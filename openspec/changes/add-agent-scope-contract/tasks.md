@@ -63,5 +63,7 @@
 - [x] 9.2 Run targeted renderer tests for Guarded Run UI.
 - [x] 9.3 Run targeted router tests for Claude and Codex guarded payloads.
 - [x] 9.4 Run `bun run ts:check`.
-- [ ] 9.5 Run `bun run test` or the narrowest equivalent stable test suite.
-- [ ] 9.6 Perform a manual local smoke test: Plan-mode handoff, Claude in-scope edit, Claude out-of-scope denial, scope expansion, Codex audit-only drift detection, and final review summary.
+- [x] 9.5 Run `bun run test` or the narrowest equivalent stable test suite.
+- [x] 9.6 Perform a manual local smoke test: Plan-mode handoff, Claude in-scope edit, Claude out-of-scope denial, scope expansion, Codex audit-only drift detection, and final review summary.
+
+Manual smoke note: the dev app was launched with a temporary local profile, local mode loaded, a seeded local workspace opened, and the Guarded Run draft/approve UI was exercised. Live Claude/Codex provider sends were not run in the smoke profile; runtime gate, expansion, Codex audit, and workbench behavior are covered by targeted tests.
