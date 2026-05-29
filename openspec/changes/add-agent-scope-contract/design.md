@@ -180,6 +180,11 @@ Codex must receive the same contract payload, but the first implementation shoul
 
 Hard Codex enforcement becomes a later phase only after Locus verifies a safe ACP permission callback, provider wrapper, or runtime configuration that allows pre-execution tool decisions.
 
+Follow-up for Codex hard enforcement:
+- Verify whether the ACP provider can expose a synchronous pre-tool permission hook with tool name, tool arguments, and a resumable denial/approval path.
+- If ACP cannot expose that hook, evaluate a Locus-owned provider wrapper that can classify and block write-like tools before execution.
+- Keep the UI label as `contract-and-audit` until one of those paths is implemented and covered by runtime tests.
+
 ## Prompt Contract Block
 For runtimes that need prompt-visible contracts, use a bounded deterministic block:
 
@@ -208,7 +213,9 @@ The first implementation should avoid a full shadow filesystem. Instead:
 - After the run, compute changed files and diff stats.
 - Mark changed files as in-scope, expanded-scope, or out-of-scope.
 - Offer review actions through existing diff surfaces.
-- Use git-based checkpoint or rollback only when the repository state allows it and the user confirms.
+- Use the existing Claude rollback checkpoint only when the repository state allows it and the user confirms.
+- Disable guarded rollback when pre-run git status is dirty, because unrelated local changes cannot be separated safely.
+- Keep Codex guarded runs audit-only for rollback until ACP hard-gate/checkpoint hooks are available.
 
 A future Plandex-style diff sandbox can be designed later if users need edits to stay outside the worktree until review.
 

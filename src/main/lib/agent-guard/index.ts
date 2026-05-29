@@ -33,3 +33,8 @@ export {
   type ClaudeToolCategory,
   type DecideClaudeToolUseInput,
 } from "./decision"
+export {
+  getGuardedRunCheckpointAvailability,
+  type GuardedRunCheckpointAvailability,
+  type GuardedRunCheckpointAvailabilityInput,
+} from "./checkpoint"

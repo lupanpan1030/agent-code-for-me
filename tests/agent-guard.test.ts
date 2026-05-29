@@ -256,3 +256,34 @@ describe("guarded run audit", () => {
     expect(block).toContain("success_checks:\n- bun test tests/app.test.ts")
   })
 })
+
+describe("guarded run checkpoints", () => {
+  test("uses existing Claude rollback checkpoints only when the baseline is clean", () => {
+    expect(
+      guard.getGuardedRunCheckpointAvailability({
+        runtime: "claude",
+        sdkMessageUuid: "sdk-message-1",
+        dirtyBeforeRun: false,
+      }),
+    ).toEqual({
+      available: true,
+      mechanism: "existing-rollback-checkpoint",
+      reason: null,
+    })
+
+    expect(
+      guard.getGuardedRunCheckpointAvailability({
+        runtime: "claude",
+        sdkMessageUuid: "sdk-message-1",
+        dirtyBeforeRun: true,
+      }).available,
+    ).toBe(false)
+
+    expect(
+      guard.getGuardedRunCheckpointAvailability({
+        runtime: "codex",
+        sdkMessageUuid: "sdk-message-1",
+      }).reason,
+    ).toContain("audit-only")
+  })
+})

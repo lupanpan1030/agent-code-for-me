@@ -42,7 +42,7 @@
 - [x] 6.3 Capture pre-run and post-run git status for Codex guarded runs.
 - [x] 6.4 Compare changed files to approved and expanded scope.
 - [x] 6.5 Mark out-of-scope Codex changes as drift or needs-review.
-- [ ] 6.6 Document the follow-up needed for ACP pre-tool permission support.
+- [x] 6.6 Document the follow-up needed for ACP pre-tool permission support.
 
 ## 7. Pending Changes Review and Audit UI
 - [x] 7.1 Capture pre-run git status before guarded execution starts.
@@ -50,13 +50,13 @@
 - [x] 7.3 Render a final audit summary on the assistant response.
 - [x] 7.4 Link audit changed files to the existing diff/review surface.
 - [x] 7.5 Warn before guarded runs start when unrelated dirty files make audit ambiguous.
-- [ ] 7.6 Add workbench status mapping for blocked, drifted, and needs-review guarded runs where the workbench is available.
+- [x] 7.6 Add workbench status mapping for blocked, drifted, and needs-review guarded runs where the workbench is available.
 
 ## 8. Checkpoints and Rollback
-- [ ] 8.1 Decide the MVP checkpoint mechanism after validating current git/diff helpers.
-- [ ] 8.2 If implemented, require user confirmation before rollback.
-- [ ] 8.3 Avoid rollback actions when the worktree has unrelated dirty files that cannot be separated safely.
-- [ ] 8.4 Add tests for checkpoint availability and disabled-state reasons.
+- [x] 8.1 Decide the MVP checkpoint mechanism after validating current git/diff helpers.
+- [x] 8.2 If implemented, require user confirmation before rollback.
+- [x] 8.3 Avoid rollback actions when the worktree has unrelated dirty files that cannot be separated safely.
+- [x] 8.4 Add tests for checkpoint availability and disabled-state reasons.
 
 ## 9. Verification
 - [x] 9.1 Run targeted unit tests for `agent-guard`.
