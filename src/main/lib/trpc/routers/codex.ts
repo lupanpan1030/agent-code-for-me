@@ -15,6 +15,16 @@ import {
   normalizeCodexStreamChunk,
 } from "../../../../shared/codex-tool-normalizer"
 import { preparePromptWithAppAgents } from "../../app-agents/prompt"
+import {
+  agentScopeContractInputSchema,
+  buildGuardedRunAudit,
+  buildGuardedRunPromptBlock,
+  captureGuardedGitStatus,
+  formatScopeValidationError,
+  validateAgentScopeContract,
+  type GuardedGitStatusSnapshot,
+  type ValidatedAgentScopeContract,
+} from "../../agent-guard"
 import { getClaudeShellEnvironment } from "../../claude/env"
 import { resolveProjectPathFromWorktree } from "../../claude-config"
 import { getDatabase, projects as projectsTable, subChats } from "../../db"
@@ -2058,6 +2068,7 @@ export const codexRouter = router({
           })
           .optional(),
         providerProfileId: z.string().optional(),
+        scopeContract: agentScopeContractInputSchema.optional(),
       }),
     )
     .subscription(({ input }) => {
@@ -2098,8 +2109,37 @@ export const codexRouter = router({
           }
         }
 
+        let guardedContract: ValidatedAgentScopeContract | null = null
+        let guardedPreRunStatus: GuardedGitStatusSnapshot | null = null
+        const guardedRunStartedAt = new Date().toISOString()
+
         ;(async () => {
           try {
+            if (input.scopeContract) {
+              try {
+                const validated = await validateAgentScopeContract(input.scopeContract, {
+                  cwd: input.cwd,
+                  projectPath: input.projectPath,
+                  chatId: input.chatId,
+                  subChatId: input.subChatId,
+                  runId: input.runId,
+                })
+                guardedContract = {
+                  ...validated,
+                  runId: validated.runId ?? input.runId,
+                }
+                guardedPreRunStatus = await captureGuardedGitStatus(input.cwd)
+              } catch (guardError) {
+                safeEmit({
+                  type: "error",
+                  errorText: `Guarded run contract rejected: ${formatScopeValidationError(guardError)}`,
+                })
+                safeEmit({ type: "finish" })
+                safeComplete()
+                return
+              }
+            }
+
             const db = getDatabase()
 
             const existingSubChat = db
@@ -2335,6 +2375,10 @@ export const codexRouter = router({
               return
             }
 
+            if (guardedContract) {
+              finalPrompt = `${buildGuardedRunPromptBlock(guardedContract)}\n\n${finalPrompt}`
+            }
+
             const result = streamText({
               model: provider.languageModel(selectedModelId),
               messages: [
@@ -2358,6 +2402,16 @@ export const codexRouter = router({
                 if (sessionId) {
                   latestSessionId = sessionId
                 }
+                const guardedRunMetadata = guardedContract
+                  ? {
+                      guardedRun: {
+                        contractId: guardedContract.id,
+                        runId: guardedContract.runId ?? input.runId,
+                        runtime: "codex",
+                        enforcementMode: "contract-and-audit",
+                      },
+                    }
+                  : {}
 
                 if (part.type === "finish") {
                   return {
@@ -2365,7 +2419,9 @@ export const codexRouter = router({
                     model: metadataModel,
                     sessionId,
                     durationMs: Date.now() - startedAt,
-                    resultSubtype: part.finishReason === "error" ? "error" : "success",
+                    resultSubtype:
+                      part.finishReason === "error" ? "error" : "success",
+                    ...guardedRunMetadata,
                   }
                 }
 
@@ -2374,14 +2430,34 @@ export const codexRouter = router({
                     provider: "codex",
                     model: metadataModel,
                     sessionId,
+                    ...guardedRunMetadata,
                   }
                 }
 
-                return { provider: "codex", model: metadataModel }
+                return {
+                  provider: "codex",
+                  model: metadataModel,
+                  ...guardedRunMetadata,
+                }
               },
               onFinish: async ({ responseMessage, isContinuation }) => {
                 try {
                   const usageMetadata = await resolveUsageOnce()
+                  const guardedRunAudit =
+                    guardedContract && guardedPreRunStatus
+                      ? buildGuardedRunAudit({
+                          contract: guardedContract,
+                          runtime: "codex",
+                          enforcementMode: "contract-and-audit",
+                          preRunStatus: guardedPreRunStatus,
+                          postRunStatus: await captureGuardedGitStatus(input.cwd),
+                          startedAt: guardedRunStartedAt,
+                          stopped: abortController.signal.aborted,
+                        })
+                      : null
+                  if (guardedRunAudit) {
+                    safeEmit({ type: "guard-audit", audit: guardedRunAudit })
+                  }
                   const responseWithUsage = {
                     ...responseMessage,
                     createdAt:
@@ -2390,6 +2466,17 @@ export const codexRouter = router({
                     metadata: {
                       ...((responseMessage as any)?.metadata || {}),
                       ...(usageMetadata || {}),
+                      ...(guardedRunAudit
+                        ? {
+                            guardedRun: {
+                              contractId: guardedRunAudit.contractId,
+                              runId: guardedRunAudit.runId,
+                              runtime: "codex",
+                              enforcementMode: guardedRunAudit.enforcementMode,
+                              audit: guardedRunAudit,
+                            },
+                          }
+                        : {}),
                     },
                   }
                   const cleanedResponseMessage =

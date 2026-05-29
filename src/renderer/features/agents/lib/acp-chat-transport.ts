@@ -19,6 +19,8 @@ import { appStore } from "../../../lib/jotai-store"
 import { trpcClient } from "../../../lib/trpc"
 import { en, zhCN, type TranslationKey } from "../../../lib/i18n/dictionaries"
 import {
+  approvedGuardedRunContractsAtom,
+  guardedRunAuditsAtom,
   pendingAuthRetryMessageAtom,
   subChatCodexModelIdAtomFamily,
   subChatCodexModelSourceAtomFamily,
@@ -213,6 +215,13 @@ export class ACPChatTransport implements ChatTransport<UIMessage> {
             ...(forceNewSession ? { forceNewSession: true } : {}),
             ...(images.length > 0 ? { images } : {}),
             ...(longTextAttachments.length > 0 ? { longTextAttachments } : {}),
+            ...(appStore.get(approvedGuardedRunContractsAtom).get(this.config.subChatId)
+              ? {
+                  scopeContract: appStore
+                    .get(approvedGuardedRunContractsAtom)
+                    .get(this.config.subChatId),
+                }
+              : {}),
             ...(providerProfileId ? { providerProfileId } : {}),
             ...(codexApiKey
               ? {
@@ -286,6 +295,13 @@ export class ACPChatTransport implements ChatTransport<UIMessage> {
                 })
               }
 
+              if (chunk.type === "guard-audit") {
+                const currentAudits = appStore.get(guardedRunAuditsAtom)
+                const nextAudits = new Map(currentAudits)
+                nextAudits.set(this.config.subChatId, chunk.audit)
+                appStore.set(guardedRunAuditsAtom, nextAudits)
+              }
+
               try {
                 const normalizedChunk = normalizeCodexStreamChunk(chunk) as UIMessageChunk
                 controller.enqueue(normalizedChunk)
@@ -294,6 +310,12 @@ export class ACPChatTransport implements ChatTransport<UIMessage> {
               }
 
               if (chunk.type === "finish") {
+                const approvedContracts = appStore.get(approvedGuardedRunContractsAtom)
+                if (approvedContracts.has(this.config.subChatId)) {
+                  const nextContracts = new Map(approvedContracts)
+                  nextContracts.delete(this.config.subChatId)
+                  appStore.set(approvedGuardedRunContractsAtom, nextContracts)
+                }
                 try {
                   controller.close()
                 } catch {

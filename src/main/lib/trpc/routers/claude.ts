@@ -60,6 +60,18 @@ import { discoverPluginMcpServers } from "../../plugins"
 import { publicProcedure, router } from "../index"
 import { preparePromptWithAppAgents } from "../../app-agents/prompt"
 import {
+  agentScopeContractInputSchema,
+  buildGuardedRunAudit,
+  captureGuardedGitStatus,
+  decideClaudeToolUse,
+  formatScopeValidationError,
+  toClaudePermissionResult,
+  validateAgentScopeContract,
+  type GuardedGitStatusSnapshot,
+  type ValidatedAgentScopeContract,
+} from "../../agent-guard"
+import type { AgentGuardEvent } from "../../../../shared/agent-scope-contracts"
+import {
   getApprovedPluginMcpServers,
   getEnabledPlugins,
 } from "./claude-settings"
@@ -853,6 +865,7 @@ export const claudeRouter = router({
       z.object({
         subChatId: z.string(),
         chatId: z.string(),
+        runId: z.string().optional(),
         prompt: z.string(),
         cwd: z.string(),
         projectPath: z.string().optional(), // Original project path for MCP config lookup
@@ -874,6 +887,7 @@ export const claudeRouter = router({
         historyEnabled: z.boolean().optional(),
         offlineModeEnabled: z.boolean().optional(), // Whether offline mode (Ollama) is enabled in settings
         enableTasks: z.boolean().optional(), // Enable task management tools (TodoWrite, Task agents)
+        scopeContract: agentScopeContractInputSchema.optional(),
       }),
     )
     .subscription(({ input }) => {
@@ -949,8 +963,38 @@ export const claudeRouter = router({
           } as UIMessageChunk)
         }
 
+        let guardedContract: ValidatedAgentScopeContract | null = null
+        let guardedPreRunStatus: GuardedGitStatusSnapshot | null = null
+        const guardEvents: AgentGuardEvent[] = []
+        const guardedRunStartedAt = new Date().toISOString()
+
         ;(async () => {
           try {
+            if (input.scopeContract) {
+              try {
+                const validated = await validateAgentScopeContract(input.scopeContract, {
+                  cwd: input.cwd,
+                  projectPath: input.projectPath,
+                  chatId: input.chatId,
+                  subChatId: input.subChatId,
+                  runId: input.runId,
+                })
+                guardedContract = {
+                  ...validated,
+                  runId: validated.runId ?? input.runId ?? streamId,
+                }
+                guardedPreRunStatus = await captureGuardedGitStatus(input.cwd)
+              } catch (guardError) {
+                emitError(
+                  new Error(formatScopeValidationError(guardError)),
+                  "Guarded run contract rejected",
+                )
+                safeEmit({ type: "finish" } as UIMessageChunk)
+                safeComplete()
+                return
+              }
+            }
+
             const db = getDatabase()
 
             // 1. Get existing messages from DB
@@ -1201,7 +1245,46 @@ export const claudeRouter = router({
             // 4. Setup accumulation state
             const parts: any[] = []
             let currentText = ""
-            let metadata: any = {}
+            let metadata: any = guardedContract
+              ? {
+                  guardedRun: {
+                    contractId: guardedContract.id,
+                    runId: guardedContract.runId ?? guardedContract.id,
+                    runtime: "claude",
+                    enforcementMode: "hard",
+                  },
+                }
+              : {}
+
+            const finalizeGuardMetadata = async (
+              currentMetadata: any,
+              options: { failed?: boolean; stopped?: boolean } = {},
+            ) => {
+              if (!guardedContract || !guardedPreRunStatus) {
+                return currentMetadata
+              }
+
+              const postRunStatus = await captureGuardedGitStatus(input.cwd)
+              const audit = buildGuardedRunAudit({
+                contract: guardedContract,
+                runtime: "claude",
+                enforcementMode: "hard",
+                preRunStatus: guardedPreRunStatus,
+                postRunStatus,
+                guardEvents,
+                startedAt: guardedRunStartedAt,
+                failed: options.failed,
+                stopped: options.stopped,
+              })
+              safeEmit({ type: "guard-audit", audit })
+              return {
+                ...currentMetadata,
+                guardedRun: {
+                  ...(currentMetadata?.guardedRun ?? {}),
+                  audit,
+                },
+              }
+            }
 
             // Capture stderr from Claude process for debugging
             const stderrLines: string[] = []
@@ -2048,6 +2131,24 @@ ${prompt}
                       }
                     }
                   }
+                  if (
+                    guardedContract &&
+                    input.mode !== "plan" &&
+                    toolName !== "AskUserQuestion"
+                  ) {
+                    const decision = decideClaudeToolUse({
+                      contract: guardedContract,
+                      toolName,
+                      toolInput,
+                      toolUseId: options.toolUseID,
+                    })
+                    guardEvents.push(decision.event)
+                    safeEmit({
+                      type: "guard-event",
+                      event: decision.event,
+                    })
+                    return toClaudePermissionResult(decision)
+                  }
                   if (toolName === "AskUserQuestion") {
                     const { toolUseID } = options
                     // Emit to UI (safely in case observer is closed)
@@ -2736,6 +2837,10 @@ ${prompt}
                 if (currentText.trim()) {
                   parts.push({ type: "text", text: currentText })
                 }
+                metadata = await finalizeGuardMetadata(metadata, {
+                  failed: !abortController.signal.aborted,
+                  stopped: abortController.signal.aborted,
+                })
                 if (parts.length > 0) {
                   const assistantMessage = {
                     id: crypto.randomUUID(),
@@ -2813,6 +2918,10 @@ ${prompt}
             if (currentText.trim()) {
               parts.push({ type: "text", text: currentText })
             }
+
+            metadata = await finalizeGuardMetadata(metadata, {
+              stopped: abortController.signal.aborted,
+            })
 
             const savedSessionId = metadata.sessionId
 
