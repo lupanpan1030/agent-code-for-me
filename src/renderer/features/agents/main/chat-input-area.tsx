@@ -663,6 +663,7 @@ export const ChatInputArea = memo(function ChatInputArea({
 
   const { data: providerConfigData } =
     trpc.claudeProviderConfig.get.useQuery()
+  const providerConfigKnown = providerConfigData !== undefined
   const hasCustomClaudeConfig = Boolean(providerConfigData?.config?.hasToken)
   const selectedClaudeProfileId = parseProviderProfileSource(
     selectedClaudeModelSource,
@@ -680,7 +681,9 @@ export const ChatInputArea = memo(function ChatInputArea({
   const effectiveClaudeModelSource =
     selectedClaudeModelSource === "auto"
       ? "claude-oauth"
-      : selectedClaudeModelSource === "custom-provider" && !hasCustomClaudeConfig
+      : selectedClaudeModelSource === "custom-provider" &&
+          providerConfigKnown &&
+          !hasCustomClaudeConfig
         ? "claude-oauth"
         : selectedClaudeProfileId &&
             !selectedClaudeProviderProfile &&
@@ -699,7 +702,11 @@ export const ChatInputArea = memo(function ChatInputArea({
     )
 
   useEffect(() => {
-    if (selectedClaudeModelSource === "custom-provider" && !hasCustomClaudeConfig) {
+    if (
+      selectedClaudeModelSource === "custom-provider" &&
+      providerConfigKnown &&
+      !hasCustomClaudeConfig
+    ) {
       setSelectedClaudeModelSource("claude-oauth")
       setLastSelectedClaudeModelSource("claude-oauth")
       return
@@ -714,6 +721,7 @@ export const ChatInputArea = memo(function ChatInputArea({
     }
   }, [
     hasCustomClaudeConfig,
+    providerConfigKnown,
     selectedClaudeModelSource,
     selectedClaudeProviderProfile,
     selectedClaudeProfileIsPending,
