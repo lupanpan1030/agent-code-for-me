@@ -13,6 +13,10 @@ describe("agent guard runtime pipeline", () => {
       "utf8",
     )
     const chunks = readFileSync("src/main/lib/claude/types.ts", "utf8")
+    const input = readFileSync(
+      "src/renderer/features/agents/main/chat-input-area.tsx",
+      "utf8",
+    )
 
     expect(atoms).toContain("approvedGuardedRunContractsAtom")
     expect(atoms).toContain("pendingScopeExpansionRequestsAtom")
@@ -26,7 +30,12 @@ describe("agent guard runtime pipeline", () => {
     expect(claude).toContain("validateAgentScopeContract(input.scopeContract")
     expect(claude).toContain("decideClaudeToolUse")
     expect(claude).toContain("toClaudePermissionResult(decision)")
+    expect(claude).toContain("respondScopeExpansion")
+    expect(claude).toContain("activeGuardedContracts")
     expect(claude).toContain("buildGuardedRunAudit")
+    expect(input).toContain("AgentGuardedRunCard")
+    expect(input).toContain("approveGuardedRunDraft")
+    expect(input).toContain("ensureGuardedRunReady")
     expect(chunks).toContain('| { type: "guard-event"; event: AgentGuardEvent }')
     expect(chunks).toContain('| { type: "guard-audit"; audit: GuardedRunAudit }')
   })
@@ -35,6 +44,10 @@ describe("agent guard runtime pipeline", () => {
     const codex = readFileSync("src/main/lib/trpc/routers/codex.ts", "utf8")
     const acp = readFileSync(
       "src/renderer/features/agents/lib/acp-chat-transport.ts",
+      "utf8",
+    )
+    const audit = readFileSync(
+      "src/renderer/features/agents/ui/agent-guarded-run-audit.tsx",
       "utf8",
     )
 
@@ -48,5 +61,7 @@ describe("agent guard runtime pipeline", () => {
     expect(codex).toContain("buildGuardedRunPromptBlock(guardedContract)")
     expect(codex).toContain("buildGuardedRunAudit")
     expect(codex).toContain('enforcementMode: "contract-and-audit"')
+    expect(audit).toContain("filteredDiffFilesAtom")
+    expect(audit).toContain("Guarded Run")
   })
 })

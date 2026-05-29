@@ -6,12 +6,12 @@
 - [x] 1.5 Add unit tests for valid contracts, empty editable scope, absolute paths, parent traversal, symlinks, blocked paths, sensitive paths, directory entries, and glob entries.
 
 ## 2. Renderer Guarded Run UX
-- [ ] 2.1 Add a Guarded Run draft card in the agents chat input flow without large rewrites to `active-chat.tsx`.
-- [ ] 2.2 Let users edit editable scope, read-only evidence, and success checks before approval.
-- [ ] 2.3 Seed draft contracts from selected files, current changed files, GitHub context, and Plan-mode summaries where available.
-- [ ] 2.4 Show source labels for suggested contract entries.
-- [ ] 2.5 Provide an explicit run-without-guard path for quick tasks.
-- [ ] 2.6 Add UI tests or component-level tests for draft editing, approval, removal, and send blocking.
+- [x] 2.1 Add a Guarded Run draft card in the agents chat input flow without large rewrites to `active-chat.tsx`.
+- [x] 2.2 Let users edit editable scope, read-only evidence, and success checks before approval.
+- [x] 2.3 Seed draft contracts from selected files, current changed files, GitHub context, and Plan-mode summaries where available.
+- [x] 2.4 Show source labels for suggested contract entries.
+- [x] 2.5 Provide an explicit run-without-guard path for quick tasks.
+- [x] 2.6 Add UI tests or component-level tests for draft editing, approval, removal, and send blocking.
 
 ## 3. Transport and Router Payloads
 - [x] 3.1 Extend Claude chat transport payloads with approved `scopeContract` metadata.
@@ -31,10 +31,10 @@
 
 ## 5. Scope Expansion
 - [x] 5.1 Add a scope-expansion request event shape and renderer state.
-- [ ] 5.2 Reuse or mirror the pending tool approval pattern for approve/reject actions.
-- [ ] 5.3 Update the in-memory run contract when the user approves expansion.
-- [ ] 5.4 Persist expansion decisions in assistant message metadata.
-- [ ] 5.5 Add tests for approved and rejected expansion flows.
+- [x] 5.2 Reuse or mirror the pending tool approval pattern for approve/reject actions.
+- [x] 5.3 Update the in-memory run contract when the user approves expansion.
+- [x] 5.4 Persist expansion decisions in assistant message metadata.
+- [x] 5.5 Add tests for approved and rejected expansion flows.
 
 ## 6. Codex Contract and Audit
 - [x] 6.1 Inject a deterministic guarded-run prompt block into Codex requests.
@@ -47,9 +47,9 @@
 ## 7. Pending Changes Review and Audit UI
 - [x] 7.1 Capture pre-run git status before guarded execution starts.
 - [x] 7.2 Compute post-run changed files, diff stats, and in-scope/out-of-scope classification.
-- [ ] 7.3 Render a final audit summary on the assistant response.
-- [ ] 7.4 Link audit changed files to the existing diff/review surface.
-- [ ] 7.5 Warn before guarded runs start when unrelated dirty files make audit ambiguous.
+- [x] 7.3 Render a final audit summary on the assistant response.
+- [x] 7.4 Link audit changed files to the existing diff/review surface.
+- [x] 7.5 Warn before guarded runs start when unrelated dirty files make audit ambiguous.
 - [ ] 7.6 Add workbench status mapping for blocked, drifted, and needs-review guarded runs where the workbench is available.
 
 ## 8. Checkpoints and Rollback
@@ -60,7 +60,7 @@
 
 ## 9. Verification
 - [x] 9.1 Run targeted unit tests for `agent-guard`.
-- [ ] 9.2 Run targeted renderer tests for Guarded Run UI.
+- [x] 9.2 Run targeted renderer tests for Guarded Run UI.
 - [x] 9.3 Run targeted router tests for Claude and Codex guarded payloads.
 - [x] 9.4 Run `bun run ts:check`.
 - [ ] 9.5 Run `bun run test` or the narrowest equivalent stable test suite.
