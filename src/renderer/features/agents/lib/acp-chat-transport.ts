@@ -185,6 +185,7 @@ export class ACPChatTransport implements ChatTransport<UIMessage> {
         let sub: { unsubscribe: () => void } | null = null
         let didUnsubscribe = false
         let forcedUnsubscribeTimer: ReturnType<typeof setTimeout> | null = null
+        let lastRuntimeStatusError: string | null = null
 
         const clearForcedUnsubscribeTimer = () => {
           if (!forcedUnsubscribeTimer) return
@@ -290,8 +291,21 @@ export class ACPChatTransport implements ChatTransport<UIMessage> {
               }
 
               if (chunk.type === "error") {
+                if (!chunk.errorText || chunk.errorText !== lastRuntimeStatusError) {
+                  toast.error(tr("agent.transport.codexError"), {
+                    description: chunk.errorText || tr("agent.transport.unexpectedCodexError"),
+                  })
+                }
+              }
+
+              if (chunk.type === "runtime-status" && chunk.ok === false) {
+                lastRuntimeStatusError = chunk.blocker?.message || null
+                const description =
+                  chunk.blocker?.hint && chunk.blocker?.message
+                    ? `${chunk.blocker.message} ${chunk.blocker.hint}`
+                    : chunk.blocker?.message || tr("agent.transport.unexpectedCodexError")
                 toast.error(tr("agent.transport.codexError"), {
-                  description: chunk.errorText || tr("agent.transport.unexpectedCodexError"),
+                  description,
                 })
               }
 

@@ -64,4 +64,25 @@ describe("agent guard runtime pipeline", () => {
     expect(audit).toContain("filteredDiffFilesAtom")
     expect(audit).toContain("Guarded Run")
   })
+
+  test("Codex desktop route is wired to normalized runtime status before provider work", () => {
+    const codex = readFileSync("src/main/lib/trpc/routers/codex.ts", "utf8")
+    const acp = readFileSync(
+      "src/renderer/features/agents/lib/acp-chat-transport.ts",
+      "utf8",
+    )
+
+    expect(codex).toContain("buildCodexRuntimeAvailability")
+    expect(codex).toContain("buildCodexRuntimeAvailabilityFromComponents")
+    expect(codex).toContain("buildCodexRuntimeStatusChunk")
+    expect(codex).toContain("buildCodexCapabilityErrorChunk")
+    expect(codex).toContain("const runtimeStatus = await getCodexRuntimeStatus()")
+    expect(codex).toContain("const integration = await getCodexIntegrationStatus()")
+    expect(codex).toContain('id: "login"')
+    expect(codex).toContain("runtimeStatus.blockers[0]")
+    expect(codex).toContain('id: "provider-profile"')
+    expect(codex).toContain('id: "mcp"')
+    expect(codex).toContain('id: "local-only"')
+    expect(acp).toContain('chunk.type === "runtime-status"')
+  })
 })

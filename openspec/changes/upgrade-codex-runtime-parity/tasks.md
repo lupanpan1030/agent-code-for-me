@@ -11,7 +11,7 @@
 - [ ] 2.4 Implement Codex AskUserQuestion parity with normalized pending, result, timeout, and denial events.
 - [ ] 2.5 Implement Codex rollback/fork parity using durable session references compatible with the shared runner contract.
 - [ ] 2.6 Implement Codex MCP auth parity so needs-auth MCP servers are surfaced before starting affected runs.
-- [ ] 2.7 Implement normalized Codex runtime availability/status states for bundled CLI, ACP runtime, login, provider profile, MCP auth/configuration, and local-only blockers.
+- [x] 2.7 Implement normalized Codex runtime availability/status states for bundled CLI, ACP runtime, login, provider profile, MCP auth/configuration, and local-only blockers.
 - [ ] 2.8 Migrate or delegate the existing desktop Codex chat route and ACP transport to the shared Codex runtime enforcement/status path.
 - [ ] 2.9 Add tests proving Codex core safety capabilities marked `supported` execute through enforcement paths and cannot be bypassed by the desktop chat path.
 - [ ] 2.10 Run desktop smoke covering guarded tool denial, plan mode denial, scope expansion, AskUserQuestion, rollback/fork, MCP needs-auth handling, and separated runtime availability states.

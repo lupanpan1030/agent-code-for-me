@@ -14,6 +14,15 @@ import {
   normalizeCodexAssistantMessage,
   normalizeCodexStreamChunk,
 } from "../../../../shared/codex-tool-normalizer"
+import { redactProviderSecrets } from "../../../../shared/provider-profile-security"
+import {
+  buildCodexCapabilityErrorChunk,
+  buildCodexRuntimeAvailability,
+  buildCodexRuntimeAvailabilityFromComponents,
+  buildCodexRuntimeStatusChunk,
+  createCodexRuntimeComponent,
+  createCodexRuntimeBlocker,
+} from "../../../../shared/codex-runtime-status"
 import { preparePromptWithAppAgents } from "../../app-agents/prompt"
 import {
   agentScopeContractInputSchema,
@@ -33,6 +42,7 @@ import { prependLongTextAttachmentPromptBlocks } from "../../long-text-attachmen
 import { getRuntimeExecutableStatus } from "../../runtime-executable"
 import { getProviderGatewayEndpoint } from "../../provider-profiles/gateway"
 import { getProviderProfileRuntimeConfig } from "../../provider-profiles/storage"
+import { isLocalOnlyMode } from "../../local-only"
 import {
   fetchMcpTools,
   fetchMcpToolsStdio,
@@ -546,13 +556,103 @@ async function getCodexRuntimeStatus() {
         durationMs: 0,
       }
   const acpWithProbe = { ...acp, spawnProbe }
+  const resolvedAcp = acpResolveError
+    ? { ...acpWithProbe, error: acpResolveError }
+    : acpWithProbe
+  const runtimeAvailability = buildCodexRuntimeAvailability({
+    loginCli,
+    acp: resolvedAcp,
+  })
+  const extraComponents = [
+    createCodexRuntimeComponent({
+      id: "provider-profile",
+      label: "Codex provider profile",
+      status: "unknown",
+      ok: true,
+      blocking: false,
+      error: null,
+      hint: "Provider profile availability is checked for the selected run.",
+    }),
+    createCodexRuntimeComponent({
+      id: "mcp",
+      label: "Codex MCP configuration",
+      status: "unknown",
+      ok: true,
+      blocking: false,
+      error: null,
+      hint: "MCP configuration and auth are checked for the selected project before each run.",
+    }),
+    createCodexRuntimeComponent({
+      id: "local-only",
+      label: "Local-only policy",
+      status: isLocalOnlyMode() ? "ready" : "unknown",
+      ok: true,
+      blocking: false,
+      error: null,
+      hint: isLocalOnlyMode()
+        ? "Local-only policy is active; Codex runs use local runtime components and user-selected providers."
+        : "Local-only policy is disabled by environment configuration.",
+    }),
+  ]
+
+  if (loginCli.ok) {
+    try {
+      const integration = await getCodexIntegrationStatus()
+      extraComponents.unshift(
+        createCodexRuntimeComponent({
+          id: "login",
+          label: "Codex login",
+          status: integration.isConnected ? "ready" : "needs-auth",
+          ok: integration.isConnected,
+          blocking: false,
+          error: integration.isConnected
+            ? null
+            : "Codex login or API key is required for ChatGPT-backed Codex runs.",
+          hint: integration.isConnected
+            ? "Codex login is connected."
+            : "Connect Codex with ChatGPT login, use a Codex API key, or choose a provider profile.",
+        }),
+      )
+    } catch (error) {
+      const normalized = extractCodexError(error)
+      extraComponents.unshift(
+        createCodexRuntimeComponent({
+          id: "login",
+          label: "Codex login",
+          status: "failed",
+          ok: false,
+          blocking: false,
+          error: normalized.message,
+          hint: "Codex login status could not be checked.",
+        }),
+      )
+    }
+  } else {
+    extraComponents.unshift(
+      createCodexRuntimeComponent({
+        id: "login",
+        label: "Codex login",
+        status: "blocked",
+        ok: false,
+        blocking: false,
+        error: "Codex CLI is unavailable, so login status cannot be checked.",
+        hint: loginCli.hint,
+      }),
+    )
+  }
+  const availability = buildCodexRuntimeAvailabilityFromComponents([
+    ...runtimeAvailability.components,
+    ...extraComponents,
+  ])
 
   return {
     runtime: "codex" as const,
     requiresGlobalCli: false,
-    ok: loginCli.ok && acp.ok && spawnProbe.ok && !acpResolveError,
+    ok: availability.ok,
     loginCli,
-    acp: acpResolveError ? { ...acpWithProbe, error: acpResolveError } : acpWithProbe,
+    acp: resolvedAcp,
+    components: availability.components,
+    blockers: availability.blockers,
   }
 }
 
@@ -673,8 +773,11 @@ function extractCodexError(error: unknown): { message: string; code?: string } {
     String(error)
   const code = anyError?.data?.code || anyError?.code
 
+  const rawMessage = typeof message === "string" ? message : String(message)
+  const redactedMessage = redactCodexLoginOutput(redactProviderSecrets(rawMessage))
+
   return {
-    message: typeof message === "string" ? message : String(message),
+    message: redactedMessage,
     code: typeof code === "string" ? code : undefined,
   }
 }
@@ -1433,6 +1536,24 @@ function normalizeCodexIntegrationState(rawOutput: string): CodexIntegrationStat
   return "unknown"
 }
 
+async function getCodexIntegrationStatus() {
+  const result = await runCodexCli(["login", "status"])
+  const combinedOutput = [result.stdout, result.stderr]
+    .filter((chunk) => chunk.trim().length > 0)
+    .join("\n")
+    .trim()
+
+  const state = normalizeCodexIntegrationState(combinedOutput)
+
+  return {
+    state,
+    isConnected:
+      state === "connected_chatgpt" || state === "connected_api_key",
+    rawOutput: combinedOutput,
+    exitCode: result.exitCode,
+  }
+}
+
 function parseStoredMessages(raw: string | null | undefined): any[] {
   if (!raw) return []
   try {
@@ -1776,23 +1897,7 @@ function cleanupProvider(subChatId: string): void {
 export const codexRouter = router({
   getRuntimeStatus: publicProcedure.query(() => getCodexRuntimeStatus()),
 
-  getIntegration: publicProcedure.query(async () => {
-    const result = await runCodexCli(["login", "status"])
-    const combinedOutput = [result.stdout, result.stderr]
-      .filter((chunk) => chunk.trim().length > 0)
-      .join("\n")
-      .trim()
-
-    const state = normalizeCodexIntegrationState(combinedOutput)
-
-    return {
-      state,
-      isConnected:
-        state === "connected_chatgpt" || state === "connected_api_key",
-      rawOutput: combinedOutput,
-      exitCode: result.exitCode,
-    }
-  }),
+  getIntegration: publicProcedure.query(() => getCodexIntegrationStatus()),
 
   logout: publicProcedure.mutation(async () => {
     const logoutResult = await runCodexCli(["logout"])
@@ -2140,6 +2245,30 @@ export const codexRouter = router({
               }
             }
 
+            const runtimeStatus = await getCodexRuntimeStatus()
+            if (!runtimeStatus.ok) {
+              const blocker =
+                runtimeStatus.blockers[0] ??
+                createCodexRuntimeBlocker({
+                  id: "acp-runtime",
+                  label: "Codex runtime",
+                  status: "failed",
+                  ok: false,
+                  message: "Codex runtime is unavailable.",
+                  hint: "Check Codex runtime status and try again.",
+                })
+              safeEmit(buildCodexRuntimeStatusChunk(blocker))
+              safeEmit({
+                type: "error",
+                errorText: blocker.hint
+                  ? `${blocker.message} ${blocker.hint}`
+                  : blocker.message,
+              })
+              safeEmit({ type: "finish" })
+              safeComplete()
+              return
+            }
+
             const db = getDatabase()
 
             const existingSubChat = db
@@ -2183,9 +2312,19 @@ export const codexRouter = router({
             if (input.providerProfileId) {
               const profile = getProviderProfileRuntimeConfig(input.providerProfileId)
               if (!profile || !profile.targetRuntimes.includes("codex")) {
+                const blocker = createCodexRuntimeBlocker({
+                  id: "provider-profile",
+                  label: "Codex provider profile",
+                  status: "unavailable",
+                  ok: false,
+                  message: "Provider profile is not available for Codex.",
+                  hint: "Choose a provider profile that targets Codex.",
+                })
+                safeEmit(buildCodexRuntimeStatusChunk(blocker))
+                safeEmit(buildCodexCapabilityErrorChunk(blocker))
                 safeEmit({
-                  type: "auth-error",
-                  errorText: "Provider profile is not available for Codex",
+                  type: "error",
+                  errorText: blocker.message,
                 })
                 safeEmit({ type: "finish" })
                 safeComplete()
@@ -2197,6 +2336,27 @@ export const codexRouter = router({
                 name: profile.name,
                 baseUrl: gateway.baseUrl,
                 token: gateway.token,
+              }
+            } else if (!input.authConfig?.apiKey?.trim()) {
+              const integration = await getCodexIntegrationStatus()
+              if (!integration.isConnected) {
+                const blocker = createCodexRuntimeBlocker({
+                  id: "login",
+                  label: "Codex login",
+                  status: "needs-auth",
+                  ok: false,
+                  message: "Codex login or API key is required.",
+                  hint: "Connect Codex with ChatGPT login or choose a Codex API key/provider profile.",
+                })
+                safeEmit(buildCodexRuntimeStatusChunk(blocker))
+                safeEmit(buildCodexCapabilityErrorChunk(blocker))
+                safeEmit({
+                  type: "auth-error",
+                  errorText: blocker.message,
+                })
+                safeEmit({ type: "finish" })
+                safeComplete()
+                return
               }
             }
             const requestedModelId =
@@ -2305,7 +2465,48 @@ export const codexRouter = router({
                 lookupPath: mcpLookupPath,
               })
             } catch (mcpError) {
-              console.error("[codex] Failed to resolve MCP servers:", mcpError)
+              const message = extractCodexError(mcpError).message
+              const blocker = createCodexRuntimeBlocker({
+                id: "mcp",
+                label: "Codex MCP configuration",
+                status: "failed",
+                ok: false,
+                message: `Codex MCP configuration failed: ${message}`,
+                hint: "Fix Codex MCP configuration or disable the failing MCP server.",
+              })
+              console.error("[codex] Failed to resolve MCP servers:", message)
+              safeEmit(buildCodexRuntimeStatusChunk(blocker))
+              safeEmit(buildCodexCapabilityErrorChunk(blocker))
+              safeEmit({
+                type: "error",
+                errorText: blocker.message,
+              })
+              safeEmit({ type: "finish" })
+              safeComplete()
+              return
+            }
+
+            const needsAuthMcpServer = mcpSnapshot.groups
+              .flatMap((group) => group.mcpServers)
+              .find((server) => server.needsAuth || server.status === "needs-auth")
+            if (needsAuthMcpServer) {
+              const blocker = createCodexRuntimeBlocker({
+                id: "mcp",
+                label: "Codex MCP auth",
+                status: "needs-auth",
+                ok: false,
+                message: `Codex MCP server '${needsAuthMcpServer.name}' needs authentication.`,
+                hint: "Authenticate the MCP server before starting this Codex run.",
+              })
+              safeEmit(buildCodexRuntimeStatusChunk(blocker))
+              safeEmit(buildCodexCapabilityErrorChunk(blocker))
+              safeEmit({
+                type: "error",
+                errorText: blocker.message,
+              })
+              safeEmit({ type: "finish" })
+              safeComplete()
+              return
             }
 
             const provider = getOrCreateProvider({
