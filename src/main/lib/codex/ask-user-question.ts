@@ -211,7 +211,7 @@ export function createCodexAskUserQuestionTools(input: {
           toolUseId,
           result,
         })
-        return result
+        return JSON.stringify(result)
       },
     }),
   })

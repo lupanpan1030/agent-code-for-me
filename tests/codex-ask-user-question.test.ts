@@ -77,11 +77,11 @@ describe("Codex AskUserQuestion bridge", () => {
       },
     })
 
-    await expect(promise).resolves.toEqual({
+    await expect(promise).resolves.toBe(JSON.stringify({
       answers: {
         "Proceed?": "Yes",
       },
-    })
+    }))
     expect(chunks.at(-1)).toEqual({
       type: "ask-user-question-result",
       toolUseId,

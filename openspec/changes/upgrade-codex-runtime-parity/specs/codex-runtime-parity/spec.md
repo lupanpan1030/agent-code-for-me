@@ -105,16 +105,17 @@ The system SHALL provide Codex behavior equivalent to Claude-facing runtime-neut
 - **AND** project-scoped Codex add/remove operations SHALL fail explicitly instead of silently writing global configuration
 - **AND** needs-auth MCP servers SHALL still block affected runs before provider work starts
 
-#### Scenario: Provider profile and usage metadata are equivalent
+#### Scenario: Provider profile and available usage metadata are equivalent
 - **WHEN** a user selects a provider profile for Codex
 - **THEN** the runtime adapter receives only the non-secret profile reference needed to start the run
-- **AND** the renderer receives consistent non-secret runtime, model, profile, availability, context, token, quota, and usage metadata when available
+- **AND** the renderer receives consistent non-secret runtime, model, profile availability, context, token, and usage metadata when available
+- **AND** unavailable quota or usage fields are omitted rather than reported as zero
 
 #### Scenario: Attachments are validated before provider work
-- **WHEN** a user submits an image, long-text, or file attachment to Codex
+- **WHEN** a user submits an image, long-text, or file-content context attachment to Codex
 - **THEN** the runtime adapter validates whether that attachment type is supported before starting provider work
 - **AND** supported attachments are passed through normalized attachment metadata
-- **AND** unsupported attachments fail with a normalized capability error rather than provider-specific UI behavior
+- **AND** unsupported generic file attachments fail or remain out of scope rather than being silently treated as supported Codex file parity
 
 #### Scenario: Runtime plugins are executable when shown as executable
 - **WHEN** a plugin is displayed as available and executable for Codex

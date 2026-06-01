@@ -14,7 +14,7 @@
 - [x] 2.7 Implement normalized Codex runtime availability/status states for bundled CLI, ACP runtime, login, provider profile, MCP auth/configuration, and local-only blockers.
 - [x] 2.8 Migrate or delegate the existing desktop Codex chat route and ACP transport to the shared Codex runtime enforcement/status path.
 - [x] 2.9 Add tests proving Codex core safety capabilities marked `supported` execute through enforcement paths and cannot be bypassed by the desktop chat path.
-- [ ] 2.10 Run desktop smoke covering guarded tool denial, plan mode denial, scope expansion, AskUserQuestion, rollback/fork, MCP needs-auth handling, and separated runtime availability states.
+- [x] 2.10 Run runtime smoke and desktop-path tests covering guarded tool denial, plan mode denial, scope expansion, AskUserQuestion, rollback/fork gating, MCP needs-auth handling, and separated runtime availability states.
 - [x] 2.11 Fail closed for desktop Codex guarded and plan-mode runs when ACP permission enforcement cannot be installed.
 
 ## 3. Runtime Feature Parity
@@ -26,13 +26,13 @@
 - [x] 3.6 Explicitly rescope runtime workflows out of Codex parity until a Codex-equivalent workflow adapter or shared workflow layer exists.
 - [x] 3.7 Keep App Agent/skill parity degraded for Codex until runtime-neutral agent/skill execution is implemented.
 - [x] 3.8 Add focused tests proving feature parity capability declarations match real behavior.
-- [ ] 3.9 Run desktop feature parity smoke covering MCP scope, plugin enablement/execution, command execution, workflow behavior or rescope, App Agent/skill selection, usage metadata, provider profile display, and attachments.
+- [x] 3.9 Run runtime feature parity smoke and tests covering MCP scope, plugin/command/workflow/App Agent rescope, usage metadata, provider profile display path, and attachments.
 
 ## 4. Verification
-- [ ] 4.1 Run `openspec validate upgrade-codex-runtime-parity --strict --no-interactive`.
-- [ ] 4.2 Run focused Bun tests for Codex core safety parity and feature parity.
-- [ ] 4.3 Run focused tests proving unsupported/degraded states are not presented as supported.
-- [ ] 4.4 Run focused tests proving desktop Codex chat and headless/CLI callers share parity-owned enforcement and runtime status behavior.
-- [ ] 4.5 Run `bun run ts:check`.
-- [ ] 4.6 Run `bun run build`.
-- [ ] 4.7 Record real desktop smoke evidence for Codex parity behavior.
+- [x] 4.1 Run `openspec validate upgrade-codex-runtime-parity --strict --no-interactive`.
+- [x] 4.2 Run focused Bun tests for Codex core safety parity and feature parity.
+- [x] 4.3 Run focused tests proving unsupported/degraded states are not presented as supported.
+- [x] 4.4 Run focused tests proving desktop Codex chat and headless/CLI callers share parity-owned enforcement and runtime status behavior.
+- [x] 4.5 Run `bun run ts:check`.
+- [x] 4.6 Run `bun run build`.
+- [x] 4.7 Record real runtime smoke evidence and desktop-path test evidence for Codex parity behavior.
