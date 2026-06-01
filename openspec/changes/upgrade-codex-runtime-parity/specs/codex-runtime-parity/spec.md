@@ -61,6 +61,12 @@ The system SHALL provide Codex behavior equivalent to Claude Code for core safet
 - **AND** rollback excludes messages after the selected point
 - **AND** forked sessions do not mutate the original session history
 
+#### Scenario: Rollback and fork are not safely available
+- **WHEN** Codex only exposes existing-session resume without a durable resume-at or fork primitive
+- **THEN** Locus SHALL keep Codex rollback/fork capability `unsupported`
+- **AND** SHALL NOT present Codex rollback/fork as runtime-neutral behavior
+- **AND** SHALL require a later implementation or approved rescope before changing that capability to `supported`
+
 #### Scenario: MCP auth blocks before provider work
 - **WHEN** a Codex run would use an MCP server with known missing or expired authentication
 - **THEN** the runner reports a normalized needs-auth state before starting provider work
@@ -93,6 +99,12 @@ The system SHALL provide Codex behavior equivalent to Claude-facing runtime-neut
 - **THEN** Codex uses the requested scope without silently falling back to a different scope
 - **AND** reports auth state and configuration source using normalized fields
 
+#### Scenario: Codex MCP project-scoped writes are unavailable
+- **WHEN** Codex can list/status MCP configuration but cannot safely add or remove project-scoped MCP servers through its runtime configuration layer
+- **THEN** MCP configuration capability SHALL remain `degraded`
+- **AND** project-scoped Codex add/remove operations SHALL fail explicitly instead of silently writing global configuration
+- **AND** needs-auth MCP servers SHALL still block affected runs before provider work starts
+
 #### Scenario: Provider profile and usage metadata are equivalent
 - **WHEN** a user selects a provider profile for Codex
 - **THEN** the runtime adapter receives only the non-secret profile reference needed to start the run
@@ -119,6 +131,11 @@ The system SHALL provide Codex behavior equivalent to Claude-facing runtime-neut
 - **THEN** Codex can execute the workflow through a runtime-native integration or shared Locus-owned workflow layer
 - **AND** Claude-only workflow adapters are not counted as Codex workflow parity unless workflows are explicitly rescoped out of runtime-neutral parity
 
+#### Scenario: Unsupported feature surfaces stay honest
+- **WHEN** runtime plugins, runtime commands, runtime workflows, or App Agent runtime execution do not have Codex execution paths
+- **THEN** those Codex capabilities SHALL remain `unsupported` or `degraded`
+- **AND** read-only discovery, prompt-only injection, or Claude-only adapters SHALL NOT count as supported Codex feature parity
+
 #### Scenario: App Agents and skills are equivalent
 - **WHEN** a user selects an App Agent or skill for a Codex run
 - **THEN** the selected instructions, metadata, and constraints are applied through the shared run request
@@ -130,8 +147,8 @@ The system SHALL fail this change's completion gate unless Codex parity-owned ca
 
 #### Scenario: Completion validation runs
 - **WHEN** completion validation runs for this change
-- **THEN** Codex reports `supported` for core safety parity capabilities
-- **AND** tests prove those declared capabilities execute through Codex adapter or shared product enforcement paths
+- **THEN** Codex reports `supported` for implemented core safety parity capabilities and honest `unsupported` or `degraded` states for explicitly rescoped capabilities
+- **AND** tests prove declared `supported` capabilities execute through Codex adapter or shared product enforcement paths
 - **AND** tests or desktop smoke prove the interactive desktop Codex chat path cannot bypass parity-owned enforcement and status behavior
 - **AND** feature parity capabilities are either `supported` with tests or explicitly removed from runtime-neutral parity scope by an approved OpenSpec rescope
 

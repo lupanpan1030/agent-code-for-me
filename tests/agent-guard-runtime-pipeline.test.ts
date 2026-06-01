@@ -90,4 +90,22 @@ describe("agent guard runtime pipeline", () => {
     expect(codex).toContain('id: "local-only"')
     expect(acp).toContain('chunk.type === "runtime-status"')
   })
+
+  test("Codex rollback and fork controls fail closed instead of using Claude session semantics", () => {
+    const chats = readFileSync("src/main/lib/trpc/routers/chats.ts", "utf8")
+    const activeChat = readFileSync(
+      "src/renderer/features/agents/main/active-chat.tsx",
+      "utf8",
+    )
+
+    expect(chats).toContain("hasCodexBackedMessages(messagesToFork)")
+    expect(chats).toContain("hasCodexBackedMessages(messages)")
+    expect(chats).toContain("Codex rollback/fork is unsupported")
+    expect(activeChat).toContain(
+      'onRollback={provider === "codex" ? undefined : handleRollback}',
+    )
+    expect(activeChat).toContain(
+      'onFork={provider === "codex" ? undefined : handleForkFromMessage}',
+    )
+  })
 })

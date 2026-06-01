@@ -83,6 +83,27 @@ Decision: if a parity surface cannot be implemented safely, rescope it explicitl
 
 Why: parity claims are product contracts. A rescope is clearer than shipping a false capability declaration.
 
+### Feature Parity Boundary
+Decision: this change completes Codex platform-runtime parity by supporting the runtime features that already have a real Codex execution path, and by explicitly keeping the remaining Claude-specific surfaces degraded or unsupported.
+
+Supported in this change:
+- Provider profiles: the renderer sends only provider-profile IDs; the main process resolves gateway tokens and redacts provider secrets.
+- Attachments: Codex uses the same local image, long-text, and file-content send pipeline as the desktop chat path.
+- Usage metadata: Codex emits normalized token/context metadata from session token-count events when available and omits unavailable fields.
+
+Explicitly not claimed as supported in this change:
+- MCP configuration remains degraded for project-scoped writes because the current Codex CLI exposes global add/remove behavior; list/status and needs-auth preflight still run through Codex status handling.
+- Runtime plugins and runtime commands remain unsupported for Codex executable behavior; read-only discovery is not executable parity.
+- Runtime workflows remain unsupported because the existing dynamic-workflow adapter is Claude-specific.
+- App Agents remain degraded because Codex currently receives prompt-prepared App Agent context, not a runtime-neutral agent/skill execution layer.
+
+Why: these surfaces are useful, but marking read-only listings, prompt injection, or Claude-only adapters as Codex-supported would recreate the false parity this change is intended to remove.
+
+### Rollback/Fork Rescope
+Decision: Codex rollback/fork remains unsupported until Locus has a durable Codex resume-at/fork primitive or a shared transcript replay layer that excludes discarded turns.
+
+Why: the current ACP provider accepts an `existingSessionId`, but it does not expose Claude-equivalent `resumeSessionAt` or `forkSession` controls. Reusing the existing session after rollback would risk continuing from provider history that still includes messages the user removed.
+
 ## Risks / Mitigations
 - Codex or ACP may not expose pre-tool interception hooks.
   - Mitigation: add a safe Locus-owned proxy/wrapper seam or keep the capability degraded until a viable enforcement path exists.
@@ -96,6 +117,6 @@ Why: parity claims are product contracts. A rescope is clearer than shipping a f
   - Mitigation: either keep workflow parity out of runtime-neutral surfaces, build a Codex equivalent, or add a separate rescope before completion.
 
 ## Phase Boundary
-- Phase 1 is complete when Codex core safety parity passes tests and real desktop smoke.
-- Phase 2 is complete when runtime feature parity surfaces pass tests and real desktop smoke.
+- Phase 1 is complete when supported Codex core safety parity passes tests and real desktop smoke, while rollback/fork stays honestly unsupported and hidden from parity claims.
+- Phase 2 is complete when supported runtime feature surfaces pass tests and real desktop smoke, while MCP project-scoped writes, runtime plugins, runtime commands, runtime workflows, and App Agent runtime execution stay explicitly degraded or unsupported.
 - The change is complete only when remaining unsupported Codex surfaces are explicitly rescoped or no longer presented as runtime-neutral parity requirements.

@@ -54,6 +54,36 @@ describe("Codex runtime capabilities", () => {
     })
   })
 
+  test("marks implemented runtime feature capabilities supported", () => {
+    expect(getCodexRuntimeCapability("providerProfiles")).toMatchObject({
+      status: "supported",
+    })
+    expect(getCodexRuntimeCapability("attachments")).toMatchObject({
+      status: "supported",
+    })
+    expect(getCodexRuntimeCapability("usageMetadata")).toMatchObject({
+      status: "supported",
+    })
+  })
+
+  test("keeps unfinished feature surfaces honest", () => {
+    expect(getCodexRuntimeCapability("mcpConfiguration")).toMatchObject({
+      status: "degraded",
+    })
+    expect(getCodexRuntimeCapability("runtimePlugins")).toMatchObject({
+      status: "unsupported",
+    })
+    expect(getCodexRuntimeCapability("runtimeCommands")).toMatchObject({
+      status: "unsupported",
+    })
+    expect(getCodexRuntimeCapability("runtimeWorkflows")).toMatchObject({
+      status: "unsupported",
+    })
+    expect(getCodexRuntimeCapability("appAgents")).toMatchObject({
+      status: "degraded",
+    })
+  })
+
   test("builds non-secret capability error chunks for fail-closed guarded runs", () => {
     const capability = getCodexRuntimeCapability("hardToolGuard")
     const chunk = buildCodexRuntimeCapabilityErrorChunk({

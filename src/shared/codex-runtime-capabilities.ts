@@ -103,26 +103,26 @@ const CODEX_RUNTIME_CAPABILITIES: readonly CodexRuntimeCapability[] = [
   {
     id: "providerProfiles",
     label: "Provider profiles",
-    status: "degraded",
+    status: "supported",
     reason:
-      "Codex provider profiles use main-process gateway tokens, but renderer-safe metadata parity is incomplete.",
-    hint: "Expose only non-secret profile summaries to Codex callers.",
+      "Codex accepts renderer-safe provider profile IDs, resolves gateway tokens in the main process, and redacts provider secrets from errors and logs.",
+    hint: "Renderer callers should pass only the provider profile ID.",
   },
   {
     id: "attachments",
     label: "Attachments",
-    status: "degraded",
+    status: "supported",
     reason:
-      "Codex supports current image and long-text attachment paths, but normalized file attachment parity is incomplete.",
-    hint: "Validate attachment types before starting provider work.",
+      "Codex resolves image attachments in the main process, prepends long-text attachments through the shared local attachment store, and includes file-content parts in the prompt.",
+    hint: "Unsupported attachment references fail before provider work starts.",
   },
   {
     id: "usageMetadata",
     label: "Usage metadata",
-    status: "degraded",
+    status: "supported",
     reason:
-      "Codex polls usage for active sessions, but shared quota/context/token metadata parity is incomplete.",
-    hint: "Treat missing Codex usage fields as unavailable, not zero.",
+      "Codex polls session token_count events and emits normalized token and context metadata when available without inventing missing values.",
+    hint: "Missing Codex usage fields are omitted rather than reported as zero.",
   },
   {
     id: "runtimePlugins",

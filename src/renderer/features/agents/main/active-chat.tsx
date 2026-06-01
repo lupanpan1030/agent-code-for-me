@@ -4200,8 +4200,8 @@ const ChatViewInner = memo(function ChatViewInner({
               ToolCallComponent={AgentToolCall}
               MessageGroupWrapper={MessageGroup}
               toolRegistry={AgentToolRegistry}
-              onRollback={handleRollback}
-              onFork={handleForkFromMessage}
+              onRollback={provider === "codex" ? undefined : handleRollback}
+              onFork={provider === "codex" ? undefined : handleForkFromMessage}
             />
           </div>
         </div>
