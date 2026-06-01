@@ -46,6 +46,7 @@ import {
 } from "../../codex/acp-permission"
 import {
   createCodexAskUserQuestionTools,
+  installCodexAskUserQuestionAcpResultNormalizer,
   type CodexAskUserQuestionApproval,
   type CodexAskUserQuestionPending,
 } from "../../codex/ask-user-question"
@@ -2644,6 +2645,7 @@ export const codexRouter = router({
               selectedModelId,
               getCodexAcpModeId(input.mode),
             )
+            installCodexAskUserQuestionAcpResultNormalizer(model)
             const codexRuntimeTools = {
               ...(provider.tools || {}),
               ...createCodexAskUserQuestionTools({

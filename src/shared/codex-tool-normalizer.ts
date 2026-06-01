@@ -184,14 +184,23 @@ function stripExecutionBookkeeping(input: AnyRecord): AnyRecord {
   return cleaned
 }
 
-function normalizeAskUserQuestionResult(value: unknown): unknown {
-  if (!isRecord(value)) return value
+function getContentText(item: unknown): string {
+  if (!isRecord(item)) return ""
+  if (typeof item.text === "string") return item.text
+  if (isRecord(item.content) && typeof item.content.text === "string") {
+    return item.content.text
+  }
+  return ""
+}
 
-  const content = Array.isArray(value.content) ? value.content : []
+function normalizeAskUserQuestionResult(value: unknown): unknown {
+  const content = Array.isArray(value)
+    ? value
+    : isRecord(value) && Array.isArray(value.content)
+      ? value.content
+      : []
   const firstText = content
-    .map((item) =>
-      isRecord(item) && typeof item.text === "string" ? item.text : "",
-    )
+    .map(getContentText)
     .find((text) => text.trim().length > 0)
 
   if (!firstText) return value

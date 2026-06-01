@@ -58,6 +58,9 @@ describe("agent guard runtime pipeline", () => {
     expect(codex).toContain("installCodexAcpPermissionHandler")
     expect(codex).toContain("createCodexAcpPermissionHandler")
     expect(codex).toContain("createCodexAskUserQuestionTools")
+    expect(codex).toContain(
+      "installCodexAskUserQuestionAcpResultNormalizer",
+    )
     expect(codex).toContain("respondToolApproval")
     expect(codex).toContain("buildCodexRuntimeCapabilityErrorChunk")
     expect(codex).toContain("buildGuardedRunPromptBlock(guardedContract)")

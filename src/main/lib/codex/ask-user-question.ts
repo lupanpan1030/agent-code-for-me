@@ -34,6 +34,9 @@ export type CodexAskUserQuestionPending = {
 
 type EmitCodexAskUserQuestionChunk = (chunk: Record<string, unknown>) => void
 
+const ASK_USER_QUESTION_RESULT_NORMALIZER_FLAG =
+  "__locusCodexAskUserQuestionResultNormalizerInstalled"
+
 const optionSchema = z
   .object({
     label: z.string(),
@@ -58,6 +61,118 @@ export const codexAskUserQuestionInputSchema = z
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null
+}
+
+function safeStringify(value: unknown): string {
+  if (typeof value === "string") return value
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return String(value)
+  }
+}
+
+function isAskUserQuestionToolName(value: unknown): boolean {
+  if (typeof value !== "string") return false
+  return (
+    value === CODEX_ASK_USER_QUESTION_TOOL_NAME ||
+    value.includes(
+      `${CODEX_ASK_USER_QUESTION_PROXY_SERVER}/${CODEX_ASK_USER_QUESTION_TOOL_NAME}`,
+    )
+  )
+}
+
+function toAcpToolCallContent(item: unknown): Record<string, unknown> | null {
+  if (!isRecord(item) || typeof item.type !== "string") return null
+  if (item.type === "content" && isRecord(item.content)) return item
+  return {
+    type: "content",
+    content: item,
+  }
+}
+
+export function normalizeCodexAskUserQuestionAcpToolResult(
+  value: unknown,
+): Record<string, unknown>[] {
+  const rawContent = Array.isArray(value)
+    ? value
+    : isRecord(value) && Array.isArray(value.content)
+      ? value.content
+      : null
+
+  if (rawContent) {
+    const content = rawContent
+      .map(toAcpToolCallContent)
+      .filter((item): item is Record<string, unknown> => Boolean(item))
+    if (content.length > 0) return content
+  }
+
+  if (value === null || value === undefined) return []
+
+  return [
+    {
+      type: "content",
+      content: {
+        type: "text",
+        text: safeStringify(value),
+      },
+    },
+  ]
+}
+
+export function installCodexAskUserQuestionAcpResultNormalizer(
+  model: unknown,
+): boolean {
+  const target = model as {
+    parseToolResult?: (update: unknown) => unknown
+    toolCallsMap?: Map<string, { name?: unknown }>
+    [ASK_USER_QUESTION_RESULT_NORMALIZER_FLAG]?: boolean
+  }
+
+  if (target[ASK_USER_QUESTION_RESULT_NORMALIZER_FLAG]) return true
+  if (typeof target.parseToolResult !== "function") return false
+
+  const originalParseToolResult = target.parseToolResult
+  target.parseToolResult = function parseToolResultWithAskUserQuestionShape(
+    this: {
+      toolCallsMap?: Map<string, { name?: unknown }>
+    },
+    update: unknown,
+  ) {
+    const parsed = originalParseToolResult.call(this, update)
+    if (!isRecord(parsed)) return parsed
+
+    const toolCallId =
+      typeof parsed.toolCallId === "string" ? parsed.toolCallId : null
+    const storedToolName =
+      toolCallId && this.toolCallsMap instanceof Map
+        ? this.toolCallsMap.get(toolCallId)?.name
+        : undefined
+    const updateTitle =
+      isRecord(update) && typeof update.title === "string"
+        ? update.title
+        : undefined
+
+    if (
+      ![
+        parsed.toolName,
+        storedToolName,
+        updateTitle,
+      ].some(isAskUserQuestionToolName)
+    ) {
+      return parsed
+    }
+
+    return {
+      ...parsed,
+      toolResult: normalizeCodexAskUserQuestionAcpToolResult(
+        parsed.toolResult,
+      ),
+    }
+  }
+  target[ASK_USER_QUESTION_RESULT_NORMALIZER_FLAG] = true
+
+  return true
 }
 
 export function normalizeCodexAskUserQuestions(

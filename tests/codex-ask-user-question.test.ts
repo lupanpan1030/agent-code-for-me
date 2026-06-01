@@ -4,6 +4,8 @@ import {
   QUESTIONS_SKIPPED_MESSAGE,
   QUESTIONS_TIMED_OUT_MESSAGE,
   createCodexAskUserQuestionTools,
+  installCodexAskUserQuestionAcpResultNormalizer,
+  normalizeCodexAskUserQuestionAcpToolResult,
   normalizeCodexAskUserQuestions,
   type CodexAskUserQuestionPending,
 } from "../src/main/lib/codex/ask-user-question"
@@ -196,5 +198,117 @@ describe("Codex AskUserQuestion bridge", () => {
         },
       ],
     })
+
+    expect(
+      normalizeCodexAssistantMessage(
+        {
+          role: "assistant",
+          parts: [
+            {
+              type: "tool-acp.acp_provider_agent_dynamic_tool",
+              toolName: "Tool: acp-ai-sdk-tools/AskUserQuestion",
+              input: {
+                args: {
+                  questions: [{ question: "Proceed?" }],
+                },
+              },
+              result: [
+                {
+                  type: "content",
+                  content: {
+                    type: "text",
+                    text: JSON.stringify({
+                      answers: { "Proceed?": "Yes" },
+                    }),
+                  },
+                },
+              ],
+            },
+          ],
+        },
+        { normalizeState: true },
+      ),
+    ).toMatchObject({
+      role: "assistant",
+      parts: [
+        {
+          type: "tool-AskUserQuestion",
+          result: {
+            answers: { "Proceed?": "Yes" },
+          },
+        },
+      ],
+    })
+  })
+
+  test("normalizes AskUserQuestion MCP tool results to ACP content arrays", () => {
+    expect(
+      normalizeCodexAskUserQuestionAcpToolResult({
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({ answers: { "Proceed?": "Yes" } }),
+          },
+        ],
+        isError: false,
+      }),
+    ).toEqual([
+      {
+        type: "content",
+        content: {
+          type: "text",
+          text: JSON.stringify({ answers: { "Proceed?": "Yes" } }),
+        },
+      },
+    ])
+  })
+
+  test("keeps ACP provider AskUserQuestion failed updates from iterating object results", async () => {
+    const { createACPProvider } = await import("@mcpc-tech/acp-ai-provider")
+    const provider = createACPProvider({ command: "/bin/echo" })
+    const model = provider.languageModel()
+    const enqueued: Record<string, any>[] = []
+    const controller = {
+      enqueue: (part: Record<string, any>) => enqueued.push(part),
+      close: () => {},
+    }
+    const title = "Tool: acp-ai-sdk-tools/AskUserQuestion"
+    const anyModel = model as any
+
+    installCodexAskUserQuestionAcpResultNormalizer(model)
+
+    expect(() => {
+      anyModel.handleStreamNotification(controller, {
+        update: {
+          sessionUpdate: "tool_call",
+          toolCallId: "tool-1",
+          title,
+          rawInput: { questions: [{ question: "Proceed?" }] },
+        },
+      })
+      anyModel.handleStreamNotification(controller, {
+        update: {
+          sessionUpdate: "tool_call_update",
+          toolCallId: "tool-1",
+          title,
+          status: "failed",
+          rawOutput: {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify({ answers: { "Proceed?": "Yes" } }),
+              },
+            ],
+          },
+        },
+      })
+    }).not.toThrow()
+
+    const result = enqueued.find((part) => part.type === "tool-result")
+    expect(result?.isError).toBe(true)
+    expect(result?.result).toBeInstanceOf(Error)
+    expect((result?.result as Error).message).toBe(
+      JSON.stringify({ answers: { "Proceed?": "Yes" } }),
+    )
   })
 })
