@@ -8,9 +8,9 @@
 - [x] 2.1 Implement Codex hard tool guard through ACP pre-tool interception or a safe Locus-owned tool proxy/wrapper seam.
 - [x] 2.2 Implement Codex plan mode enforcement so blocked writes and blocked shell operations are denied before execution.
 - [x] 2.3 Implement Codex scope expansion parity so workspace/project boundary crossings stop for approval before execution.
-- [ ] 2.4 Implement Codex AskUserQuestion parity with normalized pending, result, timeout, and denial events.
+- [x] 2.4 Implement Codex AskUserQuestion parity with normalized pending, result, timeout, and denial events.
 - [ ] 2.5 Implement Codex rollback/fork parity using durable session references compatible with the shared runner contract.
-- [ ] 2.6 Implement Codex MCP auth parity so needs-auth MCP servers are surfaced before starting affected runs.
+- [x] 2.6 Implement Codex MCP auth parity so needs-auth MCP servers are surfaced before starting affected runs.
 - [x] 2.7 Implement normalized Codex runtime availability/status states for bundled CLI, ACP runtime, login, provider profile, MCP auth/configuration, and local-only blockers.
 - [ ] 2.8 Migrate or delegate the existing desktop Codex chat route and ACP transport to the shared Codex runtime enforcement/status path.
 - [x] 2.9 Add tests proving Codex core safety capabilities marked `supported` execute through enforcement paths and cannot be bypassed by the desktop chat path.

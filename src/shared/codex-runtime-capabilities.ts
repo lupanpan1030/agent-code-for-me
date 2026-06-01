@@ -71,10 +71,10 @@ const CODEX_RUNTIME_CAPABILITIES: readonly CodexRuntimeCapability[] = [
   {
     id: "askUserQuestion",
     label: "Ask user question",
-    status: "unsupported",
+    status: "supported",
     reason:
-      "The desktop Codex path does not yet normalize pending question, answer, timeout, and denial events.",
-    hint: "Keep interactive question flows runtime-specific until Codex emits a tested event contract.",
+      "Locus registers a Codex ACP host-side AskUserQuestion tool and bridges pending, answer, timeout, and denial events through the shared desktop question UI contract.",
+    hint: "Codex question requests remain a blocking host tool call until the user answers, skips, or the request times out.",
   },
   {
     id: "rollback",
@@ -87,10 +87,10 @@ const CODEX_RUNTIME_CAPABILITIES: readonly CodexRuntimeCapability[] = [
   {
     id: "mcpAuth",
     label: "MCP auth",
-    status: "degraded",
+    status: "supported",
     reason:
-      "Codex runs preflight MCP needs-auth state, but full shared MCP auth refresh parity is not complete.",
-    hint: "Needs-auth MCP servers are blocked before provider work; broader auth parity still needs shared runtime tests.",
+      "Codex runs preflight MCP needs-auth checks and blocks affected runs before provider work starts.",
+    hint: "Authenticate the reported MCP server, then retry the Codex run.",
   },
   {
     id: "mcpConfiguration",

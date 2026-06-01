@@ -44,6 +44,12 @@ import {
   createCodexAcpPermissionHandler,
   installCodexAcpPermissionHandler,
 } from "../../codex/acp-permission"
+import {
+  createCodexAskUserQuestionTools,
+  type CodexAskUserQuestionApproval,
+  type CodexAskUserQuestionPending,
+} from "../../codex/ask-user-question"
+import type { UIMessageChunk } from "../../claude/types"
 import { getClaudeShellEnvironment } from "../../claude/env"
 import { resolveProjectPathFromWorktree } from "../../claude-config"
 import { getDatabase, projects as projectsTable, subChats } from "../../db"
@@ -243,6 +249,23 @@ type ActiveCodexStream = {
 }
 
 const activeStreams = new Map<string, ActiveCodexStream>()
+const pendingCodexToolApprovals = new Map<
+  string,
+  CodexAskUserQuestionPending
+>()
+
+function clearPendingCodexApprovals(
+  message = "Session cancelled.",
+  subChatId?: string,
+): void {
+  for (const [toolUseId, pending] of pendingCodexToolApprovals) {
+    if (subChatId && pending.subChatId !== subChatId) {
+      continue
+    }
+    pending.resolve({ approved: false, message })
+    pendingCodexToolApprovals.delete(toolUseId)
+  }
+}
 
 /** Check if there are any active Codex streaming sessions */
 export function hasActiveCodexStreams(): boolean {
@@ -254,6 +277,7 @@ export function abortAllCodexStreams(): void {
   for (const [subChatId, stream] of activeStreams) {
     console.log(`[codex] Aborting stream ${subChatId} before reload`)
     stream.controller.abort()
+    clearPendingCodexApprovals("Session cancelled.", subChatId)
   }
   activeStreams.clear()
 }
@@ -2620,6 +2644,19 @@ export const codexRouter = router({
               selectedModelId,
               getCodexAcpModeId(input.mode),
             )
+            const codexRuntimeTools = {
+              ...(provider.tools || {}),
+              ...createCodexAskUserQuestionTools({
+                subChatId: input.subChatId,
+                emit: (chunk) => safeEmit(chunk as UIMessageChunk),
+                registerPending: (toolUseId, pending) => {
+                  pendingCodexToolApprovals.set(toolUseId, pending)
+                },
+                unregisterPending: (toolUseId) => {
+                  pendingCodexToolApprovals.delete(toolUseId)
+                },
+              }),
+            }
 
             if (requiredSafetyCapability) {
               const installResult = await installCodexAcpPermissionHandler({
@@ -2650,7 +2687,7 @@ export const codexRouter = router({
                   ),
                 },
               ],
-              tools: provider.tools,
+              tools: codexRuntimeTools,
               abortSignal: abortController.signal,
             })
 
@@ -2834,6 +2871,7 @@ export const codexRouter = router({
               if (shouldCleanupProvider) {
                 cleanupProvider(input.subChatId)
               }
+              clearPendingCodexApprovals("Session cancelled.", input.subChatId)
               activeStreams.delete(input.subChatId)
             }
           }
@@ -2870,8 +2908,33 @@ export const codexRouter = router({
 
       activeStream.cancelRequested = true
       activeStream.controller.abort()
+      clearPendingCodexApprovals("Session cancelled.", input.subChatId)
 
       return { cancelled: true, ignoredStale: false }
+    }),
+
+  respondToolApproval: publicProcedure
+    .input(
+      z.object({
+        toolUseId: z.string(),
+        approved: z.boolean(),
+        message: z.string().optional(),
+        updatedInput: z.unknown().optional(),
+      }),
+    )
+    .mutation(({ input }) => {
+      const pending = pendingCodexToolApprovals.get(input.toolUseId)
+      if (!pending) {
+        return { ok: false }
+      }
+      const response: CodexAskUserQuestionApproval = {
+        approved: input.approved,
+        message: input.message,
+        updatedInput: input.updatedInput,
+      }
+      pending.resolve(response)
+      pendingCodexToolApprovals.delete(input.toolUseId)
+      return { ok: true }
     }),
 
   cleanup: publicProcedure
@@ -2882,6 +2945,7 @@ export const codexRouter = router({
       const activeStream = activeStreams.get(input.subChatId)
       if (activeStream) {
         activeStream.controller.abort()
+        clearPendingCodexApprovals("Session cancelled.", input.subChatId)
         activeStreams.delete(input.subChatId)
       }
 

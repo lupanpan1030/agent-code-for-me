@@ -57,11 +57,16 @@ describe("agent guard runtime pipeline", () => {
     expect(codex).toContain("getCodexRunRequiredCapability")
     expect(codex).toContain("installCodexAcpPermissionHandler")
     expect(codex).toContain("createCodexAcpPermissionHandler")
+    expect(codex).toContain("createCodexAskUserQuestionTools")
+    expect(codex).toContain("respondToolApproval")
     expect(codex).toContain("buildCodexRuntimeCapabilityErrorChunk")
     expect(codex).toContain("buildGuardedRunPromptBlock(guardedContract)")
     expect(codex).toContain('enforcementMode: "hard"')
     expect(codex).not.toContain('enforcementMode: "contract-and-audit"')
     expect(codex).toContain("buildGuardedRunAudit")
+    expect(acp).toContain('chunk.type === "ask-user-question"')
+    expect(acp).toContain('chunk.type === "ask-user-question-timeout"')
+    expect(acp).toContain('chunk.type === "ask-user-question-result"')
   })
 
   test("Codex desktop route is wired to normalized runtime status before provider work", () => {

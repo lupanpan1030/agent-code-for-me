@@ -36,7 +36,7 @@ describe("Codex runtime capabilities", () => {
     ).toBe(true)
   })
 
-  test("marks implemented core safety capabilities supported through ACP permission enforcement", () => {
+  test("marks implemented core safety capabilities supported through enforced runtime paths", () => {
     expect(getCodexRuntimeCapability("hardToolGuard")).toMatchObject({
       status: "supported",
     })
@@ -44,6 +44,12 @@ describe("Codex runtime capabilities", () => {
       status: "supported",
     })
     expect(getCodexRuntimeCapability("scopeExpansion")).toMatchObject({
+      status: "supported",
+    })
+    expect(getCodexRuntimeCapability("askUserQuestion")).toMatchObject({
+      status: "supported",
+    })
+    expect(getCodexRuntimeCapability("mcpAuth")).toMatchObject({
       status: "supported",
     })
   })
