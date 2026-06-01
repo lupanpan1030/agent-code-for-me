@@ -14,6 +14,20 @@ The system SHALL upgrade Codex parity on top of the shared `AgentRuntime` contra
 - **THEN** tests exercise the adapter or shared product layer that provides the behavior
 - **AND** prompt-only instructions, UI labels, indexed documentation, or post-run audit alone do not satisfy the capability
 
+### Requirement: Shared Codex Runtime Path
+The system SHALL bring the existing desktop Codex chat path under the same capability and enforcement truth used by the shared Codex runtime adapter.
+
+#### Scenario: Desktop Codex chat starts
+- **WHEN** a user sends a Codex message from the interactive desktop chat
+- **THEN** the request uses the shared `AgentRuntime` Codex adapter or a shared enforcement/status layer delegated by that adapter
+- **AND** guarded runs, plan mode, scope expansion, AskUserQuestion, attachments, MCP auth, usage, and provider-profile behavior are decided from the same capability states as headless and CLI callers
+- **AND** normalized runtime events or capability errors are emitted consistently enough for desktop and headless callers to test the same behavior
+
+#### Scenario: Legacy Codex route bypass remains
+- **WHEN** any desktop-only Codex router or ACP transport path can still execute a parity-owned capability through prompt-only instructions, read-only metadata, or post-run audit
+- **THEN** that capability remains `degraded` or `unsupported`
+- **AND** this change cannot mark it `supported` until the bypass is removed or delegated to shared enforcement
+
 ### Requirement: Core Safety Parity
 The system SHALL provide Codex behavior equivalent to Claude Code for core safety capabilities before claiming Codex first-class runtime safety.
 
@@ -51,6 +65,25 @@ The system SHALL provide Codex behavior equivalent to Claude Code for core safet
 - **WHEN** a Codex run would use an MCP server with known missing or expired authentication
 - **THEN** the runner reports a normalized needs-auth state before starting provider work
 - **AND** the agent run does not begin with that unauthenticated MCP server silently enabled
+
+### Requirement: Codex Runtime Availability Status
+The system SHALL expose normalized, non-secret Codex runtime availability status without collapsing setup, auth, provider, MCP, and policy failures into a generic runtime failure.
+
+#### Scenario: Bundled runtime component is unavailable
+- **WHEN** the bundled Codex CLI is missing, the bundled ACP runtime is missing or non-executable, or the ACP spawn probe fails
+- **THEN** the Codex runtime status identifies the failing component, local path when safe, sanitized error, and remediation hint
+- **AND** the system blocks provider work until the failing runtime component is fixed
+
+#### Scenario: Login or provider profile is unavailable
+- **WHEN** Codex login is missing or expired
+- **OR** the selected Codex provider profile is unavailable, invalid, or no longer allowed for Codex
+- **THEN** the status distinguishes login-required from provider-profile-unavailable
+- **AND** the renderer receives only non-secret identifiers, labels, availability, and remediation metadata
+
+#### Scenario: MCP or policy blocker is detected
+- **WHEN** a Codex run is blocked by MCP needs-auth, invalid MCP configuration, or a local-only policy guard
+- **THEN** the runner emits a normalized status or error before provider work starts
+- **AND** the status identifies the blocked component or policy without exposing credentials or raw request headers
 
 ### Requirement: Runtime Feature Parity
 The system SHALL provide Codex behavior equivalent to Claude-facing runtime-neutral feature surfaces or explicitly rescope those surfaces before claiming parity.
@@ -99,6 +132,7 @@ The system SHALL fail this change's completion gate unless Codex parity-owned ca
 - **WHEN** completion validation runs for this change
 - **THEN** Codex reports `supported` for core safety parity capabilities
 - **AND** tests prove those declared capabilities execute through Codex adapter or shared product enforcement paths
+- **AND** tests or desktop smoke prove the interactive desktop Codex chat path cannot bypass parity-owned enforcement and status behavior
 - **AND** feature parity capabilities are either `supported` with tests or explicitly removed from runtime-neutral parity scope by an approved OpenSpec rescope
 
 #### Scenario: Degraded capability remains

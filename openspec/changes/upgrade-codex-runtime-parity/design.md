@@ -8,6 +8,7 @@ Locus currently has Claude and Codex runtime paths, but Claude Code is the path 
   - Keep capability declarations tied to tests and real adapter behavior.
   - Preserve local-first and credential boundaries.
   - Keep desktop and future headless callers consuming the same capability truth.
+  - Bring the existing desktop Codex chat path under the same enforcement and capability truth as headless/CLI callers.
 - Non-goals:
   - Building the local job platform itself.
   - Copying Codex CLI, Claude Code, ACP, Goose, or another runtime wholesale.
@@ -39,6 +40,17 @@ Codex must reach equivalent user-facing behavior for:
 
 Feature parity does not require identical upstream primitives. A runtime-native Codex implementation and a Locus-owned shared layer are both acceptable. Prompt injection, documentation-only entries, installed/read-only visibility, or UI labels without execution paths are not enough.
 
+### Platform Runtime Status
+Codex must expose distinct, non-secret availability states for:
+- bundled Codex CLI availability
+- bundled ACP runtime availability and spawn probes
+- Codex login or API-key state
+- selected provider profile availability
+- MCP auth and MCP configuration readiness
+- local-only or policy blockers
+
+These states should be visible to desktop and headless callers before provider work starts. A single generic "Codex failed" state is not enough for platform-level runtime behavior.
+
 ## Decisions
 
 ### Separate From Headless Jobs
@@ -50,6 +62,16 @@ Why: headless jobs only need a truthful runtime contract and caller gating. Requ
 Decision: Codex may report a capability as `supported` only when the adapter or a Locus-owned shared layer enforces or provides the behavior.
 
 Why: UI similarity and prompt-only instructions are not equivalent to a runtime capability. This is especially important for hard tool guards, plan mode, scope expansion, and AskUserQuestion flows.
+
+### Existing Desktop Chat Is In Scope
+Decision: the current interactive Codex chat path must either call the shared `AgentRuntime` Codex adapter or delegate to the same enforcement/status layer used by the adapter.
+
+Why: a new headless runner can pass parity tests while the user's real desktop chat still uses a router-specific prompt-only or audit-only path. Codex is not platform-level until the existing desktop route consumes the same capability truth.
+
+### Availability Is Not A Single Boolean
+Decision: Codex runtime availability should be modeled as component-level status, not just `ok` or `failed`.
+
+Why: bundled CLI problems, ACP spawn failures, login gaps, provider-profile errors, MCP needs-auth states, and local-only blocks lead to different user actions and must not be collapsed into one diagnosis.
 
 ### Keep Degraded States Visible During Development
 Decision: degraded/unsupported Codex capability states remain valid during implementation, but not at this change's completion gate for parity-owned capabilities.
@@ -66,6 +88,8 @@ Why: parity claims are product contracts. A rescope is clearer than shipping a f
   - Mitigation: add a safe Locus-owned proxy/wrapper seam or keep the capability degraded until a viable enforcement path exists.
 - Capability manifests can drift from adapter behavior.
   - Mitigation: add contract tests that exercise every Codex capability marked `supported`.
+- Existing desktop chat can bypass the new runtime adapter.
+  - Mitigation: add tests and desktop smoke that prove interactive Codex chat and headless/CLI callers use the same parity-owned enforcement/status behavior.
 - Feature parity can expand into unrelated product work.
   - Mitigation: limit implementation to behavior already presented as runtime-neutral or necessary to stop false parity claims.
 - Claude Dynamic Workflows may remain Claude-specific.

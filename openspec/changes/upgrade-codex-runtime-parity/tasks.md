@@ -1,8 +1,8 @@
 ## 1. Proposal and Scope
 - [x] 1.1 Create the OpenSpec proposal, design, and capability delta for Codex runtime parity.
 - [x] 1.2 Validate the OpenSpec change strictly.
-- [ ] 1.3 Get approval before implementing product code.
-- [ ] 1.4 Confirm dependency boundaries with `add-headless-agent-jobs` so headless jobs can complete with honest degraded/unsupported Codex capabilities.
+- [x] 1.3 Get approval before implementing product code.
+- [x] 1.4 Confirm dependency boundaries with `add-headless-agent-jobs` so headless jobs can complete with honest degraded/unsupported Codex capabilities.
 
 ## 2. Core Safety Parity
 - [ ] 2.1 Implement Codex hard tool guard through ACP pre-tool interception or a safe Locus-owned tool proxy/wrapper seam.
@@ -11,8 +11,10 @@
 - [ ] 2.4 Implement Codex AskUserQuestion parity with normalized pending, result, timeout, and denial events.
 - [ ] 2.5 Implement Codex rollback/fork parity using durable session references compatible with the shared runner contract.
 - [ ] 2.6 Implement Codex MCP auth parity so needs-auth MCP servers are surfaced before starting affected runs.
-- [ ] 2.7 Add tests proving Codex core safety capabilities marked `supported` execute through enforcement paths.
-- [ ] 2.8 Run desktop smoke covering guarded tool denial, plan mode denial, scope expansion, AskUserQuestion, rollback/fork, and MCP needs-auth handling.
+- [ ] 2.7 Implement normalized Codex runtime availability/status states for bundled CLI, ACP runtime, login, provider profile, MCP auth/configuration, and local-only blockers.
+- [ ] 2.8 Migrate or delegate the existing desktop Codex chat route and ACP transport to the shared Codex runtime enforcement/status path.
+- [ ] 2.9 Add tests proving Codex core safety capabilities marked `supported` execute through enforcement paths and cannot be bypassed by the desktop chat path.
+- [ ] 2.10 Run desktop smoke covering guarded tool denial, plan mode denial, scope expansion, AskUserQuestion, rollback/fork, MCP needs-auth handling, and separated runtime availability states.
 
 ## 3. Runtime Feature Parity
 - [ ] 3.1 Implement Codex MCP configuration parity for app/global and project-scoped MCP add, remove, list, and status behavior.
@@ -29,6 +31,7 @@
 - [ ] 4.1 Run `openspec validate upgrade-codex-runtime-parity --strict --no-interactive`.
 - [ ] 4.2 Run focused Bun tests for Codex core safety parity and feature parity.
 - [ ] 4.3 Run focused tests proving unsupported/degraded states are not presented as supported.
-- [ ] 4.4 Run `bun run ts:check`.
-- [ ] 4.5 Run `bun run build`.
-- [ ] 4.6 Record real desktop smoke evidence for Codex parity behavior.
+- [ ] 4.4 Run focused tests proving desktop Codex chat and headless/CLI callers share parity-owned enforcement and runtime status behavior.
+- [ ] 4.5 Run `bun run ts:check`.
+- [ ] 4.6 Run `bun run build`.
+- [ ] 4.7 Record real desktop smoke evidence for Codex parity behavior.
