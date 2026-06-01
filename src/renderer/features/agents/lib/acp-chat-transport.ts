@@ -309,6 +309,14 @@ export class ACPChatTransport implements ChatTransport<UIMessage> {
                 })
               }
 
+              if (chunk.type === "capability-error") {
+                lastRuntimeStatusError = chunk.errorText || null
+                toast.error(tr("agent.transport.codexError"), {
+                  description:
+                    chunk.errorText || tr("agent.transport.unexpectedCodexError"),
+                })
+              }
+
               if (chunk.type === "guard-audit") {
                 const currentAudits = appStore.get(guardedRunAuditsAtom)
                 const nextAudits = new Map(currentAudits)

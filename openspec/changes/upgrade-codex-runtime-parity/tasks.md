@@ -15,6 +15,7 @@
 - [ ] 2.8 Migrate or delegate the existing desktop Codex chat route and ACP transport to the shared Codex runtime enforcement/status path.
 - [ ] 2.9 Add tests proving Codex core safety capabilities marked `supported` execute through enforcement paths and cannot be bypassed by the desktop chat path.
 - [ ] 2.10 Run desktop smoke covering guarded tool denial, plan mode denial, scope expansion, AskUserQuestion, rollback/fork, MCP needs-auth handling, and separated runtime availability states.
+- [x] 2.11 Gate desktop Codex guarded and plan-mode runs from degraded/unsupported capability state until real pre-tool enforcement seams exist.
 
 ## 3. Runtime Feature Parity
 - [ ] 3.1 Implement Codex MCP configuration parity for app/global and project-scoped MCP add, remove, list, and status behavior.

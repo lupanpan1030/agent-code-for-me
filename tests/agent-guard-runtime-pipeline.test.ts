@@ -40,29 +40,26 @@ describe("agent guard runtime pipeline", () => {
     expect(chunks).toContain('| { type: "guard-audit"; audit: GuardedRunAudit }')
   })
 
-  test("Codex transport and router receive a contract and produce an audit-only record", () => {
+  test("Codex guarded and plan-mode runs are blocked instead of routed through audit-only enforcement", () => {
     const codex = readFileSync("src/main/lib/trpc/routers/codex.ts", "utf8")
     const acp = readFileSync(
       "src/renderer/features/agents/lib/acp-chat-transport.ts",
       "utf8",
     )
-    const audit = readFileSync(
-      "src/renderer/features/agents/ui/agent-guarded-run-audit.tsx",
-      "utf8",
-    )
 
     expect(acp).toContain("approvedGuardedRunContractsAtom")
     expect(acp).toContain("scopeContract")
-    expect(acp).toContain('chunk.type === "guard-audit"')
+    expect(acp).toContain('chunk.type === "capability-error"')
     expect(codex).toContain(
       "scopeContract: agentScopeContractInputSchema.optional()",
     )
-    expect(codex).toContain("validateAgentScopeContract(input.scopeContract")
-    expect(codex).toContain("buildGuardedRunPromptBlock(guardedContract)")
-    expect(codex).toContain("buildGuardedRunAudit")
-    expect(codex).toContain('enforcementMode: "contract-and-audit"')
-    expect(audit).toContain("filteredDiffFilesAtom")
-    expect(audit).toContain("Guarded Run")
+    expect(codex).toContain("getCodexRunBlockingCapability")
+    expect(codex).toContain("buildCodexUnsupportedCapabilityErrorChunk")
+    expect(codex).toContain("Codex guarded runs are blocked")
+    expect(codex).toContain("Codex plan mode is blocked")
+    expect(codex).not.toContain("buildGuardedRunPromptBlock(guardedContract)")
+    expect(codex).not.toContain('enforcementMode: "contract-and-audit"')
+    expect(codex).not.toContain("buildGuardedRunAudit")
   })
 
   test("Codex desktop route is wired to normalized runtime status before provider work", () => {
@@ -76,6 +73,7 @@ describe("agent guard runtime pipeline", () => {
     expect(codex).toContain("buildCodexRuntimeAvailabilityFromComponents")
     expect(codex).toContain("buildCodexRuntimeStatusChunk")
     expect(codex).toContain("buildCodexCapabilityErrorChunk")
+    expect(codex).toContain("getCodexRuntimeCapabilities()")
     expect(codex).toContain("const runtimeStatus = await getCodexRuntimeStatus()")
     expect(codex).toContain("const integration = await getCodexIntegrationStatus()")
     expect(codex).toContain('id: "login"')
