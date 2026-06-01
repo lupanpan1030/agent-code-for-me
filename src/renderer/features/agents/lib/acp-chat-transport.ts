@@ -21,7 +21,9 @@ import { en, zhCN, type TranslationKey } from "../../../lib/i18n/dictionaries"
 import {
   approvedGuardedRunContractsAtom,
   guardedRunAuditsAtom,
+  guardedRunEventsAtom,
   pendingAuthRetryMessageAtom,
+  pendingScopeExpansionRequestsAtom,
   subChatCodexModelIdAtomFamily,
   subChatCodexModelSourceAtomFamily,
   subChatCodexThinkingAtomFamily,
@@ -315,6 +317,30 @@ export class ACPChatTransport implements ChatTransport<UIMessage> {
                   description:
                     chunk.errorText || tr("agent.transport.unexpectedCodexError"),
                 })
+              }
+
+              if (chunk.type === "guard-event") {
+                const currentEvents = appStore.get(guardedRunEventsAtom)
+                const nextEvents = new Map(currentEvents)
+                const events = nextEvents.get(this.config.subChatId) ?? []
+                nextEvents.set(this.config.subChatId, [...events, chunk.event])
+                appStore.set(guardedRunEventsAtom, nextEvents)
+
+                if (chunk.event?.type === "scope-expansion-request") {
+                  const currentRequests = appStore.get(pendingScopeExpansionRequestsAtom)
+                  const nextRequests = new Map(currentRequests)
+                  nextRequests.set(this.config.subChatId, {
+                    subChatId: this.config.subChatId,
+                    parentChatId: this.config.chatId,
+                    toolUseId: chunk.event.toolUseId,
+                    contractId: chunk.event.contractId,
+                    path: chunk.event.path,
+                    paths: chunk.event.paths,
+                    toolName: chunk.event.toolName,
+                    reason: chunk.event.reason,
+                  })
+                  appStore.set(pendingScopeExpansionRequestsAtom, nextRequests)
+                }
               }
 
               if (chunk.type === "guard-audit") {

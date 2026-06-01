@@ -284,6 +284,6 @@ describe("guarded run checkpoints", () => {
         runtime: "codex",
         sdkMessageUuid: "sdk-message-1",
       }).reason,
-    ).toContain("audit-only")
+    ).toContain("rollback and fork")
   })
 })

@@ -27,7 +27,8 @@ export function getGuardedRunCheckpointAvailability({
     return {
       available: false,
       mechanism: "unavailable",
-      reason: "Codex guarded runs use audit-only review until ACP exposes pre-tool checkpoint hooks.",
+      reason:
+        "Codex rollback checkpoints are unavailable until rollback and fork use durable shared session references.",
     }
   }
 

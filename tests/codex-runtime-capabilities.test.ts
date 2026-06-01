@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import {
-  buildCodexUnsupportedCapabilityErrorChunk,
-  getCodexRunBlockingCapability,
+  buildCodexRuntimeCapabilityErrorChunk,
+  getCodexRunRequiredCapability,
   getCodexRuntimeCapabilities,
   getCodexRuntimeCapability,
   type CodexRuntimeCapabilityId,
@@ -36,24 +36,24 @@ describe("Codex runtime capabilities", () => {
     ).toBe(true)
   })
 
-  test("does not mark core safety capabilities supported without pre-execution enforcement", () => {
+  test("marks implemented core safety capabilities supported through ACP permission enforcement", () => {
     expect(getCodexRuntimeCapability("hardToolGuard")).toMatchObject({
-      status: "unsupported",
+      status: "supported",
     })
     expect(getCodexRuntimeCapability("planMode")).toMatchObject({
-      status: "unsupported",
+      status: "supported",
     })
     expect(getCodexRuntimeCapability("scopeExpansion")).toMatchObject({
-      status: "unsupported",
+      status: "supported",
     })
   })
 
-  test("builds non-secret capability error chunks for blocked guarded runs", () => {
+  test("builds non-secret capability error chunks for fail-closed guarded runs", () => {
     const capability = getCodexRuntimeCapability("hardToolGuard")
-    const chunk = buildCodexUnsupportedCapabilityErrorChunk({
+    const chunk = buildCodexRuntimeCapabilityErrorChunk({
       capability,
       message:
-        "Codex guarded runs are blocked because Codex hard tool guard is not enforced before tool execution.",
+        "Codex guarded runs are blocked because ACP permission enforcement is unavailable.",
     })
 
     expect(chunk).toMatchObject({
@@ -62,7 +62,7 @@ describe("Codex runtime capabilities", () => {
       capability: "hardToolGuard",
       blocker: {
         capability: "hardToolGuard",
-        status: "unsupported",
+        status: "supported",
       },
     })
     expect(chunk.errorText).toContain("Codex guarded runs are blocked")
@@ -70,24 +70,24 @@ describe("Codex runtime capabilities", () => {
     expect(JSON.stringify(chunk)).not.toContain("access_token")
   })
 
-  test("blocks Codex run modes that would imply unsupported safety enforcement", () => {
+  test("identifies run modes that require ACP permission enforcement", () => {
     expect(
-      getCodexRunBlockingCapability({
+      getCodexRunRequiredCapability({
         mode: "agent",
         hasScopeContract: false,
       }),
     ).toBeNull()
     expect(
-      getCodexRunBlockingCapability({
+      getCodexRunRequiredCapability({
         mode: "agent",
         hasScopeContract: true,
       }),
-    ).toMatchObject({ id: "hardToolGuard", status: "unsupported" })
+    ).toMatchObject({ id: "hardToolGuard", status: "supported" })
     expect(
-      getCodexRunBlockingCapability({
+      getCodexRunRequiredCapability({
         mode: "plan",
         hasScopeContract: false,
       }),
-    ).toMatchObject({ id: "planMode", status: "unsupported" })
+    ).toMatchObject({ id: "planMode", status: "supported" })
   })
 })

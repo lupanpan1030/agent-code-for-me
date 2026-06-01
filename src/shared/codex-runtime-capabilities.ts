@@ -47,26 +47,26 @@ const CODEX_RUNTIME_CAPABILITIES: readonly CodexRuntimeCapability[] = [
   {
     id: "hardToolGuard",
     label: "Hard tool guard",
-    status: "unsupported",
+    status: "supported",
     reason:
-      "Current ACP integration does not expose a reliable pre-execution allow/deny/rewrite hook for Codex tool calls.",
-    hint: "Use Claude for guarded runs until Codex has a Locus-owned tool proxy or ACP pre-tool interception.",
+      "Locus installs an ACP permission handler before Codex prompts and maps permission requests to guarded-run decisions.",
+    hint: "Guarded Codex runs fail closed if the ACP permission handler cannot be attached.",
   },
   {
     id: "planMode",
     label: "Plan mode enforcement",
-    status: "unsupported",
+    status: "supported",
     reason:
-      "Codex plan mode is not yet enforced by a verified runtime mode or pre-tool denial path.",
-    hint: "Do not rely on Codex plan mode for write or shell prevention yet.",
+      "Locus maps Codex plan runs to ACP read-only mode and denies edit, move, delete, and execute permission requests before execution.",
+    hint: "Plan-mode writes and shell commands are rejected through ACP permission handling.",
   },
   {
     id: "scopeExpansion",
     label: "Scope expansion approval",
-    status: "unsupported",
+    status: "supported",
     reason:
-      "Codex cannot pause before crossing workspace scope without a pre-execution tool decision hook.",
-    hint: "Keep Codex scope expansion controls disabled until hard tool guard parity exists.",
+      "Out-of-scope Codex guarded operations emit a scope-expansion event and are denied before the permission request is approved.",
+    hint: "Approve the requested scope expansion, then retry the guarded run.",
   },
   {
     id: "askUserQuestion",
@@ -174,7 +174,7 @@ export function getCodexRuntimeCapability(
   return { ...capability }
 }
 
-export function buildCodexUnsupportedCapabilityErrorChunk(input: {
+export function buildCodexRuntimeCapabilityErrorChunk(input: {
   capability: CodexRuntimeCapability
   message?: string
   hint?: string | null
@@ -199,7 +199,7 @@ export function buildCodexUnsupportedCapabilityErrorChunk(input: {
   }
 }
 
-export function getCodexRunBlockingCapability(input: {
+export function getCodexRunRequiredCapability(input: {
   mode?: "plan" | "agent"
   hasScopeContract?: boolean
 }): CodexRuntimeCapability | null {

@@ -14,6 +14,7 @@ import {
   normalizeCodexAssistantMessage,
   normalizeCodexStreamChunk,
 } from "../../../../shared/codex-tool-normalizer"
+import type { AgentGuardEvent } from "../../../../shared/agent-scope-contracts"
 import { redactProviderSecrets } from "../../../../shared/provider-profile-security"
 import {
   buildCodexCapabilityErrorChunk,
@@ -24,14 +25,25 @@ import {
   createCodexRuntimeBlocker,
 } from "../../../../shared/codex-runtime-status"
 import {
-  buildCodexUnsupportedCapabilityErrorChunk,
+  buildCodexRuntimeCapabilityErrorChunk,
   getCodexRuntimeCapabilities,
-  getCodexRunBlockingCapability,
+  getCodexRunRequiredCapability,
 } from "../../../../shared/codex-runtime-capabilities"
 import { preparePromptWithAppAgents } from "../../app-agents/prompt"
 import {
   agentScopeContractInputSchema,
+  buildGuardedRunAudit,
+  buildGuardedRunPromptBlock,
+  captureGuardedGitStatus,
+  formatScopeValidationError,
+  validateAgentScopeContract,
+  type GuardedGitStatusSnapshot,
+  type ValidatedAgentScopeContract,
 } from "../../agent-guard"
+import {
+  createCodexAcpPermissionHandler,
+  installCodexAcpPermissionHandler,
+} from "../../codex/acp-permission"
 import { getClaudeShellEnvironment } from "../../claude/env"
 import { resolveProjectPathFromWorktree } from "../../claude-config"
 import { getDatabase, projects as projectsTable, subChats } from "../../db"
@@ -1617,6 +1629,10 @@ function preprocessCodexModelName(params: {
   return params.modelId
 }
 
+function getCodexAcpModeId(mode: "plan" | "agent"): string {
+  return mode === "plan" ? "read-only" : "auto"
+}
+
 function getAuthFingerprint(authConfig?: { apiKey: string }): string | null {
   const apiKey = authConfig?.apiKey?.trim()
   if (!apiKey) return null
@@ -2213,18 +2229,48 @@ export const codexRouter = router({
           }
         }
 
+        let guardedContract: ValidatedAgentScopeContract | null = null
+        let guardedPreRunStatus: GuardedGitStatusSnapshot | null = null
+        const guardedRunStartedAt = new Date().toISOString()
+        const guardedRunEvents: AgentGuardEvent[] = []
+
         ;(async () => {
           try {
-            const blockedCapability = getCodexRunBlockingCapability({
+            if (input.scopeContract) {
+              try {
+                const validated = await validateAgentScopeContract(input.scopeContract, {
+                  cwd: input.cwd,
+                  projectPath: input.projectPath,
+                  chatId: input.chatId,
+                  subChatId: input.subChatId,
+                  runId: input.runId,
+                })
+                guardedContract = {
+                  ...validated,
+                  runId: validated.runId ?? input.runId,
+                }
+                guardedPreRunStatus = await captureGuardedGitStatus(input.cwd)
+              } catch (guardError) {
+                safeEmit({
+                  type: "error",
+                  errorText: `Guarded run contract rejected: ${formatScopeValidationError(guardError)}`,
+                })
+                safeEmit({ type: "finish" })
+                safeComplete()
+                return
+              }
+            }
+
+            const requiredSafetyCapability = getCodexRunRequiredCapability({
               mode: input.mode,
-              hasScopeContract: Boolean(input.scopeContract),
+              hasScopeContract: Boolean(guardedContract),
             })
-            if (blockedCapability) {
-              const chunk = buildCodexUnsupportedCapabilityErrorChunk({
-                capability: blockedCapability,
-                message: input.scopeContract
-                  ? "Codex guarded runs are blocked because Codex hard tool guard is not enforced before tool execution."
-                  : "Codex plan mode is blocked because Codex plan-mode write and shell denial is not enforced before tool execution.",
+            const emitUnsupportedSafetyCapability = (error: string) => {
+              if (!requiredSafetyCapability) return
+              const chunk = buildCodexRuntimeCapabilityErrorChunk({
+                capability: requiredSafetyCapability,
+                message: `Codex ${requiredSafetyCapability.label} could not start because ACP permission enforcement is unavailable.`,
+                hint: error,
               })
               safeEmit(chunk)
               safeEmit({
@@ -2233,7 +2279,6 @@ export const codexRouter = router({
               })
               safeEmit({ type: "finish" })
               safeComplete()
-              return
             }
 
             const runtimeStatus = await getCodexRuntimeStatus()
@@ -2567,8 +2612,35 @@ export const codexRouter = router({
               return
             }
 
+            if (guardedContract) {
+              finalPrompt = `${buildGuardedRunPromptBlock(guardedContract)}\n\n${finalPrompt}`
+            }
+
+            const model = provider.languageModel(
+              selectedModelId,
+              getCodexAcpModeId(input.mode),
+            )
+
+            if (requiredSafetyCapability) {
+              const installResult = await installCodexAcpPermissionHandler({
+                model,
+                handler: createCodexAcpPermissionHandler({
+                  mode: input.mode,
+                  contract: guardedContract,
+                  onGuardEvent: (event) => {
+                    guardedRunEvents.push(event)
+                    safeEmit({ type: "guard-event", event })
+                  },
+                }),
+              })
+              if (!installResult.ok) {
+                emitUnsupportedSafetyCapability(installResult.error)
+                return
+              }
+            }
+
             const result = streamText({
-              model: provider.languageModel(selectedModelId),
+              model,
               messages: [
                 {
                   role: "user",
@@ -2590,6 +2662,16 @@ export const codexRouter = router({
                 if (sessionId) {
                   latestSessionId = sessionId
                 }
+                const guardedRunMetadata = guardedContract
+                  ? {
+                      guardedRun: {
+                        contractId: guardedContract.id,
+                        runId: guardedContract.runId ?? input.runId,
+                        runtime: "codex",
+                        enforcementMode: "hard",
+                      },
+                    }
+                  : {}
 
                 if (part.type === "finish") {
                   return {
@@ -2599,6 +2681,7 @@ export const codexRouter = router({
                     durationMs: Date.now() - startedAt,
                     resultSubtype:
                       part.finishReason === "error" ? "error" : "success",
+                    ...guardedRunMetadata,
                   }
                 }
 
@@ -2607,17 +2690,35 @@ export const codexRouter = router({
                     provider: "codex",
                     model: metadataModel,
                     sessionId,
+                    ...guardedRunMetadata,
                   }
                 }
 
                 return {
                   provider: "codex",
                   model: metadataModel,
+                  ...guardedRunMetadata,
                 }
               },
               onFinish: async ({ responseMessage, isContinuation }) => {
                 try {
                   const usageMetadata = await resolveUsageOnce()
+                  const guardedRunAudit =
+                    guardedContract && guardedPreRunStatus
+                      ? buildGuardedRunAudit({
+                          contract: guardedContract,
+                          runtime: "codex",
+                          enforcementMode: "hard",
+                          preRunStatus: guardedPreRunStatus,
+                          postRunStatus: await captureGuardedGitStatus(input.cwd),
+                          guardEvents: guardedRunEvents,
+                          startedAt: guardedRunStartedAt,
+                          stopped: abortController.signal.aborted,
+                        })
+                      : null
+                  if (guardedRunAudit) {
+                    safeEmit({ type: "guard-audit", audit: guardedRunAudit })
+                  }
                   const responseWithUsage = {
                     ...responseMessage,
                     createdAt:
@@ -2626,6 +2727,17 @@ export const codexRouter = router({
                     metadata: {
                       ...((responseMessage as any)?.metadata || {}),
                       ...(usageMetadata || {}),
+                      ...(guardedRunAudit
+                        ? {
+                            guardedRun: {
+                              contractId: guardedRunAudit.contractId,
+                              runId: guardedRunAudit.runId,
+                              runtime: "codex",
+                              enforcementMode: guardedRunAudit.enforcementMode,
+                              audit: guardedRunAudit,
+                            },
+                          }
+                        : {}),
                     },
                   }
                   const cleanedResponseMessage =

@@ -5,17 +5,17 @@
 - [x] 1.4 Confirm dependency boundaries with `add-headless-agent-jobs` so headless jobs can complete with honest degraded/unsupported Codex capabilities.
 
 ## 2. Core Safety Parity
-- [ ] 2.1 Implement Codex hard tool guard through ACP pre-tool interception or a safe Locus-owned tool proxy/wrapper seam.
-- [ ] 2.2 Implement Codex plan mode enforcement so blocked writes and blocked shell operations are denied before execution.
-- [ ] 2.3 Implement Codex scope expansion parity so workspace/project boundary crossings stop for approval before execution.
+- [x] 2.1 Implement Codex hard tool guard through ACP pre-tool interception or a safe Locus-owned tool proxy/wrapper seam.
+- [x] 2.2 Implement Codex plan mode enforcement so blocked writes and blocked shell operations are denied before execution.
+- [x] 2.3 Implement Codex scope expansion parity so workspace/project boundary crossings stop for approval before execution.
 - [ ] 2.4 Implement Codex AskUserQuestion parity with normalized pending, result, timeout, and denial events.
 - [ ] 2.5 Implement Codex rollback/fork parity using durable session references compatible with the shared runner contract.
 - [ ] 2.6 Implement Codex MCP auth parity so needs-auth MCP servers are surfaced before starting affected runs.
 - [x] 2.7 Implement normalized Codex runtime availability/status states for bundled CLI, ACP runtime, login, provider profile, MCP auth/configuration, and local-only blockers.
 - [ ] 2.8 Migrate or delegate the existing desktop Codex chat route and ACP transport to the shared Codex runtime enforcement/status path.
-- [ ] 2.9 Add tests proving Codex core safety capabilities marked `supported` execute through enforcement paths and cannot be bypassed by the desktop chat path.
+- [x] 2.9 Add tests proving Codex core safety capabilities marked `supported` execute through enforcement paths and cannot be bypassed by the desktop chat path.
 - [ ] 2.10 Run desktop smoke covering guarded tool denial, plan mode denial, scope expansion, AskUserQuestion, rollback/fork, MCP needs-auth handling, and separated runtime availability states.
-- [x] 2.11 Gate desktop Codex guarded and plan-mode runs from degraded/unsupported capability state until real pre-tool enforcement seams exist.
+- [x] 2.11 Fail closed for desktop Codex guarded and plan-mode runs when ACP permission enforcement cannot be installed.
 
 ## 3. Runtime Feature Parity
 - [ ] 3.1 Implement Codex MCP configuration parity for app/global and project-scoped MCP add, remove, list, and status behavior.
