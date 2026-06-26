@@ -105,11 +105,6 @@ contextBridge.exposeInMainWorld("desktopApi", {
       filePath?: string
     }>,
 
-  // Auth methods
-  getUser: () => ipcRenderer.invoke("auth:get-user"),
-  isAuthenticated: () => ipcRenderer.invoke("auth:is-authenticated"),
-  logout: () => ipcRenderer.invoke("auth:logout"),
-
   // MCP import preview
   getPendingMcpImportPreview: () =>
     ipcRenderer.invoke(
@@ -313,16 +308,6 @@ export interface DesktopApi {
     filename: string
     filters?: { name: string; extensions: string[] }[]
   }) => Promise<{ success: boolean; filePath?: string }>
-  // Auth
-  getUser: () => Promise<{
-    id: string
-    email: string
-    name: string | null
-    imageUrl: string | null
-    username: string | null
-  } | null>
-  isAuthenticated: () => Promise<boolean>
-  logout: () => Promise<void>
   getPendingMcpImportPreview: () => Promise<McpImportPreview | null>
   clearPendingMcpImportPreview: () => Promise<{ success: boolean }>
   onMcpImportPreview: (

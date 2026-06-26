@@ -56,7 +56,7 @@
 |---|---|---|---|
 | **IPC/preload** | [preload/index.ts](src/preload/index.ts) | `desktopApi` 频道、`exposeElectronTRPC` | 暴露面大：`shell:open-external`、`vscode:load-theme`(任意路径)、`dialog:save-file`、`git:subscribe-watcher`(任意路径)、`unlockDevTools`。旧 `onStream*` 频道已删（§5）。 |
 | **tRPC 层** | [trpc/index.ts](src/main/lib/trpc/index.ts)、[routers/](src/main/lib/trpc/routers/) | 32 个挂载 router；`changes` = git router | 无 auth；多个 router 收 `z.string()` 路径不做根目录约束（§5 High 簇）。结构性能力/信任边界提案：[update-trpc-capability-boundary](openspec/changes/update-trpc-capability-boundary/proposal.md)。 |
-| **认证/凭证** | [auth-manager.ts](src/main/auth-manager.ts)、[auth-store.ts](src/main/auth-store.ts)、[secure-storage.ts](src/main/lib/secure-storage.ts)、[mcp-auth.ts](src/main/lib/mcp-auth.ts) | `encryptStringForStorage` 走 safeStorage；写入若不可用则**抛错拒绝存明文**（[secure-storage.ts:134-152](src/main/lib/secure-storage.ts:134)，好姿态 ✓） | `AuthManager` 是空壳；MCP token 明文落 `~/.claude.json`；`FALLBACK_PREFIX` 旁路解密分支。 |
+| **认证/凭证** | [secure-storage.ts](src/main/lib/secure-storage.ts)、[anthropic-accounts.ts](src/main/lib/trpc/routers/anthropic-accounts.ts)、[mcp-auth.ts](src/main/lib/mcp-auth.ts) | `encryptStringForStorage` 走 safeStorage；写入若不可用则**抛错拒绝存明文**（[secure-storage.ts:134-152](src/main/lib/secure-storage.ts:134)，好姿态 ✓）；真实 Anthropic 凭证走 `anthropic_accounts` + secure-storage | MCP token 明文落 `~/.claude.json`；`FALLBACK_PREFIX` 旁路解密分支。 |
 | **agent runtime** | [agent-runtime/](src/main/lib/agent-runtime/)（permission-policy / preflight / scope-expansion） | mode→controlLevel→SDK permissionMode 映射（[permission-policy.ts:611-746](src/main/lib/agent-runtime/permission-policy.ts:611)）；`preflight` 用 DB 校验 cwd（[preflight.ts:157-165](src/main/lib/agent-runtime/preflight.ts:157)） | plan 模式 `MultiEdit` 漏拦；`updatedInput` 不校验。 |
 | **agent guard** | [agent-guard/](src/main/lib/agent-guard/)（contract / decision / audit / checkpoint / active-contracts） | 仅 `agent`+scopeContract（"Guarded"）时生效；shell 允许走白名单（[decision.ts:612-677](src/main/lib/agent-guard/decision.ts:612)） | observe 模式（agent 无契约）**不走** guard；`requiresUserApproval` 仅咨询性。 |
 | **命令执行/worktree** | [git/worktree-config.ts](src/main/lib/git/worktree-config.ts)、[git/worktree.ts](src/main/lib/git/worktree.ts)、[git/worktree-setup-trust.ts](src/main/lib/git/worktree-setup-trust.ts)、[git/security/](src/main/lib/git/security/) | worktree 内 fs 操作有 `assertRegisteredWorktree`+realpath 约束（[secure-fs.ts](src/main/lib/git/security/secure-fs.ts)，好姿态 ✓）；仓库 setup 命令现在由 trust owner 按命令指纹审批后才执行 | R1 已修；后续仍要处理 tRPC 路径边界和 MCP token 明文（High）。 |
@@ -207,7 +207,7 @@
 | R19 | `git:subscribe-watcher` 收任意路径无校验（资源耗尽 + 路径存在性泄漏） | [watcher/ipc-bridge.ts:22-23](src/main/lib/git/watcher/ipc-bridge.ts:22) | 待核对 |
 | R20 | `CLAUDE_RAW_LOG=1` 把原始 SDK 消息未脱敏写盘（保留 7 天，开发者开关） | [claude/raw-logger.ts:101-138](src/main/lib/claude/raw-logger.ts:101) | 待核对 |
 | R21 | `claude-token.ts` 用 `spawn('claude',['setup-token'],{shell:true})`，PATH 劫持可换二进制 | [claude-token.ts:306-311](src/main/lib/claude-token.ts:306) | 待核对 |
-| R22 | `auth:*` IPC 的 `validateSender` 允许 `*.localhost` 子域（处理器是空壳，影响小） | [windows/main.ts:351-362](src/main/windows/main.ts:351) | 待核对 |
+| R22 | `auth:*` IPC 的 `validateSender` 允许 `*.localhost` 子域（处理器是空壳，影响小） | 已删除 `auth:*` IPC、preload 暴露与 debug logout 调用方 | **已消除 / ✓核对**。D5 同提交删除。 |
 
 ### 死代码 / 双路径 / 依赖卫生
 
@@ -217,7 +217,7 @@
 | D2 | preload `onStreamChunk/onStreamDone/onStreamError` **两端皆死**：renderer 0 消费者、main 无 `stream:*` 发送方 | [preload/index.ts](src/preload/index.ts) | **已修 / ✓核对**。Commit：`d3784254` |
 | D3 | `features/changes/components/*/` 子文件夹组件集无外部 import（疑似被废弃的并行实现） | 剩余活组件为 `changes-file-filter`、`commit-input`、`history-view`、`diff-sidebar-header`、`file-list-item` 等实际引用路径 | **已修 / ✓核对**。Commit：`69fb275f` |
 | D4 | 三份分叉的 `pluralize.ts`（md5 各异）：agents/utils、sidebar/utils、lib/utils | 三份均已删除；grep/knip 确认无调用方 | **已修 / ✓核对**。Commit：`c429fe7c`、`69fb275f` |
-| D5 | `AuthManager.isAuthenticated()` 恒 false、`getUser()` 恒 null；`AuthStore` 加密机制从不被调用 | [auth-manager.ts:11-17](src/main/auth-manager.ts:11) | **待评估 / 本轮保留**：牵动认证布线，按 P2 纪律不删。 |
+| D5 | `AuthManager.isAuthenticated()` 恒 false、`getUser()` 恒 null；`AuthStore` 加密机制从不被调用 | 已删除 `auth-manager.ts` / `auth-store.ts`、`auth:*` IPC、preload 暴露、debug logout 与死测试 | **已修 / ✓核对**。真实 Anthropic 认证仍走 `anthropic_accounts` + secure-storage。 |
 | D6 | `claude_code_credentials` 表标 DEPRECATED 但无迁移删除；仅为"迁移走"而读 | [schema/index.ts:96-104](src/main/lib/db/schema/index.ts:96) | **✓核对** |
 | D7 | `syncMessagesAtom` 导出但自述"not used"、0 调用方 | [message-store.ts:994-999](src/renderer/features/agents/stores/message-store.ts:994) | 待核对 |
 | D8 | `@agentclientprotocol/sdk` **被用但不在 package.json**（依赖卫生，影响可复现构建） | [codex/tool-permission.ts:7](src/main/lib/codex/tool-permission.ts:7) | **已修 / ✓核对（knip）**：`package.json` pin 为 `0.4.9`。Commit：`7eca3997` |
@@ -236,7 +236,7 @@
 
 1. **`FALLBACK_PREFIX` 是否纯历史遗留**：已确认历史提交 `16a6d578` 曾写入 `locus:v1:base64:` fallback；当前读取旁路已改为 fail-closed，旧 fallback 凭据需重新认证/重新保存。
 2. **local-only 的安全语义**：是否有意允许 Anthropic API 调用、仅限制 app 专有域（[local-only.ts](src/shared/local-only.ts)）？若 local-only 应阻一切云出口，则为 Medium 旁路。
-3. **`AuthManager`/`AuthStore` 去留**：本地优先、空壳常驻——是永久死代码（应连同 `auth:*` IPC 删除以缩面），还是被部分剥离的功能残留？
+3. **`AuthManager`/`AuthStore` 去留**：已确认永久死代码并删除；`auth:*` IPC、preload 暴露和 debug logout 调用方同步移除。
 4. **`requiresUserApproval` 是否接到 UI 阻断**（[decision.ts:516](src/main/lib/agent-guard/decision.ts:516)）：未找到 renderer 侧据此阻断的调用点。
 5. **`projectSlug` 是否在拼 worktree 路径前消毒**（[worktree.ts:985-986](src/main/lib/git/worktree.ts:985)，`~/.21st/worktrees/<slug>`）：未追到生成处与消毒逻辑。
 6. **`settingSources:["project","user"]`**（[agent-sdk-query-options.ts:272](src/main/lib/claude/agent-sdk-query-options.ts:272)）：恶意仓库的 `.claude/` 项目级设置能向 SDK 注入多少（system prompt / 工具配置）？范围待确认。

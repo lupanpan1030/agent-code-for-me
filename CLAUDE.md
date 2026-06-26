@@ -49,14 +49,13 @@ bun run db:push          # Push schema directly (dev only)
 src/
 ├── main/                    # Electron main process
 │   ├── index.ts             # App entry, window lifecycle
-│   ├── auth-manager.ts      # OAuth flow, token refresh
-│   ├── auth-store.ts        # Encrypted credential storage (safeStorage)
 │   ├── windows/main.ts      # Window creation, IPC handlers
 │   └── lib/
 │       ├── db/              # Drizzle + SQLite
 │       │   ├── index.ts     # DB init, auto-migrate on startup
 │       │   ├── schema/      # Drizzle table definitions
 │       │   └── utils.ts     # ID generation
+│       ├── secure-storage.ts # safeStorage-backed credential encryption
 │       └── trpc/routers/    # tRPC routers (projects, chats, claude)
 │
 ├── preload/                 # IPC bridge (context isolation)
@@ -101,7 +100,7 @@ Current schema source defines these tables:
 | `worktree_setup_trust_decisions` | Per-project approval decisions for repository-provided worktree setup commands |
 | `sub_chats` | Runtime sessions, mode, stream id, and persisted message JSON for each chat tab |
 | `claude_code_credentials` | Legacy encrypted Claude Code credential row |
-| `anthropic_accounts` | Multi-account Claude Code OAuth credential envelopes |
+| `anthropic_accounts` | Multi-account Claude Code OAuth credential envelopes encrypted through `secure-storage.ts` |
 | `anthropic_settings` | Active Anthropic account pointer |
 | `claude_provider_config` | Legacy single Claude-compatible provider config |
 | `local_api_provider_configs` | Encrypted helper-provider configs for local utility calls |

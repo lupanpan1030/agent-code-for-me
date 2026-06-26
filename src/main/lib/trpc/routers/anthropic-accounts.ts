@@ -1,6 +1,5 @@
 import { eq, sql } from "drizzle-orm"
 import { z } from "zod"
-import { getAuthManager } from "../../../index"
 import {
   createClaudeCodeCredentialEnvelope,
   decryptClaudeCodeCredential,
@@ -237,8 +236,6 @@ export const anthropicAccountsRouter = router({
     )
     .mutation(({ input }) => {
       const db = getDatabase()
-      const authManager = getAuthManager()
-      const user = authManager.getUser()
 
       const encryptedToken = encryptToken(input.oauthToken)
       const newId = createId()
@@ -250,7 +247,7 @@ export const anthropicAccountsRouter = router({
           displayName: input.displayName || input.email || "Anthropic Account",
           oauthToken: encryptedToken,
           connectedAt: new Date(),
-          desktopUserId: user?.id ?? null,
+          desktopUserId: null,
         })
         .run()
 

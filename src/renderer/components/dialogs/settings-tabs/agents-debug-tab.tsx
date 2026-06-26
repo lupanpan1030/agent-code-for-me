@@ -111,14 +111,6 @@ export function AgentsDebugTab() {
     onError: (error) => toast.error(error.message),
   })
 
-  const logoutMutation = trpc.debug.logout.useMutation({
-    onSuccess: () => {
-      toast.success(t("settings.debug.toast.loggedOut"))
-      setTimeout(() => window.location.reload(), 500)
-    },
-    onError: (error) => toast.error(error.message),
-  })
-
   const openFolderMutation = trpc.debug.openUserDataFolder.useMutation({
     onError: (error) => toast.error(error.message),
   })
@@ -432,7 +424,7 @@ export function AgentsDebugTab() {
         <h4 className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
           {t("settings.debug.dataManagement")}
         </h4>
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-2 gap-2">
           <Button
             variant="outline"
             size="sm"
@@ -444,18 +436,6 @@ export function AgentsDebugTab() {
             disabled={clearChatsMutation.isPending}
           >
             {clearChatsMutation.isPending ? "..." : t("settings.debug.clearChats")}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              if (confirm(t("settings.debug.confirmLogout"))) {
-                logoutMutation.mutate()
-              }
-            }}
-            disabled={logoutMutation.isPending}
-          >
-            {logoutMutation.isPending ? "..." : t("settings.debug.logout")}
           </Button>
           <Button
             variant="destructive"

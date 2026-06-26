@@ -2037,7 +2037,6 @@ export const en = {
     "Network detection restored to normal",
   "settings.debug.toast.allChatsCleared": "All chats cleared",
   "settings.debug.toast.allDataCleared": "All data cleared. Reloading...",
-  "settings.debug.toast.loggedOut": "Logged out. Reloading...",
   "settings.debug.toast.debugInfoCopied": "Debug info copied to clipboard",
   "settings.debug.toast.reactScanEnabled": "React Scan enabled",
   "settings.debug.toast.reactScanEnabledDescription":
@@ -2097,10 +2096,8 @@ export const en = {
   "settings.debug.dataManagement": "Data Management",
   "settings.debug.confirmClearChats": "Clear all chats? Projects will be kept.",
   "settings.debug.clearChats": "Clear Chats",
-  "settings.debug.confirmLogout": "Logout? You will need to sign in again.",
-  "settings.debug.logout": "Logout",
   "settings.debug.confirmResetAll":
-    "Reset everything? This will clear all data and log you out.",
+    "Reset everything? This will clear all local app data.",
   "settings.debug.resetAll": "Reset All",
 
   "toast.models.accountSwitched": "Account switched",
@@ -5736,7 +5733,6 @@ export const zhCN: Partial<Record<TranslationKey, string>> = {
     "网络检测已恢复正常",
   "settings.debug.toast.allChatsCleared": "所有对话已清除",
   "settings.debug.toast.allDataCleared": "所有数据已清除，正在重新加载...",
-  "settings.debug.toast.loggedOut": "已退出登录，正在重新加载...",
   "settings.debug.toast.debugInfoCopied": "调试信息已复制到剪贴板",
   "settings.debug.toast.reactScanEnabled": "React Scan 已启用",
   "settings.debug.toast.reactScanEnabledDescription":
@@ -5796,10 +5792,8 @@ export const zhCN: Partial<Record<TranslationKey, string>> = {
   "settings.debug.dataManagement": "数据管理",
   "settings.debug.confirmClearChats": "清除所有对话？项目会保留。",
   "settings.debug.clearChats": "清除对话",
-  "settings.debug.confirmLogout": "退出登录？之后需要重新登录。",
-  "settings.debug.logout": "退出登录",
   "settings.debug.confirmResetAll":
-    "重置所有内容？这会清除全部数据并退出登录。",
+    "重置所有内容？这会清除全部本地应用数据。",
   "settings.debug.resetAll": "全部重置",
 
   "toast.models.accountSwitched": "账号已切换",
