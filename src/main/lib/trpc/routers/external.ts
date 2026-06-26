@@ -62,25 +62,30 @@ function spawnAsync(
       detached: true,
       stdio: "ignore",
       windowsHide: true,
-      shell: process.platform === "win32",
+      shell: false,
     })
-    child.unref()
     child.on("error", reject)
-    // Resolve immediately — we just need to launch the app
-    resolve()
+    child.on("spawn", () => {
+      child.unref()
+      resolve()
+    })
   })
 }
 
-function commandExists(command: string): boolean {
+function resolveCommandPath(command: string): string | null {
   try {
     const lookupCommand = process.platform === "win32" ? "where" : "which"
-    execFileSync(lookupCommand, [command], {
-      stdio: "ignore",
+    const stdout = execFileSync(lookupCommand, [command], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
       windowsHide: true,
     })
-    return true
+    return stdout
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find(Boolean) ?? null
   } catch {
-    return false
+    return null
   }
 }
 
@@ -90,8 +95,9 @@ async function spawnFirstAvailableCommand(
   options?: { cwd?: string },
 ): Promise<string | null> {
   for (const command of commands) {
-    if (!commandExists(command)) continue
-    await spawnAsync(command, args, options)
+    const resolvedCommand = resolveCommandPath(command)
+    if (!resolvedCommand) continue
+    await spawnAsync(resolvedCommand, args, options)
     return command
   }
 
@@ -121,7 +127,13 @@ async function openPathInApp(
   }
 
   const meta = APP_META[app]
-  await spawnAsync("open", ["-a", meta.macAppName, expandedPath])
+  const launched = await spawnFirstAvailableCommand(
+    ["open"],
+    ["-a", meta.macAppName, expandedPath],
+  )
+  if (launched) return
+
+  await shell.openPath(expandedPath)
 }
 
 /**
@@ -215,9 +227,9 @@ export const externalRouter = router({
 
       for (const editor of editors) {
         try {
-          // Check if the command exists first
-          if (!commandExists(editor.cmd)) continue
-          await spawnAsync(editor.cmd, editor.args, { cwd })
+          const resolvedEditor = resolveCommandPath(editor.cmd)
+          if (!resolvedEditor) continue
+          await spawnAsync(resolvedEditor, editor.args, { cwd })
           return { success: true, editor: editor.cmd }
         } catch {
           // Try next editor

@@ -14,10 +14,25 @@ describe("Windows desktop readiness source guards", () => {
     const source = readFileSync("src/main/lib/trpc/routers/external.ts", "utf-8")
 
     expect(source).toContain('process.platform === "win32" ? "where" : "which"')
-    expect(source).toContain('shell: process.platform === "win32"')
+    expect(source).toContain("const resolvedEditor = resolveCommandPath(editor.cmd)")
+    expect(source).toContain("await spawnAsync(resolvedEditor, editor.args, { cwd })")
+    expect(source).toContain("shell: false")
+    expect(source).not.toContain('shell: process.platform === "win32"')
     expect(source).toContain('if (process.platform !== "darwin")')
     expect(source).toContain("await shell.openPath(expandedPath)")
     expect(source).not.toContain('execFileSync("which"')
+  })
+
+  test("Claude setup-token uses the bundled binary without shell PATH lookup", () => {
+    const source = readFileSync("src/main/lib/claude-token.ts", "utf-8")
+
+    expect(source).toContain("getBundledClaudeBinaryPath")
+    expect(source).toContain("const claudeBinaryPath = getBundledClaudeBinaryPath()")
+    expect(source).toContain("spawn(claudeBinaryPath, ['setup-token']")
+    expect(source).toContain("shell: false")
+    expect(source).not.toContain("spawn('claude'")
+    expect(source).not.toContain("spawn(\"claude\"")
+    expect(source).not.toContain("shell: true")
   })
 
   test("Windows default shell stays aligned with cmd exec arguments", () => {

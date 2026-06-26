@@ -2,6 +2,7 @@ import { execSync, spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { getBundledClaudeBinaryPath } from "./claude/env";
 import { buildExtendedPath, isWindows } from "./platform";
 
 interface ClaudeCredentials {
@@ -301,14 +302,12 @@ export function runClaudeSetupToken(
   return new Promise((resolve) => {
     onStatus('Starting Claude setup-token...');
 
-    const fullPath = getExtendedPath();
-
-    const child = spawn('claude', ['setup-token'], {
+    const claudeBinaryPath = getBundledClaudeBinaryPath();
+    const child = spawn(claudeBinaryPath, ['setup-token'], {
       // Don't use 'inherit' - it causes hang in non-TTY environments
       // Use 'ignore' for stdin and 'pipe' for stdout/stderr
       stdio: ['ignore', 'pipe', 'pipe'],
-      shell: true,
-      env: { ...process.env, PATH: fullPath },
+      shell: false,
     });
 
     let stdout = '';

@@ -210,10 +210,10 @@
 |---|---|---|---|
 | R16 | `<webview>` `will-navigate` 用 `preventDefault?.()`，可选链使阻止可能失效；且 `normalizeLocalBrowserUrl` 放行任意 `file:` | [local-browser-workbench.tsx](src/renderer/features/agents/ui/local-browser-workbench.tsx)、[shared/local-browser-workbench.ts](src/shared/local-browser-workbench.ts) | **已修 / ✓核对**：`preventDefault()` 必调；`file:` 仅允许显式传入的 worktree 根内。测试：[local-browser-workbench.test.ts](tests/local-browser-workbench.test.ts)。 |
 | R17 | 主 webContents 未注册 `will-navigate`，渲染层若被注入可导航到远程源 | [windows/main.ts](src/main/windows/main.ts)、[navigation-guard.ts](src/main/windows/navigation-guard.ts) | **已修 / ✓核对**：`will-navigate` / `will-redirect` 统一按 renderer origin gate 拦截。测试：[main-window-navigation-guard.test.ts](tests/main-window-navigation-guard.test.ts)。 |
-| R18 | `external.openInApp/openFileInEditor` 在 win32 用 `shell:true`，路径含 `&\|;` 可注入 | [external.ts:60-65](src/main/lib/trpc/routers/external.ts:60) | 待核对 |
+| R18 | `external.openInApp/openFileInEditor` 在 win32 用 `shell:true`，路径含 `&\|;` 可注入 | [external.ts](src/main/lib/trpc/routers/external.ts) | **已修 / ✓核对**：外部 app/editor 先解析可执行路径，再以 `spawn(..., argv, { shell:false })` 启动。测试：[external-launch-spawn.test.ts](tests/external-launch-spawn.test.ts)、[windows-desktop-readiness.test.ts](tests/windows-desktop-readiness.test.ts)。 |
 | R19 | `git:subscribe-watcher` 收任意路径无校验（资源耗尽 + 路径存在性泄漏） | [watcher/ipc-bridge.ts](src/main/lib/git/watcher/ipc-bridge.ts) | **已修 / ✓核对**：订阅前必须通过登记 project/worktree 根校验。测试：[git-watcher-ipc-bridge.test.ts](tests/git-watcher-ipc-bridge.test.ts)。 |
 | R20 | `CLAUDE_RAW_LOG=1` 把原始 SDK 消息未脱敏写盘（保留 7 天，开发者开关） | [claude/raw-logger.ts:101-138](src/main/lib/claude/raw-logger.ts:101) | 待核对 |
-| R21 | `claude-token.ts` 用 `spawn('claude',['setup-token'],{shell:true})`，PATH 劫持可换二进制 | [claude-token.ts:306-311](src/main/lib/claude-token.ts:306) | 待核对 |
+| R21 | `claude-token.ts` 用 `spawn('claude',['setup-token'],{shell:true})`，PATH 劫持可换二进制 | [claude-token.ts](src/main/lib/claude-token.ts) | **已修 / ✓核对**：`setup-token` 改用 bundled Claude 绝对路径并显式 `shell:false`。测试：[claude-token-spawn.test.ts](tests/claude-token-spawn.test.ts)、[windows-desktop-readiness.test.ts](tests/windows-desktop-readiness.test.ts)。 |
 | R22 | `auth:*` IPC 的 `validateSender` 允许 `*.localhost` 子域（处理器是空壳，影响小） | 已删除 `auth:*` IPC、preload 暴露与 debug logout 调用方 | **已消除 / ✓核对**。D5 同提交删除。 |
 
 ### 死代码 / 双路径 / 依赖卫生
