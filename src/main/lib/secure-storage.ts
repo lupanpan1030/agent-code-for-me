@@ -3,7 +3,6 @@ import { existsSync } from "node:fs"
 import { homedir } from "node:os"
 import * as electron from "electron"
 
-const FALLBACK_PREFIX = "locus:v1:base64:"
 export const SECURE_STORAGE_UNAVAILABLE_MESSAGE =
   "System secure storage is unavailable. Please enable the OS keychain/credential store and try again."
 
@@ -153,13 +152,6 @@ export function encryptStringForStorage(value: string): string {
 }
 
 export function decryptStringFromStorage(encrypted: string): string | null {
-  if (encrypted.startsWith(FALLBACK_PREFIX)) {
-    return Buffer.from(
-      encrypted.slice(FALLBACK_PREFIX.length),
-      "base64",
-    ).toString("utf-8")
-  }
-
   if (!isSecureStorageAvailable()) {
     return null
   }

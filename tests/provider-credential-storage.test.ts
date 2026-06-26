@@ -97,10 +97,10 @@ describe("provider credential storage hardening", () => {
     )
   })
 
-  test("legacy base64 fallback is read-only compatible", () => {
+  test("legacy base64 fallback prefix is rejected instead of decoded", () => {
     const legacy = `locus:v1:base64:${Buffer.from("sk-legacy", "utf-8").toString("base64")}`
 
-    expect(secureStorage.decryptStringFromStorage(legacy)).toBe("sk-legacy")
+    expect(secureStorage.decryptStringFromStorage(legacy)).toBeNull()
     expect(
       secureStorage.decryptStringFromStorage(
         Buffer.from("sk-plain-base64", "utf-8").toString("base64"),

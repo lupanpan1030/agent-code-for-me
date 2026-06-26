@@ -165,8 +165,9 @@
 
 ### Medium
 
-**R7 — `FALLBACK_PREFIX` base64 旁路解密** · **✓核对**
-- [secure-storage.ts:155-161](src/main/lib/secure-storage.ts:155)：值以 `locus:v1:base64:` 开头时，先于 safeStorage 检查直接 base64 解码返回明文。当前代码无写入端产生该前缀（待确认是否纯历史遗留），但分支仍活；若本地攻击者能写 DB 即可注入"伪密文"。
+**R7 — `FALLBACK_PREFIX` base64 旁路解密** · **已修 / ✓核对**
+- 原问题：[secure-storage.ts](src/main/lib/secure-storage.ts) 遇到 `locus:v1:base64:` 前缀时先于 safeStorage 直接 base64 解码返回明文；历史提交 `16a6d578` 确实曾写入该 fallback，后续 `d77ca27f` 已让写入端 fail-closed，但读取旁路仍活。
+- 修复：删除 fallback 前缀解码分支；旧 fallback 数据不再当作明文凭据使用，需要重新认证/重新保存凭据。测试：[provider-credential-storage.test.ts](tests/provider-credential-storage.test.ts) 覆盖写入端拒绝明文 fallback、注入 `locus:v1:base64:...` 返回 `null`。Commit：本提交 `fix: reject legacy secure storage fallback`。
 
 **R8 — plan 模式漏拦 `MultiEdit`** · **已修 / ✓核对**
 - 原问题：[agent-sdk-tool-permission.ts](src/main/lib/claude/agent-sdk-tool-permission.ts) 的 plan 模式显式拦截只覆盖 `Edit/Write/Bash/NotebookEdit`，`MultiEdit` 会落到允许分支。
@@ -232,7 +233,7 @@
 
 ## 6. 待解之谜（待确认）
 
-1. **`FALLBACK_PREFIX` 是否纯历史遗留**：当前无写入端产生 `locus:v1:base64:`。是旧版迁移残留还是死分支？若死，应删 [secure-storage.ts:156-160](src/main/lib/secure-storage.ts:156)。
+1. **`FALLBACK_PREFIX` 是否纯历史遗留**：已确认历史提交 `16a6d578` 曾写入 `locus:v1:base64:` fallback；当前读取旁路已改为 fail-closed，旧 fallback 凭据需重新认证/重新保存。
 2. **local-only 的安全语义**：是否有意允许 Anthropic API 调用、仅限制 app 专有域（[local-only.ts](src/shared/local-only.ts)）？若 local-only 应阻一切云出口，则为 Medium 旁路。
 3. **`AuthManager`/`AuthStore` 去留**：本地优先、空壳常驻——是永久死代码（应连同 `auth:*` IPC 删除以缩面），还是被部分剥离的功能残留？
 4. **`requiresUserApproval` 是否接到 UI 阻断**（[decision.ts:516](src/main/lib/agent-guard/decision.ts:516)）：未找到 renderer 侧据此阻断的调用点。
