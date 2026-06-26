@@ -7,6 +7,15 @@ import { normalizeCodexToolPart } from "./codex-tool-normalizer"
 
 type AnyRecord = Record<string, any>
 
+type ParseFailure = {
+  error: unknown
+  rawMessages: unknown
+}
+
+type PersistedMessagesParseResult =
+  | { ok: true; messages: unknown[] }
+  | { ok: false; failure: ParseFailure }
+
 export type NormalizePersistedChatMessagesOptions = {
   sourceId?: string
   onParseError?: (error: unknown, sourceId?: string) => void
@@ -28,19 +37,57 @@ function parseObjectJson(value: string): AnyRecord | null {
 function parsePersistedMessages(
   rawMessages: unknown,
   options?: NormalizePersistedChatMessagesOptions,
-): unknown[] {
-  if (Array.isArray(rawMessages)) return rawMessages
-  if (!rawMessages) return []
+): PersistedMessagesParseResult {
+  if (Array.isArray(rawMessages)) return { ok: true, messages: rawMessages }
+  if (!rawMessages) return { ok: true, messages: [] }
 
-  if (typeof rawMessages !== "string") return []
+  if (typeof rawMessages !== "string") return { ok: true, messages: [] }
 
   try {
     const parsed = JSON.parse(rawMessages)
-    return Array.isArray(parsed) ? parsed : []
+    if (Array.isArray(parsed)) return { ok: true, messages: parsed }
+    const error = new Error("Persisted messages JSON did not contain an array.")
+    options?.onParseError?.(error, options.sourceId)
+    return { ok: false, failure: { error, rawMessages } }
   } catch (error) {
     options?.onParseError?.(error, options.sourceId)
-    return []
+    return { ok: false, failure: { error, rawMessages } }
   }
+}
+
+function sourceSegment(sourceId: string | undefined): string {
+  return (sourceId || "unknown")
+    .trim()
+    .replace(/[^A-Za-z0-9_.:-]/g, "_")
+    .slice(0, 120) || "unknown"
+}
+
+function parseFailureMessage(
+  failure: ParseFailure,
+  options?: NormalizePersistedChatMessagesOptions,
+): CanonicalChatMessage[] {
+  const source = sourceSegment(options?.sourceId)
+  const errorMessage =
+    failure.error instanceof Error ? failure.error.message : String(failure.error)
+
+  return [
+    {
+      id: `parse-failure-${source}`,
+      role: "assistant",
+      metadata: {
+        parseFailure: true,
+        parseFailureSourceId: options?.sourceId,
+        parseFailureError: errorMessage,
+        rawPersistedMessages: failure.rawMessages,
+      },
+      parts: [
+        {
+          type: "text",
+          text: "消息解析失败。原始聊天数据仍保留在本地数据库中，未被删除。",
+        },
+      ],
+    } as CanonicalChatMessage,
+  ]
 }
 
 function normalizeLegacyToolInvocationPart(part: AnyRecord): AnyRecord | null {
@@ -165,7 +212,7 @@ export function normalizePersistedChatMessages(
   rawMessages: unknown,
   options?: NormalizePersistedChatMessagesOptions,
 ): CanonicalChatMessage[] {
-  return parsePersistedMessages(rawMessages, options).map(
-    normalizePersistedChatMessage,
-  )
+  const parsed = parsePersistedMessages(rawMessages, options)
+  if (!parsed.ok) return parseFailureMessage(parsed.failure, options)
+  return parsed.messages.map(normalizePersistedChatMessage)
 }

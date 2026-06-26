@@ -1,8 +1,11 @@
 import * as electron from "electron"
 import { join } from "path"
 import { appendFile, mkdir, stat, readdir, unlink } from "fs/promises"
+import { redactRuntimePayload } from "../agent-runtime/redaction"
+import type { JsonValue } from "../agent-runtime/runtime-events"
 
-// Check if logging is enabled (lazy check after app is ready)
+// Dev-only diagnostic switch. Payloads are redacted before disk, but raw SDK
+// traces can still reveal sensitive workflow context.
 function isEnabled(): boolean {
   return process.env.CLAUDE_RAW_LOG === "1"
 }
@@ -42,6 +45,18 @@ function sanitizeLogFileSegment(value: string): string {
       .replace(/[^A-Za-z0-9_-]/g, "_")
       .slice(0, 120) || "session"
   )
+}
+
+function toRedactableJsonValue(value: unknown): JsonValue {
+  try {
+    const serialized = JSON.stringify(value, (_key, child) =>
+      typeof child === "bigint" ? child.toString() : child,
+    )
+    if (serialized === undefined) return String(value)
+    return JSON.parse(serialized) as JsonValue
+  } catch {
+    return String(value)
+  }
 }
 
 /**
@@ -129,9 +144,19 @@ export async function logRawClaudeMessage(
       }
     }
 
+    const redaction = redactRuntimePayload(toRedactableJsonValue(msg), {
+      runtimeId: "claude-code",
+      runId: sessionId,
+      source: "runtime-diagnostic",
+    })
+
     const entry = {
       timestamp: new Date().toISOString(),
-      data: msg,
+      data: redaction.payload,
+      redaction: {
+        status: redaction.appliedRules.length > 0 ? "redacted" : "unchanged",
+        appliedRules: redaction.appliedRules,
+      },
     }
 
     await appendFile(currentLogFile!, JSON.stringify(entry) + "\n")

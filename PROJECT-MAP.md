@@ -199,8 +199,9 @@
 **R13 — `allFullThemesAtom` 恒返回 `[]`** · **已修 / ✓核对**
 - 已确认全 renderer 无引用；主题功能实际由 [theme-provider.tsx](src/renderer/lib/themes/theme-provider.tsx) 聚合 `BUILTIN_THEMES + importedThemesAtom`。删除恒空只读派生 atom 与误导注释，不影响现有主题路径。
 
-**R14 — 损坏的 `sub_chats.messages` 被静默丢弃** · **待核对**
-- [chat-message-normalizer.ts:41-43](src/shared/chat-message-normalizer.ts:41) 解析失败仅 `console.warn` 返回 `[]`；用户看到空聊天、无任何数据丢失提示。JSON blob 无版本戳、无逐条类型校验。
+**R14 — 损坏的 `sub_chats.messages` 被静默丢弃** · **已修 / ✓核对**
+- 修复：[chat-message-normalizer.ts](src/shared/chat-message-normalizer.ts) 解析 persisted message JSON 失败或解析结果不是数组时，不再静默返回空聊天；改为返回一条非破坏性"消息解析失败"提示，并把原始 persisted blob 保留在 message metadata 中。此路径只影响渲染归一化，不回写 DB、不删除原始数据。
+- 回归测试：[chat-message-normalizer.test.ts](tests/chat-message-normalizer.test.ts) 覆盖 malformed JSON 的 sourceId、原始 blob 和提示文案。
 
 **R15 — VS Code 主题扫描 `execSync` 字符串插值** · **已修 / ✓核对**
 - 原问题：[vscode-theme-scanner.ts](src/main/lib/vscode-theme-scanner.ts) 用 `execSync(\`ls -1 "${extensionsDir}"\`)` 扫描扩展目录；历史注释称 `fs.readdir` 在 Electron 有缓存问题，但未找到当前可复现证据。
@@ -214,7 +215,7 @@
 | R17 | 主 webContents 未注册 `will-navigate`，渲染层若被注入可导航到远程源 | [windows/main.ts](src/main/windows/main.ts)、[navigation-guard.ts](src/main/windows/navigation-guard.ts) | **已修 / ✓核对**：`will-navigate` / `will-redirect` 统一按 renderer origin gate 拦截。测试：[main-window-navigation-guard.test.ts](tests/main-window-navigation-guard.test.ts)。 |
 | R18 | `external.openInApp/openFileInEditor` 在 win32 用 `shell:true`，路径含 `&\|;` 可注入 | [external.ts](src/main/lib/trpc/routers/external.ts) | **已修 / ✓核对**：外部 app/editor 先解析可执行路径，再以 `spawn(..., argv, { shell:false })` 启动。测试：[external-launch-spawn.test.ts](tests/external-launch-spawn.test.ts)、[windows-desktop-readiness.test.ts](tests/windows-desktop-readiness.test.ts)。 |
 | R19 | `git:subscribe-watcher` 收任意路径无校验（资源耗尽 + 路径存在性泄漏） | [watcher/ipc-bridge.ts](src/main/lib/git/watcher/ipc-bridge.ts) | **已修 / ✓核对**：订阅前必须通过登记 project/worktree 根校验。测试：[git-watcher-ipc-bridge.test.ts](tests/git-watcher-ipc-bridge.test.ts)。 |
-| R20 | `CLAUDE_RAW_LOG=1` 把原始 SDK 消息未脱敏写盘（保留 7 天，开发者开关） | [claude/raw-logger.ts:101-138](src/main/lib/claude/raw-logger.ts:101) | 待核对 |
+| R20 | `CLAUDE_RAW_LOG=1` 把原始 SDK 消息未脱敏写盘（保留 7 天，开发者开关） | [claude/raw-logger.ts](src/main/lib/claude/raw-logger.ts)、[redaction.ts](src/main/lib/agent-runtime/redaction.ts) | **已修 / ✓核对**：raw logger 明确为 dev-only diagnostic，写盘前走 runtime redaction owner 脱敏 token/bearer/key/password/secret 等明显密钥形状，并记录 redaction 状态。测试：[claude-raw-logger.test.ts](tests/claude-raw-logger.test.ts)、[runtime-redaction.test.ts](tests/runtime-redaction.test.ts)。 |
 | R21 | `claude-token.ts` 用 `spawn('claude',['setup-token'],{shell:true})`，PATH 劫持可换二进制 | [claude-token.ts](src/main/lib/claude-token.ts) | **已修 / ✓核对**：`setup-token` 改用 bundled Claude 绝对路径并显式 `shell:false`。测试：[claude-token-spawn.test.ts](tests/claude-token-spawn.test.ts)、[windows-desktop-readiness.test.ts](tests/windows-desktop-readiness.test.ts)。 |
 | R22 | `auth:*` IPC 的 `validateSender` 允许 `*.localhost` 子域（处理器是空壳，影响小） | 已删除 `auth:*` IPC、preload 暴露与 debug logout 调用方 | **已消除 / ✓核对**。D5 同提交删除。 |
 

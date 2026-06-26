@@ -3,15 +3,30 @@ import { normalizeAcpParts } from "../src/shared/acp-tool-normalizer"
 import { normalizePersistedChatMessages } from "../src/shared/chat-message-normalizer"
 
 describe("chat message hydration normalizer", () => {
-  test("returns empty messages for malformed persisted JSON", () => {
+  test("surfaces malformed persisted JSON without dropping the raw blob", () => {
     const errors: Array<{ error: unknown; sourceId?: string }> = []
 
-    expect(
-      normalizePersistedChatMessages("{not-json", {
-        sourceId: "sub-1",
-        onParseError: (error, sourceId) => errors.push({ error, sourceId }),
-      }),
-    ).toEqual([])
+    const messages = normalizePersistedChatMessages("{not-json", {
+      sourceId: "sub-1",
+      onParseError: (error, sourceId) => errors.push({ error, sourceId }),
+    })
+
+    expect(messages).toHaveLength(1)
+    expect(messages[0]).toMatchObject({
+      id: "parse-failure-sub-1",
+      role: "assistant",
+      metadata: {
+        parseFailure: true,
+        parseFailureSourceId: "sub-1",
+        rawPersistedMessages: "{not-json",
+      },
+      parts: [
+        {
+          type: "text",
+          text: expect.stringContaining("消息解析失败"),
+        },
+      ],
+    })
     expect(errors).toHaveLength(1)
     expect(errors[0]?.sourceId).toBe("sub-1")
   })

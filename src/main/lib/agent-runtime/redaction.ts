@@ -1,12 +1,13 @@
 import type { JsonValue, RunEventRedactionContext } from "./runtime-events"
 
 const SECRET_KEY_PATTERN =
-  /(?:api[_-]?key|access[_-]?token|refresh[_-]?token|gateway[_-]?token|authorization|cookie|password|secret|client[_-]?secret|oauth)/i
+  /(?:api[_-]?key|(?:^|[_-])token(?:$|[_-])|access[_-]?token|refresh[_-]?token|auth[_-]?token|gateway[_-]?token|authorization|cookie|password|secret|client[_-]?secret|oauth)/i
 
 const SECRET_TEXT_PATTERNS = [
   /sk-[A-Za-z0-9_-]{16,}/g,
   /bearer\s+[A-Za-z0-9._-]+/gi,
-  /(?:api[_-]?key|access[_-]?token|refresh[_-]?token|authorization)=([A-Za-z0-9._~+/-]+)/gi,
+  /(?:api[_-]?key|access[_-]?token|refresh[_-]?token|auth[_-]?token|authorization)=([A-Za-z0-9._~+/-]+)/gi,
+  /(?:api[_-]?key|access[_-]?token|refresh[_-]?token|auth[_-]?token|token|password|secret|authorization)\s*[:=]\s*["']?[A-Za-z0-9._~+/-]{8,}["']?/gi,
 ]
 const MIN_SECRET_HINT_LENGTH = 8
 
@@ -43,8 +44,9 @@ function redactString(
   for (const pattern of SECRET_TEXT_PATTERNS) {
     if (pattern.test(redacted)) {
       appliedRules.add("secret-text")
+      pattern.lastIndex = 0
       redacted = redacted.replace(pattern, (match) => {
-        const separatorIndex = match.indexOf("=")
+        const separatorIndex = Math.max(match.indexOf("="), match.indexOf(":"))
         if (separatorIndex > 0) {
           return `${match.slice(0, separatorIndex + 1)}<redacted>`
         }

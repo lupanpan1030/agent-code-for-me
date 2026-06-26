@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 import {
   mkdir,
   mkdtemp,
+  readFile,
   readdir,
   rm,
   stat,
@@ -94,6 +95,50 @@ describe("Claude raw logger", () => {
     expect(files[0]).toEndWith(".jsonl")
     expect(files[0]).not.toContain("/")
     expect(files[0]).not.toContain("..")
+  })
+
+  test("redacts obvious secrets before writing raw SDK logs to disk", async () => {
+    process.env.CLAUDE_RAW_LOG = "1"
+
+    await rawLogger.logRawClaudeMessage("session-secrets", {
+      authorization: "Bearer raw-authorization-token",
+      headers: {
+        apiKey: "sk-testsecretvalue1234567890",
+        token: "plain-token-value",
+      },
+      text: "token=inline-secret-value Bearer inline.bearer.secret",
+      usage: {
+        input_tokens: 123,
+      },
+    })
+
+    const logsDir = join(userDataDir, "logs", "claude")
+    const files = await readdir(logsDir)
+    expect(files).toHaveLength(1)
+
+    const raw = await readFile(join(logsDir, files[0]), "utf8")
+    expect(raw).not.toContain("raw-authorization-token")
+    expect(raw).not.toContain("sk-testsecretvalue1234567890")
+    expect(raw).not.toContain("plain-token-value")
+    expect(raw).not.toContain("inline-secret-value")
+    expect(raw).not.toContain("inline.bearer.secret")
+
+    const entry = JSON.parse(raw.trim())
+    expect(entry.data).toMatchObject({
+      authorization: "<redacted>",
+      headers: {
+        apiKey: "<redacted>",
+        token: "<redacted>",
+      },
+      text: "token=<redacted> <redacted>",
+      usage: {
+        input_tokens: 123,
+      },
+    })
+    expect(entry.redaction.status).toBe("redacted")
+    expect(entry.redaction.appliedRules).toEqual(
+      expect.arrayContaining(["secret-key", "secret-text"]),
+    )
   })
 
   test("cleans up stale logs when a new raw log session starts", async () => {
