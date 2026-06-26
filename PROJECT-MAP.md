@@ -178,8 +178,9 @@
 **R10 — guarded `requiresUserApproval` 仅咨询性** · **待核对 / 待确认 UI 接线**
 - [decision.ts:516-530](src/main/lib/agent-guard/decision.ts:516) 返回 `decision:"allow", requiresUserApproval:true`，但裁决映射只看 `allow`。若 UI 未据此阻断，guarded 的有界 shell 写会无确认执行。
 
-**R11 — 历史 `customClaudeConfigAtom` 把 token 存 localStorage** · **待核对**
-- [lib/atoms/index.ts:209-218](src/renderer/lib/atoms/index.ts:209)：`atomWithStorage("agents:claude-custom-config")` 含 `token` 字段。迁移钩子（[use-legacy-migrations.ts:82-116](src/renderer/features/onboarding/lib/use-legacy-migrations.ts:82)）会清空但不 `removeItem`；迁移前 token 明文驻留渲染层 localStorage。
+**R11 — 历史 `customClaudeConfigAtom` 把 token 存 localStorage** · **已修 / ✓核对**
+- 原问题：[lib/atoms/index.ts](src/renderer/lib/atoms/index.ts) 的 legacy `atomWithStorage("agents:claude-custom-config")` 默认持久化形状含 `token`；迁移钩子只写空 token，不移除 legacy key。
+- 修复：`customClaudeConfigAtom` 的当前持久化默认形状去掉 `token`，旧 token 仅作为 optional legacy 输入读取；迁移成功、失败或发现无效 legacy token 时都 `localStorage.removeItem("agents:claude-custom-config")` 并 reset atom。测试：[legacy-custom-claude-config-migration.test.ts](tests/legacy-custom-claude-config-migration.test.ts) 和 [provider-runtime-binding.test.ts](tests/provider-runtime-binding.test.ts) 覆盖迁移后不保留 key/明文 token 写法。Commit：本提交 `fix: remove legacy Claude token storage`。
 
 **R12 — local-only 门不挡 Anthropic 端点** · **待核对 / 待确认意图**
 - [shared/local-only.ts](src/shared/local-only.ts) 的 `blockedRoots` 不含 `anthropic.com`/`claude.ai`/`platform.claude.com`，local-only 模式下对这些端点不阻断。是否为有意（local-only 仅限制 app 专有域）属**待确认**。

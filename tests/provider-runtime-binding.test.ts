@@ -157,8 +157,9 @@ describe("Codex provider profile runtime binding", () => {
     expect(claudeRouterSource).not.toContain("input.customConfig")
     expect(claudeRouterSource).not.toContain("legacyProviderConfig")
     expect(migrationsSource).toContain(
-      'setLegacyCustomClaudeConfig({ model: "", token: "", baseUrl: "" })',
+      "window.localStorage.removeItem(LEGACY_CUSTOM_CLAUDE_CONFIG_STORAGE_KEY)",
     )
+    expect(migrationsSource).toContain("setLegacyCustomClaudeConfig(RESET)")
     expect(migrationsSource).not.toContain(
       "providerConfigAttemptedRef.current = false",
     )

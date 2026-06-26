@@ -1,15 +1,22 @@
 import { useAtom } from "jotai"
+import { RESET } from "jotai/utils"
 import { useEffect, useRef } from "react"
 import { toast } from "sonner"
 import {
   customClaudeConfigAtom,
   LEGACY_CODEX_API_KEY_STORAGE_KEY,
+  LEGACY_CUSTOM_CLAUDE_CONFIG_STORAGE_KEY,
   LEGACY_OPENAI_API_KEY_STORAGE_KEY,
   normalizeCodexApiKey,
   normalizeCustomClaudeConfig,
 } from "../../../lib/atoms"
 import { useI18n } from "../../../lib/i18n"
 import { trpc } from "../../../lib/trpc"
+
+function removeLegacyCustomClaudeConfigStorage(): void {
+  if (typeof window === "undefined") return
+  window.localStorage.removeItem(LEGACY_CUSTOM_CLAUDE_CONFIG_STORAGE_KEY)
+}
 
 /**
  * One-time migrations of credentials persisted by older app versions into the
@@ -83,7 +90,14 @@ export function useLegacyMigrations() {
     if (providerConfigAttemptedRef.current) return
 
     const normalized = normalizeCustomClaudeConfig(legacyCustomClaudeConfig)
-    if (!normalized) return
+    if (!normalized) {
+      if ((legacyCustomClaudeConfig.token ?? "").trim()) {
+        providerConfigAttemptedRef.current = true
+        removeLegacyCustomClaudeConfigStorage()
+        setLegacyCustomClaudeConfig(RESET)
+      }
+      return
+    }
 
     providerConfigAttemptedRef.current = true
     const authMode = normalized.baseUrl.includes("anthropic.com")
@@ -94,7 +108,8 @@ export function useLegacyMigrations() {
       { ...normalized, authMode },
       {
         onSuccess: async () => {
-          setLegacyCustomClaudeConfig({ model: "", token: "", baseUrl: "" })
+          removeLegacyCustomClaudeConfigStorage()
+          setLegacyCustomClaudeConfig(RESET)
           await trpcUtils.claudeProviderConfig.get.invalidate()
         },
         onError: (error) => {
@@ -102,7 +117,8 @@ export function useLegacyMigrations() {
             "[App] Failed to migrate legacy Claude provider config:",
             error,
           )
-          setLegacyCustomClaudeConfig({ model: "", token: "", baseUrl: "" })
+          removeLegacyCustomClaudeConfigStorage()
+          setLegacyCustomClaudeConfig(RESET)
           toast.error(t("toast.models.failedToMigrateLegacyClaudeProvider"))
         },
       },
