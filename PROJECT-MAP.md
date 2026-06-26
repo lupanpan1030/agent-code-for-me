@@ -187,8 +187,8 @@
 **R12 — local-only 门不挡 Anthropic 端点** · **待核对 / 待确认意图**
 - [shared/local-only.ts](src/shared/local-only.ts) 的 `blockedRoots` 不含 `anthropic.com`/`claude.ai`/`platform.claude.com`，local-only 模式下对这些端点不阻断。是否为有意（local-only 仅限制 app 专有域）属**待确认**。
 
-**R13 — `allFullThemesAtom` 恒返回 `[]`** · **待核对**
-- [lib/atoms/index.ts:479-483](src/renderer/lib/atoms/index.ts:479)：只读派生 atom 恒空，注释称"由 theme provider 命令式填充"——但派生 atom 不可被 `set()`。订阅它的主题 UI 可能恒空。**待确认**是否有命令式写入方。
+**R13 — `allFullThemesAtom` 恒返回 `[]`** · **已修 / ✓核对**
+- 已确认全 renderer 无引用；主题功能实际由 [theme-provider.tsx](src/renderer/lib/themes/theme-provider.tsx) 聚合 `BUILTIN_THEMES + importedThemesAtom`。删除恒空只读派生 atom 与误导注释，不影响现有主题路径。
 
 **R14 — 损坏的 `sub_chats.messages` 被静默丢弃** · **待核对**
 - [chat-message-normalizer.ts:41-43](src/shared/chat-message-normalizer.ts:41) 解析失败仅 `console.warn` 返回 `[]`；用户看到空聊天、无任何数据丢失提示。JSON blob 无版本戳、无逐条类型校验。
@@ -240,7 +240,7 @@
 4. **`requiresUserApproval` 是否接到 UI 阻断**（[decision.ts:516](src/main/lib/agent-guard/decision.ts:516)）：未找到 renderer 侧据此阻断的调用点。
 5. **`projectSlug` 是否在拼 worktree 路径前消毒**（[worktree.ts:985-986](src/main/lib/git/worktree.ts:985)，`~/.21st/worktrees/<slug>`）：未追到生成处与消毒逻辑。
 6. **`settingSources:["project","user"]`**（[agent-sdk-query-options.ts:272](src/main/lib/claude/agent-sdk-query-options.ts:272)）：恶意仓库的 `.claude/` 项目级设置能向 SDK 注入多少（system prompt / 工具配置）？范围待确认。
-7. **`allFullThemesAtom` 是否有命令式写入方**（[lib/atoms/index.ts:479](src/renderer/lib/atoms/index.ts:479)）：若无，主题选择 UI 恒空。
+7. **`allFullThemesAtom` 是否有命令式写入方**：已确认无引用且不可命令式写入，恒空派生 atom 已删除；主题功能走 `theme-provider.tsx`。
 8. **`<webview>` 分区是否继承 `webSecurity:true` 与 file: CORS 策略**：影响 R16 实际可利用性。
 9. **CLAUDE.md 已更新**：见 D9，当前记录为 16 表 + Claude/Codex/Qwen/Ollama/Kun/headless-job runtime 现实。
 
