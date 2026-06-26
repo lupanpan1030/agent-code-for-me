@@ -2564,7 +2564,7 @@ const ChatViewInner = memo(function ChatViewInner({
       toolUseId: string
       approved: boolean
       message?: string
-      updatedInput?: unknown
+      updatedInput?: Record<string, unknown>
     }) => {
       if (provider === "codex") {
         await trpcClient.codex.respondToolApproval.mutate(input)

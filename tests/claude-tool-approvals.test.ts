@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
 import {
   clearClaudePendingToolApprovals,
   clearClaudePendingToolApprovalsForTest,
@@ -15,6 +17,8 @@ describe("Claude tool approval owner", () => {
     const decisions: unknown[] = []
     getClaudePendingToolApprovalStore().set("tool-1", {
       subChatId: "sub-1",
+      toolName: "AskUserQuestion",
+      toolInput: { questions: ["Proceed?"] },
       resolve: (decision) => decisions.push(decision),
     })
 
@@ -23,7 +27,10 @@ describe("Claude tool approval owner", () => {
         toolUseId: "tool-1",
         decision: {
           approved: true,
-          updatedInput: { answer: "yes" },
+          updatedInput: {
+            questions: ["Proceed?"],
+            answers: { "Proceed?": "yes" },
+          },
         },
       }),
     ).toBe(true)
@@ -31,10 +38,66 @@ describe("Claude tool approval owner", () => {
     expect(decisions).toEqual([
       {
         approved: true,
-        updatedInput: { answer: "yes" },
+        updatedInput: {
+          questions: ["Proceed?"],
+          answers: { "Proceed?": "yes" },
+        },
       },
     ])
     expect(getClaudePendingToolApprovalStore().has("tool-1")).toBe(false)
+  })
+
+  test("rejects approval updatedInput fields outside the approved tool schema", () => {
+    const decisions: unknown[] = []
+    getClaudePendingToolApprovalStore().set("tool-1", {
+      subChatId: "sub-1",
+      toolName: "AskUserQuestion",
+      toolInput: { questions: ["Proceed?"] },
+      resolve: (decision) => decisions.push(decision),
+    })
+
+    expect(() =>
+      resolveClaudePendingToolApproval({
+        toolUseId: "tool-1",
+        decision: {
+          approved: true,
+          updatedInput: {
+            questions: ["Proceed?"],
+            answers: { "Proceed?": "yes" },
+            command: "rm -rf /",
+          },
+        },
+      }),
+    ).toThrow("Invalid updatedInput for AskUserQuestion approval.")
+
+    expect(decisions).toEqual([])
+    expect(getClaudePendingToolApprovalStore().has("tool-1")).toBe(true)
+  })
+
+  test("rejects approval updatedInput that swaps the displayed questions", () => {
+    const decisions: unknown[] = []
+    getClaudePendingToolApprovalStore().set("tool-1", {
+      subChatId: "sub-1",
+      toolName: "AskUserQuestion",
+      toolInput: { questions: ["Proceed?"] },
+      resolve: (decision) => decisions.push(decision),
+    })
+
+    expect(() =>
+      resolveClaudePendingToolApproval({
+        toolUseId: "tool-1",
+        decision: {
+          approved: true,
+          updatedInput: {
+            questions: ["Run a different command?"],
+            answers: { "Proceed?": "yes" },
+          },
+        },
+      }),
+    ).toThrow("questions changed")
+
+    expect(decisions).toEqual([])
+    expect(getClaudePendingToolApprovalStore().has("tool-1")).toBe(true)
   })
 
   test("clears only approvals for the requested sub-chat", () => {
@@ -44,10 +107,14 @@ describe("Claude tool approval owner", () => {
     }
     getClaudePendingToolApprovalStore().set("tool-1", {
       subChatId: "sub-1",
+      toolName: "AskUserQuestion",
+      toolInput: { questions: ["Proceed?"] },
       resolve: (decision) => decisions.first.push(decision),
     })
     getClaudePendingToolApprovalStore().set("tool-2", {
       subChatId: "sub-2",
+      toolName: "AskUserQuestion",
+      toolInput: { questions: ["Proceed?"] },
       resolve: (decision) => decisions.second.push(decision),
     })
 
@@ -71,5 +138,19 @@ describe("Claude tool approval owner", () => {
         decision: { approved: false },
       }),
     ).toBe(false)
+  })
+
+  test("Claude approval route no longer accepts unknown top-level updatedInput", () => {
+    const claudeRouterSource = readFileSync(
+      join(process.cwd(), "src/main/lib/trpc/routers/claude.ts"),
+      "utf-8",
+    )
+
+    expect(claudeRouterSource).not.toContain(
+      "updatedInput: z.unknown().optional()",
+    )
+    expect(claudeRouterSource).toContain(
+      "updatedInput: z.object({}).passthrough().optional()",
+    )
   })
 })

@@ -173,8 +173,9 @@
 - 原问题：[agent-sdk-tool-permission.ts](src/main/lib/claude/agent-sdk-tool-permission.ts) 的 plan 模式显式拦截只覆盖 `Edit/Write/Bash/NotebookEdit`，`MultiEdit` 会落到允许分支。
 - 修复：plan 模式 workspace side-effect 阻断改为单一工具集合，覆盖 `Edit`、`Write`、`MultiEdit`、`NotebookEdit`、`Bash`；保留 `Read` 允许。测试：[claude-agent-sdk-tool-permission.test.ts](tests/claude-agent-sdk-tool-permission.test.ts) 覆盖 plan 模式 `MultiEdit` 等写工具 `behavior:"deny"`、`Read` 仍 `allow`。Commit：本提交 `fix: block MultiEdit in plan mode`。
 
-**R9 — 工具审批 `updatedInput` 不校验** · **待核对**
-- [claude.ts:339-359](src/main/lib/trpc/routers/claude.ts:339)：`respondToolApproval` 收 `updatedInput: z.unknown()` 原样替换将执行的工具参数。被污染的 renderer 可"展示 A、执行 B"。
+**R9 — 工具审批 `updatedInput` 不校验** · **已修 / ✓核对**
+- 原问题：[claude.ts](src/main/lib/trpc/routers/claude.ts) 的 `respondToolApproval` 用 `updatedInput: z.unknown()`，并把 renderer payload 原样交给 pending tool resolve，污染 renderer 可尝试"展示 A、执行 B"。
+- 修复：路由输入先收窄为 object envelope；Claude approval owner 记录 pending tool name 和原始 tool input，并按 `AskUserQuestion` approval schema 校验 `updatedInput`，拒绝 schema 外字段或替换原始 `questions`。测试：[claude-tool-approvals.test.ts](tests/claude-tool-approvals.test.ts) 覆盖 schema 外/越权字段拒绝、展示问题被替换时拒绝、合法 answer 通过；[claude-agent-sdk-tool-permission.test.ts](tests/claude-agent-sdk-tool-permission.test.ts) 覆盖 AskUserQuestion bridge 未回归。Commit：本提交 `fix: validate Claude approval input`。
 
 **R10 — guarded `requiresUserApproval` 仅咨询性** · **待核对 / 待确认 UI 接线**
 - [decision.ts:516-530](src/main/lib/agent-guard/decision.ts:516) 返回 `decision:"allow", requiresUserApproval:true`，但裁决映射只看 `allow`。若 UI 未据此阻断，guarded 的有界 shell 写会无确认执行。

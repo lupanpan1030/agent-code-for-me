@@ -35,6 +35,8 @@ export type ClaudeAskUserQuestionDecision = {
 
 export type ClaudeAskUserQuestionPending = {
   subChatId: string
+  toolName: "AskUserQuestion"
+  toolInput: Record<string, unknown>
   resolve: (decision: ClaudeAskUserQuestionDecision) => void
 }
 
@@ -250,6 +252,8 @@ export function createClaudeAgentSdkPermissionControls({
 
           pendingToolApprovals.set(toolUseID, {
             subChatId,
+            toolName: "AskUserQuestion",
+            toolInput: { ...toolInput },
             resolve: (decision) => {
               clearTimeout(timeoutId)
               resolve(decision)

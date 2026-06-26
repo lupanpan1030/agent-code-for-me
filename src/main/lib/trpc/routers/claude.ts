@@ -342,7 +342,7 @@ export const claudeRouter = router({
         toolUseId: z.string(),
         approved: z.boolean(),
         message: z.string().optional(),
-        updatedInput: z.unknown().optional(),
+        updatedInput: z.object({}).passthrough().optional(),
       }),
     )
     .mutation(({ input }) => {
