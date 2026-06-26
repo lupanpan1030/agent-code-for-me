@@ -99,7 +99,7 @@
 - **窗口加固**（[windows/main.ts:489-497](src/main/windows/main.ts:489)）：`contextIsolation: true` ✓、`nodeIntegration: false` ✓、`sandbox: false`（trpc-electron 要求，文档化）、`webSecurity: true`、`webviewTag: true`（启用 `<webview>`）。`setWindowOpenHandler` 一律 deny 转系统浏览器（[main.ts:590-599](src/main/windows/main.ts:590)）；但 `will-navigate` 未在主 webContents 注册（§5 Low）。**待核对（webPreferences 由 agent 报告，行号可点验）**
 - **不可信输入入口**：① 打开的项目仓库内容（`.cursor/.locus/.1code` 配置、`CLAUDE.md`/`.claude/` 设置源 [agent-sdk-query-options.ts:272](src/main/lib/claude/agent-sdk-query-options.ts:272)）；② deep-link URL（[index.ts:491-521/887](src/main/index.ts:491)）；③ MCP server 返回内容；④ renderer→tRPC 的全部入参。
 - **密钥存储**：DB 内凭证经 safeStorage 加密、写入端拒绝明文回退（好姿态）；**例外**是 MCP token 明文落 `~/.claude.json`、`FALLBACK_PREFIX` 旁路、以及历史 `customClaudeConfigAtom` 把 token 存 localStorage。
-- **命令执行面**：Agent SDK 工具（Bash/Write…）以同用户进程运行、**无 OS 级 sandbox**，约束全靠进程内 `canUseTool` 钩子；原 worktree setup 直接 `exec` 已由 R1 修复改为 trust gate，审批后才执行。
+- **命令执行面**：Agent SDK 工具（Bash/Write…）以同用户进程运行、**无 OS 级 sandbox**，约束全靠进程内 `canUseTool` 钩子；原 worktree setup 直接 `exec` 已由 R1 修复改为 trust gate，MCP stdio command 写入已由 R0c 修复改为 native consent + fingerprint gate。
 
 ---
 
@@ -123,6 +123,13 @@
 - clone 修复：`projects.cloneFromGitHub` 不再拼 shell 字符串；renderer `repoUrl` 先被解析为受约束的 GitHub `owner/repo` 身份，拒绝 shell 元字符、URL 额外 path/query/fragment 和 `--upload-pack` 等 git 参数注入，再用 `execFile` argv 调 `git clone -- <url> <path>`。Commit：`a3eeee3f`。
 - 回归测试：[terminal-create-session-boundary.test.ts](tests/terminal-create-session-boundary.test.ts) 覆盖伪造 cwd/scope、旧 XSS payload 形状里的 raw `initialCommands`、任意命令字符串伪装 intent、白名单 `gh auth login`；[github-clone-boundary.test.ts](tests/github-clone-boundary.test.ts) 覆盖 repoUrl shell 元字符、git clone 参数注入和 argv clone。
 - 残余边界：本单按 0b 输入信任收敛关闭 `createOrAttach` 启动命令和 clone shell 注入；`terminal.write` 仍是交互式 PTY 输入面，后续 Phase 3 capability/consent 单独处理，未在本单混入。
+
+**R0c — MCP stdio command 持久化 → 后续 runtime spawn RCE 链** · **已修 / ✓核对**
+- 原问题：`claude.addMcpServer` / `claude.updateMcpServer` / `codex.addMcpServer` / `mcpRegistry.install` 可由 renderer 触发写入 stdio `command`、`args`、`env` 到 runtime 会读取的 MCP 配置；若 renderer 被 XSS 控制，攻击者可先持久化恶意命令，再等 app 或 bundled runtime 后续 spawn。
+- 修复边界：Runtime MCP Config owner 新增 [mcp-command-trust.ts](src/main/lib/runtime-mcp-config/mcp-command-trust.ts)，对最终 `{runtime,name,scope,command,args,env,envVars,cwd}` 计算指纹；未批准的 stdio command 写入会先弹主进程原生 Electron dialog，取消则不写配置、不调 Codex CLI。
+- 运行期纵深：Claude SDK MCP materialization、Claude registry check/list-tools、Codex `mcpServersForSession` materialization 和 stdio tool probe 均查同一 approved fingerprint；无记录时 fail closed，不把 stdio command 交给会 spawn 的 transport。
+- 持久化：[0019_breezy_the_hunter.sql](drizzle/0019_breezy_the_hunter.sql) 新增 `mcp_command_trust_decisions`，只存 runtime/server/scope/hash/decision/timestamps，不存 env 值或命令原文。
+- 回归测试：[runtime-mcp-config-service.test.ts](tests/runtime-mcp-config-service.test.ts) 覆盖 XSS 形状直接调 stdio add 被拒不落盘、HTTP transport 不受影响、同指纹批准后不重复弹、command 变更重新要求批准、未批准 stdio 不进入 Claude/Codex runtime materialization。Commit：本提交 `fix: gate MCP stdio commands with native consent`。
 
 **R1 — 打开恶意仓库即触发任意 shell 执行（malicious-repo RCE，无确认）** · **已修 / ✓核对**
 - 原问题：`.locus/worktree.json` / `.cursor/worktrees.json` / `.1code/worktree.json` 里的 setup 命令来自仓库内容，旧路径会在建 chat 的 worktree 后台直接执行。`.cursor/worktrees.json` 兼容性使"现存 Cursor 仓库已带毒"成为现实向量。

@@ -29,6 +29,7 @@
 - [ ] 3.1 Define a typed capability taxonomy for filesystem, shell, runtime, MCP, plugin, credential, network, external-open, git-write, and debug-destroy procedures.
 - [ ] 3.2 Introduce tRPC procedure wrappers or metadata that require every dangerous procedure to declare its capability class.
 - [ ] 3.3 Implement explicit consent gates for shell execution, arbitrary file writes/deletes, external app/URL opens, plugin/native activation, MCP command writes, and destructive debug/admin actions.
+- [x] 3.3a MCP stdio command writes: require main-process native consent before persisting Claude/Codex/registry stdio command configs, remember approved command fingerprints, and fail closed when runtime materialization sees an unapproved stdio command.
 - [ ] 3.4 Add an audit log and runtime kill-switch for dangerous capability classes.
 - [ ] 3.5 Add tests and architecture guards proving dangerous procedures cannot be added as bare `publicProcedure`.
 

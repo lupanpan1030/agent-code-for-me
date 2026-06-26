@@ -102,6 +102,34 @@ export const worktreeSetupTrustDecisions = sqliteTable(
   ],
 )
 
+// ============ MCP COMMAND TRUST ============
+export const mcpCommandTrustDecisions = sqliteTable(
+  "mcp_command_trust_decisions",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    runtime: text("runtime").notNull(),
+    serverName: text("server_name").notNull(),
+    scope: text("scope").notNull(),
+    commandHash: text("command_hash").notNull(),
+    decision: text("decision").notNull().default("approved"),
+    createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(
+      () => new Date(),
+    ),
+    updatedAt: integer("updated_at", { mode: "timestamp" }).$defaultFn(
+      () => new Date(),
+    ),
+  },
+  (table) => [
+    uniqueIndex("mcp_command_trust_hash_idx").on(table.commandHash),
+    index("mcp_command_trust_runtime_server_idx").on(
+      table.runtime,
+      table.serverName,
+    ),
+  ],
+)
+
 // ============ SUB-CHATS ============
 export const subChats = sqliteTable("sub_chats", {
   id: text("id")
