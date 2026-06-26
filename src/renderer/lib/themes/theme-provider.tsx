@@ -9,39 +9,39 @@
  * - Integrates with Shiki for syntax highlighting
  */
 
+import { useAtom, useAtomValue, useSetAtom } from "jotai"
 import {
   createContext,
+  type ReactNode,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
-  useCallback,
-  type ReactNode,
 } from "react"
-import { useAtom, useAtomValue, useSetAtom } from "jotai"
-import { useTheme } from "next-themes"
 import type { ITheme } from "xterm"
+import { useTheme } from "@/lib/themes/theme-mode-provider"
 
 import {
-  selectedFullThemeIdAtom,
   fullThemeDataAtom,
-  systemLightThemeIdAtom,
-  systemDarkThemeIdAtom,
   importedThemesAtom,
+  selectedFullThemeIdAtom,
+  systemDarkThemeIdAtom,
+  systemLightThemeIdAtom,
   type VSCodeFullTheme,
 } from "../atoms"
 import {
-  generateCSSVariables,
-  applyCSSVariables,
-  removeCSSVariables,
-  getThemeTypeFromColors,
-} from "./vscode-to-css-mapping"
-import { extractTerminalTheme } from "./terminal-theme-mapper"
-import {
   BUILTIN_THEMES,
-  getBuiltinThemeById,
   DEFAULT_DARK_THEME_ID,
   DEFAULT_LIGHT_THEME_ID,
+  getBuiltinThemeById,
 } from "./builtin-themes"
+import { extractTerminalTheme } from "./terminal-theme-mapper"
+import {
+  applyCSSVariables,
+  generateCSSVariables,
+  getThemeTypeFromColors,
+  removeCSSVariables,
+} from "./vscode-to-css-mapping"
 
 /**
  * Theme context value
@@ -154,7 +154,7 @@ export function VSCodeThemeProvider({ children }: VSCodeThemeProviderProps) {
     [importedThemes],
   )
   
-  // Determine if we're in dark mode (from next-themes or theme type)
+  // Determine if we're in dark mode (from theme mode or theme type)
   const isDark = useMemo(() => {
     if (fullThemeData) {
       return fullThemeData.type === "dark"
@@ -189,11 +189,11 @@ export function VSCodeThemeProvider({ children }: VSCodeThemeProviderProps) {
       const cssVars = generateCSSVariables(fullThemeData.colors)
       applyCSSVariables(cssVars)
       
-      // For system mode, let next-themes handle the class
+      // For system mode, let the theme mode provider handle the class
       if (selectedThemeId === null) {
         setNextTheme("system")
       } else {
-        // Sync next-themes with the theme type
+        // Sync theme mode with the theme type
         const themeType = getThemeTypeFromColors(fullThemeData.colors)
         if (themeType === "dark") {
           document.documentElement.classList.add("dark")

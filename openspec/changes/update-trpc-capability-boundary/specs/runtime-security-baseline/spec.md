@@ -93,9 +93,13 @@ The renderer SHALL treat repository content, chat markdown, tool output, MCP out
 - **WHEN** a tool-call subtitle is derived from model, repository, MCP, tool input, or tool output text containing HTML or event handler payloads
 - **THEN** the renderer SHALL render the subtitle as text or through an approved sanitizer and SHALL NOT insert it as raw HTML.
 
-#### Scenario: Renderer CSP permits script execution
-- **WHEN** the renderer CSP is evaluated for the privileged app document
-- **THEN** it SHALL NOT allow broad JavaScript `unsafe-eval` or remote script origins, and any remaining inline-script or WebAssembly compilation exception SHALL be documented with the code that blocks removal.
+#### Scenario: Production renderer CSP permits script execution
+- **WHEN** the production renderer CSP is evaluated for the privileged app document
+- **THEN** it SHALL NOT allow inline scripts, broad JavaScript `unsafe-eval`, or remote script origins, and any remaining WebAssembly compilation exception SHALL be documented with the code that blocks removal.
+
+#### Scenario: Development renderer CSP permits Vite HMR
+- **WHEN** the development renderer CSP is evaluated for the privileged app document
+- **THEN** any inline-script or localhost connection allowance SHALL be scoped to development Vite HMR and SHALL NOT be present in the production renderer CSP.
 
 #### Scenario: Previewed web page attempts bridge access
 - **WHEN** a local browser preview or webview page executes JavaScript

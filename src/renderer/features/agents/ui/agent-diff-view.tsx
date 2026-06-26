@@ -13,7 +13,6 @@ import {
   Columns2,
   Rows2,
 } from "lucide-react"
-import { useTheme } from "next-themes"
 import {
   Component,
   type ErrorInfo,
@@ -30,6 +29,7 @@ import {
   useState,
 } from "react"
 import { toast } from "sonner"
+import { useTheme } from "@/lib/themes/theme-mode-provider"
 import { APP_META } from "../../../../shared/external-apps"
 import {
   AlertDialog,

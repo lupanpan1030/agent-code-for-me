@@ -1,9 +1,9 @@
 import { useAtomValue } from "jotai"
-import { useTheme } from "next-themes"
+import { useTheme } from "@/lib/themes/theme-mode-provider"
 import {
-  vscodeCodeThemeLightAtom,
-  vscodeCodeThemeDarkAtom,
   fullThemeDataAtom,
+  vscodeCodeThemeDarkAtom,
+  vscodeCodeThemeLightAtom,
 } from "../atoms"
 
 /**

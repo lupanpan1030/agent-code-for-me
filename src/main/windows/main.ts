@@ -1,31 +1,40 @@
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { join } from "node:path"
 import {
-  BrowserWindow,
-  Notification,
-  nativeTheme,
-  ipcMain,
   app,
+  BrowserWindow,
   clipboard,
-  nativeImage,
   dialog,
+  ipcMain,
+  Notification,
+  nativeImage,
+  nativeTheme,
 } from "electron"
-import { join } from "path"
-import { readFileSync, existsSync, writeFileSync, mkdirSync } from "fs"
 import { createIPCHandler } from "trpc-electron/main"
-import { createAppRouter } from "../lib/trpc/routers"
-import { registerGitWatcherIPC } from "../lib/git/watcher"
+import { IS_DEV } from "../constants"
 import {
   abortAllClaudeSessions,
   hasActiveClaudeSessions,
 } from "../lib/claude/active-sessions"
-import { hasActiveCodexStreams, abortAllCodexStreams } from "../lib/trpc/routers/codex"
-import { registerThemeScannerIPC } from "../lib/vscode-theme-scanner"
-import { windowManager } from "./window-manager"
-import { isLocalOnlyMode, LocalOnlyBlockedError, openExternalUrl } from "../lib/local-only"
 import { shouldOpenDevToolsOnStartup } from "../lib/devtools-startup"
-import { IS_DEV } from "../constants"
+import { registerGitWatcherIPC } from "../lib/git/watcher"
+import {
+  isLocalOnlyMode,
+  LocalOnlyBlockedError,
+  openExternalUrl,
+} from "../lib/local-only"
+import { createAppRouter } from "../lib/trpc/routers"
+import {
+  abortAllCodexStreams,
+  hasActiveCodexStreams,
+} from "../lib/trpc/routers/codex"
+import { registerThemeScannerIPC } from "../lib/vscode-theme-scanner"
+import { installRendererContentSecurityPolicy } from "./renderer-csp"
+import { windowManager } from "./window-manager"
 
 const APP_NAME = "Locus"
 const APP_DISPLAY_NAME = IS_DEV ? `${APP_NAME} Dev` : APP_NAME
+const RENDERER_INDEX_PATH = join(__dirname, "../renderer/index.html")
 
 function formatWindowTitle(title?: string): string {
   const trimmed = title?.trim()
@@ -378,7 +387,7 @@ function loadAppInWindow(
   } else {
     const hashParams = new URLSearchParams()
     buildParams(hashParams)
-    window.loadFile(join(__dirname, "../renderer/index.html"), {
+    window.loadFile(RENDERER_INDEX_PATH, {
       hash: hashParams.toString(),
     })
   }
@@ -468,6 +477,13 @@ export function createWindow(options?: { chatId?: string; subChatId?: string }):
   console.log(
     `[Main] Created window ${window.id} with stable ID "${stableWindowId}" (total: ${windowManager.count()})`,
   )
+
+  installRendererContentSecurityPolicy({
+    session: window.webContents.session,
+    isDev: IS_DEV,
+    devServerUrl: process.env.ELECTRON_RENDERER_URL,
+    prodIndexPath: RENDERER_INDEX_PATH,
+  })
 
   // Setup tRPC IPC handler (singleton pattern)
   if (ipcHandler) {

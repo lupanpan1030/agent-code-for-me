@@ -3,18 +3,9 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <!-- unsafe-inline remains for the startup theme and error handler scripts below. -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws://localhost:* http://localhost:*; img-src 'self' data: blob: https:; media-src 'self' blob:;" />
     <title>Locus</title>
     <!-- Prevent theme flash: detect system/stored theme before render -->
-    <script>
-      (function() {
-        var stored = localStorage.getItem('theme');
-        var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-        var theme = stored === 'light' ? 'light' : stored === 'dark' ? 'dark' : (prefersDark ? 'dark' : 'light');
-        document.documentElement.classList.add(theme);
-      })();
-    </script>
+    <script src="./theme-init.js"></script>
     <style>
       /* Loading state before React loads - respects system theme */
       :root {
@@ -77,16 +68,7 @@
         <path d="M39.5 6L41.2 10.8L46 12.5L41.2 14.2L39.5 19L37.8 14.2L33 12.5L37.8 10.8L39.5 6Z" fill="currentColor"/>
       </svg>
     </div>
-    <script>
-      console.log("[HTML] Inline script running - scripts work!");
-      window.onerror = function(msg, url, line) {
-        console.error("[HTML] Global error:", msg, "at", url, "line", line);
-        const root = document.getElementById("root");
-        if (root && root.dataset.reactMounted !== "true") {
-          root.innerHTML = "<pre style='color:red;padding:20px'>Error: " + msg + "</pre>";
-        }
-      };
-    </script>
+    <script src="./error-handler.js"></script>
     <script type="module" src="./main.tsx"></script>
   </body>
 </html>
