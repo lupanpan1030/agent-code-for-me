@@ -1,13 +1,5 @@
 import type { McpImportPreview } from "../shared/mcp-import-preview"
 
-export interface DesktopUser {
-  id: string
-  email: string
-  name: string | null
-  imageUrl: string | null
-  username: string | null
-}
-
 export interface WorktreeSetupFailurePayload {
   kind: "create-failed" | "create-timeout" | "setup-failed"
   message: string
@@ -66,10 +58,6 @@ export interface DesktopApi {
   clipboardWrite: (text: string) => Promise<void>
   clipboardRead: () => Promise<string>
 
-  // Auth
-  getUser: () => Promise<DesktopUser | null>
-  isAuthenticated: () => Promise<boolean>
-  logout: () => Promise<void>
   getPendingMcpImportPreview: () => Promise<McpImportPreview | null>
   clearPendingMcpImportPreview: () => Promise<{ success: boolean }>
   onMcpImportPreview: (

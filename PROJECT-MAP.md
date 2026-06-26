@@ -56,7 +56,7 @@
 |---|---|---|---|
 | **IPC/preload** | [preload/index.ts](src/preload/index.ts) | `desktopApi` 频道、`exposeElectronTRPC` | 暴露面大：`shell:open-external`、`vscode:load-theme`(任意路径)、`dialog:save-file`、`git:subscribe-watcher`(任意路径)、`unlockDevTools`。旧 `onStream*` 频道已删（§5）。 |
 | **tRPC 层** | [trpc/index.ts](src/main/lib/trpc/index.ts)、[routers/](src/main/lib/trpc/routers/) | 32 个挂载 router；`changes` = git router | 无 auth；多个 router 收 `z.string()` 路径不做根目录约束（§5 High 簇）。结构性能力/信任边界提案：[update-trpc-capability-boundary](openspec/changes/update-trpc-capability-boundary/proposal.md)。 |
-| **认证/凭证** | [auth-manager.ts](src/main/auth-manager.ts)、[auth-store.ts](src/main/auth-store.ts)、[secure-storage.ts](src/main/lib/secure-storage.ts)、[mcp-auth.ts](src/main/lib/mcp-auth.ts) | `encryptStringForStorage` 走 safeStorage；写入若不可用则**抛错拒绝存明文**（[secure-storage.ts:134-152](src/main/lib/secure-storage.ts:134)，好姿态 ✓） | `AuthManager` 是空壳；MCP token 明文落 `~/.claude.json`；`FALLBACK_PREFIX` 旁路解密分支。 |
+| **认证/凭证** | [secure-storage.ts](src/main/lib/secure-storage.ts)、[anthropic-accounts.ts](src/main/lib/trpc/routers/anthropic-accounts.ts)、[mcp-auth.ts](src/main/lib/mcp-auth.ts) | `encryptStringForStorage` 走 safeStorage；写入若不可用则**抛错拒绝存明文**（[secure-storage.ts:134-152](src/main/lib/secure-storage.ts:134)，好姿态 ✓）；真实 Anthropic 凭证走 `anthropic_accounts` + secure-storage | MCP token 明文落 `~/.claude.json`；`FALLBACK_PREFIX` 旁路解密分支。 |
 | **agent runtime** | [agent-runtime/](src/main/lib/agent-runtime/)（permission-policy / preflight / scope-expansion） | mode→controlLevel→SDK permissionMode 映射（[permission-policy.ts:611-746](src/main/lib/agent-runtime/permission-policy.ts:611)）；`preflight` 用 DB 校验 cwd（[preflight.ts:157-165](src/main/lib/agent-runtime/preflight.ts:157)） | plan 模式 `MultiEdit` 漏拦；`updatedInput` 不校验。 |
 | **agent guard** | [agent-guard/](src/main/lib/agent-guard/)（contract / decision / audit / checkpoint / active-contracts） | 仅 `agent`+scopeContract（"Guarded"）时生效；shell 允许走白名单（[decision.ts:612-677](src/main/lib/agent-guard/decision.ts:612)） | observe 模式（agent 无契约）**不走** guard；`requiresUserApproval` 仅咨询性。 |
 | **命令执行/worktree** | [git/worktree-config.ts](src/main/lib/git/worktree-config.ts)、[git/worktree.ts](src/main/lib/git/worktree.ts)、[git/worktree-setup-trust.ts](src/main/lib/git/worktree-setup-trust.ts)、[git/security/](src/main/lib/git/security/) | worktree 内 fs 操作有 `assertRegisteredWorktree`+realpath 约束（[secure-fs.ts](src/main/lib/git/security/secure-fs.ts)，好姿态 ✓）；仓库 setup 命令现在由 trust owner 按命令指纹审批后才执行 | R1 已修；后续仍要处理 tRPC 路径边界和 MCP token 明文（High）。 |
@@ -165,32 +165,37 @@
 
 ### Medium
 
-**R7 — `FALLBACK_PREFIX` base64 旁路解密** · **✓核对**
-- [secure-storage.ts:155-161](src/main/lib/secure-storage.ts:155)：值以 `locus:v1:base64:` 开头时，先于 safeStorage 检查直接 base64 解码返回明文。当前代码无写入端产生该前缀（待确认是否纯历史遗留），但分支仍活；若本地攻击者能写 DB 即可注入"伪密文"。
+**R7 — `FALLBACK_PREFIX` base64 旁路解密** · **已修 / ✓核对**
+- 原问题：[secure-storage.ts](src/main/lib/secure-storage.ts) 遇到 `locus:v1:base64:` 前缀时先于 safeStorage 直接 base64 解码返回明文；历史提交 `16a6d578` 确实曾写入该 fallback，后续 `d77ca27f` 已让写入端 fail-closed，但读取旁路仍活。
+- 修复：删除 fallback 前缀解码分支；旧 fallback 数据不再当作明文凭据使用，需要重新认证/重新保存凭据。测试：[provider-credential-storage.test.ts](tests/provider-credential-storage.test.ts) 覆盖写入端拒绝明文 fallback、注入 `locus:v1:base64:...` 返回 `null`。Commit：本提交 `fix: reject legacy secure storage fallback`。
 
-**R8 — plan 模式漏拦 `MultiEdit`** · **待核对**
-- [agent-sdk-tool-permission.ts:183-202](src/main/lib/claude/agent-sdk-tool-permission.ts:183) 只显式拦 `Edit/Write/Bash/NotebookEdit`；plan 模式下 `MultiEdit` 落到允许分支。是否被 SDK 原生 `permissionMode:"plan"` 兜底属外部依赖，不应据此免拦。
+**R8 — plan 模式漏拦 `MultiEdit`** · **已修 / ✓核对**
+- 原问题：[agent-sdk-tool-permission.ts](src/main/lib/claude/agent-sdk-tool-permission.ts) 的 plan 模式显式拦截只覆盖 `Edit/Write/Bash/NotebookEdit`，`MultiEdit` 会落到允许分支。
+- 修复：plan 模式 workspace side-effect 阻断改为单一工具集合，覆盖 `Edit`、`Write`、`MultiEdit`、`NotebookEdit`、`Bash`；保留 `Read` 允许。测试：[claude-agent-sdk-tool-permission.test.ts](tests/claude-agent-sdk-tool-permission.test.ts) 覆盖 plan 模式 `MultiEdit` 等写工具 `behavior:"deny"`、`Read` 仍 `allow`。Commit：本提交 `fix: block MultiEdit in plan mode`。
 
-**R9 — 工具审批 `updatedInput` 不校验** · **待核对**
-- [claude.ts:339-359](src/main/lib/trpc/routers/claude.ts:339)：`respondToolApproval` 收 `updatedInput: z.unknown()` 原样替换将执行的工具参数。被污染的 renderer 可"展示 A、执行 B"。
+**R9 — 工具审批 `updatedInput` 不校验** · **已修 / ✓核对**
+- 原问题：[claude.ts](src/main/lib/trpc/routers/claude.ts) 的 `respondToolApproval` 用 `updatedInput: z.unknown()`，并把 renderer payload 原样交给 pending tool resolve，污染 renderer 可尝试"展示 A、执行 B"。
+- 修复：路由输入先收窄为 object envelope；Claude approval owner 记录 pending tool name 和原始 tool input，并按 `AskUserQuestion` approval schema 校验 `updatedInput`，拒绝 schema 外字段或替换原始 `questions`。测试：[claude-tool-approvals.test.ts](tests/claude-tool-approvals.test.ts) 覆盖 schema 外/越权字段拒绝、展示问题被替换时拒绝、合法 answer 通过；[claude-agent-sdk-tool-permission.test.ts](tests/claude-agent-sdk-tool-permission.test.ts) 覆盖 AskUserQuestion bridge 未回归。Commit：本提交 `fix: validate Claude approval input`。
 
 **R10 — guarded `requiresUserApproval` 仅咨询性** · **待核对 / 待确认 UI 接线**
 - [decision.ts:516-530](src/main/lib/agent-guard/decision.ts:516) 返回 `decision:"allow", requiresUserApproval:true`，但裁决映射只看 `allow`。若 UI 未据此阻断，guarded 的有界 shell 写会无确认执行。
 
-**R11 — 历史 `customClaudeConfigAtom` 把 token 存 localStorage** · **待核对**
-- [lib/atoms/index.ts:209-218](src/renderer/lib/atoms/index.ts:209)：`atomWithStorage("agents:claude-custom-config")` 含 `token` 字段。迁移钩子（[use-legacy-migrations.ts:82-116](src/renderer/features/onboarding/lib/use-legacy-migrations.ts:82)）会清空但不 `removeItem`；迁移前 token 明文驻留渲染层 localStorage。
+**R11 — 历史 `customClaudeConfigAtom` 把 token 存 localStorage** · **已修 / ✓核对**
+- 原问题：[lib/atoms/index.ts](src/renderer/lib/atoms/index.ts) 的 legacy `atomWithStorage("agents:claude-custom-config")` 默认持久化形状含 `token`；迁移钩子只写空 token，不移除 legacy key。
+- 修复：`customClaudeConfigAtom` 的当前持久化默认形状去掉 `token`，旧 token 仅作为 optional legacy 输入读取；迁移成功、失败或发现无效 legacy token 时都 `localStorage.removeItem("agents:claude-custom-config")` 并 reset atom。测试：[legacy-custom-claude-config-migration.test.ts](tests/legacy-custom-claude-config-migration.test.ts) 和 [provider-runtime-binding.test.ts](tests/provider-runtime-binding.test.ts) 覆盖迁移后不保留 key/明文 token 写法。Commit：本提交 `fix: remove legacy Claude token storage`。
 
-**R12 — local-only 门不挡 Anthropic 端点** · **待核对 / 待确认意图**
-- [shared/local-only.ts](src/shared/local-only.ts) 的 `blockedRoots` 不含 `anthropic.com`/`claude.ai`/`platform.claude.com`，local-only 模式下对这些端点不阻断。是否为有意（local-only 仅限制 app 专有域）属**待确认**。
+**R12 — local-only 门不挡 Anthropic 端点** · **by design / 非目标**
+- [shared/local-only.ts](src/shared/local-only.ts) 的 `blockedRoots` 不含 `anthropic.com`/`claude.ai`/`platform.claude.com` 是有意设计：local-only 阻断范围是 Locus/1Code 自有托管云与远程 sandbox（21st.dev、e2b、codesandbox 等），不是 air-gap。用户配置的 AI provider（含 Anthropic/自带 key）与本地 Ollama 不在此阻断范围；完全离线应使用 Ollama。代码注释与 guard 文案已补充，`blockedRoots` 不改。
 
-**R13 — `allFullThemesAtom` 恒返回 `[]`** · **待核对**
-- [lib/atoms/index.ts:479-483](src/renderer/lib/atoms/index.ts:479)：只读派生 atom 恒空，注释称"由 theme provider 命令式填充"——但派生 atom 不可被 `set()`。订阅它的主题 UI 可能恒空。**待确认**是否有命令式写入方。
+**R13 — `allFullThemesAtom` 恒返回 `[]`** · **已修 / ✓核对**
+- 已确认全 renderer 无引用；主题功能实际由 [theme-provider.tsx](src/renderer/lib/themes/theme-provider.tsx) 聚合 `BUILTIN_THEMES + importedThemesAtom`。删除恒空只读派生 atom 与误导注释，不影响现有主题路径。
 
 **R14 — 损坏的 `sub_chats.messages` 被静默丢弃** · **待核对**
 - [chat-message-normalizer.ts:41-43](src/shared/chat-message-normalizer.ts:41) 解析失败仅 `console.warn` 返回 `[]`；用户看到空聊天、无任何数据丢失提示。JSON blob 无版本戳、无逐条类型校验。
 
-**R15 — VS Code 主题扫描 `execSync` 字符串插值** · **待核对**
-- [vscode-theme-scanner.ts:124-125](src/main/lib/vscode-theme-scanner.ts:124)：`execSync(\`ls -1 "${extensionsDir}"\`)`。`extensionsDir` 源自 `homedir()` 固定路径（非 renderer 控制），实际注入风险低，但应改 `fs.readdir`。
+**R15 — VS Code 主题扫描 `execSync` 字符串插值** · **已修 / ✓核对**
+- 原问题：[vscode-theme-scanner.ts](src/main/lib/vscode-theme-scanner.ts) 用 `execSync(\`ls -1 "${extensionsDir}"\`)` 扫描扩展目录；历史注释称 `fs.readdir` 在 Electron 有缓存问题，但未找到当前可复现证据。
+- 修复：改用 async `fs.readdir(..., { withFileTypes: true })`，不再保留 shell 调用。测试：[vscode-theme-scanner.test.ts](tests/vscode-theme-scanner.test.ts) 在临时目录创建 VS Code extension/theme fixture，验证扫描返回正确条目。Commit：本提交 `fix: scan VS Code themes without shell`。
 
 ### Low
 
@@ -202,7 +207,7 @@
 | R19 | `git:subscribe-watcher` 收任意路径无校验（资源耗尽 + 路径存在性泄漏） | [watcher/ipc-bridge.ts:22-23](src/main/lib/git/watcher/ipc-bridge.ts:22) | 待核对 |
 | R20 | `CLAUDE_RAW_LOG=1` 把原始 SDK 消息未脱敏写盘（保留 7 天，开发者开关） | [claude/raw-logger.ts:101-138](src/main/lib/claude/raw-logger.ts:101) | 待核对 |
 | R21 | `claude-token.ts` 用 `spawn('claude',['setup-token'],{shell:true})`，PATH 劫持可换二进制 | [claude-token.ts:306-311](src/main/lib/claude-token.ts:306) | 待核对 |
-| R22 | `auth:*` IPC 的 `validateSender` 允许 `*.localhost` 子域（处理器是空壳，影响小） | [windows/main.ts:351-362](src/main/windows/main.ts:351) | 待核对 |
+| R22 | `auth:*` IPC 的 `validateSender` 允许 `*.localhost` 子域（处理器是空壳，影响小） | 已删除 `auth:*` IPC、preload 暴露与 debug logout 调用方 | **已消除 / ✓核对**。D5 同提交删除。 |
 
 ### 死代码 / 双路径 / 依赖卫生
 
@@ -212,7 +217,7 @@
 | D2 | preload `onStreamChunk/onStreamDone/onStreamError` **两端皆死**：renderer 0 消费者、main 无 `stream:*` 发送方 | [preload/index.ts](src/preload/index.ts) | **已修 / ✓核对**。Commit：`d3784254` |
 | D3 | `features/changes/components/*/` 子文件夹组件集无外部 import（疑似被废弃的并行实现） | 剩余活组件为 `changes-file-filter`、`commit-input`、`history-view`、`diff-sidebar-header`、`file-list-item` 等实际引用路径 | **已修 / ✓核对**。Commit：`69fb275f` |
 | D4 | 三份分叉的 `pluralize.ts`（md5 各异）：agents/utils、sidebar/utils、lib/utils | 三份均已删除；grep/knip 确认无调用方 | **已修 / ✓核对**。Commit：`c429fe7c`、`69fb275f` |
-| D5 | `AuthManager.isAuthenticated()` 恒 false、`getUser()` 恒 null；`AuthStore` 加密机制从不被调用 | [auth-manager.ts:11-17](src/main/auth-manager.ts:11) | **待评估 / 本轮保留**：牵动认证布线，按 P2 纪律不删。 |
+| D5 | `AuthManager.isAuthenticated()` 恒 false、`getUser()` 恒 null；`AuthStore` 加密机制从不被调用 | 已删除 `auth-manager.ts` / `auth-store.ts`、`auth:*` IPC、preload 暴露、debug logout 与死测试 | **已修 / ✓核对**。真实 Anthropic 认证仍走 `anthropic_accounts` + secure-storage。 |
 | D6 | `claude_code_credentials` 表标 DEPRECATED 但无迁移删除；仅为"迁移走"而读 | [schema/index.ts:96-104](src/main/lib/db/schema/index.ts:96) | **✓核对** |
 | D7 | `syncMessagesAtom` 导出但自述"not used"、0 调用方 | [message-store.ts:994-999](src/renderer/features/agents/stores/message-store.ts:994) | 待核对 |
 | D8 | `@agentclientprotocol/sdk` **被用但不在 package.json**（依赖卫生，影响可复现构建） | [codex/tool-permission.ts:7](src/main/lib/codex/tool-permission.ts:7) | **已修 / ✓核对（knip）**：`package.json` pin 为 `0.4.9`。Commit：`7eca3997` |
@@ -229,13 +234,13 @@
 
 ## 6. 待解之谜（待确认）
 
-1. **`FALLBACK_PREFIX` 是否纯历史遗留**：当前无写入端产生 `locus:v1:base64:`。是旧版迁移残留还是死分支？若死，应删 [secure-storage.ts:156-160](src/main/lib/secure-storage.ts:156)。
-2. **local-only 的安全语义**：是否有意允许 Anthropic API 调用、仅限制 app 专有域（[local-only.ts](src/shared/local-only.ts)）？若 local-only 应阻一切云出口，则为 Medium 旁路。
-3. **`AuthManager`/`AuthStore` 去留**：本地优先、空壳常驻——是永久死代码（应连同 `auth:*` IPC 删除以缩面），还是被部分剥离的功能残留？
+1. **`FALLBACK_PREFIX` 是否纯历史遗留**：已确认历史提交 `16a6d578` 曾写入 `locus:v1:base64:` fallback；当前读取旁路已改为 fail-closed，旧 fallback 凭据需重新认证/重新保存。
+2. **local-only 的安全语义**：已定为 by design。local-only 只阻断 Locus/1Code 托管云与远程 sandbox，不是 air-gap；Anthropic/用户自带 provider key 不在阻断范围，完全离线走 Ollama。
+3. **`AuthManager`/`AuthStore` 去留**：已确认永久死代码并删除；`auth:*` IPC、preload 暴露和 debug logout 调用方同步移除。
 4. **`requiresUserApproval` 是否接到 UI 阻断**（[decision.ts:516](src/main/lib/agent-guard/decision.ts:516)）：未找到 renderer 侧据此阻断的调用点。
 5. **`projectSlug` 是否在拼 worktree 路径前消毒**（[worktree.ts:985-986](src/main/lib/git/worktree.ts:985)，`~/.21st/worktrees/<slug>`）：未追到生成处与消毒逻辑。
 6. **`settingSources:["project","user"]`**（[agent-sdk-query-options.ts:272](src/main/lib/claude/agent-sdk-query-options.ts:272)）：恶意仓库的 `.claude/` 项目级设置能向 SDK 注入多少（system prompt / 工具配置）？范围待确认。
-7. **`allFullThemesAtom` 是否有命令式写入方**（[lib/atoms/index.ts:479](src/renderer/lib/atoms/index.ts:479)）：若无，主题选择 UI 恒空。
+7. **`allFullThemesAtom` 是否有命令式写入方**：已确认无引用且不可命令式写入，恒空派生 atom 已删除；主题功能走 `theme-provider.tsx`。
 8. **`<webview>` 分区是否继承 `webSecurity:true` 与 file: CORS 策略**：影响 R16 实际可利用性。
 9. **CLAUDE.md 已更新**：见 D9，当前记录为 16 表 + Claude/Codex/Qwen/Ollama/Kun/headless-job runtime 现实。
 

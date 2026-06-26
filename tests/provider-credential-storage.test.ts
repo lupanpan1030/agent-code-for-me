@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
-import { existsSync, readFileSync } from "node:fs"
+import { readFileSync } from "node:fs"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -36,7 +36,6 @@ mock.module("electron", () => ({
 }))
 
 const secureStorage = await import("../src/main/lib/secure-storage")
-const authStoreModule = await import("../src/main/auth-store")
 const codexChatInputSchemaModule = await import(
   "../src/main/lib/codex/chat-input-schema"
 )
@@ -97,37 +96,15 @@ describe("provider credential storage hardening", () => {
     )
   })
 
-  test("legacy base64 fallback is read-only compatible", () => {
+  test("legacy base64 fallback prefix is rejected instead of decoded", () => {
     const legacy = `locus:v1:base64:${Buffer.from("sk-legacy", "utf-8").toString("base64")}`
 
-    expect(secureStorage.decryptStringFromStorage(legacy)).toBe("sk-legacy")
+    expect(secureStorage.decryptStringFromStorage(legacy)).toBeNull()
     expect(
       secureStorage.decryptStringFromStorage(
         Buffer.from("sk-plain-base64", "utf-8").toString("base64"),
       ),
     ).toBeNull()
-  })
-
-  test("AuthStore refuses plaintext json fallback writes", () => {
-    const store = new authStoreModule.AuthStore(userDataDir)
-
-    expect(() =>
-      store.save({
-        token: "token",
-        refreshToken: "refresh",
-        expiresAt: new Date(Date.now() + 60_000).toISOString(),
-        user: {
-          id: "user_1",
-          email: "user@example.com",
-          name: null,
-          imageUrl: null,
-          username: null,
-        },
-      }),
-    ).toThrow(/secure storage/i)
-
-    expect(existsSync(join(userDataDir, "auth.dat"))).toBe(false)
-    expect(existsSync(join(userDataDir, "auth.dat.json"))).toBe(false)
   })
 
   test("renderer and chat sources do not persist or transmit plaintext Codex keys", () => {

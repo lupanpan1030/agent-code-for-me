@@ -3,7 +3,6 @@ import { existsSync, readFileSync, readlinkSync, unlinkSync } from "fs"
 import { createServer } from "http"
 import { join } from "path"
 import { format as formatLog } from "util"
-import { AuthManager, initAuthManager, getAuthManager as getAuthManagerFromModule } from "./auth-manager"
 import { isLocalOnlyMode, openExternalUrl } from "./lib/local-only"
 import { startAutomaticAppUpdateChecks } from "./lib/app-updater"
 import { closeDatabase, initDatabase } from "./lib/db"
@@ -91,14 +90,7 @@ console.log(
 // under heavy multi-chat workloads. Must be set before app readiness/window creation.
 app.commandLine.appendSwitch("js-flags", "--max-old-space-size=8192")
 
-// Auth manager singleton (use the one from auth-manager module)
-let authManager: AuthManager
 let pendingMcpImportPreview: McpImportPreview | null = null
-
-export function getAuthManager(): AuthManager {
-  // First try to get from module, fallback to local variable for backwards compat
-  return getAuthManagerFromModule() || authManager
-}
 
 ipcMain.handle("mcp-import:get-pending-preview", () => pendingMcpImportPreview)
 ipcMain.handle("mcp-import:clear-pending-preview", () => {
@@ -834,9 +826,6 @@ if (gotTheLock) {
     // Build initial menu
     buildMenu()
 
-    // Initialize auth manager (uses singleton from auth-manager module)
-    authManager = initAuthManager(!!process.env.ELECTRON_RENDERER_URL)
-    console.log("[App] Auth manager initialized")
     startAuthCallbackServer()
 
     console.log("[Analytics] Hosted telemetry removed from local-first build")

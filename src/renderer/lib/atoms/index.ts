@@ -192,10 +192,20 @@ export type ClaudeProviderAuthMode = "api_key" | "auth_token"
 
 export type CustomClaudeConfig = {
   model: string
-  token: string
   baseUrl: string
   authMode?: ClaudeProviderAuthMode
 }
+
+export type LegacyCustomClaudeConfig = CustomClaudeConfig & {
+  token?: string
+}
+
+export type NormalizedLegacyCustomClaudeConfig = CustomClaudeConfig & {
+  token: string
+}
+
+export const LEGACY_CUSTOM_CLAUDE_CONFIG_STORAGE_KEY =
+  "agents:claude-custom-config"
 
 // Selected Ollama model for offline mode
 export const selectedOllamaModelAtom = atomWithStorage<string | null>(
@@ -206,11 +216,10 @@ export const selectedOllamaModelAtom = atomWithStorage<string | null>(
 )
 
 // Legacy single config (deprecated, kept for backwards compatibility)
-export const customClaudeConfigAtom = atomWithStorage<CustomClaudeConfig>(
-  "agents:claude-custom-config",
+export const customClaudeConfigAtom = atomWithStorage<LegacyCustomClaudeConfig>(
+  LEGACY_CUSTOM_CLAUDE_CONFIG_STORAGE_KEY,
   {
     model: "",
-    token: "",
     baseUrl: "",
   },
   undefined,
@@ -234,10 +243,10 @@ export const showOfflineModeFeaturesAtom = atomWithStorage<boolean>(
 )
 
 export function normalizeCustomClaudeConfig(
-  config: CustomClaudeConfig,
-): CustomClaudeConfig | undefined {
+  config: LegacyCustomClaudeConfig,
+): NormalizedLegacyCustomClaudeConfig | undefined {
   const model = config.model.trim()
-  const token = config.token.trim()
+  const token = (config.token ?? "").trim()
   const baseUrl = config.baseUrl.trim()
 
   if (!model || !token || !baseUrl) return undefined
@@ -471,16 +480,6 @@ export const importedThemesAtom = atomWithStorage<VSCodeFullTheme[]>(
   undefined,
   { getOnInit: true },
 )
-
-/**
- * All available full themes (built-in + imported + discovered)
- * This is a derived atom that combines all theme sources
- */
-export const allFullThemesAtom = atom<VSCodeFullTheme[]>((get) => {
-  // This will be populated by the theme provider
-  // For now, return empty - will be set imperatively
-  return []
-})
 
 // ============================================
 // CUSTOM HOTKEYS CONFIGURATION

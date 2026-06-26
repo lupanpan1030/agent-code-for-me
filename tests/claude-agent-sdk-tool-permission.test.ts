@@ -81,7 +81,7 @@ function baseContract(): AgentScopeContract {
 }
 
 describe("Claude Agent SDK tool permission handler", () => {
-  test("repairs Ollama tool aliases and blocks plan-mode side effects", async () => {
+  test("repairs Ollama tool aliases and blocks plan-mode workspace side effects", async () => {
     const handler = createClaudeAgentSdkToolPermissionHandler(
       baseHandlerInput({
         isUsingOllama: true,
@@ -100,13 +100,21 @@ describe("Claude Agent SDK tool permission handler", () => {
     })
     expect(readInput).toEqual({ file_path: "src/app.ts" })
 
-    const writeResult = await handler(
+    for (const [index, toolName] of [
       "Edit",
-      { file_path: "src/app.ts" },
-      toolOptions("tool-2"),
-    )
-    expect(writeResult.behavior).toBe("deny")
-    expect(writeResult.message).toContain("blocked in plan mode")
+      "Write",
+      "MultiEdit",
+      "NotebookEdit",
+      "Bash",
+    ].entries()) {
+      const writeResult = await handler(
+        toolName,
+        { file_path: "src/app.ts", command: "echo unsafe" },
+        toolOptions(`plan-blocked-${index}`),
+      )
+      expect(writeResult.behavior).toBe("deny")
+      expect(writeResult.message).toContain("blocked in plan mode")
+    }
   })
 
   test("enforces assistant web-only allow-list before Claude tools run", async () => {

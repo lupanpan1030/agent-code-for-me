@@ -12,7 +12,6 @@ import { join } from "path"
 import { readFileSync, existsSync, writeFileSync, mkdirSync } from "fs"
 import { createIPCHandler } from "trpc-electron/main"
 import { createAppRouter } from "../lib/trpc/routers"
-import { getAuthManager } from "../index"
 import { registerGitWatcherIPC } from "../lib/git/watcher"
 import {
   abortAllClaudeSessions,
@@ -347,39 +346,6 @@ function registerIpcHandlers(): void {
     },
   )
 
-  // Auth IPC handlers
-  const validateSender = (event: Electron.IpcMainInvokeEvent): boolean => {
-    const senderUrl = event.sender.getURL()
-    try {
-      const parsed = new URL(senderUrl)
-      if (parsed.protocol === "file:") return true
-      const hostname = parsed.hostname.toLowerCase()
-      const trusted = ["localhost", "127.0.0.1"]
-      return trusted.some((h) => hostname === h || hostname.endsWith(`.${h}`))
-    } catch {
-      return false
-    }
-  }
-
-  ipcMain.handle("auth:get-user", (event) => {
-    if (!validateSender(event)) return null
-    return getAuthManager().getUser()
-  })
-
-  ipcMain.handle("auth:is-authenticated", (event) => {
-    if (!validateSender(event)) return false
-    return getAuthManager().isAuthenticated()
-  })
-
-  ipcMain.handle("auth:logout", async (event) => {
-    if (!validateSender(event)) return
-    getAuthManager().logout()
-    // Return to the local app shell after clearing any persisted auth state.
-    for (const win of windowManager.getAll()) {
-      loadAppInWindow(win)
-    }
-  })
-
   // Register git watcher IPC handlers
   registerGitWatcherIPC()
 
@@ -639,21 +605,6 @@ export function createWindow(options?: { chatId?: string; subChatId?: string }):
 
   // Load the local app shell. Account authentication is no longer required for
   // local-first usage.
-  const authManager = getAuthManager()
-
-  console.log("[Main] ========== AUTH CHECK ==========")
-  console.log("[Main] AuthManager exists:", !!authManager)
-  const isAuth = authManager.isAuthenticated()
-  console.log("[Main] isAuthenticated():", isAuth)
-  const user = authManager.getUser()
-  console.log("[Main] getUser():", user ? user.email : "null")
-  console.log("[Main] ================================")
-
-  console.log(
-    isAuth
-      ? "[Main] ✓ User authenticated, loading app"
-      : "[Main] Local mode: not authenticated, loading app",
-  )
   loadAppInWindow(window, options)
 
   // Log page load - traffic light visibility is managed by the renderer

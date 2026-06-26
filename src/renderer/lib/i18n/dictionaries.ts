@@ -2037,7 +2037,6 @@ export const en = {
     "Network detection restored to normal",
   "settings.debug.toast.allChatsCleared": "All chats cleared",
   "settings.debug.toast.allDataCleared": "All data cleared. Reloading...",
-  "settings.debug.toast.loggedOut": "Logged out. Reloading...",
   "settings.debug.toast.debugInfoCopied": "Debug info copied to clipboard",
   "settings.debug.toast.reactScanEnabled": "React Scan enabled",
   "settings.debug.toast.reactScanEnabledDescription":
@@ -2097,10 +2096,8 @@ export const en = {
   "settings.debug.dataManagement": "Data Management",
   "settings.debug.confirmClearChats": "Clear all chats? Projects will be kept.",
   "settings.debug.clearChats": "Clear Chats",
-  "settings.debug.confirmLogout": "Logout? You will need to sign in again.",
-  "settings.debug.logout": "Logout",
   "settings.debug.confirmResetAll":
-    "Reset everything? This will clear all data and log you out.",
+    "Reset everything? This will clear all local app data.",
   "settings.debug.resetAll": "Reset All",
 
   "toast.models.accountSwitched": "Account switched",
@@ -2510,8 +2507,10 @@ export const en = {
   "workbench.error.internal_error.body": "Locus hit an unexpected local error.",
   "workbench.error.internal_error.nextAction": "Copy redacted details and inspect logs.",
   "workbench.error.local_only_guard_blocked.title": "Blocked by local-only mode",
-  "workbench.error.local_only_guard_blocked.body": "This action would leave the allowed local boundary.",
-  "workbench.error.local_only_guard_blocked.nextAction": "Disable local-only mode only if you intend to use hosted services.",
+  "workbench.error.local_only_guard_blocked.body":
+    "This action targets Locus-hosted services or remote sandboxes. User-configured AI providers and local Ollama are outside this guard.",
+  "workbench.error.local_only_guard_blocked.nextAction":
+    "Use Ollama for fully offline runs, or disable local-only only for hosted/internal testing.",
   "workbench.error.unsupported_capability.title": "Capability is not available",
   "workbench.error.unsupported_capability.body": "The selected runtime cannot safely provide the required capability.",
   "workbench.error.unsupported_capability.nextAction": "Choose another runtime/profile or change the run mode.",
@@ -5736,7 +5735,6 @@ export const zhCN: Partial<Record<TranslationKey, string>> = {
     "网络检测已恢复正常",
   "settings.debug.toast.allChatsCleared": "所有对话已清除",
   "settings.debug.toast.allDataCleared": "所有数据已清除，正在重新加载...",
-  "settings.debug.toast.loggedOut": "已退出登录，正在重新加载...",
   "settings.debug.toast.debugInfoCopied": "调试信息已复制到剪贴板",
   "settings.debug.toast.reactScanEnabled": "React Scan 已启用",
   "settings.debug.toast.reactScanEnabledDescription":
@@ -5796,10 +5794,8 @@ export const zhCN: Partial<Record<TranslationKey, string>> = {
   "settings.debug.dataManagement": "数据管理",
   "settings.debug.confirmClearChats": "清除所有对话？项目会保留。",
   "settings.debug.clearChats": "清除对话",
-  "settings.debug.confirmLogout": "退出登录？之后需要重新登录。",
-  "settings.debug.logout": "退出登录",
   "settings.debug.confirmResetAll":
-    "重置所有内容？这会清除全部数据并退出登录。",
+    "重置所有内容？这会清除全部本地应用数据。",
   "settings.debug.resetAll": "全部重置",
 
   "toast.models.accountSwitched": "账号已切换",
@@ -6206,8 +6202,10 @@ export const zhCN: Partial<Record<TranslationKey, string>> = {
   "workbench.error.internal_error.body": "Locus 遇到了意外的本地错误。",
   "workbench.error.internal_error.nextAction": "复制已脱敏详情并检查 logs。",
   "workbench.error.local_only_guard_blocked.title": "被 local-only mode 阻止",
-  "workbench.error.local_only_guard_blocked.body": "这个操作会离开允许的本地边界。",
-  "workbench.error.local_only_guard_blocked.nextAction": "只有在确实要使用 hosted services 时，才禁用 local-only mode。",
+  "workbench.error.local_only_guard_blocked.body":
+    "这个操作会访问 Locus 托管服务或远程 sandbox。用户配置的 AI provider 和本地 Ollama 不在此阻断范围内。",
+  "workbench.error.local_only_guard_blocked.nextAction":
+    "完全离线请使用 Ollama；只有在 hosted/internal 测试时才禁用 local-only mode。",
   "workbench.error.unsupported_capability.title": "Capability 不可用",
   "workbench.error.unsupported_capability.body": "所选 runtime 无法安全提供所需 capability。",
   "workbench.error.unsupported_capability.nextAction": "选择另一个 runtime/profile，或更改 run mode。",
