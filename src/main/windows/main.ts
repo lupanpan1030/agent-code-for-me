@@ -29,6 +29,7 @@ import {
   hasActiveCodexStreams,
 } from "../lib/trpc/routers/codex"
 import { registerThemeScannerIPC } from "../lib/vscode-theme-scanner"
+import { isAllowedMainWindowNavigationUrl } from "./navigation-guard"
 import { installRendererContentSecurityPolicy } from "./renderer-csp"
 import { windowManager } from "./window-manager"
 
@@ -578,6 +579,31 @@ export function createWindow(options?: { chatId?: string; subChatId?: string }):
       )
     })
     return { action: "deny" }
+  })
+
+  const guardMainFrameNavigation = (
+    event: Electron.Event,
+    url: string,
+    source: "will-navigate" | "will-redirect",
+  ) => {
+    if (
+      isAllowedMainWindowNavigationUrl(url, {
+        devServerUrl: process.env.ELECTRON_RENDERER_URL,
+        prodIndexPath: RENDERER_INDEX_PATH,
+      })
+    ) {
+      return
+    }
+
+    event.preventDefault()
+    console.warn(`[Main] Blocked ${source} outside app origin: ${url}`)
+  }
+
+  window.webContents.on("will-navigate", (event, url) => {
+    guardMainFrameNavigation(event, url, "will-navigate")
+  })
+  window.webContents.on("will-redirect", (event, url) => {
+    guardMainFrameNavigation(event, url, "will-redirect")
   })
 
   // Prevent window close if there are active streaming sessions

@@ -4,10 +4,16 @@ export type LocalBrowserUrlErrorCode =
   | "unsupported-scheme"
   | "remote-host"
   | "credentials"
+  | "file-not-allowed"
+  | "file-outside-root"
 
 export type LocalBrowserUrlResult =
   | { ok: true; url: string; protocol: "http:" | "https:" | "file:" }
   | { ok: false; code: LocalBrowserUrlErrorCode; message: string }
+
+export type LocalBrowserUrlOptions = {
+  allowedFileRoots?: readonly string[]
+}
 
 export type LocalBrowserConsoleLevel = "debug" | "log" | "info" | "warning" | "error"
 
@@ -60,7 +66,51 @@ const MAX_TEXT_LENGTH = 240
 const MAX_LIST_ITEMS = 8
 const MAX_REPORT_EVENTS = 6
 
-export function normalizeLocalBrowserUrl(input: string): LocalBrowserUrlResult {
+function normalizeBoundaryPath(value: string): string {
+  const normalized = value
+    .trim()
+    .replace(/\\/g, "/")
+    .replace(/\/+/g, "/")
+    .replace(/\/$/, "")
+  return normalized || "/"
+}
+
+function fileUrlPath(url: URL): string | null {
+  if (url.host && url.host !== "localhost") return null
+  try {
+    const decoded = decodeURIComponent(url.pathname)
+    const withoutWindowsSlash = decoded.replace(/^\/([A-Za-z]:\/)/, "$1")
+    return normalizeBoundaryPath(withoutWindowsSlash)
+  } catch {
+    return null
+  }
+}
+
+function isFileUrlInsideAllowedRoot(
+  url: URL,
+  allowedFileRoots: readonly string[] | undefined,
+): boolean {
+  const filePath = fileUrlPath(url)
+  if (!filePath) return false
+
+  for (const root of allowedFileRoots ?? []) {
+    const normalizedRoot = normalizeBoundaryPath(root)
+    if (!normalizedRoot || normalizedRoot === ".") continue
+    if (
+      filePath === normalizedRoot ||
+      filePath.startsWith(`${normalizedRoot.replace(/\/$/, "")}/`)
+    ) {
+      return true
+    }
+  }
+
+  return false
+}
+
+export function normalizeLocalBrowserUrl(
+  input: string,
+  options: LocalBrowserUrlOptions = {},
+): LocalBrowserUrlResult {
   const trimmed = input.trim()
   if (!trimmed) {
     return {
@@ -91,6 +141,20 @@ export function normalizeLocalBrowserUrl(input: string): LocalBrowserUrlResult {
   }
 
   if (url.protocol === "file:") {
+    if (!options.allowedFileRoots?.length) {
+      return {
+        ok: false,
+        code: "file-not-allowed",
+        message: "File URLs are only supported from an allowed project or worktree.",
+      }
+    }
+    if (!isFileUrlInsideAllowedRoot(url, options.allowedFileRoots)) {
+      return {
+        ok: false,
+        code: "file-outside-root",
+        message: "File URLs must stay inside the current project or worktree.",
+      }
+    }
     return { ok: true, url: url.href, protocol: "file:" }
   }
 
@@ -113,8 +177,11 @@ export function normalizeLocalBrowserUrl(input: string): LocalBrowserUrlResult {
   return { ok: true, url: url.href, protocol: url.protocol }
 }
 
-export function isAllowedLocalBrowserUrl(input: string): boolean {
-  return normalizeLocalBrowserUrl(input).ok
+export function isAllowedLocalBrowserUrl(
+  input: string,
+  options: LocalBrowserUrlOptions = {},
+): boolean {
+  return normalizeLocalBrowserUrl(input, options).ok
 }
 
 export function buildLocalBrowserReport(input: LocalBrowserCaptureReportInput): string {

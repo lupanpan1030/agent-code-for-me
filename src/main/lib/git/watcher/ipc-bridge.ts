@@ -1,6 +1,7 @@
 import { ipcMain, BrowserWindow } from "electron";
 import { gitWatcherRegistry, type GitWatchEvent } from "./git-watcher";
 import { gitCache } from "../cache";
+import { assertRegisteredWorktree } from "../security";
 
 /**
  * IPC Bridge for GitWatcher.
@@ -21,6 +22,7 @@ export function registerGitWatcherIPC(): void {
 		"git:subscribe-watcher",
 		async (event, worktreePath: string) => {
 			if (!worktreePath) return;
+			assertRegisteredWorktree(worktreePath);
 
 			// Already subscribed?
 			if (activeSubscriptions.has(worktreePath)) {

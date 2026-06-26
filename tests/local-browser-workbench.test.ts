@@ -23,9 +23,36 @@ describe("local browser workbench", () => {
       ok: true,
       url: "http://[::1]:8080/",
     })
-    expect(normalizeLocalBrowserUrl("file:///tmp/locus-preview.html")).toMatchObject({
+  })
+
+  test("allows file URLs only inside an explicit worktree root", () => {
+    expect(
+      normalizeLocalBrowserUrl("file:///tmp/locus-preview/index.html", {
+        allowedFileRoots: ["/tmp/locus-preview"],
+      }),
+    ).toMatchObject({
       ok: true,
       protocol: "file:",
+    })
+    expect(normalizeLocalBrowserUrl("file:///tmp/locus-preview/index.html")).toMatchObject({
+      ok: false,
+      code: "file-not-allowed",
+    })
+    expect(
+      normalizeLocalBrowserUrl("file:///tmp/locus-preview-evil/index.html", {
+        allowedFileRoots: ["/tmp/locus-preview"],
+      }),
+    ).toMatchObject({
+      ok: false,
+      code: "file-outside-root",
+    })
+    expect(
+      normalizeLocalBrowserUrl("file:///tmp/locus-preview/../secret.txt", {
+        allowedFileRoots: ["/tmp/locus-preview"],
+      }),
+    ).toMatchObject({
+      ok: false,
+      code: "file-outside-root",
     })
   })
 
@@ -47,6 +74,7 @@ describe("local browser workbench", () => {
       code: "credentials",
     })
     expect(isAllowedLocalBrowserUrl("https://127.0.0.1:8443")).toBe(true)
+    expect(isAllowedLocalBrowserUrl("file:///tmp/locus-preview.html")).toBe(false)
   })
 
   test("builds bounded browser QA reports", () => {

@@ -96,7 +96,7 @@
 ## 4. 信任边界与安全模型
 
 - **唯一边界 = renderer↔main IPC**。tRPC 无认证（[trpc/index.ts:8-10](src/main/lib/trpc/index.ts:8)），所以**任何在 renderer 执行的代码都拥有全部 32 router 的能力**。威胁面因此放大：渲染层 XSS / 恶意 MCP 工具结果 / 被污染的前端依赖，都可直接调用任意 router。
-- **窗口加固**（[windows/main.ts:489-497](src/main/windows/main.ts:489)）：`contextIsolation: true` ✓、`nodeIntegration: false` ✓、`sandbox: false`（trpc-electron 要求，文档化）、`webSecurity: true`、`webviewTag: true`（启用 `<webview>`）。`setWindowOpenHandler` 一律 deny 转系统浏览器（[main.ts:590-599](src/main/windows/main.ts:590)）；但 `will-navigate` 未在主 webContents 注册（§5 Low）。**待核对（webPreferences 由 agent 报告，行号可点验）**
+- **窗口加固**（[windows/main.ts:489-497](src/main/windows/main.ts:489)）：`contextIsolation: true` ✓、`nodeIntegration: false` ✓、`sandbox: false`（trpc-electron 要求，文档化）、`webSecurity: true`、`webviewTag: true`（启用 `<webview>`）。`setWindowOpenHandler` 一律 deny 转系统浏览器；主 `webContents` 的 `will-navigate` / `will-redirect` 只允许 app 自身 renderer origin（dev 下允许已配置 Vite origin，prod 下仅允许打包 index 文件）。**已修 / ✓核对**
 - **不可信输入入口**：① 打开的项目仓库内容（`.cursor/.locus/.1code` 配置、`CLAUDE.md`/`.claude/` 设置源 [agent-sdk-query-options.ts:272](src/main/lib/claude/agent-sdk-query-options.ts:272)）；② deep-link URL（[index.ts:491-521/887](src/main/index.ts:491)）；③ MCP server 返回内容；④ renderer→tRPC 的全部入参。
 - **密钥存储**：DB 内凭证经 safeStorage 加密、写入端拒绝明文回退（好姿态）；**例外**是 MCP token 明文落 `~/.claude.json`、`FALLBACK_PREFIX` 旁路、以及历史 `customClaudeConfigAtom` 把 token 存 localStorage。
 - **命令执行面**：Agent SDK 工具（Bash/Write…）以同用户进程运行、**无 OS 级 sandbox**，约束全靠进程内 `canUseTool` 钩子；原 worktree setup 直接 `exec` 已由 R1 修复改为 trust gate，MCP stdio command 写入已由 R0c 修复改为 native consent + fingerprint gate。
@@ -208,10 +208,10 @@
 
 | 编号 | 风险 | file:line | 核对 |
 |---|---|---|---|
-| R16 | `<webview>` `will-navigate` 用 `preventDefault?.()`，可选链使阻止可能失效；且 `normalizeLocalBrowserUrl` 放行任意 `file:` | [local-browser-workbench.tsx:443-458](src/renderer/features/agents/ui/local-browser-workbench.tsx:443)、[shared/local-browser-workbench.ts:93-95](src/shared/local-browser-workbench.ts:93) | 待核对 |
-| R17 | 主 webContents 未注册 `will-navigate`，渲染层若被注入可导航到远程源 | [windows/main.ts](src/main/windows/main.ts)（缺失） | 待核对 |
+| R16 | `<webview>` `will-navigate` 用 `preventDefault?.()`，可选链使阻止可能失效；且 `normalizeLocalBrowserUrl` 放行任意 `file:` | [local-browser-workbench.tsx](src/renderer/features/agents/ui/local-browser-workbench.tsx)、[shared/local-browser-workbench.ts](src/shared/local-browser-workbench.ts) | **已修 / ✓核对**：`preventDefault()` 必调；`file:` 仅允许显式传入的 worktree 根内。测试：[local-browser-workbench.test.ts](tests/local-browser-workbench.test.ts)。 |
+| R17 | 主 webContents 未注册 `will-navigate`，渲染层若被注入可导航到远程源 | [windows/main.ts](src/main/windows/main.ts)、[navigation-guard.ts](src/main/windows/navigation-guard.ts) | **已修 / ✓核对**：`will-navigate` / `will-redirect` 统一按 renderer origin gate 拦截。测试：[main-window-navigation-guard.test.ts](tests/main-window-navigation-guard.test.ts)。 |
 | R18 | `external.openInApp/openFileInEditor` 在 win32 用 `shell:true`，路径含 `&\|;` 可注入 | [external.ts:60-65](src/main/lib/trpc/routers/external.ts:60) | 待核对 |
-| R19 | `git:subscribe-watcher` 收任意路径无校验（资源耗尽 + 路径存在性泄漏） | [watcher/ipc-bridge.ts:22-23](src/main/lib/git/watcher/ipc-bridge.ts:22) | 待核对 |
+| R19 | `git:subscribe-watcher` 收任意路径无校验（资源耗尽 + 路径存在性泄漏） | [watcher/ipc-bridge.ts](src/main/lib/git/watcher/ipc-bridge.ts) | **已修 / ✓核对**：订阅前必须通过登记 project/worktree 根校验。测试：[git-watcher-ipc-bridge.test.ts](tests/git-watcher-ipc-bridge.test.ts)。 |
 | R20 | `CLAUDE_RAW_LOG=1` 把原始 SDK 消息未脱敏写盘（保留 7 天，开发者开关） | [claude/raw-logger.ts:101-138](src/main/lib/claude/raw-logger.ts:101) | 待核对 |
 | R21 | `claude-token.ts` 用 `spawn('claude',['setup-token'],{shell:true})`，PATH 劫持可换二进制 | [claude-token.ts:306-311](src/main/lib/claude-token.ts:306) | 待核对 |
 | R22 | `auth:*` IPC 的 `validateSender` 允许 `*.localhost` 子域（处理器是空壳，影响小） | 已删除 `auth:*` IPC、preload 暴露与 debug logout 调用方 | **已消除 / ✓核对**。D5 同提交删除。 |
@@ -248,7 +248,7 @@
 5. **`projectSlug` 是否在拼 worktree 路径前消毒**（[worktree.ts:985-986](src/main/lib/git/worktree.ts:985)，`~/.21st/worktrees/<slug>`）：未追到生成处与消毒逻辑。
 6. **`settingSources:["project","user"]`**（[agent-sdk-query-options.ts:272](src/main/lib/claude/agent-sdk-query-options.ts:272)）：恶意仓库的 `.claude/` 项目级设置能向 SDK 注入多少（system prompt / 工具配置）？范围待确认。
 7. **`allFullThemesAtom` 是否有命令式写入方**：已确认无引用且不可命令式写入，恒空派生 atom 已删除；主题功能走 `theme-provider.tsx`。
-8. **`<webview>` 分区是否继承 `webSecurity:true` 与 file: CORS 策略**：影响 R16 实际可利用性。
+8. **`<webview>` 分区是否继承 `webSecurity:true` 与 file: CORS 策略**：R16 已先收紧为只允许登记 worktree 根内 `file:` URL；分区继承语义不再是放行任意 `file:` 的前置条件。
 9. **CLAUDE.md 已更新**：见 D9，当前记录为 16 表 + Claude/Codex/Qwen/Ollama/Kun/headless-job runtime 现实。
 
 ---

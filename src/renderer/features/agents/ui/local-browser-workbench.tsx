@@ -156,9 +156,11 @@ export function LocalBrowserWorkbench({
     }
     const handleNavigate = (event: any) => {
       const nextUrl = String(event.url || "")
-      const result = normalizeLocalBrowserUrl(nextUrl)
+      const result = normalizeLocalBrowserUrl(nextUrl, {
+        allowedFileRoots: [worktreePath],
+      })
       if (!result.ok) {
-        event.preventDefault?.()
+        event.preventDefault()
         setUrlError(result.message)
         pushLoadFailure({
           url: nextUrl,
@@ -174,7 +176,9 @@ export function LocalBrowserWorkbench({
     }
     const handleNavigated = (event: any) => {
       const nextUrl = String(event.url || "")
-      const result = normalizeLocalBrowserUrl(nextUrl)
+      const result = normalizeLocalBrowserUrl(nextUrl, {
+        allowedFileRoots: [worktreePath],
+      })
       if (!result.ok) {
         rollbackToLastAllowedUrl(webview, lastAllowedUrlRef.current)
         return
@@ -206,7 +210,7 @@ export function LocalBrowserWorkbench({
       webview.removeEventListener("did-navigate", handleNavigated)
       webview.removeEventListener("did-navigate-in-page", handleNavigated)
     }
-  }, [currentUrl, installClickTracker, pushConsoleMessage, pushLoadFailure])
+  }, [currentUrl, installClickTracker, pushConsoleMessage, pushLoadFailure, worktreePath])
 
   const handleViewportModeChange = useCallback((mode: "desktop" | "mobile") => {
     setViewportMode(mode)
@@ -234,7 +238,9 @@ export function LocalBrowserWorkbench({
 
   const handleNavigateSubmit = useCallback((event?: React.FormEvent) => {
     event?.preventDefault()
-    const result = normalizeLocalBrowserUrl(urlInput)
+    const result = normalizeLocalBrowserUrl(urlInput, {
+      allowedFileRoots: [worktreePath],
+    })
     if (!result.ok) {
       setUrlError(result.message)
       return
