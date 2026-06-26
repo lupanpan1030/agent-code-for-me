@@ -19,6 +19,12 @@ import {
   type McpRegistryVerificationRecord,
   upsertMcpRegistryVerificationRecord,
 } from "../mcp-registry/verification-state"
+import {
+  buildMcpCommandTrustInputFromConfig,
+  ensureMcpCommandWriteApproved,
+  isMcpCommandTrustApprovedForRuntime,
+  type McpCommandTrustInput,
+} from "./mcp-command-trust"
 
 export type CodexMcpServerForSession =
   | {
@@ -243,6 +249,38 @@ function resolveCodexStdioCommand(
   return isPathLike ? resolve(cwd, command) : command
 }
 
+function buildCodexMcpCommandTrustInput(input: {
+  name: string
+  command: string
+  args?: string[]
+  env?: Record<string, string>
+  envVars?: string[]
+  cwd?: string
+}): McpCommandTrustInput {
+  return {
+    runtime: "codex",
+    name: input.name,
+    scope: "global",
+    command: input.command,
+    args: input.args,
+    env: input.env,
+    envVars: input.envVars,
+    cwd: input.cwd,
+  }
+}
+
+function buildCodexMcpCommandTrustInputFromConfig(input: {
+  name: string
+  config: CodexMcpServerConfigWrite
+}): McpCommandTrustInput | null {
+  return buildMcpCommandTrustInputFromConfig({
+    runtime: "codex",
+    name: input.name,
+    scope: "global",
+    config: input.config as Record<string, unknown>,
+  })
+}
+
 function normalizeCodexTools(tools: McpToolInfo[]): McpToolInfo[] {
   const unique = new Map<string, McpToolInfo>()
   for (const tool of tools) {
@@ -272,6 +310,20 @@ async function fetchCodexMcpTools(
     if (transportType === "stdio") {
       const command = resolveCodexStdioCommand(entry.transport)
       if (!command) return []
+      if (
+        !isMcpCommandTrustApprovedForRuntime(
+          buildCodexMcpCommandTrustInput({
+            name: entry.name,
+            command,
+            args: entry.transport.args || undefined,
+            env: entry.transport.env || undefined,
+            envVars: entry.transport.env_vars || undefined,
+            cwd: resolveCodexStdioCwd(entry.transport),
+          }),
+        )
+      ) {
+        throw new Error("MCP stdio command has not been approved.")
+      }
       return await fetchMcpToolsStdio({
         command,
         args: entry.transport.args || undefined,
@@ -560,7 +612,19 @@ export async function resolveCodexMcpSnapshot(params: {
       if (transportType === "stdio") {
         const command = resolveCodexStdioCommand(entry.transport)
         const args = entry.transport.args || undefined
-        if (includeInSession && command) {
+        const commandApproved = command
+          ? isMcpCommandTrustApprovedForRuntime(
+              buildCodexMcpCommandTrustInput({
+                name: entry.name,
+                command,
+                args,
+                env: entry.transport.env || undefined,
+                envVars: entry.transport.env_vars || undefined,
+                cwd: resolveCodexStdioCwd(entry.transport),
+              }),
+            )
+          : false
+        if (includeInSession && command && commandApproved) {
           const envPairs = objectToPairs(resolvedStdioEnv) || []
           sessionServer = {
             name: entry.name,
@@ -569,6 +633,9 @@ export async function resolveCodexMcpSnapshot(params: {
             args: Array.isArray(args) ? args : [],
             env: envPairs,
           }
+        } else if (includeInSession && command && !commandApproved) {
+          status = "failed"
+          settingsConfig.disabledReason = "MCP stdio command is not approved"
         }
 
         settingsConfig.command = command
@@ -957,6 +1024,13 @@ export async function addCodexMcpServer(input: {
       throw new Error("Command is required for stdio servers.")
     }
 
+    await ensureMcpCommandWriteApproved({
+      request: buildCodexMcpCommandTrustInput({
+        name: input.name.trim(),
+        command,
+        args: input.args,
+      }),
+    })
     args.push("--", command, ...(input.args || []))
   }
 
@@ -982,6 +1056,13 @@ export async function writeCodexMcpServerConfig(input: {
     throw new Error(
       "Codex MCP server name must contain only letters, numbers, underscores, or hyphens.",
     )
+  }
+  const trustInput = buildCodexMcpCommandTrustInputFromConfig({
+    name: serverName,
+    config: input.config,
+  })
+  if (trustInput) {
+    await ensureMcpCommandWriteApproved({ request: trustInput })
   }
 
   const existing = await readCodexConfigToml()

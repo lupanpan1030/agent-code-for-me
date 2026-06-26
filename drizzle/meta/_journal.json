@@ -134,6 +134,13 @@
       "when": 1782452870640,
       "tag": "0018_classy_ultimatum",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1782496537258,
+      "tag": "0019_breezy_the_hunter",
+      "breakpoints": true
     }
   ]
 }

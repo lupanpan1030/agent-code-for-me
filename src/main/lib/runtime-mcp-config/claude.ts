@@ -44,6 +44,14 @@ import {
   getApprovedPluginMcpServers,
   getEnabledPlugins,
 } from "../trpc/routers/claude-settings"
+import {
+  buildMcpCommandTrustInputFromConfig,
+  ensureMcpCommandWriteApproved,
+  isMcpCommandTrustApprovedForRuntime,
+  type McpCommandTrustInput,
+  type McpCommandTrustRuntime,
+  type McpCommandTrustScope,
+} from "./mcp-command-trust"
 
 type ClaudeMcpServersForSdk = PrepareClaudeAgentSdkMcpServersInput["mcpServers"]
 type ClaudeMcpServerForSdk = NonNullable<ClaudeMcpServersForSdk>[string]
@@ -373,6 +381,47 @@ function materializeClaudeMcpServerConfigForSdk(
   return undefined
 }
 
+function buildClaudeMcpCommandTrustInput(input: {
+  name: string
+  scope: McpCommandTrustScope
+  projectPath?: string
+  config: McpServerConfig
+  runtime?: McpCommandTrustRuntime
+}): McpCommandTrustInput | null {
+  const runtimeConfig = materializeMcpRegistryServerConfigForRuntime(
+    input.config,
+    { stripMetadata: true },
+  )
+  return buildMcpCommandTrustInputFromConfig({
+    runtime: input.runtime ?? "claude-code",
+    name: input.name,
+    scope: input.scope,
+    projectPath: input.projectPath,
+    config: runtimeConfig as Record<string, unknown>,
+  })
+}
+
+async function ensureClaudeMcpCommandWriteApproved(input: {
+  name: string
+  scope: McpCommandTrustScope
+  projectPath?: string
+  config: McpServerConfig
+}): Promise<void> {
+  const request = buildClaudeMcpCommandTrustInput(input)
+  if (!request) return
+  await ensureMcpCommandWriteApproved({ request })
+}
+
+function isClaudeMcpCommandApprovedForRuntime(input: {
+  name: string
+  scope: McpCommandTrustScope
+  projectPath?: string
+  config: McpServerConfig
+}): boolean {
+  const request = buildClaudeMcpCommandTrustInput(input)
+  return request ? isMcpCommandTrustApprovedForRuntime(request) : true
+}
+
 function addClaudeMcpRegistryVerificationTarget(input: {
   targets: ClaudeMcpRegistryVerificationTargets
   serverName: string
@@ -388,16 +437,19 @@ function addClaudeMcpRegistryVerificationTarget(input: {
 
 const MCP_FETCH_TIMEOUT_MS = 40_000
 
-async function fetchToolsForServerStrict(
-  serverConfig: McpServerConfig,
-): Promise<McpToolInfo[]> {
+async function fetchToolsForServerStrict(input: {
+  name: string
+  scope: McpCommandTrustScope
+  projectPath?: string
+  serverConfig: McpServerConfig
+}): Promise<McpToolInfo[]> {
   const timeoutPromise = new Promise<McpToolInfo[]>((_, reject) =>
     setTimeout(() => reject(new Error("Timeout")), MCP_FETCH_TIMEOUT_MS),
   )
 
   const fetchPromise = (async () => {
     const runtimeConfig = materializeMcpRegistryServerConfigForRuntime(
-      serverConfig,
+      input.serverConfig,
       { stripMetadata: true },
     )
     if (runtimeConfig.url) {
@@ -409,6 +461,16 @@ async function fetchToolsForServerStrict(
 
     const command = runtimeConfig.command
     if (command) {
+      if (
+        !isClaudeMcpCommandApprovedForRuntime({
+          name: input.name,
+          scope: input.scope,
+          projectPath: input.projectPath,
+          config: input.serverConfig,
+        })
+      ) {
+        throw new Error("MCP stdio command has not been approved.")
+      }
       return await fetchMcpToolsStdio({
         command,
         args: runtimeConfig.args,
@@ -422,11 +484,14 @@ async function fetchToolsForServerStrict(
   return await Promise.race([fetchPromise, timeoutPromise])
 }
 
-async function fetchToolsForServer(
-  serverConfig: McpServerConfig,
-): Promise<McpToolInfo[]> {
+async function fetchToolsForServer(input: {
+  name: string
+  scope: McpCommandTrustScope
+  projectPath?: string
+  serverConfig: McpServerConfig
+}): Promise<McpToolInfo[]> {
   try {
-    return await fetchToolsForServerStrict(serverConfig)
+    return await fetchToolsForServerStrict(input)
   } catch {
     return []
   }
@@ -484,7 +549,12 @@ async function convertServersForSettings(
       let tools: McpToolInfo[] = []
 
       try {
-        tools = await fetchToolsForServer(serverConfig)
+        tools = await fetchToolsForServer({
+          name,
+          scope: scope ? "project" : "global",
+          ...(scope ? { projectPath: scope } : {}),
+          serverConfig,
+        })
       } catch (error) {
         console.error(`[MCP] Failed to fetch tools for ${name}:`, error)
       }
@@ -731,7 +801,11 @@ export async function getAllMcpConfigHandler() {
                 let tools: McpToolInfo[] = []
 
                 try {
-                  tools = await fetchToolsForServer(effectiveServerConfig)
+                  tools = await fetchToolsForServer({
+                    name,
+                    scope: "global",
+                    serverConfig: effectiveServerConfig,
+                  })
                 } catch (error) {
                   console.error(
                     `[MCP] Failed to fetch tools for plugin ${name}:`,
@@ -882,12 +956,19 @@ export async function resolveClaudeMcpServersForSdk(input: {
       const resolvedProjectPath =
         resolveProjectPathFromWorktree(lookupPath) || lookupPath
       for (const [name, srvConfig] of Object.entries(allServers)) {
-        const scope = name in projectServers ? resolvedProjectPath : null
-        const cacheKey = mcpCacheKey(scope, name)
+        const projectScoped = name in projectServers
+        const scopeKey = projectScoped ? resolvedProjectPath : null
+        const cacheKey = mcpCacheKey(scopeKey, name)
         if (
           shouldIncludeClaudeMcpServerInSdk(srvConfig) &&
           (workingMcpServers.get(cacheKey) === true ||
-            !workingMcpServers.has(cacheKey))
+            !workingMcpServers.has(cacheKey)) &&
+          isClaudeMcpCommandApprovedForRuntime({
+            name,
+            scope: projectScoped ? "project" : "global",
+            ...(projectScoped ? { projectPath: resolvedProjectPath } : {}),
+            config: srvConfig,
+          })
         ) {
           const runtimeConfig =
             materializeClaudeMcpServerConfigForSdk(srvConfig)
@@ -909,8 +990,21 @@ export async function resolveClaudeMcpServersForSdk(input: {
       }
     } else {
       const entries: Array<[string, ClaudeMcpServerForSdk]> = []
+      const resolvedProjectPath =
+        resolveProjectPathFromWorktree(lookupPath) || lookupPath
       for (const [name, srvConfig] of Object.entries(allServers)) {
         if (!shouldIncludeClaudeMcpServerInSdk(srvConfig)) continue
+        const projectScoped = name in projectServers
+        if (
+          !isClaudeMcpCommandApprovedForRuntime({
+            name,
+            scope: projectScoped ? "project" : "global",
+            ...(projectScoped ? { projectPath: resolvedProjectPath } : {}),
+            config: srvConfig,
+          })
+        ) {
+          continue
+        }
         const runtimeConfig = materializeClaudeMcpServerConfigForSdk(srvConfig)
         if (runtimeConfig) {
           entries.push([name, runtimeConfig])
@@ -1102,6 +1196,13 @@ export async function writeClaudeMcpServerConfig(input: {
   const projectPath = resolveMcpProjectPathForMutation(input)
   assertWritableClaudeMcpConfig(input.config)
 
+  await ensureClaudeMcpCommandWriteApproved({
+    name: serverName,
+    scope: input.scope,
+    ...(projectPath ? { projectPath } : {}),
+    config: input.config,
+  })
+
   await updateClaudeConfigAtomic((existingConfig) => {
     if (projectPath) {
       if (existingConfig.projects?.[projectPath]?.mcpServers?.[serverName]) {
@@ -1142,7 +1243,7 @@ export async function updateClaudeMcpServer(input: {
     : undefined
   let returnedName = serverName
 
-  await updateClaudeConfigAtomic((config) => {
+  await updateClaudeConfigAtomic(async (config) => {
     const servers = getMcpServersForScope(config, projectPath)
     if (!servers?.[serverName]) {
       throw new Error(`Server "${serverName}" not found`)
@@ -1154,6 +1255,12 @@ export async function updateClaudeMcpServer(input: {
       if (servers[newName]) {
         throw new Error(`Server "${newName}" already exists`)
       }
+      await ensureClaudeMcpCommandWriteApproved({
+        name: newName,
+        scope: input.scope,
+        ...(projectPath ? { projectPath } : {}),
+        config: existing,
+      })
       returnedName = newName
       const updated = removeMcpServerConfig(config, projectPath, serverName)
       return updateMcpServerConfig(updated, projectPath, newName, existing)
@@ -1180,6 +1287,12 @@ export async function updateClaudeMcpServer(input: {
     }
 
     const merged = { ...existing, ...update }
+    await ensureClaudeMcpCommandWriteApproved({
+      name: serverName,
+      scope: input.scope,
+      ...(projectPath ? { projectPath } : {}),
+      config: merged,
+    })
     return updateMcpServerConfig(config, projectPath, serverName, merged)
   })
 
@@ -1288,7 +1401,12 @@ export async function checkClaudeMcpRegistryServer(input: {
   )
 
   try {
-    const tools = await fetchToolsForServerStrict(materializedConfig)
+    const tools = await fetchToolsForServerStrict({
+      name: serverName,
+      scope: input.scope,
+      ...(projectPath ? { projectPath } : {}),
+      serverConfig,
+    })
     await upsertMcpRegistryVerificationRecord({
       ...verificationKey,
       status: "ready-to-verify",

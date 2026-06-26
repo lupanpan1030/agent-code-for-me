@@ -41,6 +41,7 @@ Already-good patterns to reuse:
 - `src/main/lib/fs/path-boundary.ts` centralizes path containment.
 - `src/main/lib/git/security/secure-fs.ts` and `assertRegisteredWorktree` protect many `changes` routes.
 - `src/main/lib/git/worktree-setup-trust.ts` shows the approval/fingerprint pattern for repository-provided commands.
+- Phase 3 MCP stdio command writes now use `src/main/lib/runtime-mcp-config/mcp-command-trust.ts` as the Runtime MCP Config-owned trust gate: Claude, Codex, and registry writers request native main-process confirmation before persisting stdio commands, record only approved command fingerprints, and runtime materialization omits unapproved stdio commands.
 
 ## Options
 

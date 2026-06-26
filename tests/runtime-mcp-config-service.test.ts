@@ -11,6 +11,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import * as realOs from "node:os"
 import { join, resolve } from "node:path"
 import * as dbSchema from "../src/main/lib/db/schema"
+import { createAgentJobTestDb } from "./helpers/agent-job-test-db"
 
 type MockMcpServerConfig = {
   command?: string
@@ -65,6 +66,7 @@ let registeredProjectPaths: string[] = []
 let codexMcpListStdout = "[]"
 let codexCliCalls: CodexCliCall[] = []
 let mcpOAuthCalls: McpOAuthCall[] = []
+let mcpTrustPromptCalls: Array<{ name: string; commandHash: string }> = []
 let tempDirs: string[] = []
 let mockHome = originalHome || realOs.tmpdir()
 let enabledPluginSources: string[] = []
@@ -148,6 +150,9 @@ mock.module("electron", () => ({
       }
       return mockHome
     },
+  },
+  dialog: {
+    showMessageBox: mock(async () => ({ response: 0 })),
   },
 }))
 
@@ -273,6 +278,9 @@ const claudeMcpConfig = await import(
   "../src/main/lib/runtime-mcp-config/claude"
 )
 const codexMcpConfig = await import("../src/main/lib/runtime-mcp-config/codex")
+const mcpCommandTrust = await import(
+  "../src/main/lib/runtime-mcp-config/mcp-command-trust"
+)
 const { setElectronUserDataPathProviderForTest } = await import(
   "../src/main/lib/electron-app"
 )
@@ -289,7 +297,45 @@ function makeTempDir(): string {
   return dir
 }
 
+function approveMcpCommand(input: {
+  runtime: "claude-code" | "codex"
+  name: string
+  scope?: "global" | "project"
+  projectPath?: string
+  command: string
+  args?: string[]
+  env?: Record<string, string>
+  envVars?: string[]
+  cwd?: string
+}) {
+  mcpCommandTrust.recordMcpCommandTrustApproval({
+    request: {
+      runtime: input.runtime,
+      name: input.name,
+      scope: input.scope ?? "global",
+      projectPath: input.projectPath,
+      command: input.command,
+      args: input.args,
+      env: input.env,
+      envVars: input.envVars,
+      cwd: input.cwd,
+    },
+  })
+}
+
 beforeEach(() => {
+  mcpCommandTrust.setMcpCommandTrustDatabaseForTest(
+    createAgentJobTestDb() as unknown as Parameters<
+      typeof mcpCommandTrust.setMcpCommandTrustDatabaseForTest
+    >[0],
+  )
+  mcpCommandTrust.setMcpCommandTrustPromptForTest(async (request) => {
+    mcpTrustPromptCalls.push({
+      name: request.name,
+      commandHash: request.commandHash,
+    })
+    return true
+  })
   claudeConfig = {}
   claudeDirConfig = {}
   projectMcpJsonByPath = {}
@@ -297,6 +343,7 @@ beforeEach(() => {
   codexMcpListStdout = "[]"
   codexCliCalls = []
   mcpOAuthCalls = []
+  mcpTrustPromptCalls = []
   enabledPluginSources = []
   approvedPluginMcpServers = []
   pluginMcpConfigs = []
@@ -319,6 +366,8 @@ afterEach(() => {
     delete process.env.HOME
   }
   setElectronUserDataPathProviderForTest(null)
+  mcpCommandTrust.setMcpCommandTrustDatabaseForTest(null)
+  mcpCommandTrust.setMcpCommandTrustPromptForTest(null)
 })
 
 afterAll(() => {
@@ -438,6 +487,140 @@ describe("Runtime MCP config service behavior", () => {
     ).rejects.toThrow("registered project path")
   })
 
+  test("blocks unapproved stdio MCP writes while leaving HTTP writes unaffected", async () => {
+    mcpCommandTrust.setMcpCommandTrustPromptForTest(async (request) => {
+      mcpTrustPromptCalls.push({
+        name: request.name,
+        commandHash: request.commandHash,
+      })
+      return false
+    })
+
+    await expect(
+      claudeMcpConfig.addClaudeMcpServer({
+        name: "evil",
+        scope: "global",
+        transport: "stdio",
+        command: "node",
+        args: ["-e", "require('child_process').execSync('touch /tmp/pwned')"],
+        env: { SECRET: "payload" },
+      }),
+    ).rejects.toThrow("not approved")
+    expect(claudeConfig.mcpServers?.evil).toBeUndefined()
+    expect(mcpTrustPromptCalls).toHaveLength(1)
+
+    await claudeMcpConfig.addClaudeMcpServer({
+      name: "remote_ok",
+      scope: "global",
+      transport: "http",
+      url: "https://api.example.com/mcp",
+      authType: "none",
+    })
+    expect(claudeConfig.mcpServers?.remote_ok).toEqual({
+      url: "https://api.example.com/mcp",
+      authType: "none",
+    })
+    expect(mcpTrustPromptCalls).toHaveLength(1)
+
+    await expect(
+      codexMcpConfig.addCodexMcpServer({
+        name: "evil_codex",
+        scope: "global",
+        transport: "stdio",
+        command: "node",
+        args: ["-e", "process.exit(99)"],
+      }),
+    ).rejects.toThrow("not approved")
+    expect(codexCliCalls).toEqual([])
+  })
+
+  test("remembers approved MCP command fingerprints and re-prompts on command changes", async () => {
+    await claudeMcpConfig.addClaudeMcpServer({
+      name: "safe_stdio",
+      scope: "global",
+      transport: "stdio",
+      command: "node",
+      args: ["server.js"],
+      env: { MCP_ENV: "1" },
+    })
+    expect(mcpTrustPromptCalls).toHaveLength(1)
+
+    await claudeMcpConfig.updateClaudeMcpServer({
+      name: "safe_stdio",
+      scope: "global",
+      disabled: true,
+    })
+    expect(mcpTrustPromptCalls).toHaveLength(1)
+
+    await claudeMcpConfig.updateClaudeMcpServer({
+      name: "safe_stdio",
+      scope: "global",
+      command: "node2",
+    })
+    expect(mcpTrustPromptCalls).toHaveLength(2)
+    expect(claudeConfig.mcpServers?.safe_stdio).toMatchObject({
+      command: "node2",
+      args: ["server.js"],
+      env: { MCP_ENV: "1" },
+      disabled: true,
+    })
+  })
+
+  test("does not pass unapproved stdio MCP configs to runtime materialization", async () => {
+    const tempHome = makeTempDir()
+    mockHome = tempHome
+    process.env.HOME = tempHome
+    const claudeRuntimeConfig = {
+      mcpServers: {
+        evil: {
+          command: "node",
+          args: ["-e", "process.exit(99)"],
+          env: { SECRET: "payload" },
+        },
+        remote_ok: {
+          url: "https://api.example.com/mcp",
+          authType: "none" as const,
+        },
+      },
+    }
+    writeFileSync(
+      join(tempHome, ".claude.json"),
+      JSON.stringify(claudeRuntimeConfig),
+    )
+    claudeConfig = claudeRuntimeConfig
+
+    const claudeRuntime = await claudeMcpConfig.resolveClaudeMcpServersForSdk({
+      isolatedConfigReady: true,
+      runtimeCwd: tempHome,
+    })
+    expect(claudeRuntime.mcpServersForSdk).not.toHaveProperty("evil")
+    expect(claudeRuntime.mcpServersForSdk).toHaveProperty("remote_ok")
+
+    codexMcpListStdout = JSON.stringify([
+      {
+        name: "evil_codex",
+        enabled: true,
+        transport: {
+          type: "stdio",
+          command: "node",
+          args: ["-e", "process.exit(99)"],
+          env: { SECRET: "payload" },
+        },
+        auth_status: "unsupported",
+      },
+    ])
+
+    const codexRuntime = await codexMcpConfig.resolveCodexMcpSnapshot({})
+    expect(codexRuntime.mcpServersForSession).toEqual([])
+    expect(codexRuntime.groups[0]?.mcpServers[0]).toMatchObject({
+      name: "evil_codex",
+      status: "failed",
+      config: {
+        disabledReason: "MCP stdio command is not approved",
+      },
+    })
+  })
+
   test("displays plugin-sourced MCP servers under plugin ownership", async () => {
     enabledPluginSources = ["market:demo"]
     approvedPluginMcpServers = ["approved-demo-server"]
@@ -456,6 +639,11 @@ describe("Runtime MCP config service behavior", () => {
         },
       },
     ]
+    approveMcpCommand({
+      runtime: "claude-code",
+      name: "approved_tool",
+      command: "approved-plugin-tool",
+    })
 
     const settings = await claudeMcpConfig.getAllMcpConfigHandler()
     const pluginGroup = settings.groups.find(
@@ -534,6 +722,16 @@ describe("Runtime MCP config service behavior", () => {
         },
       },
     }
+    approveMcpCommand({
+      runtime: "claude-code",
+      name: "registry_check",
+      command: "registry-check-tool",
+    })
+    approveMcpCommand({
+      runtime: "claude-code",
+      name: "registry_check_fail",
+      command: "registry-fail-tool",
+    })
 
     await expect(
       claudeMcpConfig.checkClaudeMcpRegistryServer({
@@ -617,6 +815,13 @@ describe("Runtime MCP config service behavior", () => {
         auth_status: "not_logged_in",
       },
     ])
+    approveMcpCommand({
+      runtime: "codex",
+      name: "local_stdio",
+      command: "node",
+      args: ["stdio.js"],
+      env: { LOCAL: "1" },
+    })
 
     const allConfig = await codexMcpConfig.getAllCodexMcpConfigHandler()
     const globalServers = allConfig.groups[0]?.mcpServers || []
@@ -720,6 +925,15 @@ describe("Runtime MCP config service behavior", () => {
         auth_status: "bearer_token",
       },
     ])
+    approveMcpCommand({
+      runtime: "codex",
+      name: "active_stdio",
+      command: resolve(projectPath, "server.js"),
+      args: ["--mode", "active"],
+      env: { INLINE_SECRET: "inline-secret" },
+      envVars: ["CODEX_REMOTE_TOKEN", "CODEX_MISSING_ENV"],
+      cwd: projectPath,
+    })
 
     const snapshot = await codexMcpConfig.resolveCodexMcpSnapshot({
       lookupPath: projectPath,
@@ -1091,6 +1305,24 @@ describe("Runtime MCP config service behavior", () => {
     projectMcpJsonByPath[projectPath] = {
       project_json: { command: "json-tool" },
     }
+    approveMcpCommand({
+      runtime: "claude-code",
+      name: "global_stdio",
+      command: "global-tool",
+      args: ["--global"],
+    })
+    approveMcpCommand({
+      runtime: "claude-code",
+      name: "registry_ready_to_verify",
+      command: "registry-ready-tool",
+    })
+    approveMcpCommand({
+      runtime: "claude-code",
+      name: "project_json",
+      scope: "project",
+      projectPath,
+      command: "json-tool",
+    })
 
     const claudeRuntime = await claudeMcpConfig.resolveClaudeMcpServersForSdk({
       isolatedConfigReady: true,
@@ -1185,6 +1417,13 @@ describe("Runtime MCP config service behavior", () => {
         auth_status: "bearer_token",
       },
     ])
+    approveMcpCommand({
+      runtime: "codex",
+      name: "local_stdio",
+      command: "node",
+      args: ["stdio.js"],
+      env: { LOCAL: "1" },
+    })
 
     const codexRuntime =
       await codexMcpConfig.resolveCodexMcpSnapshotForDesktopRun({

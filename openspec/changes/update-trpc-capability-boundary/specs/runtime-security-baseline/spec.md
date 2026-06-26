@@ -66,6 +66,18 @@ Renderer-reachable procedures that perform shell execution, arbitrary file write
 - **WHEN** a dangerous operation is denied by user consent, policy, local-only mode, safe mode, or a kill-switch
 - **THEN** the main process SHALL skip the side effect and return a bounded denial result.
 
+#### Scenario: MCP stdio command write is not approved
+- **WHEN** a renderer-reachable MCP add, update, or registry install request would persist a stdio `command`, `args`, `env`, env-var reference, or cwd for later runtime execution
+- **THEN** the main process SHALL require native main-process confirmation before writing the config, and SHALL NOT persist the command when the user cancels or the confirmation cannot be completed.
+
+#### Scenario: MCP stdio command fingerprint is already approved
+- **WHEN** an MCP stdio command write has the same approved fingerprint for runtime, server name, scope, command, args, env, env-var references, and cwd
+- **THEN** the main process SHALL allow the write without showing another confirmation.
+
+#### Scenario: Runtime sees unapproved MCP stdio command
+- **WHEN** Claude or Codex runtime materialization encounters a stdio MCP command without an approved fingerprint
+- **THEN** the main process SHALL omit that command from runtime startup materialization and SHALL NOT pass it to a stdio MCP transport for spawn.
+
 ### Requirement: Untrusted Renderer Content Is Isolated From Privileged Bridges
 The renderer SHALL treat repository content, chat markdown, tool output, MCP output, and previewed web pages as untrusted and SHALL prevent them from directly executing privileged app JavaScript or calling the tRPC bridge.
 
