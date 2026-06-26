@@ -168,8 +168,9 @@
 **R7 — `FALLBACK_PREFIX` base64 旁路解密** · **✓核对**
 - [secure-storage.ts:155-161](src/main/lib/secure-storage.ts:155)：值以 `locus:v1:base64:` 开头时，先于 safeStorage 检查直接 base64 解码返回明文。当前代码无写入端产生该前缀（待确认是否纯历史遗留），但分支仍活；若本地攻击者能写 DB 即可注入"伪密文"。
 
-**R8 — plan 模式漏拦 `MultiEdit`** · **待核对**
-- [agent-sdk-tool-permission.ts:183-202](src/main/lib/claude/agent-sdk-tool-permission.ts:183) 只显式拦 `Edit/Write/Bash/NotebookEdit`；plan 模式下 `MultiEdit` 落到允许分支。是否被 SDK 原生 `permissionMode:"plan"` 兜底属外部依赖，不应据此免拦。
+**R8 — plan 模式漏拦 `MultiEdit`** · **已修 / ✓核对**
+- 原问题：[agent-sdk-tool-permission.ts](src/main/lib/claude/agent-sdk-tool-permission.ts) 的 plan 模式显式拦截只覆盖 `Edit/Write/Bash/NotebookEdit`，`MultiEdit` 会落到允许分支。
+- 修复：plan 模式 workspace side-effect 阻断改为单一工具集合，覆盖 `Edit`、`Write`、`MultiEdit`、`NotebookEdit`、`Bash`；保留 `Read` 允许。测试：[claude-agent-sdk-tool-permission.test.ts](tests/claude-agent-sdk-tool-permission.test.ts) 覆盖 plan 模式 `MultiEdit` 等写工具 `behavior:"deny"`、`Read` 仍 `allow`。Commit：本提交 `fix: block MultiEdit in plan mode`。
 
 **R9 — 工具审批 `updatedInput` 不校验** · **待核对**
 - [claude.ts:339-359](src/main/lib/trpc/routers/claude.ts:339)：`respondToolApproval` 收 `updatedInput: z.unknown()` 原样替换将执行的工具参数。被污染的 renderer 可"展示 A、执行 B"。

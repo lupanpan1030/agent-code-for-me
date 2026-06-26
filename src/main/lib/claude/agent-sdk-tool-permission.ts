@@ -52,7 +52,13 @@ export type CreateClaudeAgentSdkToolPermissionHandlerInput = {
   parts: Array<Record<string, any>>
 }
 
-const PLAN_MODE_BLOCKED_TOOLS = new Set(["Bash", "NotebookEdit"])
+const PLAN_MODE_BLOCKED_TOOLS = new Set([
+  "Edit",
+  "Write",
+  "MultiEdit",
+  "NotebookEdit",
+  "Bash",
+])
 
 function fixOllamaToolInputAliases(
   toolName: string,
@@ -181,12 +187,6 @@ export function createClaudeAgentSdkPermissionControls({
     }
 
     if (permissionPolicy.planWorkspaceSideEffects === "deny") {
-      if (toolName === "Edit" || toolName === "Write") {
-        return {
-          behavior: "deny",
-          message: `Tool "${toolName}" blocked in plan mode.`,
-        }
-      }
       if (toolName === "ExitPlanMode") {
         return {
           behavior: "deny",
