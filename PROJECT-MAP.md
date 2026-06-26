@@ -190,8 +190,9 @@
 **R14 — 损坏的 `sub_chats.messages` 被静默丢弃** · **待核对**
 - [chat-message-normalizer.ts:41-43](src/shared/chat-message-normalizer.ts:41) 解析失败仅 `console.warn` 返回 `[]`；用户看到空聊天、无任何数据丢失提示。JSON blob 无版本戳、无逐条类型校验。
 
-**R15 — VS Code 主题扫描 `execSync` 字符串插值** · **待核对**
-- [vscode-theme-scanner.ts:124-125](src/main/lib/vscode-theme-scanner.ts:124)：`execSync(\`ls -1 "${extensionsDir}"\`)`。`extensionsDir` 源自 `homedir()` 固定路径（非 renderer 控制），实际注入风险低，但应改 `fs.readdir`。
+**R15 — VS Code 主题扫描 `execSync` 字符串插值** · **已修 / ✓核对**
+- 原问题：[vscode-theme-scanner.ts](src/main/lib/vscode-theme-scanner.ts) 用 `execSync(\`ls -1 "${extensionsDir}"\`)` 扫描扩展目录；历史注释称 `fs.readdir` 在 Electron 有缓存问题，但未找到当前可复现证据。
+- 修复：改用 async `fs.readdir(..., { withFileTypes: true })`，不再保留 shell 调用。测试：[vscode-theme-scanner.test.ts](tests/vscode-theme-scanner.test.ts) 在临时目录创建 VS Code extension/theme fixture，验证扫描返回正确条目。Commit：本提交 `fix: scan VS Code themes without shell`。
 
 ### Low
 

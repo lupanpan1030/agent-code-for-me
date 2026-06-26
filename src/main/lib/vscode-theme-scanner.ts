@@ -112,7 +112,10 @@ function mapUiTheme(uiTheme: string | undefined): "light" | "dark" {
 /**
  * Scan a single extensions directory
  */
-async function scanExtensionsDir(extensionsDir: string, source: EditorSource): Promise<DiscoveredTheme[]> {
+export async function scanExtensionsDir(
+  extensionsDir: string,
+  source: EditorSource,
+): Promise<DiscoveredTheme[]> {
   const themes: DiscoveredTheme[] = []
 
   if (!(await directoryExists(extensionsDir))) {
@@ -120,28 +123,9 @@ async function scanExtensionsDir(extensionsDir: string, source: EditorSource): P
   }
 
   try {
-    // Always use execSync to get directory listing (fs.readdir has caching issues in Electron)
-    const { execSync } = require("child_process")
-    const lsOutput = execSync(`ls -1 "${extensionsDir}"`, { encoding: "utf-8" })
-    const lsEntries = lsOutput.trim().split("\n").filter(Boolean)
+    const entries = await fs.readdir(extensionsDir, { withFileTypes: true })
 
-    // Create Dirent-like objects from ls output
-    const entries_final = await Promise.all(
-      lsEntries.map(async (name: string) => {
-        const fullPath = path.join(extensionsDir, name)
-        try {
-          const stat = await fs.stat(fullPath)
-          return {
-            name,
-            isDirectory: () => stat.isDirectory(),
-          }
-        } catch {
-          return { name, isDirectory: () => false }
-        }
-      })
-    )
-
-    for (const entry of entries_final) {
+    for (const entry of entries) {
       if (!entry.isDirectory()) continue
 
       const extDir = entry.name
