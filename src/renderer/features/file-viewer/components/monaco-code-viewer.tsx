@@ -1,11 +1,11 @@
+import Editor, { type Monaco } from "@monaco-editor/react"
+import { Loader2 } from "lucide-react"
+import type { editor } from "monaco-editor"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom"
-import Editor, { type Monaco } from "@monaco-editor/react"
-import type { editor } from "monaco-editor"
-import { useTheme } from "next-themes"
-import { Loader2 } from "lucide-react"
-import { defaultEditorOptions, getMonacoTheme, registerMonacoTheme } from "./monaco-config"
 import { useVSCodeTheme } from "@/lib/themes"
+import { useTheme } from "@/lib/themes/theme-mode-provider"
+import { defaultEditorOptions, getMonacoTheme, registerMonacoTheme } from "./monaco-config"
 
 type ContextMenuPosition = { x: number; y: number }
 const FIND_ACTION_ID = "actions.find"

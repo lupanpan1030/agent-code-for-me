@@ -12,13 +12,13 @@ import {
   ZoomIn,
   ZoomOut,
 } from "lucide-react"
-import { useTheme } from "next-themes"
 import { memo, useCallback, useEffect, useRef, useState } from "react"
 import {
   TransformComponent,
   TransformWrapper,
   useControls,
 } from "react-zoom-pan-pinch"
+import { useTheme } from "@/lib/themes/theme-mode-provider"
 import { useI18n } from "../lib/i18n"
 import {
   MERMAID_SECURITY_LEVEL,

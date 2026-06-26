@@ -1,7 +1,7 @@
 import { Provider as JotaiProvider, useSetAtom } from "jotai"
-import { ThemeProvider, useTheme } from "next-themes"
 import { useEffect } from "react"
 import { Toaster } from "sonner"
+import { ThemeProvider, useTheme } from "@/lib/themes/theme-mode-provider"
 import { IconSpinner } from "./components/ui/icons"
 import { TooltipProvider } from "./components/ui/tooltip"
 import { TRPCProvider } from "./contexts/TRPCProvider"

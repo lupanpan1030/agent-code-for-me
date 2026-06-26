@@ -1,14 +1,17 @@
-import { useEffect, useRef, useState, useCallback, useMemo } from "react"
-import type { Terminal as XTerm } from "xterm"
 import type { FitAddon } from "@xterm/addon-fit"
 import type { SearchAddon } from "@xterm/addon-search"
 import type { SerializeAddon } from "@xterm/addon-serialize"
-import { useTheme } from "next-themes"
-import { useSetAtom, useAtomValue } from "jotai"
+import { useAtomValue, useSetAtom } from "jotai"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
+import type { Terminal as XTerm } from "xterm"
+import { fullThemeDataAtom } from "@/lib/atoms"
+import { useI18n } from "@/lib/i18n"
+import { useTheme } from "@/lib/themes/theme-mode-provider"
 import { trpc } from "@/lib/trpc"
 import { terminalCwdAtom } from "./atoms"
-import { fullThemeDataAtom } from "@/lib/atoms"
+import { sanitizeForTitle } from "./commandBuffer"
+import { getTerminalTheme, getTerminalThemeFromVSCode } from "./config"
 import {
   createTerminalInstance,
   getDefaultTerminalBg,
@@ -19,13 +22,10 @@ import {
   setupPasteHandler,
   setupResizeHandlers,
 } from "./helpers"
-import { getTerminalTheme, getTerminalThemeFromVSCode } from "./config"
 import { parseCwd } from "./parseCwd"
-import { sanitizeForTitle } from "./commandBuffer"
-import { shellEscapePaths } from "./utils"
 import { TerminalSearch } from "./TerminalSearch"
 import type { TerminalProps, TerminalStreamEvent } from "./types"
-import { useI18n } from "@/lib/i18n"
+import { shellEscapePaths } from "./utils"
 import "xterm/css/xterm.css"
 
 export function Terminal({

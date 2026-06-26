@@ -20,6 +20,7 @@
 
 ## 2. Phase 2 - Renderer Hardening
 - [x] 2.1 Audit renderer CSP requirements and remove broad `unsafe-eval`/remote script allowances where feasible.
+- [x] 2.1a Remove production `script-src 'unsafe-inline'` by externalizing startup theme/error scripts, installing a main-process dev/prod CSP header, and keeping Vite HMR allowances dev-only.
 - [ ] 2.2 Sanitize or sandbox markdown, highlighted HTML, Mermaid SVG, MCP/tool output, and chat export previews before rendering.
 - [ ] 2.3 Harden local browser/webview navigation, permissions, partitions, and JavaScript execution surfaces.
 - [ ] 2.4 Add desktop smoke coverage for markdown, diagrams, syntax highlighting, local browser preview, and tRPC bridge startup.
@@ -37,3 +38,5 @@
 - [x] 4.1 Run `bun run check`.
 - [x] 4.2 Run `openspec validate update-trpc-capability-boundary --strict --no-interactive`.
 - [x] 4.3 Update `PROJECT-MAP.md` with implemented commit references after each phase.
+- [x] 4.4 Run packaged desktop CSP smoke for Phase 2 production `unsafe-inline` removal.
+- [x] 4.5 Run dev desktop CSP/HMR smoke for Phase 2 production `unsafe-inline` removal.

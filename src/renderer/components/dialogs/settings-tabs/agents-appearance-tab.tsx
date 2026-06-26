@@ -1,7 +1,7 @@
 import { useAtom, useSetAtom } from "jotai"
 import { AnimatePresence, motion } from "motion/react"
-import { useTheme } from "next-themes"
 import { useCallback, useEffect, useMemo, useState } from "react"
+import { useTheme } from "@/lib/themes/theme-mode-provider"
 import {
   Select,
   SelectContent,
@@ -306,7 +306,7 @@ export function AgentsAppearanceTab() {
         const cssVars = generateCSSVariables(theme.colors)
         applyCSSVariables(cssVars)
 
-        // Sync next-themes with theme type
+        // Sync theme mode with theme type
         const themeType = getThemeTypeFromColors(theme.colors)
         if (themeType === "dark") {
           document.documentElement.classList.add("dark")

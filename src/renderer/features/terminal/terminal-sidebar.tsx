@@ -1,7 +1,6 @@
 import { useAtom, useAtomValue } from "jotai"
 import { AlignJustify, ChevronsDown } from "lucide-react"
 import { motion } from "motion/react"
-import { useTheme } from "next-themes"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Kbd } from "@/components/ui/kbd"
@@ -13,6 +12,7 @@ import {
 import { fullThemeDataAtom } from "@/lib/atoms"
 import { useResolvedHotkeyDisplay } from "@/lib/hotkeys"
 import { useI18n } from "@/lib/i18n"
+import { useTheme } from "@/lib/themes/theme-mode-provider"
 import { trpc } from "@/lib/trpc"
 import type { TerminalInitialCommandIntent } from "../../../shared/terminal-initial-command-intents"
 import {

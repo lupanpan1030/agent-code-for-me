@@ -2,7 +2,6 @@
 
 import { useAtom, useAtomValue } from "jotai"
 import { motion } from "motion/react"
-import { useTheme } from "next-themes"
 import type { ReactNode } from "react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
@@ -19,6 +18,7 @@ import { TerminalTabs } from "@/features/terminal/terminal-tabs"
 import type { TerminalInstance } from "@/features/terminal/types"
 import { fullThemeDataAtom } from "@/lib/atoms"
 import { useI18n } from "@/lib/i18n"
+import { useTheme } from "@/lib/themes/theme-mode-provider"
 import { trpc } from "@/lib/trpc"
 import type { TerminalInitialCommandIntent } from "../../../../shared/terminal-initial-command-intents"
 
