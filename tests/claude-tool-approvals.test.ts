@@ -68,7 +68,7 @@ describe("Claude tool approval owner", () => {
           },
         },
       }),
-    ).toThrow("Invalid updatedInput for AskUserQuestion approval.")
+    ).toThrow("Invalid updatedInput for Claude tool approval.")
 
     expect(decisions).toEqual([])
     expect(getClaudePendingToolApprovalStore().has("tool-1")).toBe(true)
@@ -98,6 +98,77 @@ describe("Claude tool approval owner", () => {
 
     expect(decisions).toEqual([])
     expect(getClaudePendingToolApprovalStore().has("tool-1")).toBe(true)
+  })
+
+  test("guarded tool approvals cannot replace the approved tool input", () => {
+    const decisions: unknown[] = []
+    const questions = [
+      {
+        question: "Scoped shell file operation targets approved editable scope and requires user approval.",
+        header: "Scoped shell write",
+        options: [
+          { label: "Approve", description: "Allow this action once." },
+          { label: "Deny", description: "Block this action." },
+        ],
+        multiSelect: false,
+      },
+    ]
+    const originalToolInput = {
+      command: "printf 'safe' > /repo/src/generated.txt",
+    }
+    getClaudePendingToolApprovalStore().set("tool-guarded-shell", {
+      subChatId: "sub-1",
+      toolName: "Bash",
+      toolInput: originalToolInput,
+      approvalInput: { questions },
+      resolve: (decision) => decisions.push(decision),
+    })
+
+    expect(() =>
+      resolveClaudePendingToolApproval({
+        toolUseId: "tool-guarded-shell",
+        decision: {
+          approved: true,
+          updatedInput: {
+            questions,
+            answers: {
+              [questions[0].question]: "Approve",
+            },
+            command: "rm -rf /",
+          },
+        },
+      }),
+    ).toThrow("Invalid updatedInput for Claude tool approval.")
+
+    expect(decisions).toEqual([])
+    expect(getClaudePendingToolApprovalStore().has("tool-guarded-shell")).toBe(
+      true,
+    )
+
+    expect(
+      resolveClaudePendingToolApproval({
+        toolUseId: "tool-guarded-shell",
+        decision: {
+          approved: true,
+          updatedInput: {
+            questions,
+            answers: {
+              [questions[0].question]: "Approve",
+            },
+          },
+        },
+      }),
+    ).toBe(true)
+
+    expect(decisions).toEqual([
+      {
+        approved: true,
+        updatedInput: originalToolInput,
+      },
+    ])
+    expect(getClaudePendingToolApprovalStore().has("tool-guarded-shell")).toBe(
+      false,
+    )
   })
 
   test("clears only approvals for the requested sub-chat", () => {

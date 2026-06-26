@@ -184,8 +184,10 @@
 - 原问题：[claude.ts](src/main/lib/trpc/routers/claude.ts) 的 `respondToolApproval` 用 `updatedInput: z.unknown()`，并把 renderer payload 原样交给 pending tool resolve，污染 renderer 可尝试"展示 A、执行 B"。
 - 修复：路由输入先收窄为 object envelope；Claude approval owner 记录 pending tool name 和原始 tool input，并按 `AskUserQuestion` approval schema 校验 `updatedInput`，拒绝 schema 外字段或替换原始 `questions`。测试：[claude-tool-approvals.test.ts](tests/claude-tool-approvals.test.ts) 覆盖 schema 外/越权字段拒绝、展示问题被替换时拒绝、合法 answer 通过；[claude-agent-sdk-tool-permission.test.ts](tests/claude-agent-sdk-tool-permission.test.ts) 覆盖 AskUserQuestion bridge 未回归。Commit：本提交 `fix: validate Claude approval input`。
 
-**R10 — guarded `requiresUserApproval` 仅咨询性** · **待核对 / 待确认 UI 接线**
-- [decision.ts:516-530](src/main/lib/agent-guard/decision.ts:516) 返回 `decision:"allow", requiresUserApproval:true`，但裁决映射只看 `allow`。若 UI 未据此阻断，guarded 的有界 shell 写会无确认执行。
+**R10 — guarded `requiresUserApproval` 仅咨询性** · **已修 / ✓核对**
+- 原问题：[decision.ts](src/main/lib/agent-guard/decision.ts) 对 guarded 有界 shell 写返回 `requiresUserApproval:true`；Codex app-server 与 Kun 已接用户确认，但 Claude Agent SDK guarded 路径直接 `toClaudePermissionResult(decision)`，未阻断等待用户确认。
+- 修复：Claude `agent+scopeContract` 且 `locus-guarded-tool-policy` 生效时，`resolveGuardedScopedShellWriteApproval` 命中会复用现有 `ask-user-question` pending 流；用户选择 Approve 才返回原始 Bash tool input，选择 Deny/跳过/超时均 deny。审批 owner 会校验问题未被替换，并拒绝 renderer 用 `updatedInput.command` 偷换 Bash 命令。
+- 回归测试：[claude-agent-sdk-tool-permission.test.ts](tests/claude-agent-sdk-tool-permission.test.ts)、[claude-tool-approvals.test.ts](tests/claude-tool-approvals.test.ts)。
 
 **R11 — 历史 `customClaudeConfigAtom` 把 token 存 localStorage** · **已修 / ✓核对**
 - 原问题：[lib/atoms/index.ts](src/renderer/lib/atoms/index.ts) 的 legacy `atomWithStorage("agents:claude-custom-config")` 默认持久化形状含 `token`；迁移钩子只写空 token，不移除 legacy key。
@@ -244,7 +246,7 @@
 1. **`FALLBACK_PREFIX` 是否纯历史遗留**：已确认历史提交 `16a6d578` 曾写入 `locus:v1:base64:` fallback；当前读取旁路已改为 fail-closed，旧 fallback 凭据需重新认证/重新保存。
 2. **local-only 的安全语义**：已定为 by design。local-only 只阻断 Locus/1Code 托管云与远程 sandbox，不是 air-gap；Anthropic/用户自带 provider key 不在阻断范围，完全离线走 Ollama。
 3. **`AuthManager`/`AuthStore` 去留**：已确认永久死代码并删除；`auth:*` IPC、preload 暴露和 debug logout 调用方同步移除。
-4. **`requiresUserApproval` 是否接到 UI 阻断**（[decision.ts:516](src/main/lib/agent-guard/decision.ts:516)）：未找到 renderer 侧据此阻断的调用点。
+4. **`requiresUserApproval` 是否接到 UI 阻断**：Claude guarded 路径已接现有 `ask-user-question` pending 流；Codex app-server 与 Kun 已有对应消费。非 guarded / observe 路径仍不使用该 guard approval。
 5. **`projectSlug` 是否在拼 worktree 路径前消毒**（[worktree.ts:985-986](src/main/lib/git/worktree.ts:985)，`~/.21st/worktrees/<slug>`）：未追到生成处与消毒逻辑。
 6. **`settingSources:["project","user"]`**（[agent-sdk-query-options.ts:272](src/main/lib/claude/agent-sdk-query-options.ts:272)）：恶意仓库的 `.claude/` 项目级设置能向 SDK 注入多少（system prompt / 工具配置）？范围待确认。
 7. **`allFullThemesAtom` 是否有命令式写入方**：已确认无引用且不可命令式写入，恒空派生 atom 已删除；主题功能走 `theme-provider.tsx`。

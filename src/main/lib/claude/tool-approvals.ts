@@ -40,23 +40,28 @@ function validateApprovalUpdatedInput(
   pending: ClaudeAskUserQuestionPending,
   updatedInput: unknown,
 ): Record<string, unknown> {
-  if (pending.toolName !== "AskUserQuestion") {
-    throw new Error(`Unsupported Claude tool approval: ${pending.toolName}`)
-  }
-
   const parsed =
     askUserQuestionApprovalUpdatedInputSchema.safeParse(updatedInput)
   if (!parsed.success) {
-    throw new Error("Invalid updatedInput for AskUserQuestion approval.")
+    throw new Error("Invalid updatedInput for Claude tool approval.")
   }
+
+  const expectedQuestions =
+    "approvalInput" in pending
+      ? pending.approvalInput.questions
+      : pending.toolInput.questions
 
   if (
     stableJson(parsed.data.questions) !==
-    stableJson(pending.toolInput.questions)
+    stableJson(expectedQuestions)
   ) {
     throw new Error(
-      "Invalid updatedInput for AskUserQuestion approval: questions changed.",
+      "Invalid updatedInput for Claude tool approval: questions changed.",
     )
+  }
+
+  if ("approvalInput" in pending) {
+    return pending.toolInput
   }
 
   return parsed.data

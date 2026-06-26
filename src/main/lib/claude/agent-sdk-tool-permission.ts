@@ -9,6 +9,7 @@ import type { AgentGuardEvent } from "../../../shared/agent-scope-contracts"
 import {
   classifyObservedToolRisk,
   decideClaudeToolUse,
+  resolveGuardedScopedShellWriteApproval,
   toClaudePermissionResult,
   type ValidatedAgentScopeContract,
 } from "../agent-guard"
@@ -38,6 +39,14 @@ export type ClaudeAskUserQuestionPending = {
   toolName: "AskUserQuestion"
   toolInput: Record<string, unknown>
   resolve: (decision: ClaudeAskUserQuestionDecision) => void
+} | {
+  subChatId: string
+  toolName: string
+  toolInput: Record<string, unknown>
+  approvalInput: {
+    questions: AskUserQuestionChunk["questions"]
+  }
+  resolve: (decision: ClaudeAskUserQuestionDecision) => void
 }
 
 export type CreateClaudeAgentSdkToolPermissionHandlerInput = {
@@ -61,6 +70,65 @@ const PLAN_MODE_BLOCKED_TOOLS = new Set([
   "NotebookEdit",
   "Bash",
 ])
+
+const APPROVE_OPTION_LABEL = "Approve"
+const DENY_OPTION_LABEL = "Deny"
+
+type AskUserQuestionChunk = Extract<UIMessageChunk, { type: "ask-user-question" }>
+
+function createGuardedShellApprovalQuestions(reason: string): AskUserQuestionChunk["questions"] {
+  return [
+    {
+      header: "Scoped shell write",
+      question: reason,
+      options: [
+        {
+          label: APPROVE_OPTION_LABEL,
+          description: "Allow this bounded shell file operation once.",
+        },
+        {
+          label: DENY_OPTION_LABEL,
+          description: "Block this shell file operation.",
+        },
+      ],
+      multiSelect: false,
+    },
+  ]
+}
+
+function approvalAnswers(decision: ClaudeAskUserQuestionDecision): Record<string, unknown> {
+  const updatedInput = decision.updatedInput
+  if (
+    !updatedInput ||
+    typeof updatedInput !== "object" ||
+    !("answers" in updatedInput) ||
+    typeof (updatedInput as { answers?: unknown }).answers !== "object" ||
+    (updatedInput as { answers?: unknown }).answers === null
+  ) {
+    return {}
+  }
+
+  return (updatedInput as { answers: Record<string, unknown> }).answers
+}
+
+function approvalSelected(
+  decision: ClaudeAskUserQuestionDecision,
+  label: string,
+): boolean {
+  return Object.values(approvalAnswers(decision)).some((answer) => {
+    if (typeof answer === "string") return answer === label
+    if (Array.isArray(answer)) return answer.includes(label)
+    return false
+  })
+}
+
+function approvalAccepted(decision: ClaudeAskUserQuestionDecision): boolean {
+  return (
+    decision.approved &&
+    approvalSelected(decision, APPROVE_OPTION_LABEL) &&
+    !approvalSelected(decision, DENY_OPTION_LABEL)
+  )
+}
 
 function fixOllamaToolInputAliases(
   toolName: string,
@@ -211,6 +279,74 @@ export function createClaudeAgentSdkPermissionControls({
     ) {
       const currentGuardedContract =
         getGuardedContract(guardedContract.id) ?? guardedContract
+      const approval = resolveGuardedScopedShellWriteApproval({
+        contract: currentGuardedContract,
+        toolName,
+        toolInput,
+        toolUseId: toolUseID,
+      })
+      if (approval?.decision === "allow" && approval.requiresUserApproval) {
+        recordGuardEvent(approval.event)
+        emit({
+          type: "guard-event",
+          event: approval.event,
+        })
+
+        const questions = createGuardedShellApprovalQuestions(approval.reason)
+        emit({
+          type: "ask-user-question",
+          toolUseId: toolUseID,
+          questions,
+        })
+
+        const response = await new Promise<ClaudeAskUserQuestionDecision>(
+          (resolve) => {
+            const timeoutId = setTimeout(() => {
+              pendingToolApprovals.delete(toolUseID)
+              emit({
+                type: "ask-user-question-timeout",
+                toolUseId: toolUseID,
+              })
+              resolve({ approved: false, message: "Timed out" })
+            }, 60000)
+
+            pendingToolApprovals.set(toolUseID, {
+              subChatId,
+              toolName,
+              toolInput: { ...toolInput },
+              approvalInput: { questions },
+              resolve: (decision) => {
+                clearTimeout(timeoutId)
+                resolve(decision)
+              },
+            })
+          },
+        )
+
+        if (!approvalAccepted(response)) {
+          const errorMessage = response.message || "Denied"
+          emit({
+            type: "ask-user-question-result",
+            toolUseId: toolUseID,
+            result: errorMessage,
+          })
+          return {
+            behavior: "deny",
+            message: errorMessage,
+          }
+        }
+
+        emit({
+          type: "ask-user-question-result",
+          toolUseId: toolUseID,
+          result: "approved",
+        })
+        return {
+          behavior: "allow",
+          updatedInput: approval.updatedInput,
+        }
+      }
+
       const decision = decideClaudeToolUse({
         contract: currentGuardedContract,
         toolName,

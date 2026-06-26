@@ -281,6 +281,156 @@ describe("Claude Agent SDK tool permission handler", () => {
     ])
   })
 
+  test("requires user approval before allowing guarded bounded shell writes", async () => {
+    const guardedContract = await validateAgentScopeContract(
+      {
+        ...baseContract(),
+        id: "contract-shell-approval",
+        editableScope: [{ path: "src", kind: "directory" }],
+      },
+      {
+        cwd,
+        projectPath: cwd,
+        chatId: "chat-1",
+        subChatId: "sub-1",
+        runId: "run-1",
+        requireRegisteredWorktree: false,
+      },
+    )
+    const pendingToolApprovals = new Map<string, ClaudeAskUserQuestionPending>()
+    const guardEvents: any[] = []
+    const emitted: any[] = []
+    const handler = createClaudeAgentSdkToolPermissionHandler(
+      baseHandlerInput({
+        permissionPolicy: resolveDesktopPermissionPolicy({
+          runtimeId: "claude-code",
+          mode: "agent",
+          hasScopeContract: true,
+        }),
+        guardedContract,
+        getGuardedContract: () => guardedContract,
+        pendingToolApprovals,
+        recordGuardEvent: (event) => {
+          guardEvents.push(event)
+        },
+        emit: (chunk) => {
+          emitted.push(chunk)
+        },
+      }),
+    )
+    const toolInput = {
+      command: `/bin/zsh -lc "printf 'hello' > ${join(cwd, "src/generated.txt")}"`,
+    }
+
+    const resultPromise = handler(
+      "Bash",
+      toolInput,
+      toolOptions("guard-shell-approval-1"),
+    )
+
+    const pendingApproval = pendingToolApprovals.get("guard-shell-approval-1")
+    expect(pendingApproval).toBeDefined()
+    expect(pendingApproval).toMatchObject({
+      toolName: "Bash",
+      toolInput,
+    })
+    if (!pendingApproval || !("approvalInput" in pendingApproval)) {
+      throw new Error("expected guarded shell approval pending state")
+    }
+    const question = pendingApproval.approvalInput.questions[0]
+    expect(question.options.map((option) => option.label)).toEqual([
+      "Approve",
+      "Deny",
+    ])
+    expect(guardEvents).toHaveLength(1)
+    expect(guardEvents[0]).toMatchObject({
+      type: "allowed",
+      toolName: "Bash",
+      toolUseId: "guard-shell-approval-1",
+    })
+    expect(emitted.map((chunk) => chunk.type)).toEqual([
+      "guard-event",
+      "ask-user-question",
+    ])
+
+    pendingApproval.resolve({
+      approved: true,
+      updatedInput: {
+        questions: pendingApproval.approvalInput.questions,
+        answers: {
+          [question.question]: "Approve",
+        },
+      },
+    })
+
+    const result = await resultPromise
+    expect(result).toEqual({
+      behavior: "allow",
+      updatedInput: toolInput,
+    })
+    expect(emitted.at(-1)).toEqual({
+      type: "ask-user-question-result",
+      toolUseId: "guard-shell-approval-1",
+      result: "approved",
+    })
+  })
+
+  test("denies guarded bounded shell writes when the user selects Deny", async () => {
+    const guardedContract = await validateAgentScopeContract(
+      {
+        ...baseContract(),
+        id: "contract-shell-deny",
+        editableScope: [{ path: "src", kind: "directory" }],
+      },
+      {
+        cwd,
+        projectPath: cwd,
+        chatId: "chat-1",
+        subChatId: "sub-1",
+        runId: "run-1",
+        requireRegisteredWorktree: false,
+      },
+    )
+    const pendingToolApprovals = new Map<string, ClaudeAskUserQuestionPending>()
+    const handler = createClaudeAgentSdkToolPermissionHandler(
+      baseHandlerInput({
+        permissionPolicy: resolveDesktopPermissionPolicy({
+          runtimeId: "claude-code",
+          mode: "agent",
+          hasScopeContract: true,
+        }),
+        guardedContract,
+        getGuardedContract: () => guardedContract,
+        pendingToolApprovals,
+      }),
+    )
+    const resultPromise = handler(
+      "Bash",
+      {
+        command: `/bin/zsh -lc "printf 'hello' > ${join(cwd, "src/generated.txt")}"`,
+      },
+      toolOptions("guard-shell-deny-1"),
+    )
+    const pendingApproval = pendingToolApprovals.get("guard-shell-deny-1")
+    if (!pendingApproval || !("approvalInput" in pendingApproval)) {
+      throw new Error("expected guarded shell approval pending state")
+    }
+    pendingApproval.resolve({
+      approved: true,
+      updatedInput: {
+        questions: pendingApproval.approvalInput.questions,
+        answers: {
+          [pendingApproval.approvalInput.questions[0].question]: "Deny",
+        },
+      },
+    })
+
+    await expect(resultPromise).resolves.toMatchObject({
+      behavior: "deny",
+      message: "Denied",
+    })
+  })
+
   test("observes normal Agent-mode tools and loudly blocks catastrophic actions", async () => {
     const emitted: any[] = []
     const handler = createClaudeAgentSdkToolPermissionHandler(
