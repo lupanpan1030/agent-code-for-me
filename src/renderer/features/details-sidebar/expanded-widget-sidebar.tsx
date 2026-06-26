@@ -13,6 +13,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { useI18n } from "@/lib/i18n"
+import type { TerminalInitialCommandIntent } from "../../../shared/terminal-initial-command-intents"
 import type { AgentMode } from "../agents/atoms"
 import {
   expandedWidgetAtomFamily,
@@ -34,7 +35,7 @@ interface ExpandedWidgetSidebarProps {
   /** Terminal scope key shared with the full terminal renderer */
   terminalScopeKey?: string
   terminalTabId?: string
-  terminalInitialCommands?: string[]
+  terminalInitialCommandIntents?: TerminalInitialCommandIntent[]
   /** Plan path for plan section */
   planPath: string | null
   /** Plan refetch trigger */
@@ -58,7 +59,7 @@ export function ExpandedWidgetSidebar({
   worktreePath,
   terminalScopeKey,
   terminalTabId,
-  terminalInitialCommands,
+  terminalInitialCommandIntents,
   planPath,
   planRefetchTrigger,
   activeSubChatId,
@@ -114,6 +115,7 @@ export function ExpandedWidgetSidebar({
         return (
           <PlanSection
             chatId={activeSubChatId || chatId}
+            projectPath={worktreePath}
             planPath={planPath}
             refetchTrigger={planRefetchTrigger}
             isExpanded
@@ -129,7 +131,7 @@ export function ExpandedWidgetSidebar({
             cwd={worktreePath}
             workspaceId={chatId}
             tabId={terminalTabId}
-            initialCommands={terminalInitialCommands}
+            initialCommandIntents={terminalInitialCommandIntents}
             isExpanded
           />
         ) : null
@@ -151,8 +153,10 @@ export function ExpandedWidgetSidebar({
     }
   }
 
-  const minWidth = expandedWidget === "browser" || expandedWidget === "file" ? 620 : 400
-  const maxWidth = expandedWidget === "browser" || expandedWidget === "file" ? 1100 : 800
+  const minWidth =
+    expandedWidget === "browser" || expandedWidget === "file" ? 620 : 400
+  const maxWidth =
+    expandedWidget === "browser" || expandedWidget === "file" ? 1100 : 800
 
   return (
     <ResizableSidebar

@@ -1,17 +1,31 @@
-import { memo, useState, useEffect, useRef, useCallback } from "react"
-import { useTheme } from "next-themes"
-import { Copy, Check, Download, AlertTriangle, RotateCcw, Maximize2, X, ZoomIn, ZoomOut, RotateCcw as ResetZoom } from "lucide-react"
-import { TransformWrapper, TransformComponent, useControls } from "react-zoom-pan-pinch"
-import { cn } from "../lib/utils"
-import { useI18n } from "../lib/i18n"
-import {
-  Dialog,
-  DialogContent,
-  DialogPortal,
-  DialogTitle,
-} from "./ui/dialog"
 import * as DialogPrimitive from "@radix-ui/react-dialog"
 import * as VisuallyHidden from "@radix-ui/react-visually-hidden"
+import {
+  AlertTriangle,
+  Check,
+  Copy,
+  Download,
+  Maximize2,
+  RotateCcw as ResetZoom,
+  RotateCcw,
+  X,
+  ZoomIn,
+  ZoomOut,
+} from "lucide-react"
+import { useTheme } from "next-themes"
+import { memo, useCallback, useEffect, useRef, useState } from "react"
+import {
+  TransformComponent,
+  TransformWrapper,
+  useControls,
+} from "react-zoom-pan-pinch"
+import { useI18n } from "../lib/i18n"
+import {
+  MERMAID_SECURITY_LEVEL,
+  sanitizeMermaidSvg,
+} from "../lib/security/mermaid-svg-sanitizer"
+import { cn } from "../lib/utils"
+import { Dialog, DialogContent, DialogPortal, DialogTitle } from "./ui/dialog"
 
 // Lazy load mermaid to avoid bundle size impact (~500KB)
 let mermaidPromise: Promise<typeof import("mermaid")> | null = null
@@ -33,9 +47,11 @@ const cleanupMermaidErrors = () => {
     }
   })
   // Also clean up any container divs mermaid creates
-  const containers = document.querySelectorAll('div[id^="dmermaid-"], div[id^="d"]')
+  const containers = document.querySelectorAll(
+    'div[id^="dmermaid-"], div[id^="d"]',
+  )
   containers.forEach((div) => {
-    if (div.parentElement === document.body && div.querySelector('svg')) {
+    if (div.parentElement === document.body && div.querySelector("svg")) {
       div.remove()
     }
   })
@@ -127,7 +143,7 @@ const getMermaidConfig = (isDark: boolean): Record<string, unknown> => ({
         titleColor: "#18181b",
         edgeLabelBackground: "#fafafa",
       },
-  securityLevel: "loose" as const,
+  securityLevel: MERMAID_SECURITY_LEVEL,
   fontFamily: "inherit",
 })
 
@@ -202,7 +218,7 @@ const MermaidBlockInner = memo(function MermaidBlockInner({
   const isDark = resolvedTheme === "dark"
   const [renderState, setRenderState] = useState<RenderState>(() => {
     // Check cache on initial render
-    const cacheKey = `${code}-${isDark ? 'dark' : 'light'}`
+    const cacheKey = `${code}-${isDark ? "dark" : "light"}`
     const cached = mermaidCache.get(cacheKey)
     if (cached) {
       return { status: "success", svg: cached }
@@ -238,15 +254,16 @@ const MermaidBlockInner = memo(function MermaidBlockInner({
       const id = `mermaid-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
 
       const { svg } = await mermaid.render(id, code)
+      const sanitizedSvg = sanitizeMermaidSvg(svg)
 
       // Check again if this render is still current
       if (currentRenderId !== renderIdRef.current) return
 
       // Cache the result for future remounts
-      const cacheKey = `${code}-${isDark ? 'dark' : 'light'}`
-      mermaidCache.set(cacheKey, svg)
+      const cacheKey = `${code}-${isDark ? "dark" : "light"}`
+      mermaidCache.set(cacheKey, sanitizedSvg)
 
-      setRenderState({ status: "success", svg })
+      setRenderState({ status: "success", svg: sanitizedSvg })
       lastRenderedCodeRef.current = code
       lastRenderedThemeRef.current = isDark
 
@@ -262,7 +279,8 @@ const MermaidBlockInner = memo(function MermaidBlockInner({
       cleanupMermaidErrors()
 
       // Check if this is a parse/syntax error (incomplete diagram)
-      const isParseError = message.toLowerCase().includes("parse error") ||
+      const isParseError =
+        message.toLowerCase().includes("parse error") ||
         message.toLowerCase().includes("syntax error") ||
         message.toLowerCase().includes("expecting") ||
         message.toLowerCase().includes("unexpected") ||
@@ -306,10 +324,11 @@ const MermaidBlockInner = memo(function MermaidBlockInner({
       return quotes % 2 !== 0
     }
 
-    const looksIncomplete = hasUnclosedBrackets(code) ||
-                           hasUnclosedBraces(code) ||
-                           hasUnclosedParens(code) ||
-                           hasUnclosedQuotes(code)
+    const looksIncomplete =
+      hasUnclosedBrackets(code) ||
+      hasUnclosedBraces(code) ||
+      hasUnclosedParens(code) ||
+      hasUnclosedQuotes(code)
 
     if (looksIncomplete) {
       setRenderState({ status: "parsing" })
@@ -333,7 +352,7 @@ const MermaidBlockInner = memo(function MermaidBlockInner({
   // Render on mount and when code/theme changes
   useEffect(() => {
     // Check if we have a cached result
-    const cacheKey = `${code}-${isDark ? 'dark' : 'light'}`
+    const cacheKey = `${code}-${isDark ? "dark" : "light"}`
     const cached = mermaidCache.get(cacheKey)
     if (cached) {
       setRenderState({ status: "success", svg: cached })
@@ -343,7 +362,10 @@ const MermaidBlockInner = memo(function MermaidBlockInner({
     }
 
     // Only re-render if code or theme actually changed
-    if (code === lastRenderedCodeRef.current && isDark === lastRenderedThemeRef.current) {
+    if (
+      code === lastRenderedCodeRef.current &&
+      isDark === lastRenderedThemeRef.current
+    ) {
       return
     }
     renderDiagram()
@@ -441,7 +463,8 @@ const MermaidBlockInner = memo(function MermaidBlockInner({
             </div>
           )}
 
-          {(renderState.status === "loading" || renderState.status === "parsing") && (
+          {(renderState.status === "loading" ||
+            renderState.status === "parsing") && (
             <div className="flex items-center gap-2 text-muted-foreground text-sm">
               <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
               <span>{t("mermaid.creating")}</span>
@@ -530,7 +553,7 @@ const MermaidBlockInner = memo(function MermaidBlockInner({
                       className={cn(
                         "mermaid-diagram-fullscreen p-8",
                         "[&_svg]:max-w-none [&_svg]:h-auto",
-                        isDark ? "" : "[&_svg]:filter [&_svg]:drop-shadow-lg"
+                        isDark ? "" : "[&_svg]:filter [&_svg]:drop-shadow-lg",
                       )}
                       dangerouslySetInnerHTML={{ __html: renderState.svg }}
                     />
@@ -556,24 +579,29 @@ function looksComplete(code: string): boolean {
 
   // Check for balanced brackets/braces/parens
   const opens = {
-    '[': (code.match(/\[/g) || []).length,
-    '{': (code.match(/\{/g) || []).length,
-    '(': (code.match(/\(/g) || []).length,
+    "[": (code.match(/\[/g) || []).length,
+    "{": (code.match(/\{/g) || []).length,
+    "(": (code.match(/\(/g) || []).length,
   }
   const closes = {
-    ']': (code.match(/\]/g) || []).length,
-    '}': (code.match(/\}/g) || []).length,
-    ')': (code.match(/\)/g) || []).length,
+    "]": (code.match(/\]/g) || []).length,
+    "}": (code.match(/\}/g) || []).length,
+    ")": (code.match(/\)/g) || []).length,
   }
 
-  if (opens['['] > closes[']']) return false
-  if (opens['{'] > closes['}']) return false
-  if (opens['('] > closes[')']) return false
+  if (opens["["] > closes["]"]) return false
+  if (opens["{"] > closes["}"]) return false
+  if (opens["("] > closes[")"]) return false
 
   // Check for incomplete statements at end
   const trimmed = code.trim()
-  if (trimmed.endsWith('--') || trimmed.endsWith('->') || trimmed.endsWith('->>')) return false
-  if (trimmed.endsWith(':')) return false
+  if (
+    trimmed.endsWith("--") ||
+    trimmed.endsWith("->") ||
+    trimmed.endsWith("->>")
+  )
+    return false
+  if (trimmed.endsWith(":")) return false
 
   // Looks complete enough to try rendering
   return true
@@ -582,16 +610,13 @@ function looksComplete(code: string): boolean {
 // Generate a stable ID for a mermaid block based on its content
 function getBlockId(code: string): string {
   // Use first line (diagram type declaration) as stable ID
-  const firstLine = code.split('\n')[0] || ''
+  const firstLine = code.split("\n")[0] || ""
   return firstLine.slice(0, 50)
 }
 
 // Exported component that handles streaming state
 // When streaming, shows placeholder. When done, renders the diagram.
-export function MermaidBlock({
-  code,
-  isStreaming = false,
-}: MermaidBlockProps) {
+export function MermaidBlock({ code, isStreaming = false }: MermaidBlockProps) {
   const blockId = getBlockId(code)
   const codeComplete = looksComplete(code)
 

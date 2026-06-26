@@ -14,6 +14,7 @@ import { fullThemeDataAtom } from "@/lib/atoms"
 import { useResolvedHotkeyDisplay } from "@/lib/hotkeys"
 import { useI18n } from "@/lib/i18n"
 import { trpc } from "@/lib/trpc"
+import type { TerminalInitialCommandIntent } from "../../../shared/terminal-initial-command-intents"
 import {
   activeTerminalIdAtom,
   terminalCwdAtom,
@@ -40,7 +41,7 @@ interface TerminalSidebarProps {
   cwd: string
   workspaceId: string
   tabId?: string
-  initialCommands?: string[]
+  initialCommandIntents?: TerminalInitialCommandIntent[]
   /** Mobile fullscreen mode */
   isMobileFullscreen?: boolean
   /** Callback when closing in mobile mode */
@@ -83,7 +84,7 @@ export function TerminalSidebar({
   cwd,
   workspaceId,
   tabId,
-  initialCommands,
+  initialCommandIntents,
   isMobileFullscreen = false,
   onClose,
 }: TerminalSidebarProps) {
@@ -437,7 +438,7 @@ export function TerminalSidebar({
                 workspaceId={workspaceId}
                 scopeKey={scopeKey}
                 tabId={tabId}
-                initialCommands={initialCommands}
+                initialCommandIntents={initialCommandIntents}
                 initialCwd={cwd}
               />
             </motion.div>
@@ -464,7 +465,7 @@ interface TerminalBottomPanelContentProps {
   cwd: string
   workspaceId: string
   tabId?: string
-  initialCommands?: string[]
+  initialCommandIntents?: TerminalInitialCommandIntent[]
   onClose: () => void
 }
 
@@ -473,7 +474,7 @@ export function TerminalBottomPanelContent({
   cwd,
   workspaceId,
   tabId,
-  initialCommands,
+  initialCommandIntents,
   onClose,
 }: TerminalBottomPanelContentProps) {
   const { t } = useI18n()
@@ -734,7 +735,7 @@ export function TerminalBottomPanelContent({
               workspaceId={workspaceId}
               scopeKey={scopeKey}
               tabId={tabId}
-              initialCommands={initialCommands}
+              initialCommandIntents={initialCommandIntents}
               initialCwd={cwd}
             />
           </motion.div>

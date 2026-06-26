@@ -30,6 +30,7 @@ import { useResolvedHotkeyDisplay } from "@/lib/hotkeys"
 import { useI18n } from "@/lib/i18n"
 import { trpc } from "@/lib/trpc"
 import { cn } from "@/lib/utils"
+import type { TerminalInitialCommandIntent } from "../../../../shared/terminal-initial-command-intents"
 
 interface TerminalWidgetProps {
   chatId: string
@@ -37,7 +38,7 @@ interface TerminalWidgetProps {
   cwd: string
   workspaceId: string
   tabId?: string
-  initialCommands?: string[]
+  initialCommandIntents?: TerminalInitialCommandIntent[]
   onExpand?: () => void
 }
 
@@ -73,7 +74,7 @@ export const TerminalWidget = memo(function TerminalWidget({
   cwd,
   workspaceId,
   tabId,
-  initialCommands,
+  initialCommandIntents,
   onExpand,
 }: TerminalWidgetProps) {
   const { t } = useI18n()
@@ -431,7 +432,7 @@ export const TerminalWidget = memo(function TerminalWidget({
                 workspaceId={workspaceId}
                 scopeKey={terminalKey}
                 tabId={tabId}
-                initialCommands={initialCommands}
+                initialCommandIntents={initialCommandIntents}
                 initialCwd={cwd}
               />
             </motion.div>

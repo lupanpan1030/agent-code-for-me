@@ -39,16 +39,23 @@ export const AgentToolCall = memo(
       ? " cursor-pointer hover:text-muted-foreground transition-colors"
       : ""
 
+    const subtitleClassName = `text-muted-foreground/60 font-normal truncate min-w-0${clickableClass}`
+    const subtitleContent = onClick ? (
+      <button
+        type="button"
+        className={`${subtitleClassName} appearance-none border-0 bg-transparent p-0 text-left`}
+        onClick={onClick}
+      >
+        {subtitleStr}
+      </button>
+    ) : (
+      <span className={subtitleClassName}>{subtitleStr}</span>
+    )
+
     const subtitleElement = subtitleStr ? (
       tooltipContent ? (
         <Tooltip>
-          <TooltipTrigger asChild>
-            <span
-              className={`text-muted-foreground/60 font-normal truncate min-w-0${clickableClass}`}
-              dangerouslySetInnerHTML={{ __html: subtitleStr }}
-              onClick={onClick}
-            />
-          </TooltipTrigger>
+          <TooltipTrigger asChild>{subtitleContent}</TooltipTrigger>
           <TooltipContent
             side="top"
             className="px-2 py-1.5 max-w-none flex items-center justify-center"
@@ -59,11 +66,7 @@ export const AgentToolCall = memo(
           </TooltipContent>
         </Tooltip>
       ) : (
-        <span
-          className={`text-muted-foreground/60 font-normal truncate min-w-0${clickableClass}`}
-          dangerouslySetInnerHTML={{ __html: subtitleStr }}
-          onClick={onClick}
-        />
+        subtitleContent
       )
     ) : null
 
