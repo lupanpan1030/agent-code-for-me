@@ -184,8 +184,8 @@
 - 原问题：[lib/atoms/index.ts](src/renderer/lib/atoms/index.ts) 的 legacy `atomWithStorage("agents:claude-custom-config")` 默认持久化形状含 `token`；迁移钩子只写空 token，不移除 legacy key。
 - 修复：`customClaudeConfigAtom` 的当前持久化默认形状去掉 `token`，旧 token 仅作为 optional legacy 输入读取；迁移成功、失败或发现无效 legacy token 时都 `localStorage.removeItem("agents:claude-custom-config")` 并 reset atom。测试：[legacy-custom-claude-config-migration.test.ts](tests/legacy-custom-claude-config-migration.test.ts) 和 [provider-runtime-binding.test.ts](tests/provider-runtime-binding.test.ts) 覆盖迁移后不保留 key/明文 token 写法。Commit：本提交 `fix: remove legacy Claude token storage`。
 
-**R12 — local-only 门不挡 Anthropic 端点** · **待核对 / 待确认意图**
-- [shared/local-only.ts](src/shared/local-only.ts) 的 `blockedRoots` 不含 `anthropic.com`/`claude.ai`/`platform.claude.com`，local-only 模式下对这些端点不阻断。是否为有意（local-only 仅限制 app 专有域）属**待确认**。
+**R12 — local-only 门不挡 Anthropic 端点** · **by design / 非目标**
+- [shared/local-only.ts](src/shared/local-only.ts) 的 `blockedRoots` 不含 `anthropic.com`/`claude.ai`/`platform.claude.com` 是有意设计：local-only 阻断范围是 Locus/1Code 自有托管云与远程 sandbox（21st.dev、e2b、codesandbox 等），不是 air-gap。用户配置的 AI provider（含 Anthropic/自带 key）与本地 Ollama 不在此阻断范围；完全离线应使用 Ollama。代码注释与 guard 文案已补充，`blockedRoots` 不改。
 
 **R13 — `allFullThemesAtom` 恒返回 `[]`** · **已修 / ✓核对**
 - 已确认全 renderer 无引用；主题功能实际由 [theme-provider.tsx](src/renderer/lib/themes/theme-provider.tsx) 聚合 `BUILTIN_THEMES + importedThemesAtom`。删除恒空只读派生 atom 与误导注释，不影响现有主题路径。
@@ -235,7 +235,7 @@
 ## 6. 待解之谜（待确认）
 
 1. **`FALLBACK_PREFIX` 是否纯历史遗留**：已确认历史提交 `16a6d578` 曾写入 `locus:v1:base64:` fallback；当前读取旁路已改为 fail-closed，旧 fallback 凭据需重新认证/重新保存。
-2. **local-only 的安全语义**：是否有意允许 Anthropic API 调用、仅限制 app 专有域（[local-only.ts](src/shared/local-only.ts)）？若 local-only 应阻一切云出口，则为 Medium 旁路。
+2. **local-only 的安全语义**：已定为 by design。local-only 只阻断 Locus/1Code 托管云与远程 sandbox，不是 air-gap；Anthropic/用户自带 provider key 不在阻断范围，完全离线走 Ollama。
 3. **`AuthManager`/`AuthStore` 去留**：已确认永久死代码并删除；`auth:*` IPC、preload 暴露和 debug logout 调用方同步移除。
 4. **`requiresUserApproval` 是否接到 UI 阻断**（[decision.ts:516](src/main/lib/agent-guard/decision.ts:516)）：未找到 renderer 侧据此阻断的调用点。
 5. **`projectSlug` 是否在拼 worktree 路径前消毒**（[worktree.ts:985-986](src/main/lib/git/worktree.ts:985)，`~/.21st/worktrees/<slug>`）：未追到生成处与消毒逻辑。

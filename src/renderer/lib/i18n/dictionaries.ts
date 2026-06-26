@@ -2507,8 +2507,10 @@ export const en = {
   "workbench.error.internal_error.body": "Locus hit an unexpected local error.",
   "workbench.error.internal_error.nextAction": "Copy redacted details and inspect logs.",
   "workbench.error.local_only_guard_blocked.title": "Blocked by local-only mode",
-  "workbench.error.local_only_guard_blocked.body": "This action would leave the allowed local boundary.",
-  "workbench.error.local_only_guard_blocked.nextAction": "Disable local-only mode only if you intend to use hosted services.",
+  "workbench.error.local_only_guard_blocked.body":
+    "This action targets Locus-hosted services or remote sandboxes. User-configured AI providers and local Ollama are outside this guard.",
+  "workbench.error.local_only_guard_blocked.nextAction":
+    "Use Ollama for fully offline runs, or disable local-only only for hosted/internal testing.",
   "workbench.error.unsupported_capability.title": "Capability is not available",
   "workbench.error.unsupported_capability.body": "The selected runtime cannot safely provide the required capability.",
   "workbench.error.unsupported_capability.nextAction": "Choose another runtime/profile or change the run mode.",
@@ -6200,8 +6202,10 @@ export const zhCN: Partial<Record<TranslationKey, string>> = {
   "workbench.error.internal_error.body": "Locus 遇到了意外的本地错误。",
   "workbench.error.internal_error.nextAction": "复制已脱敏详情并检查 logs。",
   "workbench.error.local_only_guard_blocked.title": "被 local-only mode 阻止",
-  "workbench.error.local_only_guard_blocked.body": "这个操作会离开允许的本地边界。",
-  "workbench.error.local_only_guard_blocked.nextAction": "只有在确实要使用 hosted services 时，才禁用 local-only mode。",
+  "workbench.error.local_only_guard_blocked.body":
+    "这个操作会访问 Locus 托管服务或远程 sandbox。用户配置的 AI provider 和本地 Ollama 不在此阻断范围内。",
+  "workbench.error.local_only_guard_blocked.nextAction":
+    "完全离线请使用 Ollama；只有在 hosted/internal 测试时才禁用 local-only mode。",
   "workbench.error.unsupported_capability.title": "Capability 不可用",
   "workbench.error.unsupported_capability.body": "所选 runtime 无法安全提供所需 capability。",
   "workbench.error.unsupported_capability.nextAction": "选择另一个 runtime/profile，或更改 run mode。",
