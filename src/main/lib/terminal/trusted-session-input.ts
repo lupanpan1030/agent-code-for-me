@@ -4,8 +4,8 @@ import { eq } from "drizzle-orm"
 import { z } from "zod"
 import { chats, getDatabase } from "../db"
 import {
-  TERMINAL_INITIAL_COMMAND_INTENTS,
   resolveInitialCommandIntents,
+  TERMINAL_INITIAL_COMMAND_INTENTS,
   type TerminalInitialCommandIntent,
 } from "./initial-command-intents"
 import type { CreateSessionParams } from "./types"
@@ -105,4 +105,3 @@ export async function resolveTrustedCreateSessionParams(
     ),
   }
 }
-

@@ -80,7 +80,7 @@ export interface DesktopApi {
   newWindow: (options?: {
     chatId?: string
     subChatId?: string
-  }) => Promise<{ blocked: boolean } | void>
+  }) => Promise<{ blocked: boolean } | undefined>
 
   // Chat ownership — prevent same chat open in multiple windows
   claimChat: (

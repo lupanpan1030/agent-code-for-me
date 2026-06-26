@@ -1130,7 +1130,6 @@ export async function getWorktreeDiff(
   try {
     const git = simpleGit(worktreePath)
     const status = await git.status()
-    const currentBranch = status.current
 
     // Has uncommitted changes - diff against HEAD
     if (!status.isClean()) {
@@ -1178,7 +1177,7 @@ export async function getWorktreeDiff(
           // git diff --no-index returns exit code 1 when files differ
           // simple-git throws but includes the diff output in the error
           const gitError = error as { message?: string }
-          if (gitError.message && gitError.message.includes("diff --git")) {
+          if (gitError.message?.includes("diff --git")) {
             // Extract the diff from the error message
             const diffStart = gitError.message.indexOf("diff --git")
             if (diffStart !== -1) {

@@ -16,11 +16,11 @@ import { getDefaultTerminalBg } from "@/features/terminal/helpers"
 import { Terminal } from "@/features/terminal/terminal"
 import { TerminalModeSwitcher } from "@/features/terminal/terminal-mode-switcher"
 import { TerminalTabs } from "@/features/terminal/terminal-tabs"
-import type { TerminalInitialCommandIntent } from "../../../../shared/terminal-initial-command-intents"
 import type { TerminalInstance } from "@/features/terminal/types"
 import { fullThemeDataAtom } from "@/lib/atoms"
 import { useI18n } from "@/lib/i18n"
 import { trpc } from "@/lib/trpc"
+import type { TerminalInitialCommandIntent } from "../../../../shared/terminal-initial-command-intents"
 
 interface TerminalSectionProps {
   chatId: string

@@ -13,14 +13,14 @@ import {
   getProjectDeletionPreview,
 } from "../../projects/deletion"
 import {
+  buildGitHubCloneTarget,
+  cloneGitHubRepository,
+} from "../../projects/github-clone"
+import {
   registerProjectForPath,
   removeProjectFromActiveListById,
   restoreProjectById,
 } from "../../projects/registry"
-import {
-  buildGitHubCloneTarget,
-  cloneGitHubRepository,
-} from "../../projects/github-clone"
 import { publicProcedure, router } from "../index"
 
 export const projectsRouter = router({

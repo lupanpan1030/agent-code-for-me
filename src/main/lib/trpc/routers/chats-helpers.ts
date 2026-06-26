@@ -27,11 +27,9 @@ import { computeContentHash, gitCache } from "../../git/cache"
 import { splitUnifiedDiffByFile } from "../../git/diff-parser"
 import { execWithShellEnv } from "../../git/shell-env"
 import { applyRollbackStash } from "../../git/stash"
-import type { WorktreeSetupResult } from "../../git/worktree-config"
 import { assertOfficialCloudAllowed } from "../../local-only"
 import { checkOllamaStatus } from "../../ollama"
 import { getProviderDefaultRuntimeConfig } from "../../provider-profiles/storage"
-import { terminalManager } from "../../terminal/manager"
 import { publicProcedure, router } from "../index"
 import {
   buildCommitFileSummary,

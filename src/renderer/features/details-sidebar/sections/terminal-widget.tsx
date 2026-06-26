@@ -24,13 +24,13 @@ import { getDefaultTerminalBg } from "@/features/terminal/helpers"
 import { Terminal } from "@/features/terminal/terminal"
 import { TerminalModeSwitcher } from "@/features/terminal/terminal-mode-switcher"
 import { TerminalTabs } from "@/features/terminal/terminal-tabs"
-import type { TerminalInitialCommandIntent } from "../../../../shared/terminal-initial-command-intents"
 import type { TerminalInstance } from "@/features/terminal/types"
 import { fullThemeDataAtom } from "@/lib/atoms"
 import { useResolvedHotkeyDisplay } from "@/lib/hotkeys"
 import { useI18n } from "@/lib/i18n"
 import { trpc } from "@/lib/trpc"
 import { cn } from "@/lib/utils"
+import type { TerminalInitialCommandIntent } from "../../../../shared/terminal-initial-command-intents"
 
 interface TerminalWidgetProps {
   chatId: string

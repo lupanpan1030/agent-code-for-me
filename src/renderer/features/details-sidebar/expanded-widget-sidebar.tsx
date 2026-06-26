@@ -13,6 +13,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { useI18n } from "@/lib/i18n"
+import type { TerminalInitialCommandIntent } from "../../../shared/terminal-initial-command-intents"
 import type { AgentMode } from "../agents/atoms"
 import {
   expandedWidgetAtomFamily,
@@ -24,7 +25,6 @@ import { DiffSection } from "./sections/diff-section"
 import { InfoSection } from "./sections/info-section"
 import { PlanSection } from "./sections/plan-section"
 import { TerminalSection } from "./sections/terminal-section"
-import type { TerminalInitialCommandIntent } from "../../../shared/terminal-initial-command-intents"
 import type { ParsedDiffFile } from "./types"
 
 interface ExpandedWidgetSidebarProps {
@@ -153,8 +153,10 @@ export function ExpandedWidgetSidebar({
     }
   }
 
-  const minWidth = expandedWidget === "browser" || expandedWidget === "file" ? 620 : 400
-  const maxWidth = expandedWidget === "browser" || expandedWidget === "file" ? 1100 : 800
+  const minWidth =
+    expandedWidget === "browser" || expandedWidget === "file" ? 620 : 400
+  const maxWidth =
+    expandedWidget === "browser" || expandedWidget === "file" ? 1100 : 800
 
   return (
     <ResizableSidebar

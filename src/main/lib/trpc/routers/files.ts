@@ -1,10 +1,5 @@
 import { watch } from "node:fs"
-import {
-  rename as fsRename,
-  readdir,
-  readFile,
-  stat,
-} from "node:fs/promises"
+import { rename as fsRename, readdir, readFile, stat } from "node:fs/promises"
 import { basename, dirname, extname, join, relative, resolve } from "node:path"
 import { observable } from "@trpc/server/observable"
 import { shell } from "electron"
@@ -237,7 +232,7 @@ async function scanDirectory(
 
         // Check extension
         const ext = entry.name.includes(".")
-          ? "." + entry.name.split(".").pop()?.toLowerCase()
+          ? `.${entry.name.split(".").pop()?.toLowerCase()}`
           : ""
         if (IGNORED_EXTENSIONS.has(ext)) {
           // Allow specific lock files

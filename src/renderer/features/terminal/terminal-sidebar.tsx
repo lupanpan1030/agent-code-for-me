@@ -14,6 +14,7 @@ import { fullThemeDataAtom } from "@/lib/atoms"
 import { useResolvedHotkeyDisplay } from "@/lib/hotkeys"
 import { useI18n } from "@/lib/i18n"
 import { trpc } from "@/lib/trpc"
+import type { TerminalInitialCommandIntent } from "../../../shared/terminal-initial-command-intents"
 import {
   activeTerminalIdAtom,
   terminalCwdAtom,
@@ -25,7 +26,6 @@ import { getDefaultTerminalBg } from "./helpers"
 import { Terminal } from "./terminal"
 import { TerminalModeSwitcher } from "./terminal-mode-switcher"
 import { TerminalTabs } from "./terminal-tabs"
-import type { TerminalInitialCommandIntent } from "../../../shared/terminal-initial-command-intents"
 import type { TerminalInstance } from "./types"
 import { isSharedTerminalScope } from "./utils"
 

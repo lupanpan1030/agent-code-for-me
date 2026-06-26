@@ -29,10 +29,16 @@ type DomPurifyInstance = ReturnType<typeof createDOMPurify>
 
 let browserPurifier: DomPurifyInstance | null = null
 
+function isAttributeSpacingOrControlCharacter(char: string) {
+  const code = char.charCodeAt(0)
+  return code <= 0x1f || code === 0x7f || /\s/.test(char)
+}
+
 function isUnsafeMermaidSvgAttribute(attrName: string, attrValue: string) {
   const name = attrName.toLowerCase()
-  const normalizedValue = attrValue
-    .replace(/[\u0000-\u001f\u007f\s]+/g, "")
+  const normalizedValue = Array.from(attrValue)
+    .filter((char) => !isAttributeSpacingOrControlCharacter(char))
+    .join("")
     .toLowerCase()
 
   return (
