@@ -4,6 +4,7 @@ import {
   createCodexAppServerRuntimeEventMapper,
   type CodexAppServerNotification,
 } from "../src/main/lib/codex/app-server-stream-events"
+import { getWorkbenchTraceRow } from "../src/renderer/features/agents/workbench/workbench-trace-presenter"
 
 function mapChunksToRunEvents(chunks: unknown[]) {
   return chunks.flatMap((chunk, index) =>
@@ -170,6 +171,14 @@ describe("Codex app-server stream event mapper", () => {
       "usage_update",
       "completed",
     ])
+    expect(getWorkbenchTraceRow(events[1]).usage).toMatchObject({
+      inputTokens: 10,
+      outputTokens: 5,
+      totalTokens: 15,
+      cacheReadInputTokens: 2,
+      totalInputContextTokens: 10,
+      cacheHitRatio: 0.2,
+    })
     expect(events[2].payload).toMatchObject({
       status: "succeeded",
       messageMetadata: {
