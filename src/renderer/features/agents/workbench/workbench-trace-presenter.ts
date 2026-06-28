@@ -2,6 +2,7 @@ import {
   DESKTOP_RUNTIME_CONTROL_LEVELS,
   type DesktopRuntimeControlLevel,
 } from "../../../../shared/agent-runtime-control"
+import { normalizeRuntimeUsage } from "../../../../shared/usage-metadata"
 import type { TranslationKey } from "../../../lib/i18n"
 
 export type WorkbenchTraceTextValues = Record<string, string | number>
@@ -52,6 +53,8 @@ export type WorkbenchTraceUsage = {
   durationMs?: number
   cacheReadInputTokens?: number
   cacheCreationInputTokens?: number
+  totalInputContextTokens?: number
+  cacheHitRatio?: number
   modelContextWindow?: number
   missing: Array<"provider" | "cost" | "cache" | "context">
 }
@@ -321,18 +324,29 @@ function getUsagePayload(payload: unknown): Record<string, unknown> {
 
 function getUsage(payload: unknown): WorkbenchTraceUsage | undefined {
   const usagePayload = getUsagePayload(payload)
-  const inputTokens = readNumber(usagePayload.inputTokens)
-  const outputTokens = readNumber(usagePayload.outputTokens)
+  const normalizedUsage = normalizeRuntimeUsage({
+    provider: usagePayload.provider,
+    adapterSource: usagePayload.adapterSource,
+    model: usagePayload.model,
+    inputTokens: usagePayload.inputTokens,
+    outputTokens: usagePayload.outputTokens,
+    totalTokens: usagePayload.totalTokens,
+    cacheReadInputTokens: usagePayload.cacheReadInputTokens,
+    cacheCreationInputTokens: usagePayload.cacheCreationInputTokens,
+    cachedInputTokens: usagePayload.cachedInputTokens,
+  })
+  const inputTokens = normalizedUsage.inputTokens
+  const outputTokens = normalizedUsage.outputTokens
   const totalTokens =
-    readNumber(usagePayload.totalTokens) ??
+    normalizedUsage.totalTokens ??
     (inputTokens !== undefined || outputTokens !== undefined
       ? (inputTokens ?? 0) + (outputTokens ?? 0)
       : undefined)
   const estimatedCostUsd = readNumber(usagePayload.totalCostUsd)
-  const cacheReadInputTokens = readNumber(usagePayload.cacheReadInputTokens)
-  const cacheCreationInputTokens = readNumber(
-    usagePayload.cacheCreationInputTokens,
-  )
+  const cacheReadInputTokens = normalizedUsage.cacheReadInputTokens
+  const cacheCreationInputTokens = normalizedUsage.cacheCreationInputTokens
+  const totalInputContextTokens = normalizedUsage.totalInputContextTokens
+  const cacheHitRatio = normalizedUsage.cacheHitRatio
   const modelContextWindow =
     readNumber(usagePayload.modelContextWindow) ??
     readNumber(usagePayload.contextWindow)
@@ -344,6 +358,8 @@ function getUsage(payload: unknown): WorkbenchTraceUsage | undefined {
     estimatedCostUsd !== undefined ||
     cacheReadInputTokens !== undefined ||
     cacheCreationInputTokens !== undefined ||
+    totalInputContextTokens !== undefined ||
+    cacheHitRatio !== undefined ||
     modelContextWindow !== undefined ||
     durationMs !== undefined
 
@@ -370,6 +386,10 @@ function getUsage(payload: unknown): WorkbenchTraceUsage | undefined {
     ...(cacheCreationInputTokens !== undefined
       ? { cacheCreationInputTokens }
       : {}),
+    ...(totalInputContextTokens !== undefined
+      ? { totalInputContextTokens }
+      : {}),
+    ...(cacheHitRatio !== undefined ? { cacheHitRatio } : {}),
     ...(modelContextWindow !== undefined ? { modelContextWindow } : {}),
     missing,
   }

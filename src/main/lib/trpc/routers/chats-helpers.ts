@@ -10,6 +10,10 @@ import {
 } from "../../../../shared/agent-chat-provider"
 import { buildAgentRuntimeCapabilityDiagnostic } from "../../../../shared/agent-runtime-capabilities"
 import {
+  normalizeRuntimeUsage,
+  readFiniteNumber,
+} from "../../../../shared/usage-metadata"
+import {
   trackPRCreated,
   trackWorkspaceArchived,
   trackWorkspaceCreated,
@@ -285,7 +289,7 @@ export function emptyUsageTotals(): UsageTotals {
 }
 
 export function readNumber(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) ? value : null
+  return readFiniteNumber(value)
 }
 
 export function readObject(value: unknown): Record<string, unknown> {
@@ -379,9 +383,6 @@ export function getContextUsage(
   }
 
   const model = typeof metadata.model === "string" ? metadata.model : null
-  const normalizedModel = model?.toLowerCase() ?? ""
-  const isCodexModel =
-    normalizedModel.includes("codex") || normalizedModel.startsWith("gpt-")
   const inputTokens = readNumber(metadata.inputTokens) ?? 0
   const outputTokens = readNumber(metadata.outputTokens) ?? 0
   const totalTokens = readNumber(metadata.totalTokens)
@@ -389,12 +390,17 @@ export function getContextUsage(
   const cacheCreationInputTokens =
     readNumber(metadata.cacheCreationInputTokens) ?? 0
 
-  const usedTokens = Math.max(
-    0,
-    isCodexModel && totalTokens !== null
-      ? totalTokens - outputTokens
-      : inputTokens + cacheReadInputTokens + cacheCreationInputTokens,
-  )
+  const normalizedUsage = normalizeRuntimeUsage({
+    provider: metadata.provider,
+    adapterSource: metadata.adapterSource,
+    model,
+    inputTokens,
+    outputTokens,
+    totalTokens,
+    cacheReadInputTokens,
+    cacheCreationInputTokens,
+  })
+  const usedTokens = normalizedUsage.totalInputContextTokens ?? 0
   const percentUsed = Math.min(100, (usedTokens / windowTokens) * 100)
 
   return {

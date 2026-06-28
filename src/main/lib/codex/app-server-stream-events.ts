@@ -49,9 +49,7 @@ export type CodexAppServerNotification =
       }
     }
   | {
-      method:
-        | "item/reasoning/textDelta"
-        | "item/reasoning/summaryTextDelta"
+      method: "item/reasoning/textDelta" | "item/reasoning/summaryTextDelta"
       params: {
         threadId: string
         turnId: string
@@ -158,6 +156,7 @@ function messageMetadata(input: {
     inputTokens: last?.inputTokens,
     outputTokens: last?.outputTokens,
     totalTokens: last?.totalTokens,
+    cacheReadInputTokens: last?.cachedInputTokens,
     cachedInputTokens: last?.cachedInputTokens,
     reasoningOutputTokens: last?.reasoningOutputTokens,
     cumulativeInputTokens: total?.inputTokens,

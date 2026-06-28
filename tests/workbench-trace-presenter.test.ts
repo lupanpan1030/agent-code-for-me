@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test"
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
 import {
   formatTracePayload,
   getWorkbenchTraceRow,
@@ -144,6 +146,106 @@ describe("workbench trace presenter", () => {
       modelContextWindow: 200000,
       missing: ["cache"],
     })
+  })
+
+  test("derives cache efficiency for Claude-shaped exclusive input usage", () => {
+    const row = getWorkbenchTraceRow(
+      event("usage_update", {
+        messageMetadata: {
+          provider: "claude",
+          inputTokens: 60,
+          outputTokens: 20,
+          totalTokens: 80,
+          cacheReadInputTokens: 40,
+          cacheCreationInputTokens: 0,
+        },
+      }),
+    )
+
+    expect(row).toMatchObject({
+      kind: "usage",
+      status: "observed",
+      summaryKey: "workbench.trace.tokens",
+      summaryValues: { total: "80" },
+    })
+    expect(row.usage).toMatchObject({
+      inputTokens: 60,
+      outputTokens: 20,
+      totalTokens: 80,
+      cacheReadInputTokens: 40,
+      cacheCreationInputTokens: 0,
+      totalInputContextTokens: 100,
+      cacheHitRatio: 0.4,
+      missing: ["cost", "context"],
+    })
+  })
+
+  test("derives cache efficiency for Codex app-server inclusive input usage without a model", () => {
+    const row = getWorkbenchTraceRow(
+      event("usage_update", {
+        messageMetadata: {
+          provider: "codex",
+          adapterSource: "codex-app-server",
+          inputTokens: 100,
+          outputTokens: 20,
+          totalTokens: 120,
+          cachedInputTokens: 40,
+        },
+      }),
+    )
+
+    expect(row.usage).toMatchObject({
+      inputTokens: 100,
+      outputTokens: 20,
+      totalTokens: 120,
+      cacheReadInputTokens: 40,
+      totalInputContextTokens: 100,
+      cacheHitRatio: 0.4,
+      missing: ["cost", "context"],
+    })
+    expect(row.usage).not.toHaveProperty("provider")
+    expect(row.usage).not.toHaveProperty("adapterSource")
+    expect(row.usage).not.toHaveProperty("cachedInputTokens")
+  })
+
+  test("omits cache efficiency when cache data or input baseline is unavailable", () => {
+    const noCacheRow = getWorkbenchTraceRow(
+      event("usage_update", {
+        messageMetadata: {
+          provider: "claude",
+          inputTokens: 60,
+          outputTokens: 20,
+          totalTokens: 80,
+        },
+      }),
+    )
+    const noBaselineRow = getWorkbenchTraceRow(
+      event("usage_update", {
+        messageMetadata: {
+          provider: "claude",
+          cacheReadInputTokens: 40,
+        },
+      }),
+    )
+
+    expect(noCacheRow.usage?.cacheHitRatio).toBeUndefined()
+    expect(noCacheRow.usage?.missing).toContain("cache")
+    expect(noBaselineRow.usage?.cacheHitRatio).toBeUndefined()
+    expect(noBaselineRow.usage?.totalInputContextTokens).toBeUndefined()
+  })
+
+  test("keeps workbench trace usage normalization in renderer-safe shared code", () => {
+    const source = readFileSync(
+      join(
+        process.cwd(),
+        "src/renderer/features/agents/workbench/workbench-trace-presenter.ts",
+      ),
+      "utf8",
+    )
+
+    expect(source).toContain("../../../../shared/usage-metadata")
+    expect(source).not.toContain("trpc/routers/chats-helpers")
+    expect(source).not.toContain("../../../../main/lib")
   })
 
   test("maps product error semantics", () => {

@@ -150,6 +150,8 @@ describe("Codex app-server stream event mapper", () => {
         inputTokens: 10,
         outputTokens: 5,
         totalTokens: 15,
+        cacheReadInputTokens: 2,
+        cachedInputTokens: 2,
         modelContextWindow: 128000,
       },
     })

@@ -38,9 +38,22 @@ function getRowIcon(row: WorkbenchTraceRow) {
 function TraceRow({ row }: { row: WorkbenchTraceRow }) {
   const { t } = useI18n()
   const Icon = getRowIcon(row)
+  const cacheHitPercent =
+    row.kind === "usage" && row.usage?.cacheHitRatio !== undefined
+      ? Math.round(row.usage.cacheHitRatio * 100)
+      : null
+  const cacheHitSummary =
+    cacheHitPercent !== null
+      ? t("workbench.trace.cacheHit", { percent: cacheHitPercent })
+      : null
   const summary = row.summaryKey
     ? t(row.summaryKey, row.summaryValues)
     : row.summary
+  const displaySummary = cacheHitSummary
+    ? summary
+      ? `${summary} · ${cacheHitSummary}`
+      : cacheHitSummary
+    : summary
 
   return (
     <div className="grid grid-cols-[1rem_minmax(0,1fr)] gap-2 px-2 py-1.5">
@@ -64,12 +77,12 @@ function TraceRow({ row }: { row: WorkbenchTraceRow }) {
             </span>
           )}
         </div>
-        {summary && (
+        {displaySummary && (
           <div
             className="mt-0.5 truncate text-[11px] text-muted-foreground"
-            title={summary}
+            title={displaySummary}
           >
-            {summary}
+            {displaySummary}
           </div>
         )}
       </div>
