@@ -6,8 +6,8 @@
 - [x] 2.2 Map Codex app-server `cachedInputTokens` (`src/main/lib/codex/app-server-stream-events.ts:161`) into the shared cache-read field
 - [x] 2.3 Normalize `inputTokens` semantics so the cache-ratio denominator is consistent: preserve the existing per-runtime total-input-context rule (`chats-helpers.ts:392`) — Codex `totalTokens - outputTokens`, Claude `input + cacheRead + cacheCreation` — rather than computing `input + cacheRead` directly for Codex (which double-counts cached, since Codex `inputTokens` is inclusive per `usage-metadata.ts:224`)
 - [x] 2.4 Treat cache-creation as `0` when a runtime does not report it
-- [ ] 2.5 [needs smoke] Verify the normalized Codex values reach `workbench-trace-presenter.ts` `getUsage` for a real Codex app-server run
-  - Automated substitute added: `tests/codex-app-server-stream-events.test.ts` now covers Codex app-server token notification → RunEvent → Workbench trace presenter. Real smoke remains unchecked because the locally available global Codex CLI is `0.136.0-alpha.1`, while this project targets bundled `0.139.0`.
+- [x] 2.5 Verify the normalized Codex values reach `workbench-trace-presenter.ts` `getUsage` for a real Codex app-server run
+  - Real smoke passed with bundled Codex CLI `0.139.0` at `resources/bin/darwin-arm64/codex`: the adapter run succeeded, emitted a `usage_update`, and `getWorkbenchTraceRow` exposed `cacheReadInputTokens: 2432`, `totalInputContextTokens: 25087`, and `cacheHitRatio: 0.09694263961414279`.
 
 ## 3. Implementation
 - [x] 3.1 Extract the `chats-helpers.ts:392` total-input-context derivation into a renderer-safe pure shared helper (for example `src/shared/usage-metadata.ts`) and update both `chats-helpers.ts` and `workbench-trace-presenter.ts` to consume it
