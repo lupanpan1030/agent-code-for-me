@@ -264,4 +264,13 @@ describe("MCP OAuth token storage", () => {
       tokenType: "Bearer",
     })
   })
+
+  test("binds the OAuth callback server to loopback", () => {
+    const source = readFileSync(
+      join(__dirname, "..", "src/main/lib/oauth.ts"),
+      "utf-8",
+    )
+
+    expect(source).toContain("listen(CALLBACK_PORT, '127.0.0.1'")
+  })
 })
