@@ -3,6 +3,12 @@ import path from "node:path"
 import { TRPCError } from "@trpc/server"
 import { observable } from "@trpc/server/observable"
 import { z } from "zod"
+import {
+  isPathInsideOrEqual,
+  PathBoundaryError,
+  resolveRealPathWithinRoot,
+} from "../../fs/path-boundary"
+import { resolveRegisteredChatWorktreeRoot } from "../../fs/registered-roots"
 import { terminalManager } from "../../terminal/manager"
 import {
   resolveTrustedCreateSessionParams,
@@ -149,9 +155,25 @@ export const terminalRouter = router({
    * List directory contents for navigation
    */
   listDirectory: publicProcedure
-    .input(z.object({ dirPath: z.string() }))
+    .input(z.object({ chatId: z.string().min(1), dirPath: z.string() }))
     .query(async ({ input }) => {
-      const { dirPath } = input
+      const rootPath = resolveRegisteredChatWorktreeRoot(input.chatId)
+      let dirPath: string
+
+      try {
+        dirPath = await resolveRealPathWithinRoot({
+          targetPath: input.dirPath,
+          rootPath,
+        })
+      } catch (error) {
+        if (error instanceof PathBoundaryError) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: error.message,
+          })
+        }
+        throw error
+      }
 
       try {
         const entries = await fs.readdir(dirPath, { withFileTypes: true })
@@ -172,7 +194,8 @@ export const terminalRouter = router({
 
         // Get parent directory
         const parentPath = path.dirname(dirPath)
-        const hasParent = parentPath !== dirPath
+        const hasParent =
+          parentPath !== dirPath && isPathInsideOrEqual(rootPath, parentPath)
 
         return {
           currentPath: dirPath,
