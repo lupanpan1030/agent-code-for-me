@@ -9,6 +9,7 @@ import {
   type GuardedGitStatusSnapshot,
   type ValidatedAgentScopeContract,
 } from "../../agent-guard"
+import { resolveDesktopRunCwdFromDb } from "../../agent-runtime/preflight"
 import {
   desktopScopeExpansionResponseInputSchema,
   respondDesktopScopeExpansion,
@@ -47,9 +48,52 @@ import {
   startClaudeMcpOAuth,
   updateClaudeMcpServer,
 } from "../../runtime-mcp-config/claude"
+import {
+  normalizeMcpArgs,
+  normalizeMcpEnv,
+  normalizeMcpServerUrl,
+} from "../../runtime-mcp-config/input-validation"
 import { publicProcedure, router } from "../index"
 
 export { clearClaudeCaches, getAllMcpConfigHandler }
+
+function zodMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Invalid input"
+}
+
+const mcpStringInputSchema = z
+  .string()
+  .refine((value) => !value.includes("\0"), {
+    message: "Value must not contain null bytes",
+  })
+
+const mcpArgsInputSchema = z
+  .array(mcpStringInputSchema)
+  .superRefine((value, ctx) => {
+    try {
+      normalizeMcpArgs(value)
+    } catch (error) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: zodMessage(error) })
+    }
+  })
+
+const mcpEnvInputSchema = z
+  .record(z.string(), z.string())
+  .superRefine((value, ctx) => {
+    try {
+      normalizeMcpEnv(value)
+    } catch (error) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: zodMessage(error) })
+    }
+  })
+
+const mcpUrlInputSchema = z.string().superRefine((value, ctx) => {
+  try {
+    normalizeMcpServerUrl(value)
+  } catch (error) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: zodMessage(error) })
+  }
+})
 
 export const claudeRouter = router({
   /**
@@ -62,7 +106,7 @@ export const claudeRouter = router({
         chatId: z.string(),
         runId: z.string().optional(),
         prompt: z.string(),
-        cwd: z.string(),
+        cwd: z.string().optional(),
         projectPath: z.string().optional(), // Original project path for MCP config lookup
         mode: z.enum(["plan", "agent"]).default("agent"),
         sessionId: z.string().optional(),
@@ -79,6 +123,11 @@ export const claudeRouter = router({
     )
     .subscription(({ input }) => {
       return observable<UIMessageChunk>((emit) => {
+        const db = getDatabase()
+        const resolvedInitialCwd = resolveDesktopRunCwdFromDb(db, {
+          chatId: input.chatId,
+          subChatId: input.subChatId,
+        })
         const {
           abortController,
           streamId,
@@ -95,7 +144,7 @@ export const claudeRouter = router({
           subChatId: input.subChatId,
           requestedRunId: input.runId,
           createId: () => crypto.randomUUID(),
-          cwd: input.cwd,
+          cwd: resolvedInitialCwd,
           mode: input.mode,
           emitNext: (chunk) => {
             emit.next(chunk)
@@ -122,13 +171,12 @@ export const claudeRouter = router({
           emit: safeEmit,
           complete: safeComplete,
           run: async () => {
-            const db = getDatabase()
             desktopRunState.setDb(db)
             const runControls = await prepareClaudeAgentSdkDesktopRunControls({
               db,
               chatId: input.chatId,
               subChatId: input.subChatId,
-              cwd: input.cwd,
+              cwd: input.cwd ?? resolvedInitialCwd,
               projectPath: input.projectPath,
               mode: input.mode,
               scopeContract: input.scopeContract,
@@ -230,12 +278,11 @@ export const claudeRouter = router({
               mcpServersForSdk,
               mcpReadinessStatus,
               mcpRegistryVerificationTargets,
-            } =
-              await resolveClaudeMcpServersForSdk({
-                isolatedConfigReady,
-                projectPath: input.projectPath,
-                runtimeCwd,
-              })
+            } = await resolveClaudeMcpServersForSdk({
+              isolatedConfigReady,
+              projectPath: input.projectPath,
+              runtimeCwd,
+            })
 
             const runtimeResult =
               await runClaudeAgentSdkDesktopRuntimeWithMcpReadiness({
@@ -405,10 +452,10 @@ export const claudeRouter = router({
         scope: z.enum(["global", "project"]),
         projectPath: z.string().optional(),
         transport: z.enum(["stdio", "http"]),
-        command: z.string().optional(),
-        args: z.array(z.string()).optional(),
-        env: z.record(z.string(), z.string()).optional(),
-        url: z.string().url().optional(),
+        command: mcpStringInputSchema.optional(),
+        args: mcpArgsInputSchema.optional(),
+        env: mcpEnvInputSchema.optional(),
+        url: mcpUrlInputSchema.optional(),
         authType: z.enum(["none", "oauth", "bearer"]).optional(),
         bearerToken: z.string().optional(),
       }),
@@ -427,10 +474,10 @@ export const claudeRouter = router({
           .string()
           .regex(/^[a-zA-Z0-9_-]+$/)
           .optional(),
-        command: z.string().optional(),
-        args: z.array(z.string()).optional(),
-        env: z.record(z.string(), z.string()).optional(),
-        url: z.string().url().optional(),
+        command: mcpStringInputSchema.optional(),
+        args: mcpArgsInputSchema.optional(),
+        env: mcpEnvInputSchema.optional(),
+        url: mcpUrlInputSchema.optional(),
         authType: z.enum(["none", "oauth", "bearer"]).optional(),
         bearerToken: z.string().optional(),
         disabled: z.boolean().optional(),

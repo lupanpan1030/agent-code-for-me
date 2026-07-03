@@ -318,7 +318,6 @@ import { utf8ToBase64, base64ToUtf8 } from "../utils/base64"
  *  Includes a 30s safety timeout — if the store never transitions to "ready",
  *  the promise resolves anyway to prevent hanging the UI indefinitely. */
 const STREAMING_READY_TIMEOUT_MS = 30_000
-const FOLDERLESS_RENDERER_CWD = "__locus_folderless_quick_chat__"
 
 function waitForStreamingReady(subChatId: string): Promise<void> {
   return new Promise((resolve) => {
@@ -5781,7 +5780,6 @@ Make sure to preserve all functionality from both branches when resolving confli
       const projectPath = isFolderlessChat
         ? undefined
         : originalProjectPath
-      const runtimeCwd = worktreePath || FOLDERLESS_RENDERER_CWD
 
       // Fast path for existing chats. Only inspect messages when a local empty-chat provider override
       // might require transport recreation.
@@ -5858,7 +5856,6 @@ Make sure to preserve all functionality from both branches when resolving confli
         transport = new ACPChatTransport({
           chatId,
           subChatId,
-          cwd: runtimeCwd,
           projectPath,
           mode: subChatMode,
           provider: "codex",
@@ -5873,7 +5870,6 @@ Make sure to preserve all functionality from both branches when resolving confli
           runtimeId: chatProvider,
           chatId,
           subChatId,
-          cwd: runtimeCwd,
           mode: subChatMode,
           ...(kunModelSource
             ? {
@@ -5886,7 +5882,6 @@ Make sure to preserve all functionality from both branches when resolving confli
         transport = new IPCChatTransport({
           chatId,
           subChatId,
-          cwd: runtimeCwd,
           projectPath,
           mode: subChatMode,
         })
@@ -6123,7 +6118,6 @@ Make sure to preserve all functionality from both branches when resolving confli
 
     // Create empty Chat instance for the new sub-chat
     const projectPath = originalProjectPath
-    const runtimeCwd = worktreePath || FOLDERLESS_RENDERER_CWD
 
     console.log("[createNewSubChat] Transport selection", {
       newId: newId.slice(-8),
@@ -6144,7 +6138,6 @@ Make sure to preserve all functionality from both branches when resolving confli
         newSubChatTransport = new ACPChatTransport({
           chatId,
           subChatId: newId,
-          cwd: runtimeCwd,
           projectPath: isFolderlessChat ? undefined : projectPath,
           mode: newSubChatMode,
           provider: "codex",
@@ -6159,7 +6152,6 @@ Make sure to preserve all functionality from both branches when resolving confli
           runtimeId: chatProvider,
           chatId,
           subChatId: newId,
-          cwd: runtimeCwd,
           mode: newSubChatMode,
           ...(kunModelSource
             ? {
@@ -6173,7 +6165,6 @@ Make sure to preserve all functionality from both branches when resolving confli
         newSubChatTransport = new IPCChatTransport({
           chatId,
           subChatId: newId,
-          cwd: runtimeCwd,
           projectPath: isFolderlessChat ? undefined : projectPath,
           mode: newSubChatMode,
         })

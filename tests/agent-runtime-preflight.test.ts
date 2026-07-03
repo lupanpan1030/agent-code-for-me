@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import {
   DesktopRunPreflightError,
+  resolveDesktopRunCwdFromDb,
   verifyDesktopRunPreflight,
 } from "../src/main/lib/agent-runtime/preflight"
 import { chats, projects, subChats } from "../src/main/lib/db/schema"
@@ -45,6 +46,26 @@ describe("desktop runtime preflight", () => {
     expect(result.project.id).toBe("project-1")
     expect(result.chat.id).toBe("chat-1")
     expect(result.subChat.id).toBe("sub-chat-1")
+    expect(result.cwd).toBe("/tmp/project-worktree")
+  })
+
+  test("resolves project cwd from registered chat state without renderer cwd", () => {
+    const db = createAgentJobTestDb()
+    seedChat(db)
+
+    expect(
+      resolveDesktopRunCwdFromDb(db, {
+        chatId: "chat-1",
+        subChatId: "sub-chat-1",
+      }),
+    ).toBe("/tmp/project-worktree")
+
+    const result = verifyDesktopRunPreflight(db, {
+      chatId: "chat-1",
+      subChatId: "sub-chat-1",
+    })
+
+    expect(result.kind).toBe("project")
     expect(result.cwd).toBe("/tmp/project-worktree")
   })
 
