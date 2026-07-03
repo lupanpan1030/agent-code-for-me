@@ -21,6 +21,25 @@
 **顺序原则**：001–004 是安全/正确性，先做；005–007 是防御与流程，可并行。
 每张工单独立提交（一 PR 一工单），便于逐条审查。
 
+**状态**：001–007 已实施并经审查，随 [PR #15](https://github.com/lupanpan1030/agent-code-for-me/pull/15) 合并入 main（merge `3161f118`）。
+
+## 第二批 — tRPC capability boundary Phase 1（输入信任收敛）
+
+来源：openspec `update-trpc-capability-boundary`（设计已就绪，`design.md` 含完整危险 procedure 清单）。
+目标：把危险 procedure 的输入从「renderer 原始 `cwd`/`path`」改为「服务端从注册实体解析的可信根」。
+
+| 工单 | 标题 | 级别 | 顺序 |
+|------|------|------|------|
+| [TICKET-101](TICKET-101-shared-registered-root-resolver.md) | 共享注册根解析器（基础） | 🟠 结构基础 | 1（前置） |
+| [TICKET-102](TICKET-102-commands-agents-skills-registered-root.md) | commands/agents/skills 写入走注册根 | 🟠 High 安全 | 2 |
+| [TICKET-103](TICKET-103-terminal-listdirectory-boundary.md) | terminal.listDirectory 加边界（小·试水） | 🟠 Medium 安全 | 2 |
+| [TICKET-104](TICKET-104-runtime-start-server-resolved-cwd.md) | 运行时启动 cwd 服务端解析 | 🔴 High 安全 | 3（单独 PR） |
+| [TICKET-105](TICKET-105-mcp-provider-config-validation.md) | MCP/provider 配置根解析 + 输入校验 | 🟠 High 安全 | 2 |
+| [TICKET-106](TICKET-106-arch-guard-dangerous-router-inputs.md) | 架构守卫：危险输入必经解析器 | 🟡 结构防回归 | 4（最后） |
+
+**顺序**：101 前置 → 102/103/105 可并行 → 104 单独一 PR（改动最大、热路径）→ 106 最后（依赖前面收敛完成，否则守卫会因现存违规而红）。
+Phase 2（渲染层 markdown/webview 隔离）与 Phase 3（capability 中间件/consent/audit）待 Phase 1 收敛后再拆。
+
 ## 暂不立工单的结构性改进（需先设计，不适合直接实施-审查闭环）
 
 以下项风险高、主观性强、机械审查困难，**暂不交给 Codex 直接实施**，留待单独设计：
