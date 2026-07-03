@@ -39,6 +39,19 @@ describe("headless desktop jobs UI", () => {
     expect(startupSection).toContain("recoverStaleAgentJobs(db)")
   })
 
+  test("fails loudly instead of opening the desktop when database startup fails", () => {
+    const source = read("src/main/index.ts")
+    const startupSection = source.slice(
+      source.indexOf("// Initialize database"),
+      source.indexOf("// Create main window"),
+    )
+
+    expect(startupSection).toContain("dialog.showErrorBox(")
+    expect(startupSection).toContain("Database Initialization Failed")
+    expect(startupSection).toContain("app.quit()")
+    expect(startupSection).toContain("return")
+  })
+
   test("shows local jobs in Agent Workbench without replacing chat tasks", () => {
     const source = read(
       "src/renderer/features/agents/workbench/agent-workbench.tsx",

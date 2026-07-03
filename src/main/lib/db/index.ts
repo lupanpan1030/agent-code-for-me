@@ -48,28 +48,29 @@ export function initDatabase() {
   const dbPath = getDatabasePath()
   console.log(`[DB] Initializing database at: ${dbPath}`)
 
-  // Create SQLite connection
-  sqlite = new Database(dbPath)
-  sqlite.pragma("journal_mode = WAL")
-  sqlite.pragma("busy_timeout = 5000")
-  sqlite.pragma("foreign_keys = ON")
-
-  // Create Drizzle instance
-  db = drizzle(sqlite, { schema })
-
-  // Run migrations
-  const migrationsPath = getMigrationsPath()
-  console.log(`[DB] Running migrations from: ${migrationsPath}`)
+  const connection = new Database(dbPath)
 
   try {
-    migrate(db, { migrationsFolder: migrationsPath })
+    connection.pragma("journal_mode = WAL")
+    connection.pragma("busy_timeout = 5000")
+    connection.pragma("foreign_keys = ON")
+
+    const instance = drizzle(connection, { schema })
+
+    // Run migrations before publishing the module-level singleton.
+    const migrationsPath = getMigrationsPath()
+    console.log(`[DB] Running migrations from: ${migrationsPath}`)
+    migrate(instance, { migrationsFolder: migrationsPath })
+
+    sqlite = connection
+    db = instance
     console.log("[DB] Migrations completed")
+    return db
   } catch (error) {
     console.error("[DB] Migration error:", error)
+    connection.close()
     throw error
   }
-
-  return db
 }
 
 /**
