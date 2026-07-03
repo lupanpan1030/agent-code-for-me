@@ -16,6 +16,9 @@ if "%COMMAND%"=="daemon" goto headless
 if "%COMMAND%"=="schedules" goto headless
 if "%COMMAND%"=="schedule" goto headless
 if "%COMMAND%"=="acp" goto headless
+if "%COMMAND%"=="version" goto headless
+if "%COMMAND%"=="--version" goto headless
+if "%COMMAND%"=="-v" goto headless
 if "%COMMAND%"=="open" goto gui_open
 if "%COMMAND%"=="gui" goto gui_open
 goto gui_default

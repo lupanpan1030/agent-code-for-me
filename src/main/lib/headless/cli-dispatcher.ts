@@ -953,6 +953,11 @@ async function acpCommand(
   })
 }
 
+function versionCommand(options: RunHeadlessCliCommandOptions): number {
+  writeLine(options.stdout, options.appVersion?.trim() || "unknown")
+  return HEADLESS_EXIT_CODES.success
+}
+
 function helpCommand(options: RunHeadlessCliCommandOptions): number {
   write(
     options.stdout,
@@ -973,6 +978,7 @@ function helpCommand(options: RunHeadlessCliCommandOptions): number {
       "  locus api runs status|result|cancel|retry <id> --json",
       "  locus api runs events <id> [--after <sequence>] [--follow] --jsonl",
       "  locus acp",
+      "  locus --version",
       `  stdin limit: ${HEADLESS_STDIN_MAX_BYTES} bytes`,
       "  locus jobs list",
       "  locus jobs show <id>",
@@ -993,7 +999,7 @@ export async function runHeadlessCliCommand(
     return commandError(options.stderr, parsed.message, parsed.code)
   }
 
-  if (parsed.command.kind !== "daemon-run") {
+  if (parsed.command.kind !== "daemon-run" && parsed.command.kind !== "version") {
     recoverStaleAgentJobs(options.db, options.now)
   }
 
@@ -1041,6 +1047,8 @@ export async function runHeadlessCliCommand(
       return schedulesMutationCommand(parsed.command, options)
     case "acp":
       return acpCommand(options)
+    case "version":
+      return versionCommand(options)
     case "daemon-run":
       return daemonRunCommand(parsed.command, options)
     case "help":

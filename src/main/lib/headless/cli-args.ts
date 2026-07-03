@@ -21,6 +21,23 @@ export const HEADLESS_CLI_MARKER = "--locus-headless-cli"
 
 export const HEADLESS_OUTPUT_FORMATS = ["text", "json", "stream-json"] as const
 
+export const HEADLESS_API_GROUPS = ["runtimes", "runs", "projects"] as const
+
+const HEADLESS_API_RUNTIMES_SUBCOMMANDS = ["list"] as const
+const HEADLESS_API_RUNS_SUBCOMMANDS = [
+  "create",
+  "status",
+  "events",
+  "result",
+  "cancel",
+  "retry",
+] as const
+const HEADLESS_API_PROJECTS_SUBCOMMANDS = [
+  "register",
+  "status",
+  "unregister",
+] as const
+
 export type HeadlessOutputFormat = (typeof HEADLESS_OUTPUT_FORMATS)[number]
 
 export type HeadlessJobSourceFilter = AgentJobSource | "all"
@@ -140,6 +157,9 @@ export type HeadlessCliCommand =
     }
   | {
       kind: "acp"
+    }
+  | {
+      kind: "version"
     }
   | {
       kind: "help"
@@ -305,6 +325,29 @@ function unexpectedArgumentsMessage(args: string[]): string {
   return `Unexpected arguments: ${args.map(sanitizeCliArgForError).join(" ")}`
 }
 
+function includesCliValue<const T extends readonly string[]>(
+  values: T,
+  value: string | undefined,
+): value is T[number] {
+  return typeof value === "string" && (values as readonly string[]).includes(value)
+}
+
+function availableValues(values: readonly string[]): string {
+  return values.join(", ")
+}
+
+function unknownApiGroupMessage(group: string | undefined): string {
+  return `Unknown api command group: ${group ?? ""}. Available groups: ${availableValues(HEADLESS_API_GROUPS)}`
+}
+
+function unknownApiSubcommandMessage(
+  group: string,
+  subcommand: string | undefined,
+  values: readonly string[],
+): string {
+  return `Unknown api ${group} subcommand: ${subcommand ?? ""}. Available subcommands: ${availableValues(values)}`
+}
+
 function errorCodeForParseMessage(message: string): number {
   if (message.startsWith("Invalid or inaccessible cwd:")) return 7
   if (
@@ -325,6 +368,13 @@ export function parseHeadlessCliArgv(argv = process.argv): ParsedHeadlessCli {
     const command = args.shift()
     if (!command || command === "help" || command === "--help" || command === "-h") {
       return { ok: true, command: { kind: "help", output: "text" } }
+    }
+
+    if (command === "version" || command === "--version" || command === "-v") {
+      if (args.length > 0) {
+        throw new Error(unexpectedArgumentsMessage(args))
+      }
+      return { ok: true, command: { kind: "version" } }
     }
 
     if (command === "run") {
@@ -394,11 +444,21 @@ export function parseHeadlessCliArgv(argv = process.argv): ParsedHeadlessCli {
 
     if (command === "api") {
       const group = args.shift()
+      if (!includesCliValue(HEADLESS_API_GROUPS, group)) {
+        throw new Error(unknownApiGroupMessage(group))
+      }
+
       if (group === "runtimes") {
         const subcommand = args.shift() ?? "list"
         takeFlag(args, "--json")
-        if (subcommand !== "list") {
-          throw new Error(`Unknown api runtimes subcommand: ${subcommand}`)
+        if (!includesCliValue(HEADLESS_API_RUNTIMES_SUBCOMMANDS, subcommand)) {
+          throw new Error(
+            unknownApiSubcommandMessage(
+              "runtimes",
+              subcommand,
+              HEADLESS_API_RUNTIMES_SUBCOMMANDS,
+            ),
+          )
         }
         if (args.length > 0) {
           throw new Error(unexpectedArgumentsMessage(args))
@@ -408,6 +468,15 @@ export function parseHeadlessCliArgv(argv = process.argv): ParsedHeadlessCli {
 
       if (group === "projects") {
         const subcommand = args.shift()
+        if (!includesCliValue(HEADLESS_API_PROJECTS_SUBCOMMANDS, subcommand)) {
+          throw new Error(
+            unknownApiSubcommandMessage(
+              "projects",
+              subcommand,
+              HEADLESS_API_PROJECTS_SUBCOMMANDS,
+            ),
+          )
+        }
         takeFlag(args, "--json")
         const cwdOption = takeOption(args, "--cwd")
         if (!cwdOption) {
@@ -445,12 +514,19 @@ export function parseHeadlessCliArgv(argv = process.argv): ParsedHeadlessCli {
             command: { kind: "api-projects-unregister", cwd, force },
           }
         }
-
-        throw new Error(`Unknown api projects subcommand: ${subcommand ?? ""}`)
       }
 
       if (group === "runs") {
         const subcommand = args.shift()
+        if (!includesCliValue(HEADLESS_API_RUNS_SUBCOMMANDS, subcommand)) {
+          throw new Error(
+            unknownApiSubcommandMessage(
+              "runs",
+              subcommand,
+              HEADLESS_API_RUNS_SUBCOMMANDS,
+            ),
+          )
+        }
         if (subcommand === "create") {
           takeFlag(args, "--json")
           const requestPath = takeOption(args, "--request")
@@ -516,11 +592,7 @@ export function parseHeadlessCliArgv(argv = process.argv): ParsedHeadlessCli {
             },
           }
         }
-
-        throw new Error(`Unknown api runs subcommand: ${subcommand ?? ""}`)
       }
-
-      throw new Error(`Unknown api command group: ${group ?? ""}`)
     }
 
     if (command === "daemon") {

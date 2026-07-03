@@ -9,10 +9,14 @@ describe("headless CLI shims", () => {
     const source = readFileSync(join(repoRoot, "resources/cli/locus"), "utf-8")
     expect(source).toContain("--locus-headless-cli")
     expect(source).toContain('case "$COMMAND" in')
-    expect(source).toContain('run|jobs|api|daemon|schedules|schedule|acp)')
+    expect(source).toContain(
+      'run|jobs|api|daemon|schedules|schedule|acp|version|--version|-v)',
+    )
 
     const headlessSection = source.slice(
-      source.indexOf('run|jobs|api|daemon|schedules|schedule|acp)'),
+      source.indexOf(
+        'run|jobs|api|daemon|schedules|schedule|acp|version|--version|-v)',
+      ),
       source.indexOf('open|gui)'),
     )
     expect(headlessSection).toContain("exec")
@@ -29,6 +33,9 @@ describe("headless CLI shims", () => {
     expect(source).toContain('if "%COMMAND%"=="schedules"')
     expect(source).toContain('if "%COMMAND%"=="schedule"')
     expect(source).toContain('if "%COMMAND%"=="acp"')
+    expect(source).toContain('if "%COMMAND%"=="version"')
+    expect(source).toContain('if "%COMMAND%"=="--version"')
+    expect(source).toContain('if "%COMMAND%"=="-v"')
 
     const headlessSection = source.slice(
       source.indexOf(":headless"),

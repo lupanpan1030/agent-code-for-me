@@ -17,6 +17,17 @@ describe("headless CLI args", () => {
     ).toBe(true)
   })
 
+  test("parses top-level version command aliases", () => {
+    for (const alias of ["version", "--version", "-v"]) {
+      expect(
+        parseHeadlessCliArgv(["Locus", HEADLESS_CLI_MARKER, alias]),
+      ).toMatchObject({
+        ok: true,
+        command: { kind: "version" },
+      })
+    }
+  })
+
   test("parses run with runtime aliases, mode, cwd, and JSON output", () => {
     const parsed = parseHeadlessCliArgv([
       "Locus",
@@ -441,6 +452,98 @@ describe("headless CLI args", () => {
         follow: true,
       },
     })
+  })
+
+  test("reports Local Job API command inventory for unknown groups", () => {
+    const missingGroup = parseHeadlessCliArgv([
+      "Locus",
+      HEADLESS_CLI_MARKER,
+      "api",
+    ])
+    expect(missingGroup).toMatchObject({
+      ok: false,
+      code: 2,
+    })
+    if (!missingGroup.ok) {
+      expect(missingGroup.message).toContain(
+        "Available groups: runtimes, runs, projects",
+      )
+    }
+
+    const unknownGroup = parseHeadlessCliArgv([
+      "Locus",
+      HEADLESS_CLI_MARKER,
+      "api",
+      "models",
+    ])
+    expect(unknownGroup).toMatchObject({
+      ok: false,
+      code: 2,
+    })
+    if (!unknownGroup.ok) {
+      expect(unknownGroup.message).toContain("Unknown api command group: models")
+      expect(unknownGroup.message).toContain(
+        "Available groups: runtimes, runs, projects",
+      )
+    }
+  })
+
+  test("reports unknown Local Job API subcommands before required arguments", () => {
+    const unknownRunsSubcommand = parseHeadlessCliArgv([
+      "Locus",
+      HEADLESS_CLI_MARKER,
+      "api",
+      "runs",
+      "list",
+      "--json",
+    ])
+    expect(unknownRunsSubcommand).toMatchObject({
+      ok: false,
+      code: 2,
+    })
+    if (!unknownRunsSubcommand.ok) {
+      expect(unknownRunsSubcommand.message).toContain(
+        "Unknown api runs subcommand: list",
+      )
+      expect(unknownRunsSubcommand.message).not.toContain("requires a job id")
+    }
+
+    const unknownProjectsSubcommand = parseHeadlessCliArgv([
+      "Locus",
+      HEADLESS_CLI_MARKER,
+      "api",
+      "projects",
+      "list",
+      "--json",
+    ])
+    expect(unknownProjectsSubcommand).toMatchObject({
+      ok: false,
+      code: 2,
+    })
+    if (!unknownProjectsSubcommand.ok) {
+      expect(unknownProjectsSubcommand.message).toContain(
+        "Unknown api projects subcommand: list",
+      )
+      expect(unknownProjectsSubcommand.message).not.toContain("requires --cwd")
+    }
+
+    const missingCwd = parseHeadlessCliArgv([
+      "Locus",
+      HEADLESS_CLI_MARKER,
+      "api",
+      "projects",
+      "status",
+      "--json",
+    ])
+    expect(missingCwd).toMatchObject({
+      ok: false,
+      code: 2,
+    })
+    if (!missingCwd.ok) {
+      expect(missingCwd.message).toContain(
+        "locus api projects status requires --cwd <path>",
+      )
+    }
   })
 
   test("parses acp stdio command", () => {

@@ -77,6 +77,42 @@ function parseJsonLines(value: string): any[] {
 }
 
 describe("headless CLI dispatcher", () => {
+  test("prints the app version from headless options", async () => {
+    const db = createAgentJobTestDb()
+    const stdout = writer()
+    const stderr = writer()
+    const code = await runHeadlessCliCommand({
+      db,
+      argv: ["Locus", HEADLESS_CLI_MARKER, "--version"],
+      stdout: stdout.stream,
+      stderr: stderr.stream,
+      appVersion: "1.2.3-test",
+    })
+
+    expect(code).toBe(0)
+    expect(stdout.value()).toBe("1.2.3-test\n")
+    expect(stderr.value()).toBe("")
+  })
+
+  test("reports Local Job API available groups on stderr", async () => {
+    const db = createAgentJobTestDb()
+    const stdout = writer()
+    const stderr = writer()
+    const code = await runHeadlessCliCommand({
+      db,
+      argv: ["Locus", HEADLESS_CLI_MARKER, "api", "models"],
+      stdout: stdout.stream,
+      stderr: stderr.stream,
+    })
+
+    expect(code).toBe(2)
+    expect(stdout.value()).toBe("")
+    expect(stderr.value()).toContain("Unknown api command group: models")
+    expect(stderr.value()).toContain(
+      "Available groups: runtimes, runs, projects",
+    )
+  })
+
   test("runs Local Job API create/status/events/result with stable JSON output", async () => {
     const db = createAgentJobTestDb()
     const { packageDir, artifactBaseDir } = seedLocalPackageProject(db)
