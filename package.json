@@ -105,7 +105,7 @@
     "js-yaml": "^4.1.0",
     "jsonc-parser": "^3.3.1",
     "lucide-react": "^0.468.0",
-    "mermaid": "^11.12.2",
+    "mermaid": "^11.16.0",
     "monaco-editor": "^0.55.1",
     "motion": "^11.15.0",
     "node-pty": "^1.1.0",
@@ -118,7 +118,7 @@
     "remark-breaks": "^4.0.0",
     "remark-gfm": "^4.0.1",
     "shiki": "^1.24.4",
-    "simple-git": "^3.28.0",
+    "simple-git": "^3.36.0",
     "sonner": "^1.7.1",
     "streamdown": "^2.0.1",
     "superjson": "^2.2.2",
@@ -291,6 +291,10 @@
     "portable": {
       "artifactName": "Locus-${version}-portable.${ext}"
     }
+  },
+  "overrides": {
+    "dompurify": "3.4.11",
+    "uuid": "11.1.1"
   },
   "pnpm": {
     "overrides": {
