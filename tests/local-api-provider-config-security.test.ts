@@ -21,10 +21,11 @@ mock.module("electron", () => ({
   },
 }))
 
-const {
-  getLocalApiProviderTokenRequirement,
-  localApiProviderPurposeSchema,
-} = await import("../src/main/lib/trpc/routers/local-api-provider-config")
+const { getLocalApiProviderTokenRequirement, localApiProviderPurposeSchema } =
+  await import("../src/main/lib/trpc/routers/local-api-provider-config")
+const { normalizeProviderBaseUrl } = await import(
+  "../src/main/lib/provider-token"
+)
 
 describe("local API provider config security", () => {
   test("accepts voice transcription as a helper provider purpose", () => {
@@ -64,5 +65,14 @@ describe("local API provider config security", () => {
         baseUrl: "https://api.example.com/v1",
       }),
     ).toBe("missing")
+  })
+
+  test("rejects unsafe provider base URLs", () => {
+    expect(() => normalizeProviderBaseUrl("ftp://api.example.com/v1")).toThrow(
+      "http or https",
+    )
+    expect(() =>
+      normalizeProviderBaseUrl("https://api.example.com/v1\0.evil.test"),
+    ).toThrow("null bytes")
   })
 })

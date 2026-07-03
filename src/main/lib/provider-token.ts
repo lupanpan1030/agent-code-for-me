@@ -19,7 +19,24 @@ const HEADER_SAFE_TOKEN_REGEX = /^[\x21-\x7E]+$/
 
 /** Trim and drop trailing slashes from a provider base URL. */
 export function normalizeProviderBaseUrl(baseUrl: string): string {
-  return baseUrl.trim().replace(/\/+$/, "")
+  const normalized = baseUrl.trim().replace(/\/+$/, "")
+  if (!normalized) return ""
+  if (normalized.includes("\0")) {
+    throw new Error("Provider base URL must not contain null bytes")
+  }
+
+  let parsed: URL
+  try {
+    parsed = new URL(normalized)
+  } catch {
+    throw new Error("Provider base URL must be a valid URL")
+  }
+
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error("Provider base URL must use http or https")
+  }
+
+  return normalized
 }
 
 /**

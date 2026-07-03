@@ -109,9 +109,41 @@ import {
   resolveCodexMcpSnapshotForDesktopRun,
   startCodexMcpOAuth,
 } from "../../runtime-mcp-config/codex"
+import {
+  normalizeMcpArgs,
+  normalizeMcpServerUrl,
+} from "../../runtime-mcp-config/input-validation"
 import { publicProcedure, router } from "../index"
 
 export { getAllCodexMcpConfigHandler }
+
+function zodMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Invalid input"
+}
+
+const mcpStringInputSchema = z
+  .string()
+  .refine((value) => !value.includes("\0"), {
+    message: "Value must not contain null bytes",
+  })
+
+const mcpArgsInputSchema = z
+  .array(mcpStringInputSchema)
+  .superRefine((value, ctx) => {
+    try {
+      normalizeMcpArgs(value)
+    } catch (error) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: zodMessage(error) })
+    }
+  })
+
+const mcpUrlInputSchema = z.string().superRefine((value, ctx) => {
+  try {
+    normalizeMcpServerUrl(value)
+  } catch (error) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: zodMessage(error) })
+  }
+})
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value)
@@ -380,9 +412,9 @@ export const codexRouter = router({
           ),
         scope: z.enum(["global", "project"]),
         transport: z.enum(["stdio", "http"]),
-        command: z.string().optional(),
-        args: z.array(z.string()).optional(),
-        url: z.string().url().optional(),
+        command: mcpStringInputSchema.optional(),
+        args: mcpArgsInputSchema.optional(),
+        url: mcpUrlInputSchema.optional(),
       }),
     )
     .mutation(async ({ input }) => {
@@ -817,10 +849,9 @@ export const codexRouter = router({
               requestedModel: input.model,
               hasAppManagedApiKey: Boolean(appManagedCodexApiKey),
             })
-            const appServerSelectedModelId =
-              !codexProviderProfile
-                ? normalizeCodexAppServerModelId(selectedModelId)
-                : selectedModelId
+            const appServerSelectedModelId = !codexProviderProfile
+              ? normalizeCodexAppServerModelId(selectedModelId)
+              : selectedModelId
             const metadataModel =
               codexProviderProfile?.defaultModel ?? appServerSelectedModelId
 

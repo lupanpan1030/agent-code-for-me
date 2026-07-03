@@ -1,21 +1,34 @@
 import { z } from "zod"
 import {
+  type ClaudeProviderAuthMode,
+  type ClaudeProviderRuntimeConfig,
   claudeProviderAuthModeSchema,
   clearClaudeProviderConfig,
   getClaudeProviderConfigMetadata,
   importLegacyClaudeProviderConfig,
   saveClaudeProviderConfig,
-  type ClaudeProviderAuthMode,
-  type ClaudeProviderRuntimeConfig,
 } from "../../claude/provider-config-store"
+import { normalizeProviderBaseUrl } from "../../provider-token"
 import { publicProcedure, router } from "../index"
 
-export { claudeProviderAuthModeSchema }
 export type { ClaudeProviderAuthMode, ClaudeProviderRuntimeConfig }
+export { claudeProviderAuthModeSchema }
 
 const saveInputSchema = z.object({
   model: z.string().min(1),
-  baseUrl: z.string().min(1),
+  baseUrl: z
+    .string()
+    .min(1)
+    .superRefine((value, ctx) => {
+      try {
+        normalizeProviderBaseUrl(value)
+      } catch (error) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: error instanceof Error ? error.message : "Invalid input",
+        })
+      }
+    }),
   authMode: claudeProviderAuthModeSchema,
   token: z.string().optional(),
 })

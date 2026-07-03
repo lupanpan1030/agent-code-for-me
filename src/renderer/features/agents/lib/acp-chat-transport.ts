@@ -53,7 +53,6 @@ function tr(key: TranslationKey, values?: Record<string, string | number>) {
 type ACPChatTransportConfig = {
   chatId: string
   subChatId: string
-  cwd: string
   projectPath?: string
   mode: "plan" | "agent"
   provider: "codex"
@@ -248,7 +247,6 @@ export class ACPChatTransport implements ChatTransport<UIMessage> {
             chatId: this.config.chatId,
             runId,
             prompt,
-            cwd: this.config.cwd,
             ...(this.config.projectPath
               ? { projectPath: this.config.projectPath }
               : {}),

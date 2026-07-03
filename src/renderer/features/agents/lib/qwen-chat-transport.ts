@@ -22,7 +22,6 @@ type QwenChatTransportConfig = {
   runtimeId?: ExperimentalRuntimeTransportId
   chatId: string
   subChatId: string
-  cwd: string
   mode: "plan" | "agent"
   modelSource?: string | null
   providerProfileId?: string | null
@@ -91,7 +90,6 @@ export class QwenChatTransport implements ChatTransport<UIMessage> {
             chatId: this.config.chatId,
             runId,
             prompt,
-            cwd: this.config.cwd,
             mode: this.config.mode,
             ...(this.config.modelSource
               ? { modelSource: this.config.modelSource }

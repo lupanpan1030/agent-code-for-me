@@ -3,12 +3,13 @@ import { statSync } from "node:fs"
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { basename, dirname, isAbsolute, join, resolve } from "node:path"
-import { eq } from "drizzle-orm"
 import { z } from "zod"
 import { sanitizeMcpConfigForRenderer } from "../../../shared/mcp-import-preview"
 import { resolveProjectPathFromWorktree } from "../claude-config"
 import { runCodexCliChecked } from "../codex/cli-runner"
 import { getDatabase, projects as projectsTable } from "../db"
+import { PathBoundaryError } from "../fs/path-boundary"
+import { resolveRegisteredProjectRoot } from "../fs/registered-roots"
 import {
   fetchMcpTools,
   fetchMcpToolsStdio,
@@ -19,6 +20,12 @@ import {
   type McpRegistryVerificationRecord,
   upsertMcpRegistryVerificationRecord,
 } from "../mcp-registry/verification-state"
+import {
+  normalizeMcpArgs,
+  normalizeMcpCommand,
+  normalizeMcpServerConfigForWrite,
+  normalizeMcpServerUrl,
+} from "./input-validation"
 import {
   buildMcpCommandTrustInputFromConfig,
   ensureMcpCommandWriteApproved,
@@ -981,22 +988,23 @@ function resolveCodexMcpProjectPathForCli(
   const requestedPath = projectPath?.trim()
   if (!requestedPath) return undefined
 
-  const db = getDatabase()
-  const registeredProject = db
-    .select({ path: projectsTable.path })
-    .from(projectsTable)
-    .where(eq(projectsTable.path, requestedPath))
-    .get()
-
-  if (!registeredProject) {
+  const resolvedProjectPath =
+    resolveProjectPathFromWorktree(resolve(requestedPath)) || requestedPath
+  let registeredProjectPath: string
+  try {
+    registeredProjectPath = resolveRegisteredProjectRoot(resolvedProjectPath)
+  } catch (error) {
+    if (!(error instanceof PathBoundaryError)) {
+      throw error
+    }
     throw new Error("Codex MCP project path must match a registered project.")
   }
 
-  if (!isExistingCodexMcpCwd(registeredProject.path)) {
+  if (!isExistingCodexMcpCwd(registeredProjectPath)) {
     throw new Error("Codex MCP project path no longer exists.")
   }
 
-  return registeredProject.path
+  return registeredProjectPath
 }
 
 export async function addCodexMcpServer(input: {
@@ -1013,25 +1021,20 @@ export async function addCodexMcpServer(input: {
 
   const args = ["mcp", "add", input.name.trim()]
   if (input.transport === "http") {
-    const url = input.url?.trim()
-    if (!url) {
-      throw new Error("URL is required for HTTP servers.")
-    }
+    const url = normalizeMcpServerUrl(input.url, "Codex MCP URL")
     args.push("--url", url)
   } else {
-    const command = input.command?.trim()
-    if (!command) {
-      throw new Error("Command is required for stdio servers.")
-    }
+    const command = normalizeMcpCommand(input.command, "Codex MCP command")
+    const commandArgs = normalizeMcpArgs(input.args) ?? []
 
     await ensureMcpCommandWriteApproved({
       request: buildCodexMcpCommandTrustInput({
         name: input.name.trim(),
         command,
-        args: input.args,
+        args: commandArgs,
       }),
     })
-    args.push("--", command, ...(input.args || []))
+    args.push("--", command, ...commandArgs)
   }
 
   await runCodexCliChecked(args)
@@ -1057,9 +1060,10 @@ export async function writeCodexMcpServerConfig(input: {
       "Codex MCP server name must contain only letters, numbers, underscores, or hyphens.",
     )
   }
+  const config = normalizeMcpServerConfigForWrite(input.config)
   const trustInput = buildCodexMcpCommandTrustInputFromConfig({
     name: serverName,
-    config: input.config,
+    config,
   })
   if (trustInput) {
     await ensureMcpCommandWriteApproved({ request: trustInput })
@@ -1069,7 +1073,7 @@ export async function writeCodexMcpServerConfig(input: {
   const withoutServer = removeCodexMcpServerTomlBlock(existing, serverName)
   const block = buildCodexMcpServerTomlBlock({
     name: serverName,
-    config: input.config,
+    config,
   })
   const next = `${withoutServer.trimEnd()}\n\n${block}`.trimStart()
   await writeCodexConfigToml(`${next.trimEnd()}\n`)

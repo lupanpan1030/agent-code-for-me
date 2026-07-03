@@ -1,13 +1,13 @@
 import { eq } from "drizzle-orm"
 import { z } from "zod"
 import { getDatabase, localApiProviderConfigs } from "../../db"
-import { isSecureStorageAvailable } from "../../secure-storage"
 import {
   decryptProviderToken,
   encryptProviderToken,
   normalizeProviderBaseUrl,
   normalizeProviderToken,
 } from "../../provider-token"
+import { isSecureStorageAvailable } from "../../secure-storage"
 import { publicProcedure, router } from "../index"
 
 export const localApiProviderPurposeSchema = z.enum([
@@ -34,7 +34,6 @@ type LocalApiProviderMetadata = {
   createdAt: string | null
   updatedAt: string | null
 }
-
 
 export function getLocalApiProviderTokenRequirement(input: {
   baseUrl: string
@@ -101,7 +100,19 @@ const providerPurposeInputSchema = z.object({
 
 const saveInputSchema = providerPurposeInputSchema.extend({
   model: z.string().min(1),
-  baseUrl: z.string().min(1),
+  baseUrl: z
+    .string()
+    .min(1)
+    .superRefine((value, ctx) => {
+      try {
+        normalizeProviderBaseUrl(value)
+      } catch (error) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: error instanceof Error ? error.message : "Invalid input",
+        })
+      }
+    }),
   token: z.string().optional(),
 })
 
@@ -111,7 +122,8 @@ export const localApiProviderConfigRouter = router({
 
     return {
       config: row ? rowToMetadata(row) : null,
-      encryptionAvailable: Boolean(row?.encryptedToken) && isSecureStorageAvailable(),
+      encryptionAvailable:
+        Boolean(row?.encryptedToken) && isSecureStorageAvailable(),
     }
   }),
 

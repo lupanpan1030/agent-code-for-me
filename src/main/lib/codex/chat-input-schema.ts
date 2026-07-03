@@ -30,7 +30,7 @@ export const codexChatInputSchema = z
     runId: z.string(),
     prompt: z.string(),
     model: z.string().optional(),
-    cwd: z.string(),
+    cwd: z.string().optional(),
     projectPath: z.string().optional(),
     mode: z.enum(["plan", "agent"]).default("agent"),
     sessionId: z.string().optional(),

@@ -4,6 +4,13 @@ import * as path from "node:path"
 import { z } from "zod"
 import { isCustomAgentModel } from "../../../../shared/custom-agent-models"
 import { listClaudeNativeAgents } from "../../agent-builder/claude-native-agents"
+import {
+  ensureRegisteredClaudeProjectComponentRoot,
+  resolveExistingRegisteredClaudeProjectComponentRoot,
+  resolveRegisteredClaudeProjectComponentPath,
+  resolveRegisteredClaudeProjectComponentRoot,
+  resolveRegisteredProjectRoot,
+} from "../../fs/registered-roots"
 import { getPluginComponentPaths } from "../../plugins"
 import { discoverAllowedClaudePluginRuntimeComponents } from "../../plugins/runtime-gates"
 import { publicProcedure, router } from "../index"
@@ -22,7 +29,15 @@ const listAgentsProcedure = publicProcedure
       .optional(),
   )
   .query(async ({ input }) => {
-    return listClaudeNativeAgents({ cwd: input?.cwd })
+    const projectRoot = input?.cwd
+      ? (
+          await resolveExistingRegisteredClaudeProjectComponentRoot(
+            input.cwd,
+            "agents",
+          )
+        )?.projectRoot
+      : undefined
+    return listClaudeNativeAgents({ cwd: projectRoot })
   })
 
 export const agentsRouter = router({
@@ -44,15 +59,18 @@ export const agentsRouter = router({
   get: publicProcedure
     .input(z.object({ name: z.string(), cwd: z.string().optional() }))
     .query(async ({ input }) => {
+      const projectRoot = input.cwd
+        ? resolveRegisteredProjectRoot(input.cwd)
+        : undefined
       const locations = [
         {
           dir: path.join(os.homedir(), ".claude", "agents"),
           source: "user" as const,
         },
-        ...(input.cwd
+        ...(projectRoot
           ? [
               {
-                dir: path.join(input.cwd, ".claude", "agents"),
+                dir: path.join(projectRoot, ".claude", "agents"),
                 source: "project" as const,
               },
             ]
@@ -60,8 +78,15 @@ export const agentsRouter = router({
       ]
 
       for (const { dir, source } of locations) {
-        const agentPath = path.join(dir, `${input.name}.md`)
         try {
+          const agentPath =
+            source === "project" && projectRoot
+              ? await resolveRegisteredClaudeProjectComponentPath({
+                  projectPath: projectRoot,
+                  component: "agents",
+                  targetPath: path.join(dir, `${input.name}.md`),
+                })
+              : path.join(dir, `${input.name}.md`)
           const content = await fs.readFile(agentPath, "utf-8")
           const parsed = parseAgentMd(content, `${input.name}.md`)
           return {
@@ -118,11 +143,17 @@ export const agentsRouter = router({
 
       // Determine target directory
       let targetDir: string
+      let projectRoot: string | undefined
       if (input.source === "project") {
         if (!input.cwd) {
           throw new Error("Project path (cwd) required for project agents")
         }
-        targetDir = path.join(input.cwd, ".claude", "agents")
+        const roots = await ensureRegisteredClaudeProjectComponentRoot(
+          input.cwd,
+          "agents",
+        )
+        projectRoot = roots.projectRoot
+        targetDir = roots.componentRoot
       } else {
         targetDir = path.join(os.homedir(), ".claude", "agents")
       }
@@ -130,7 +161,13 @@ export const agentsRouter = router({
       // Ensure directory exists
       await fs.mkdir(targetDir, { recursive: true })
 
-      const agentPath = path.join(targetDir, `${safeName}.md`)
+      const agentPath = projectRoot
+        ? await resolveRegisteredClaudeProjectComponentPath({
+            projectPath: projectRoot,
+            component: "agents",
+            targetPath: path.join(targetDir, `${safeName}.md`),
+          })
+        : path.join(targetDir, `${safeName}.md`)
 
       // Check if already exists
       try {
@@ -190,17 +227,35 @@ export const agentsRouter = router({
 
       // Determine target directory
       let targetDir: string
+      let projectRoot: string | undefined
       if (input.source === "project") {
         if (!input.cwd) {
           throw new Error("Project path (cwd) required for project agents")
         }
-        targetDir = path.join(input.cwd, ".claude", "agents")
+        const roots = resolveRegisteredClaudeProjectComponentRoot(
+          input.cwd,
+          "agents",
+        )
+        projectRoot = roots.projectRoot
+        targetDir = roots.componentRoot
       } else {
         targetDir = path.join(os.homedir(), ".claude", "agents")
       }
 
-      const originalPath = path.join(targetDir, `${safeOriginalName}.md`)
-      const newPath = path.join(targetDir, `${safeName}.md`)
+      const originalPath = projectRoot
+        ? await resolveRegisteredClaudeProjectComponentPath({
+            projectPath: projectRoot,
+            component: "agents",
+            targetPath: path.join(targetDir, `${safeOriginalName}.md`),
+          })
+        : path.join(targetDir, `${safeOriginalName}.md`)
+      const newPath = projectRoot
+        ? await resolveRegisteredClaudeProjectComponentPath({
+            projectPath: projectRoot,
+            component: "agents",
+            targetPath: path.join(targetDir, `${safeName}.md`),
+          })
+        : path.join(targetDir, `${safeName}.md`)
 
       // Check original exists
       try {
@@ -263,16 +318,28 @@ export const agentsRouter = router({
       }
 
       let targetDir: string
+      let projectRoot: string | undefined
       if (input.source === "project") {
         if (!input.cwd) {
           throw new Error("Project path (cwd) required for project agents")
         }
-        targetDir = path.join(input.cwd, ".claude", "agents")
+        const roots = resolveRegisteredClaudeProjectComponentRoot(
+          input.cwd,
+          "agents",
+        )
+        projectRoot = roots.projectRoot
+        targetDir = roots.componentRoot
       } else {
         targetDir = path.join(os.homedir(), ".claude", "agents")
       }
 
-      const agentPath = path.join(targetDir, `${safeName}.md`)
+      const agentPath = projectRoot
+        ? await resolveRegisteredClaudeProjectComponentPath({
+            projectPath: projectRoot,
+            component: "agents",
+            targetPath: path.join(targetDir, `${safeName}.md`),
+          })
+        : path.join(targetDir, `${safeName}.md`)
 
       await fs.unlink(agentPath)
 

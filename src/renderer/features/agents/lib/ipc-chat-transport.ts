@@ -184,7 +184,6 @@ const ERROR_TOAST_CONFIG: Record<
 type IPCChatTransportConfig = {
   chatId: string
   subChatId: string
-  cwd: string
   projectPath?: string // Original project path for MCP config lookup (when using worktrees)
   mode: "plan" | "agent"
   model?: string
@@ -324,7 +323,7 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
     let chunkCount = 0
     let lastChunkType = ""
     console.log(
-      `[SD] R:START sub=${subId} cwd=${this.config.cwd} projectPath=${this.config.projectPath || "(not set)"}`,
+      `[SD] R:START sub=${subId} cwd=(server-resolved) projectPath=${this.config.projectPath || "(not set)"}`,
     )
 
     return new ReadableStream({
@@ -335,7 +334,6 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
             chatId: this.config.chatId,
             runId: crypto.randomUUID(),
             prompt,
-            cwd: this.config.cwd,
             projectPath: this.config.projectPath, // Original project path for MCP config lookup
             mode: currentMode,
             sessionId,
@@ -481,7 +479,7 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
                 console.error(
                   `[SDK ERROR] SubChat ID: ${this.config.subChatId}`,
                 )
-                console.error(`[SDK ERROR] CWD: ${this.config.cwd}`)
+                console.error("[SDK ERROR] CWD: server-resolved")
                 console.error(`[SDK ERROR] Mode: ${currentMode}`)
                 if (debugInfo) {
                   console.error(
@@ -503,7 +501,7 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
                   `Category: ${category}`,
                   `Chat ID: ${this.config.chatId}`,
                   `SubChat ID: ${this.config.subChatId}`,
-                  `CWD: ${this.config.cwd}`,
+                  "CWD: server-resolved",
                   `Mode: ${currentMode}`,
                   `Timestamp: ${new Date().toISOString()}`,
                   debugInfo

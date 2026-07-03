@@ -1,9 +1,7 @@
 import { TRPCError } from "@trpc/server"
 import { observable } from "@trpc/server/observable"
 import { z } from "zod"
-import {
-  AGENT_RUNTIME_CAPABILITY_IDS,
-} from "../../../../shared/agent-runtime-capabilities"
+import { AGENT_RUNTIME_CAPABILITY_IDS } from "../../../../shared/agent-runtime-capabilities"
 import {
   parseProviderProfileSource,
   providerProfileSource,
@@ -15,11 +13,6 @@ import {
 } from "../../agent-guard"
 import type { DesktopRunProviderBinding } from "../../agent-runtime/desktop-run-request"
 import {
-  getRuntimeFeatureSettingsSnapshot,
-  setKunRuntimeEnabled,
-  setQwenRuntimeEnabled,
-} from "../../agent-runtime/runtime-feature-settings"
-import {
   collectExperimentalRuntimeAssistantChunk,
   createExperimentalRuntimeAssistantAccumulator,
   persistExperimentalRuntimeSubChatMessages,
@@ -30,6 +23,11 @@ import {
 import { resolveDesktopPermissionPolicy } from "../../agent-runtime/permission-policy"
 import { verifyDesktopRunPreflight } from "../../agent-runtime/preflight"
 import type { RunEvent } from "../../agent-runtime/runtime-events"
+import {
+  getRuntimeFeatureSettingsSnapshot,
+  setKunRuntimeEnabled,
+  setQwenRuntimeEnabled,
+} from "../../agent-runtime/runtime-feature-settings"
 import {
   listRegisteredAgentRuntimeManifests,
   resolveRegisteredAgentRuntimeCapability,
@@ -94,7 +92,7 @@ const experimentalRuntimeChatInputSchema = z.object({
   chatId: z.string().min(1),
   runId: z.string().optional(),
   prompt: z.string(),
-  cwd: z.string(),
+  cwd: z.string().optional(),
   mode: z.enum(["plan", "agent"]).default("agent"),
   sessionId: z.string().optional(),
   modelSource: z.string().optional(),

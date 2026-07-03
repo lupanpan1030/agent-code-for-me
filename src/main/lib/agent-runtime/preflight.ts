@@ -3,19 +3,19 @@ import os from "node:os"
 import path from "node:path"
 import { eq } from "drizzle-orm"
 import {
-  chats,
-  projects,
-  subChats,
   type Chat,
+  chats,
   type Project,
+  projects,
   type SubChat,
+  subChats,
 } from "../db/schema"
 import type { AgentJobDatabase } from "../headless/job-store"
 
 export type DesktopRunPreflightInput = {
   chatId: string
   subChatId: string
-  cwd: string
+  cwd?: string
   folderlessScratchCwd?: string
   blockers?: DesktopRunPreflightBlocker[]
 }
@@ -94,9 +94,12 @@ export function assertDesktopRunPreflightBlockers(
   }
 }
 
-export function verifyDesktopRunPreflight(
+function resolveDesktopRunPreflightContext(
   db: AgentJobDatabase,
-  input: DesktopRunPreflightInput,
+  input: Pick<
+    DesktopRunPreflightInput,
+    "chatId" | "subChatId" | "folderlessScratchCwd"
+  >,
 ): DesktopRunPreflightResult {
   const chat = db.select().from(chats).where(eq(chats.id, input.chatId)).get()
   if (!chat) throw new Error(`Unknown chat: ${input.chatId}`)
@@ -128,8 +131,6 @@ export function verifyDesktopRunPreflight(
       })
     }
 
-    assertDesktopRunPreflightBlockers(input.blockers)
-
     return {
       kind: "folderless",
       chat,
@@ -155,16 +156,37 @@ export function verifyDesktopRunPreflight(
   }
 
   const expectedCwd = normalizeDesktopRunPath(chat.worktreePath || project.path)
-  const requestedCwd = normalizeDesktopRunPath(input.cwd)
-  if (requestedCwd !== expectedCwd) {
-    failPreflight({
-      id: "cwd",
-      status: "mismatch",
-      message: `Desktop job cwd mismatch: expected ${expectedCwd}, received ${requestedCwd}`,
-    })
+  return { kind: "project", chat, subChat, project, cwd: expectedCwd }
+}
+
+export function resolveDesktopRunCwdFromDb(
+  db: AgentJobDatabase,
+  input: Pick<
+    DesktopRunPreflightInput,
+    "chatId" | "subChatId" | "folderlessScratchCwd"
+  >,
+): string {
+  return resolveDesktopRunPreflightContext(db, input).cwd
+}
+
+export function verifyDesktopRunPreflight(
+  db: AgentJobDatabase,
+  input: DesktopRunPreflightInput,
+): DesktopRunPreflightResult {
+  const preflight = resolveDesktopRunPreflightContext(db, input)
+  if (preflight.kind === "project" && input.cwd !== undefined) {
+    const requestedCwd = normalizeDesktopRunPath(input.cwd)
+    const expectedCwd = preflight.cwd
+    if (requestedCwd !== expectedCwd) {
+      failPreflight({
+        id: "cwd",
+        status: "mismatch",
+        message: `Desktop job cwd mismatch: expected ${expectedCwd}, received ${requestedCwd}`,
+      })
+    }
   }
 
   assertDesktopRunPreflightBlockers(input.blockers)
 
-  return { kind: "project", chat, subChat, project, cwd: expectedCwd }
+  return preflight
 }

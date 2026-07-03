@@ -158,7 +158,9 @@ describe("tRPC path boundaries", () => {
       caller.search({ projectPath: rootPath, query: "", limit: 50 }),
     ).rejects.toThrow("File read root is not registered")
     await expect(
-      Promise.resolve().then(() => caller.watchChanges({ projectPath: rootPath })),
+      Promise.resolve().then(() =>
+        caller.watchChanges({ projectPath: rootPath }),
+      ),
     ).rejects.toThrow("File read root is not registered")
   })
 
@@ -264,6 +266,14 @@ describe("tRPC path boundaries", () => {
 
     await writeText(commandPath, "---\ndescription: Safe\n---\n\nsafe body\n")
     await writeText(secretPath, "SECRET_COMMAND_PAYLOAD")
+    testDb
+      .insert(schema.projects)
+      .values({
+        id: "project-commands-boundary",
+        name: "Commands Boundary",
+        path: projectPath,
+      })
+      .run()
 
     const caller = commandsRouter.createCaller({ getWindow: () => null })
 
@@ -297,8 +307,19 @@ describe("tRPC path boundaries", () => {
     const secretPath = join(secretRoot, "secret.md")
 
     await mkdir(dirname(commandLink), { recursive: true })
-    await writeText(secretPath, "---\ndescription: Secret\n---\n\nsecret body\n")
+    await writeText(
+      secretPath,
+      "---\ndescription: Secret\n---\n\nsecret body\n",
+    )
     await symlink(secretPath, commandLink)
+    testDb
+      .insert(schema.projects)
+      .values({
+        id: "project-commands-symlink-boundary",
+        name: "Commands Symlink Boundary",
+        path: projectPath,
+      })
+      .run()
 
     const caller = commandsRouter.createCaller({ getWindow: () => null })
 

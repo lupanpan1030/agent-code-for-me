@@ -5,18 +5,18 @@
 - [x] 0.4 Receive emergency approval for the Phase 2 renderer XSS slice; broader Phase 1/2/3 rollout remains pending.
 
 ## 1. Phase 1 - Input Trust Convergence
-- [ ] 1.1 Add or extend shared main-process resolvers for registered project roots, chat worktree roots, command roots, agent roots, skill roots, terminal workspace cwd, and dialog-selected path tokens.
+- [x] 1.1 Add or extend shared main-process resolvers for registered project roots, chat worktree roots, command roots, agent roots, skill roots, terminal workspace cwd, and dialog-selected path tokens.
 - [x] 1.2 Update `files` routes so search, watch, rename, and delete use registered roots or dialog-issued tokens; keep existing read hardening intact.
-- [ ] 1.3 Update `commands`, `agents`, and `skills` project-scoped routes so renderer input uses registered project/chat identity instead of raw `projectPath` or `cwd`.
-- [ ] 1.4 Update runtime start routes (`claude.chat`, `codex.chat`, `agentRuntime.chat`) so cwd/projectPath are derived from `chatId`/`subChatId` server-side and forged renderer cwd is rejected.
-- [ ] 1.5 Update terminal routes so `createOrAttach` and `listDirectory` resolve cwd from registered workspace/chat state or a dialog token before spawning/reading.
+- [x] 1.3 Update `commands`, `agents`, and `skills` project-scoped routes so renderer input uses registered project/chat identity instead of raw `projectPath` or `cwd`.
+- [x] 1.4 Update runtime start routes (`claude.chat`, `codex.chat`, `agentRuntime.chat`) so cwd/projectPath are derived from `chatId`/`subChatId` server-side and forged renderer cwd is rejected.
+- [x] 1.5 Update terminal routes so `createOrAttach` and `listDirectory` resolve cwd from registered workspace/chat state or a dialog token before spawning/reading.
 - [x] 1.5a Emergency command sink subset: update `terminal.createOrAttach` so renderer input no longer carries raw `cwd` or `initialCommands`; the main process resolves cwd from the registered chat/workspace and maps only whitelisted `initialCommandIntents` to app-owned commands.
-- [ ] 1.6 Update MCP and provider route inputs so project-scoped config writes resolve project roots server-side and command/url/env inputs receive explicit validation.
+- [x] 1.6 Update MCP and provider route inputs so project-scoped config writes resolve project roots server-side and command/url/env inputs receive explicit validation.
 - [x] 1.7 Replace shell-string git clone in `projects.cloneFromGitHub` with argv-based execution and constrained GitHub repo identity.
-- [ ] 1.8 Add adversarial tests for absolute paths, traversal, symlink escapes, forged cwd/projectPath, raw command/config writes, and unregistered roots.
+- [x] 1.8 Add adversarial tests for absolute paths, traversal, symlink escapes, forged cwd/projectPath, raw command/config writes, and unregistered roots.
 - [x] 1.8a Emergency command sink subset tests: cover forged terminal cwd/scope, legacy raw `initialCommands` payloads, arbitrary command strings masquerading as intents, whitelisted `gh auth login`, GitHub clone shell metacharacters, Git clone option injection, and argv clone execution.
 - [x] 1.8b Files sink subset tests: cover unregistered search/watch roots, rename/delete targets outside registered roots, and rename replacement names containing traversal or path separators.
-- [ ] 1.9 Add an architecture guard for new dangerous router input fields without an approved resolver.
+- [x] 1.9 Add an architecture guard for new dangerous router input fields without an approved resolver.
 
 ## 2. Phase 2 - Renderer Hardening
 - [x] 2.1 Audit renderer CSP requirements and remove broad `unsafe-eval`/remote script allowances where feasible.

@@ -23,6 +23,8 @@ import {
   updateMcpServerConfig,
 } from "../claude-config"
 import { getDatabase, projects as projectsTable } from "../db"
+import { PathBoundaryError } from "../fs/path-boundary"
+import { resolveRegisteredProjectRoot } from "../fs/registered-roots"
 import {
   ensureMcpTokensFresh,
   fetchMcpTools,
@@ -44,6 +46,7 @@ import {
   getApprovedPluginMcpServers,
   getEnabledPlugins,
 } from "../trpc/routers/claude-settings"
+import { normalizeMcpServerConfigForWrite } from "./input-validation"
 import {
   buildMcpCommandTrustInputFromConfig,
   ensureMcpCommandWriteApproved,
@@ -129,20 +132,16 @@ function resolveMcpProjectPathForMutation(input: {
   const requestedPath = path.resolve(input.projectPath)
   const resolvedProjectPath =
     resolveProjectPathFromWorktree(requestedPath) || requestedPath
-  const normalizedResolvedPath = path.resolve(resolvedProjectPath)
-  const registeredProject = getDatabase()
-    .select({ path: projectsTable.path })
-    .from(projectsTable)
-    .all()
-    .find((project) => path.resolve(project.path) === normalizedResolvedPath)
-
-  if (!registeredProject) {
+  try {
+    return resolveRegisteredProjectRoot(resolvedProjectPath)
+  } catch (error) {
+    if (!(error instanceof PathBoundaryError)) {
+      throw error
+    }
     throw new Error(
       "Project-scoped MCP writes require a registered project path",
     )
   }
-
-  return registeredProject.path
 }
 
 function getMcpServersForScope(
@@ -1194,13 +1193,14 @@ export async function writeClaudeMcpServerConfig(input: {
 }) {
   const serverName = normalizeMcpServerName(input.name)
   const projectPath = resolveMcpProjectPathForMutation(input)
-  assertWritableClaudeMcpConfig(input.config)
+  const config = normalizeMcpServerConfigForWrite(input.config)
+  assertWritableClaudeMcpConfig(config)
 
   await ensureClaudeMcpCommandWriteApproved({
     name: serverName,
     scope: input.scope,
     ...(projectPath ? { projectPath } : {}),
-    config: input.config,
+    config,
   })
 
   await updateClaudeConfigAtomic((existingConfig) => {
@@ -1216,7 +1216,7 @@ export async function writeClaudeMcpServerConfig(input: {
       existingConfig,
       projectPath,
       serverName,
-      input.config,
+      config,
     )
   })
 
@@ -1286,7 +1286,10 @@ export async function updateClaudeMcpServer(input: {
       }
     }
 
-    const merged = { ...existing, ...update }
+    const merged = normalizeMcpServerConfigForWrite({
+      ...existing,
+      ...update,
+    })
     await ensureClaudeMcpCommandWriteApproved({
       name: serverName,
       scope: input.scope,

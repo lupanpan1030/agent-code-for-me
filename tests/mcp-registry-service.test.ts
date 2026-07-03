@@ -131,7 +131,9 @@ function oauthRemoteSetupDetailResponse(): OfficialMcpRegistryServerResponse {
   }
 }
 
-function createProviderStub(): {
+function createProviderStub(
+  getDetailResponse: () => OfficialMcpRegistryServerResponse = detailResponse,
+): {
   provider: OfficialMcpRegistryProvider
   calls: string[]
 } {
@@ -150,7 +152,7 @@ function createProviderStub(): {
       },
       async getServerDetail(input) {
         calls.push(`detail:${input.serverName}:${input.version ?? "latest"}`)
-        return detailResponse()
+        return getDetailResponse()
       },
     },
   }
@@ -394,6 +396,29 @@ describe("MCP registry service", () => {
         resolvedSetup: { runtimeAuthenticated: true },
       }),
     ).rejects.toThrow("runtime-auth:codex")
+  })
+
+  test("rejects unsafe registry setup before injected config writers run", async () => {
+    const { provider } = createProviderStub(requiredSetupDetailResponse)
+    const service = createMcpRegistryService({
+      provider,
+      resolveCodexRuntimeAuthenticated: () => false,
+      async writeClaudeConfig() {
+        throw new Error("Claude config must not be written")
+      },
+    })
+
+    await expect(
+      service.installEntry({
+        serverName: "io.github.example/needs-setup",
+        targetId: "package:@example/needs-setup:0",
+        runtime: "claude-code",
+        scope: "global",
+        resolvedSetup: {
+          env: { REQUIRED_TOKEN: { envVar: "BAD-NAME" } },
+        },
+      }),
+    ).rejects.toThrow("environment variable name")
   })
 
   test("saves inactive needs-setup config when required setup is missing", async () => {

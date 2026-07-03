@@ -1,31 +1,46 @@
 import { z } from "zod"
 import { getRuntimeFeatureSettingsSnapshot } from "../../agent-runtime/runtime-feature-settings"
+import { testProviderProfile } from "../../provider-profiles/gateway"
+import { PROVIDER_PROFILE_PRESETS } from "../../provider-profiles/presets"
 import {
+  deleteProviderProfile,
+  getProviderDefaults,
+  getProviderProfileRuntimeConfig,
+  listProviderProfiles,
   providerProfileAuthModeSchema,
   providerProfileCapabilitiesSchema,
   providerProfileDefaultPurposeSchema,
   providerProfileProtocolSchema,
   providerProfileTargetSchema,
-  getProviderDefaults,
-  getProviderProfileMetadata,
-  getProviderProfileRuntimeConfig,
-  listProviderProfiles,
   saveProviderProfile,
-  deleteProviderProfile,
   setProviderDefault,
 } from "../../provider-profiles/storage"
-import { PROVIDER_PROFILE_PRESETS } from "../../provider-profiles/presets"
-import { testProviderProfile } from "../../provider-profiles/gateway"
+import { normalizeProviderBaseUrl } from "../../provider-token"
 import { publicProcedure, router } from "../index"
 
 const headersSchema = z.record(z.string(), z.string()).default({})
+
+function zodMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Invalid input"
+}
+
+const providerBaseUrlInputSchema = z
+  .string()
+  .min(1)
+  .superRefine((value, ctx) => {
+    try {
+      normalizeProviderBaseUrl(value)
+    } catch (error) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: zodMessage(error) })
+    }
+  })
 
 const saveInputSchema = z.object({
   id: z.string().optional(),
   name: z.string().min(1),
   presetId: z.string().nullable().optional(),
   protocol: providerProfileProtocolSchema,
-  baseUrl: z.string().min(1),
+  baseUrl: providerBaseUrlInputSchema,
   defaultModel: z.string().min(1),
   authMode: providerProfileAuthModeSchema,
   token: z.string().optional(),

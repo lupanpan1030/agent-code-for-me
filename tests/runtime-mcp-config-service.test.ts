@@ -62,7 +62,9 @@ let projectMcpJsonByPath: Record<
   string,
   Record<string, MockMcpServerConfig>
 > = {}
-let registeredProjectPaths: string[] = []
+let registeredProjectPaths: Array<
+  string | { path: string; removedAt?: Date | null }
+> = []
 let codexMcpListStdout = "[]"
 let codexCliCalls: CodexCliCall[] = []
 let mcpOAuthCalls: McpOAuthCall[] = []
@@ -81,6 +83,17 @@ let pluginMcpConfigs: Array<{
 
 function clone<T>(value: T): T {
   return value === undefined ? value : (JSON.parse(JSON.stringify(value)) as T)
+}
+
+function registeredProjectRows(): Array<{
+  path: string
+  removedAt: Date | null
+}> {
+  return registeredProjectPaths.map((project) =>
+    typeof project === "string"
+      ? { path: project, removedAt: null }
+      : { path: project.path, removedAt: project.removedAt ?? null },
+  )
 }
 
 function getProjectServers(
@@ -215,12 +228,10 @@ mock.module("../src/main/lib/db", () => ({
   getDatabase: () => ({
     select: () => ({
       from: () => ({
-        all: () => registeredProjectPaths.map((path) => ({ path })),
+        all: () => registeredProjectRows(),
         where: () => ({
           get: () =>
-            registeredProjectPaths.length > 0
-              ? { path: registeredProjectPaths[0] }
-              : undefined,
+            registeredProjectRows().find((project) => !project.removedAt),
         }),
       }),
     }),
@@ -485,6 +496,71 @@ describe("Runtime MCP config service behavior", () => {
         command: "node",
       }),
     ).rejects.toThrow("registered project path")
+  })
+
+  test("rejects unsafe MCP config writes before persistence", async () => {
+    const projectPath = makeTempDir()
+    registeredProjectPaths = [
+      { path: projectPath, removedAt: new Date("2026-07-03T00:00:00Z") },
+    ]
+
+    await expect(
+      claudeMcpConfig.addClaudeMcpServer({
+        name: "removed_project",
+        scope: "project",
+        projectPath,
+        transport: "stdio",
+        command: "node",
+      }),
+    ).rejects.toThrow("registered project path")
+
+    registeredProjectPaths = [projectPath]
+
+    await expect(
+      claudeMcpConfig.addClaudeMcpServer({
+        name: "bad_remote",
+        scope: "global",
+        transport: "http",
+        url: "ftp://mcp.example.com/server",
+      }),
+    ).rejects.toThrow("must use http or https")
+
+    await expect(
+      claudeMcpConfig.addClaudeMcpServer({
+        name: "bad_env",
+        scope: "global",
+        transport: "stdio",
+        command: "node",
+        env: { "BAD-NAME": "1" },
+      }),
+    ).rejects.toThrow("environment variable name")
+
+    await expect(
+      claudeMcpConfig.addClaudeMcpServer({
+        name: "bad_arg",
+        scope: "global",
+        transport: "stdio",
+        command: "node",
+        args: ["ok", "bad\0arg"],
+      }),
+    ).rejects.toThrow("null bytes")
+
+    await expect(
+      codexMcpConfig.addCodexMcpServer({
+        name: "bad_codex_remote",
+        scope: "global",
+        transport: "http",
+        url: "file:///tmp/mcp.sock",
+      }),
+    ).rejects.toThrow("must use http or https")
+
+    await expect(
+      codexMcpConfig.writeCodexMcpServerConfig({
+        name: "bad_codex_env",
+        scope: "global",
+        config: { command: "node", env: { "BAD-NAME": "1" } },
+      }),
+    ).rejects.toThrow("environment variable name")
   })
 
   test("blocks unapproved stdio MCP writes while leaving HTTP writes unaffected", async () => {
