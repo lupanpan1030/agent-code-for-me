@@ -185,6 +185,53 @@ describe("chat message hydration normalizer", () => {
     })
   })
 
+  test("does not throw when persisted parts contain non-string discriminator fields", () => {
+    const messages = normalizePersistedChatMessages(
+      JSON.stringify([
+        {
+          id: "msg-malformed",
+          role: "assistant",
+          parts: [
+            {
+              type: 42,
+              state: "result",
+              toolName: 99,
+              input: { toolName: 123 },
+              result: { success: true },
+            },
+            {
+              type: null,
+              state: "result",
+              input: { toolName: null },
+            },
+            {
+              type: { nested: true },
+              state: "result",
+              toolName: { nested: true },
+              input: { toolName: { nested: true } },
+            },
+          ],
+        },
+      ]),
+    )
+
+    expect(messages).toHaveLength(1)
+    expect(messages[0]?.parts).toHaveLength(3)
+    expect(messages[0]?.parts?.[0]).toMatchObject({
+      type: 42,
+      state: "result",
+      toolName: 99,
+    })
+    expect(messages[0]?.parts?.[1]).toMatchObject({
+      type: null,
+      state: "result",
+    })
+    expect(messages[0]?.parts?.[2]).toMatchObject({
+      type: { nested: true },
+      state: "result",
+    })
+  })
+
   test("shared ACP primitive keeps render-time normalization available", () => {
     expect(
       normalizeAcpParts([
