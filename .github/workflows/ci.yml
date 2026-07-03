@@ -50,3 +50,32 @@ jobs:
 
       - name: Build
         run: bun run build
+
+  debt-report:
+    name: Debt Report
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Install dependencies
+        env:
+          LOCUS_SKIP_POSTINSTALL: "1"
+        run: bun install --frozen-lockfile
+
+      - name: Full lint report
+        continue-on-error: true
+        run: bun run lint:all
+
+      - name: Dependency audit report
+        continue-on-error: true
+        run: bun audit
