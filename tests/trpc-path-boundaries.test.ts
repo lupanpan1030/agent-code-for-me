@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import * as schema from "../src/main/lib/db/schema"
@@ -111,6 +111,43 @@ describe("tRPC path boundaries", () => {
     ).rejects.toThrow("File read root is not registered")
   })
 
+  test("file reads reject symlinks that resolve outside registered roots", async () => {
+    const projectPath = await makeTempDir("locus-files-symlink-project-")
+    const secretRoot = await makeTempDir("locus-files-symlink-secret-")
+    const insideTarget = join(projectPath, "src", "inside.txt")
+    const insideLink = join(projectPath, "linked-inside.txt")
+    const secretPath = join(secretRoot, "secret.txt")
+    const outsideLink = join(projectPath, "linked-secret.txt")
+
+    await writeText(insideTarget, "inside")
+    await writeText(secretPath, "SECRET_PAYLOAD")
+    await symlink(insideTarget, insideLink)
+    await symlink(secretPath, outsideLink)
+    testDb
+      .insert(schema.projects)
+      .values({
+        id: "project-files-symlink-boundary",
+        name: "Files Symlink Boundary",
+        path: projectPath,
+      })
+      .run()
+
+    const caller = filesRouter.createCaller({ getWindow: () => null })
+
+    await expect(
+      caller.readFile({ filePath: insideLink, projectPath }),
+    ).resolves.toBe("inside")
+    await expect(
+      caller.readFile({ filePath: outsideLink, projectPath }),
+    ).rejects.toThrow("Path escapes allowed directory")
+    await expect(
+      caller.readTextFile({ filePath: outsideLink, projectPath }),
+    ).rejects.toThrow("Path escapes allowed directory")
+    await expect(
+      caller.readBinaryFile({ filePath: outsideLink, projectPath }),
+    ).rejects.toThrow("Path escapes allowed directory")
+  })
+
   test("file search and watch reject attacker-selected unregistered roots", async () => {
     const rootPath = await makeTempDir("locus-files-search-unregistered-")
     await writeText(join(rootPath, "payload.txt"), "UNREGISTERED_PAYLOAD")
@@ -123,6 +160,37 @@ describe("tRPC path boundaries", () => {
     await expect(
       Promise.resolve().then(() => caller.watchChanges({ projectPath: rootPath })),
     ).rejects.toThrow("File read root is not registered")
+  })
+
+  test("file search does not return symlink entries as regular files", async () => {
+    const projectPath = await makeTempDir("locus-files-scan-symlink-project-")
+    const secretRoot = await makeTempDir("locus-files-scan-symlink-secret-")
+    const secretPath = join(secretRoot, "secret.txt")
+    const outsideLink = join(projectPath, "linked-secret.txt")
+
+    await writeText(secretPath, "SECRET_PAYLOAD")
+    await symlink(secretPath, outsideLink)
+    testDb
+      .insert(schema.projects)
+      .values({
+        id: "project-files-scan-symlink-boundary",
+        name: "Files Scan Symlink Boundary",
+        path: projectPath,
+      })
+      .run()
+
+    const caller = filesRouter.createCaller({ getWindow: () => null })
+
+    const results = await caller.search({
+      projectPath,
+      query: "linked-secret",
+      limit: 50,
+      includeHiddenAndSensitive: true,
+    })
+
+    expect(results.some((entry) => entry.path === "linked-secret.txt")).toBe(
+      false,
+    )
   })
 
   test("file rename and delete reject targets outside registered roots", async () => {
@@ -220,5 +288,25 @@ describe("tRPC path boundaries", () => {
     await expect(
       caller.delete({ path: secretPath, projectPath }),
     ).rejects.toThrow("Absolute paths are not allowed")
+  })
+
+  test("command content rejects symlinks that resolve outside command directories", async () => {
+    const projectPath = await makeTempDir("locus-commands-symlink-project-")
+    const secretRoot = await makeTempDir("locus-commands-symlink-secret-")
+    const commandLink = join(projectPath, ".claude", "commands", "link.md")
+    const secretPath = join(secretRoot, "secret.md")
+
+    await mkdir(dirname(commandLink), { recursive: true })
+    await writeText(secretPath, "---\ndescription: Secret\n---\n\nsecret body\n")
+    await symlink(secretPath, commandLink)
+
+    const caller = commandsRouter.createCaller({ getWindow: () => null })
+
+    await expect(
+      caller.getContent({
+        path: ".claude/commands/link.md",
+        projectPath,
+      }),
+    ).rejects.toThrow("Invalid command path")
   })
 })

@@ -10,6 +10,7 @@
 > - 严重度：Critical / High / Medium / Low / Info。
 > - **2026-06-26 P0 修复追记**：Critical R1 已在 `codex/harden-worktree-setup-trust` 上改为显式 trust gate，仓库提供的 setup 命令默认不执行。
 > - **2026-06-27 P2 清理追记**：正式 `knip.json` 已提交；确认死代码/双路径、未声明依赖、CLAUDE.md 陈旧项已按表内 commit 闭环。安全行为和 tRPC 认证边界未在本轮改动。
+> - **2026-07-03 依赖追记**：`package.json` top-level `overrides` 是 Bun 生效的精确 pin，用于把 `dompurify` 收敛到 `3.4.11`、把 Mermaid transitive `uuid` 收敛到 `11.1.1`。这会阻止 `bun update` 自动带上这些包的未来安全补丁；后续看到 DOMPurify/uuid 新通告时必须手动更新 override pin 并刷新 `bun.lock`。`pnpm.overrides` 仍只服务 pnpm 语义。
 
 ## 0. 机械基线（审计参照）
 

@@ -25,6 +25,10 @@ function isRecord(value: unknown): value is AnyRecord {
   return typeof value === "object" && value !== null
 }
 
+function asString(value: unknown): string {
+  return typeof value === "string" ? value : ""
+}
+
 function parseObjectJson(value: string): AnyRecord | null {
   try {
     const parsed = JSON.parse(value)
@@ -102,7 +106,7 @@ function normalizeLegacyToolInvocationPart(part: AnyRecord): AnyRecord | null {
 }
 
 function normalizeToolStateAndOutput(part: AnyRecord): AnyRecord {
-  if (!part.type?.startsWith("tool-") || !part.state) return part
+  if (!asString(part.type).startsWith("tool-") || !part.state) return part
 
   let normalizedState = part.state
   if (part.state === "result") {
@@ -119,9 +123,9 @@ function normalizeToolStateAndOutput(part: AnyRecord): AnyRecord {
 
 function isCodexMcpWrapperPart(part: AnyRecord): boolean {
   return (
-    part.type?.startsWith("tool-Tool:") ||
-    part.toolName?.startsWith("Tool:") ||
-    part.input?.toolName?.startsWith("Tool:")
+    asString(part.type).startsWith("tool-Tool:") ||
+    asString(part.toolName).startsWith("Tool:") ||
+    asString(part.input?.toolName).startsWith("Tool:")
   )
 }
 
@@ -139,11 +143,12 @@ function normalizeCodexMcpWrapperPart(part: AnyRecord): AnyRecord | null {
 }
 
 function isAcpToolPart(part: AnyRecord): boolean {
+  const type = asString(part.type)
   return (
-    part.type?.startsWith("tool-") &&
+    type.startsWith("tool-") &&
     (part.input?.toolName ||
-      part.type.includes(" ") ||
-      part.type === "tool-acp.acp_provider_agent_dynamic_tool")
+      type.includes(" ") ||
+      type === "tool-acp.acp_provider_agent_dynamic_tool")
   )
 }
 

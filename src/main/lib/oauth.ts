@@ -920,7 +920,7 @@ export class CraftOAuth {
         }
       });
 
-      this.server.listen(CALLBACK_PORT, () => {
+      this.server.listen(CALLBACK_PORT, '127.0.0.1', () => {
         // Server started
       });
 

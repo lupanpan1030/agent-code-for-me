@@ -10,7 +10,7 @@ import { getBundledClaudeBinaryPath } from "../../claude"
 import { resolveDirentType } from "../../fs/dirent"
 import {
   assertRelativePathBoundary,
-  resolvePathWithinRoot,
+  resolveRealPathWithinRoot,
 } from "../../fs/path-boundary"
 import { parseMarkdownFrontmatter } from "../../markdown/frontmatter"
 import { getPluginComponentPaths } from "../../plugins"
@@ -1037,13 +1037,13 @@ function isHomeDisplayPath(displayPath: string): boolean {
   )
 }
 
-function resolveEditableCommandPath(
+async function resolveEditableCommandPath(
   displayPath: string,
   projectPath?: string,
-): string {
+): Promise<string> {
   if (isHomeDisplayPath(displayPath)) {
     const absolutePath = resolveCommandPath(displayPath)
-    return resolvePathWithinRoot({
+    return resolveRealPathWithinRoot({
       targetPath: absolutePath,
       rootPath: getUserCommandsDir(),
     })
@@ -1056,7 +1056,7 @@ function resolveEditableCommandPath(
   }
 
   const absolutePath = resolveCommandPath(displayPath, projectPath)
-  return resolvePathWithinRoot({
+  return resolveRealPathWithinRoot({
     targetPath: absolutePath,
     rootPath: getProjectCommandsDir(projectPath),
   })
@@ -1169,7 +1169,7 @@ export const commandsRouter = router({
     .input(z.object({ path: z.string(), projectPath: z.string().optional() }))
     .query(async ({ input }) => {
       try {
-        const absolutePath = resolveEditableCommandPath(
+        const absolutePath = await resolveEditableCommandPath(
           input.path,
           input.projectPath,
         )
@@ -1256,7 +1256,7 @@ export const commandsRouter = router({
       }),
     )
     .mutation(async ({ input }) => {
-      const absolutePath = resolveEditableCommandPath(
+      const absolutePath = await resolveEditableCommandPath(
         input.path,
         input.projectPath,
       )
@@ -1283,7 +1283,7 @@ export const commandsRouter = router({
       }),
     )
     .mutation(async ({ input }) => {
-      const absolutePath = resolveEditableCommandPath(
+      const absolutePath = await resolveEditableCommandPath(
         input.path,
         input.projectPath,
       )

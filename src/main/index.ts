@@ -842,6 +842,13 @@ if (gotTheLock) {
       console.log("[App] Database initialized")
     } catch (error) {
       console.error("[App] Failed to initialize database:", error)
+      const message = error instanceof Error ? error.message : String(error)
+      dialog.showErrorBox(
+        "Database Initialization Failed",
+        `Locus could not start because the local database migration failed.\n\n${message}`,
+      )
+      app.quit()
+      return
     }
 
     // Create main window

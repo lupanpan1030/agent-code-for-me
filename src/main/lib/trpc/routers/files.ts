@@ -1,11 +1,20 @@
 import { watch } from "node:fs"
-import { rename as fsRename, readdir, readFile, stat } from "node:fs/promises"
+import {
+  rename as fsRename,
+  lstat,
+  readdir,
+  readFile,
+  stat,
+} from "node:fs/promises"
 import { basename, dirname, extname, join, relative, resolve } from "node:path"
 import { observable } from "@trpc/server/observable"
 import { shell } from "electron"
 import { z } from "zod"
 import { chats, getDatabase, projects } from "../../db"
-import { resolvePathWithinRoot } from "../../fs/path-boundary"
+import {
+  resolvePathWithinRoot,
+  resolveRealPathWithinRoot,
+} from "../../fs/path-boundary"
 import {
   cleanupStaleLongTextAttachments,
   deleteLongTextAttachment,
@@ -153,12 +162,12 @@ function resolveRegisteredFileRoot(rootPath: string): string {
   return resolvedRoot
 }
 
-function resolveFilePathWithinRegisteredRoot(input: {
+async function resolveFilePathWithinRegisteredRoot(input: {
   filePath: string
   projectPath: string
-}): string {
+}): Promise<string> {
   const rootPath = resolveRegisteredFileRoot(input.projectPath)
-  return resolvePathWithinRoot({
+  return resolveRealPathWithinRoot({
     targetPath: input.filePath,
     rootPath,
   })
@@ -196,8 +205,12 @@ async function scanDirectory(
     for (const entry of dirEntries) {
       const fullPath = join(currentPath, entry.name)
       const relativePath = relative(rootPath, fullPath)
+      const entryStat = await lstat(fullPath).catch(() => null)
+      if (!entryStat) continue
 
-      if (entry.isDirectory()) {
+      if (entryStat.isSymbolicLink()) continue
+
+      if (entryStat.isDirectory()) {
         // Skip ignored directories
         if (IGNORED_DIRS.has(entry.name)) continue
         // Skip hidden directories (except .github, .vscode, etc.)
@@ -221,7 +234,7 @@ async function scanDirectory(
           options,
         )
         entries.push(...subEntries)
-      } else if (entry.isFile()) {
+      } else if (entryStat.isFile()) {
         // Skip ignored files
         if (IGNORED_FILES.has(entry.name)) continue
         if (
@@ -432,7 +445,7 @@ export const filesRouter = router({
     .input(z.object({ filePath: z.string(), projectPath: z.string() }))
     .query(async ({ input }) => {
       try {
-        const filePath = resolveFilePathWithinRegisteredRoot(input)
+        const filePath = await resolveFilePathWithinRegisteredRoot(input)
         const content = await readFile(filePath, "utf-8")
         return content
       } catch (error) {
@@ -453,7 +466,7 @@ export const filesRouter = router({
       const MAX_SIZE = 2 * 1024 * 1024 // 2 MB
 
       try {
-        const filePath = resolveFilePathWithinRegisteredRoot(input)
+        const filePath = await resolveFilePathWithinRegisteredRoot(input)
         const fileStat = await stat(filePath)
 
         if (fileStat.size > MAX_SIZE) {
@@ -500,7 +513,7 @@ export const filesRouter = router({
       const MAX_SIZE = 20 * 1024 * 1024 // 20 MB
 
       try {
-        const filePath = resolveFilePathWithinRegisteredRoot(input)
+        const filePath = await resolveFilePathWithinRegisteredRoot(input)
         const fileStat = await stat(filePath)
 
         if (fileStat.size > MAX_SIZE) {

@@ -14,6 +14,7 @@ function buildClaudeArgs(request: AgentRuntimeRunRequest): string[] {
     "--no-session-persistence",
     "--permission-mode",
     request.context.mode === "plan" ? "plan" : "acceptEdits",
+    "--",
     request.prompt,
   ]
 }
