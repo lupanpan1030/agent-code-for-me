@@ -3,6 +3,7 @@ import {
   createMcpRegistryService,
   type McpRegistryService,
 } from "../../mcp-registry/service"
+import { assertMcpEnvName } from "../../runtime-mcp-config/input-validation"
 import { publicProcedure, router } from "../index"
 
 const optionalTrimmedStringSchema = z.preprocess((value) => {
@@ -32,21 +33,47 @@ const registryPreviewInstallInputSchema = registryDetailInputSchema.extend({
   targetId: z.string().trim().min(1),
 })
 
+function zodMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Invalid input"
+}
+
+const trimmedNoNullStringSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .refine((value) => !value.includes("\0"), {
+    message: "Value must not contain null bytes",
+  })
+
+const setupKeySchema = z.string().refine((value) => !value.includes("\0"), {
+  message: "Setup key must not contain null bytes",
+})
+
+const envNameSchema = z.string().superRefine((value, ctx) => {
+  try {
+    assertMcpEnvName(value, "MCP registry env var")
+  } catch (error) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: zodMessage(error) })
+  }
+})
+
 const registrySetupValueSchema = z.union([
   z.boolean(),
-  z.string().trim().min(1),
+  trimmedNoNullStringSchema,
   z.object({
-    value: z.string().trim().min(1).optional(),
-    envVar: optionalTrimmedStringSchema,
+    value: trimmedNoNullStringSchema.optional(),
+    envVar: envNameSchema.optional(),
   }),
 ])
 
 const registrySetupResolutionSchema = z
   .object({
-    env: z.record(z.string(), registrySetupValueSchema).optional(),
-    headers: z.record(z.string(), registrySetupValueSchema).optional(),
-    variables: z.record(z.string(), registrySetupValueSchema).optional(),
-    bearerTokenEnvRefs: z.record(z.string(), z.string().optional()).optional(),
+    env: z.record(setupKeySchema, registrySetupValueSchema).optional(),
+    headers: z.record(setupKeySchema, registrySetupValueSchema).optional(),
+    variables: z.record(setupKeySchema, registrySetupValueSchema).optional(),
+    bearerTokenEnvRefs: z
+      .record(setupKeySchema, envNameSchema.optional())
+      .optional(),
     localDependencies: z.record(z.string(), z.boolean()).optional(),
     oauthAuthenticated: z.boolean().optional(),
     runtimeAuthenticated: z.boolean().optional(),

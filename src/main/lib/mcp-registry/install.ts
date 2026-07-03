@@ -1,4 +1,10 @@
 import type { McpServerConfig } from "../claude-config"
+import { PathBoundaryError } from "../fs/path-boundary"
+import { resolveRegisteredProjectRoot } from "../fs/registered-roots"
+import {
+  assertMcpEnvName,
+  normalizeMcpServerConfigForWrite,
+} from "../runtime-mcp-config/input-validation"
 import type { McpRegistryRuntimeId } from "./installability"
 import { previewMcpRegistryRuntimeInstallability } from "./installability"
 import type {
@@ -99,6 +105,33 @@ function fieldByName(
   return new Map(fields.map((field) => [field.name, field]))
 }
 
+function assertNoNullByte(value: string, label: string): void {
+  if (value.includes("\0")) {
+    throw new Error(`${label} must not contain null bytes`)
+  }
+}
+
+function resolveMcpRegistryInstallProjectPath(input: {
+  scope: "global" | "project"
+  projectPath?: string
+}): string | undefined {
+  if (input.scope === "global") return undefined
+  if (!input.projectPath) {
+    throw new Error("Project path required for project-scoped MCP install.")
+  }
+
+  try {
+    return resolveRegisteredProjectRoot(input.projectPath)
+  } catch (error) {
+    if (!(error instanceof PathBoundaryError)) {
+      throw error
+    }
+    throw new Error(
+      "Project-scoped MCP registry install requires a registered project path.",
+    )
+  }
+}
+
 function resolvedSetupValueForField(input: {
   field: McpRegistrySetupField
   resolvedSetup: McpRegistrySetupResolutionInput | undefined
@@ -115,6 +148,12 @@ function resolvedSetupValueForField(input: {
         : input.resolvedSetup?.variables?.[input.field.name]
   const value = getResolvedSetupPlainValue(resolved)
   const envVar = getResolvedSetupEnvVar(resolved)
+  if (value) {
+    assertNoNullByte(value, `MCP registry ${input.source} setup value`)
+  }
+  if (envVar) {
+    assertMcpEnvName(envVar, `MCP registry ${input.source} setup env var`)
+  }
   return {
     ...(value ? { value } : {}),
     ...(envVar ? { envVar } : {}),
@@ -399,7 +438,10 @@ function materializeClaudeMcpConfig(input: {
     )) {
       if (!envName?.trim()) continue
       if (!headerFields.has(headerName)) continue
-      bearerTokenEnvRefs[headerName] = envName.trim()
+      bearerTokenEnvRefs[headerName] = assertMcpEnvName(
+        envName,
+        "MCP registry bearer token env ref",
+      )
     }
     return {
       config: {
@@ -520,7 +562,10 @@ function materializeCodexMcpConfig(input: {
     )) {
       if (!envName?.trim()) continue
       if (!headerFields.has(headerName)) continue
-      bearerTokenEnvRefs[headerName] = envName.trim()
+      bearerTokenEnvRefs[headerName] = assertMcpEnvName(
+        envName,
+        "MCP registry bearer token env ref",
+      )
     }
     return {
       url: urlTemplate,
@@ -579,16 +624,19 @@ export async function installMcpRegistryTarget(
   })
   const serverName =
     input.installName?.trim() || suggestMcpServerName(input.entry)
+  const projectPath = resolveMcpRegistryInstallProjectPath(input)
 
   if (input.runtime === "codex") {
-    const config = materializeCodexMcpConfig({
-      target: input.target,
-      resolvedSetup: input.resolvedSetup,
-    })
+    const config = normalizeMcpServerConfigForWrite(
+      materializeCodexMcpConfig({
+        target: input.target,
+        resolvedSetup: input.resolvedSetup,
+      }),
+    )
     await (input.writeCodexConfig ?? defaultWriteCodexConfig)({
       name: serverName,
       scope: input.scope,
-      projectPath: input.projectPath,
+      projectPath,
       config,
     })
     await upsertMcpRegistryVerificationRecord({
@@ -613,7 +661,7 @@ export async function installMcpRegistryTarget(
     target: input.target,
     resolvedSetup: input.resolvedSetup,
   })
-  const config: McpServerConfig = {
+  const config: McpServerConfig = normalizeMcpServerConfigForWrite({
     ...materialized.config,
     ...(installStatus === "installed-needs-setup"
       ? {
@@ -639,12 +687,12 @@ export async function installMcpRegistryTarget(
         templates: materialized.templates,
       }),
     },
-  }
+  })
 
   await (input.writeClaudeConfig ?? defaultWriteClaudeConfig)({
     name: serverName,
     scope: input.scope,
-    projectPath: input.projectPath,
+    projectPath,
     config,
   })
 

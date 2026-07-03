@@ -80,7 +80,8 @@ describe("Codex MCP config mutation boundaries", () => {
     expect(service).toContain("Codex MCP project path no longer exists")
     expect(service).toContain("function isExistingCodexMcpCwd")
     expect(service).toContain(".from(projectsTable)")
-    expect(service).toContain(".where(eq(projectsTable.path, requestedPath))")
+    expect(service).toContain("resolveRegisteredProjectRoot")
+    expect(service).toContain("PathBoundaryError")
 
     const oauthBlock = getProcedureBlock(route, "startMcpOAuth")
     const logoutBlock = getProcedureBlock(route, "logoutMcpServer")
@@ -88,15 +89,15 @@ describe("Codex MCP config mutation boundaries", () => {
       "function resolveCodexMcpProjectPathForCli",
     )
     const registeredProjectCheck = service.indexOf(
-      "if (!registeredProject)",
+      "registeredProjectPath = resolveRegisteredProjectRoot",
       projectPathResolverStart,
     )
     const existingCwdCheck = service.indexOf(
-      "if (!isExistingCodexMcpCwd(registeredProject.path))",
+      "if (!isExistingCodexMcpCwd(registeredProjectPath))",
       projectPathResolverStart,
     )
     const projectPathReturn = service.indexOf(
-      "return registeredProject.path",
+      "return registeredProjectPath",
       projectPathResolverStart,
     )
 
