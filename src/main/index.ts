@@ -3,43 +3,43 @@ import { existsSync, readFileSync, readlinkSync, unlinkSync } from "fs"
 import { createServer } from "http"
 import { join } from "path"
 import { format as formatLog } from "util"
-import { isLocalOnlyMode, openExternalUrl } from "./lib/local-only"
-import { startAutomaticAppUpdateChecks } from "./lib/app-updater"
-import { closeDatabase, initDatabase } from "./lib/db"
-import { isHeadlessCliInvocation } from "./lib/headless/cli-args"
-import { runHeadlessCliCommand } from "./lib/headless/cli-dispatcher"
-import { recoverStaleAgentJobs } from "./lib/headless/job-recovery"
 import {
-  getLaunchDirectory,
-  isCliInstalled,
-  installCli,
-  uninstallCli,
-  parseLaunchDirectory,
-} from "./lib/cli"
-import { cleanupGitWatchers } from "./lib/git/watcher"
-import { cancelAllPendingOAuth, handleMcpOAuthCallback } from "./lib/mcp-auth"
+  type McpImportPreview,
+  parseMcpImportLink,
+  sanitizeDeepLinkForLog,
+  sanitizeProcessArgsForLog,
+} from "../shared/mcp-import-preview"
+import { AUTH_SERVER_PORT, IS_DEV } from "./constants"
+import { startAutomaticAppUpdateChecks } from "./lib/app-updater"
 import {
   abortAllClaudeSessions,
   hasActiveClaudeSessions,
 } from "./lib/claude/active-sessions"
+import {
+  getLaunchDirectory,
+  installCli,
+  isCliInstalled,
+  parseLaunchDirectory,
+  uninstallCli,
+} from "./lib/cli"
+import { closeDatabase, initDatabase } from "./lib/db"
+import { cleanupGitWatchers } from "./lib/git/watcher"
+import { isHeadlessCliInvocation } from "./lib/headless/cli-args"
+import { runHeadlessCliCommand } from "./lib/headless/cli-dispatcher"
+import { recoverStaleAgentJobs } from "./lib/headless/job-recovery"
+import { flushHeadlessStdio } from "./lib/headless/stdio"
+import { isLocalOnlyMode, openExternalUrl } from "./lib/local-only"
+import { cancelAllPendingOAuth, handleMcpOAuthCallback } from "./lib/mcp-auth"
 import { getAllMcpConfigHandler } from "./lib/trpc/routers/claude"
-import { getAllCodexMcpConfigHandler, hasActiveCodexStreams, abortAllCodexStreams } from "./lib/trpc/routers/codex"
+import { abortAllCodexStreams, getAllCodexMcpConfigHandler, hasActiveCodexStreams } from "./lib/trpc/routers/codex"
 import { resolveUserDataPath } from "./lib/user-data-path"
 import {
   createMainWindow,
   createWindow,
-  getWindow,
   getAllWindows,
+  getWindow,
   setIsQuitting,
 } from "./windows/main"
-import {
-  parseMcpImportLink,
-  sanitizeDeepLinkForLog,
-  sanitizeProcessArgsForLog,
-  type McpImportPreview,
-} from "../shared/mcp-import-preview"
-
-import { IS_DEV, AUTH_SERVER_PORT } from "./constants"
 
 const APP_NAME = "Locus"
 const APP_DISPLAY_NAME = IS_DEV ? `${APP_NAME} Dev` : APP_NAME
@@ -432,6 +432,7 @@ async function runHeadlessMain(): Promise<void> {
     } catch (error) {
       console.error("[Headless] Failed to close database:", error)
     }
+    await flushHeadlessStdio(process.stdout, process.stderr).catch(() => {})
     app.exit(exitCode)
   }
 }
