@@ -26,6 +26,7 @@ import { closeDatabase, initDatabase } from "./lib/db"
 import { cleanupGitWatchers } from "./lib/git/watcher"
 import { isHeadlessCliInvocation } from "./lib/headless/cli-args"
 import { runHeadlessCliCommand } from "./lib/headless/cli-dispatcher"
+import { hideDockForHeadlessCli } from "./lib/headless/dock"
 import { recoverStaleAgentJobs } from "./lib/headless/job-recovery"
 import { flushHeadlessStdio } from "./lib/headless/stdio"
 import { isLocalOnlyMode, openExternalUrl } from "./lib/local-only"
@@ -47,6 +48,10 @@ const LEGACY_APP_NAME = "Agent Code for Me"
 const APP_COPYRIGHT = "Copyright © 2026 Locus"
 const APP_HOMEPAGE_URL = "https://github.com/lupanpan1030/agent-code-for-me"
 const isHeadlessCliLaunch = isHeadlessCliInvocation(process.argv)
+
+if (isHeadlessCliLaunch) {
+  hideDockForHeadlessCli(app)
+}
 
 function redirectHeadlessStdoutLogs(): void {
   if (!isHeadlessCliLaunch) return
