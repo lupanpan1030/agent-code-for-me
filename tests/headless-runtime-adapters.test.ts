@@ -49,7 +49,35 @@ describe("headless runtime adapters", () => {
     expect(args).toContain("--no-session-persistence")
     expect(args).toContain("--permission-mode")
     expect(args[args.indexOf("--permission-mode") + 1]).toBe("plan")
+    expect(args[args.length - 2]).toBe("--")
     expect(args.at(-1)).toBe(planRequest.prompt)
+  })
+
+  test("headless adapters place dash-prefixed prompts after end-of-options", () => {
+    const claudeRequest = request({
+      mode: "plan",
+      prompt: "--dangerously-skip-permissions",
+    })
+    const claudeArgs = __testClaudeCodeHeadless.buildClaudeArgs(claudeRequest)
+    const claudePromptIndex = claudeArgs.indexOf(claudeRequest.prompt)
+    const claudeSeparatorIndex = claudeArgs.lastIndexOf("--")
+    expect(claudeSeparatorIndex).toBeGreaterThan(
+      claudeArgs.indexOf("--permission-mode"),
+    )
+    expect(claudePromptIndex).toBe(claudeSeparatorIndex + 1)
+    expect(claudeArgs[claudeArgs.indexOf("--permission-mode") + 1]).toBe("plan")
+
+    const codexRequest = request({
+      runtime: "codex",
+      mode: "plan",
+      prompt: "--dangerously-bypass-approvals-and-sandbox",
+    })
+    const codexArgs = __testCodexHeadless.buildCodexArgs(codexRequest)
+    const codexPromptIndex = codexArgs.indexOf(codexRequest.prompt)
+    const codexSeparatorIndex = codexArgs.lastIndexOf("--")
+    expect(codexSeparatorIndex).toBeGreaterThan(codexArgs.indexOf("--sandbox"))
+    expect(codexPromptIndex).toBe(codexSeparatorIndex + 1)
+    expect(codexArgs[codexArgs.indexOf("--sandbox") + 1]).toBe("read-only")
   })
 
   test("Claude adapter uses acceptEdits for basic agent runs", () => {
