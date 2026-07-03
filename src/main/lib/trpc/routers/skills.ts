@@ -3,6 +3,13 @@ import * as os from "node:os"
 import * as path from "node:path"
 import { z } from "zod"
 import { isDirentDirectory } from "../../fs/dirent"
+import { assertRelativePathBoundary } from "../../fs/path-boundary"
+import {
+  ensureRegisteredClaudeProjectComponentRoot,
+  resolveExistingRegisteredClaudeProjectComponentRoot,
+  resolveRegisteredClaudeProjectComponentPath,
+  resolveRegisteredClaudeProjectComponentRoot,
+} from "../../fs/registered-roots"
 import { parseMarkdownFrontmatter } from "../../markdown/frontmatter"
 import { getPluginComponentPaths } from "../../plugins"
 import { discoverAllowedClaudePluginRuntimeComponents } from "../../plugins/runtime-gates"
@@ -152,12 +159,19 @@ const listSkillsProcedure = publicProcedure
 
     let projectSkillsPromise = Promise.resolve<FileSkill[]>([])
     if (input?.cwd) {
-      const projectSkillsDir = path.join(input.cwd, ".claude", "skills")
-      projectSkillsPromise = scanSkillsDirectory(
-        projectSkillsDir,
-        "project",
-        input.cwd,
-      )
+      projectSkillsPromise =
+        resolveExistingRegisteredClaudeProjectComponentRoot(
+          input.cwd,
+          "skills",
+        ).then((roots) =>
+          roots
+            ? scanSkillsDirectory(
+                roots.componentRoot,
+                "project",
+                roots.projectRoot,
+              )
+            : [],
+        )
     }
 
     // Discover plugin skills
@@ -247,6 +261,34 @@ function resolveSkillPath(displayPath: string): string {
     return path.join(os.homedir(), displayPath.slice(1))
   }
   return displayPath
+}
+
+async function resolveEditableSkillPath(input: {
+  displayPath: string
+  cwd?: string
+}): Promise<string> {
+  if (
+    input.cwd &&
+    !input.displayPath.startsWith("~") &&
+    !input.displayPath.startsWith("~\\")
+  ) {
+    const roots = resolveRegisteredClaudeProjectComponentRoot(
+      input.cwd,
+      "skills",
+    )
+    if (!path.isAbsolute(input.displayPath)) {
+      assertRelativePathBoundary(input.displayPath)
+    }
+    return resolveRegisteredClaudeProjectComponentPath({
+      projectPath: roots.projectRoot,
+      component: "skills",
+      targetPath: path.isAbsolute(input.displayPath)
+        ? input.displayPath
+        : path.join(roots.projectRoot, input.displayPath),
+    })
+  }
+
+  return resolveSkillPath(input.displayPath)
 }
 
 export const skillsRouter = router({
@@ -353,17 +395,23 @@ export const skillsRouter = router({
       }
 
       let targetDir: string
+      let projectRoot: string | undefined
       if (input.source === "project") {
         if (!input.cwd) {
           throw new Error("Project path (cwd) required for project skills")
         }
-        targetDir = path.join(input.cwd, ".claude", "skills")
+        const roots = await ensureRegisteredClaudeProjectComponentRoot(
+          input.cwd,
+          "skills",
+        )
+        projectRoot = roots.projectRoot
+        targetDir = roots.componentRoot
       } else {
         targetDir = path.join(os.homedir(), ".claude", "skills")
       }
 
       const skillDir = path.join(targetDir, safeName)
-      const skillMdPath = path.join(skillDir, "SKILL.md")
+      let skillMdPath = path.join(skillDir, "SKILL.md")
 
       // Check if already exists
       try {
@@ -377,6 +425,13 @@ export const skillsRouter = router({
 
       // Create directory and write SKILL.md
       await fs.mkdir(skillDir, { recursive: true })
+      if (projectRoot) {
+        skillMdPath = await resolveRegisteredClaudeProjectComponentPath({
+          projectPath: projectRoot,
+          component: "skills",
+          targetPath: skillMdPath,
+        })
+      }
 
       const fileContent = generateSkillMd({
         name: safeName,
@@ -407,10 +462,10 @@ export const skillsRouter = router({
       }),
     )
     .mutation(async ({ input }) => {
-      const absolutePath =
-        input.cwd && !input.path.startsWith("~") && !input.path.startsWith("/")
-          ? path.join(input.cwd, input.path)
-          : resolveSkillPath(input.path)
+      const absolutePath = await resolveEditableSkillPath({
+        displayPath: input.path,
+        cwd: input.cwd,
+      })
 
       // Verify file exists before writing
       await fs.access(absolutePath)
@@ -441,10 +496,10 @@ export const skillsRouter = router({
         throw new Error("Invalid path")
       }
 
-      const absolutePath =
-        input.cwd && !input.path.startsWith("~") && !input.path.startsWith("/")
-          ? path.join(input.cwd, input.path)
-          : resolveSkillPath(input.path)
+      const absolutePath = await resolveEditableSkillPath({
+        displayPath: input.path,
+        cwd: input.cwd,
+      })
 
       // Skills are directories containing SKILL.md — delete the parent directory
       const skillDir = path.dirname(absolutePath)

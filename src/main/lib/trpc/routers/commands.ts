@@ -12,6 +12,12 @@ import {
   assertRelativePathBoundary,
   resolveRealPathWithinRoot,
 } from "../../fs/path-boundary"
+import {
+  ensureRegisteredClaudeProjectComponentRoot,
+  resolveExistingRegisteredClaudeProjectComponentRoot,
+  resolveRegisteredClaudeProjectComponentPath,
+  resolveRegisteredClaudeProjectComponentRoot,
+} from "../../fs/registered-roots"
 import { parseMarkdownFrontmatter } from "../../markdown/frontmatter"
 import { getPluginComponentPaths } from "../../plugins"
 import { discoverAllowedClaudePluginRuntimeComponents } from "../../plugins/runtime-gates"
@@ -1055,10 +1061,15 @@ async function resolveEditableCommandPath(
     throw new Error("Project path required for project command")
   }
 
-  const absolutePath = resolveCommandPath(displayPath, projectPath)
-  return resolveRealPathWithinRoot({
+  const roots = resolveRegisteredClaudeProjectComponentRoot(
+    projectPath,
+    "commands",
+  )
+  const absolutePath = resolveCommandPath(displayPath, roots.projectRoot)
+  return resolveRegisteredClaudeProjectComponentPath({
+    projectPath: roots.projectRoot,
+    component: "commands",
     targetPath: absolutePath,
-    rootPath: getProjectCommandsDir(projectPath),
   })
 }
 
@@ -1114,17 +1125,20 @@ export const commandsRouter = router({
 
       let projectCommandsPromise = Promise.resolve<FileCommand[]>([])
       if (input?.projectPath) {
-        const projectCommandsDir = path.join(
-          input.projectPath,
-          ".claude",
-          "commands",
-        )
-        projectCommandsPromise = scanCommandsDirectory(
-          projectCommandsDir,
-          "project",
-          "",
-          input.projectPath,
-        )
+        projectCommandsPromise =
+          resolveExistingRegisteredClaudeProjectComponentRoot(
+            input.projectPath,
+            "commands",
+          ).then((roots) =>
+            roots
+              ? scanCommandsDirectory(
+                  roots.componentRoot,
+                  "project",
+                  "",
+                  roots.projectRoot,
+                )
+              : [],
+          )
       }
 
       // Discover plugin commands
@@ -1206,16 +1220,28 @@ export const commandsRouter = router({
       }
 
       let targetDir: string
+      let projectRoot: string | undefined
       if (input.source === "project") {
         if (!input.projectPath) {
           throw new Error("Project path required for project commands")
         }
-        targetDir = path.join(input.projectPath, ".claude", "commands")
+        const roots = await ensureRegisteredClaudeProjectComponentRoot(
+          input.projectPath,
+          "commands",
+        )
+        projectRoot = roots.projectRoot
+        targetDir = roots.componentRoot
       } else {
         targetDir = path.join(os.homedir(), ".claude", "commands")
       }
 
-      const commandPath = path.join(targetDir, `${safeName}.md`)
+      const commandPath = projectRoot
+        ? await resolveRegisteredClaudeProjectComponentPath({
+            projectPath: projectRoot,
+            component: "commands",
+            targetPath: path.join(targetDir, `${safeName}.md`),
+          })
+        : path.join(targetDir, `${safeName}.md`)
 
       // Check if already exists
       try {
