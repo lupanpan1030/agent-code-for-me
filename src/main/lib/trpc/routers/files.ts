@@ -6,15 +6,15 @@ import {
   readFile,
   stat,
 } from "node:fs/promises"
-import { basename, dirname, extname, join, relative, resolve } from "node:path"
+import { basename, dirname, extname, join, relative } from "node:path"
 import { observable } from "@trpc/server/observable"
 import { shell } from "electron"
 import { z } from "zod"
-import { chats, getDatabase, projects } from "../../db"
 import {
   resolvePathWithinRoot,
   resolveRealPathWithinRoot,
 } from "../../fs/path-boundary"
+import { resolveRegisteredFileRoot } from "../../fs/registered-roots"
 import {
   cleanupStaleLongTextAttachments,
   deleteLongTextAttachment,
@@ -126,41 +126,6 @@ const fileListCache = new Map<
   { entries: FileEntry[]; timestamp: number }
 >()
 const CACHE_TTL = 5000 // 5 seconds
-
-function resolveRegisteredFileRoot(rootPath: string): string {
-  const resolvedRoot = resolve(rootPath)
-  const db = getDatabase()
-  const registeredProject = db
-    .select({
-      path: projects.path,
-      removedAt: projects.removedAt,
-    })
-    .from(projects)
-    .all()
-    .some(
-      (project) => !project.removedAt && resolve(project.path) === resolvedRoot,
-    )
-
-  if (registeredProject) {
-    return resolvedRoot
-  }
-
-  const registeredWorktree = db
-    .select({ worktreePath: chats.worktreePath })
-    .from(chats)
-    .all()
-    .some(
-      (chat) =>
-        typeof chat.worktreePath === "string" &&
-        resolve(chat.worktreePath) === resolvedRoot,
-    )
-
-  if (!registeredWorktree) {
-    throw new Error("File read root is not registered")
-  }
-
-  return resolvedRoot
-}
 
 async function resolveFilePathWithinRegisteredRoot(input: {
   filePath: string
