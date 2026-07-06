@@ -42,6 +42,9 @@ jobs:
           BIOME_CHANGED_SINCE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
         run: bun run lint
 
+      - name: Architecture guards
+        run: bun run architecture:check
+
       - name: Run tests
         run: bun run test
 
