@@ -891,6 +891,13 @@ function assertPackageScripts() {
   }
 }
 
+function assertCiRunsArchitectureCheck() {
+  const ci = readText(".github/workflows/ci.yml")
+  if (!/\brun:\s*bun run architecture:check\b/.test(ci)) {
+    fail("GitHub CI must run bun run architecture:check.")
+  }
+}
+
 function assertOwnershipDocs() {
   const requiredSections = [
     "## Runtime Capability Truth",
@@ -1193,6 +1200,7 @@ function assertCanonicalVocabularyI18n() {
 
 assertOwnershipDocs()
 assertPackageScripts()
+assertCiRunsArchitectureCheck()
 assertRuntimeCapabilitySingleOwner()
 assertGuardDecisionSingleOwner()
 assertRuntimeEventStateOwner()
