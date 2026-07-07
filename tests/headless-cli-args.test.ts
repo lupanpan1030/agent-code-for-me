@@ -93,7 +93,9 @@ describe("headless CLI args", () => {
     })
     if (!directFlag.ok) {
       expect(directFlag.message).toContain("--api-key is not accepted")
-      expect(directFlag.message).not.toContain("sk-abcdefghijklmnopqrstuvwxyz123456")
+      expect(directFlag.message).not.toContain(
+        "sk-abcdefghijklmnopqrstuvwxyz123456",
+      )
     }
 
     const unexpectedArg = parseHeadlessCliArgv([
@@ -111,7 +113,9 @@ describe("headless CLI args", () => {
     })
     if (!unexpectedArg.ok) {
       expect(unexpectedArg.message).toContain("[redacted-argument]")
-      expect(unexpectedArg.message).not.toContain("sk-abcdefghijklmnopqrstuvwxyz123456")
+      expect(unexpectedArg.message).not.toContain(
+        "sk-abcdefghijklmnopqrstuvwxyz123456",
+      )
     }
   })
 
@@ -349,7 +353,22 @@ describe("headless CLI args", () => {
       ]),
     ).toMatchObject({
       ok: true,
-      command: { kind: "api-runtimes-list" },
+      command: { kind: "api-runtimes-list", noProbe: false },
+    })
+
+    expect(
+      parseHeadlessCliArgv([
+        "Locus",
+        HEADLESS_CLI_MARKER,
+        "api",
+        "runtimes",
+        "list",
+        "--json",
+        "--no-probe",
+      ]),
+    ).toMatchObject({
+      ok: true,
+      command: { kind: "api-runtimes-list", noProbe: true },
     })
 
     expect(
@@ -481,7 +500,9 @@ describe("headless CLI args", () => {
       code: 2,
     })
     if (!unknownGroup.ok) {
-      expect(unknownGroup.message).toContain("Unknown api command group: models")
+      expect(unknownGroup.message).toContain(
+        "Unknown api command group: models",
+      )
       expect(unknownGroup.message).toContain(
         "Available groups: runtimes, runs, projects",
       )
@@ -548,11 +569,7 @@ describe("headless CLI args", () => {
 
   test("parses acp stdio command", () => {
     expect(
-      parseHeadlessCliArgv([
-        "Locus",
-        HEADLESS_CLI_MARKER,
-        "acp",
-      ]),
+      parseHeadlessCliArgv(["Locus", HEADLESS_CLI_MARKER, "acp"]),
     ).toMatchObject({
       ok: true,
       command: {

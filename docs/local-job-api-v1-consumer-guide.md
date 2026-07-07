@@ -169,9 +169,15 @@ Response shape:
 ```json
 {
   "apiVersion": "locus.local-job.v1",
+  "features": ["runtime-readiness"],
   "runtimes": [
     {
       "runtimeId": "codex",
+      "readiness": {
+        "state": "needs-auth",
+        "detail": "Codex login is required.",
+        "hint": "Connect Codex with ChatGPT login, use a Codex API key, or choose a provider profile."
+      },
       "capabilities": [
         {
           "id": "planMode",
@@ -184,6 +190,12 @@ Response shape:
   ]
 }
 ```
+
+`readiness.state` is advisory and can be `ready`, `needs-auth`, `unavailable`,
+or `unknown`. Discovery still exits 0 and returns the full manifest list when a
+readiness probe fails; that runtime reports `unknown` and diagnostics go to
+stderr. Use `locus api runtimes list --json --no-probe` to skip subprocess
+status probes; skipped probed states report `unknown` rather than `ready`.
 
 Use `runtime.requiredCapabilities` in the create request when the downstream
 workflow depends on a capability. Locus rejects unsupported or degraded required

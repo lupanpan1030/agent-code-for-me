@@ -1,18 +1,22 @@
-import {
-  AGENT_JOB_MODES,
-  type AgentJobMode,
-} from "./agent-jobs"
+import { AGENT_JOB_MODES, type AgentJobMode } from "./agent-jobs"
 import {
   AGENT_RUNTIME_CAPABILITY_IDS,
+  type AgentRuntimeCapabilityId,
+  type AgentRuntimeCapabilityManifest,
+  type AgentRuntimeContractId,
   CONTRACT_RUNTIME_IDS,
   toAgentRuntimeId,
-  type AgentRuntimeCapabilityId,
-  type AgentRuntimeContractId,
 } from "./agent-runtime-capabilities"
 
 export const LOCAL_JOB_API_VERSION = "locus.local-job.v1" as const
 
-export const LOCAL_JOB_API_PROJECT_NOT_REGISTERED = "project_not_registered" as const
+export const LOCAL_JOB_API_DISCOVERY_FEATURES = ["runtime-readiness"] as const
+
+export type LocalJobApiDiscoveryFeature =
+  (typeof LOCAL_JOB_API_DISCOVERY_FEATURES)[number]
+
+export const LOCAL_JOB_API_PROJECT_NOT_REGISTERED =
+  "project_not_registered" as const
 
 export const LOCAL_JOB_API_WRITE_POLICIES = [
   "metadata-only",
@@ -148,6 +152,32 @@ export type LocalJobApiResultEnvelope = {
   result: unknown
 }
 
+export const LOCAL_JOB_API_RUNTIME_READINESS_STATES = [
+  "ready",
+  "needs-auth",
+  "unavailable",
+  "unknown",
+] as const
+
+export type LocalJobApiRuntimeReadinessState =
+  (typeof LOCAL_JOB_API_RUNTIME_READINESS_STATES)[number]
+
+export type LocalJobApiRuntimeReadiness = {
+  state: LocalJobApiRuntimeReadinessState
+  detail?: string
+  hint?: string
+}
+
+export type LocalJobApiRuntimeManifest = AgentRuntimeCapabilityManifest & {
+  readiness: LocalJobApiRuntimeReadiness
+}
+
+export type LocalJobApiRuntimeManifestEnvelope = {
+  apiVersion: typeof LOCAL_JOB_API_VERSION
+  features: LocalJobApiDiscoveryFeature[]
+  runtimes: LocalJobApiRuntimeManifest[]
+}
+
 export type LocalJobApiValidationResult =
   | {
       ok: true
@@ -175,6 +205,12 @@ const SECRET_VALUE_PATTERNS = [
   /bearer\s+[A-Za-z0-9._-]+/i,
   /authorization\s*:\s*basic\s+[A-Za-z0-9+/=_-]+/i,
 ]
+
+function assertNoSecretText(value: string, context: string): void {
+  if (SECRET_VALUE_PATTERNS.some((pattern) => pattern.test(value))) {
+    throw new Error(`${context} contains secret-like text`)
+  }
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value)
@@ -280,7 +316,9 @@ function normalizePolicyGrant(
 ): LocalJobApiPolicyGrant | null {
   if (value === undefined || value === null) {
     if (executionProfile === "policy-grant") {
-      errors.push("runtime.policyGrant.scopes is required for policy-grant execution")
+      errors.push(
+        "runtime.policyGrant.scopes is required for policy-grant execution",
+      )
     }
     return null
   }
@@ -308,7 +346,9 @@ function normalizePolicyGrant(
     if (!scopes.includes(scope)) scopes.push(scope)
   }
   if (executionProfile === "policy-grant" && scopes.length === 0) {
-    errors.push("runtime.policyGrant.scopes must contain at least one scope for policy-grant execution")
+    errors.push(
+      "runtime.policyGrant.scopes must contain at least one scope for policy-grant execution",
+    )
   }
   const canDecideAutomatically = value.canDecideAutomatically
   if (
@@ -351,10 +391,7 @@ export function validateLocalJobApiCreateRequest(
     )
   }
   const runExternalId = optionalString(consumer?.runExternalId, null)
-  if (
-    runExternalId &&
-    !isBoundedId(runExternalId, MAX_EXTERNAL_ID_LENGTH)
-  ) {
+  if (runExternalId && !isBoundedId(runExternalId, MAX_EXTERNAL_ID_LENGTH)) {
     errors.push(
       `consumer.runExternalId must be 1-${MAX_EXTERNAL_ID_LENGTH} chars: letters, numbers, '.', '_', ':', '-'`,
     )
@@ -477,4 +514,38 @@ export function assertLocalJobApiCreateRequest(
   const result = validateLocalJobApiCreateRequest(value)
   if (result.ok) return result.request
   throw new Error(result.errors.join("; "))
+}
+
+export function assertLocalJobApiRuntimeReadiness(
+  readiness: LocalJobApiRuntimeReadiness,
+): void {
+  if (
+    !(LOCAL_JOB_API_RUNTIME_READINESS_STATES as readonly string[]).includes(
+      readiness.state,
+    )
+  ) {
+    throw new Error(`Unsupported runtime readiness state: ${readiness.state}`)
+  }
+  if (readiness.detail !== undefined) {
+    assertNoSecretText(readiness.detail, "runtime readiness detail")
+  }
+  if (readiness.hint !== undefined) {
+    assertNoSecretText(readiness.hint, "runtime readiness hint")
+  }
+}
+
+export function normalizeLocalJobApiRuntimeReadiness(
+  readiness: LocalJobApiRuntimeReadiness,
+): LocalJobApiRuntimeReadiness {
+  const normalized: LocalJobApiRuntimeReadiness = {
+    state: readiness.state,
+  }
+  if (readiness.detail?.trim()) {
+    normalized.detail = readiness.detail.trim()
+  }
+  if (readiness.hint?.trim()) {
+    normalized.hint = readiness.hint.trim()
+  }
+  assertLocalJobApiRuntimeReadiness(normalized)
+  return normalized
 }

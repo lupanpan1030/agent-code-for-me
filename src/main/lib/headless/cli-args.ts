@@ -82,6 +82,7 @@ export type HeadlessCliCommand =
     }
   | {
       kind: "api-runtimes-list"
+      noProbe: boolean
     }
   | {
       kind: "api-projects-register"
@@ -451,6 +452,7 @@ export function parseHeadlessCliArgv(argv = process.argv): ParsedHeadlessCli {
       if (group === "runtimes") {
         const subcommand = args.shift() ?? "list"
         takeFlag(args, "--json")
+        const noProbe = takeFlag(args, "--no-probe")
         if (!includesCliValue(HEADLESS_API_RUNTIMES_SUBCOMMANDS, subcommand)) {
           throw new Error(
             unknownApiSubcommandMessage(
@@ -463,7 +465,7 @@ export function parseHeadlessCliArgv(argv = process.argv): ParsedHeadlessCli {
         if (args.length > 0) {
           throw new Error(unexpectedArgumentsMessage(args))
         }
-        return { ok: true, command: { kind: "api-runtimes-list" } }
+        return { ok: true, command: { kind: "api-runtimes-list", noProbe } }
       }
 
       if (group === "projects") {

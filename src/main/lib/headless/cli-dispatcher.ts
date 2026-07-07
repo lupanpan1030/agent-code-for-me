@@ -56,6 +56,7 @@ import {
   createLocalJobApiJob,
   getLocalJobApiEvents,
   getLocalJobApiJobOrThrow,
+  type LocalJobApiRuntimeManifestEnvelopeOptions,
   parseLocalJobApiCreateRequestJson,
   retryLocalJobApiJob,
   toLocalJobApiJobEnvelope,
@@ -89,6 +90,7 @@ export type RunHeadlessCliCommandOptions = {
   runner?: AgentTaskRunner | null
   now?: Date
   daemonLockPath?: string | null
+  runtimeReadinessDependencies?: LocalJobApiRuntimeManifestEnvelopeOptions["readinessDependencies"]
 }
 
 export const HEADLESS_STDIN_MAX_BYTES = 1024 * 1024
@@ -484,8 +486,18 @@ async function apiRunsCreateCommand(
   }
 }
 
-function apiRuntimesListCommand(options: RunHeadlessCliCommandOptions): number {
-  writeJson(options.stdout, toLocalJobApiRuntimeManifestEnvelope())
+async function apiRuntimesListCommand(
+  command: Extract<HeadlessCliCommand, { kind: "api-runtimes-list" }>,
+  options: RunHeadlessCliCommandOptions,
+): Promise<number> {
+  writeJson(
+    options.stdout,
+    await toLocalJobApiRuntimeManifestEnvelope({
+      onDiagnostic: (message) => writeLine(options.stderr, message),
+      probe: !command.noProbe,
+      readinessDependencies: options.runtimeReadinessDependencies,
+    }),
+  )
   return HEADLESS_EXIT_CODES.success
 }
 
@@ -970,7 +982,7 @@ function helpCommand(options: RunHeadlessCliCommandOptions): number {
       "  locus schedules list [--status enabled|paused|disabled] [--include-disabled]",
       "  locus schedules create --name <name> --prompt <text> --interval-seconds <n> [--cwd <path>] [--runtime claude-code|codex] [--mode plan|agent]",
       "  locus schedules pause|resume|delete|run <id>",
-      "  locus api runtimes list --json",
+      "  locus api runtimes list --json [--no-probe]",
       "  locus api projects register --cwd <path> [--name <name>] --json",
       "  locus api projects status --cwd <path> --json",
       "  locus api projects unregister --cwd <path> [--force] --json",
@@ -1017,7 +1029,7 @@ export async function runHeadlessCliCommand(
     case "jobs-retry":
       return retryCommand(parsed.command, options)
     case "api-runtimes-list":
-      return apiRuntimesListCommand(options)
+      return apiRuntimesListCommand(parsed.command, options)
     case "api-projects-register":
       return apiProjectsRegisterCommand(parsed.command, options)
     case "api-projects-status":

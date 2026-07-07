@@ -1,15 +1,21 @@
-import { describe, expect, test } from "bun:test"
+import { beforeEach, describe, expect, test } from "bun:test"
 import {
   existsSync,
-  mkdtempSync,
   mkdirSync,
+  mkdtempSync,
   readFileSync,
   realpathSync,
   writeFileSync,
 } from "node:fs"
-import { join } from "node:path"
 import { tmpdir } from "node:os"
-import { Readable } from "stream"
+import { join } from "node:path"
+import { Readable } from "node:stream"
+import { projects } from "../src/main/lib/db/schema"
+import { HEADLESS_CLI_MARKER } from "../src/main/lib/headless/cli-args"
+import {
+  HEADLESS_STDIN_MAX_BYTES,
+  runHeadlessCliCommand,
+} from "../src/main/lib/headless/cli-dispatcher"
 import {
   completeAgentJob,
   createAgentJob,
@@ -18,13 +24,8 @@ import {
   listAgentJobs,
   startAgentJob,
 } from "../src/main/lib/headless/job-store"
-import {
-  HEADLESS_STDIN_MAX_BYTES,
-  runHeadlessCliCommand,
-} from "../src/main/lib/headless/cli-dispatcher"
-import { HEADLESS_CLI_MARKER } from "../src/main/lib/headless/cli-args"
+import { clearRuntimeReadinessCacheForTest } from "../src/main/lib/headless/runtime-readiness"
 import { LOCAL_JOB_API_PROJECT_NOT_REGISTERED } from "../src/shared/local-job-api"
-import { projects } from "../src/main/lib/db/schema"
 import { createAgentJobTestDb } from "./helpers/agent-job-test-db"
 
 function writer() {
@@ -76,7 +77,31 @@ function parseJsonLines(value: string): any[] {
     .map((line) => JSON.parse(line))
 }
 
+function codexExecutableStatus(ok = true) {
+  return {
+    ok,
+    path: ok ? "/tmp/codex" : "/missing/codex",
+    exists: ok,
+    isExecutable: ok,
+    error: ok ? null : "Runtime executable was not found.",
+    hint: "Restore Codex.",
+  }
+}
+
+function codexRuntimeStatus(loginStatus = "ready") {
+  return {
+    components: [
+      { id: "login-cli", status: "ready", error: null, hint: null },
+      { id: "login", status: loginStatus, error: null, hint: null },
+    ],
+  }
+}
+
 describe("headless CLI dispatcher", () => {
+  beforeEach(() => {
+    clearRuntimeReadinessCacheForTest()
+  })
+
   test("prints the app version from headless options", async () => {
     const db = createAgentJobTestDb()
     const stdout = writer()
@@ -318,21 +343,130 @@ describe("headless CLI dispatcher", () => {
   test("lists Local Job API runtime capabilities", async () => {
     const db = createAgentJobTestDb()
     const stdout = writer()
+    const stderr = writer()
     const code = await runHeadlessCliCommand({
       db,
       argv: ["Locus", HEADLESS_CLI_MARKER, "api", "runtimes", "list", "--json"],
       stdout: stdout.stream,
-      stderr: writer().stream,
+      stderr: stderr.stream,
+      runtimeReadinessDependencies: {
+        hasAnyClaudeCodeAccount: () => false,
+        getExistingClaudeCredentials: () => null,
+        getCodexExecutableStatus: () => codexExecutableStatus(true),
+        getCodexRuntimeStatus: async () => codexRuntimeStatus("ready"),
+      },
     })
 
     expect(code).toBe(0)
+    expect(stderr.value()).toBe("")
     const parsed = JSON.parse(stdout.value())
     expect(parsed.apiVersion).toBe("locus.local-job.v1")
+    expect(parsed.features).toContain("runtime-readiness")
     expect(
       parsed.runtimes.map(
         (runtime: { runtimeId: string }) => runtime.runtimeId,
       ),
     ).toContain("codex")
+    expect(
+      parsed.runtimes.find(
+        (runtime: { runtimeId: string }) => runtime.runtimeId === "claude-code",
+      ).readiness,
+    ).toMatchObject({ state: "needs-auth" })
+    expect(
+      parsed.runtimes.find(
+        (runtime: { runtimeId: string }) => runtime.runtimeId === "codex",
+      ).readiness,
+    ).toMatchObject({ state: "ready" })
+  })
+
+  test("Local Job API runtime discovery no-probe skips subprocess readiness probes", async () => {
+    const db = createAgentJobTestDb()
+    const stdout = writer()
+    const stderr = writer()
+    let executableChecks = 0
+    let codexProbes = 0
+    const code = await runHeadlessCliCommand({
+      db,
+      argv: [
+        "Locus",
+        HEADLESS_CLI_MARKER,
+        "api",
+        "runtimes",
+        "list",
+        "--json",
+        "--no-probe",
+      ],
+      stdout: stdout.stream,
+      stderr: stderr.stream,
+      runtimeReadinessDependencies: {
+        hasAnyClaudeCodeAccount: () => false,
+        getExistingClaudeCredentials: () => ({
+          accessToken: "external-claude-access-token",
+        }),
+        getCodexExecutableStatus: () => {
+          executableChecks += 1
+          return codexExecutableStatus(true)
+        },
+        getCodexRuntimeStatus: async () => {
+          codexProbes += 1
+          return codexRuntimeStatus("ready")
+        },
+      },
+    })
+
+    expect(code).toBe(0)
+    expect(stderr.value()).toBe("")
+    expect(executableChecks).toBe(1)
+    expect(codexProbes).toBe(0)
+    const parsed = JSON.parse(stdout.value())
+    expect(JSON.stringify(parsed)).not.toContain("external-claude-access-token")
+    expect(
+      parsed.runtimes.find(
+        (runtime: { runtimeId: string }) => runtime.runtimeId === "claude-code",
+      ).readiness.state,
+    ).toBe("ready")
+    expect(
+      parsed.runtimes.find(
+        (runtime: { runtimeId: string }) => runtime.runtimeId === "codex",
+      ).readiness.state,
+    ).toBe("unknown")
+  })
+
+  test("Local Job API runtime discovery keeps resolver failures off JSON stdout", async () => {
+    const db = createAgentJobTestDb()
+    const stdout = writer()
+    const stderr = writer()
+    const code = await runHeadlessCliCommand({
+      db,
+      argv: ["Locus", HEADLESS_CLI_MARKER, "api", "runtimes", "list", "--json"],
+      stdout: stdout.stream,
+      stderr: stderr.stream,
+      runtimeReadinessDependencies: {
+        hasAnyClaudeCodeAccount: () => false,
+        getExistingClaudeCredentials: () => null,
+        getCodexExecutableStatus: () => codexExecutableStatus(true),
+        getCodexRuntimeStatus: async () => {
+          throw new Error("probe failed with sk-sensitive-token-1234567890")
+        },
+      },
+    })
+
+    expect(code).toBe(0)
+    expect(stderr.value()).toContain("Runtime readiness for codex is unknown")
+    const parsed = JSON.parse(stdout.value())
+    expect(
+      parsed.runtimes.map(
+        (runtime: { runtimeId: string }) => runtime.runtimeId,
+      ),
+    ).toEqual(["claude-code", "codex"])
+    expect(
+      parsed.runtimes.find(
+        (runtime: { runtimeId: string }) => runtime.runtimeId === "codex",
+      ).readiness.state,
+    ).toBe("unknown")
+    expect(stdout.value()).not.toContain("probe failed")
+    expect(stdout.value()).not.toContain("sk-sensitive-token")
+    expect(stderr.value()).not.toContain("sk-sensitive-token")
   })
 
   test("registers, checks, and unregisters Local Job API projects", async () => {

@@ -1,11 +1,9 @@
-import { readFileSync } from "node:fs"
 import { describe, expect, test } from "bun:test"
+import { readFileSync } from "node:fs"
 import Ajv2020 from "ajv/dist/2020"
 import addFormats from "ajv-formats"
 import type { AgentJob } from "../src/main/lib/db/schema"
-import {
-  toLocalJobApiResultEnvelope,
-} from "../src/main/lib/headless/local-job-api"
+import { toLocalJobApiResultEnvelope } from "../src/main/lib/headless/local-job-api"
 import {
   AGENT_JOB_MODES,
   AGENT_JOB_SOURCES,
@@ -16,10 +14,12 @@ import {
   CONTRACT_RUNTIME_IDS,
 } from "../src/shared/agent-runtime-capabilities"
 import {
+  LOCAL_JOB_API_DISCOVERY_FEATURES,
   LOCAL_JOB_API_EVENT_TYPES,
-  type LocalJobApiArtifact,
+  LOCAL_JOB_API_RUNTIME_READINESS_STATES,
   LOCAL_JOB_API_VERSION,
   LOCAL_JOB_API_WRITE_POLICIES,
+  type LocalJobApiArtifact,
 } from "../src/shared/local-job-api"
 
 type SchemaObject = {
@@ -112,9 +112,7 @@ describe("Local Job API v1 JSON Schema", () => {
     expect(schemaEnum(def(schema, "runtimeCapabilityId"))).toEqual([
       ...AGENT_RUNTIME_CAPABILITY_IDS,
     ])
-    expect(schemaEnum(def(schema, "agentMode"))).toEqual([
-      ...AGENT_JOB_MODES,
-    ])
+    expect(schemaEnum(def(schema, "agentMode"))).toEqual([...AGENT_JOB_MODES])
     expect(schemaEnum(def(schema, "agentJobStatus"))).toEqual([
       ...AGENT_JOB_STATUSES,
     ])
@@ -123,6 +121,12 @@ describe("Local Job API v1 JSON Schema", () => {
     ])
     expect(schemaEnum(def(schema, "eventType"))).toEqual([
       ...LOCAL_JOB_API_EVENT_TYPES,
+    ])
+    expect(schemaEnum(def(schema, "runtimeReadinessState"))).toEqual([
+      ...LOCAL_JOB_API_RUNTIME_READINESS_STATES,
+    ])
+    expect(schemaEnum(def(schema, "discoveryFeature"))).toEqual([
+      ...LOCAL_JOB_API_DISCOVERY_FEATURES,
     ])
   })
 
@@ -175,6 +179,14 @@ describe("Local Job API v1 JSON Schema", () => {
       string,
       SchemaObject
     >
+    const runtimeManifest = def(schema, "runtimeManifest")
+    const runtimeManifestProperties = runtimeManifest.properties as Record<
+      string,
+      SchemaObject
+    >
+    const runtimeManifestEnvelope = def(schema, "runtimeManifestEnvelope")
+    const runtimeManifestEnvelopeProperties =
+      runtimeManifestEnvelope.properties as Record<string, SchemaObject>
     const createResponse = def(schema, "createResponseEnvelope")
     const createProperties = createResponse.properties as Record<
       string,
@@ -190,6 +202,12 @@ describe("Local Job API v1 JSON Schema", () => {
     })
     expect((resultProperties.diagnostics as SchemaObject).items).toEqual({
       $ref: "#/$defs/diagnostic",
+    })
+    expect(runtimeManifestProperties.readiness).toEqual({
+      $ref: "#/$defs/runtimeReadiness",
+    })
+    expect(runtimeManifestEnvelopeProperties.features).toMatchObject({
+      type: "array",
     })
     expect(createProperties.job).toEqual({
       $ref: "#/$defs/serializedAgentJob",

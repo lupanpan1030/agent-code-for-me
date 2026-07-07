@@ -159,9 +159,15 @@ locus api runtimes list --json
 ```json
 {
   "apiVersion": "locus.local-job.v1",
+  "features": ["runtime-readiness"],
   "runtimes": [
     {
       "runtimeId": "codex",
+      "readiness": {
+        "state": "needs-auth",
+        "detail": "Codex login is required.",
+        "hint": "Connect Codex with ChatGPT login, use a Codex API key, or choose a provider profile."
+      },
       "capabilities": [
         {
           "id": "planMode",
@@ -174,6 +180,12 @@ locus api runtimes list --json
   ]
 }
 ```
+
+`readiness.state` 是 advisory，可取 `ready`、`needs-auth`、`unavailable`
+或 `unknown`。readiness probe 失败时 discovery 仍然 exit 0 并返回完整
+manifest list；该 runtime 报 `unknown`，诊断写 stderr。用
+`locus api runtimes list --json --no-probe` 可以跳过 subprocess status
+probe；被跳过的 probe 状态报 `unknown`，不会误报 `ready`。
 
 如果下游 workflow 依赖某个能力，就在 create request 的 `runtime.requiredCapabilities`
 里声明。Locus 会在 provider work 开始前拒绝 unsupported 或 degraded 的必需能力。

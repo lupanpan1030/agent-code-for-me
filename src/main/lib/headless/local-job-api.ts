@@ -1,6 +1,4 @@
-import {
-  createHash,
-} from "node:crypto"
+import { createHash } from "node:crypto"
 import {
   existsSync,
   lstatSync,
@@ -10,35 +8,47 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs"
-import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path"
-import type { AgentJob, AgentJobEvent } from "../db/schema"
-import { createId } from "../db/utils"
 import {
-  checkRegisteredAgentRuntimeCapability,
-  listRegisteredAgentRuntimeManifests,
-} from "../agent-runtime/runtime-registry"
+  basename,
+  dirname,
+  isAbsolute,
+  join,
+  relative,
+  resolve,
+} from "node:path"
+import type { AgentRuntimeContractId } from "../../../shared/agent-runtime-capabilities"
 import {
+  assertLocalJobApiCreateRequest,
+  assertLocalJobApiRuntimeReadiness,
+  LOCAL_JOB_API_DISCOVERY_FEATURES,
   LOCAL_JOB_API_EVENT_TYPES,
   LOCAL_JOB_API_VERSION,
-  assertLocalJobApiCreateRequest,
   type LocalJobApiArtifact,
   type LocalJobApiArtifactManifest,
   type LocalJobApiEventEnvelope,
   type LocalJobApiEventType,
   type LocalJobApiResultEnvelope,
+  type LocalJobApiRuntimeManifestEnvelope,
   type NormalizedLocalJobApiCreateRequest,
 } from "../../../shared/local-job-api"
 import {
+  checkRegisteredAgentRuntimeCapability,
+  listRegisteredAgentRuntimeManifests,
+} from "../agent-runtime/runtime-registry"
+import type { AgentJob, AgentJobEvent } from "../db/schema"
+import { createId } from "../db/utils"
+import { serializeAgentJob, serializeAgentJobEvent } from "./cli-output"
+import {
+  type AgentJobDatabase,
   createAgentJob,
   getAgentJob,
   listAgentJobEvents,
   retryAgentJob,
-  type AgentJobDatabase,
 } from "./job-store"
 import {
-  serializeAgentJob,
-  serializeAgentJobEvent,
-} from "./cli-output"
+  type RuntimeReadinessResolverDependencies,
+  resolveLocalJobApiRuntimeReadiness,
+} from "./runtime-readiness"
 import { findRegisteredProjectForCwdWithCanonicalPath } from "./schedules"
 
 export type LocalJobApiCreatePrepared = {
@@ -52,9 +62,10 @@ export type LocalJobApiJobEnvelope = {
   job: ReturnType<typeof serializeAgentJob>
 }
 
-export type LocalJobApiRuntimeManifestEnvelope = {
-  apiVersion: typeof LOCAL_JOB_API_VERSION
-  runtimes: ReturnType<typeof listRegisteredAgentRuntimeManifests>
+export type LocalJobApiRuntimeManifestEnvelopeOptions = {
+  onDiagnostic?: (message: string) => void
+  probe?: boolean
+  readinessDependencies?: RuntimeReadinessResolverDependencies
 }
 
 function parseJson(value: string): unknown {
@@ -113,10 +124,14 @@ export function validateLocalJobApiArtifactBaseDir(
   if (!artifactBaseDir) return
   const base = resolve(artifactBaseDir)
   if (pathHasFinalComponent(base)) {
-    throw new Error("artifacts.baseDir cannot be inside a final artifact directory")
+    throw new Error(
+      "artifacts.baseDir cannot be inside a final artifact directory",
+    )
   }
   if (pathHasComponent(base, ".git")) {
-    throw new Error("artifacts.baseDir cannot be inside a git metadata directory")
+    throw new Error(
+      "artifacts.baseDir cannot be inside a git metadata directory",
+    )
   }
   if (existsSync(base) && !lstatSync(base).isDirectory()) {
     throw new Error("artifacts.baseDir must be a directory")
@@ -169,10 +184,14 @@ export function prepareLocalJobApiArtifactRunDir(
   mkdirSync(base, { recursive: true, mode: 0o700 })
   const baseReal = realpathSync(base)
   if (pathHasFinalComponent(baseReal)) {
-    throw new Error("artifacts.baseDir cannot resolve inside a final artifact directory")
+    throw new Error(
+      "artifacts.baseDir cannot resolve inside a final artifact directory",
+    )
   }
   if (pathHasComponent(baseReal, ".git")) {
-    throw new Error("artifacts.baseDir cannot resolve inside a git metadata directory")
+    throw new Error(
+      "artifacts.baseDir cannot resolve inside a git metadata directory",
+    )
   }
   if (projectReal && !isPathInside(projectReal, baseReal)) {
     throw new Error("artifacts.baseDir escaped project.cwd")
@@ -235,7 +254,9 @@ function parsePayload(event: AgentJobEvent): unknown {
 export function toLocalJobApiEventEnvelope(
   event: AgentJobEvent,
 ): LocalJobApiEventEnvelope {
-  const type = (LOCAL_JOB_API_EVENT_TYPES as readonly string[]).includes(event.type)
+  const type = (LOCAL_JOB_API_EVENT_TYPES as readonly string[]).includes(
+    event.type,
+  )
     ? (event.type as LocalJobApiEventType)
     : "status"
   return {
@@ -248,17 +269,40 @@ export function toLocalJobApiEventEnvelope(
   }
 }
 
-export function toLocalJobApiJobEnvelope(job: AgentJob): LocalJobApiJobEnvelope {
+export function toLocalJobApiJobEnvelope(
+  job: AgentJob,
+): LocalJobApiJobEnvelope {
   return {
     apiVersion: LOCAL_JOB_API_VERSION,
     job: serializeAgentJob(job),
   }
 }
 
-export function toLocalJobApiRuntimeManifestEnvelope(): LocalJobApiRuntimeManifestEnvelope {
+export async function toLocalJobApiRuntimeManifestEnvelope(
+  options: LocalJobApiRuntimeManifestEnvelopeOptions = {},
+): Promise<LocalJobApiRuntimeManifestEnvelope> {
+  const runtimes = await Promise.all(
+    listRegisteredAgentRuntimeManifests({ scope: "contract" }).map(
+      async (runtime) => {
+        const runtimeId = runtime.runtimeId as AgentRuntimeContractId
+        const readiness = await resolveLocalJobApiRuntimeReadiness({
+          dependencies: options.readinessDependencies,
+          onDiagnostic: options.onDiagnostic,
+          probe: options.probe,
+          runtimeId,
+        })
+        assertLocalJobApiRuntimeReadiness(readiness)
+        return {
+          ...runtime,
+          readiness,
+        }
+      },
+    ),
+  )
   return {
     apiVersion: LOCAL_JOB_API_VERSION,
-    runtimes: listRegisteredAgentRuntimeManifests({ scope: "contract" }),
+    features: [...LOCAL_JOB_API_DISCOVERY_FEATURES],
+    runtimes,
   }
 }
 
@@ -545,5 +589,7 @@ export function getSerializedLocalJobApiEvents(
   afterSequence = 0,
 ): ReturnType<typeof serializeAgentJobEvent>[] {
   getLocalJobApiJobOrThrow(db, jobId)
-  return listAgentJobEvents(db, jobId, afterSequence).map(serializeAgentJobEvent)
+  return listAgentJobEvents(db, jobId, afterSequence).map(
+    serializeAgentJobEvent,
+  )
 }

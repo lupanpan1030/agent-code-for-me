@@ -115,6 +115,19 @@
         "unavailable"
       ]
     },
+    "runtimeReadinessState": {
+      "enum": [
+        "ready",
+        "needs-auth",
+        "unavailable",
+        "unknown"
+      ]
+    },
+    "discoveryFeature": {
+      "enum": [
+        "runtime-readiness"
+      ]
+    },
     "agentMode": {
       "enum": [
         "plan",
@@ -583,7 +596,8 @@
         "runtimeId",
         "label",
         "description",
-        "capabilities"
+        "capabilities",
+        "readiness"
       ],
       "properties": {
         "runtimeId": {
@@ -602,6 +616,26 @@
           "items": {
             "$ref": "#/$defs/runtimeCapability"
           }
+        },
+        "readiness": {
+          "$ref": "#/$defs/runtimeReadiness"
+        }
+      }
+    },
+    "runtimeReadiness": {
+      "type": "object",
+      "required": [
+        "state"
+      ],
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/runtimeReadinessState"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "hint": {
+          "type": "string"
         }
       }
     },
@@ -856,11 +890,19 @@
       "type": "object",
       "required": [
         "apiVersion",
+        "features",
         "runtimes"
       ],
       "properties": {
         "apiVersion": {
           "$ref": "#/$defs/apiVersion"
+        },
+        "features": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/discoveryFeature"
+          },
+          "uniqueItems": true
         },
         "runtimes": {
           "type": "array",
