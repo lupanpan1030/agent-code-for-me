@@ -1,17 +1,18 @@
+import { createHash } from "node:crypto"
 import { eq, sql } from "drizzle-orm"
 import {
+  type ClaudeCodeCredentialEnvelope,
+  type ClaudeCodeCredentialStorageFormat,
+  createClaudeCodeCredentialEnvelope,
+  parseClaudeCodeCredentialPayload,
+  type StoredClaudeCodeCredential,
+} from "../../shared/claude-code-credential-envelope"
+import {
+  type ClaudeOAuthCredential,
   getExistingClaudeCredentials,
   isTokenExpired,
   refreshClaudeToken,
-  type ClaudeOAuthCredential,
 } from "./claude-token"
-import {
-  createClaudeCodeCredentialEnvelope,
-  parseClaudeCodeCredentialPayload,
-  type ClaudeCodeCredentialEnvelope,
-  type ClaudeCodeCredentialStorageFormat,
-  type StoredClaudeCodeCredential,
-} from "../../shared/claude-code-credential-envelope"
 import {
   anthropicAccounts,
   anthropicSettings,
@@ -25,8 +26,8 @@ import {
   isSecureStorageAvailable,
 } from "./secure-storage"
 
-export { createClaudeCodeCredentialEnvelope, parseClaudeCodeCredentialPayload }
 export type { ClaudeCodeCredentialEnvelope, ClaudeCodeCredentialStorageFormat }
+export { createClaudeCodeCredentialEnvelope, parseClaudeCodeCredentialPayload }
 
 export type ClaudeCodeCredentialMetadata = {
   isConnected: boolean
@@ -46,6 +47,10 @@ export type ClaudeCodeCredentialMetadata = {
 }
 
 type ClaudeCredentialDatabase = ReturnType<typeof getDatabase>
+type ValidClaudeCodeCredential = {
+  accessToken: string | null
+  metadata: ClaudeCodeCredentialMetadata
+}
 type ClaudeCredentialTransaction = Parameters<
   Parameters<ClaudeCredentialDatabase["transaction"]>[0]
 >[0]
@@ -55,8 +60,42 @@ const LOCAL_CLAUDE_CODE_DISPLAY_NAME = "Local Claude Code"
 const LEGACY_CLAUDE_CODE_ACCOUNT_ID = "legacy-default"
 const LEGACY_CLAUDE_CODE_CREDENTIAL_ID = "default"
 const ANTHROPIC_SETTINGS_ID = "singleton"
+let nextCredentialDatabaseSingleFlightId = 1
+const credentialDatabaseSingleFlightIds = new WeakMap<object, number>()
+const activeCredentialRefreshes = new Map<
+  string,
+  Promise<ValidClaudeCodeCredential>
+>()
 export const CLAUDE_CODE_LOCAL_CREDENTIAL_INVALID_MESSAGE =
   "Claude Code credentials are expired or revoked. Sign in with Claude Code again."
+
+function getCredentialDatabaseSingleFlightId(
+  db: ClaudeCredentialDatabase,
+): number {
+  const key = db as unknown as object
+  const existing = credentialDatabaseSingleFlightIds.get(key)
+  if (existing) return existing
+  const id = nextCredentialDatabaseSingleFlightId
+  nextCredentialDatabaseSingleFlightId += 1
+  credentialDatabaseSingleFlightIds.set(key, id)
+  return id
+}
+
+function hashRefreshTokenForSingleFlight(refreshToken: string): string {
+  return createHash("sha256").update(refreshToken).digest("hex")
+}
+
+function credentialRefreshSingleFlightKey(input: {
+  db: ClaudeCredentialDatabase
+  accountId: string | null
+  refreshToken: string
+}): string {
+  return [
+    getCredentialDatabaseSingleFlightId(input.db),
+    input.accountId ?? "no-account",
+    hashRefreshTokenForSingleFlight(input.refreshToken),
+  ].join(":")
+}
 
 function isLocalClaudeCodeSource(
   source: ClaudeCodeCredentialEnvelope["source"],
@@ -102,43 +141,54 @@ function encryptClaudeCodeCredential(
 }
 
 function getSettings(db: ClaudeCredentialDatabase) {
-  return db
-    .select()
-    .from(anthropicSettings)
-    .where(eq(anthropicSettings.id, ANTHROPIC_SETTINGS_ID))
-    .get() ?? null
+  return (
+    db
+      .select()
+      .from(anthropicSettings)
+      .where(eq(anthropicSettings.id, ANTHROPIC_SETTINGS_ID))
+      .get() ?? null
+  )
 }
 
 function getAccountById(db: ClaudeCredentialDatabase, accountId: string) {
-  return db
-    .select()
-    .from(anthropicAccounts)
-    .where(eq(anthropicAccounts.id, accountId))
-    .get() ?? null
+  return (
+    db
+      .select()
+      .from(anthropicAccounts)
+      .where(eq(anthropicAccounts.id, accountId))
+      .get() ?? null
+  )
 }
 
 function getFirstAnthropicAccount(db: ClaudeCredentialDatabase) {
-  return db
-    .select()
-    .from(anthropicAccounts)
-    .orderBy(anthropicAccounts.connectedAt)
-    .limit(1)
-    .get() ?? null
+  return (
+    db
+      .select()
+      .from(anthropicAccounts)
+      .orderBy(anthropicAccounts.connectedAt)
+      .limit(1)
+      .get() ?? null
+  )
 }
 
 function getLegacyClaudeCodeCredential(db: ClaudeCredentialDatabase) {
-  return db
-    .select()
-    .from(claudeCodeCredentials)
-    .where(eq(claudeCodeCredentials.id, LEGACY_CLAUDE_CODE_CREDENTIAL_ID))
-    .get() ?? null
+  return (
+    db
+      .select()
+      .from(claudeCodeCredentials)
+      .where(eq(claudeCodeCredentials.id, LEGACY_CLAUDE_CODE_CREDENTIAL_ID))
+      .get() ?? null
+  )
 }
 
-function clearLegacyClaudeCodeCredential(db: ClaudeCredentialDatabase): boolean {
+function clearLegacyClaudeCodeCredential(
+  db: ClaudeCredentialDatabase,
+): boolean {
   const legacy = getLegacyClaudeCodeCredential(db)
   if (!legacy) return false
 
-  const result = db.delete(claudeCodeCredentials)
+  const result = db
+    .delete(claudeCodeCredentials)
     .where(eq(claudeCodeCredentials.id, LEGACY_CLAUDE_CODE_CREDENTIAL_ID))
     .run()
   return result.changes > 0
@@ -190,15 +240,14 @@ export function ensureLegacyClaudeCodeCredentialMigrated(
   migrated: boolean
   activeAccountId: string | null
   reason:
-  | "canonical_accounts_exist"
-  | "legacy_migrated"
-  | "no_legacy"
-  | "migration_failed"
+    | "canonical_accounts_exist"
+    | "legacy_migrated"
+    | "no_legacy"
+    | "migration_failed"
 } {
-  const accountCount = db
-    .select({ count: sql<number>`count(*)` })
-    .from(anthropicAccounts)
-    .get()?.count ?? 0
+  const accountCount =
+    db.select({ count: sql<number>`count(*)` }).from(anthropicAccounts).get()
+      ?.count ?? 0
 
   if (accountCount > 0) {
     const activeAccountId = normalizeActiveClaudeCodeAccount(db)
@@ -263,12 +312,16 @@ export function ensureLegacyClaudeCodeCredentialMigrated(
     }
   }
 
-  return { migrated: true, activeAccountId: accountId, reason: "legacy_migrated" }
+  return {
+    migrated: true,
+    activeAccountId: accountId,
+    reason: "legacy_migrated",
+  }
 }
 
-function getActiveCredentialRow(
-  db: ClaudeCredentialDatabase = getDatabase(),
-): { account: typeof anthropicAccounts.$inferSelect | null } {
+function getActiveCredentialRow(db: ClaudeCredentialDatabase = getDatabase()): {
+  account: typeof anthropicAccounts.$inferSelect | null
+} {
   const migration = ensureLegacyClaudeCodeCredentialMigrated(db)
   if (migration.reason === "migration_failed") {
     return { account: null }
@@ -281,9 +334,7 @@ function getActiveCredentialRow(
   return { account }
 }
 
-function parseActiveCredential(
-  db: ClaudeCredentialDatabase = getDatabase(),
-): {
+function parseActiveCredential(db: ClaudeCredentialDatabase = getDatabase()): {
   stored: StoredClaudeCodeCredential | null
   account: typeof anthropicAccounts.$inferSelect | null
 } {
@@ -335,6 +386,7 @@ function persistCredentialEnvelope(
   envelope: ClaudeCodeCredentialEnvelope,
   options: {
     accountId?: string
+    desktopUserId?: string | null
     displayName?: string
     email?: string | null
     setAsActive?: boolean
@@ -351,30 +403,35 @@ function persistCredentialEnvelope(
       : LOCAL_CLAUDE_CODE_DISPLAY_NAME)
 
   const reusableAccount = !options.accountId
-    ? db
-      .select()
-      .from(anthropicAccounts)
-      .all()
-      .find((account) => {
-        if (options.email && account.email?.toLowerCase() === options.email.toLowerCase()) {
-          return true
-        }
-        return (
-          displayName === LOCAL_CLAUDE_CODE_DISPLAY_NAME &&
-          account.displayName === LOCAL_CLAUDE_CODE_DISPLAY_NAME &&
-          !account.email &&
-          isLocalClaudeCodeSource(envelope.source)
-        )
-      }) ?? null
+    ? (db
+        .select()
+        .from(anthropicAccounts)
+        .all()
+        .find((account) => {
+          if (
+            options.email &&
+            account.email?.toLowerCase() === options.email.toLowerCase()
+          ) {
+            return true
+          }
+          return (
+            displayName === LOCAL_CLAUDE_CODE_DISPLAY_NAME &&
+            account.displayName === LOCAL_CLAUDE_CODE_DISPLAY_NAME &&
+            !account.email &&
+            isLocalClaudeCodeSource(envelope.source)
+          )
+        }) ?? null)
     : null
 
   const accountId = options.accountId ?? reusableAccount?.id ?? createId()
 
-  const existing = reusableAccount ?? db
-    .select()
-    .from(anthropicAccounts)
-    .where(eq(anthropicAccounts.id, accountId))
-    .get()
+  const existing =
+    reusableAccount ??
+    db
+      .select()
+      .from(anthropicAccounts)
+      .where(eq(anthropicAccounts.id, accountId))
+      .get()
   const effectiveDisplayName = existing?.displayName ?? displayName
 
   db.insert(anthropicAccounts)
@@ -385,7 +442,7 @@ function persistCredentialEnvelope(
       oauthToken: encrypted,
       connectedAt: options.connectedAt ?? existing?.connectedAt ?? now,
       lastUsedAt: now,
-      desktopUserId: existing?.desktopUserId ?? null,
+      desktopUserId: options.desktopUserId ?? existing?.desktopUserId ?? null,
     })
     .onConflictDoUpdate({
       target: anthropicAccounts.id,
@@ -394,7 +451,7 @@ function persistCredentialEnvelope(
         displayName: effectiveDisplayName,
         oauthToken: encrypted,
         lastUsedAt: now,
-        desktopUserId: existing?.desktopUserId ?? null,
+        desktopUserId: options.desktopUserId ?? existing?.desktopUserId ?? null,
       },
     })
     .run()
@@ -509,34 +566,45 @@ async function refreshImportedCredentialEnvelope(
   }
 }
 
-export async function importLocalClaudeCodeCredential(options: {
-  credential?: ClaudeOAuthCredential | null
-  db?: ClaudeCredentialDatabase
-  refreshClaudeTokenFn?: RefreshClaudeTokenFn
-  validateRefreshToken?: boolean
-} = {}): Promise<{
+export async function importLocalClaudeCodeCredential(
+  options: {
+    credential?: ClaudeOAuthCredential | null
+    db?: ClaudeCredentialDatabase
+    refreshClaudeTokenFn?: RefreshClaudeTokenFn
+    validateRefreshToken?: boolean
+  } = {},
+): Promise<{
   success: true
   accountId: string
   metadata: ClaudeCodeCredentialMetadata
 }> {
   const db = options.db ?? getDatabase()
   const credential =
-    "credential" in options ? options.credential : getExistingClaudeCredentials()
+    "credential" in options
+      ? options.credential
+      : getExistingClaudeCredentials()
   if (!credential?.accessToken) {
-    throw new Error("No local Claude Code credentials found. Run Claude Code login first, then import again.")
+    throw new Error(
+      "No local Claude Code credentials found. Run Claude Code login first, then import again.",
+    )
   }
 
   const importedEnvelope = createClaudeCodeCredentialEnvelope(credential)
-  const envelope = options.validateRefreshToken === false
-    ? importedEnvelope
-    : await refreshImportedCredentialEnvelope(
-      importedEnvelope,
-      options.refreshClaudeTokenFn ?? refreshClaudeToken,
-    )
-  const accountId = persistCredentialEnvelope(envelope, {
-    displayName: LOCAL_CLAUDE_CODE_DISPLAY_NAME,
-    setAsActive: true,
-  }, db)
+  const envelope =
+    options.validateRefreshToken === false
+      ? importedEnvelope
+      : await refreshImportedCredentialEnvelope(
+          importedEnvelope,
+          options.refreshClaudeTokenFn ?? refreshClaudeToken,
+        )
+  const accountId = persistCredentialEnvelope(
+    envelope,
+    {
+      displayName: LOCAL_CLAUDE_CODE_DISPLAY_NAME,
+      setAsActive: true,
+    },
+    db,
+  )
 
   console.log("[ClaudeCredentials] Imported local Claude Code credential", {
     source: envelope.source,
@@ -558,29 +626,93 @@ function persistRefreshedActiveCredential(
   account: typeof anthropicAccounts.$inferSelect | null,
   db: ClaudeCredentialDatabase = getDatabase(),
 ): void {
-  const encrypted = encryptClaudeCodeCredential(envelope)
-  const now = new Date()
-
   if (!account) return
 
-  db.update(anthropicAccounts)
-    .set({
-      oauthToken: encrypted,
-      lastUsedAt: now,
-    })
-    .where(eq(anthropicAccounts.id, account.id))
-    .run()
-
-  clearLegacyClaudeCodeCredential(db)
+  persistCredentialEnvelope(
+    envelope,
+    {
+      accountId: account.id,
+      connectedAt: account.connectedAt,
+      desktopUserId: account.desktopUserId,
+      displayName: account.displayName ?? undefined,
+      email: account.email,
+      setAsActive: true,
+    },
+    db,
+  )
 }
 
-export async function getValidClaudeCodeCredential(options: {
-  db?: ClaudeCredentialDatabase
-  refreshClaudeTokenFn?: RefreshClaudeTokenFn
-} = {}): Promise<{
-  accessToken: string | null
-  metadata: ClaudeCodeCredentialMetadata
-}> {
+function removeClaudeCodeAccountIfCredentialUnchanged(
+  account: typeof anthropicAccounts.$inferSelect | null,
+  db: ClaudeCredentialDatabase,
+): void {
+  if (!account?.id) return
+
+  const current = getAccountById(db, account.id)
+  if (!current || current.oauthToken !== account.oauthToken) return
+
+  removeClaudeCodeAccount(account.id, db)
+}
+
+async function refreshActiveClaudeCodeCredential(input: {
+  db: ClaudeCredentialDatabase
+  stored: StoredClaudeCodeCredential
+  account: typeof anthropicAccounts.$inferSelect | null
+  refreshClaudeTokenFn: RefreshClaudeTokenFn
+}): Promise<ValidClaudeCodeCredential> {
+  const { envelope } = input.stored
+  if (!envelope.refreshToken) {
+    throw new Error(
+      "Claude Code credentials are expired and cannot be refreshed. Sign in with Claude Code again.",
+    )
+  }
+
+  console.log("[ClaudeCredentials] Refreshing Claude Code credential", {
+    source: envelope.source,
+    expiresAt: envelope.expiresAt
+      ? new Date(envelope.expiresAt).toISOString()
+      : null,
+  })
+
+  let refreshed: Awaited<ReturnType<RefreshClaudeTokenFn>>
+  try {
+    refreshed = await input.refreshClaudeTokenFn(envelope.refreshToken)
+  } catch (error) {
+    if (isInvalidGrantError(error)) {
+      removeClaudeCodeAccountIfCredentialUnchanged(input.account, input.db)
+      throw new Error(CLAUDE_CODE_LOCAL_CREDENTIAL_INVALID_MESSAGE)
+    }
+
+    throw error
+  }
+  const refreshedEnvelope = createClaudeCodeCredentialEnvelope(
+    {
+      accessToken: refreshed.accessToken,
+      refreshToken: refreshed.refreshToken ?? envelope.refreshToken,
+      expiresAt: refreshed.expiresAt,
+      scopes: envelope.scopes,
+    },
+    envelope.source,
+    envelope,
+  )
+
+  persistRefreshedActiveCredential(refreshedEnvelope, input.account, input.db)
+
+  return {
+    accessToken: refreshedEnvelope.accessToken,
+    metadata: credentialMetadataFromStored(
+      { envelope: refreshedEnvelope, storageFormat: "envelope" },
+      input.account,
+    ),
+  }
+}
+
+export async function getValidClaudeCodeCredential(
+  options: {
+    db?: ClaudeCredentialDatabase
+    refreshClaudeTokenFn?: RefreshClaudeTokenFn
+  } = {},
+): Promise<ValidClaudeCodeCredential> {
   const db = options.db ?? getDatabase()
   const { stored, account } = parseActiveCredential(db)
   if (!stored?.envelope.accessToken) {
@@ -604,48 +736,26 @@ export async function getValidClaudeCodeCredential(options: {
     )
   }
 
-  console.log("[ClaudeCredentials] Refreshing Claude Code credential", {
-    source: envelope.source,
-    expiresAt: envelope.expiresAt
-      ? new Date(envelope.expiresAt).toISOString()
-      : null,
+  const refreshKey = credentialRefreshSingleFlightKey({
+    db,
+    accountId: account?.id ?? null,
+    refreshToken: envelope.refreshToken,
   })
+  const inFlight = activeCredentialRefreshes.get(refreshKey)
+  if (inFlight) return inFlight
 
-  let refreshed: Awaited<ReturnType<RefreshClaudeTokenFn>>
-  try {
-    refreshed = await (options.refreshClaudeTokenFn ?? refreshClaudeToken)(
-      envelope.refreshToken,
-    )
-  } catch (error) {
-    if (isInvalidGrantError(error)) {
-      if (account?.id) {
-        removeClaudeCodeAccount(account.id, db)
-      }
-      throw new Error(CLAUDE_CODE_LOCAL_CREDENTIAL_INVALID_MESSAGE)
+  const refreshPromise = refreshActiveClaudeCodeCredential({
+    db,
+    stored,
+    account,
+    refreshClaudeTokenFn: options.refreshClaudeTokenFn ?? refreshClaudeToken,
+  }).finally(() => {
+    if (activeCredentialRefreshes.get(refreshKey) === refreshPromise) {
+      activeCredentialRefreshes.delete(refreshKey)
     }
-
-    throw error
-  }
-  const refreshedEnvelope = createClaudeCodeCredentialEnvelope(
-    {
-      accessToken: refreshed.accessToken,
-      refreshToken: refreshed.refreshToken ?? envelope.refreshToken,
-      expiresAt: refreshed.expiresAt,
-      scopes: envelope.scopes,
-    },
-    envelope.source,
-    envelope,
-  )
-
-  persistRefreshedActiveCredential(refreshedEnvelope, account, db)
-
-  return {
-    accessToken: refreshedEnvelope.accessToken,
-    metadata: credentialMetadataFromStored(
-      { envelope: refreshedEnvelope, storageFormat: "envelope" },
-      account,
-    ),
-  }
+  })
+  activeCredentialRefreshes.set(refreshKey, refreshPromise)
+  return refreshPromise
 }
 
 export function reconcileClaudeCodeCredentialStorage(
@@ -662,7 +772,8 @@ export function removeClaudeCodeAccount(
   let removed = false
 
   if (accountId !== LEGACY_CLAUDE_CODE_ACCOUNT_ID) {
-    const result = db.delete(anthropicAccounts)
+    const result = db
+      .delete(anthropicAccounts)
       .where(eq(anthropicAccounts.id, accountId))
       .run()
     removed = result.changes > 0
@@ -679,7 +790,11 @@ export function removeClaudeCodeAccount(
 
 export function disconnectActiveClaudeCodeAccount(
   db: ClaudeCredentialDatabase = getDatabase(),
-): { success: true; activeAccountId: string | null; removedAccountId: string | null } {
+): {
+  success: true
+  activeAccountId: string | null
+  removedAccountId: string | null
+} {
   ensureLegacyClaudeCodeCredentialMigrated(db)
   const settings = getSettings(db)
 

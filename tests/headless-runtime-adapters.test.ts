@@ -122,6 +122,134 @@ describe("headless runtime adapters", () => {
     }
   })
 
+  test("Claude headless env injects the app-store token and keeps inherited provider env stripped", async () => {
+    const previous = {
+      ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+      ANTHROPIC_AUTH_TOKEN: process.env.ANTHROPIC_AUTH_TOKEN,
+      ANTHROPIC_BASE_URL: process.env.ANTHROPIC_BASE_URL,
+      CLAUDE_CODE_OAUTH_TOKEN: process.env.CLAUDE_CODE_OAUTH_TOKEN,
+    }
+    const warnings: string[] = []
+    try {
+      process.env.ANTHROPIC_API_KEY = "stale-api-key"
+      process.env.ANTHROPIC_AUTH_TOKEN = "stale-auth-token"
+      process.env.ANTHROPIC_BASE_URL = "https://stale.example.com"
+      process.env.CLAUDE_CODE_OAUTH_TOKEN = "stale-env-token"
+      clearClaudeEnvCache()
+
+      const env = await __testClaudeCodeHeadless.buildClaudeRuntimeEnv({
+        jobId: "job_123",
+        dependencies: {
+          hasAnyAccount: () => true,
+          getValidCredential: async () => ({
+            accessToken: "app-store-token",
+          }),
+          getClaudeConfigDir: () => "/tmp/locus-test-home/.claude",
+          warn: (message) => warnings.push(message),
+        },
+      })
+
+      expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBe("app-store-token")
+      expect(env.CLAUDE_CONFIG_DIR).toBe("/tmp/locus-test-home/.claude")
+      expect(env.LOCUS_HEADLESS_JOB_ID).toBe("job_123")
+      expect(env.ANTHROPIC_API_KEY).toBeUndefined()
+      expect(env.ANTHROPIC_AUTH_TOKEN).toBeUndefined()
+      expect(env.ANTHROPIC_BASE_URL).toBeUndefined()
+      expect(JSON.stringify(env)).not.toContain("stale-env-token")
+      expect(warnings).toEqual([])
+    } finally {
+      for (const [key, value] of Object.entries(previous)) {
+        if (value === undefined) {
+          delete process.env[key]
+        } else {
+          process.env[key] = value
+        }
+      }
+      clearClaudeEnvCache()
+    }
+  })
+
+  test("Claude headless env falls back to CLI login when no app account exists", async () => {
+    const warnings: string[] = []
+    const env = await __testClaudeCodeHeadless.buildClaudeRuntimeEnv({
+      jobId: "job_123",
+      dependencies: {
+        buildEnv: () => ({
+          PATH: "/usr/bin",
+          CLAUDE_CONFIG_DIR: "/tmp/custom-claude-config",
+          CLAUDE_CODE_OAUTH_TOKEN: "stale-env-token",
+        }),
+        hasAnyAccount: () => false,
+        getValidCredential: async () => {
+          throw new Error("should not resolve without an app account")
+        },
+        warn: (message) => warnings.push(message),
+      },
+    })
+
+    expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined()
+    expect(env.CLAUDE_CONFIG_DIR).toBe("/tmp/custom-claude-config")
+    expect(env.LOCUS_HEADLESS_JOB_ID).toBe("job_123")
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0]).toContain("Ignored inherited CLAUDE_CODE_OAUTH_TOKEN")
+  })
+
+  test("Claude headless env falls back when app credential resolution fails", async () => {
+    const warnings: string[] = []
+    const env = await __testClaudeCodeHeadless.buildClaudeRuntimeEnv({
+      jobId: "job_123",
+      dependencies: {
+        buildEnv: () => ({ PATH: "/usr/bin" }),
+        hasAnyAccount: () => true,
+        getValidCredential: async () => {
+          throw new Error("refresh failed for sensitive-refresh-token")
+        },
+        getClaudeConfigDir: () => "/tmp/locus-test-home/.claude",
+        warn: (message) => warnings.push(message),
+      },
+    })
+
+    expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined()
+    expect(env.CLAUDE_CONFIG_DIR).toBe("/tmp/locus-test-home/.claude")
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0]).toContain("falling back to Claude CLI login")
+    expect(warnings[0]).not.toContain("sensitive-refresh-token")
+  })
+
+  test("Claude headless env falls back when app credential resolves without an access token", async () => {
+    const warnings: string[] = []
+    const env = await __testClaudeCodeHeadless.buildClaudeRuntimeEnv({
+      jobId: "job_123",
+      dependencies: {
+        buildEnv: () => ({ PATH: "/usr/bin" }),
+        hasAnyAccount: () => true,
+        getValidCredential: async () => ({ accessToken: null }),
+        getClaudeConfigDir: () => "/tmp/locus-test-home/.claude",
+        warn: (message) => warnings.push(message),
+      },
+    })
+
+    expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined()
+    expect(warnings).toEqual([
+      expect.stringContaining("falling back to Claude CLI login"),
+    ])
+  })
+
+  test("Claude headless env defaults to the CLI config directory", async () => {
+    const env = await __testClaudeCodeHeadless.buildClaudeRuntimeEnv({
+      jobId: "job_123",
+      dependencies: {
+        buildEnv: () => ({ PATH: "/usr/bin" }),
+        hasAnyAccount: () => false,
+        warn: () => {},
+      },
+    })
+
+    expect(env.CLAUDE_CONFIG_DIR).toBe(
+      __testClaudeCodeHeadless.getDefaultClaudeConfigDir(),
+    )
+  })
+
   test("Codex adapter maps plan to read-only and agent to workspace-write", () => {
     const planArgs = __testCodexHeadless.buildCodexArgs(
       request({ runtime: "codex", mode: "plan" }),
@@ -139,7 +267,9 @@ describe("headless runtime adapters", () => {
   })
 
   test("Codex adapter remains a codex exec headless/batch fallback only", () => {
-    const args = __testCodexHeadless.buildCodexArgs(request({ runtime: "codex" }))
+    const args = __testCodexHeadless.buildCodexArgs(
+      request({ runtime: "codex" }),
+    )
     const source = readFileSync(
       "src/main/lib/headless/adapters/codex.ts",
       "utf8",

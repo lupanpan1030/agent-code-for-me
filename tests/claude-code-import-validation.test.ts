@@ -212,6 +212,66 @@ describe("Claude Code local credential validation", () => {
     ).toBeNull()
   })
 
+  test("does not delete an account on invalid_grant if another refresh already updated it", async () => {
+    const oldEnvelope = createClaudeCodeCredentialEnvelope(
+      {
+        accessToken: "expired-access-token",
+        refreshToken: "old-refresh-token",
+        expiresAt: Date.now() - 60_000,
+      },
+      "macos_keychain",
+    )
+    const updatedEnvelope = createClaudeCodeCredentialEnvelope(
+      {
+        accessToken: "new-access-token",
+        refreshToken: "new-refresh-token",
+        expiresAt: Date.now() + 3_600_000,
+      },
+      "macos_keychain",
+      oldEnvelope,
+    )
+    const oldEncrypted = encryptStringForStorage(JSON.stringify(oldEnvelope))
+    const updatedEncrypted = encryptStringForStorage(
+      JSON.stringify(updatedEnvelope),
+    )
+
+    db.insert(anthropicAccounts)
+      .values({
+        id: "account-1",
+        displayName: "Local Claude Code",
+        oauthToken: oldEncrypted,
+        connectedAt: new Date("2026-06-01T00:00:00.000Z"),
+      })
+      .run()
+    db.insert(anthropicSettings)
+      .values({ id: "singleton", activeAccountId: "account-1" })
+      .run()
+
+    await expect(
+      getValidClaudeCodeCredential({
+        db: credentialDb(),
+        refreshClaudeTokenFn: async () => {
+          db.update(anthropicAccounts)
+            .set({ oauthToken: updatedEncrypted })
+            .where(eq(anthropicAccounts.id, "account-1"))
+            .run()
+          throw new Error('{"error":"invalid_grant"}')
+        },
+      }),
+    ).rejects.toThrow(CLAUDE_CODE_LOCAL_CREDENTIAL_INVALID_MESSAGE)
+
+    const account = db
+      .select()
+      .from(anthropicAccounts)
+      .where(eq(anthropicAccounts.id, "account-1"))
+      .get()
+    const stored = decryptClaudeCodeCredential(account?.oauthToken ?? "")
+    expect(stored?.envelope.accessToken).toBe("new-access-token")
+    expect(db.select().from(anthropicSettings).get()?.activeAccountId).toBe(
+      "account-1",
+    )
+  })
+
   test("refreshes active canonical credentials without writing legacy storage", async () => {
     const envelope = createClaudeCodeCredentialEnvelope(
       {
@@ -254,5 +314,164 @@ describe("Claude Code local credential validation", () => {
     expect(stored?.envelope.accessToken).toBe("fresh-access-token")
     expect(stored?.envelope.refreshToken).toBe("fresh-refresh-token")
     expect(db.select().from(claudeCodeCredentials).all()).toEqual([])
+  })
+
+  test("upserts refreshed credentials if the active account was concurrently removed", async () => {
+    const envelope = createClaudeCodeCredentialEnvelope(
+      {
+        accessToken: "expired-access-token",
+        refreshToken: "refresh-token",
+        expiresAt: Date.now() - 60_000,
+      },
+      "macos_keychain",
+    )
+    const encrypted = encryptStringForStorage(JSON.stringify(envelope))
+
+    db.insert(anthropicAccounts)
+      .values({
+        id: "account-1",
+        email: "user@example.com",
+        displayName: "Local Claude Code",
+        oauthToken: encrypted,
+        connectedAt: new Date("2026-06-01T00:00:00.000Z"),
+        desktopUserId: "desktop-user-1",
+      })
+      .run()
+    db.insert(anthropicSettings)
+      .values({ id: "singleton", activeAccountId: "account-1" })
+      .run()
+
+    const result = await getValidClaudeCodeCredential({
+      db: credentialDb(),
+      refreshClaudeTokenFn: async () => {
+        db.delete(anthropicAccounts)
+          .where(eq(anthropicAccounts.id, "account-1"))
+          .run()
+        db.update(anthropicSettings)
+          .set({ activeAccountId: null })
+          .where(eq(anthropicSettings.id, "singleton"))
+          .run()
+        return {
+          accessToken: "fresh-access-token",
+          refreshToken: "fresh-refresh-token",
+          expiresAt: Date.now() + 3_600_000,
+        }
+      },
+    })
+
+    const account = db
+      .select()
+      .from(anthropicAccounts)
+      .where(eq(anthropicAccounts.id, "account-1"))
+      .get()
+    const stored = decryptClaudeCodeCredential(account?.oauthToken ?? "")
+
+    expect(result.accessToken).toBe("fresh-access-token")
+    expect(account?.email).toBe("user@example.com")
+    expect(account?.displayName).toBe("Local Claude Code")
+    expect(account?.desktopUserId).toBe("desktop-user-1")
+    expect(stored?.envelope.accessToken).toBe("fresh-access-token")
+    expect(stored?.envelope.refreshToken).toBe("fresh-refresh-token")
+    expect(db.select().from(anthropicSettings).get()?.activeAccountId).toBe(
+      "account-1",
+    )
+  })
+
+  test("coalesces concurrent refreshes for the active credential", async () => {
+    const envelope = createClaudeCodeCredentialEnvelope(
+      {
+        accessToken: "expired-access-token",
+        refreshToken: "refresh-token",
+        expiresAt: Date.now() - 60_000,
+      },
+      "macos_keychain",
+    )
+    const encrypted = encryptStringForStorage(JSON.stringify(envelope))
+
+    db.insert(anthropicAccounts)
+      .values({
+        id: "account-1",
+        displayName: "Local Claude Code",
+        oauthToken: encrypted,
+        connectedAt: new Date("2026-06-01T00:00:00.000Z"),
+      })
+      .run()
+    db.insert(anthropicSettings)
+      .values({ id: "singleton", activeAccountId: "account-1" })
+      .run()
+
+    let refreshCalls = 0
+    const results = await Promise.all([
+      getValidClaudeCodeCredential({
+        db: credentialDb(),
+        refreshClaudeTokenFn: async () => {
+          refreshCalls += 1
+          await Promise.resolve()
+          return {
+            accessToken: "fresh-access-token",
+            refreshToken: "fresh-refresh-token",
+            expiresAt: Date.now() + 3_600_000,
+          }
+        },
+      }),
+      getValidClaudeCodeCredential({
+        db: credentialDb(),
+        refreshClaudeTokenFn: async () => {
+          refreshCalls += 1
+          return {
+            accessToken: "unexpected-second-token",
+            refreshToken: "unexpected-second-refresh-token",
+            expiresAt: Date.now() + 3_600_000,
+          }
+        },
+      }),
+    ])
+
+    expect(refreshCalls).toBe(1)
+    expect(results.map((result) => result.accessToken)).toEqual([
+      "fresh-access-token",
+      "fresh-access-token",
+    ])
+
+    const account = db
+      .select()
+      .from(anthropicAccounts)
+      .where(eq(anthropicAccounts.id, "account-1"))
+      .get()
+    const stored = decryptClaudeCodeCredential(account?.oauthToken ?? "")
+    expect(stored?.envelope.refreshToken).toBe("fresh-refresh-token")
+
+    const expiredAgainEnvelope = createClaudeCodeCredentialEnvelope(
+      {
+        accessToken: "expired-again-access-token",
+        refreshToken: "refresh-token",
+        expiresAt: Date.now() - 60_000,
+      },
+      "macos_keychain",
+      stored?.envelope,
+    )
+    db.update(anthropicAccounts)
+      .set({
+        oauthToken: encryptStringForStorage(
+          JSON.stringify(expiredAgainEnvelope),
+        ),
+      })
+      .where(eq(anthropicAccounts.id, "account-1"))
+      .run()
+
+    const refreshedAgain = await getValidClaudeCodeCredential({
+      db: credentialDb(),
+      refreshClaudeTokenFn: async () => {
+        refreshCalls += 1
+        return {
+          accessToken: "second-fresh-access-token",
+          refreshToken: "second-fresh-refresh-token",
+          expiresAt: Date.now() + 3_600_000,
+        }
+      },
+    })
+
+    expect(refreshedAgain.accessToken).toBe("second-fresh-access-token")
+    expect(refreshCalls).toBe(2)
   })
 })

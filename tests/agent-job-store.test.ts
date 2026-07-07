@@ -102,6 +102,35 @@ describe("agent job store", () => {
     ).toThrow("already terminal")
   })
 
+  test("redacts token values in persisted job event payloads", () => {
+    const db = createAgentJobTestDb()
+    const job = createAgentJob(db, {
+      source: "cli",
+      runtime: "claude-code",
+      mode: "agent",
+      cwd: "/tmp/project",
+      prompt: "Run with token-shaped diagnostics",
+    })
+
+    appendAgentJobEvent(db, {
+      jobId: job.id,
+      type: "command_output",
+      payload: {
+        stream: "stderr",
+        CLAUDE_CODE_OAUTH_TOKEN: "oauth-token-value",
+        text: "CLAUDE_CODE_OAUTH_TOKEN=oauth-token-value",
+      },
+    })
+
+    const events = listAgentJobEvents(db, job.id)
+    const payload = JSON.parse(events.at(-1)?.payloadJson || "{}")
+    const persistedJson = JSON.stringify(payload)
+
+    expect(payload.CLAUDE_CODE_OAUTH_TOKEN).toBe("[redacted]")
+    expect(payload.text).toBe("CLAUDE_CODE_OAUTH_TOKEN=<redacted>")
+    expect(persistedJson).not.toContain("oauth-token-value")
+  })
+
   test("records cancel request before terminal cancellation", () => {
     const db = createAgentJobTestDb()
     const job = createAgentJob(db, {
@@ -152,10 +181,7 @@ describe("agent job store", () => {
     )
 
     expect(
-      interruptStaleAgentJobs(
-        db,
-        new Date("2026-06-03T01:00:30.000Z"),
-      ),
+      interruptStaleAgentJobs(db, new Date("2026-06-03T01:00:30.000Z")),
     ).toHaveLength(0)
 
     const interrupted = interruptStaleAgentJobs(

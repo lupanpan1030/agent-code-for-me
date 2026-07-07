@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test"
-import { runProcessAgentTask } from "../src/main/lib/headless/process-runner"
-import { createAgentRuntimeRunRequest } from "../src/main/lib/headless/agent-runtime-contract"
 import type {
   AgentRuntimeObserver,
   AgentRuntimeRunRequest,
 } from "../src/main/lib/headless/agent-runtime-contract"
+import { createAgentRuntimeRunRequest } from "../src/main/lib/headless/agent-runtime-contract"
+import { runProcessAgentTask } from "../src/main/lib/headless/process-runner"
 import type { AgentJobEventType } from "../src/shared/agent-jobs"
 
 function createObserver(options: { cancelAfterHeartbeat?: boolean } = {}) {
@@ -107,10 +107,7 @@ describe("headless process runner", () => {
       request: request(controller.signal),
       observer,
       executable: process.execPath,
-      args: [
-        "-e",
-        "console.error('drop me'); console.error('keep me')",
-      ],
+      args: ["-e", "console.error('drop me'); console.error('keep me')"],
       stderrFilter: (text) => text.replace("drop me\n", ""),
       label: "node",
     })
@@ -173,12 +170,53 @@ describe("headless process runner", () => {
       request: request(controller.signal),
       observer,
       executable: process.execPath,
-      args: ["-e", "console.log('Not logged in · Please run /login'); process.exit(1)"],
+      args: [
+        "-e",
+        "console.log('Not logged in · Please run /login'); process.exit(1)",
+      ],
       label: "Claude Code",
     })
 
     expect(result.status).toBe("failed")
     expect(result.errorCode).toBe("runtime_auth_required")
-    expect(result.errorMessage).toBe("Claude Code authentication is required.")
+    expect(result.errorMessage).toBe(
+      "Claude Code authentication is required. Sign in through Locus desktop or log in with the claude CLI.",
+    )
+  })
+
+  test("keeps generic auth guidance for non-Claude processes", async () => {
+    const controller = new AbortController()
+    const { observer } = createObserver()
+    const result = await runProcessAgentTask({
+      request: request(controller.signal),
+      observer,
+      executable: process.execPath,
+      args: ["-e", "console.error('authentication failed'); process.exit(1)"],
+      label: "Codex",
+    })
+
+    expect(result.status).toBe("failed")
+    expect(result.errorCode).toBe("runtime_auth_required")
+    expect(result.errorMessage).toBe("Codex authentication is required.")
+  })
+
+  test("does not include child environment secrets in process events", async () => {
+    const controller = new AbortController()
+    const { observer, events } = createObserver()
+    const secret = "claude-oauth-token-that-must-stay-in-child-env-only"
+    const result = await runProcessAgentTask({
+      request: request(controller.signal),
+      observer,
+      executable: process.execPath,
+      args: ["-e", "console.log('done')"],
+      env: {
+        ...process.env,
+        CLAUDE_CODE_OAUTH_TOKEN: secret,
+      },
+      label: "Claude Code",
+    })
+
+    expect(result.status).toBe("succeeded")
+    expect(JSON.stringify(events)).not.toContain(secret)
   })
 })

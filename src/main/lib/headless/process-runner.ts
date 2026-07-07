@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from "node:child_process"
+import { type ChildProcess, spawn } from "node:child_process"
 import { basename } from "node:path"
 import type {
   AgentRuntimeObserver,
@@ -38,6 +38,13 @@ function killChild(child: ChildProcess): void {
   }, 5000).unref()
 }
 
+function buildAuthRequiredMessage(label: string): string {
+  if (/claude/i.test(label)) {
+    return `${label} authentication is required. Sign in through Locus desktop or log in with the claude CLI.`
+  }
+  return `${label} authentication is required.`
+}
+
 function classifyProcessFailure(input: {
   label: string
   stdout: string
@@ -46,10 +53,14 @@ function classifyProcessFailure(input: {
   signal: NodeJS.Signals | null
 }): Pick<AgentRuntimeRunResult, "errorCode" | "errorMessage"> {
   const combined = `${input.stdout}\n${input.stderr}`
-  if (/not logged in|please run\s+\/login|authentication failed|invalid api key/i.test(combined)) {
+  if (
+    /not logged in|please run\s+\/login|authentication failed|invalid api key/i.test(
+      combined,
+    )
+  ) {
     return {
       errorCode: "runtime_auth_required",
-      errorMessage: `${input.label} authentication is required.`,
+      errorMessage: buildAuthRequiredMessage(input.label),
     }
   }
 
@@ -138,11 +149,15 @@ export async function runProcessAgentTask(
     }
     if (!child) return
 
-    request.signal.addEventListener("abort", () => {
-      if (child) killChild(child)
-    }, {
-      once: true,
-    })
+    request.signal.addEventListener(
+      "abort",
+      () => {
+        if (child) killChild(child)
+      },
+      {
+        once: true,
+      },
+    )
 
     if (input.stdin !== undefined && input.stdin !== null) {
       child.stdin?.end(input.stdin)
@@ -167,7 +182,9 @@ export async function runProcessAgentTask(
         status: request.signal.aborted ? "canceled" : "failed",
         exitCode: request.signal.aborted ? 130 : 1,
         errorCode: request.signal.aborted ? "job_canceled" : "process_error",
-        errorMessage: request.signal.aborted ? "Job was canceled." : error.message,
+        errorMessage: request.signal.aborted
+          ? "Job was canceled."
+          : error.message,
         result: { stdout: stdout.trim(), stderr: stderr.trim() },
       })
     })
