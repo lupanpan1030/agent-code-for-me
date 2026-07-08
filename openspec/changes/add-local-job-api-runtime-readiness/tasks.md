@@ -17,4 +17,4 @@
 ## 3. Verification
 
 - [x] 3.1 Manual: `locus api runtimes list --json` on this machine (signed-in state) and with `--no-probe`; record output shapes in `verification.md`
-- [x] 3.2 Cross-check with RT-2 matrix runs when those execute: readiness state must agree with actual run outcome on each credential-matrix row
+- [ ] 3.2 Cross-check with RT-2 matrix runs when those execute: readiness state must agree with actual run outcome on each credential-matrix row

@@ -7,7 +7,7 @@ import {
   getClaudeCodeCredentialMetadata,
   hasAnyClaudeCodeAccount,
 } from "../claude-credentials"
-import { getExistingClaudeCredentials } from "../claude-token"
+import { getExistingClaudeCredentials, isTokenExpired } from "../claude-token"
 import {
   getBundledCodexCliMissingHint,
   getBundledCodexCliPath,
@@ -29,6 +29,12 @@ type CodexRuntimeStatusLike = {
   components: RuntimeStatusComponent[]
 }
 
+type ClaudeCliCredentialForReadiness = {
+  accessToken?: string | null
+  expiresAt?: number | null
+  refreshToken?: string | null
+}
+
 export type RuntimeReadinessResolverDependencies = {
   getClaudeCodeCredentialMetadata?: () => Pick<
     ReturnType<typeof getClaudeCodeCredentialMetadata>,
@@ -36,7 +42,7 @@ export type RuntimeReadinessResolverDependencies = {
   >
   getCodexExecutableStatus?: () => RuntimeExecutableStatus
   getCodexRuntimeStatus?: () => Promise<CodexRuntimeStatusLike>
-  getExistingClaudeCredentials?: () => { accessToken?: string | null } | null
+  getExistingClaudeCredentials?: () => ClaudeCliCredentialForReadiness | null
   hasAnyClaudeCodeAccount?: () => boolean
   now?: () => number
 }
@@ -102,6 +108,18 @@ function isClaudeAppCredentialUsable(
   )
 }
 
+function isClaudeCliCredentialUsable(
+  credential: ClaudeCliCredentialForReadiness | null | undefined,
+): boolean {
+  if (!credential?.accessToken) {
+    return false
+  }
+  return (
+    !isTokenExpired(credential.expiresAt ?? undefined) ||
+    Boolean(credential.refreshToken)
+  )
+}
+
 function resolveClaudeReadiness(
   dependencies: RuntimeReadinessResolverDependencies,
 ): LocalJobApiRuntimeReadiness {
@@ -123,7 +141,7 @@ function resolveClaudeReadiness(
   const externalCredential = dependencies.getExistingClaudeCredentials
     ? dependencies.getExistingClaudeCredentials()
     : getExistingClaudeCredentials()
-  if (externalCredential?.accessToken) {
+  if (isClaudeCliCredentialUsable(externalCredential)) {
     return readiness({
       state: "ready",
       detail: hasAnyAccount

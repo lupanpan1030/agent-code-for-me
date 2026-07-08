@@ -181,6 +181,59 @@ describe("Local Job API runtime readiness", () => {
     expect(JSON.stringify(readiness)).not.toContain("external-access-token")
   })
 
+  test("does not report expired unrefreshable Claude CLI credentials as ready", async () => {
+    const readiness = await resolveLocalJobApiRuntimeReadiness({
+      runtimeId: "claude-code",
+      dependencies: {
+        hasAnyClaudeCodeAccount: () => false,
+        getExistingClaudeCredentials: () => ({
+          accessToken: "external-access-token",
+          expiresAt: Date.now() - 1_000,
+        }),
+      },
+    })
+
+    expect(readiness).toMatchObject({
+      state: "needs-auth",
+      detail: "No Claude credential source is available.",
+    })
+    expect(JSON.stringify(readiness)).not.toContain("external-access-token")
+  })
+
+  test("does not report expiring unrefreshable Claude CLI credentials as ready", async () => {
+    const readiness = await resolveLocalJobApiRuntimeReadiness({
+      runtimeId: "claude-code",
+      dependencies: {
+        hasAnyClaudeCodeAccount: () => false,
+        getExistingClaudeCredentials: () => ({
+          accessToken: "external-access-token",
+          expiresAt: Date.now() + 60_000,
+        }),
+      },
+    })
+
+    expect(readiness.state).toBe("needs-auth")
+    expect(JSON.stringify(readiness)).not.toContain("external-access-token")
+  })
+
+  test("reports expired refreshable Claude CLI credentials as ready", async () => {
+    const readiness = await resolveLocalJobApiRuntimeReadiness({
+      runtimeId: "claude-code",
+      dependencies: {
+        hasAnyClaudeCodeAccount: () => false,
+        getExistingClaudeCredentials: () => ({
+          accessToken: "external-access-token",
+          expiresAt: Date.now() - 1_000,
+          refreshToken: "external-refresh-token",
+        }),
+      },
+    })
+
+    expect(readiness.state).toBe("ready")
+    expect(JSON.stringify(readiness)).not.toContain("external-access-token")
+    expect(JSON.stringify(readiness)).not.toContain("external-refresh-token")
+  })
+
   test("reports Claude needs-auth when neither credential source exists", async () => {
     const readiness = await resolveLocalJobApiRuntimeReadiness({
       runtimeId: "claude-code",

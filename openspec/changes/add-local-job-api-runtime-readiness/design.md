@@ -23,6 +23,7 @@ Discovery today is `listRegisteredAgentRuntimeManifests({ scope: "contract" })` 
 - Readiness is a point-in-time snapshot; a token can expire between discovery and create. Consumers must still handle `runtime_auth_required` at run time — readiness reduces, not eliminates, the late-failure path.
 - `codex login status` output parsing is string-matching on CLI output; a Codex CLI update could degrade codex readiness to `unknown`. Mapped states must degrade, never misreport `ready`.
 - The 30s cache can serve one stale `needs-auth` immediately after the user signs in; acceptable for a CLI whose consumers re-probe per operation. `--no-probe` callers get `unknown`, never stale `ready`.
+- Claude CLI fallback readiness currently reflects the default Claude credential lookup (`~/.claude` fallback plus platform credential store), while the run path can inherit `CLAUDE_CONFIG_DIR`. Custom Claude config directories can therefore diverge until the credential helper is made config-dir aware.
 
 ## Migration Plan
 
