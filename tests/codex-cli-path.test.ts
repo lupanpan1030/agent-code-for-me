@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test"
-import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import {
@@ -32,6 +38,17 @@ function createRepoRoot() {
 }
 
 describe("Codex bundled CLI path", () => {
+  test("commands router reuses the canonical Codex CLI path owner", () => {
+    const source = readFileSync(
+      join(process.cwd(), "src/main/lib/trpc/routers/commands.ts"),
+      "utf8",
+    )
+
+    expect(source).toContain('from "../../codex/cli-path"')
+    expect(source).not.toContain("function getBundledCodexCliPath")
+    expect(source).not.toContain("bun run codex:download` from the repo")
+  })
+
   test("resolves dev CLI from repo root when Electron app path is out/main", () => {
     const repo = createRepoRoot()
 

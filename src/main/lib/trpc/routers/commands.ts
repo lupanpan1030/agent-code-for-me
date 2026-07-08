@@ -7,6 +7,10 @@ import { stripVTControlCharacters } from "node:util"
 import { app } from "electron"
 import { z } from "zod"
 import { getBundledClaudeBinaryPath } from "../../claude"
+import {
+  getBundledCodexCliMissingHint,
+  getBundledCodexCliPath,
+} from "../../codex/cli-path"
 import { resolveDirentType } from "../../fs/dirent"
 import {
   assertRelativePathBoundary,
@@ -775,20 +779,6 @@ function parseCommandMd(content: string): {
   }
 }
 
-function getBundledCodexCliPath(): string {
-  const binaryName = process.platform === "win32" ? "codex.exe" : "codex"
-  const resourcesDir = app.isPackaged
-    ? path.join(process.resourcesPath, "bin")
-    : path.join(
-        app.getAppPath(),
-        "resources",
-        "bin",
-        `${process.platform}-${process.arch}`,
-      )
-
-  return path.join(resourcesDir, binaryName)
-}
-
 function cleanCommandOutput(value: string): string {
   return stripVTControlCharacters(value).replace(/\r/g, "").trim()
 }
@@ -1078,9 +1068,6 @@ export const commandsRouter = router({
     const claudeHint = process.env.ELECTRON_RENDERER_URL
       ? "Run `bun run claude:download` from the repo, then restart the dev app."
       : "Reinstall the app so the bundled Claude Code runtime is restored."
-    const codexHint = app.isPackaged
-      ? "Reinstall the app so the bundled Codex command is restored."
-      : "Run `bun run codex:download` from the repo, then restart the dev app."
 
     return Promise.all([
       readRuntimeCommandGuide(
@@ -1093,7 +1080,7 @@ export const commandsRouter = router({
         "codex",
         "Codex",
         getBundledCodexCliPath(),
-        codexHint,
+        getBundledCodexCliMissingHint(),
       ),
     ])
   }),

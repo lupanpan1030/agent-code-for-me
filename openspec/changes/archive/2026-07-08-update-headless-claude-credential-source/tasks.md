@@ -3,7 +3,7 @@
 ## 1. Implementation
 
 - [x] 1.1 Add app-store credential resolution to the headless Claude adapter: gate on `hasAnyClaudeCodeAccount()`, resolve via `getValidClaudeCodeCredential()`, inject through `createClaudeAgentSdkRuntimeEnv` / `buildClaudeEnv` customEnv seam (`src/main/lib/headless/adapters/claude-code.ts`)
-- [ ] 1.2 Verify bundled CLI precedence: injected `CLAUDE_CODE_OAUTH_TOKEN` must win over an existing `~/.claude` login; document the verified order in code comments only if the CLI required a workaround
+- [x] 1.2 Verify bundled CLI precedence: injected `CLAUDE_CODE_OAUTH_TOKEN` must win over an existing `~/.claude` login; document the verified order in code comments only if the CLI required a workaround
 - [x] 1.3 Fallback semantics: no app account, secure-storage unavailable, or refresh failure → stderr diagnostic + today's `~/.claude` behavior (never hard-fail solely because the app store is unhealthy)
 - [x] 1.4 Update `runtime_auth_required` diagnostic hint to name both remedies (Locus desktop sign-in, `claude` CLI login) in `src/main/lib/headless/process-runner.ts`
 - [x] 1.5 Add single-flight for active Claude credential refresh and guard `invalid_grant` account removal against deleting an account already updated by another refresh
@@ -18,5 +18,5 @@
 
 ## 3. Verification
 
-- [ ] 3.1 Manual matrix in `verification.md`: app-login-only / cli-login-only / both / neither × `locus run --runtime claude-code` — record observed auth source and exit codes
-- [ ] 3.2 Confirm Career Kit profile-extraction path succeeds on an app-login-only machine
+- [x] 3.1 Manual matrix in `verification.md`: app-login-only / cli-login-only / both / neither × `locus run --runtime claude-code` — record observed auth source and exit codes
+- [x] 3.2 Confirm Career Kit profile-extraction path succeeds on an app-login-only machine
