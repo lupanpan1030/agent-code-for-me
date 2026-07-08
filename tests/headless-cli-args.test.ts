@@ -41,6 +41,10 @@ describe("headless CLI args", () => {
       process.cwd(),
       "--output",
       "json",
+      "--provider-profile",
+      "codex-main",
+      "--model",
+      "gpt-5.3-codex",
       "--prompt",
       "Inspect the repo",
     ])
@@ -53,6 +57,8 @@ describe("headless CLI args", () => {
         mode: "plan",
         output: "json",
         prompt: "Inspect the repo",
+        providerProfileId: "codex-main",
+        model: "gpt-5.3-codex",
       },
     })
   })
@@ -265,6 +271,10 @@ describe("headless CLI args", () => {
         process.cwd(),
         "--interval-seconds",
         "300",
+        "--provider-profile",
+        "codex-main",
+        "--model",
+        "gpt-5.3-codex",
         "--prompt",
         "Inspect",
         "--output",
@@ -278,6 +288,8 @@ describe("headless CLI args", () => {
         runtime: "codex",
         mode: "plan",
         intervalSeconds: 300,
+        providerProfileId: "codex-main",
+        model: "gpt-5.3-codex",
         output: "json",
       },
     })
@@ -576,6 +588,36 @@ describe("headless CLI args", () => {
         kind: "acp",
       },
     })
+  })
+
+  test("rejects invalid provider selector flags", () => {
+    const profile = parseHeadlessCliArgv([
+      "Locus",
+      HEADLESS_CLI_MARKER,
+      "run",
+      "--provider-profile",
+      "not allowed",
+      "--prompt",
+      "Inspect",
+    ])
+    expect(profile).toMatchObject({ ok: false, code: 2 })
+    if (!profile.ok) {
+      expect(profile.message).toContain("--provider-profile")
+    }
+
+    const model = parseHeadlessCliArgv([
+      "Locus",
+      HEADLESS_CLI_MARKER,
+      "run",
+      "--model",
+      "gpt\nbad",
+      "--prompt",
+      "Inspect",
+    ])
+    expect(model).toMatchObject({ ok: false, code: 2 })
+    if (!model.ok) {
+      expect(model.message).toContain("--model")
+    }
   })
 
   test("rejects follow without daemon enqueue", () => {

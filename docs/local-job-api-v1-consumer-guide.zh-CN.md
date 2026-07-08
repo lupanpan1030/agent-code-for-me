@@ -159,7 +159,7 @@ locus api runtimes list --json
 ```json
 {
   "apiVersion": "locus.local-job.v1",
-  "features": ["runtime-readiness"],
+  "features": ["runtime-readiness", "provider-binding"],
   "runtimes": [
     {
       "runtimeId": "codex",
@@ -209,6 +209,21 @@ Execution profiles：
   `runtime.policyGrant.scopes`，且这些 scope 在 v1 中只作为准入/审计 metadata；
   它们还不是稳定的 app-server per-scope 强制边界。
 
+Provider 选择：
+
+- 省略 `provider`：Locus 会先读取该 runtime 的 headless 默认 profile
+  （Claude Code 用 `claude-main`，Codex 用 `codex-main`）。如果没有配置默认
+  profile，runtime 使用自己的 native credentials。
+- 设置 `provider.profileId`：Locus 在 main process 解析已存储的 provider
+  profile，并为本次 run 创建 scoped local gateway token。如果 profile 不存在、
+  target runtime 不匹配，或 credential 无法解密，job 会 fail closed。
+- 设置 `provider.model`：传入 model override。若没有同时设置
+  `provider.profileId`，它使用 runtime-managed credentials，并绕过 headless
+  defaults。
+
+consumer 只能传 provider 引用，不能在 `provider`、`input` 或 artifacts 中传
+provider token、headers 或 environment variables。
+
 ## Create Request
 
 通用本地 package 示例：
@@ -231,6 +246,10 @@ Execution profiles：
   "mode": "plan",
   "prompt": {
     "text": "Review this local package and produce a readiness note."
+  },
+  "provider": {
+    "profileId": "codex-main",
+    "model": "gpt-5.3-codex"
   },
   "input": {
     "contract": "example.local-package.v1",
@@ -272,6 +291,8 @@ cat request.json | locus api runs create --request - --json
 | `runtime.policyGrant.canDecideAutomatically` | 否 | 可选 boolean。若在 `policy-grant` 中为 false，Locus 会 fail closed，因为没有可见用户。 |
 | `mode` | 是 | `plan` 或 `agent`。 |
 | `prompt.text` | 是 | prompt 文本，最大 256 KiB。 |
+| `provider.profileId` | 否 | 已存储 provider profile ID。request 只携带引用；credentials 由 Locus main process 解析。 |
+| `provider.model` | 否 | model override。没有 `provider.profileId` 时，它使用 runtime-managed credentials，不读取 defaults。 |
 | `input` | 否 | consumer 自己的结构化 metadata，不能包含 secrets。 |
 | `artifacts.baseDir` | 否 | Locus run metadata 的绝对目录，必须在 `project.cwd` 内。 |
 | `artifacts.writePolicy` | 否 | `metadata-only` 或 `proposal-only`，默认 `metadata-only`。 |
@@ -352,8 +373,15 @@ example-package/
       "runExternalId": "package-review-001"
     },
     "artifactManifestPath": "/.../.locus/runs/mpzcxv3xp2ji1fl2/artifacts.json",
+    "providerProfileId": "codex-main",
+    "modelOverride": "gpt-5.3-codex",
     "artifacts": [],
     "diagnostics": [],
+    "resolvedProvider": {
+      "source": "request-profile",
+      "profileId": "codex-main",
+      "model": "gpt-5.3-codex"
+    },
     "result": {}
   }
 }
@@ -451,6 +479,11 @@ locus api runs result <job-id> --json
     }
   ],
   "diagnostics": [],
+  "resolvedProvider": {
+    "source": "request-profile",
+    "profileId": "codex-main",
+    "model": "gpt-5.3-codex"
+  },
   "result": {
     "finalMessage": "..."
   }
@@ -458,6 +491,18 @@ locus api runs result <job-id> --json
 ```
 
 对非 success 状态，先读取 `diagnostics`，再决定给用户展示什么。
+`resolvedProvider` 只有在 terminal result envelope 中才是权威值。in-flight
+status 轮询时，Locus 还可能正在解析 defaults 或铸造 scoped gateway token，
+所以 provider 字段可能是暂态值。
+
+Provider binding 错误一律 fail-closed。如果显式选择的 profile 或已配置的
+headless 默认 profile 不可用，job 会以结构化 diagnostic 失败，例如
+`provider_profile_not_found`、`provider_profile_runtime_mismatch` 或
+`provider_profile_unavailable`。这些情况下 Locus 不会静默回落到 runtime native
+credentials。
+`provider_profile_not_found` 和 `provider_profile_runtime_mismatch` 属于 invalid
+request，exit `2`；`provider_profile_unavailable` 属于 credential availability，
+exit `4`。
 
 ## Cancel
 
@@ -515,6 +560,8 @@ consumer 应该先看 exit code 和 stderr，再解析 stdout。Diagnostics 写�
 
 Locus 会通过自己的 main-process provider/runtime setup 路径解析 credentials。consumer 只
 传业务上下文，不传 provider secrets。
+provider-backed runs 只传 `provider.profileId`，可选再传 `provider.model`；
+scoped gateway token lifecycle 由 Locus 管理。
 
 secret-like key 或 value 会在 provider work 开始前被拒绝。
 

@@ -74,6 +74,8 @@ function exampleAgentJob(overrides: Partial<AgentJob> = {}): AgentJob {
     artifactBaseDir: "/tmp/locus-schema-project/.locus/runs",
     artifactManifestPath:
       "/tmp/locus-schema-project/.locus/runs/job_schema_result/artifacts.json",
+    providerProfileId: null,
+    modelOverride: null,
     createdAt: new Date("2026-06-15T00:00:00.000Z"),
     startedAt: new Date("2026-06-15T00:00:01.000Z"),
     finishedAt: new Date("2026-06-15T00:00:02.000Z"),
@@ -136,6 +138,7 @@ describe("Local Job API v1 JSON Schema", () => {
     const prompt = properties.prompt.properties as Record<string, SchemaObject>
     const promptText = prompt.text as SchemaObject
     const artifacts = properties.artifacts as SchemaObject
+    const provider = properties.provider as SchemaObject
     const artifactObject = (artifacts.oneOf as SchemaObject[])[0]
     const artifactProperties = artifactObject.properties as Record<
       string,
@@ -154,6 +157,7 @@ describe("Local Job API v1 JSON Schema", () => {
     expect(Object.keys(prompt)).toEqual(["text"])
     expect(properties).not.toHaveProperty("images")
     expect(properties).not.toHaveProperty("attachments")
+    expect(provider).toEqual({ $ref: "#/$defs/providerSelection" })
     expect(artifactProperties.writePolicy.default).toBe("metadata-only")
     expect(createRequest.description).toContain("secret-like")
     expect(createRequest.description).toContain("1 MiB")
@@ -202,6 +206,9 @@ describe("Local Job API v1 JSON Schema", () => {
     })
     expect((resultProperties.diagnostics as SchemaObject).items).toEqual({
       $ref: "#/$defs/diagnostic",
+    })
+    expect(resultProperties.resolvedProvider).toEqual({
+      $ref: "#/$defs/resolvedProvider",
     })
     expect(runtimeManifestProperties.readiness).toEqual({
       $ref: "#/$defs/runtimeReadiness",

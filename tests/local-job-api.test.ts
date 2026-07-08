@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test"
+import { agentProviderProfiles, projects } from "../src/main/lib/db/schema"
+import { createAgentJob, getAgentJob } from "../src/main/lib/headless/job-store"
+import { createLocalJobApiJob } from "../src/main/lib/headless/local-job-api"
 import {
   AGENT_JOB_EVENT_TYPES,
   AGENT_JOB_SOURCES,
@@ -7,7 +10,6 @@ import {
   LOCAL_JOB_API_VERSION,
   validateLocalJobApiCreateRequest,
 } from "../src/shared/local-job-api"
-import { createAgentJob, getAgentJob } from "../src/main/lib/headless/job-store"
 import { createAgentJobTestDb } from "./helpers/agent-job-test-db"
 
 describe("Local Job API v1 shared contract", () => {
@@ -93,6 +95,59 @@ describe("Local Job API v1 shared contract", () => {
         },
       },
     })
+  })
+
+  test("normalizes provider profile references without accepting secrets", () => {
+    const request = validateLocalJobApiCreateRequest({
+      apiVersion: LOCAL_JOB_API_VERSION,
+      consumer: {
+        id: "docs-workbench",
+      },
+      project: {
+        cwd: process.cwd(),
+      },
+      runtime: {
+        id: "codex",
+      },
+      mode: "agent",
+      prompt: {
+        text: "Run with selected provider.",
+      },
+      provider: {
+        profileId: " codex-main ",
+        model: " gpt-5.3-codex ",
+      },
+    })
+
+    expect(request).toMatchObject({
+      ok: true,
+      request: {
+        provider: {
+          profileId: "codex-main",
+          model: "gpt-5.3-codex",
+        },
+      },
+    })
+
+    const rejected = validateLocalJobApiCreateRequest({
+      apiVersion: LOCAL_JOB_API_VERSION,
+      consumer: { id: "docs-workbench" },
+      project: { cwd: process.cwd() },
+      runtime: { id: "codex" },
+      mode: "agent",
+      prompt: { text: "Run with selected provider." },
+      provider: {
+        profileId: "codex-main",
+        apiKey: "sk-abcdefghijklmnopqrstuvwxyz123456",
+      },
+    })
+
+    expect(rejected.ok).toBe(false)
+    if (!rejected.ok) {
+      const message = rejected.errors.join("\n")
+      expect(message).toContain("provider.apiKey is not accepted")
+      expect(message).not.toContain("sk-abcdefghijklmnopqrstuvwxyz123456")
+    }
   })
 
   test("requires bounded policy scopes for policy-grant execution", () => {
@@ -214,6 +269,56 @@ describe("Local Job API v1 shared contract", () => {
       apiConsumerId: "docs-workbench",
       apiConsumerRunId: "package-review-001",
       artifactBaseDir: `${process.cwd()}/.tmp/locus-runs`,
+    })
+  })
+
+  test("Local Job API create persists provider references only", () => {
+    const db = createAgentJobTestDb()
+    db.insert(projects)
+      .values({
+        id: "project-1",
+        name: "Current",
+        path: process.cwd(),
+      })
+      .run()
+    db.insert(agentProviderProfiles)
+      .values({
+        id: "codex-main",
+        name: "Codex Main",
+        protocol: "openai-responses",
+        baseUrl: "https://provider.example.com/v1",
+        defaultModel: "gpt-5.3-codex",
+        authMode: "none",
+        targetRuntimesJson: JSON.stringify(["codex"]),
+        capabilitiesJson: "{}",
+      })
+      .run()
+
+    const parsed = validateLocalJobApiCreateRequest({
+      apiVersion: LOCAL_JOB_API_VERSION,
+      consumer: { id: "docs-workbench" },
+      project: { cwd: process.cwd() },
+      runtime: { id: "codex" },
+      mode: "agent",
+      prompt: { text: "Run with selected provider." },
+      provider: {
+        profileId: "codex-main",
+        model: "gpt-5.4",
+      },
+    })
+
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) return
+    const prepared = createLocalJobApiJob(db, parsed.request, "test")
+    expect(prepared.job).toMatchObject({
+      providerProfileId: "codex-main",
+      modelOverride: "gpt-5.4",
+    })
+    expect(JSON.parse(prepared.job.inputJson ?? "{}")).toMatchObject({
+      provider: {
+        profileId: "codex-main",
+        model: "gpt-5.4",
+      },
     })
   })
 })

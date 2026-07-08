@@ -1,33 +1,32 @@
 import { and, asc, desc, eq, lte, ne } from "drizzle-orm"
+import { AGENT_JOB_MODES, type AgentJobMode } from "../../../shared/agent-jobs"
 import {
+  type AgentRuntimeContractId,
+  CONTRACT_RUNTIME_IDS,
+} from "../../../shared/agent-runtime-capabilities"
+import {
+  AGENT_SCHEDULE_STATUSES,
+  AGENT_SCHEDULE_TRIGGERS,
+  type AgentScheduleRuntime,
+  type AgentScheduleStatus,
+  type AgentScheduleTrigger,
+  MAX_AGENT_SCHEDULE_INTERVAL_SECONDS,
+  MIN_AGENT_SCHEDULE_INTERVAL_SECONDS,
+} from "../../../shared/agent-schedules"
+import {
+  type AgentJob,
+  type AgentSchedule,
+  type AgentScheduleRun,
   agentJobEvents,
   agentJobs,
   agentScheduleRuns,
   agentSchedules,
-  type AgentJob,
-  type AgentSchedule,
-  type AgentScheduleRun,
   type Project,
 } from "../db/schema"
 import { createId } from "../db/utils"
-import {
-  AGENT_JOB_MODES,
-  type AgentJobMode,
-} from "../../../shared/agent-jobs"
-import { CONTRACT_RUNTIME_IDS } from "../../../shared/agent-runtime-capabilities"
-import {
-  AGENT_SCHEDULE_STATUSES,
-  AGENT_SCHEDULE_TRIGGERS,
-  MAX_AGENT_SCHEDULE_INTERVAL_SECONDS,
-  MIN_AGENT_SCHEDULE_INTERVAL_SECONDS,
-  type AgentScheduleStatus,
-  type AgentScheduleRuntime,
-  type AgentScheduleTrigger,
-} from "../../../shared/agent-schedules"
-import {
-  type AgentJobDatabase,
-} from "./job-store"
 import { getRegisteredProjectForCwdOrThrow } from "../projects/registry"
+import type { AgentJobDatabase } from "./job-store"
+import { assertHeadlessProviderSelectionUsableAtCreate } from "./provider-binding"
 
 export type CreateAgentScheduleInput = {
   name: string
@@ -37,6 +36,8 @@ export type CreateAgentScheduleInput = {
   prompt: string
   intervalSeconds: number
   projectId?: string | null
+  providerProfileId?: string | null
+  modelOverride?: string | null
   timezone?: string
   nextRunAt?: Date | null
   now?: Date
@@ -80,7 +81,9 @@ function assertOneOf<T extends readonly string[]>(
   }
 }
 
-function assertScheduleStatus(status: string): asserts status is AgentScheduleStatus {
+function assertScheduleStatus(
+  status: string,
+): asserts status is AgentScheduleStatus {
   assertOneOf(AGENT_SCHEDULE_STATUSES, status, "schedule status")
 }
 
@@ -115,7 +118,10 @@ function redactSecretText(value: string): string {
       /eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g,
       "[redacted-jwt]",
     )
-    .replace(/(authorization\s*:\s*basic\s+)[A-Za-z0-9+/=_-]+/gi, "$1[redacted]")
+    .replace(
+      /(authorization\s*:\s*basic\s+)[A-Za-z0-9+/=_-]+/gi,
+      "$1[redacted]",
+    )
     .replace(/bearer\s+[A-Za-z0-9._-]+/gi, "Bearer [redacted]")
     .replace(
       /((?:access_token|refresh_token|id_token|anthropic_auth_token|openai_api_key|codex_api_key|github_token|npm_token|aws_secret_access_key|aws_session_token|api[-_]?key|secret|password)["'=:\s]+)["']?[^\s"',;]+/gi,
@@ -181,12 +187,8 @@ export function findRegisteredProjectForCwd(
   projectId?: string | null,
   label = "Schedule cwd",
 ): Project {
-  return findRegisteredProjectForCwdWithCanonicalPath(
-    db,
-    cwd,
-    projectId,
-    label,
-  ).project
+  return findRegisteredProjectForCwdWithCanonicalPath(db, cwd, projectId, label)
+    .project
 }
 
 export function findRegisteredProjectForCwdWithCanonicalPath(
@@ -208,7 +210,11 @@ function addSeconds(date: Date, seconds: number): Date {
   return new Date(date.getTime() + seconds * 1000)
 }
 
-function nextRunAfter(schedule: AgentSchedule, scheduledFor: Date, now: Date): Date {
+function nextRunAfter(
+  schedule: AgentSchedule,
+  scheduledFor: Date,
+  now: Date,
+): Date {
   let next = addSeconds(scheduledFor, schedule.intervalSeconds)
   while (next <= now) {
     next = addSeconds(next, schedule.intervalSeconds)
@@ -272,8 +278,11 @@ function insertScheduleRun(
     })
     .run()
   const run =
-    db.select().from(agentScheduleRuns).where(eq(agentScheduleRuns.id, id)).get() ??
-    null
+    db
+      .select()
+      .from(agentScheduleRuns)
+      .where(eq(agentScheduleRuns.id, id))
+      .get() ?? null
   if (!run) throw new Error(`Failed to create schedule run ${id}`)
   return run
 }
@@ -288,7 +297,9 @@ function updateScheduleAfterFire(
 ): AgentSchedule {
   const db = executor as AgentJobDatabase
   const nextRunAt =
-    trigger === "due" ? nextRunAfter(schedule, scheduledFor, now) : schedule.nextRunAt
+    trigger === "due"
+      ? nextRunAfter(schedule, scheduledFor, now)
+      : schedule.nextRunAt
   db.update(agentSchedules)
     .set({
       lastRunAt: now,
@@ -327,6 +338,8 @@ function createScheduleJobRecord(
         scheduledFor: scheduledFor.toISOString(),
       }),
       projectId: schedule.projectId,
+      providerProfileId: schedule.providerProfileId,
+      modelOverride: schedule.modelOverride,
       createdAt: now,
     })
     .run()
@@ -384,8 +397,22 @@ function fireAgentSchedule(
     }
 
     const prompt = getSchedulePrompt(current)
-    const job = createScheduleJobRecord(tx, current, trigger, scheduledFor, prompt, now)
-    const run = insertScheduleRun(tx, current.id, job.id, trigger, scheduledFor, now)
+    const job = createScheduleJobRecord(
+      tx,
+      current,
+      trigger,
+      scheduledFor,
+      prompt,
+      now,
+    )
+    const run = insertScheduleRun(
+      tx,
+      current.id,
+      job.id,
+      trigger,
+      scheduledFor,
+      now,
+    )
     const updated = updateScheduleAfterFire(
       tx,
       current,
@@ -405,6 +432,11 @@ export function createAgentSchedule(
   assertOneOf(CONTRACT_RUNTIME_IDS, input.runtime, "job runtime")
   assertOneOf(AGENT_JOB_MODES, input.mode, "job mode")
   assertScheduleInterval(input.intervalSeconds)
+  assertHeadlessProviderSelectionUsableAtCreate({
+    db,
+    runtime: input.runtime as AgentRuntimeContractId,
+    providerProfileId: input.providerProfileId,
+  })
 
   const now = input.now ?? new Date()
   const project = findRegisteredProjectForCwd(db, input.cwd, input.projectId)
@@ -425,6 +457,8 @@ export function createAgentSchedule(
       mode: input.mode,
       cwd: input.cwd,
       projectId: project.id,
+      providerProfileId: input.providerProfileId?.trim() || null,
+      modelOverride: input.modelOverride?.trim() || null,
       promptPreview: promptPreview(input.prompt),
       inputJson: toJson({ prompt: input.prompt }),
       intervalSeconds: input.intervalSeconds,
@@ -445,8 +479,11 @@ export function getAgentSchedule(
   scheduleId: string,
 ): AgentSchedule | null {
   return (
-    db.select().from(agentSchedules).where(eq(agentSchedules.id, scheduleId)).get() ??
-    null
+    db
+      .select()
+      .from(agentSchedules)
+      .where(eq(agentSchedules.id, scheduleId))
+      .get() ?? null
   )
 }
 
@@ -512,8 +549,7 @@ export function updateAgentScheduleStatus(
     throw new Error(`Schedule ${schedule.id} is disabled`)
   }
   const nextRunAt =
-    status === "enabled" &&
-    (!schedule.nextRunAt || schedule.nextRunAt <= now)
+    status === "enabled" && (!schedule.nextRunAt || schedule.nextRunAt <= now)
       ? addSeconds(now, schedule.intervalSeconds)
       : schedule.nextRunAt
   db.update(agentSchedules)
@@ -602,7 +638,13 @@ export function evaluateDueAgentSchedules(
       continue
     }
     try {
-      const firedSchedule = fireAgentSchedule(db, current, "due", current.nextRunAt, now)
+      const firedSchedule = fireAgentSchedule(
+        db,
+        current,
+        "due",
+        current.nextRunAt,
+        now,
+      )
       if (firedSchedule) fired.push(firedSchedule)
     } catch {
       disableAgentSchedule(db, current.id, now)

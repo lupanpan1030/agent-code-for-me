@@ -15,10 +15,9 @@ import type {
   AgentRuntimeRunResult,
 } from "../agent-runtime-contract"
 
-export type CodexAppServerHeadlessAdapterFactory = () => Pick<
-  CodexDesktopAdapter,
-  "metadata" | "run"
->
+export type CodexAppServerHeadlessAdapterFactory = (
+  options?: CreateHeadlessCodexAppServerDesktopAdapterOptions,
+) => Pick<CodexDesktopAdapter, "metadata" | "run">
 
 export type CreateCodexAppServerHeadlessTaskRunnerOptions = {
   createDesktopAdapter?: CodexAppServerHeadlessAdapterFactory
@@ -26,7 +25,7 @@ export type CreateCodexAppServerHeadlessTaskRunnerOptions = {
 
 export type CreateHeadlessCodexAppServerDesktopAdapterOptions = Pick<
   CreateCodexAppServerAdapterInput,
-  "createTransport"
+  "appManagedApiKey" | "createTransport" | "providerGatewayToken"
 >
 
 function syntheticId(prefix: string, request: AgentRuntimeRunRequest): string {
@@ -159,6 +158,8 @@ export function createHeadlessCodexAppServerDesktopAdapter(
   return createCodexAppServerAdapter({
     enabled: true,
     createTransport: options.createTransport,
+    providerGatewayToken: options.providerGatewayToken,
+    appManagedApiKey: options.appManagedApiKey,
     // Headless runs have no visible UI bridge. Keep the interaction callbacks
     // unset so approval, user-input, and MCP elicitation requests fail closed
     // immediately instead of waiting on the desktop approval timeout.
@@ -197,8 +198,23 @@ export function createCodexAppServerHeadlessTaskRunner({
 
     try {
       const desktopRequest = createDesktopRequestFromHeadless(request, observer)
+      const providerGatewayToken =
+        request.providerBinding?.authMode === "provider-profile"
+          ? request.providerBinding.gatewayToken
+          : null
+      if (
+        request.providerBinding?.authMode === "provider-profile" &&
+        !providerGatewayToken
+      ) {
+        return createFailClosedResult({
+          errorCode: "provider_profile_unavailable",
+          errorMessage: "Provider profile gateway binding is incomplete.",
+        })
+      }
       return mapDesktopRunResult(
-        await createDesktopAdapter().run(desktopRequest),
+        await createDesktopAdapter({ providerGatewayToken }).run(
+          desktopRequest,
+        ),
       )
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)

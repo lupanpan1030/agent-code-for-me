@@ -1,20 +1,11 @@
-import type { AgentJob, AgentJobEvent } from "../db/schema"
 import type {
   AgentJobContractRuntime,
   AgentJobMode,
   AgentJobSource,
   AgentJobStatus,
 } from "../../../shared/agent-jobs"
-import {
-  appendAgentJobEvent,
-  completeAgentJob,
-  getAgentJob,
-  getAgentJobPrompt,
-  heartbeatAgentJob,
-  listAgentJobEvents,
-  startAgentJob,
-  type AgentJobDatabase,
-} from "./job-store"
+import type { LocalJobApiResolvedProvider } from "../../../shared/local-job-api"
+import type { AgentJob, AgentJobEvent } from "../db/schema"
 import type {
   AgentRuntimeObserver,
   AgentRuntimeRunRequest,
@@ -22,7 +13,25 @@ import type {
   AgentTaskRunner,
 } from "./agent-runtime-contract"
 import { createAgentRuntimeRunRequest } from "./agent-runtime-contract"
+import {
+  type AgentJobDatabase,
+  appendAgentJobEvent,
+  completeAgentJob,
+  getAgentJob,
+  getAgentJobPrompt,
+  heartbeatAgentJob,
+  listAgentJobEvents,
+  startAgentJob,
+} from "./job-store"
 import { getLocalJobApiStoredRequest } from "./local-job-api"
+import {
+  type HeadlessProviderBindingDependencies,
+  HeadlessProviderBindingError,
+  type HeadlessProviderBindingResolution,
+  isInvalidHeadlessProviderBindingRequestCode,
+  isUnavailableHeadlessProviderBindingCode,
+  resolveHeadlessProviderBinding,
+} from "./provider-binding"
 
 export const HEADLESS_EXIT_CODES = {
   success: 0,
@@ -44,6 +53,7 @@ export type RunPersistedAgentJobOptions = {
   workerId?: string
   workerPid?: number | null
   signal?: AbortSignal
+  providerBindingDependencies?: HeadlessProviderBindingDependencies
 }
 
 export type RunPersistedAgentJobResult = {
@@ -92,6 +102,12 @@ export function normalizeHeadlessExitCode(input: {
     return HEADLESS_EXIT_CODES.unsupportedRuntimeOrMode
   }
   if (input.errorCode === "runtime_auth_required") {
+    return HEADLESS_EXIT_CODES.missingCredentials
+  }
+  if (isInvalidHeadlessProviderBindingRequestCode(input.errorCode)) {
+    return HEADLESS_EXIT_CODES.invalidArguments
+  }
+  if (isUnavailableHeadlessProviderBindingCode(input.errorCode)) {
     return HEADLESS_EXIT_CODES.missingCredentials
   }
   if (input.errorCode === "local_only_guard_blocked") {
@@ -165,7 +181,9 @@ function waitForAbort(signal: AbortSignal): Promise<AgentRuntimeRunResult> {
   })
 }
 
-function localJobApiRuntimeOptions(job: AgentJob): Pick<
+function localJobApiRuntimeOptions(
+  job: AgentJob,
+): Pick<
   Parameters<typeof createAgentRuntimeRunRequest>[0],
   "executionProfile" | "policyGrant"
 > {
@@ -181,6 +199,63 @@ function localJobApiRuntimeOptions(job: AgentJob): Pick<
   }
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value)
+}
+
+function resultWithResolvedProvider(
+  result: unknown,
+  resolvedProvider: LocalJobApiResolvedProvider,
+): Record<string, unknown> {
+  if (isRecord(result)) {
+    return {
+      ...result,
+      resolvedProvider,
+    }
+  }
+  return {
+    value: result ?? null,
+    resolvedProvider,
+  }
+}
+
+function resolvedProviderForError(
+  error: unknown,
+  job: AgentJob,
+  providerResolution: HeadlessProviderBindingResolution | null,
+): LocalJobApiResolvedProvider {
+  if (providerResolution) return providerResolution.resolvedProvider
+  if (error instanceof HeadlessProviderBindingError) {
+    return {
+      source: error.source,
+      profileId: error.profileId,
+      model: job.modelOverride,
+    }
+  }
+  return {
+    source: job.providerProfileId ? "request-profile" : "native",
+    profileId: job.providerProfileId ?? null,
+    model: job.modelOverride,
+  }
+}
+
+function appendResolvedProviderEvent(input: {
+  db: AgentJobDatabase
+  jobId: string
+  resolvedProvider: LocalJobApiResolvedProvider
+}): void {
+  if (input.resolvedProvider.source !== "default-profile") return
+  appendAgentJobEvent(input.db, {
+    jobId: input.jobId,
+    type: "status",
+    payload: {
+      providerBinding: {
+        resolvedProvider: input.resolvedProvider,
+      },
+    },
+  })
+}
+
 export async function runPersistedAgentJob(
   options: RunPersistedAgentJobOptions,
 ): Promise<RunPersistedAgentJobResult> {
@@ -188,7 +263,8 @@ export async function runPersistedAgentJob(
   if (!initial) throw new Error(`Unknown job: ${options.jobId}`)
   const workerId =
     options.workerId ?? `headless:${process.pid}:${Date.now()}:${initial.id}`
-  const workerPid = options.workerPid === undefined ? process.pid : options.workerPid
+  const workerPid =
+    options.workerPid === undefined ? process.pid : options.workerPid
   const job = startAgentJob(options.db, {
     jobId: initial.id,
     workerId,
@@ -205,15 +281,23 @@ export async function runPersistedAgentJob(
       once: true,
     })
   }
-  const observer = createObserver(
-    options.db,
-    job.id,
-    workerId,
-    abortController,
-  )
+  const observer = createObserver(options.db, job.id, workerId, abortController)
   const runtimeOptions = localJobApiRuntimeOptions(job)
+  let providerResolution: HeadlessProviderBindingResolution | null = null
 
   try {
+    providerResolution = await resolveHeadlessProviderBinding({
+      db: options.db,
+      runtime: job.runtime as AgentJobContractRuntime,
+      providerProfileId: job.providerProfileId,
+      modelOverride: job.modelOverride,
+      dependencies: options.providerBindingDependencies,
+    })
+    appendResolvedProviderEvent({
+      db: options.db,
+      jobId: job.id,
+      resolvedProvider: providerResolution.resolvedProvider,
+    })
     const result = abortController.signal.aborted
       ? canceledRunResult()
       : await (() => {
@@ -235,6 +319,7 @@ export async function runPersistedAgentJob(
               apiConsumerRunId: job.apiConsumerRunId,
               artifactBaseDir: job.artifactBaseDir,
               artifactManifestPath: job.artifactManifestPath,
+              providerBinding: providerResolution.providerBinding,
             }),
             observer,
           )
@@ -244,17 +329,23 @@ export async function runPersistedAgentJob(
             waitForAbort(abortController.signal),
           ])
         })()
-    const canceled = observer.isCancelRequested() || abortController.signal.aborted
-    const status = canceled ? "canceled" : result.status ?? "succeeded"
-    const errorCode = canceled ? "job_canceled" : result.errorCode ?? null
+    const canceled =
+      observer.isCancelRequested() || abortController.signal.aborted
+    const status = canceled ? "canceled" : (result.status ?? "succeeded")
+    const errorCode = canceled ? "job_canceled" : (result.errorCode ?? null)
     const exitCode = normalizeHeadlessExitCode({ status, errorCode })
     const completed = completeAgentJob(options.db, {
       jobId: job.id,
       status,
       exitCode,
       errorCode,
-      errorMessage: canceled ? "Job was canceled." : result.errorMessage ?? null,
-      result: result.result,
+      errorMessage: canceled
+        ? "Job was canceled."
+        : (result.errorMessage ?? null),
+      result: resultWithResolvedProvider(
+        result.result,
+        providerResolution.resolvedProvider,
+      ),
     })
     return {
       job: completed,
@@ -266,14 +357,22 @@ export async function runPersistedAgentJob(
     const status = abortController.signal.aborted ? "canceled" : "failed"
     const errorCode = abortController.signal.aborted
       ? "job_canceled"
-      : "runtime_error"
+      : error instanceof HeadlessProviderBindingError
+        ? error.code
+        : "runtime_error"
     const exitCode = normalizeHeadlessExitCode({ status, errorCode })
     const completed = completeAgentJob(options.db, {
       jobId: job.id,
       status,
       exitCode,
       errorCode,
-      errorMessage: abortController.signal.aborted ? "Job was canceled." : message,
+      errorMessage: abortController.signal.aborted
+        ? "Job was canceled."
+        : message,
+      result: resultWithResolvedProvider(
+        null,
+        resolvedProviderForError(error, job, providerResolution),
+      ),
     })
     return {
       job: completed,
@@ -281,6 +380,11 @@ export async function runPersistedAgentJob(
       exitCode,
     }
   } finally {
+    try {
+      providerResolution?.cleanup()
+    } catch {
+      // Terminal job state has already been recorded; cleanup must not mask it.
+    }
     options.signal?.removeEventListener("abort", abortFromExternalSignal)
   }
 }

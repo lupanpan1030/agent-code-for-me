@@ -10,7 +10,7 @@ import {
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Readable } from "node:stream"
-import { projects } from "../src/main/lib/db/schema"
+import { agentProviderProfiles, projects } from "../src/main/lib/db/schema"
 import { HEADLESS_CLI_MARKER } from "../src/main/lib/headless/cli-args"
 import {
   HEADLESS_STDIN_MAX_BYTES,
@@ -51,6 +51,25 @@ function seedCurrentProject(
       id: "project-1",
       name: "Current",
       path: cwd,
+    })
+    .run()
+}
+
+function seedProviderProfile(
+  db: ReturnType<typeof createAgentJobTestDb>,
+  input: { id: string; targets: string[] },
+) {
+  db.insert(agentProviderProfiles)
+    .values({
+      id: input.id,
+      name: input.id,
+      protocol: "openai-responses",
+      baseUrl: "https://provider.example.com/v1",
+      defaultModel: "provider-default-model",
+      authMode: "none",
+      encryptedToken: null,
+      targetRuntimesJson: JSON.stringify(input.targets),
+      capabilitiesJson: "{}",
     })
     .run()
 }
@@ -955,6 +974,99 @@ describe("headless CLI dispatcher", () => {
       error: {
         code: LOCAL_JOB_API_PROJECT_NOT_REGISTERED,
         cwd: unregisteredCwd,
+      },
+    })
+    expect(listAgentJobs(db, { source: "api" })).toHaveLength(0)
+  })
+
+  test("returns structured provider errors for API create-time provider validation", async () => {
+    const db = createAgentJobTestDb()
+    seedCurrentProject(db)
+    const stdout = writer()
+    const stderr = writer()
+    const code = await runHeadlessCliCommand({
+      db,
+      argv: [
+        "Locus",
+        HEADLESS_CLI_MARKER,
+        "api",
+        "runs",
+        "create",
+        "--request",
+        "-",
+        "--json",
+      ],
+      stdin: Readable.from([
+        JSON.stringify({
+          apiVersion: "locus.local-job.v1",
+          consumer: { id: "docs-workbench" },
+          project: { cwd: process.cwd() },
+          runtime: { id: "codex" },
+          mode: "plan",
+          prompt: { text: "Do not start" },
+          provider: { profileId: "missing-profile" },
+        }),
+      ]),
+      stdout: stdout.stream,
+      stderr: stderr.stream,
+      env: { LOCUS_HEADLESS_FAKE_RUNNER: "1" },
+    })
+
+    expect(code).toBe(2)
+    expect(stderr.value()).toBe("")
+    expect(JSON.parse(stdout.value())).toMatchObject({
+      apiVersion: "locus.local-job.v1",
+      error: {
+        code: "provider_profile_not_found",
+        source: "request-profile",
+        profileId: "missing-profile",
+      },
+    })
+    expect(listAgentJobs(db, { source: "api" })).toHaveLength(0)
+  })
+
+  test("returns invalid request for API create-time provider runtime mismatch", async () => {
+    const db = createAgentJobTestDb()
+    seedCurrentProject(db)
+    seedProviderProfile(db, { id: "claude-only", targets: ["claude"] })
+    const stdout = writer()
+    const stderr = writer()
+    const code = await runHeadlessCliCommand({
+      db,
+      argv: [
+        "Locus",
+        HEADLESS_CLI_MARKER,
+        "api",
+        "runs",
+        "create",
+        "--request",
+        "-",
+        "--json",
+      ],
+      stdin: Readable.from([
+        JSON.stringify({
+          apiVersion: "locus.local-job.v1",
+          consumer: { id: "docs-workbench" },
+          project: { cwd: process.cwd() },
+          runtime: { id: "codex" },
+          mode: "plan",
+          prompt: { text: "Do not start" },
+          provider: { profileId: "claude-only" },
+        }),
+      ]),
+      stdout: stdout.stream,
+      stderr: stderr.stream,
+      env: { LOCUS_HEADLESS_FAKE_RUNNER: "1" },
+    })
+
+    expect(code).toBe(2)
+    expect(stderr.value()).toBe("")
+    expect(JSON.parse(stdout.value())).toMatchObject({
+      apiVersion: "locus.local-job.v1",
+      error: {
+        code: "provider_profile_runtime_mismatch",
+        source: "request-profile",
+        profileId: "claude-only",
       },
     })
     expect(listAgentJobs(db, { source: "api" })).toHaveLength(0)

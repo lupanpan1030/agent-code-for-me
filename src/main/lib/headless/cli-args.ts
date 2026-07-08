@@ -1,5 +1,5 @@
-import { existsSync } from "fs"
-import { resolve } from "path"
+import { existsSync } from "node:fs"
+import { resolve } from "node:path"
 import {
   AGENT_JOB_MODES,
   AGENT_JOB_SOURCES,
@@ -7,14 +7,14 @@ import {
   type AgentJobSource,
 } from "../../../shared/agent-jobs"
 import {
+  type AgentRuntimeContractId,
   CONTRACT_RUNTIME_IDS,
   toAgentRuntimeId,
-  type AgentRuntimeContractId,
 } from "../../../shared/agent-runtime-capabilities"
 import {
   AGENT_SCHEDULE_STATUSES,
-  MAX_AGENT_SCHEDULE_INTERVAL_SECONDS,
   type AgentScheduleStatus,
+  MAX_AGENT_SCHEDULE_INTERVAL_SECONDS,
 } from "../../../shared/agent-schedules"
 
 export const HEADLESS_CLI_MARKER = "--locus-headless-cli"
@@ -53,6 +53,8 @@ export type HeadlessCliCommand =
       daemon: boolean
       follow: boolean
       output: HeadlessOutputFormat
+      providerProfileId: string | null
+      model: string | null
     }
   | {
       kind: "jobs-list"
@@ -146,6 +148,8 @@ export type HeadlessCliCommand =
       prompt: string
       intervalSeconds: number
       output: HeadlessOutputFormat
+      providerProfileId: string | null
+      model: string | null
     }
   | {
       kind:
@@ -207,7 +211,10 @@ function parseOutput(args: string[]): HeadlessOutputFormat {
   return output as HeadlessOutputFormat
 }
 
-function parseMode(value: string | null, fallback: AgentJobMode = "agent"): AgentJobMode {
+function parseMode(
+  value: string | null,
+  fallback: AgentJobMode = "agent",
+): AgentJobMode {
   const mode = value ?? fallback
   if (!(AGENT_JOB_MODES as readonly string[]).includes(mode)) {
     throw new Error("Unsupported --mode")
@@ -217,10 +224,48 @@ function parseMode(value: string | null, fallback: AgentJobMode = "agent"): Agen
 
 function parseRuntime(value: string | null): AgentRuntimeContractId {
   const runtime = toAgentRuntimeId(value ?? "claude-code")
-  if (!runtime || !(CONTRACT_RUNTIME_IDS as readonly string[]).includes(runtime)) {
+  if (
+    !runtime ||
+    !(CONTRACT_RUNTIME_IDS as readonly string[]).includes(runtime)
+  ) {
     throw new Error("Unsupported --runtime")
   }
   return runtime as AgentRuntimeContractId
+}
+
+function parseProviderProfileId(value: string | null): string | null {
+  if (!value) return null
+  const profileId = value.trim()
+  if (!/^[A-Za-z0-9._:-]{1,160}$/.test(profileId)) {
+    throw new Error(
+      "--provider-profile must be 1-160 chars: letters, numbers, '.', '_', ':', '-'",
+    )
+  }
+  return profileId
+}
+
+function hasControlCharacter(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index)
+    if (code <= 0x1f || code === 0x7f) return true
+  }
+  return false
+}
+
+function parseProviderModel(value: string | null): string | null {
+  if (!value) return null
+  const model = value.trim()
+  if (
+    model.length < 1 ||
+    model.length > 200 ||
+    hasControlCharacter(model) ||
+    !/^[A-Za-z0-9._:@/+,\-=]+$/.test(model)
+  ) {
+    throw new Error(
+      "--model must be 1-200 chars and contain only model-id safe characters",
+    )
+  }
+  return model
 }
 
 function parseJobSource(value: string | null): HeadlessJobSourceFilter {
@@ -261,7 +306,8 @@ function parseNonNegativeInteger(
   name: string,
 ): number {
   const raw = value ?? String(fallback)
-  if (!/^\d+$/.test(raw)) throw new Error(`${name} must be a non-negative integer`)
+  if (!/^\d+$/.test(raw))
+    throw new Error(`${name} must be a non-negative integer`)
   const parsed = Number(raw)
   if (!Number.isSafeInteger(parsed) || parsed < 0) {
     throw new Error(`${name} must be a non-negative integer`)
@@ -286,13 +332,16 @@ function rejectSecretFlags(args: string[]): void {
     "--refresh-token",
   ]
   const flag = args.find((arg) =>
-    forbidden.some((forbiddenFlag) =>
-      arg === forbiddenFlag || arg.startsWith(`${forbiddenFlag}=`),
+    forbidden.some(
+      (forbiddenFlag) =>
+        arg === forbiddenFlag || arg.startsWith(`${forbiddenFlag}=`),
     ),
   )
   if (flag) {
     const safeFlag = flag.split("=", 1)[0] || "--secret"
-    throw new Error(`${safeFlag} is not accepted. Use stored provider credentials.`)
+    throw new Error(
+      `${safeFlag} is not accepted. Use stored provider credentials.`,
+    )
   }
 }
 
@@ -310,7 +359,9 @@ function sanitizeCliArgForError(arg: string): string {
   if (equalsIndex > 0) {
     const flag = arg.slice(0, equalsIndex)
     if (
-      /--?(api[-_]?key|token|auth[-_]?token|access[-_]?token|refresh[-_]?token|authorization|password|secret)$/i.test(flag)
+      /--?(api[-_]?key|token|auth[-_]?token|access[-_]?token|refresh[-_]?token|authorization|password|secret)$/i.test(
+        flag,
+      )
     ) {
       return `${flag}=<redacted>`
     }
@@ -330,7 +381,9 @@ function includesCliValue<const T extends readonly string[]>(
   values: T,
   value: string | undefined,
 ): value is T[number] {
-  return typeof value === "string" && (values as readonly string[]).includes(value)
+  return (
+    typeof value === "string" && (values as readonly string[]).includes(value)
+  )
 }
 
 function availableValues(values: readonly string[]): string {
@@ -367,7 +420,12 @@ export function parseHeadlessCliArgv(argv = process.argv): ParsedHeadlessCli {
   try {
     rejectSecretFlags(args)
     const command = args.shift()
-    if (!command || command === "help" || command === "--help" || command === "-h") {
+    if (
+      !command ||
+      command === "help" ||
+      command === "--help" ||
+      command === "-h"
+    ) {
       return { ok: true, command: { kind: "help", output: "text" } }
     }
 
@@ -386,6 +444,10 @@ export function parseHeadlessCliArgv(argv = process.argv): ParsedHeadlessCli {
       const cwd = parseCwd(takeOption(args, "--cwd"))
       const runtime = parseRuntime(takeOption(args, "--runtime"))
       const mode = parseMode(takeOption(args, "--mode"))
+      const providerProfileId = parseProviderProfileId(
+        takeOption(args, "--provider-profile"),
+      )
+      const model = parseProviderModel(takeOption(args, "--model"))
       const prompt = takeOption(args, "--prompt") ?? ""
       if (follow && !daemon) {
         throw new Error("--follow can only be used with --daemon")
@@ -408,6 +470,8 @@ export function parseHeadlessCliArgv(argv = process.argv): ParsedHeadlessCli {
           daemon,
           follow,
           output,
+          providerProfileId,
+          model,
         },
       }
     }
@@ -432,7 +496,10 @@ export function parseHeadlessCliArgv(argv = process.argv): ParsedHeadlessCli {
         return { ok: true, command: { kind: "jobs-show", jobId, output } }
       }
       if (subcommand === "logs") {
-        return { ok: true, command: { kind: "jobs-logs", jobId, follow, output } }
+        return {
+          ok: true,
+          command: { kind: "jobs-logs", jobId, follow, output },
+        }
       }
       if (subcommand === "cancel") {
         return { ok: true, command: { kind: "jobs-cancel", jobId, output } }
@@ -571,7 +638,9 @@ export function parseHeadlessCliArgv(argv = process.argv): ParsedHeadlessCli {
         takeFlag(args, "--json")
         const jobId = args.shift()
         if (!jobId) {
-          throw new Error(`locus api runs ${subcommand ?? ""} requires a job id`)
+          throw new Error(
+            `locus api runs ${subcommand ?? ""} requires a job id`,
+          )
         }
         if (args.length > 0) {
           throw new Error(unexpectedArgumentsMessage(args))
@@ -654,6 +723,10 @@ export function parseHeadlessCliArgv(argv = process.argv): ParsedHeadlessCli {
         const cwd = parseCwd(takeOption(args, "--cwd"))
         const runtime = parseRuntime(takeOption(args, "--runtime"))
         const mode = parseMode(takeOption(args, "--mode"), "plan")
+        const providerProfileId = parseProviderProfileId(
+          takeOption(args, "--provider-profile"),
+        )
+        const model = parseProviderModel(takeOption(args, "--model"))
         const name = takeOption(args, "--name") ?? ""
         const prompt = takeOption(args, "--prompt") ?? ""
         const intervalSeconds = parsePositiveInteger(
@@ -662,7 +735,8 @@ export function parseHeadlessCliArgv(argv = process.argv): ParsedHeadlessCli {
           "--interval-seconds",
           MAX_AGENT_SCHEDULE_INTERVAL_SECONDS,
         )
-        if (!name.trim()) throw new Error("locus schedules create requires --name")
+        if (!name.trim())
+          throw new Error("locus schedules create requires --name")
         if (!prompt.trim()) {
           throw new Error("locus schedules create requires --prompt")
         }
@@ -680,6 +754,8 @@ export function parseHeadlessCliArgv(argv = process.argv): ParsedHeadlessCli {
             prompt,
             intervalSeconds,
             output,
+            providerProfileId,
+            model,
           },
         }
       }
@@ -692,7 +768,9 @@ export function parseHeadlessCliArgv(argv = process.argv): ParsedHeadlessCli {
       ) {
         const scheduleId = args.shift()
         if (!scheduleId) {
-          throw new Error(`locus schedules ${subcommand} requires a schedule id`)
+          throw new Error(
+            `locus schedules ${subcommand} requires a schedule id`,
+          )
         }
         if (args.length > 0) {
           throw new Error(unexpectedArgumentsMessage(args))

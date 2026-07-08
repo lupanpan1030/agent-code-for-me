@@ -1,8 +1,8 @@
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs"
-import { join } from "node:path"
-import { tmpdir } from "node:os"
 import { describe, expect, test } from "bun:test"
-import { projects } from "../src/main/lib/db/schema"
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { agentProviderProfiles, projects } from "../src/main/lib/db/schema"
 import { listAgentJobs } from "../src/main/lib/headless/job-store"
 import {
   createAgentSchedule,
@@ -16,11 +16,9 @@ import {
 } from "../src/main/lib/headless/schedules"
 import { createAgentJobTestDb } from "./helpers/agent-job-test-db"
 
-function withTempProject<T>(callback: (paths: {
-  root: string
-  projectPath: string
-  cwd: string
-}) => T): T {
+function withTempProject<T>(
+  callback: (paths: { root: string; projectPath: string; cwd: string }) => T,
+): T {
   const root = mkdtempSync(join(tmpdir(), "locus-schedules-"))
   const projectPath = join(root, "project")
   const cwd = join(projectPath, "workspace")
@@ -32,12 +30,33 @@ function withTempProject<T>(callback: (paths: {
   }
 }
 
-function seedProject(db: ReturnType<typeof createAgentJobTestDb>, path: string) {
+function seedProject(
+  db: ReturnType<typeof createAgentJobTestDb>,
+  path: string,
+) {
   db.insert(projects)
     .values({
       id: "project-1",
       name: "Project",
       path,
+    })
+    .run()
+}
+
+function seedProviderProfile(
+  db: ReturnType<typeof createAgentJobTestDb>,
+  id = "codex-main",
+) {
+  db.insert(agentProviderProfiles)
+    .values({
+      id,
+      name: "Codex Main",
+      protocol: "openai-responses",
+      baseUrl: "https://provider.example.com/v1",
+      defaultModel: "gpt-5.3-codex",
+      authMode: "none",
+      targetRuntimesJson: JSON.stringify(["codex"]),
+      capabilitiesJson: "{}",
     })
     .run()
 }
@@ -65,9 +84,7 @@ describe("headless schedules", () => {
       expect(schedule.projectId).toBe("project-1")
       expect(schedule.promptPreview).not.toContain(secret)
       expect(schedule.inputJson).not.toContain(secret)
-      expect(schedule.nextRunAt?.toISOString()).toBe(
-        "2026-06-03T01:01:00.000Z",
-      )
+      expect(schedule.nextRunAt?.toISOString()).toBe("2026-06-03T01:01:00.000Z")
       expect(listAgentSchedules(db)).toHaveLength(1)
     })
   })
@@ -109,6 +126,7 @@ describe("headless schedules", () => {
     withTempProject(({ projectPath, cwd }) => {
       const db = createAgentJobTestDb()
       seedProject(db, projectPath)
+      seedProviderProfile(db)
       const schedule = createAgentSchedule(db, {
         name: "Manual",
         runtime: "codex",
@@ -116,6 +134,8 @@ describe("headless schedules", () => {
         cwd,
         prompt: "Inspect",
         intervalSeconds: 300,
+        providerProfileId: "codex-main",
+        modelOverride: "gpt-5.4",
         nextRunAt: new Date("2026-06-03T02:00:00.000Z"),
         now: new Date("2026-06-03T01:00:00.000Z"),
       })
@@ -129,6 +149,10 @@ describe("headless schedules", () => {
       expect(fired.job.source).toBe("schedule")
       expect(fired.job.status).toBe("queued")
       expect(fired.job.projectId).toBe("project-1")
+      expect(fired.schedule.providerProfileId).toBe("codex-main")
+      expect(fired.schedule.modelOverride).toBe("gpt-5.4")
+      expect(fired.job.providerProfileId).toBe("codex-main")
+      expect(fired.job.modelOverride).toBe("gpt-5.4")
       expect(fired.run.trigger).toBe("manual")
       expect(fired.schedule.lastJobId).toBe(fired.job.id)
       expect(fired.schedule.nextRunAt?.toISOString()).toBe(

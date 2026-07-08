@@ -43,6 +43,8 @@ export type CreateAgentJobInput = {
   apiConsumerRunId?: string | null
   artifactBaseDir?: string | null
   artifactManifestPath?: string | null
+  providerProfileId?: string | null
+  modelOverride?: string | null
   createdByVersion?: string | null
 }
 
@@ -303,6 +305,12 @@ export function createAgentJob(
         : null,
       artifactManifestPath: input.artifactManifestPath
         ? redactSecretText(input.artifactManifestPath)
+        : null,
+      providerProfileId: input.providerProfileId
+        ? redactSecretText(input.providerProfileId)
+        : null,
+      modelOverride: input.modelOverride
+        ? redactSecretText(input.modelOverride)
         : null,
       createdByVersion: input.createdByVersion ?? null,
       createdAt: now,
@@ -696,6 +704,8 @@ export function retryAgentJob(
           ? options.artifactBaseDir
           : job.artifactBaseDir,
       artifactManifestPath: options.artifactManifestPath ?? null,
+      providerProfileId: job.providerProfileId,
+      modelOverride: job.modelOverride,
       createdAt: now,
       createdByVersion: job.createdByVersion,
     })

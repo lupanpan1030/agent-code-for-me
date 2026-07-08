@@ -17,6 +17,8 @@ export type SerializedAgentJob = {
   apiConsumerRunId: string | null
   artifactBaseDir: string | null
   artifactManifestPath: string | null
+  providerProfileId: string | null
+  modelOverride: string | null
   createdAt: string | null
   startedAt: string | null
   finishedAt: string | null
@@ -48,6 +50,8 @@ export type SerializedAgentSchedule = {
   mode: string
   cwd: string
   projectId: string | null
+  providerProfileId: string | null
+  modelOverride: string | null
   promptPreview: string | null
   intervalSeconds: number
   timezone: string
@@ -59,7 +63,9 @@ export type SerializedAgentSchedule = {
   disabledAt: string | null
 }
 
-function toIso(value: Date | string | number | null | undefined): string | null {
+function toIso(
+  value: Date | string | number | null | undefined,
+): string | null {
   if (!value) return null
   const date = value instanceof Date ? value : new Date(value)
   if (Number.isNaN(date.getTime())) return null
@@ -93,6 +99,8 @@ export function serializeAgentJob(job: AgentJob): SerializedAgentJob {
     apiConsumerRunId: job.apiConsumerRunId,
     artifactBaseDir: job.artifactBaseDir,
     artifactManifestPath: job.artifactManifestPath,
+    providerProfileId: job.providerProfileId,
+    modelOverride: job.modelOverride,
     createdAt: toIso(job.createdAt),
     startedAt: toIso(job.startedAt),
     finishedAt: toIso(job.finishedAt),
@@ -132,6 +140,8 @@ export function serializeAgentSchedule(
     mode: schedule.mode,
     cwd: schedule.cwd,
     projectId: schedule.projectId,
+    providerProfileId: schedule.providerProfileId,
+    modelOverride: schedule.modelOverride,
     promptPreview: schedule.promptPreview,
     intervalSeconds: schedule.intervalSeconds,
     timezone: schedule.timezone,

@@ -169,6 +169,52 @@ describe("headless runtime adapters", () => {
     }
   })
 
+  test("Claude provider profile runs use gateway auth without app token injection", async () => {
+    let queriedAppAccount = false
+    const providerRequest = request({
+      providerBinding: {
+        model: "claude-sonnet-4-5",
+        modelSource: "provider-profile:claude-main",
+        providerProfileId: "claude-main",
+        providerProfileName: "Claude Main",
+        gatewayEndpoint:
+          "http://127.0.0.1:1234/profile/claude-main/anthropic/v1",
+        gatewayToken: "gateway-token",
+        authMode: "provider-profile",
+      },
+    })
+    const args = __testClaudeCodeHeadless.buildClaudeArgs(providerRequest)
+    expect(
+      args.slice(args.indexOf("--model"), args.indexOf("--model") + 2),
+    ).toEqual(["--model", "claude-sonnet-4-5"])
+
+    const env = await __testClaudeCodeHeadless.buildClaudeRuntimeEnv({
+      request: providerRequest,
+      dependencies: {
+        buildEnv: (options) => ({
+          PATH: "/usr/bin",
+          CLAUDE_CODE_OAUTH_TOKEN: "stale-env-token",
+          ...(options?.customEnv ?? {}),
+        }),
+        hasAnyAccount: () => {
+          queriedAppAccount = true
+          return true
+        },
+        getValidCredential: async () => ({ accessToken: "app-store-token" }),
+        getClaudeConfigDir: () => "/tmp/locus-test-home/.claude",
+        warn: () => {},
+      },
+    })
+
+    expect(queriedAppAccount).toBe(false)
+    expect(env.ANTHROPIC_BASE_URL).toBe(
+      "http://127.0.0.1:1234/profile/claude-main/anthropic/v1",
+    )
+    expect(env.ANTHROPIC_AUTH_TOKEN).toBe("gateway-token")
+    expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined()
+    expect(env.LOCUS_HEADLESS_JOB_ID).toBe("job_123")
+  })
+
   test("Claude headless env falls back to CLI login when no app account exists", async () => {
     const warnings: string[] = []
     const env = await __testClaudeCodeHeadless.buildClaudeRuntimeEnv({
@@ -316,5 +362,45 @@ describe("headless runtime adapters", () => {
     expect(env.CODEX_API_KEY).toBeUndefined()
     expect(env.GITHUB_TOKEN).toBeUndefined()
     expect(env.ANTHROPIC_AUTH_TOKEN).toBeUndefined()
+  })
+
+  test("Codex provider profile runs use gateway env and model provider args", () => {
+    const providerRequest = request({
+      runtime: "codex",
+      providerBinding: {
+        model: "gpt-5.3-codex",
+        modelSource: "provider-profile:codex-main",
+        providerProfileId: "codex-main",
+        providerProfileName: "Codex Main",
+        gatewayEndpoint:
+          "http://127.0.0.1:1234/profile/codex-main/responses/v1",
+        gatewayToken: "gateway-token",
+        authMode: "provider-profile",
+      },
+    })
+    const args = __testCodexHeadless.buildCodexArgs(providerRequest)
+    expect(args).toContain('model_provider="locus_profile"')
+    expect(args).toContain(
+      'model_providers.locus_profile.env_key="LOCUS_CODEX_PROVIDER_GATEWAY_TOKEN"',
+    )
+    expect(args.join("\n")).toContain("LOCUS_CODEX_PROVIDER_GATEWAY_TOKEN")
+    expect(args.join("\n")).not.toContain("gateway-token")
+    expect(args.slice(args.indexOf("-m"), args.indexOf("-m") + 2)).toEqual([
+      "-m",
+      "gpt-5.3-codex",
+    ])
+
+    const env = __testCodexHeadless.buildCodexEnv(
+      providerRequest,
+      {
+        PATH: "/usr/bin",
+        CODEX_API_KEY: "stale-codex-key",
+      },
+      {},
+    )
+
+    expect(env.LOCUS_CODEX_PROVIDER_GATEWAY_TOKEN).toBe("gateway-token")
+    expect(env.CODEX_API_KEY).toBeUndefined()
+    expect(env.LOCUS_HEADLESS_JOB_ID).toBe("job_123")
   })
 })

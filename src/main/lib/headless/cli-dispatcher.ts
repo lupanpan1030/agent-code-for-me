@@ -66,6 +66,12 @@ import {
   writeLocalJobApiInitialArtifacts,
 } from "./local-job-api"
 import {
+  assertHeadlessProviderSelectionUsableAtCreate,
+  HeadlessProviderBindingError,
+  isInvalidHeadlessProviderBindingRequestCode,
+  isUnavailableHeadlessProviderBindingCode,
+} from "./provider-binding"
+import {
   createAgentSchedule,
   deleteAgentSchedule,
   findRegisteredProjectForCwd,
@@ -266,15 +272,31 @@ async function runCommand(
     )
   }
 
-  const job = createAgentJob(options.db, {
-    source: command.daemon ? "daemon" : "cli",
-    runtime: command.runtime,
-    mode: command.mode,
-    cwd: command.cwd,
-    prompt,
-    projectId: project.id,
-    createdByVersion: options.appVersion ?? null,
-  })
+  let job: AgentJob
+  try {
+    assertHeadlessProviderSelectionUsableAtCreate({
+      db: options.db,
+      runtime: command.runtime,
+      providerProfileId: command.providerProfileId,
+    })
+    job = createAgentJob(options.db, {
+      source: command.daemon ? "daemon" : "cli",
+      runtime: command.runtime,
+      mode: command.mode,
+      cwd: command.cwd,
+      prompt,
+      projectId: project.id,
+      providerProfileId: command.providerProfileId,
+      modelOverride: command.model,
+      createdByVersion: options.appVersion ?? null,
+    })
+  } catch (error) {
+    return commandError(
+      options.stderr,
+      error instanceof Error ? error.message : String(error),
+      HEADLESS_EXIT_CODES.invalidArguments,
+    )
+  }
 
   if (command.daemon) {
     if (command.follow) {
@@ -452,7 +474,7 @@ async function runPreparedLocalJobApiJob(
   writeJson(options.stdout, {
     apiVersion: LOCAL_JOB_API_VERSION,
     job: toLocalJobApiJobEnvelope(result.job).job,
-    result: toLocalJobApiResultEnvelope(result.job, artifacts),
+    result: toLocalJobApiResultEnvelope(result.job, artifacts, finalEvents),
   })
   return result
 }
@@ -476,6 +498,10 @@ async function apiRunsCreateCommand(
     if (isLocalJobApiProjectNotRegisteredError(error)) {
       writeJson(options.stdout, toLocalJobApiProjectErrorEnvelope(error))
       return HEADLESS_EXIT_CODES.invalidCwd
+    }
+    if (error instanceof HeadlessProviderBindingError) {
+      writeJson(options.stdout, toLocalJobApiProviderErrorEnvelope(error))
+      return localJobApiCreateErrorCode(error)
     }
     const message = error instanceof Error ? error.message : String(error)
     return commandError(
@@ -686,8 +712,30 @@ function toLocalJobApiProjectErrorEnvelope(error: ProjectRegistrationError) {
   }
 }
 
+function toLocalJobApiProviderErrorEnvelope(
+  error: HeadlessProviderBindingError,
+) {
+  return {
+    apiVersion: LOCAL_JOB_API_VERSION,
+    error: {
+      code: error.code,
+      message: error.message,
+      source: error.source,
+      profileId: error.profileId,
+    },
+  }
+}
+
 function localJobApiCreateErrorCode(error: unknown): number {
   if (isProjectRegistrationError(error)) return HEADLESS_EXIT_CODES.invalidCwd
+  if (error instanceof HeadlessProviderBindingError) {
+    if (isInvalidHeadlessProviderBindingRequestCode(error.code)) {
+      return HEADLESS_EXIT_CODES.invalidArguments
+    }
+    if (isUnavailableHeadlessProviderBindingCode(error.code)) {
+      return HEADLESS_EXIT_CODES.missingCredentials
+    }
+  }
   const message = error instanceof Error ? error.message : String(error)
   if (/unsupported/i.test(message)) {
     return HEADLESS_EXIT_CODES.unsupportedRuntimeOrMode
@@ -722,7 +770,14 @@ function apiRunsResultCommand(
 ): number {
   try {
     const job = getLocalJobApiJobOrThrow(options.db, command.jobId)
-    writeJson(options.stdout, toLocalJobApiResultEnvelope(job))
+    writeJson(
+      options.stdout,
+      toLocalJobApiResultEnvelope(
+        job,
+        undefined,
+        listAgentJobEvents(options.db, job.id),
+      ),
+    )
     return HEADLESS_EXIT_CODES.success
   } catch (error) {
     return commandError(
@@ -851,6 +906,8 @@ function schedulesCreateCommand(
       mode: command.mode,
       prompt: command.prompt,
       intervalSeconds: command.intervalSeconds,
+      providerProfileId: command.providerProfileId,
+      modelOverride: command.model,
       now: options.now,
     })
     outputSchedule(options.stdout, command.output, schedule)
@@ -975,12 +1032,12 @@ function helpCommand(options: RunHeadlessCliCommandOptions): number {
     options.stdout,
     [
       "Usage:",
-      "  locus run --runtime claude-code|codex --prompt <text> [--cwd <path>] [--mode plan|agent] [--output text|json|stream-json]",
+      "  locus run --runtime claude-code|codex --prompt <text> [--cwd <path>] [--mode plan|agent] [--provider-profile <id>] [--model <model>] [--output text|json|stream-json]",
       "  locus run --stdin [--prompt <prefix>]",
       "  locus run --daemon [--follow] --prompt <text>",
       "  locus daemon run [--concurrency <n>] [--poll-interval-ms <ms>]",
       "  locus schedules list [--status enabled|paused|disabled] [--include-disabled]",
-      "  locus schedules create --name <name> --prompt <text> --interval-seconds <n> [--cwd <path>] [--runtime claude-code|codex] [--mode plan|agent]",
+      "  locus schedules create --name <name> --prompt <text> --interval-seconds <n> [--cwd <path>] [--runtime claude-code|codex] [--mode plan|agent] [--provider-profile <id>] [--model <model>]",
       "  locus schedules pause|resume|delete|run <id>",
       "  locus api runtimes list --json [--no-probe]",
       "  locus api projects register --cwd <path> [--name <name>] --json",
@@ -1011,7 +1068,10 @@ export async function runHeadlessCliCommand(
     return commandError(options.stderr, parsed.message, parsed.code)
   }
 
-  if (parsed.command.kind !== "daemon-run" && parsed.command.kind !== "version") {
+  if (
+    parsed.command.kind !== "daemon-run" &&
+    parsed.command.kind !== "version"
+  ) {
     recoverStaleAgentJobs(options.db, options.now)
   }
 

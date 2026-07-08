@@ -263,6 +263,64 @@ describe("headless Codex app-server adapter", () => {
     expect(desktopRequest?.attachments).toEqual([])
   })
 
+  test("passes provider gateway token into the desktop adapter factory without putting it on the desktop request", async () => {
+    const { observer: runtimeObserver } = observer()
+    let factoryProviderGatewayToken: string | null | undefined
+    let desktopRequest: DesktopRunRequest | null = null
+    const runner = createCodexAppServerHeadlessTaskRunner({
+      createDesktopAdapter: (options) => {
+        factoryProviderGatewayToken = options?.providerGatewayToken
+        return {
+          metadata: {
+            runtimeId: "codex",
+            source: "codex-app-server",
+            label: "Codex app-server adapter",
+            temporaryFallback: false,
+          },
+          async run(request) {
+            desktopRequest = request
+            return {
+              status: "succeeded",
+              sessionId: "session-provider",
+            }
+          },
+        }
+      },
+    })
+
+    const result = await runner(
+      request({
+        executionProfile: "policy-grant",
+        policyGrant: {
+          scopes: ["workspace:file-write"],
+        },
+        providerBinding: {
+          model: "gpt-5.3-codex",
+          modelSource: "provider-profile:codex-main",
+          providerProfileId: "codex-main",
+          providerProfileName: "Codex Main",
+          gatewayEndpoint:
+            "http://127.0.0.1:1234/profile/codex-main/responses/v1",
+          gatewayToken: "gateway-token",
+          authMode: "provider-profile",
+        },
+      }),
+      runtimeObserver,
+    )
+
+    expect(result).toMatchObject({
+      status: "succeeded",
+      sessionId: "session-provider",
+    })
+    expect(factoryProviderGatewayToken).toBe("gateway-token")
+    expect(desktopRequest?.providerBinding).toMatchObject({
+      providerProfileId: "codex-main",
+      gatewayEndpoint: "http://127.0.0.1:1234/profile/codex-main/responses/v1",
+      authMode: "provider-profile",
+    })
+    expect(JSON.stringify(desktopRequest)).not.toContain("gateway-token")
+  })
+
   test("fails app-server interaction requests closed without waiting for a headless UI bridge", async () => {
     const transport = new FakeCodexAppServerTransport()
     const { observer: runtimeObserver } = observer()

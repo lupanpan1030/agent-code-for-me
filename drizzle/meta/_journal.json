@@ -141,6 +141,13 @@
       "when": 1782496537258,
       "tag": "0019_breezy_the_hunter",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1783545138134,
+      "tag": "0020_chubby_molly_hayes",
+      "breakpoints": true
     }
   ]
 }

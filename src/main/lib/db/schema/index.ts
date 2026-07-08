@@ -315,6 +315,8 @@ export const agentJobs = sqliteTable(
     apiConsumerRunId: text("api_consumer_run_id"),
     artifactBaseDir: text("artifact_base_dir"),
     artifactManifestPath: text("artifact_manifest_path"),
+    providerProfileId: text("provider_profile_id"),
+    modelOverride: text("model_override"),
     createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(
       () => new Date(),
     ),
@@ -386,6 +388,8 @@ export const agentSchedules = sqliteTable(
     projectId: text("project_id").references(() => projects.id, {
       onDelete: "set null",
     }),
+    providerProfileId: text("provider_profile_id"),
+    modelOverride: text("model_override"),
     promptPreview: text("prompt_preview"),
     inputJson: text("input_json").notNull().default("{}"),
     intervalSeconds: integer("interval_seconds").notNull(),

@@ -169,7 +169,7 @@ Response shape:
 ```json
 {
   "apiVersion": "locus.local-job.v1",
-  "features": ["runtime-readiness"],
+  "features": ["runtime-readiness", "provider-binding"],
   "runtimes": [
     {
       "runtimeId": "codex",
@@ -222,6 +222,21 @@ Execution profiles:
   admission/audit metadata in v1. The declared scope strings are not yet a
   stable per-scope app-server enforcement boundary.
 
+Provider selection:
+
+- omit `provider`: Locus first checks the headless default profile for the
+  runtime (`claude-main` for Claude Code, `codex-main` for Codex). If no
+  default profile is configured, the runtime uses its native credentials.
+- set `provider.profileId`: Locus resolves that stored provider profile in the
+  main process, creates a scoped local gateway token for this run, and fails
+  closed if the profile is missing, targets another runtime, or cannot decrypt.
+- set `provider.model`: passes a model override. When used without
+  `provider.profileId`, it selects runtime-managed credentials and bypasses
+  headless defaults.
+
+Consumers must pass only provider references. Never send provider tokens,
+headers, or environment variables in `provider`, `input`, or artifacts.
+
 ## Create Request
 
 Example for a generic local package:
@@ -244,6 +259,10 @@ Example for a generic local package:
   "mode": "plan",
   "prompt": {
     "text": "Review this local package and produce a readiness note."
+  },
+  "provider": {
+    "profileId": "codex-main",
+    "model": "gpt-5.3-codex"
   },
   "input": {
     "contract": "example.local-package.v1",
@@ -285,6 +304,8 @@ cat request.json | locus api runs create --request - --json
 | `runtime.policyGrant.canDecideAutomatically` | no | Optional boolean. If false for `policy-grant`, Locus fails closed because no visible user is available. |
 | `mode` | yes | `plan` or `agent`. |
 | `prompt.text` | yes | Prompt text. Max size is 256 KiB. |
+| `provider.profileId` | no | Stored provider profile ID. The request carries only the reference; Locus resolves credentials in the main process. |
+| `provider.model` | no | Model override. Without `provider.profileId`, this uses runtime-managed credentials and does not consult defaults. |
 | `input` | no | Consumer-owned structured metadata. Must not contain secrets. |
 | `artifacts.baseDir` | no | Absolute directory for Locus run metadata. Must be inside `project.cwd`. |
 | `artifacts.writePolicy` | no | `metadata-only` or `proposal-only`. Defaults to `metadata-only`. |
@@ -365,8 +386,15 @@ Use `final/` only for downstream/user-approved material.
       "runExternalId": "package-review-001"
     },
     "artifactManifestPath": "/.../.locus/runs/mpzcxv3xp2ji1fl2/artifacts.json",
+    "providerProfileId": "codex-main",
+    "modelOverride": "gpt-5.3-codex",
     "artifacts": [],
     "diagnostics": [],
+    "resolvedProvider": {
+      "source": "request-profile",
+      "profileId": "codex-main",
+      "model": "gpt-5.3-codex"
+    },
     "result": {}
   }
 }
@@ -466,6 +494,11 @@ Response:
     }
   ],
   "diagnostics": [],
+  "resolvedProvider": {
+    "source": "request-profile",
+    "profileId": "codex-main",
+    "model": "gpt-5.3-codex"
+  },
   "result": {
     "finalMessage": "..."
   }
@@ -473,6 +506,18 @@ Response:
 ```
 
 Read `diagnostics` before treating a non-success status as user-visible output.
+`resolvedProvider` is authoritative only on terminal result envelopes. In-flight
+status polling may show provisional provider fields while Locus is still
+resolving defaults or minting scoped gateway tokens.
+
+Provider binding errors are fail-closed. If an explicitly selected profile or a
+configured headless default profile is unavailable, the job fails with a
+structured diagnostic such as `provider_profile_not_found`,
+`provider_profile_runtime_mismatch`, or `provider_profile_unavailable`. Locus
+does not silently fall back to native runtime credentials in those cases.
+`provider_profile_not_found` and `provider_profile_runtime_mismatch` are invalid
+request errors and exit `2`; `provider_profile_unavailable` is a credential
+availability error and exits `4`.
 
 ## Cancel
 
@@ -534,6 +579,8 @@ Do not put these in the request:
 
 Locus resolves runtime credentials through its own main-process provider and
 runtime setup paths. The consumer sends domain context, not provider secrets.
+For provider-backed runs, send `provider.profileId` and optionally
+`provider.model`; Locus owns the scoped gateway token lifecycle.
 
 Secret-like keys or values are rejected before provider work starts.
 

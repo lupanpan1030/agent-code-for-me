@@ -1,4 +1,3 @@
-import type { AgentJob, AgentJobEvent } from "../db/schema"
 import type {
   AgentJobEventType,
   AgentJobMode,
@@ -6,12 +5,17 @@ import type {
   AgentJobStatus,
 } from "../../../shared/agent-jobs"
 import {
-  getAgentRunRequiredCapabilityIds,
   type AgentRuntimeContractId,
+  getAgentRunRequiredCapabilityIds,
 } from "../../../shared/agent-runtime-capabilities"
+import {
+  type NonDesktopInteractiveRequirement,
+  type NonDesktopPolicyGrant,
+  resolveNonDesktopPermissionPolicy,
+} from "../agent-runtime/permission-policy"
 import type {
-  AgentRuntimePermissionPolicySummary,
   AgentRuntimeExecutionProfile,
+  AgentRuntimePermissionPolicySummary,
   AgentRuntimePersistedObserver,
   AgentRuntimeProviderReference,
   AgentRuntimeRunContextBase,
@@ -19,11 +23,7 @@ import type {
   AgentRuntimeRunRequestBase,
   AgentRuntimeRunResultBase,
 } from "../agent-runtime/run-contract"
-import {
-  resolveNonDesktopPermissionPolicy,
-  type NonDesktopInteractiveRequirement,
-  type NonDesktopPolicyGrant,
-} from "../agent-runtime/permission-policy"
+import type { AgentJob, AgentJobEvent } from "../db/schema"
 
 export type AgentRuntimeObserver = AgentRuntimePersistedObserver<
   AgentJobEventType,
@@ -51,11 +51,17 @@ export type AgentRuntimeRunContext = AgentRuntimeRunContextBase & {
   artifactManifestPath?: string | null
 }
 
+export type HeadlessAgentRuntimeProviderReference =
+  AgentRuntimeProviderReference & {
+    providerProfileName?: string | null
+    gatewayToken?: string | null
+  }
+
 export type AgentRuntimeRunRequest = AgentRuntimeRunRequestBase<
   AgentRuntimeRunIdentity,
   AgentRuntimeRunContext,
   AgentRuntimePermissionPolicySummary,
-  AgentRuntimeProviderReference | null
+  HeadlessAgentRuntimeProviderReference | null
 >
 
 export type AgentRuntimeRunResult = AgentRuntimeRunResultBase<
@@ -89,6 +95,7 @@ export type CreateAgentRuntimeRunRequestInput = {
   hasVisibleUserInteractionChannel?: boolean
   interactiveRequirements?: NonDesktopInteractiveRequirement[]
   policyGrant?: NonDesktopPolicyGrant | null
+  providerBinding?: HeadlessAgentRuntimeProviderReference | null
 }
 
 export function createHeadlessBatchPermissionSummary(input: {
@@ -153,12 +160,11 @@ export function createAgentRuntimeRunRequest(
       source: input.source,
       mode: input.mode,
       executionProfile,
-      hasVisibleUserInteractionChannel:
-        input.hasVisibleUserInteractionChannel,
+      hasVisibleUserInteractionChannel: input.hasVisibleUserInteractionChannel,
       interactiveRequirements: input.interactiveRequirements,
       policyGrant: input.policyGrant,
     }),
-    providerBinding: null,
+    providerBinding: input.providerBinding ?? null,
   }
 }
 

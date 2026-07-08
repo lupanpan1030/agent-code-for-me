@@ -69,18 +69,11 @@
       ]
     },
     "runtimeId": {
-      "enum": [
-        "claude-code",
-        "codex"
-      ]
+      "enum": ["claude-code", "codex"]
     },
     "runtimeIdInput": {
       "description": "`claude` is accepted in create requests and normalized to `claude-code` in persisted/envelope output.",
-      "enum": [
-        "claude-code",
-        "codex",
-        "claude"
-      ]
+      "enum": ["claude-code", "codex", "claude"]
     },
     "runtimeCapabilityId": {
       "enum": [
@@ -102,37 +95,19 @@
       ]
     },
     "runtimeCapabilityStatus": {
-      "enum": [
-        "supported",
-        "degraded",
-        "unsupported"
-      ]
+      "enum": ["supported", "degraded", "unsupported"]
     },
     "runtimeCapabilityScope": {
-      "enum": [
-        "runtime-neutral",
-        "runtime-specific",
-        "unavailable"
-      ]
+      "enum": ["runtime-neutral", "runtime-specific", "unavailable"]
     },
     "runtimeReadinessState": {
-      "enum": [
-        "ready",
-        "needs-auth",
-        "unavailable",
-        "unknown"
-      ]
+      "enum": ["ready", "needs-auth", "unavailable", "unknown"]
     },
     "discoveryFeature": {
-      "enum": [
-        "runtime-readiness"
-      ]
+      "enum": ["runtime-readiness", "provider-binding"]
     },
     "agentMode": {
-      "enum": [
-        "plan",
-        "agent"
-      ]
+      "enum": ["plan", "agent"]
     },
     "agentJobStatus": {
       "enum": [
@@ -145,10 +120,87 @@
       ]
     },
     "writePolicy": {
-      "enum": [
-        "metadata-only",
-        "proposal-only"
-      ]
+      "enum": ["metadata-only", "proposal-only"]
+    },
+    "executionProfile": {
+      "enum": ["batch", "policy-grant"]
+    },
+    "providerModelId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "pattern": "^[A-Za-z0-9._:@/+,=-]+$"
+    },
+    "providerSelection": {
+      "type": "object",
+      "description": "Optional provider selector. Only profile/model references are accepted; credentials and headers are rejected by runtime validation.",
+      "additionalProperties": false,
+      "properties": {
+        "profileId": {
+          "$ref": "#/$defs/boundedId160"
+        },
+        "model": {
+          "$ref": "#/$defs/providerModelId"
+        }
+      }
+    },
+    "normalizedProviderSelection": {
+      "type": "object",
+      "required": ["profileId", "model"],
+      "properties": {
+        "profileId": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/boundedId160"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "model": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/providerModelId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "resolvedProviderSource": {
+      "enum": ["request-profile", "default-profile", "native"]
+    },
+    "resolvedProvider": {
+      "type": "object",
+      "required": ["source", "profileId", "model"],
+      "properties": {
+        "source": {
+          "$ref": "#/$defs/resolvedProviderSource"
+        },
+        "profileId": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/boundedId160"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "model": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/providerModelId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
     },
     "eventType": {
       "enum": [
@@ -167,9 +219,7 @@
     },
     "consumer": {
       "type": "object",
-      "required": [
-        "id"
-      ],
+      "required": ["id"],
       "properties": {
         "id": {
           "$ref": "#/$defs/boundedId80"
@@ -188,10 +238,7 @@
     },
     "normalizedConsumer": {
       "type": "object",
-      "required": [
-        "id",
-        "runExternalId"
-      ],
+      "required": ["id", "runExternalId"],
       "properties": {
         "id": {
           "$ref": "#/$defs/boundedId80"
@@ -228,9 +275,7 @@
         },
         "project": {
           "type": "object",
-          "required": [
-            "cwd"
-          ],
+          "required": ["cwd"],
           "properties": {
             "cwd": {
               "$ref": "#/$defs/absoluteLocalPath"
@@ -249,9 +294,7 @@
         },
         "runtime": {
           "type": "object",
-          "required": [
-            "id"
-          ],
+          "required": ["id"],
           "properties": {
             "id": {
               "$ref": "#/$defs/runtimeIdInput"
@@ -263,6 +306,34 @@
               },
               "uniqueItems": true,
               "default": []
+            },
+            "executionProfile": {
+              "$ref": "#/$defs/executionProfile",
+              "default": "batch"
+            },
+            "policyGrant": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "required": ["scopes"],
+                  "properties": {
+                    "scopes": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/boundedId160"
+                      },
+                      "uniqueItems": true
+                    },
+                    "canDecideAutomatically": {
+                      "type": "boolean"
+                    }
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
             }
           }
         },
@@ -271,9 +342,7 @@
         },
         "prompt": {
           "type": "object",
-          "required": [
-            "text"
-          ],
+          "required": ["text"],
           "properties": {
             "text": {
               "type": "string",
@@ -281,6 +350,9 @@
               "maxLength": 262144
             }
           }
+        },
+        "provider": {
+          "$ref": "#/$defs/providerSelection"
         },
         "input": {
           "type": "object",
@@ -327,6 +399,7 @@
         "runtime",
         "mode",
         "prompt",
+        "provider",
         "input",
         "artifacts"
       ],
@@ -339,10 +412,7 @@
         },
         "project": {
           "type": "object",
-          "required": [
-            "cwd",
-            "projectId"
-          ],
+          "required": ["cwd", "projectId"],
           "properties": {
             "cwd": {
               "$ref": "#/$defs/absoluteLocalPath"
@@ -363,7 +433,9 @@
           "type": "object",
           "required": [
             "id",
-            "requiredCapabilities"
+            "requiredCapabilities",
+            "executionProfile",
+            "policyGrant"
           ],
           "properties": {
             "id": {
@@ -375,6 +447,32 @@
                 "$ref": "#/$defs/runtimeCapabilityId"
               },
               "uniqueItems": true
+            },
+            "executionProfile": {
+              "$ref": "#/$defs/executionProfile"
+            },
+            "policyGrant": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "required": ["scopes"],
+                  "properties": {
+                    "scopes": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/boundedId160"
+                      },
+                      "uniqueItems": true
+                    },
+                    "canDecideAutomatically": {
+                      "type": "boolean"
+                    }
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
             }
           }
         },
@@ -383,9 +481,7 @@
         },
         "prompt": {
           "type": "object",
-          "required": [
-            "text"
-          ],
+          "required": ["text"],
           "properties": {
             "text": {
               "type": "string",
@@ -397,12 +493,12 @@
         "input": {
           "type": "object"
         },
+        "provider": {
+          "$ref": "#/$defs/normalizedProviderSelection"
+        },
         "artifacts": {
           "type": "object",
-          "required": [
-            "baseDir",
-            "writePolicy"
-          ],
+          "required": ["baseDir", "writePolicy"],
           "properties": {
             "baseDir": {
               "oneOf": [
@@ -423,13 +519,7 @@
     },
     "artifact": {
       "type": "object",
-      "required": [
-        "role",
-        "path",
-        "sha256",
-        "contentType",
-        "sizeBytes"
-      ],
+      "required": ["role", "path", "sha256", "contentType", "sizeBytes"],
       "properties": {
         "role": {
           "type": "string",
@@ -505,10 +595,7 @@
     },
     "diagnostic": {
       "type": "object",
-      "required": [
-        "code",
-        "message"
-      ],
+      "required": ["code", "message"],
       "properties": {
         "code": {
           "type": "string",
@@ -563,10 +650,7 @@
           "oneOf": [
             {
               "type": "object",
-              "required": [
-                "kind",
-                "references"
-              ],
+              "required": ["kind", "references"],
               "properties": {
                 "kind": {
                   "enum": [
@@ -624,9 +708,7 @@
     },
     "runtimeReadiness": {
       "type": "object",
-      "required": [
-        "state"
-      ],
+      "required": ["state"],
       "properties": {
         "state": {
           "$ref": "#/$defs/runtimeReadinessState"
@@ -658,6 +740,8 @@
         "apiConsumerRunId",
         "artifactBaseDir",
         "artifactManifestPath",
+        "providerProfileId",
+        "modelOverride",
         "createdAt",
         "startedAt",
         "finishedAt",
@@ -691,14 +775,7 @@
           "minimum": 1
         },
         "source": {
-          "enum": [
-            "desktop",
-            "cli",
-            "api",
-            "daemon",
-            "schedule",
-            "protocol"
-          ]
+          "enum": ["desktop", "cli", "api", "daemon", "schedule", "protocol"]
         },
         "runtime": {
           "$ref": "#/$defs/runtimeId"
@@ -792,6 +869,26 @@
             }
           ]
         },
+        "providerProfileId": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/boundedId160"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "modelOverride": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/providerModelId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "createdAt": {
           "$ref": "#/$defs/dateTimeOrNull"
         },
@@ -873,10 +970,7 @@
     },
     "jobEnvelope": {
       "type": "object",
-      "required": [
-        "apiVersion",
-        "job"
-      ],
+      "required": ["apiVersion", "job"],
       "properties": {
         "apiVersion": {
           "$ref": "#/$defs/apiVersion"
@@ -888,11 +982,7 @@
     },
     "runtimeManifestEnvelope": {
       "type": "object",
-      "required": [
-        "apiVersion",
-        "features",
-        "runtimes"
-      ],
+      "required": ["apiVersion", "features", "runtimes"],
       "properties": {
         "apiVersion": {
           "$ref": "#/$defs/apiVersion"
@@ -955,6 +1045,7 @@
         "artifactManifestPath",
         "artifacts",
         "diagnostics",
+        "resolvedProvider",
         "result"
       ],
       "properties": {
@@ -1006,16 +1097,15 @@
             "$ref": "#/$defs/diagnostic"
           }
         },
+        "resolvedProvider": {
+          "$ref": "#/$defs/resolvedProvider"
+        },
         "result": true
       }
     },
     "createResponseEnvelope": {
       "type": "object",
-      "required": [
-        "apiVersion",
-        "job",
-        "result"
-      ],
+      "required": ["apiVersion", "job", "result"],
       "properties": {
         "apiVersion": {
           "$ref": "#/$defs/apiVersion"

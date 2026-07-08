@@ -10,7 +10,10 @@ import {
 
 export const LOCAL_JOB_API_VERSION = "locus.local-job.v1" as const
 
-export const LOCAL_JOB_API_DISCOVERY_FEATURES = ["runtime-readiness"] as const
+export const LOCAL_JOB_API_DISCOVERY_FEATURES = [
+  "runtime-readiness",
+  "provider-binding",
+] as const
 
 export type LocalJobApiDiscoveryFeature =
   (typeof LOCAL_JOB_API_DISCOVERY_FEATURES)[number]
@@ -37,6 +40,31 @@ export type LocalJobApiExecutionProfile =
 export type LocalJobApiPolicyGrant = {
   scopes: string[]
   canDecideAutomatically?: boolean
+}
+
+export type LocalJobApiProviderSelection = {
+  profileId?: string
+  model?: string
+}
+
+export type NormalizedLocalJobApiProviderSelection = {
+  profileId: string | null
+  model: string | null
+}
+
+export const LOCAL_JOB_API_RESOLVED_PROVIDER_SOURCES = [
+  "request-profile",
+  "default-profile",
+  "native",
+] as const
+
+export type LocalJobApiResolvedProviderSource =
+  (typeof LOCAL_JOB_API_RESOLVED_PROVIDER_SOURCES)[number]
+
+export type LocalJobApiResolvedProvider = {
+  source: LocalJobApiResolvedProviderSource
+  profileId?: string | null
+  model?: string | null
 }
 
 export const LOCAL_JOB_API_EVENT_TYPES = [
@@ -80,6 +108,7 @@ export type LocalJobApiCreateRequest = {
   prompt: {
     text: string
   }
+  provider?: LocalJobApiProviderSelection
   input?: Record<string, unknown>
   artifacts?: {
     baseDir?: string | null
@@ -104,6 +133,7 @@ export type NormalizedLocalJobApiCreateRequest = {
   prompt: {
     text: string
   }
+  provider: NormalizedLocalJobApiProviderSelection
   input: Record<string, unknown>
   artifacts: {
     baseDir: string | null
@@ -149,6 +179,7 @@ export type LocalJobApiResultEnvelope = {
     code: string
     message: string
   }>
+  resolvedProvider: LocalJobApiResolvedProvider
   result: unknown
 }
 
@@ -191,6 +222,8 @@ export type LocalJobApiValidationResult =
 const MAX_CONSUMER_ID_LENGTH = 80
 const MAX_EXTERNAL_ID_LENGTH = 160
 const MAX_POLICY_GRANT_SCOPE_LENGTH = 120
+const MAX_PROVIDER_PROFILE_ID_LENGTH = 160
+const MAX_PROVIDER_MODEL_LENGTH = 200
 const MAX_PROMPT_LENGTH = 256 * 1024
 const MAX_REQUEST_JSON_LENGTH = 1024 * 1024
 
@@ -230,6 +263,77 @@ function isBoundedId(value: string, maxLength: number): boolean {
     value.length <= maxLength &&
     /^[A-Za-z0-9._:-]+$/.test(value)
   )
+}
+
+function hasControlCharacter(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index)
+    if (code <= 0x1f || code === 0x7f) return true
+  }
+  return false
+}
+
+function isSafeProviderModel(value: string): boolean {
+  return (
+    value.length > 0 &&
+    value.length <= MAX_PROVIDER_MODEL_LENGTH &&
+    !hasControlCharacter(value) &&
+    /^[A-Za-z0-9._:@/+,\-=]+$/.test(value)
+  )
+}
+
+function normalizeProviderSelection(
+  value: unknown,
+  errors: string[],
+): NormalizedLocalJobApiProviderSelection {
+  if (value === undefined || value === null) {
+    return { profileId: null, model: null }
+  }
+  if (!isRecord(value)) {
+    errors.push("provider must be an object when provided")
+    return { profileId: null, model: null }
+  }
+
+  const allowedKeys = new Set(["profileId", "model"])
+  for (const key of Object.keys(value)) {
+    if (!allowedKeys.has(key)) {
+      errors.push(`provider.${key} is not accepted`)
+    }
+  }
+
+  let profileId: string | null = null
+  if (value.profileId !== undefined && value.profileId !== null) {
+    if (typeof value.profileId !== "string") {
+      errors.push("provider.profileId must be a string")
+    } else {
+      const normalized = value.profileId.trim()
+      if (!isBoundedId(normalized, MAX_PROVIDER_PROFILE_ID_LENGTH)) {
+        errors.push(
+          `provider.profileId must be 1-${MAX_PROVIDER_PROFILE_ID_LENGTH} chars: letters, numbers, '.', '_', ':', '-'`,
+        )
+      } else {
+        profileId = normalized
+      }
+    }
+  }
+
+  let model: string | null = null
+  if (value.model !== undefined && value.model !== null) {
+    if (typeof value.model !== "string") {
+      errors.push("provider.model must be a string")
+    } else {
+      const normalized = value.model.trim()
+      if (!isSafeProviderModel(normalized)) {
+        errors.push(
+          `provider.model must be 1-${MAX_PROVIDER_MODEL_LENGTH} chars and contain only model-id safe characters`,
+        )
+      } else {
+        model = normalized
+      }
+    }
+  }
+
+  return { profileId, model }
 }
 
 function collectSecretFindings(
@@ -441,6 +545,8 @@ export function validateLocalJobApiCreateRequest(
     errors.push(`prompt.text exceeds ${MAX_PROMPT_LENGTH} character limit`)
   }
 
+  const provider = normalizeProviderSelection(value.provider, errors)
+
   const input =
     value.input === undefined || value.input === null
       ? {}
@@ -499,6 +605,7 @@ export function validateLocalJobApiCreateRequest(
       prompt: {
         text: promptText,
       },
+      provider,
       input,
       artifacts: {
         baseDir: artifactBaseDir || null,

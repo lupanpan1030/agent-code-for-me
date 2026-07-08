@@ -22,11 +22,13 @@ import {
   assertLocalJobApiRuntimeReadiness,
   LOCAL_JOB_API_DISCOVERY_FEATURES,
   LOCAL_JOB_API_EVENT_TYPES,
+  LOCAL_JOB_API_RESOLVED_PROVIDER_SOURCES,
   LOCAL_JOB_API_VERSION,
   type LocalJobApiArtifact,
   type LocalJobApiArtifactManifest,
   type LocalJobApiEventEnvelope,
   type LocalJobApiEventType,
+  type LocalJobApiResolvedProvider,
   type LocalJobApiResultEnvelope,
   type LocalJobApiRuntimeManifestEnvelope,
   type NormalizedLocalJobApiCreateRequest,
@@ -45,6 +47,7 @@ import {
   listAgentJobEvents,
   retryAgentJob,
 } from "./job-store"
+import { assertHeadlessProviderSelectionUsableAtCreate } from "./provider-binding"
 import {
   type RuntimeReadinessResolverDependencies,
   resolveLocalJobApiRuntimeReadiness,
@@ -319,6 +322,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value)
 }
 
+function nullableString(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null
+}
+
 function parseJobInput(job: AgentJob): Record<string, unknown> {
   try {
     const parsed = JSON.parse(job.inputJson || "{}")
@@ -337,6 +344,7 @@ export function getLocalJobApiStoredRequest(
   const storedProject = isRecord(input.project) ? input.project : {}
   const storedConsumer = isRecord(input.consumer) ? input.consumer : {}
   const storedArtifacts = isRecord(input.artifacts) ? input.artifacts : {}
+  const storedProvider = isRecord(input.provider) ? input.provider : {}
   const storedInput = isRecord(input.input) ? input.input : {}
   const prompt = typeof input.prompt === "string" ? input.prompt : ""
   return assertLocalJobApiCreateRequest({
@@ -359,6 +367,11 @@ export function getLocalJobApiStoredRequest(
     prompt: {
       text: prompt || job.promptPreview || "Retry API job",
     },
+    provider: {
+      profileId:
+        job.providerProfileId ?? nullableString(storedProvider.profileId),
+      model: job.modelOverride ?? nullableString(storedProvider.model),
+    },
     input: storedInput,
     artifacts: storedArtifacts,
   })
@@ -378,9 +391,69 @@ function readArtifacts(path: string | null): LocalJobApiArtifact[] {
   }
 }
 
+function parseResolvedProviderValue(
+  provider: unknown,
+): LocalJobApiResolvedProvider | null {
+  if (!isRecord(provider)) return null
+  const source =
+    typeof provider.source === "string" &&
+    (LOCAL_JOB_API_RESOLVED_PROVIDER_SOURCES as readonly string[]).includes(
+      provider.source,
+    )
+      ? provider.source
+      : null
+  if (!source) return null
+  return {
+    source,
+    profileId: nullableString(provider.profileId),
+    model: nullableString(provider.model),
+  } as LocalJobApiResolvedProvider
+}
+
+function parseResolvedProviderFromResult(
+  result: unknown,
+): LocalJobApiResolvedProvider | null {
+  if (!isRecord(result)) return null
+  return parseResolvedProviderValue(result.resolvedProvider)
+}
+
+function parseResolvedProviderFromEvents(
+  events: AgentJobEvent[] | undefined,
+): LocalJobApiResolvedProvider | null {
+  if (!events) return null
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const payload = parsePayload(events[index])
+    if (!isRecord(payload)) continue
+    const providerBinding = isRecord(payload.providerBinding)
+      ? payload.providerBinding
+      : null
+    const resolvedProvider = parseResolvedProviderValue(
+      providerBinding?.resolvedProvider,
+    )
+    if (resolvedProvider) return resolvedProvider
+  }
+  return null
+}
+
+function resolvedProviderForJob(
+  job: AgentJob,
+  events?: AgentJobEvent[],
+): LocalJobApiResolvedProvider {
+  const fromResult = parseResolvedProviderFromResult(parseJobResult(job))
+  if (fromResult) return fromResult
+  const fromEvents = parseResolvedProviderFromEvents(events)
+  if (fromEvents) return fromEvents
+  return {
+    source: job.providerProfileId ? "request-profile" : "native",
+    profileId: job.providerProfileId ?? null,
+    model: job.modelOverride ?? null,
+  }
+}
+
 export function toLocalJobApiResultEnvelope(
   job: AgentJob,
   artifacts: LocalJobApiArtifact[] = readArtifacts(job.artifactManifestPath),
+  events?: AgentJobEvent[],
 ): LocalJobApiResultEnvelope {
   return {
     apiVersion: LOCAL_JOB_API_VERSION,
@@ -404,6 +477,7 @@ export function toLocalJobApiResultEnvelope(
           },
         ]
       : [],
+    resolvedProvider: resolvedProviderForJob(job, events),
     result: parseJobResult(job),
   }
 }
@@ -428,6 +502,11 @@ export function createLocalJobApiJob(
   appVersion: string | null | undefined,
 ): LocalJobApiCreatePrepared {
   validateLocalJobApiRequiredCapabilities(request)
+  assertHeadlessProviderSelectionUsableAtCreate({
+    db,
+    runtime: request.runtime.id,
+    providerProfileId: request.provider.profileId,
+  })
   validateLocalJobApiArtifactBaseDir(request.artifacts.baseDir)
   const project = findRegisteredProjectForCwdWithCanonicalPath(
     db,
@@ -455,6 +534,7 @@ export function createLocalJobApiJob(
       project: request.project,
       runtime: request.runtime,
       mode: request.mode,
+      provider: request.provider,
       input: request.input,
       artifacts: request.artifacts,
       prompt: request.prompt.text,
@@ -464,6 +544,8 @@ export function createLocalJobApiJob(
     apiConsumerRunId: request.consumer.runExternalId,
     artifactBaseDir: runDir ?? request.artifacts.baseDir,
     artifactManifestPath: manifestPath,
+    providerProfileId: request.provider.profileId,
+    modelOverride: request.provider.model,
     createdByVersion: appVersion ?? null,
   })
 
@@ -549,7 +631,10 @@ export function writeLocalJobApiFinalArtifacts(input: {
     fileArtifact("request", join(input.runDir, "request.json")),
     fileArtifact("events", eventsPath),
   ]
-  writeJsonFile(resultPath, toLocalJobApiResultEnvelope(input.job, artifacts))
+  writeJsonFile(
+    resultPath,
+    toLocalJobApiResultEnvelope(input.job, artifacts, input.events),
+  )
   artifacts.push(fileArtifact("result", resultPath))
   const manifest: LocalJobApiArtifactManifest = {
     apiVersion: LOCAL_JOB_API_VERSION,
