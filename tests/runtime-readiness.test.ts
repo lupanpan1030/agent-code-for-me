@@ -43,6 +43,23 @@ function codexStatus(
   }
 }
 
+function claudeMetadata(
+  overrides: Partial<{
+    isConnected: boolean
+    isExpired: boolean
+    isExpiringSoon: boolean
+    refreshable: boolean
+  }> = {},
+) {
+  return {
+    isConnected: true,
+    isExpired: false,
+    isExpiringSoon: false,
+    refreshable: false,
+    ...overrides,
+  }
+}
+
 describe("Local Job API runtime readiness", () => {
   beforeEach(() => {
     clearRuntimeReadinessCacheForTest()
@@ -53,7 +70,7 @@ describe("Local Job API runtime readiness", () => {
       runtimeId: "claude-code",
       dependencies: {
         hasAnyClaudeCodeAccount: () => true,
-        getClaudeCodeCredentialMetadata: () => ({ isConnected: true }),
+        getClaudeCodeCredentialMetadata: () => claudeMetadata(),
         getExistingClaudeCredentials: () => {
           throw new Error("CLI credential fallback should not be checked")
         },
@@ -64,6 +81,89 @@ describe("Local Job API runtime readiness", () => {
       state: "ready",
       detail: "Locus desktop Claude credential is available.",
     })
+  })
+
+  test("does not report expired unrefreshable Claude app credentials as ready", async () => {
+    const readiness = await resolveLocalJobApiRuntimeReadiness({
+      runtimeId: "claude-code",
+      dependencies: {
+        hasAnyClaudeCodeAccount: () => true,
+        getClaudeCodeCredentialMetadata: () =>
+          claudeMetadata({
+            isExpired: true,
+            isExpiringSoon: true,
+            refreshable: false,
+          }),
+        getExistingClaudeCredentials: () => null,
+      },
+    })
+
+    expect(readiness).toMatchObject({
+      state: "needs-auth",
+      detail: "No Claude credential source is available.",
+    })
+  })
+
+  test("does not report expiring unrefreshable Claude app credentials as ready", async () => {
+    const readiness = await resolveLocalJobApiRuntimeReadiness({
+      runtimeId: "claude-code",
+      dependencies: {
+        hasAnyClaudeCodeAccount: () => true,
+        getClaudeCodeCredentialMetadata: () =>
+          claudeMetadata({
+            isExpired: false,
+            isExpiringSoon: true,
+            refreshable: false,
+          }),
+        getExistingClaudeCredentials: () => null,
+      },
+    })
+
+    expect(readiness.state).toBe("needs-auth")
+  })
+
+  test("falls back to Claude CLI login when app credential cannot refresh", async () => {
+    const readiness = await resolveLocalJobApiRuntimeReadiness({
+      runtimeId: "claude-code",
+      dependencies: {
+        hasAnyClaudeCodeAccount: () => true,
+        getClaudeCodeCredentialMetadata: () =>
+          claudeMetadata({
+            isExpired: true,
+            isExpiringSoon: true,
+            refreshable: false,
+          }),
+        getExistingClaudeCredentials: () => ({
+          accessToken: "external-access-token",
+        }),
+      },
+    })
+
+    expect(readiness).toMatchObject({
+      state: "ready",
+      detail: "Claude CLI login is available as fallback.",
+    })
+    expect(JSON.stringify(readiness)).not.toContain("external-access-token")
+  })
+
+  test("reports refreshable Claude app credentials as ready", async () => {
+    const readiness = await resolveLocalJobApiRuntimeReadiness({
+      runtimeId: "claude-code",
+      dependencies: {
+        hasAnyClaudeCodeAccount: () => true,
+        getClaudeCodeCredentialMetadata: () =>
+          claudeMetadata({
+            isExpired: true,
+            isExpiringSoon: true,
+            refreshable: true,
+          }),
+        getExistingClaudeCredentials: () => {
+          throw new Error("CLI credential fallback should not be checked")
+        },
+      },
+    })
+
+    expect(readiness.state).toBe("ready")
   })
 
   test("reports Claude ready from CLI login when no app account exists", async () => {

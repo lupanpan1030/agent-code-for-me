@@ -8,7 +8,10 @@ import {
   hasAnyClaudeCodeAccount,
 } from "../claude-credentials"
 import { getExistingClaudeCredentials } from "../claude-token"
-import { getBundledCodexCliPath } from "../codex/cli-path"
+import {
+  getBundledCodexCliMissingHint,
+  getBundledCodexCliPath,
+} from "../codex/cli-path"
 import { getCodexRuntimeStatus } from "../codex/runtime-status"
 import {
   getRuntimeExecutableStatus,
@@ -29,7 +32,7 @@ type CodexRuntimeStatusLike = {
 export type RuntimeReadinessResolverDependencies = {
   getClaudeCodeCredentialMetadata?: () => Pick<
     ReturnType<typeof getClaudeCodeCredentialMetadata>,
-    "isConnected"
+    "isConnected" | "isExpired" | "isExpiringSoon" | "refreshable"
   >
   getCodexExecutableStatus?: () => RuntimeExecutableStatus
   getCodexRuntimeStatus?: () => Promise<CodexRuntimeStatusLike>
@@ -82,7 +85,20 @@ function emitUnknownDiagnostic(
 function defaultCodexExecutableStatus(): RuntimeExecutableStatus {
   return getRuntimeExecutableStatus(
     getBundledCodexCliPath(),
-    "Run `bun run codex:download` from the repo, then retry discovery.",
+    getBundledCodexCliMissingHint(),
+  )
+}
+
+function isClaudeAppCredentialUsable(
+  metadata: Pick<
+    ReturnType<typeof getClaudeCodeCredentialMetadata>,
+    "isConnected" | "isExpired" | "isExpiringSoon" | "refreshable"
+  >,
+): boolean {
+  return (
+    metadata.isConnected &&
+    (!metadata.isExpired || metadata.refreshable) &&
+    (!metadata.isExpiringSoon || metadata.refreshable)
   )
 }
 
@@ -96,7 +112,7 @@ function resolveClaudeReadiness(
     const metadata = dependencies.getClaudeCodeCredentialMetadata
       ? dependencies.getClaudeCodeCredentialMetadata()
       : getClaudeCodeCredentialMetadata()
-    if (metadata.isConnected) {
+    if (isClaudeAppCredentialUsable(metadata)) {
       return readiness({
         state: "ready",
         detail: "Locus desktop Claude credential is available.",

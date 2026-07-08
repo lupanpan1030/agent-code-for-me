@@ -6,7 +6,7 @@ The runtime discovery response SHALL include a per-runtime readiness object desc
 
 #### Scenario: Configured runtime reports ready
 
-- **WHEN** a consumer lists runtimes on a machine where the Claude headless credential resolution would succeed (app-stored account or CLI login present)
+- **WHEN** a consumer lists runtimes on a machine where the Claude headless credential resolution would succeed (usable app-stored account or CLI login present)
 - **THEN** the claude-code entry reports `readiness.state` of `ready`
 
 #### Scenario: Fresh install reports needs-auth with a hint

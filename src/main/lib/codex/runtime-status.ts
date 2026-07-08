@@ -10,7 +10,11 @@ import { getRegisteredAgentRuntimeManifest } from "../agent-runtime/runtime-regi
 import { type ElectronAppLike, getElectronApp } from "../electron-app"
 import { isLocalOnlyMode } from "../local-only"
 import { getRuntimeExecutableStatus } from "../runtime-executable"
-import { BUNDLED_CODEX_CLI_VERSION, getBundledCodexCliPath } from "./cli-path"
+import {
+  BUNDLED_CODEX_CLI_VERSION,
+  getBundledCodexCliMissingHint,
+  getBundledCodexCliPath,
+} from "./cli-path"
 import {
   type CodexDesktopAdapterSelection,
   resolveCodexDesktopAdapterSelection,
@@ -55,9 +59,7 @@ export async function getCodexRuntimeStatus(
 ) {
   const env = input.env ?? process.env
   const appContext = input.appContext ?? getElectronApp()
-  const cliHint = appContext.isPackaged
-    ? "Reinstall the app so the bundled Codex command is restored."
-    : "Run `bun run codex:download` from the repo, then restart the dev app."
+  const cliHint = getBundledCodexCliMissingHint(appContext)
 
   const loginCli = getRuntimeExecutableStatus(
     getBundledCodexCliPath(appContext),
