@@ -160,8 +160,18 @@ or UI helper.
 
 ## Provider Credentials
 
-- Canonical owners: `src/main/lib/provider-profiles.ts`,
-  `src/main/lib/claude/env.ts`, `src/main/lib/codex/provider-env.ts`
+- Canonical storage and read owners:
+  - provider profiles: `src/main/lib/provider-profiles/storage.ts`
+  - local helper provider configs:
+    `src/main/lib/local-api-provider-config.ts`
+  - Claude custom provider config:
+    `src/main/lib/claude/provider-config-store.ts`
+  - app-managed Codex API key: `src/main/lib/codex/api-key-store.ts`
+- Shared token normalization and storage primitives:
+  `src/main/lib/provider-token.ts` and `src/main/lib/secure-storage.ts`
+- Runtime environment and binding owners: `src/main/lib/claude/env.ts`,
+  `src/main/lib/codex/provider-runtime-binding.ts`, and
+  `src/main/lib/codex/official-runtime-env.ts`
 - Consumers: runtime startup, status checks, provider profile routes
 - Rule: plaintext provider secrets stay in the main process. Renderer code may
   receive status, IDs, labels, and redacted metadata only.
@@ -205,6 +215,36 @@ or UI helper.
 - Rule: runtime routes may validate tRPC inputs and map errors, but durable MCP
   listing, status, auth, add/update/remove, refresh/cache, and session
   materialization behavior belongs to the Runtime MCP Config service.
+
+## Runtime Core Import Boundary
+
+- Guarded runtime-core directories:
+  - `src/main/lib/agent-runtime/`
+  - `src/main/lib/headless/`
+  - `src/main/lib/agent-guard/`
+  - `src/main/lib/provider-profiles/`
+- Rule: source files in these directories must not directly import:
+  - Electron (`electron` or any `electron/*` subpath)
+  - tRPC packages (`@trpc/*`, `trpc-electron`, or any
+    `trpc-electron/*` subpath) or modules that resolve under
+    `src/main/lib/trpc/`
+  - renderer code, including modules that resolve under `src/renderer/` and
+    the `@/` renderer alias
+  - preload code that resolves under `src/preload/`
+- Dependency direction: tRPC routers import durable behavior and shared state
+  from main-process lib owners; main-process lib owners, including the guarded
+  runtime-core directories, never import those behaviors from router modules.
+- Local API provider reads are owned by
+  `src/main/lib/local-api-provider-config.ts`. That owner may materialize the
+  decrypted runtime token for main-process consumers; its tRPC router returns
+  metadata only and imports the owner, never the reverse.
+- The guard currently enforces direct imports only. Transitive reach through
+  wrapper modules is allowed at this stage and deferred by design.
+  Representative, non-exhaustive wrappers include `electron-app`, `db`,
+  `secure-storage`, `provider-token`, `local-only`, `claude-credentials`,
+  `codex/cli-path`, `codex/runtime-status`, and `utility-chat-completion`.
+  This list documents known reach-throughs; it is not an allowlist, and a
+  direct import from a guarded directory into a banned category still fails.
 
 ## tRPC Route Boundary
 

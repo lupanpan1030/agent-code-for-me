@@ -24,13 +24,13 @@ import {
   getDatabase,
 } from "../db"
 import { createId } from "../db/utils"
+import { getActiveLocalApiProviderConfig } from "../local-api-provider-config"
 import {
   decryptProviderToken,
   encryptProviderToken,
   normalizeProviderBaseUrl,
   normalizeProviderToken,
 } from "../provider-token"
-import { getActiveLocalApiProviderConfig } from "../trpc/routers/local-api-provider-config"
 
 // Re-exported for existing consumers (e.g. provider-profiles/gateway.ts).
 export { normalizeProviderBaseUrl, normalizeProviderToken }

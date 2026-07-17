@@ -4,11 +4,11 @@ import * as fs from "fs/promises"
 import * as path from "path"
 import simpleGit from "simple-git"
 import { z } from "zod"
-import { buildAgentRuntimeCapabilityDiagnostic } from "../../../../shared/agent-runtime-capabilities"
 import {
   agentChatProviders,
   buildAgentChatMessageMetadata,
 } from "../../../../shared/agent-chat-provider"
+import { buildAgentRuntimeCapabilityDiagnostic } from "../../../../shared/agent-runtime-capabilities"
 import {
   trackPRCreated,
   trackWorkspaceArchived,
@@ -23,30 +23,29 @@ import {
   removeWorktree,
   sanitizeProjectName,
 } from "../../git"
-import type { WorktreeSetupResult } from "../../git/worktree-config"
 import { computeContentHash, gitCache } from "../../git/cache"
 import { splitUnifiedDiffByFile } from "../../git/diff-parser"
 import { execWithShellEnv } from "../../git/shell-env"
 import { applyRollbackStash } from "../../git/stash"
-import { assertOfficialCloudAllowed } from "../../local-only"
-import { checkOllamaStatus } from "../../ollama"
-import { terminalManager } from "../../terminal/manager"
-import { publicProcedure, router } from "../index"
+import type { WorktreeSetupResult } from "../../git/worktree-config"
 import {
   getActiveLocalApiProviderConfig,
   type LocalApiProviderPurpose,
-} from "./local-api-provider-config"
+} from "../../local-api-provider-config"
+import { assertOfficialCloudAllowed } from "../../local-only"
+import { checkOllamaStatus } from "../../ollama"
 import { getProviderDefaultRuntimeConfig } from "../../provider-profiles/storage"
+import { terminalManager } from "../../terminal/manager"
+import { publicProcedure, router } from "../index"
+import {
+  getCodexRollbackUnsupportedMessage,
+  hasCodexBackedMessages,
+} from "./chats-helpers"
 import {
   buildCommitFileSummary,
   buildCommitMessagePrompt,
   cleanGeneratedCommitMessage,
 } from "./commit-message-utils"
-
-import {
-  getCodexRollbackUnsupportedMessage,
-  hasCodexBackedMessages,
-} from "./chats-helpers"
 
 export const subChatProcedures = {
   getSubChat: publicProcedure

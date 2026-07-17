@@ -13,15 +13,17 @@ The 2026-07-17 verified audit measured the runtime-core boundary state:
   import-boundary rule exists.
 - Nothing named `RuntimeHostContext`/`HostPaths`/`SecretStore` exists in `src/`.
 
-Known indirect (transitive) reach-throughs — documented so implementers do not
-"fix" them in this change (each is reached via a wrapper module, not a direct
-import): `agent-runtime/runtime-feature-settings.ts` → `../electron-app`;
-`../db` (db/index.ts touches `electron.app`); `headless/provider-binding.ts` →
+Representative, non-exhaustive indirect (transitive) reach-throughs are
+documented so implementers do not "fix" them in this change (each example is
+reached via a wrapper module, not a direct import):
+`agent-runtime/runtime-feature-settings.ts` → `../electron-app`; `../db`
+(db/index.ts touches `electron.app`); `headless/provider-binding.ts` →
 `../provider-token` → `secure-storage`; `headless/completion-runner.ts` →
 `../local-only` (direct electron inside local-only.ts) and →
 `../utility-chat-completion`; `headless/runtime-readiness.ts` →
 `../claude-credentials` and → `../codex/cli-path` / `../codex/runtime-status`
-→ `../electron-app`.
+→ `../electron-app`. This list is not an allowlist and does not claim to
+enumerate every transitive path.
 
 ## Goals / Non-Goals
 
@@ -52,30 +54,49 @@ import): `agent-runtime/runtime-feature-settings.ts` → `../electron-app`;
 - Decision: banned specifier categories for files under
   `src/main/lib/{agent-runtime,headless,agent-guard,provider-profiles}/`:
   1. `electron` and `electron/*`
-  2. any specifier whose resolved path lands in `src/main/lib/trpc/`
+  2. tRPC packages: `@trpc/*`, `trpc-electron`, and
+     `trpc-electron/*`
+  3. any specifier whose resolved path lands in `src/main/lib/trpc/`
      (relative forms such as `../trpc/...`, `../../trpc/...`)
-  3. any specifier resolving into `src/renderer/` or using the `@/` alias
-  4. any specifier resolving into `src/preload/`
-  Both `import ... from`, `export ... from`, dynamic `import(...)`, and
-  `require(...)` count. Type-only imports count too (keeps the rule simple and
-  the boundary honest; no type-only imports of these targets exist today).
+  4. any specifier resolving into `src/renderer/` or using the `@/` alias
+  5. any specifier resolving into `src/preload/`
+  Scan `.ts`, `.tsx`, `.mts`, `.cts`, `.js`, `.jsx`, `.mjs`, and `.cjs`
+  files. Static `import ... from`, side-effect `import "..."`,
+  `export ... from`, dynamic `import(...)`, and CommonJS loader calls count.
+  CommonJS coverage includes direct or parenthesized `require(...)`,
+  `module.require(...)`, simple aliases assigned from `require` or
+  `module.require`, and loaders created from an imported Node
+  `createRequire`. `import type { ... } from` and inline
+  `import { type ... } from` count too. Only literal and no-substitution
+  template specifiers are classified; import-like text that appears only in
+  comments or ordinary string literals does not count.
 - Decision: new lib owner `src/main/lib/local-api-provider-config.ts` receives
   (moves, not copies) the non-route logic from the router module:
   `localApiProviderPurposeSchema`, `LocalApiProviderPurpose`,
   `LocalApiProviderRuntimeConfig`, `getLocalApiProviderTokenRequirement`,
   `getStoredProviderRow`, `rowToMetadata`, `getActiveLocalApiProviderConfig`,
   and the private `LocalApiProviderMetadata` type required by `rowToMetadata`.
-  The router imports from the lib owner; nothing imports from the router except
-  the tRPC app router composition. Sibling routers currently importing via the
+  This is the complete move list; the router-local input schemas and the
+  complete `get`, `save`, and `clear` procedure bodies remain in place. In
+  particular, persistence writes, token encryption, secure-storage checks,
+  and delete behavior do not move into or expand inside the new owner. The
+  router imports the listed helpers from the lib owner; nothing imports those
+  helpers from the router. Sibling routers currently importing via the
   relative `"./local-api-provider-config"` specifier (voice, chats-sub-chats,
   chats-pr, chats-diff, chats-generation) switch to the lib owner. If any
-  module outside `trpc/` still imports a moved symbol from the router path
-  after the move, that is a task-1 bug, not a reason to re-export.
+  module still imports a moved symbol from the router path after the move,
+  that is a task-1 bug, not a reason to re-export.
 - Decision: self-test first. The assert validates itself against in-memory
-  synthetic fixtures (one violating sample per banned category + one clean
-  sample) before scanning the tree, mirroring
-  `assertDangerousRouterInputGuardSelfTest`; if the self-test fails, the whole
-  guard run fails.
+  synthetic fixtures before scanning the tree, mirroring
+  `assertDangerousRouterInputGuardSelfTest`. The fixture matrix covers every
+  banned category, every scanned extension, static and side-effect imports,
+  export-from, dynamic import, direct and parenthesized require,
+  `module.require`, simple require/createRequire aliases,
+  `import type { ... }`, and `import { type ... }`; it also includes an
+  allowed import, an ordinary string containing import-like text, and a
+  comment containing a banned-looking import. The expected finding set must
+  match exactly, so both a missed violation and a clean/comment false positive
+  fail the whole guard run.
 - Alternatives considered: ESLint no-restricted-imports (rejected — repo uses
   Biome, no ESLint infra); dependency-cruiser (rejected — new dependency for
   one rule; the in-house AST/regex checker already owns this class of rule).
@@ -85,9 +106,11 @@ import): `agent-runtime/runtime-feature-settings.ts` → `../electron-app`;
 - Risk: a hidden importer of a moved symbol breaks `ts:check`. → Mitigation:
   task 1.3 requires a whole-`src/` grep for each moved symbol; `bun run check`
   catches stragglers.
-- Risk: specifier-pattern false negatives (e.g. an alias that hides `trpc`).
-  → Accepted: the rule is a tripwire, not a proof; the self-test pins the
-  patterns that must keep working.
+- Risk: specifier-pattern false negatives through computed specifiers,
+  arbitrary wrapper functions, or dynamically reassigned loader aliases.
+  → Accepted: the rule is a direct-dependency tripwire, not a whole-program
+  proof; the self-test pins the literal and simple-alias forms that must keep
+  working.
 - Risk: collision with active `update-trpc-capability-boundary` edits to the
   same router. → Mitigation: this change keeps the router's procedure surface
   byte-identical apart from imports; land whichever is ready first, rebase the
@@ -95,9 +118,12 @@ import): `agent-runtime/runtime-feature-settings.ts` → `../electron-app`;
 
 ## Migration Plan
 
-Single change, no flags. Rollback = revert the commit (guard rule and inversion
-are independent commits if implemented in task order, so either can be reverted
-alone).
+Single change, no flags. Commit granularity is not prescribed by task order.
+Rollback the guard, ownership-map documentation, import-path updates, and
+dependency inversion together. If an emergency rollback must be staged, remove
+the guard before restoring the old lib-to-router import; reverting the
+inversion alone while the guard remains active would intentionally fail the
+architecture check.
 
 ## Open Questions
 

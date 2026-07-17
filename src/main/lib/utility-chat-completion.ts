@@ -1,8 +1,8 @@
-import { getProviderDefaultRuntimeConfig } from "./provider-profiles/storage"
 import {
   getActiveLocalApiProviderConfig,
   type LocalApiProviderPurpose,
-} from "./trpc/routers/local-api-provider-config"
+} from "./local-api-provider-config"
+import { getProviderDefaultRuntimeConfig } from "./provider-profiles/storage"
 
 export type LocalChatCompletionProviderConfig = {
   apiKey: string | null

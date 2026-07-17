@@ -172,6 +172,586 @@ function walkFiles(relativeDir, extensions, result = []) {
   return result
 }
 
+const RUNTIME_CORE_DIRECTORIES = [
+  "src/main/lib/agent-runtime",
+  "src/main/lib/headless",
+  "src/main/lib/agent-guard",
+  "src/main/lib/provider-profiles",
+]
+const RUNTIME_CORE_SOURCE_EXTENSIONS = [
+  ".ts",
+  ".tsx",
+  ".mts",
+  ".cts",
+  ".js",
+  ".jsx",
+  ".mjs",
+  ".cjs",
+]
+const RUNTIME_CORE_OWNERSHIP_SECTION =
+  'docs/OWNERSHIP_MAP.md "Runtime Core Import Boundary"'
+
+function isPathInside(absolutePath, absoluteDirectory) {
+  const relativePath = path.relative(absoluteDirectory, absolutePath)
+  return (
+    relativePath === "" ||
+    (!relativePath.startsWith(`..${path.sep}`) &&
+      relativePath !== ".." &&
+      !path.isAbsolute(relativePath))
+  )
+}
+
+function resolveLocalImport(filePath, specifier) {
+  const target = specifier.replace(/[?#].*$/, "")
+  if (target.startsWith(".")) {
+    return path.resolve(repoRoot, path.dirname(filePath), target)
+  }
+  if (target.startsWith("src/")) {
+    return path.resolve(repoRoot, target)
+  }
+  if (path.isAbsolute(target)) {
+    return path.resolve(target)
+  }
+  return null
+}
+
+function runtimeCoreImportCategory(filePath, specifier) {
+  if (specifier === "electron" || specifier.startsWith("electron/")) {
+    return "Electron"
+  }
+
+  if (
+    specifier === "@trpc" ||
+    specifier.startsWith("@trpc/") ||
+    specifier === "trpc-electron" ||
+    specifier.startsWith("trpc-electron/")
+  ) {
+    return "tRPC"
+  }
+
+  if (specifier.startsWith("@/")) {
+    return "renderer"
+  }
+
+  const resolvedTarget = resolveLocalImport(filePath, specifier)
+  if (!resolvedTarget) return null
+
+  const bannedResolvedDirectories = [
+    ["tRPC", path.join(repoRoot, "src/main/lib/trpc")],
+    ["renderer", path.join(repoRoot, "src/renderer")],
+    ["preload", path.join(repoRoot, "src/preload")],
+  ]
+  for (const [category, absoluteDirectory] of bannedResolvedDirectories) {
+    if (isPathInside(resolvedTarget, absoluteDirectory)) {
+      return category
+    }
+  }
+
+  return null
+}
+
+function importTypeSpecifier(node) {
+  const argument = node.argument
+  if (!ts.isLiteralTypeNode(argument)) return null
+  return stringLiteralValue(argument.literal)
+}
+
+function memberExpression(expression) {
+  const unwrapped = unwrapExpression(expression)
+  if (!unwrapped) return null
+
+  if (ts.isPropertyAccessExpression(unwrapped)) {
+    return {
+      object: unwrapExpression(unwrapped.expression),
+      property: unwrapped.name.text,
+    }
+  }
+
+  if (ts.isElementAccessExpression(unwrapped)) {
+    return {
+      object: unwrapExpression(unwrapped.expression),
+      property: stringLiteralValue(unwrapped.argumentExpression),
+    }
+  }
+
+  return null
+}
+
+function isModuleRequireExpression(expression) {
+  const member = memberExpression(expression)
+  return (
+    member?.property === "require" &&
+    ts.isIdentifier(member.object) &&
+    member.object.text === "module"
+  )
+}
+
+function isCreateRequireFactoryExpression(
+  expression,
+  createRequireFactories,
+  moduleNamespaces,
+) {
+  const unwrapped = unwrapExpression(expression)
+  if (!unwrapped) return false
+
+  if (
+    ts.isIdentifier(unwrapped) &&
+    createRequireFactories.has(unwrapped.text)
+  ) {
+    return true
+  }
+
+  const member = memberExpression(unwrapped)
+  return (
+    member?.property === "createRequire" &&
+    ts.isIdentifier(member.object) &&
+    moduleNamespaces.has(member.object.text)
+  )
+}
+
+function collectRuntimeCoreLoaderBindings(sourceFile) {
+  const loaderAliases = new Map([["require", "require call"]])
+  const createRequireFactories = new Set()
+  const moduleNamespaces = new Set()
+  const variableDeclarations = []
+
+  function collect(node) {
+    if (
+      ts.isImportDeclaration(node) &&
+      ["module", "node:module"].includes(
+        stringLiteralValue(node.moduleSpecifier),
+      ) &&
+      node.importClause
+    ) {
+      if (node.importClause.name) {
+        moduleNamespaces.add(node.importClause.name.text)
+      }
+
+      const bindings = node.importClause.namedBindings
+      if (bindings && ts.isNamespaceImport(bindings)) {
+        moduleNamespaces.add(bindings.name.text)
+      } else if (bindings && ts.isNamedImports(bindings)) {
+        for (const element of bindings.elements) {
+          const importedName = element.propertyName?.text ?? element.name.text
+          if (importedName === "createRequire") {
+            createRequireFactories.add(element.name.text)
+          }
+        }
+      }
+    } else if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.initializer
+    ) {
+      variableDeclarations.push(node)
+    }
+
+    ts.forEachChild(node, collect)
+  }
+
+  collect(sourceFile)
+
+  let changed = true
+  while (changed) {
+    changed = false
+
+    for (const declaration of variableDeclarations) {
+      const name = declaration.name.text
+      const initializer = unwrapExpression(declaration.initializer)
+      if (!initializer) continue
+
+      if (
+        ts.isIdentifier(initializer) &&
+        createRequireFactories.has(initializer.text) &&
+        !createRequireFactories.has(name)
+      ) {
+        createRequireFactories.add(name)
+        changed = true
+      } else if (
+        isCreateRequireFactoryExpression(
+          initializer,
+          createRequireFactories,
+          moduleNamespaces,
+        ) &&
+        !createRequireFactories.has(name)
+      ) {
+        createRequireFactories.add(name)
+        changed = true
+      }
+
+      let loaderSyntax = null
+      if (ts.isIdentifier(initializer) && loaderAliases.has(initializer.text)) {
+        loaderSyntax = "require alias call"
+      } else if (isModuleRequireExpression(initializer)) {
+        loaderSyntax = "module.require alias call"
+      } else if (
+        ts.isCallExpression(initializer) &&
+        isCreateRequireFactoryExpression(
+          initializer.expression,
+          createRequireFactories,
+          moduleNamespaces,
+        )
+      ) {
+        loaderSyntax = "createRequire alias call"
+      }
+
+      if (loaderSyntax && !loaderAliases.has(name)) {
+        loaderAliases.set(name, loaderSyntax)
+        changed = true
+      }
+    }
+  }
+
+  return { createRequireFactories, loaderAliases, moduleNamespaces }
+}
+
+function runtimeCoreLoaderCallSyntax(expression, loaderBindings) {
+  const callee = unwrapExpression(expression)
+  if (!callee) return null
+
+  if (
+    ts.isIdentifier(callee) &&
+    loaderBindings.loaderAliases.has(callee.text)
+  ) {
+    return loaderBindings.loaderAliases.get(callee.text)
+  }
+
+  if (isModuleRequireExpression(callee)) {
+    return "module.require call"
+  }
+
+  if (
+    ts.isCallExpression(callee) &&
+    isCreateRequireFactoryExpression(
+      callee.expression,
+      loaderBindings.createRequireFactories,
+      loaderBindings.moduleNamespaces,
+    )
+  ) {
+    return "createRequire call"
+  }
+
+  return null
+}
+
+function collectRuntimeCoreImportBoundaryFindings(filePath, content) {
+  const sourceFile = ts.createSourceFile(
+    filePath,
+    content,
+    ts.ScriptTarget.Latest,
+    true,
+  )
+  const findings = []
+  const loaderBindings = collectRuntimeCoreLoaderBindings(sourceFile)
+
+  function addFinding(specifier, syntax) {
+    if (specifier === null) return
+    const category = runtimeCoreImportCategory(filePath, specifier)
+    if (category) {
+      findings.push({ filePath, specifier, syntax, category })
+    }
+  }
+
+  function visit(node) {
+    if (ts.isImportDeclaration(node)) {
+      const syntax = node.importClause?.isTypeOnly
+        ? "type-only import declaration"
+        : node.importClause
+          ? "import declaration"
+          : "side-effect import declaration"
+      addFinding(stringLiteralValue(node.moduleSpecifier), syntax)
+    } else if (ts.isExportDeclaration(node) && node.moduleSpecifier) {
+      addFinding(
+        stringLiteralValue(node.moduleSpecifier),
+        node.isTypeOnly
+          ? "type-only export-from declaration"
+          : "export-from declaration",
+      )
+    } else if (
+      ts.isCallExpression(node) &&
+      node.expression.kind === ts.SyntaxKind.ImportKeyword
+    ) {
+      addFinding(stringLiteralValue(node.arguments[0]), "dynamic import")
+    } else if (ts.isCallExpression(node)) {
+      const syntax = runtimeCoreLoaderCallSyntax(
+        node.expression,
+        loaderBindings,
+      )
+      if (syntax) {
+        addFinding(stringLiteralValue(node.arguments[0]), syntax)
+      }
+    } else if (
+      ts.isImportEqualsDeclaration(node) &&
+      ts.isExternalModuleReference(node.moduleReference)
+    ) {
+      addFinding(
+        stringLiteralValue(node.moduleReference.expression),
+        "import-equals declaration",
+      )
+    } else if (ts.isImportTypeNode(node)) {
+      addFinding(importTypeSpecifier(node), "import type node")
+    }
+
+    ts.forEachChild(node, visit)
+  }
+
+  visit(sourceFile)
+  return findings
+}
+
+function assertRuntimeCoreImportBoundarySelfTest() {
+  const fixtures = [
+    {
+      name: "side-effect Electron import",
+      filePath:
+        "src/main/lib/agent-runtime/__architecture_boundary_fixture__.ts",
+      content: 'import "electron/main"',
+      expected: {
+        specifier: "electron/main",
+        syntax: "side-effect import declaration",
+        category: "Electron",
+      },
+    },
+    {
+      name: "type-only external tRPC import",
+      filePath: "src/main/lib/headless/__architecture_boundary_fixture__.tsx",
+      content: 'import type { AnyRouter } from "@trpc/server"',
+      expected: {
+        specifier: "@trpc/server",
+        syntax: "type-only import declaration",
+        category: "tRPC",
+      },
+    },
+    {
+      name: "inline type external tRPC import",
+      filePath: "src/main/lib/headless/__architecture_boundary_fixture__.cjs",
+      content: 'import { type TRPCError } from "@trpc/server"',
+      expected: {
+        specifier: "@trpc/server",
+        syntax: "import declaration",
+        category: "tRPC",
+      },
+    },
+    {
+      name: "internal tRPC import",
+      filePath:
+        "src/main/lib/provider-profiles/__architecture_boundary_fixture__.mts",
+      content:
+        'import { appRouter } from "../trpc/routers/index"; void appRouter',
+      expected: {
+        specifier: "../trpc/routers/index",
+        syntax: "import declaration",
+        category: "tRPC",
+      },
+    },
+    {
+      name: "tRPC export-from",
+      filePath:
+        "src/main/lib/agent-guard/__architecture_boundary_fixture__.cts",
+      content: 'export { createIPCHandler } from "trpc-electron/main"',
+      expected: {
+        specifier: "trpc-electron/main",
+        syntax: "export-from declaration",
+        category: "tRPC",
+      },
+    },
+    {
+      name: "dynamic renderer import",
+      filePath:
+        "src/main/lib/agent-runtime/__architecture_boundary_fixture__.js",
+      content: 'void import("../../../renderer/lib/atoms")',
+      expected: {
+        specifier: "../../../renderer/lib/atoms",
+        syntax: "dynamic import",
+        category: "renderer",
+      },
+    },
+    {
+      name: "preload require",
+      filePath: "src/main/lib/headless/__architecture_boundary_fixture__.jsx",
+      content: 'require("../../../preload/index")',
+      expected: {
+        specifier: "../../../preload/index",
+        syntax: "require call",
+        category: "preload",
+      },
+    },
+    {
+      name: "parenthesized require",
+      filePath:
+        "src/main/lib/agent-runtime/__architecture_boundary_fixture__.js",
+      content: '(require)("electron")',
+      expected: {
+        specifier: "electron",
+        syntax: "require call",
+        category: "Electron",
+      },
+    },
+    {
+      name: "module.require",
+      filePath:
+        "src/main/lib/provider-profiles/__architecture_boundary_fixture__.cjs",
+      content: 'module.require("@trpc/server")',
+      expected: {
+        specifier: "@trpc/server",
+        syntax: "module.require call",
+        category: "tRPC",
+      },
+    },
+    {
+      name: "module.require alias",
+      filePath:
+        "src/main/lib/provider-profiles/__architecture_boundary_fixture__.cjs",
+      content:
+        'const load = module["require"]; load("trpc-electron/main")',
+      expected: {
+        specifier: "trpc-electron/main",
+        syntax: "module.require alias call",
+        category: "tRPC",
+      },
+    },
+    {
+      name: "require alias chain",
+      filePath: "src/main/lib/agent-guard/__architecture_boundary_fixture__.ts",
+      content:
+        'const load = require; const loadAgain = load; loadAgain("@/features/agents")',
+      expected: {
+        specifier: "@/features/agents",
+        syntax: "require alias call",
+        category: "renderer",
+      },
+    },
+    {
+      name: "createRequire alias",
+      filePath: "src/main/lib/headless/__architecture_boundary_fixture__.mts",
+      content:
+        'import { createRequire as makeRequire } from "node:module"; const load = makeRequire(import.meta.url); load("../../../preload/index")',
+      expected: {
+        specifier: "../../../preload/index",
+        syntax: "createRequire alias call",
+        category: "preload",
+      },
+    },
+    {
+      name: "inline createRequire",
+      filePath:
+        "src/main/lib/agent-runtime/__architecture_boundary_fixture__.mjs",
+      content:
+        'import * as nodeModule from "node:module"; nodeModule.createRequire(import.meta.url)("electron/main")',
+      expected: {
+        specifier: "electron/main",
+        syntax: "createRequire call",
+        category: "Electron",
+      },
+    },
+    {
+      name: "Electron import-equals",
+      filePath:
+        "src/main/lib/provider-profiles/__architecture_boundary_fixture__.ts",
+      content: 'import electron = require("electron")',
+      expected: {
+        specifier: "electron",
+        syntax: "import-equals declaration",
+        category: "Electron",
+      },
+    },
+    {
+      name: "renderer import type node",
+      filePath: "src/main/lib/agent-guard/__architecture_boundary_fixture__.ts",
+      content:
+        'type RendererStore = import("../../../renderer/lib/store").Store',
+      expected: {
+        specifier: "../../../renderer/lib/store",
+        syntax: "import type node",
+        category: "renderer",
+      },
+    },
+    {
+      name: "renderer alias",
+      filePath:
+        "src/main/lib/agent-runtime/__architecture_boundary_fixture__.mjs",
+      content: 'export * from "@/features/agents"',
+      expected: {
+        specifier: "@/features/agents",
+        syntax: "export-from declaration",
+        category: "renderer",
+      },
+    },
+  ]
+
+  for (const fixture of fixtures) {
+    const findings = collectRuntimeCoreImportBoundaryFindings(
+      fixture.filePath,
+      fixture.content,
+    )
+    if (
+      findings.length !== 1 ||
+      findings[0].specifier !== fixture.expected.specifier ||
+      findings[0].syntax !== fixture.expected.syntax ||
+      findings[0].category !== fixture.expected.category
+    ) {
+      fail(
+        `Runtime Core Import Boundary self-test must detect ${fixture.name}; found ${
+          findings
+            .map(
+              (finding) =>
+                `${finding.syntax} ${JSON.stringify(finding.specifier)} (${finding.category})`,
+            )
+            .join(", ") || "nothing"
+        }.`,
+      )
+    }
+  }
+
+  const cleanFixturePath =
+    "src/main/lib/headless/__architecture_boundary_clean_fixture__.cjs"
+  const cleanFindings = collectRuntimeCoreImportBoundaryFindings(
+    cleanFixturePath,
+    `
+      import "./adapter-selector"
+      const packageName = "electron"
+      const example = 'import type { AnyRouter } from "@trpc/server"'
+      const anotherExample = "require('trpc-electron')"
+      // import "../../../renderer/index"
+      /* require("../../../preload/index") */
+      void packageName
+      void example
+      void anotherExample
+    `,
+  )
+  if (cleanFindings.length > 0) {
+    fail(
+      `Runtime Core Import Boundary self-test must ignore clean imports, comments, and ordinary strings; found ${cleanFindings
+        .map((finding) => JSON.stringify(finding.specifier))
+        .join(", ")}.`,
+    )
+  }
+}
+
+function assertRuntimeCoreImportBoundary() {
+  assertRuntimeCoreImportBoundarySelfTest()
+
+  for (const runtimeCoreDirectory of RUNTIME_CORE_DIRECTORIES) {
+    for (const absolutePath of walkFiles(
+      runtimeCoreDirectory,
+      RUNTIME_CORE_SOURCE_EXTENSIONS,
+    )) {
+      const filePath = relative(absolutePath)
+      const content = readFileSync(absolutePath, "utf8")
+      const findings = collectRuntimeCoreImportBoundaryFindings(
+        filePath,
+        content,
+      )
+
+      for (const finding of findings) {
+        fail(
+          `${finding.filePath} directly imports banned ${finding.category} dependency ${JSON.stringify(finding.specifier)} via ${finding.syntax}; see ${RUNTIME_CORE_OWNERSHIP_SECTION}.`,
+        )
+      }
+    }
+  }
+}
+
 const DANGEROUS_ROUTER_INPUT_FIELDS = new Set([
   "absolutePath",
   "baseUrl",
@@ -909,6 +1489,7 @@ function assertOwnershipDocs() {
     "## Codex Desktop Chat Runtime",
     "## Headless Agent Runtime",
     "## Runtime MCP Configuration",
+    "## Runtime Core Import Boundary",
     "## tRPC Route Boundary",
   ]
 
@@ -1206,6 +1787,7 @@ assertGuardDecisionSingleOwner()
 assertRuntimeEventStateOwner()
 assertChatMessageModelOwner()
 assertNoUnresolvedDangerousRouterInput()
+assertRuntimeCoreImportBoundary()
 assertNoDeadSettingsState()
 assertCanonicalVocabularyI18n()
 

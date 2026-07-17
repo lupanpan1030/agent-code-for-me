@@ -10,7 +10,7 @@ import { z } from "zod"
 import {
   getActiveLocalApiProviderConfig,
   type LocalApiProviderRuntimeConfig,
-} from "./local-api-provider-config"
+} from "../../local-api-provider-config"
 import {
   MAX_VOICE_AUDIO_SIZE_BYTES,
   transcribeWithProviderConfig,

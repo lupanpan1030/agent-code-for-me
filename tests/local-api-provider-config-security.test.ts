@@ -22,7 +22,7 @@ mock.module("electron", () => ({
 }))
 
 const { getLocalApiProviderTokenRequirement, localApiProviderPurposeSchema } =
-  await import("../src/main/lib/trpc/routers/local-api-provider-config")
+  await import("../src/main/lib/local-api-provider-config")
 const { normalizeProviderBaseUrl } = await import(
   "../src/main/lib/provider-token"
 )
