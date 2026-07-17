@@ -31,6 +31,7 @@ import {
   type LocalJobApiResolvedProvider,
   type LocalJobApiResultEnvelope,
   type LocalJobApiRuntimeManifestEnvelope,
+  type NormalizedLocalJobApiCompletionCreateRequest,
   type NormalizedLocalJobApiCreateRequest,
 } from "../../../shared/local-job-api"
 import {
@@ -47,7 +48,10 @@ import {
   listAgentJobEvents,
   retryAgentJob,
 } from "./job-store"
-import { assertHeadlessProviderSelectionUsableAtCreate } from "./provider-binding"
+import {
+  assertHeadlessProviderSelectionUsableAtCreate,
+  resolveExplicitHeadlessProviderProfile,
+} from "./provider-binding"
 import {
   type RuntimeReadinessResolverDependencies,
   resolveLocalJobApiRuntimeReadiness,
@@ -79,6 +83,21 @@ function parseJson(value: string): unknown {
       `Invalid JSON request: ${error instanceof Error ? error.message : String(error)}`,
     )
   }
+}
+
+function completionStorageRuntime(
+  request: NormalizedLocalJobApiCompletionCreateRequest,
+): AgentRuntimeContractId {
+  return request.runtime.id ?? "codex"
+}
+
+function completionPromptPreview(
+  request: NormalizedLocalJobApiCompletionCreateRequest,
+): string {
+  return request.messages
+    .map((message) => message.content)
+    .join("\n\n")
+    .trim()
 }
 
 export function parseLocalJobApiCreateRequestJson(
@@ -340,6 +359,30 @@ export function getLocalJobApiStoredRequest(
 ): NormalizedLocalJobApiCreateRequest {
   if (job.source !== "api") throw new Error(`Job ${job.id} is not an API job`)
   const input = parseJobInput(job)
+  if (job.kind === "completion") {
+    const storedConsumer = isRecord(input.consumer) ? input.consumer : {}
+    const storedRuntime = isRecord(input.runtime) ? input.runtime : {}
+    const storedProvider = isRecord(input.provider) ? input.provider : {}
+    return assertLocalJobApiCreateRequest({
+      apiVersion: input.apiVersion ?? LOCAL_JOB_API_VERSION,
+      kind: "completion",
+      consumer: {
+        id: job.apiConsumerId ?? storedConsumer.id,
+        runExternalId: job.apiConsumerRunId ?? storedConsumer.runExternalId,
+      },
+      runtime:
+        typeof storedRuntime.id === "string" ? { id: storedRuntime.id } : null,
+      provider: {
+        profileId:
+          job.providerProfileId ?? nullableString(storedProvider.profileId),
+        model: job.modelOverride ?? nullableString(storedProvider.model),
+      },
+      messages: input.messages,
+      maxTokens: input.maxTokens,
+      temperature: input.temperature,
+      responseFormat: input.responseFormat,
+    })
+  }
   const storedRuntime = isRecord(input.runtime) ? input.runtime : {}
   const storedProject = isRecord(input.project) ? input.project : {}
   const storedConsumer = isRecord(input.consumer) ? input.consumer : {}
@@ -349,6 +392,7 @@ export function getLocalJobApiStoredRequest(
   const prompt = typeof input.prompt === "string" ? input.prompt : ""
   return assertLocalJobApiCreateRequest({
     apiVersion: input.apiVersion ?? LOCAL_JOB_API_VERSION,
+    kind: "agent",
     consumer: {
       id: job.apiConsumerId ?? storedConsumer.id,
       runExternalId: job.apiConsumerRunId ?? storedConsumer.runExternalId,
@@ -485,6 +529,7 @@ export function toLocalJobApiResultEnvelope(
 export function validateLocalJobApiRequiredCapabilities(
   request: NormalizedLocalJobApiCreateRequest,
 ): void {
+  if (request.kind !== "agent") return
   for (const capabilityId of request.runtime.requiredCapabilities) {
     const gate = checkRegisteredAgentRuntimeCapability({
       runtime: request.runtime.id,
@@ -501,6 +546,41 @@ export function createLocalJobApiJob(
   request: NormalizedLocalJobApiCreateRequest,
   appVersion: string | null | undefined,
 ): LocalJobApiCreatePrepared {
+  if (request.kind === "completion") {
+    resolveExplicitHeadlessProviderProfile({
+      db,
+      runtime: request.runtime.id,
+      providerProfileId: request.provider.profileId,
+      modelOverride: request.provider.model,
+    })
+    const job = createAgentJob(db, {
+      id: createId(),
+      kind: "completion",
+      source: "api",
+      runtime: completionStorageRuntime(request),
+      mode: "agent",
+      cwd: process.cwd(),
+      prompt: completionPromptPreview(request) || "Completion request",
+      input: {
+        apiVersion: request.apiVersion,
+        kind: request.kind,
+        consumer: request.consumer,
+        runtime: request.runtime,
+        provider: request.provider,
+        messages: request.messages,
+        maxTokens: request.maxTokens,
+        temperature: request.temperature,
+        responseFormat: request.responseFormat,
+      },
+      apiConsumerId: request.consumer.id,
+      apiConsumerRunId: request.consumer.runExternalId,
+      providerProfileId: request.provider.profileId,
+      modelOverride: request.provider.model,
+      createdByVersion: appVersion ?? null,
+    })
+    return { request, job: getAgentJob(db, job.id) ?? job, runDir: null }
+  }
+
   validateLocalJobApiRequiredCapabilities(request)
   assertHeadlessProviderSelectionUsableAtCreate({
     db,
@@ -557,6 +637,20 @@ export function retryLocalJobApiJob(
   job: AgentJob,
 ): LocalJobApiCreatePrepared {
   const request = getLocalJobApiStoredRequest(job)
+  if (request.kind === "completion") {
+    resolveExplicitHeadlessProviderProfile({
+      db,
+      runtime: request.runtime.id,
+      providerProfileId: request.provider.profileId,
+      modelOverride: request.provider.model,
+    })
+    const retry = retryAgentJob(db, job.id, {
+      id: createId(),
+      artifactBaseDir: null,
+      artifactManifestPath: null,
+    })
+    return { request, job: retry, runDir: null }
+  }
   validateLocalJobApiRequiredCapabilities(request)
   const project = findRegisteredProjectForCwdWithCanonicalPath(
     db,

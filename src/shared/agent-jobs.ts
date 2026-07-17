@@ -14,6 +14,10 @@ export const AGENT_JOB_SOURCES = [
 
 export type AgentJobSource = (typeof AGENT_JOB_SOURCES)[number]
 
+export const AGENT_JOB_KINDS = ["agent", "completion"] as const
+
+export type AgentJobKind = (typeof AGENT_JOB_KINDS)[number]
+
 export const AGENT_JOB_STATUSES = [
   "queued",
   "running",

@@ -36,6 +36,7 @@ Local Job API v1 允许下游 consumer：
 
 - 列出 runtime capability manifests
 - 发起一次 agent run
+- 发起一次 single-shot completion
 - 读取 run status
 - 读取标准化 event envelopes
 - 读取最终 result envelope
@@ -159,7 +160,7 @@ locus api runtimes list --json
 ```json
 {
   "apiVersion": "locus.local-job.v1",
-  "features": ["runtime-readiness", "provider-binding"],
+  "features": ["runtime-readiness", "provider-binding", "completion"],
   "runtimes": [
     {
       "runtimeId": "codex",
@@ -224,7 +225,10 @@ Provider 选择：
 consumer 只能传 provider 引用，不能在 `provider`、`input` 或 artifacts 中传
 provider token、headers 或 environment variables。
 
-## Create Request
+completion job 比 agent job 更严格：必须提供 `provider.profileId`，不会使用 runtime
+defaults，也不会回落到 native credentials。
+
+## Agent Create Request
 
 通用本地 package 示例：
 
@@ -275,6 +279,72 @@ locus api runs create --request request.json --json
 cat request.json | locus api runs create --request - --json
 ```
 
+## Completion Create Request
+
+completion job 用于一次上游模型请求：没有 tools、worktree、artifacts，也不会启动 runtime
+child process。通过 `"kind": "completion"` 选择。
+
+文本 completion：
+
+```json
+{
+  "apiVersion": "locus.local-job.v1",
+  "kind": "completion",
+  "consumer": {
+    "id": "generic-tool",
+    "runExternalId": "text-task-001"
+  },
+  "provider": {
+    "profileId": "completion-main",
+    "model": "provider-model"
+  },
+  "messages": [
+    {
+      "role": "user",
+      "content": "Summarize this generic text in one paragraph."
+    }
+  ],
+  "responseFormat": {
+    "type": "text"
+  }
+}
+```
+
+结构化 completion：
+
+```json
+{
+  "apiVersion": "locus.local-job.v1",
+  "kind": "completion",
+  "consumer": {
+    "id": "generic-tool"
+  },
+  "provider": {
+    "profileId": "completion-main"
+  },
+  "messages": [
+    {
+      "role": "user",
+      "content": "Return a label and confidence for this generic input."
+    }
+  ],
+  "responseFormat": {
+    "type": "json_schema",
+    "schema": {
+      "type": "object",
+      "required": ["label", "confidence"],
+      "properties": {
+        "label": { "type": "string" },
+        "confidence": { "type": "number" }
+      }
+    }
+  }
+}
+```
+
+`responseFormat.schema` 由 caller 拥有。Locus 只把它映射到 provider 原生结构化输出机制，
+并用它校验返回 JSON；Locus 不解释 schema 字段含义。
+
 ## Request 字段
 
 | 字段 | 必填 | 含义 |
@@ -296,6 +366,21 @@ cat request.json | locus api runs create --request - --json
 | `input` | 否 | consumer 自己的结构化 metadata，不能包含 secrets。 |
 | `artifacts.baseDir` | 否 | Locus run metadata 的绝对目录，必须在 `project.cwd` 内。 |
 | `artifacts.writePolicy` | 否 | `metadata-only` 或 `proposal-only`，默认 `metadata-only`。 |
+
+completion-only 字段：
+
+| 字段 | 必填 | 含义 |
+| --- | --- | --- |
+| `kind` | 是 | 必须是 `completion`。省略 `kind` 表示 agent request。 |
+| `provider.profileId` | 是 | 已存储 provider profile ID。缺失或不可用时 completion job fail closed。 |
+| `provider.model` | 否 | 针对所选 profile 的 model override。 |
+| `messages` | 是 | 有序 `system`、`user` 或 `assistant` messages。 |
+| `maxTokens` | 否 | 最大输出 token 数。 |
+| `temperature` | 否 | `0` 到 `2` 的数字。 |
+| `responseFormat` | 否 | `{ "type": "text" }` 或 `{ "type": "json_schema", "schema": ... }`，默认 text。 |
+
+completion request 会拒绝 agent-only 字段，例如 `project`、`mode`、`prompt`、`input`
+和 `artifacts`。
 
 ID 限制：
 
@@ -432,6 +517,7 @@ locus api runs events <job-id> --after 0 --jsonl
 - `tool_started`
 - `tool_delta`
 - `tool_finished`
+- `usage_update`
 - `artifact_created`
 - `status`
 - `error`
@@ -495,14 +581,37 @@ locus api runs result <job-id> --json
 status 轮询时，Locus 还可能正在解析 defaults 或铸造 scoped gateway token，
 所以 provider 字段可能是暂态值。
 
+completion result envelope 使用同一个外层 result 结构。内层 `result` 是：
+
+```json
+{
+  "content": {
+    "label": "example",
+    "confidence": 0.91
+  },
+  "usage": {
+    "inputTokens": 12,
+    "outputTokens": 6
+  },
+  "resolvedProvider": {
+    "source": "request-profile",
+    "profileId": "completion-main",
+    "model": "provider-model"
+  }
+}
+```
+
+文本 completion 的 `content` 是 string。`json_schema` completion 的 `content` 是已经按
+caller schema 校验过的 JSON。
+
 Provider binding 错误一律 fail-closed。如果显式选择的 profile 或已配置的
 headless 默认 profile 不可用，job 会以结构化 diagnostic 失败，例如
-`provider_profile_not_found`、`provider_profile_runtime_mismatch` 或
-`provider_profile_unavailable`。这些情况下 Locus 不会静默回落到 runtime native
-credentials。
-`provider_profile_not_found` 和 `provider_profile_runtime_mismatch` 属于 invalid
-request，exit `2`；`provider_profile_unavailable` 属于 credential availability，
-exit `4`。
+`provider_profile_required`、`provider_profile_not_found`、
+`provider_profile_runtime_mismatch` 或 `provider_profile_unavailable`。这些情况下
+Locus 不会静默回落到 runtime native credentials。
+`provider_profile_required`、`provider_profile_not_found` 和
+`provider_profile_runtime_mismatch` 属于 invalid request，exit `2`；
+`provider_profile_unavailable` 属于 credential availability，exit `4`。
 
 ## Cancel
 

@@ -190,6 +190,7 @@ function localJobApiRuntimeOptions(
   if (job.source !== "api") return {}
   try {
     const request = getLocalJobApiStoredRequest(job)
+    if (request.kind !== "agent") return {}
     return {
       executionProfile: request.runtime.executionProfile,
       policyGrant: request.runtime.policyGrant,

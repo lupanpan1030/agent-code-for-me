@@ -1,4 +1,9 @@
-import { AGENT_JOB_MODES, type AgentJobMode } from "./agent-jobs"
+import {
+  AGENT_JOB_KINDS,
+  AGENT_JOB_MODES,
+  type AgentJobKind,
+  type AgentJobMode,
+} from "./agent-jobs"
 import {
   AGENT_RUNTIME_CAPABILITY_IDS,
   type AgentRuntimeCapabilityId,
@@ -13,6 +18,7 @@ export const LOCAL_JOB_API_VERSION = "locus.local-job.v1" as const
 export const LOCAL_JOB_API_DISCOVERY_FEATURES = [
   "runtime-readiness",
   "provider-binding",
+  "completion",
 ] as const
 
 export type LocalJobApiDiscoveryFeature =
@@ -52,6 +58,57 @@ export type NormalizedLocalJobApiProviderSelection = {
   model: string | null
 }
 
+export type NormalizedLocalJobApiExplicitProviderSelection = {
+  profileId: string
+  model: string | null
+}
+
+export const LOCAL_JOB_API_RESPONSE_FORMAT_TYPES = [
+  "text",
+  "json_schema",
+] as const
+
+export type LocalJobApiResponseFormatType =
+  (typeof LOCAL_JOB_API_RESPONSE_FORMAT_TYPES)[number]
+
+export type LocalJobApiTextResponseFormat = {
+  type: "text"
+}
+
+export type LocalJobApiJsonSchemaResponseFormat = {
+  type: "json_schema"
+  schema: Record<string, unknown>
+}
+
+export type LocalJobApiResponseFormat =
+  | LocalJobApiTextResponseFormat
+  | LocalJobApiJsonSchemaResponseFormat
+
+export const LOCAL_JOB_API_COMPLETION_MESSAGE_ROLES = [
+  "system",
+  "user",
+  "assistant",
+] as const
+
+export type LocalJobApiCompletionMessageRole =
+  (typeof LOCAL_JOB_API_COMPLETION_MESSAGE_ROLES)[number]
+
+export type LocalJobApiCompletionMessage = {
+  role: LocalJobApiCompletionMessageRole
+  content: string
+}
+
+export type LocalJobApiCompletionUsage = {
+  inputTokens: number
+  outputTokens: number
+}
+
+export type LocalJobApiCompletionResult = {
+  content: unknown
+  usage: LocalJobApiCompletionUsage
+  resolvedProvider: LocalJobApiResolvedProvider
+}
+
 export const LOCAL_JOB_API_RESOLVED_PROVIDER_SOURCES = [
   "request-profile",
   "default-profile",
@@ -75,6 +132,7 @@ export const LOCAL_JOB_API_EVENT_TYPES = [
   "tool_started",
   "tool_delta",
   "tool_finished",
+  "usage_update",
   "artifact_created",
   "status",
   "error",
@@ -88,8 +146,9 @@ export type LocalJobApiConsumer = {
   runExternalId: string | null
 }
 
-export type LocalJobApiCreateRequest = {
+export type LocalJobApiAgentCreateRequest = {
   apiVersion: typeof LOCAL_JOB_API_VERSION
+  kind?: Extract<AgentJobKind, "agent">
   consumer: {
     id: string
     runExternalId?: string | null
@@ -116,8 +175,32 @@ export type LocalJobApiCreateRequest = {
   } | null
 }
 
-export type NormalizedLocalJobApiCreateRequest = {
+export type LocalJobApiCompletionCreateRequest = {
   apiVersion: typeof LOCAL_JOB_API_VERSION
+  kind: Extract<AgentJobKind, "completion">
+  consumer: {
+    id: string
+    runExternalId?: string | null
+  }
+  runtime?: {
+    id?: AgentRuntimeContractId | "claude" | null
+  } | null
+  provider: LocalJobApiProviderSelection & {
+    profileId: string
+  }
+  messages: LocalJobApiCompletionMessage[]
+  maxTokens?: number | null
+  temperature?: number | null
+  responseFormat?: LocalJobApiResponseFormat | null
+}
+
+export type LocalJobApiCreateRequest =
+  | LocalJobApiAgentCreateRequest
+  | LocalJobApiCompletionCreateRequest
+
+export type NormalizedLocalJobApiAgentCreateRequest = {
+  apiVersion: typeof LOCAL_JOB_API_VERSION
+  kind: Extract<AgentJobKind, "agent">
   consumer: LocalJobApiConsumer
   project: {
     cwd: string
@@ -140,6 +223,24 @@ export type NormalizedLocalJobApiCreateRequest = {
     writePolicy: LocalJobApiWritePolicy
   }
 }
+
+export type NormalizedLocalJobApiCompletionCreateRequest = {
+  apiVersion: typeof LOCAL_JOB_API_VERSION
+  kind: Extract<AgentJobKind, "completion">
+  consumer: LocalJobApiConsumer
+  runtime: {
+    id: AgentRuntimeContractId | null
+  }
+  provider: NormalizedLocalJobApiExplicitProviderSelection
+  messages: LocalJobApiCompletionMessage[]
+  maxTokens: number | null
+  temperature: number | null
+  responseFormat: LocalJobApiResponseFormat
+}
+
+export type NormalizedLocalJobApiCreateRequest =
+  | NormalizedLocalJobApiAgentCreateRequest
+  | NormalizedLocalJobApiCompletionCreateRequest
 
 export type LocalJobApiArtifact = {
   role: string
@@ -226,6 +327,9 @@ const MAX_PROVIDER_PROFILE_ID_LENGTH = 160
 const MAX_PROVIDER_MODEL_LENGTH = 200
 const MAX_PROMPT_LENGTH = 256 * 1024
 const MAX_REQUEST_JSON_LENGTH = 1024 * 1024
+const MAX_COMPLETION_MESSAGES = 128
+const MAX_COMPLETION_TOKENS = 200_000
+const MAX_TEMPERATURE = 2
 
 const SECRET_KEY_PATTERN =
   /(^|[_\-.])(api[-_]?key|authorization|auth[-_]?token|access[-_]?token|refresh[-_]?token|id[-_]?token|token|secret|password|headers?|env|environment)([_\-.]|$)/i
@@ -336,11 +440,203 @@ function normalizeProviderSelection(
   return { profileId, model }
 }
 
+function normalizeConsumer(
+  value: unknown,
+  errors: string[],
+): LocalJobApiConsumer {
+  const consumer = isRecord(value) ? value : null
+  const consumerId =
+    consumer && typeof consumer.id === "string" ? consumer.id.trim() : ""
+  if (!isBoundedId(consumerId, MAX_CONSUMER_ID_LENGTH)) {
+    errors.push(
+      `consumer.id must be 1-${MAX_CONSUMER_ID_LENGTH} chars: letters, numbers, '.', '_', ':', '-'`,
+    )
+  }
+  const runExternalId = optionalString(consumer?.runExternalId, null)
+  if (runExternalId && !isBoundedId(runExternalId, MAX_EXTERNAL_ID_LENGTH)) {
+    errors.push(
+      `consumer.runExternalId must be 1-${MAX_EXTERNAL_ID_LENGTH} chars: letters, numbers, '.', '_', ':', '-'`,
+    )
+  }
+  return {
+    id: consumerId,
+    runExternalId: runExternalId || null,
+  }
+}
+
+function rejectKeys(
+  value: Record<string, unknown>,
+  keys: readonly string[],
+  errors: string[],
+  reason: string,
+): void {
+  for (const key of keys) {
+    if (value[key] !== undefined) {
+      errors.push(`${key} is not accepted for ${reason}`)
+    }
+  }
+}
+
+function normalizeCompletionRuntime(
+  value: unknown,
+  errors: string[],
+): { id: AgentRuntimeContractId | null } {
+  if (value === undefined || value === null) return { id: null }
+  if (!isRecord(value)) {
+    errors.push("runtime must be an object when provided")
+    return { id: null }
+  }
+
+  for (const key of Object.keys(value)) {
+    if (key !== "id") {
+      errors.push(`runtime.${key} is not accepted for completion jobs`)
+    }
+  }
+
+  const rawRuntimeId =
+    typeof value.id === "string" && value.id.trim() ? value.id : null
+  if (!rawRuntimeId) return { id: null }
+  const runtimeId = toAgentRuntimeId(rawRuntimeId)
+  if (
+    !runtimeId ||
+    !(CONTRACT_RUNTIME_IDS as readonly string[]).includes(runtimeId)
+  ) {
+    errors.push("Unsupported runtime.id")
+    return { id: null }
+  }
+  return { id: runtimeId as AgentRuntimeContractId }
+}
+
+function normalizeCompletionMessages(
+  value: unknown,
+  errors: string[],
+): LocalJobApiCompletionMessage[] {
+  if (!Array.isArray(value)) {
+    errors.push("messages must be a non-empty array")
+    return []
+  }
+  if (value.length === 0) {
+    errors.push("messages must contain at least one message")
+    return []
+  }
+  if (value.length > MAX_COMPLETION_MESSAGES) {
+    errors.push(`messages exceeds ${MAX_COMPLETION_MESSAGES} item limit`)
+  }
+
+  let totalContentLength = 0
+  const messages: LocalJobApiCompletionMessage[] = []
+  value.forEach((item, index) => {
+    if (!isRecord(item)) {
+      errors.push(`messages[${index}] must be an object`)
+      return
+    }
+    const role = typeof item.role === "string" ? item.role : ""
+    if (
+      !(LOCAL_JOB_API_COMPLETION_MESSAGE_ROLES as readonly string[]).includes(
+        role,
+      )
+    ) {
+      errors.push(`messages[${index}].role is unsupported`)
+      return
+    }
+    if (typeof item.content !== "string" || item.content.trim().length === 0) {
+      errors.push(`messages[${index}].content is required`)
+      return
+    }
+    totalContentLength += item.content.length
+    messages.push({
+      role: role as LocalJobApiCompletionMessageRole,
+      content: item.content,
+    })
+  })
+  if (totalContentLength > MAX_PROMPT_LENGTH) {
+    errors.push(`messages content exceeds ${MAX_PROMPT_LENGTH} character limit`)
+  }
+  return messages
+}
+
+function normalizeNullablePositiveInteger(
+  value: unknown,
+  field: string,
+  errors: string[],
+): number | null {
+  if (value === undefined || value === null) return null
+  if (
+    typeof value !== "number" ||
+    !Number.isInteger(value) ||
+    value <= 0 ||
+    value > MAX_COMPLETION_TOKENS
+  ) {
+    errors.push(`${field} must be an integer from 1-${MAX_COMPLETION_TOKENS}`)
+    return null
+  }
+  return value
+}
+
+function normalizeNullableTemperature(
+  value: unknown,
+  errors: string[],
+): number | null {
+  if (value === undefined || value === null) return null
+  if (
+    typeof value !== "number" ||
+    !Number.isFinite(value) ||
+    value < 0 ||
+    value > MAX_TEMPERATURE
+  ) {
+    errors.push(`temperature must be a number from 0-${MAX_TEMPERATURE}`)
+    return null
+  }
+  return value
+}
+
+function normalizeResponseFormat(
+  value: unknown,
+  errors: string[],
+): LocalJobApiResponseFormat {
+  if (value === undefined || value === null) return { type: "text" }
+  if (!isRecord(value)) {
+    errors.push("responseFormat must be an object when provided")
+    return { type: "text" }
+  }
+  const type = typeof value.type === "string" ? value.type : ""
+  if (
+    !(LOCAL_JOB_API_RESPONSE_FORMAT_TYPES as readonly string[]).includes(type)
+  ) {
+    errors.push("Unsupported responseFormat.type")
+    return { type: "text" }
+  }
+  if (type === "text") {
+    for (const key of Object.keys(value)) {
+      if (key !== "type") {
+        errors.push(`responseFormat.${key} is not accepted for text responses`)
+      }
+    }
+    return { type: "text" }
+  }
+  for (const key of Object.keys(value)) {
+    if (key !== "type" && key !== "schema") {
+      errors.push(
+        `responseFormat.${key} is not accepted for JSON schema responses`,
+      )
+    }
+  }
+  if (!isRecord(value.schema)) {
+    errors.push("responseFormat.schema must be an object")
+    return { type: "json_schema", schema: {} }
+  }
+  return {
+    type: "json_schema",
+    schema: value.schema,
+  }
+}
+
 function collectSecretFindings(
   value: unknown,
   path: string,
   findings: string[],
 ): void {
+  if (path === "responseFormat.schema") return
   if (typeof value === "string") {
     if (SECRET_VALUE_PATTERNS.some((pattern) => pattern.test(value))) {
       findings.push(`${path} contains secret-like text`)
@@ -486,20 +782,70 @@ export function validateLocalJobApiCreateRequest(
     errors.push(`apiVersion must be ${LOCAL_JOB_API_VERSION}`)
   }
 
-  const consumer = isRecord(value.consumer) ? value.consumer : null
-  const consumerId =
-    consumer && typeof consumer.id === "string" ? consumer.id.trim() : ""
-  if (!isBoundedId(consumerId, MAX_CONSUMER_ID_LENGTH)) {
-    errors.push(
-      `consumer.id must be 1-${MAX_CONSUMER_ID_LENGTH} chars: letters, numbers, '.', '_', ':', '-'`,
-    )
+  const kind = value.kind ?? "agent"
+  if (
+    typeof kind !== "string" ||
+    !(AGENT_JOB_KINDS as readonly string[]).includes(kind)
+  ) {
+    errors.push("Unsupported kind")
   }
-  const runExternalId = optionalString(consumer?.runExternalId, null)
-  if (runExternalId && !isBoundedId(runExternalId, MAX_EXTERNAL_ID_LENGTH)) {
-    errors.push(
-      `consumer.runExternalId must be 1-${MAX_EXTERNAL_ID_LENGTH} chars: letters, numbers, '.', '_', ':', '-'`,
+
+  const consumer = normalizeConsumer(value.consumer, errors)
+
+  if (kind === "completion") {
+    rejectKeys(
+      value,
+      ["project", "mode", "prompt", "input", "artifacts", "cwd"],
+      errors,
+      "completion jobs",
     )
+    const runtime = normalizeCompletionRuntime(value.runtime, errors)
+    const provider = normalizeProviderSelection(value.provider, errors)
+    if (!provider.profileId) {
+      errors.push("provider.profileId is required for completion jobs")
+    }
+    const messages = normalizeCompletionMessages(value.messages, errors)
+    const maxTokens = normalizeNullablePositiveInteger(
+      value.maxTokens,
+      "maxTokens",
+      errors,
+    )
+    const temperature = normalizeNullableTemperature(value.temperature, errors)
+    const responseFormat = normalizeResponseFormat(value.responseFormat, errors)
+
+    const secretFindings: string[] = []
+    collectSecretFindings(value, "", secretFindings)
+    errors.push(...secretFindings)
+
+    if (errors.length > 0 || !provider.profileId) {
+      return { ok: false, errors }
+    }
+
+    return {
+      ok: true,
+      request: {
+        apiVersion: LOCAL_JOB_API_VERSION,
+        kind: "completion",
+        consumer,
+        runtime,
+        provider: {
+          profileId: provider.profileId,
+          model: provider.model,
+        },
+        messages,
+        maxTokens,
+        temperature,
+        responseFormat,
+      },
+    }
   }
+
+  rejectKeys(
+    value,
+    ["messages", "maxTokens", "temperature", "responseFormat"],
+    errors,
+    "agent jobs",
+  )
 
   const project = isRecord(value.project) ? value.project : null
   const cwd = project && typeof project.cwd === "string" ? project.cwd : ""
@@ -587,10 +933,8 @@ export function validateLocalJobApiCreateRequest(
     ok: true,
     request: {
       apiVersion: LOCAL_JOB_API_VERSION,
-      consumer: {
-        id: consumerId,
-        runExternalId: runExternalId || null,
-      },
+      kind: "agent",
+      consumer,
       project: {
         cwd,
         projectId: projectId || null,

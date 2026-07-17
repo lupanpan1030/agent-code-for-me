@@ -201,7 +201,7 @@ describe("Local Job API Codex app-server profile", () => {
         "job_started",
         "status",
         "assistant_delta",
-        "status",
+        "usage_update",
         "completed",
       ])
       expect(apiEvents[3].payload).toMatchObject({
@@ -210,6 +210,10 @@ describe("Local Job API Codex app-server profile", () => {
       })
       expect(apiEvents[4].payload).toEqual({
         text: "app-server local job response",
+      })
+      expect(apiEvents[5].payload).toMatchObject({
+        inputTokens: 5,
+        outputTokens: 7,
       })
       expect(prepared.runDir).toBeTruthy()
       expect(existsSync(join(prepared.runDir!, "request.json"))).toBe(true)

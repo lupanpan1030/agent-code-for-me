@@ -104,7 +104,10 @@
       "enum": ["ready", "needs-auth", "unavailable", "unknown"]
     },
     "discoveryFeature": {
-      "enum": ["runtime-readiness", "provider-binding"]
+      "enum": ["runtime-readiness", "provider-binding", "completion"]
+    },
+    "jobKind": {
+      "enum": ["agent", "completion"]
     },
     "agentMode": {
       "enum": ["plan", "agent"]
@@ -170,6 +173,108 @@
         }
       }
     },
+    "explicitProviderSelection": {
+      "type": "object",
+      "description": "Required provider profile selector for completion jobs. Completion jobs do not use default profile or native credential fallback.",
+      "required": ["profileId"],
+      "additionalProperties": false,
+      "properties": {
+        "profileId": {
+          "$ref": "#/$defs/boundedId160"
+        },
+        "model": {
+          "$ref": "#/$defs/providerModelId"
+        }
+      }
+    },
+    "normalizedExplicitProviderSelection": {
+      "type": "object",
+      "required": ["profileId", "model"],
+      "properties": {
+        "profileId": {
+          "$ref": "#/$defs/boundedId160"
+        },
+        "model": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/providerModelId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "completionMessage": {
+      "type": "object",
+      "required": ["role", "content"],
+      "additionalProperties": false,
+      "properties": {
+        "role": {
+          "enum": ["system", "user", "assistant"]
+        },
+        "content": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "responseFormat": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["type"],
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "text"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type", "schema"],
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "json_schema"
+            },
+            "schema": {
+              "type": "object",
+              "description": "Caller-owned JSON Schema passed through opaquely and used only to validate the returned JSON."
+            }
+          }
+        }
+      ]
+    },
+    "completionUsage": {
+      "type": "object",
+      "required": ["inputTokens", "outputTokens"],
+      "properties": {
+        "inputTokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "outputTokens": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "completionResult": {
+      "type": "object",
+      "required": ["content", "usage", "resolvedProvider"],
+      "properties": {
+        "content": true,
+        "usage": {
+          "$ref": "#/$defs/completionUsage"
+        },
+        "resolvedProvider": {
+          "$ref": "#/$defs/resolvedProvider"
+        }
+      }
+    },
     "resolvedProviderSource": {
       "enum": ["request-profile", "default-profile", "native"]
     },
@@ -211,6 +316,7 @@
         "tool_started",
         "tool_delta",
         "tool_finished",
+        "usage_update",
         "artifact_created",
         "status",
         "error",
@@ -255,9 +361,9 @@
         }
       }
     },
-    "createRequest": {
+    "agentCreateRequest": {
       "type": "object",
-      "description": "Input accepted by `locus api runs create --request <path|-> --json`. Runtime validation also rejects secret-like keys and values recursively, enforces a 1 MiB request JSON limit, and validates artifact paths against the filesystem/project boundary.",
+      "description": "Agent job input accepted by `locus api runs create --request <path|-> --json`. Runtime validation also rejects secret-like keys and values recursively, enforces a 1 MiB request JSON limit, and validates artifact paths against the filesystem/project boundary.",
       "required": [
         "apiVersion",
         "consumer",
@@ -269,6 +375,10 @@
       "properties": {
         "apiVersion": {
           "$ref": "#/$defs/apiVersion"
+        },
+        "kind": {
+          "const": "agent",
+          "default": "agent"
         },
         "consumer": {
           "$ref": "#/$defs/consumer"
@@ -389,11 +499,104 @@
         }
       }
     },
-    "normalizedCreateRequest": {
+    "completionCreateRequest": {
       "type": "object",
-      "description": "Normalized request shape after `validateLocalJobApiCreateRequest` succeeds.",
+      "description": "Consumer-neutral completion input accepted by `locus api runs create --request <path|-> --json`. `responseFormat.schema` is caller-owned and opaque to Locus except for JSON Schema validation of the returned content.",
+      "required": ["apiVersion", "kind", "consumer", "provider", "messages"],
+      "additionalProperties": false,
+      "properties": {
+        "apiVersion": {
+          "$ref": "#/$defs/apiVersion"
+        },
+        "kind": {
+          "const": "completion"
+        },
+        "consumer": {
+          "$ref": "#/$defs/consumer"
+        },
+        "runtime": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "$ref": "#/$defs/runtimeIdInput"
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "provider": {
+          "$ref": "#/$defs/explicitProviderSelection"
+        },
+        "messages": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 128,
+          "items": {
+            "$ref": "#/$defs/completionMessage"
+          }
+        },
+        "maxTokens": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200000
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "temperature": {
+          "oneOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 2
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "responseFormat": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/responseFormat"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": {
+            "type": "text"
+          }
+        }
+      }
+    },
+    "createRequest": {
+      "description": "Input accepted by `locus api runs create --request <path|-> --json`. Omitted `kind` is treated as `agent` for backward compatibility.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/agentCreateRequest"
+        },
+        {
+          "$ref": "#/$defs/completionCreateRequest"
+        }
+      ]
+    },
+    "normalizedAgentCreateRequest": {
+      "type": "object",
+      "description": "Normalized agent request shape after `validateLocalJobApiCreateRequest` succeeds.",
       "required": [
         "apiVersion",
+        "kind",
         "consumer",
         "project",
         "runtime",
@@ -406,6 +609,9 @@
       "properties": {
         "apiVersion": {
           "$ref": "#/$defs/apiVersion"
+        },
+        "kind": {
+          "const": "agent"
         },
         "consumer": {
           "$ref": "#/$defs/normalizedConsumer"
@@ -516,6 +722,97 @@
           }
         }
       }
+    },
+    "normalizedCompletionCreateRequest": {
+      "type": "object",
+      "description": "Normalized completion request shape after `validateLocalJobApiCreateRequest` succeeds.",
+      "required": [
+        "apiVersion",
+        "kind",
+        "consumer",
+        "runtime",
+        "provider",
+        "messages",
+        "maxTokens",
+        "temperature",
+        "responseFormat"
+      ],
+      "properties": {
+        "apiVersion": {
+          "$ref": "#/$defs/apiVersion"
+        },
+        "kind": {
+          "const": "completion"
+        },
+        "consumer": {
+          "$ref": "#/$defs/normalizedConsumer"
+        },
+        "runtime": {
+          "type": "object",
+          "required": ["id"],
+          "properties": {
+            "id": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/runtimeId"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        "provider": {
+          "$ref": "#/$defs/normalizedExplicitProviderSelection"
+        },
+        "messages": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 128,
+          "items": {
+            "$ref": "#/$defs/completionMessage"
+          }
+        },
+        "maxTokens": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200000
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "temperature": {
+          "oneOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 2
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "responseFormat": {
+          "$ref": "#/$defs/responseFormat"
+        }
+      }
+    },
+    "normalizedCreateRequest": {
+      "description": "Normalized request shape after `validateLocalJobApiCreateRequest` succeeds.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/normalizedAgentCreateRequest"
+        },
+        {
+          "$ref": "#/$defs/normalizedCompletionCreateRequest"
+        }
+      ]
     },
     "artifact": {
       "type": "object",
@@ -727,6 +1024,7 @@
         "id",
         "retryOfJobId",
         "attempt",
+        "kind",
         "source",
         "runtime",
         "status",
@@ -773,6 +1071,9 @@
         "attempt": {
           "type": "integer",
           "minimum": 1
+        },
+        "kind": {
+          "$ref": "#/$defs/jobKind"
         },
         "source": {
           "enum": ["desktop", "cli", "api", "daemon", "schedule", "protocol"]

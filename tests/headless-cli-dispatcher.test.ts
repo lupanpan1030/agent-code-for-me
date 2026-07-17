@@ -57,14 +57,19 @@ function seedCurrentProject(
 
 function seedProviderProfile(
   db: ReturnType<typeof createAgentJobTestDb>,
-  input: { id: string; targets: string[] },
+  input: {
+    id: string
+    targets: string[]
+    protocol?: string
+    baseUrl?: string
+  },
 ) {
   db.insert(agentProviderProfiles)
     .values({
       id: input.id,
       name: input.id,
-      protocol: "openai-responses",
-      baseUrl: "https://provider.example.com/v1",
+      protocol: input.protocol ?? "openai-responses",
+      baseUrl: input.baseUrl ?? "https://provider.example.com/v1",
       defaultModel: "provider-default-model",
       authMode: "none",
       encryptedToken: null,
@@ -309,6 +314,595 @@ describe("headless CLI dispatcher", () => {
     expect(
       manifest.artifacts.map((artifact: { role: string }) => artifact.role),
     ).toEqual(["request", "events", "result"])
+  })
+
+  test("runs Local Job API completion with text result and usage event", async () => {
+    const db = createAgentJobTestDb()
+    seedProviderProfile(db, { id: "completion-main", targets: ["codex"] })
+    let providerBody: Record<string, unknown> | null = null
+    const stdout = writer()
+    const stderr = writer()
+    const code = await runHeadlessCliCommand({
+      db,
+      argv: [
+        "Locus",
+        HEADLESS_CLI_MARKER,
+        "api",
+        "runs",
+        "create",
+        "--request",
+        "-",
+        "--json",
+      ],
+      stdin: Readable.from([
+        JSON.stringify({
+          apiVersion: "locus.local-job.v1",
+          kind: "completion",
+          consumer: {
+            id: "generic-tool",
+            runExternalId: "completion-run-001",
+          },
+          runtime: { id: "codex" },
+          provider: { profileId: "completion-main", model: "provider-model" },
+          messages: [{ role: "user", content: "Return short text." }],
+          responseFormat: { type: "text" },
+        }),
+      ]),
+      stdout: stdout.stream,
+      stderr: stderr.stream,
+      completionFetch: async (_url, init) => {
+        providerBody = JSON.parse(String(init?.body ?? "{}")) as Record<
+          string,
+          unknown
+        >
+        return new Response(
+          JSON.stringify({
+            output_text: "done",
+            usage: { input_tokens: 7, output_tokens: 3 },
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        )
+      },
+    })
+
+    expect(code).toBe(0)
+    expect(stderr.value()).toBe("")
+    expect(providerBody).toMatchObject({
+      model: "provider-model",
+      input: [{ role: "user", content: "Return short text." }],
+    })
+    expect(providerBody).not.toHaveProperty("tools")
+    const created = JSON.parse(stdout.value())
+    expect(created).toMatchObject({
+      apiVersion: "locus.local-job.v1",
+      job: {
+        kind: "completion",
+        source: "api",
+        status: "succeeded",
+        apiConsumerId: "generic-tool",
+      },
+      result: {
+        status: "succeeded",
+        artifactManifestPath: null,
+        artifacts: [],
+        result: {
+          content: "done",
+          usage: {
+            inputTokens: 7,
+            outputTokens: 3,
+          },
+          resolvedProvider: {
+            source: "request-profile",
+            profileId: "completion-main",
+            model: "provider-model",
+          },
+        },
+      },
+    })
+
+    const eventsStdout = writer()
+    await runHeadlessCliCommand({
+      db,
+      argv: [
+        "Locus",
+        HEADLESS_CLI_MARKER,
+        "api",
+        "runs",
+        "events",
+        created.job.id,
+        "--jsonl",
+      ],
+      stdout: eventsStdout.stream,
+      stderr: writer().stream,
+    })
+    const events = parseJsonLines(eventsStdout.value())
+    expect(events.map((event) => event.type)).toContain("usage_update")
+    expect(events.map((event) => event.type)).not.toContain("artifact_created")
+    expect(events.map((event) => event.type)).not.toContain("tool_started")
+  })
+
+  test("runs Local Job API completion with caller-owned JSON schema", async () => {
+    const db = createAgentJobTestDb()
+    seedProviderProfile(db, { id: "completion-main", targets: ["codex"] })
+    let providerBody: Record<string, unknown> | null = null
+    const stdout = writer()
+    const stderr = writer()
+    const responseSchema = {
+      type: "object",
+      required: ["decision", "notes"],
+      properties: {
+        decision: { enum: ["accept", "revise"] },
+        notes: {
+          type: "array",
+          items: { type: "string" },
+        },
+      },
+    }
+
+    const code = await runHeadlessCliCommand({
+      db,
+      argv: [
+        "Locus",
+        HEADLESS_CLI_MARKER,
+        "api",
+        "runs",
+        "create",
+        "--request",
+        "-",
+        "--json",
+      ],
+      stdin: Readable.from([
+        JSON.stringify({
+          apiVersion: "locus.local-job.v1",
+          kind: "completion",
+          consumer: { id: "generic-tool" },
+          provider: { profileId: "completion-main" },
+          messages: [{ role: "user", content: "Return JSON." }],
+          responseFormat: { type: "json_schema", schema: responseSchema },
+        }),
+      ]),
+      stdout: stdout.stream,
+      stderr: stderr.stream,
+      completionFetch: async (_url, init) => {
+        providerBody = JSON.parse(String(init?.body ?? "{}")) as Record<
+          string,
+          unknown
+        >
+        return new Response(
+          JSON.stringify({
+            output_text: JSON.stringify({
+              decision: "accept",
+              notes: ["ok"],
+            }),
+            usage: { input_tokens: 11, output_tokens: 5 },
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        )
+      },
+    })
+
+    expect(code).toBe(0)
+    expect(stderr.value()).toBe("")
+    expect(providerBody).toMatchObject({
+      text: {
+        format: {
+          type: "json_schema",
+          name: "structured_output",
+          strict: true,
+          schema: responseSchema,
+        },
+      },
+    })
+    const created = JSON.parse(stdout.value())
+    expect(created.result.result).toMatchObject({
+      content: {
+        decision: "accept",
+        notes: ["ok"],
+      },
+      usage: {
+        inputTokens: 11,
+        outputTokens: 5,
+      },
+    })
+  })
+
+  test("maps Local Job API completion to OpenAI chat structured output", async () => {
+    const db = createAgentJobTestDb()
+    seedProviderProfile(db, {
+      id: "completion-main",
+      targets: ["codex"],
+      protocol: "openai-chat",
+    })
+    let providerUrl = ""
+    let providerBody: Record<string, unknown> | null = null
+    const stdout = writer()
+    const responseSchema = {
+      type: "object",
+      required: ["summary"],
+      properties: {
+        summary: { type: "string" },
+      },
+    }
+
+    const code = await runHeadlessCliCommand({
+      db,
+      argv: [
+        "Locus",
+        HEADLESS_CLI_MARKER,
+        "api",
+        "runs",
+        "create",
+        "--request",
+        "-",
+        "--json",
+      ],
+      stdin: Readable.from([
+        JSON.stringify({
+          apiVersion: "locus.local-job.v1",
+          kind: "completion",
+          consumer: { id: "generic-tool" },
+          provider: { profileId: "completion-main" },
+          messages: [{ role: "user", content: "Return JSON." }],
+          responseFormat: { type: "json_schema", schema: responseSchema },
+        }),
+      ]),
+      stdout: stdout.stream,
+      stderr: writer().stream,
+      completionFetch: async (url, init) => {
+        providerUrl = String(url)
+        providerBody = JSON.parse(String(init?.body ?? "{}")) as Record<
+          string,
+          unknown
+        >
+        return new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({ summary: "ok" }),
+                },
+              },
+            ],
+            usage: { prompt_tokens: 8, completion_tokens: 4 },
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        )
+      },
+    })
+
+    expect(code).toBe(0)
+    expect(providerUrl).toBe("https://provider.example.com/v1/chat/completions")
+    expect(providerBody).toMatchObject({
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: "structured_output",
+          strict: true,
+          schema: responseSchema,
+        },
+      },
+    })
+    expect(JSON.parse(stdout.value()).result.result).toMatchObject({
+      content: { summary: "ok" },
+      usage: { inputTokens: 8, outputTokens: 4 },
+    })
+  })
+
+  test("maps Local Job API completion to Anthropic forced tool schema", async () => {
+    const db = createAgentJobTestDb()
+    seedProviderProfile(db, {
+      id: "completion-main",
+      targets: ["claude"],
+      protocol: "anthropic",
+    })
+    let providerBody: Record<string, unknown> | null = null
+    const stdout = writer()
+    const responseSchema = {
+      type: "object",
+      required: ["summary"],
+      properties: {
+        summary: { type: "string" },
+      },
+    }
+
+    const code = await runHeadlessCliCommand({
+      db,
+      argv: [
+        "Locus",
+        HEADLESS_CLI_MARKER,
+        "api",
+        "runs",
+        "create",
+        "--request",
+        "-",
+        "--json",
+      ],
+      stdin: Readable.from([
+        JSON.stringify({
+          apiVersion: "locus.local-job.v1",
+          kind: "completion",
+          consumer: { id: "generic-tool" },
+          runtime: { id: "claude-code" },
+          provider: { profileId: "completion-main" },
+          messages: [
+            { role: "system", content: "Return only structured output." },
+            { role: "user", content: "Return JSON." },
+          ],
+          responseFormat: { type: "json_schema", schema: responseSchema },
+        }),
+      ]),
+      stdout: stdout.stream,
+      stderr: writer().stream,
+      completionFetch: async (_url, init) => {
+        providerBody = JSON.parse(String(init?.body ?? "{}")) as Record<
+          string,
+          unknown
+        >
+        return new Response(
+          JSON.stringify({
+            content: [
+              {
+                type: "tool_use",
+                id: "toolu_1",
+                name: "structured_output",
+                input: { summary: "ok" },
+              },
+            ],
+            usage: { input_tokens: 9, output_tokens: 4 },
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        )
+      },
+    })
+
+    expect(code).toBe(0)
+    expect(providerBody).toMatchObject({
+      system: "Return only structured output.",
+      messages: [{ role: "user", content: "Return JSON." }],
+      tools: [
+        {
+          name: "structured_output",
+          input_schema: responseSchema,
+        },
+      ],
+      tool_choice: {
+        type: "tool",
+        name: "structured_output",
+      },
+    })
+    expect(JSON.parse(stdout.value()).result.result).toMatchObject({
+      content: { summary: "ok" },
+      usage: { inputTokens: 9, outputTokens: 4 },
+    })
+  })
+
+  test("local-only guard blocks disallowed completion upstream before fetch", async () => {
+    const db = createAgentJobTestDb()
+    seedProviderProfile(db, {
+      id: "completion-main",
+      targets: ["codex"],
+      baseUrl: "https://api.1code.dev/v1",
+    })
+    let called = false
+    const stdout = writer()
+    const localOnlyKeys = [
+      "LOCUS_LOCAL_ONLY",
+      "AGENT_CODE_FOR_ME_LOCAL_ONLY",
+      "ONECODE_LOCAL_ONLY",
+      "MAIN_VITE_LOCAL_ONLY",
+    ] as const
+    const previousEnv = Object.fromEntries(
+      localOnlyKeys.map((key) => [key, process.env[key]]),
+    )
+    for (const key of localOnlyKeys) delete process.env[key]
+    let code = -1
+    try {
+      code = await runHeadlessCliCommand({
+        db,
+        argv: [
+          "Locus",
+          HEADLESS_CLI_MARKER,
+          "api",
+          "runs",
+          "create",
+          "--request",
+          "-",
+          "--json",
+        ],
+        stdin: Readable.from([
+          JSON.stringify({
+            apiVersion: "locus.local-job.v1",
+            kind: "completion",
+            consumer: { id: "generic-tool" },
+            provider: { profileId: "completion-main" },
+            messages: [{ role: "user", content: "Return text." }],
+          }),
+        ]),
+        stdout: stdout.stream,
+        stderr: writer().stream,
+        completionFetch: async () => {
+          called = true
+          return new Response("{}")
+        },
+      })
+    } finally {
+      for (const key of localOnlyKeys) {
+        const value = previousEnv[key]
+        if (value === undefined) delete process.env[key]
+        else process.env[key] = value
+      }
+    }
+
+    expect(code).toBe(6)
+    expect(called).toBe(false)
+    expect(JSON.parse(stdout.value()).job).toMatchObject({
+      kind: "completion",
+      status: "failed",
+      errorCode: "local_only_guard_blocked",
+    })
+  })
+
+  test("fails Local Job API completion when returned JSON misses caller schema", async () => {
+    const db = createAgentJobTestDb()
+    seedProviderProfile(db, { id: "completion-main", targets: ["codex"] })
+    const stdout = writer()
+    const stderr = writer()
+    const code = await runHeadlessCliCommand({
+      db,
+      argv: [
+        "Locus",
+        HEADLESS_CLI_MARKER,
+        "api",
+        "runs",
+        "create",
+        "--request",
+        "-",
+        "--json",
+      ],
+      stdin: Readable.from([
+        JSON.stringify({
+          apiVersion: "locus.local-job.v1",
+          kind: "completion",
+          consumer: { id: "generic-tool" },
+          provider: { profileId: "completion-main" },
+          messages: [{ role: "user", content: "Return JSON." }],
+          responseFormat: {
+            type: "json_schema",
+            schema: {
+              type: "object",
+              required: ["summary"],
+              properties: {
+                summary: { type: "string" },
+              },
+            },
+          },
+        }),
+      ]),
+      stdout: stdout.stream,
+      stderr: stderr.stream,
+      completionFetch: async () =>
+        new Response(
+          JSON.stringify({
+            output_text: JSON.stringify({ detail: "missing field" }),
+            usage: { input_tokens: 4, output_tokens: 2 },
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
+    })
+
+    expect(code).toBe(1)
+    expect(stderr.value()).toBe("")
+    const created = JSON.parse(stdout.value())
+    expect(created.job).toMatchObject({
+      kind: "completion",
+      status: "failed",
+      errorCode: "completion_schema_validation_failed",
+    })
+    expect(created.result.result).toBe(null)
+    const events = listAgentJobEvents(db, created.job.id)
+    expect(events.map((event) => event.type)).not.toContain("usage_update")
+  })
+
+  test("completion retry re-resolves provider profile and fails closed when it is gone", async () => {
+    const db = createAgentJobTestDb()
+    seedProviderProfile(db, { id: "completion-main", targets: ["codex"] })
+    const createStdout = writer()
+    await runHeadlessCliCommand({
+      db,
+      argv: [
+        "Locus",
+        HEADLESS_CLI_MARKER,
+        "api",
+        "runs",
+        "create",
+        "--request",
+        "-",
+        "--json",
+      ],
+      stdin: Readable.from([
+        JSON.stringify({
+          apiVersion: "locus.local-job.v1",
+          kind: "completion",
+          consumer: { id: "generic-tool" },
+          provider: { profileId: "completion-main" },
+          messages: [{ role: "user", content: "Return JSON." }],
+          responseFormat: {
+            type: "json_schema",
+            schema: {
+              type: "object",
+              required: ["summary"],
+              properties: {
+                summary: { type: "string" },
+              },
+            },
+          },
+        }),
+      ]),
+      stdout: createStdout.stream,
+      stderr: writer().stream,
+      completionFetch: async () =>
+        new Response(
+          JSON.stringify({
+            output_text: JSON.stringify({ detail: "missing field" }),
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
+    })
+    const failed = JSON.parse(createStdout.value())
+    expect(failed.job.status).toBe("failed")
+    db.delete(agentProviderProfiles).run()
+
+    let called = false
+    const retryStdout = writer()
+    const retryStderr = writer()
+    const retryCode = await runHeadlessCliCommand({
+      db,
+      argv: [
+        "Locus",
+        HEADLESS_CLI_MARKER,
+        "api",
+        "runs",
+        "retry",
+        failed.job.id,
+        "--json",
+      ],
+      stdout: retryStdout.stream,
+      stderr: retryStderr.stream,
+      completionFetch: async () => {
+        called = true
+        return new Response("{}")
+      },
+    })
+
+    expect(retryCode).toBe(2)
+    expect(called).toBe(false)
+    expect(retryStderr.value()).toBe("")
+    expect(JSON.parse(retryStdout.value())).toMatchObject({
+      apiVersion: "locus.local-job.v1",
+      error: {
+        code: "provider_profile_not_found",
+        source: "request-profile",
+        profileId: "completion-main",
+      },
+    })
   })
 
   test("accepts Local Job API artifact paths whose existing prefix resolves through a path alias", async () => {

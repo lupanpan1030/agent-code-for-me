@@ -24,6 +24,7 @@ import type { HeadlessAgentRuntimeProviderReference } from "./agent-runtime-cont
 import type { AgentJobDatabase } from "./job-store"
 
 export const HEADLESS_PROVIDER_BINDING_ERROR_CODES = [
+  "provider_profile_required",
   "provider_profile_not_found",
   "provider_profile_runtime_mismatch",
   "provider_profile_unavailable",
@@ -37,6 +38,7 @@ export function isInvalidHeadlessProviderBindingRequestCode(
 ): boolean {
   return (
     code === "provider_profile_not_found" ||
+    code === "provider_profile_required" ||
     code === "provider_profile_runtime_mismatch"
   )
 }
@@ -101,7 +103,7 @@ export type HeadlessProviderBindingResolution = {
   cleanup: () => void
 }
 
-type HeadlessProviderProfileMetadata = {
+export type HeadlessProviderProfileMetadata = {
   id: string
   targetRuntimes: ProviderProfileTarget[]
 }
@@ -178,7 +180,7 @@ function parseProtocol(value: string): ProviderProfileProtocol {
     : "openai-responses"
 }
 
-function getProviderProfileMetadataFromDb(
+export function getProviderProfileMetadataFromDb(
   db: AgentJobDatabase,
   profileId: string,
 ): HeadlessProviderProfileMetadata | null {
@@ -195,7 +197,7 @@ function getProviderProfileMetadataFromDb(
   }
 }
 
-function getProviderProfileRuntimeConfigFromDb(
+export function getProviderProfileRuntimeConfigFromDb(
   db: AgentJobDatabase,
   profileId: string,
 ): ProviderProfileRuntimeConfig | null {
@@ -348,6 +350,74 @@ export function assertHeadlessProviderSelectionUsableAtCreate(input: {
     runtimeBinding,
     source: "request-profile",
   })
+}
+
+export function resolveExplicitHeadlessProviderProfile(input: {
+  db: AgentJobDatabase
+  runtime?: AgentRuntimeContractId | null
+  providerProfileId?: string | null
+  modelOverride?: string | null
+  dependencies?: HeadlessProviderBindingDependencies
+}): {
+  profile: ProviderProfileRuntimeConfig
+  resolvedProvider: LocalJobApiResolvedProvider
+} {
+  const profileId = normalizeOptionalText(input.providerProfileId)
+  if (!profileId) {
+    throw new HeadlessProviderBindingError({
+      code: "provider_profile_required",
+      message: "provider.profileId is required.",
+      source: "request-profile",
+      profileId: null,
+    })
+  }
+
+  const dependencies = defaultDependencies(input.dependencies)
+  let profile: ProviderProfileRuntimeConfig | null
+  try {
+    profile = dependencies.getProviderProfileRuntimeConfig(input.db, profileId)
+  } catch (error) {
+    throw new HeadlessProviderBindingError({
+      code: "provider_profile_unavailable",
+      message:
+        error instanceof Error
+          ? error.message
+          : `Provider profile ${profileId} is unavailable.`,
+      source: "request-profile",
+      profileId,
+    })
+  }
+  if (!profile) {
+    throw new HeadlessProviderBindingError({
+      code: "provider_profile_not_found",
+      message: `Provider profile ${profileId} was not found.`,
+      source: "request-profile",
+      profileId,
+    })
+  }
+
+  if (input.runtime) {
+    const runtimeBinding = requireRuntimeBinding(input.runtime)
+    if (runtimeBinding) {
+      assertProfileTargetsRuntime({
+        profileId,
+        targetRuntimes: profile.targetRuntimes,
+        runtimeBinding,
+        source: "request-profile",
+      })
+    }
+  }
+
+  const model =
+    normalizeOptionalText(input.modelOverride) ?? profile.defaultModel
+  return {
+    profile,
+    resolvedProvider: {
+      source: "request-profile",
+      profileId: profile.id,
+      model,
+    },
+  }
 }
 
 async function profileProviderBinding(input: {

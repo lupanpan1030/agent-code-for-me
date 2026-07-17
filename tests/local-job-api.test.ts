@@ -7,6 +7,7 @@ import {
   AGENT_JOB_SOURCES,
 } from "../src/shared/agent-jobs"
 import {
+  LOCAL_JOB_API_EVENT_TYPES,
   LOCAL_JOB_API_VERSION,
   validateLocalJobApiCreateRequest,
 } from "../src/shared/local-job-api"
@@ -244,6 +245,159 @@ describe("Local Job API v1 shared contract", () => {
   test("declares API source and artifact event type", () => {
     expect(AGENT_JOB_SOURCES).toContain("api")
     expect(AGENT_JOB_EVENT_TYPES).toContain("artifact_created")
+    expect(AGENT_JOB_EVENT_TYPES).toContain("usage_update")
+    expect(LOCAL_JOB_API_EVENT_TYPES).toContain("usage_update")
+  })
+
+  test("normalizes consumer-neutral completion requests with caller-owned schemas", () => {
+    const schemaA = {
+      type: "object",
+      required: ["summary", "scores"],
+      properties: {
+        summary: { type: "string" },
+        scores: {
+          type: "array",
+          items: { type: "number" },
+        },
+      },
+    }
+    const schemaB = {
+      type: "object",
+      required: ["decision", "metadata"],
+      properties: {
+        decision: { enum: ["accept", "revise"] },
+        metadata: {
+          type: "object",
+          properties: {
+            authorization: { type: "string" },
+          },
+        },
+      },
+    }
+
+    for (const schema of [schemaA, schemaB]) {
+      const request = validateLocalJobApiCreateRequest({
+        apiVersion: LOCAL_JOB_API_VERSION,
+        kind: "completion",
+        consumer: { id: "generic-tool" },
+        provider: { profileId: "completion-main", model: "model-v1" },
+        messages: [{ role: "user", content: "Return the requested JSON." }],
+        responseFormat: { type: "json_schema", schema },
+      })
+
+      expect(request).toMatchObject({
+        ok: true,
+        request: {
+          kind: "completion",
+          consumer: {
+            id: "generic-tool",
+            runExternalId: null,
+          },
+          provider: {
+            profileId: "completion-main",
+            model: "model-v1",
+          },
+          responseFormat: {
+            type: "json_schema",
+            schema,
+          },
+        },
+      })
+    }
+  })
+
+  test("changing only consumer id does not change completion semantics", () => {
+    const base = {
+      apiVersion: LOCAL_JOB_API_VERSION,
+      kind: "completion",
+      provider: { profileId: "completion-main" },
+      messages: [
+        { role: "system", content: "Return terse content." },
+        { role: "user", content: "Summarize this generic text." },
+      ],
+      responseFormat: { type: "text" },
+    }
+    const first = validateLocalJobApiCreateRequest({
+      ...base,
+      consumer: { id: "tool-alpha" },
+    })
+    const second = validateLocalJobApiCreateRequest({
+      ...base,
+      consumer: { id: "tool-beta" },
+    })
+
+    expect(first.ok).toBe(true)
+    expect(second.ok).toBe(true)
+    if (!first.ok || !second.ok) return
+
+    const firstWithoutConsumer = {
+      ...first.request,
+      consumer: { id: "<ignored>", runExternalId: null },
+    }
+    const secondWithoutConsumer = {
+      ...second.request,
+      consumer: { id: "<ignored>", runExternalId: null },
+    }
+    expect(firstWithoutConsumer).toEqual(secondWithoutConsumer)
+  })
+
+  test("rejects mixed agent and completion request fields", () => {
+    const completion = validateLocalJobApiCreateRequest({
+      apiVersion: LOCAL_JOB_API_VERSION,
+      kind: "completion",
+      consumer: { id: "generic-tool" },
+      provider: { profileId: "completion-main" },
+      project: { cwd: process.cwd() },
+      prompt: { text: "Not accepted." },
+      messages: [{ role: "user", content: "Return text." }],
+    })
+
+    expect(completion.ok).toBe(false)
+    if (!completion.ok) {
+      expect(completion.errors.join("\n")).toContain(
+        "project is not accepted for completion jobs",
+      )
+      expect(completion.errors.join("\n")).toContain(
+        "prompt is not accepted for completion jobs",
+      )
+    }
+
+    const agent = validateLocalJobApiCreateRequest({
+      apiVersion: LOCAL_JOB_API_VERSION,
+      consumer: { id: "docs-workbench" },
+      project: { cwd: process.cwd() },
+      runtime: { id: "codex" },
+      mode: "agent",
+      prompt: { text: "Run normally." },
+      messages: [{ role: "user", content: "Not accepted." }],
+      responseFormat: { type: "text" },
+    })
+
+    expect(agent.ok).toBe(false)
+    if (!agent.ok) {
+      expect(agent.errors.join("\n")).toContain(
+        "messages is not accepted for agent jobs",
+      )
+      expect(agent.errors.join("\n")).toContain(
+        "responseFormat is not accepted for agent jobs",
+      )
+    }
+  })
+
+  test("requires explicit provider profile for completion jobs", () => {
+    const request = validateLocalJobApiCreateRequest({
+      apiVersion: LOCAL_JOB_API_VERSION,
+      kind: "completion",
+      consumer: { id: "generic-tool" },
+      messages: [{ role: "user", content: "Return text." }],
+    })
+
+    expect(request.ok).toBe(false)
+    if (!request.ok) {
+      expect(request.errors.join("\n")).toContain(
+        "provider.profileId is required for completion jobs",
+      )
+    }
   })
 
   test("persists sanitized API metadata on local jobs", () => {
@@ -319,6 +473,58 @@ describe("Local Job API v1 shared contract", () => {
         profileId: "codex-main",
         model: "gpt-5.4",
       },
+    })
+  })
+
+  test("Local Job API completion create persists generic completion metadata", () => {
+    const db = createAgentJobTestDb()
+    db.insert(agentProviderProfiles)
+      .values({
+        id: "completion-main",
+        name: "Completion Main",
+        protocol: "openai-responses",
+        baseUrl: "https://provider.example.com/v1",
+        defaultModel: "provider-default-model",
+        authMode: "none",
+        targetRuntimesJson: JSON.stringify(["codex"]),
+        capabilitiesJson: "{}",
+      })
+      .run()
+
+    const parsed = validateLocalJobApiCreateRequest({
+      apiVersion: LOCAL_JOB_API_VERSION,
+      kind: "completion",
+      consumer: { id: "generic-tool", runExternalId: "run-001" },
+      runtime: { id: "codex" },
+      provider: {
+        profileId: "completion-main",
+        model: "provider-model",
+      },
+      messages: [{ role: "user", content: "Return text." }],
+      responseFormat: { type: "text" },
+    })
+
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) return
+    const prepared = createLocalJobApiJob(db, parsed.request, "test")
+    expect(prepared.runDir).toBe(null)
+    expect(prepared.job).toMatchObject({
+      kind: "completion",
+      source: "api",
+      projectId: null,
+      artifactBaseDir: null,
+      artifactManifestPath: null,
+      providerProfileId: "completion-main",
+      modelOverride: "provider-model",
+    })
+    expect(JSON.parse(prepared.job.inputJson ?? "{}")).toMatchObject({
+      kind: "completion",
+      provider: {
+        profileId: "completion-main",
+        model: "provider-model",
+      },
+      messages: [{ role: "user", content: "Return text." }],
+      responseFormat: { type: "text" },
     })
   })
 })

@@ -103,6 +103,7 @@ export function createAgentJobTestDb() {
       id text PRIMARY KEY NOT NULL,
       retry_of_job_id text,
       attempt integer DEFAULT 1 NOT NULL,
+      kind text DEFAULT 'agent' NOT NULL,
       source text NOT NULL,
       runtime text NOT NULL,
       status text DEFAULT 'queued' NOT NULL,

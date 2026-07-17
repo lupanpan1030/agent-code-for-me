@@ -2,10 +2,12 @@ import { and, asc, desc, eq, isNotNull, isNull, lt, or, sql } from "drizzle-orm"
 import { drizzle } from "drizzle-orm/better-sqlite3"
 import {
   AGENT_JOB_EVENT_TYPES,
+  AGENT_JOB_KINDS,
   AGENT_JOB_MODES,
   AGENT_JOB_SOURCES,
   AGENT_JOB_STATUSES,
   type AgentJobEventType,
+  type AgentJobKind,
   type AgentJobMode,
   type AgentJobRuntime,
   type AgentJobSource,
@@ -30,6 +32,7 @@ export type AgentJobDatabase = ReturnType<typeof drizzle<typeof schema>>
 
 export type CreateAgentJobInput = {
   id?: string
+  kind?: AgentJobKind
   source: AgentJobSource
   runtime: AgentJobRuntime
   mode: AgentJobMode
@@ -143,6 +146,21 @@ function redactSecretText(value: string): string {
     )
 }
 
+const SAFE_TOKEN_COUNT_KEYS = new Set([
+  "inputTokens",
+  "outputTokens",
+  "totalTokens",
+  "cacheReadInputTokens",
+  "cacheCreationInputTokens",
+])
+
+function isSensitiveStorageKey(key: string, value: unknown): boolean {
+  if (SAFE_TOKEN_COUNT_KEYS.has(key) && typeof value === "number") {
+    return false
+  }
+  return /token|authorization|api[-_]?key|secret|password/i.test(key)
+}
+
 function sanitizeForStorage(value: unknown): unknown {
   if (typeof value === "string") return redactSecretText(value)
   if (Array.isArray(value)) return value.map(sanitizeForStorage)
@@ -150,7 +168,7 @@ function sanitizeForStorage(value: unknown): unknown {
     return Object.fromEntries(
       Object.entries(value).map(([key, item]) => {
         if (
-          /token|authorization|api[-_]?key|secret|password/i.test(key) &&
+          isSensitiveStorageKey(key, item) &&
           item !== null &&
           item !== undefined
         ) {
@@ -164,7 +182,7 @@ function sanitizeForStorage(value: unknown): unknown {
 }
 
 function toJson(value: unknown): string {
-  return JSON.stringify(sanitizeForStorage(value ?? {}))
+  return JSON.stringify(sanitizeForStorage(value === undefined ? {} : value))
 }
 
 function fromJson<T>(value: string | null | undefined, fallback: T): T {
@@ -273,14 +291,17 @@ export function createAgentJob(
   input: CreateAgentJobInput,
 ): AgentJob {
   assertOneOf(AGENT_JOB_SOURCES, input.source, "job source")
+  assertOneOf(AGENT_JOB_KINDS, input.kind ?? "agent", "job kind")
   assertCreateAgentJobRuntime(input)
   assertOneOf(AGENT_JOB_MODES, input.mode, "job mode")
 
   const id = input.id ?? createId()
+  const kind = input.kind ?? "agent"
   const now = new Date()
   db.insert(agentJobs)
     .values({
       id,
+      kind,
       source: input.source,
       runtime: input.runtime,
       status: "queued",
@@ -323,6 +344,7 @@ export function createAgentJob(
     jobId: id,
     type: "job_created",
     payload: {
+      kind,
       source: input.source,
       runtime: input.runtime,
       mode: input.mode,
@@ -687,6 +709,7 @@ export function retryAgentJob(
       id: retryId,
       retryOfJobId: job.id,
       attempt: job.attempt + 1,
+      kind: job.kind,
       source: job.source,
       runtime: job.runtime,
       status: "queued",
@@ -714,6 +737,7 @@ export function retryAgentJob(
     jobId: retryId,
     type: "job_created",
     payload: {
+      kind: job.kind,
       retryOfJobId: job.id,
       attempt: job.attempt + 1,
     },

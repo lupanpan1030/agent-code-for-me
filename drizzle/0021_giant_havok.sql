@@ -1,0 +1,1 @@
+ALTER TABLE `agent_jobs` ADD `kind` text DEFAULT 'agent' NOT NULL;

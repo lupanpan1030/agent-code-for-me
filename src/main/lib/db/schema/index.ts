@@ -295,6 +295,7 @@ export const agentJobs = sqliteTable(
       .$defaultFn(() => createId()),
     retryOfJobId: text("retry_of_job_id"),
     attempt: integer("attempt").notNull().default(1),
+    kind: text("kind").notNull().default("agent"),
     source: text("source").notNull(),
     runtime: text("runtime").notNull(),
     status: text("status").notNull().default("queued"),

@@ -4,6 +4,7 @@ export type SerializedAgentJob = {
   id: string
   retryOfJobId: string | null
   attempt: number
+  kind: string
   source: string
   runtime: string
   status: string
@@ -86,6 +87,7 @@ export function serializeAgentJob(job: AgentJob): SerializedAgentJob {
     id: job.id,
     retryOfJobId: job.retryOfJobId,
     attempt: job.attempt,
+    kind: job.kind,
     source: job.source,
     runtime: job.runtime,
     status: job.status,
@@ -162,6 +164,7 @@ export function formatJobListText(jobs: AgentJob[]): string {
       return [
         job.id,
         job.status.padEnd(11),
+        job.kind.padEnd(10),
         job.runtime.padEnd(11),
         job.mode.padEnd(5),
         job.source.padEnd(8),
@@ -176,6 +179,7 @@ export function formatJobText(job: AgentJob): string {
   const lines = [
     `id: ${job.id}`,
     `status: ${job.status}`,
+    `kind: ${job.kind}`,
     `runtime: ${job.runtime}`,
     `mode: ${job.mode}`,
     `source: ${job.source}`,

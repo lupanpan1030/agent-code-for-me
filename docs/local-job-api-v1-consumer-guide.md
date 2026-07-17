@@ -39,6 +39,7 @@ Local Job API v1 lets a consumer:
 
 - list runtime capability manifests
 - create an agent run
+- create a single-shot completion
 - read run status
 - read normalized event envelopes
 - read the final result envelope
@@ -169,7 +170,7 @@ Response shape:
 ```json
 {
   "apiVersion": "locus.local-job.v1",
-  "features": ["runtime-readiness", "provider-binding"],
+  "features": ["runtime-readiness", "provider-binding", "completion"],
   "runtimes": [
     {
       "runtimeId": "codex",
@@ -237,7 +238,11 @@ Provider selection:
 Consumers must pass only provider references. Never send provider tokens,
 headers, or environment variables in `provider`, `input`, or artifacts.
 
-## Create Request
+Completion jobs are stricter than agent jobs: they require
+`provider.profileId` and do not use runtime defaults or native credential
+fallback.
+
+## Agent Create Request
 
 Example for a generic local package:
 
@@ -288,6 +293,74 @@ Or pipe it:
 cat request.json | locus api runs create --request - --json
 ```
 
+## Completion Create Request
+
+Completion jobs are for one upstream model request with no tools, worktree,
+artifacts, or runtime child process. They are selected with
+`"kind": "completion"`.
+
+Text completion:
+
+```json
+{
+  "apiVersion": "locus.local-job.v1",
+  "kind": "completion",
+  "consumer": {
+    "id": "generic-tool",
+    "runExternalId": "text-task-001"
+  },
+  "provider": {
+    "profileId": "completion-main",
+    "model": "provider-model"
+  },
+  "messages": [
+    {
+      "role": "user",
+      "content": "Summarize this generic text in one paragraph."
+    }
+  ],
+  "responseFormat": {
+    "type": "text"
+  }
+}
+```
+
+Structured completion:
+
+```json
+{
+  "apiVersion": "locus.local-job.v1",
+  "kind": "completion",
+  "consumer": {
+    "id": "generic-tool"
+  },
+  "provider": {
+    "profileId": "completion-main"
+  },
+  "messages": [
+    {
+      "role": "user",
+      "content": "Return a label and confidence for this generic input."
+    }
+  ],
+  "responseFormat": {
+    "type": "json_schema",
+    "schema": {
+      "type": "object",
+      "required": ["label", "confidence"],
+      "properties": {
+        "label": { "type": "string" },
+        "confidence": { "type": "number" }
+      }
+    }
+  }
+}
+```
+
+`responseFormat.schema` is caller-owned JSON Schema. Locus maps it to the
+provider's native structured-output mechanism, validates the returned JSON
+against it, and does not interpret the schema fields.
+
 ## Request Fields
 
 | Field | Required | Meaning |
@@ -309,6 +382,21 @@ cat request.json | locus api runs create --request - --json
 | `input` | no | Consumer-owned structured metadata. Must not contain secrets. |
 | `artifacts.baseDir` | no | Absolute directory for Locus run metadata. Must be inside `project.cwd`. |
 | `artifacts.writePolicy` | no | `metadata-only` or `proposal-only`. Defaults to `metadata-only`. |
+
+Completion-only fields:
+
+| Field | Required | Meaning |
+| --- | --- | --- |
+| `kind` | yes | Must be `completion`. Omitted `kind` means an agent request. |
+| `provider.profileId` | yes | Stored provider profile ID. Completion jobs fail closed if it is absent or unusable. |
+| `provider.model` | no | Model override for the selected profile. |
+| `messages` | yes | Ordered `system`, `user`, or `assistant` messages. |
+| `maxTokens` | no | Maximum output token count. |
+| `temperature` | no | Number from `0` to `2`. |
+| `responseFormat` | no | `{ "type": "text" }` or `{ "type": "json_schema", "schema": ... }`. Defaults to text. |
+
+Completion requests reject agent-only fields such as `project`, `mode`,
+`prompt`, `input`, and `artifacts`.
 
 Identifier limits:
 
@@ -445,12 +533,13 @@ Stable v1 event types:
 - `tool_started`
 - `tool_delta`
 - `tool_finished`
+- `usage_update`
 - `artifact_created`
 - `status`
 - `error`
 - `completed`
 
-Resume logic:
+Event continuation logic:
 
 ```text
 lastSequence = 0
@@ -510,14 +599,39 @@ Read `diagnostics` before treating a non-success status as user-visible output.
 status polling may show provisional provider fields while Locus is still
 resolving defaults or minting scoped gateway tokens.
 
+Completion result envelopes use the same outer result shape. The inner
+`result` is:
+
+```json
+{
+  "content": {
+    "label": "example",
+    "confidence": 0.91
+  },
+  "usage": {
+    "inputTokens": 12,
+    "outputTokens": 6
+  },
+  "resolvedProvider": {
+    "source": "request-profile",
+    "profileId": "completion-main",
+    "model": "provider-model"
+  }
+}
+```
+
+For text completion, `content` is a string. For `json_schema` completion,
+`content` is JSON that has already been validated against the caller schema.
+
 Provider binding errors are fail-closed. If an explicitly selected profile or a
 configured headless default profile is unavailable, the job fails with a
 structured diagnostic such as `provider_profile_not_found`,
-`provider_profile_runtime_mismatch`, or `provider_profile_unavailable`. Locus
-does not silently fall back to native runtime credentials in those cases.
-`provider_profile_not_found` and `provider_profile_runtime_mismatch` are invalid
-request errors and exit `2`; `provider_profile_unavailable` is a credential
-availability error and exits `4`.
+`provider_profile_required`, `provider_profile_runtime_mismatch`, or
+`provider_profile_unavailable`. Locus does not silently fall back to native
+runtime credentials in those cases.
+`provider_profile_required`, `provider_profile_not_found`, and
+`provider_profile_runtime_mismatch` are invalid request errors and exit `2`;
+`provider_profile_unavailable` is a credential availability error and exits `4`.
 
 ## Cancel
 

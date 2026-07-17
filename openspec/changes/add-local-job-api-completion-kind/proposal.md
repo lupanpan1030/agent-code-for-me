@@ -1,0 +1,24 @@
+# Change: Local Job API completion job kind — single-shot LLM calls
+
+## Why
+
+This is the payoff of the original LOCUS-RT-1 idea, now buildable on the foundations RT-2..RT-4 laid. Consumers today can only run agent jobs: pick a runtime, register a project cwd, drive a plan/agent loop, wait. There is no way to make a single non-agentic LLM call (summarize, classify, extract, rewrite) through Locus's managed provider/key system — a consumer must either stand up its own provider integration (defeating the point of Locus holding credentials) or abuse an agent run (heavy, needs a cwd, slow). RT-4 just made provider selection by reference work headless; a completion kind reuses that resolution plus the existing single-completion executor (`getLocalChatCompletionProviderConfig` + utility chat-completion helpers) to expose fast, synchronous, audited one-shot calls.
+
+Locus is a general-purpose base: the completion kind is a runtime-neutral, consumer-neutral primitive. It carries no vocabulary, schema, or logic specific to any downstream program. Downstream programs adapt to Locus's generic output — they supply their own structured-output schema and interpret the generic result in their own domain. Locus never learns what a consumer's schema "means".
+
+## What Changes
+
+- Local Job API create requests gain `kind: "agent" | "completion"` (default `"agent"`, so existing consumers are unaffected). Discovery `features` gains `"completion"`.
+- A completion request carries `provider` (RT-4 block) and a `messages` array (system/user/assistant turns) plus optional `maxTokens`/`temperature`. A completion has **no native agent loop and no agent-runtime default to inherit**, so MVP **requires an explicit `provider.profileId`** and fails closed if it is missing or unusable (a dedicated completion default purpose can be added later, but completion never falls back to native credentials or to the agent `claude-main`/`codex-main` defaults). It carries **no** `cwd`, `mode`, `runtime.requiredCapabilities`, scope, or artifacts — those are agent-only concepts and are rejected for completion.
+- A completion request MAY carry a generic `responseFormat`: `{ type: "text" }` (default) or `{ type: "json_schema", schema: <caller-supplied JSON Schema> }`. This is a standard LLM primitive (mapped to the provider's native structured-output mechanism — OpenAI `response_format`, Anthropic forced tool schema). The schema is opaque to Locus: the caller defines it, Locus passes it through and guarantees the returned content parses against it, and Locus attaches no meaning to its fields. Locus contains no consumer-specific schema.
+- Completion runs synchronously (the `api runs create` path is already synchronous), executes exactly one upstream request through the resolved provider config, and returns `{ content, usage: { inputTokens, outputTokens }, resolvedProvider }` — `content` is text for `type: "text"` and validated JSON for `type: "json_schema"`. No tools, no filesystem, no worktree.
+- Completion jobs are persisted in `agent_jobs`/`agent_job_events` for the same audit trail as agent jobs, with a `kind` column; usage is recorded per job (and thus per `consumer`) so a consumer's spend is attributable. This requires adding a `usage_update` event type to the **external** Local Job API event enum + schema (a general, feature-additive contract change — agent jobs already emit it internally, but the public enum currently downgrades unknown events to `status`).
+- Reuses the existing local-only guard (`assertOfficialCloudAllowed`) and secret boundaries: still references only, no plaintext credentials over the API; the provider token stays main-process.
+- CLI: `locus api runs create` accepts a completion-kind request; `locus run` stays agent-only (the CLI's ergonomics are agent-shaped). A thin `locus api completions create` alias MAY be added for discoverability.
+
+## Impact
+
+- Affected specs: `local-job-api` (ADDED: Completion Job Kind; Completion Provider Requirement; Completion Usage Accounting)
+- Affected code: `src/shared/local-job-api.ts` (kind + completion request/result shapes, validation), `src/main/lib/headless/local-job-api.ts` (completion branch in create), a new `src/main/lib/headless/completion-runner.ts` (executes one upstream call, reusing provider-profile resolution from RT-4 + the utility chat-completion helpers refactored out of `chats-helpers.ts`), `src/main/lib/db/schema/index.ts` (`kind` column + migration), `cli-args.ts`/`cli-dispatcher.ts` (completion passthrough), docs schema + consumer guides (EN/zh)
+- Depends on: RT-4 (`add-headless-provider-binding`) for provider resolution and the `provider` block
+- Non-goals: streaming token deltas (MVP returns the full text; may add later), tool use / function calling, agent-loop features, async/daemon completion (completion is inherently fast and synchronous)

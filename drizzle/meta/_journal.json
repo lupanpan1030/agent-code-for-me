@@ -148,6 +148,13 @@
       "when": 1783545138134,
       "tag": "0020_chubby_molly_hayes",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1783551000813,
+      "tag": "0021_giant_havok",
+      "breakpoints": true
     }
   ]
 }

@@ -33,6 +33,10 @@ import {
   serializeAgentJobEvent,
   serializeAgentSchedule,
 } from "./cli-output"
+import {
+  type RunPersistedCompletionJobOptions,
+  runPersistedCompletionJob,
+} from "./completion-runner"
 import { runLocalAgentDaemon } from "./daemon"
 import { recoverStaleAgentJobs } from "./job-recovery"
 import {
@@ -67,6 +71,7 @@ import {
 } from "./local-job-api"
 import {
   assertHeadlessProviderSelectionUsableAtCreate,
+  type HeadlessProviderBindingDependencies,
   HeadlessProviderBindingError,
   isInvalidHeadlessProviderBindingRequestCode,
   isUnavailableHeadlessProviderBindingCode,
@@ -97,6 +102,8 @@ export type RunHeadlessCliCommandOptions = {
   now?: Date
   daemonLockPath?: string | null
   runtimeReadinessDependencies?: LocalJobApiRuntimeManifestEnvelopeOptions["readinessDependencies"]
+  completionFetch?: RunPersistedCompletionJobOptions["fetchImpl"]
+  providerBindingDependencies?: HeadlessProviderBindingDependencies
 }
 
 export const HEADLESS_STDIN_MAX_BYTES = 1024 * 1024
@@ -320,6 +327,7 @@ async function runCommand(
     jobId: job.id,
     runner: options.runner,
     env: options.env,
+    providerBindingDependencies: options.providerBindingDependencies,
   })
   outputRunResult(options.stdout, command.output, result.job, result.events)
   return result.exitCode
@@ -459,12 +467,21 @@ async function runPreparedLocalJobApiJob(
     })
   }
 
-  const result = await runPersistedAgentJob({
-    db: options.db,
-    jobId: prepared.job.id,
-    runner: options.runner,
-    env: options.env,
-  })
+  const result =
+    prepared.request.kind === "completion"
+      ? await runPersistedCompletionJob({
+          db: options.db,
+          jobId: prepared.job.id,
+          fetchImpl: options.completionFetch,
+          providerBindingDependencies: options.providerBindingDependencies,
+        })
+      : await runPersistedAgentJob({
+          db: options.db,
+          jobId: prepared.job.id,
+          runner: options.runner,
+          env: options.env,
+          providerBindingDependencies: options.providerBindingDependencies,
+        })
   const finalEvents = listAgentJobEvents(options.db, result.job.id)
   const artifacts = writeLocalJobApiFinalArtifacts({
     runDir: prepared.runDir,
@@ -858,6 +875,10 @@ async function apiRunsRetryCommand(
     )
     return result.exitCode
   } catch (error) {
+    if (error instanceof HeadlessProviderBindingError) {
+      writeJson(options.stdout, toLocalJobApiProviderErrorEnvelope(error))
+      return localJobApiCreateErrorCode(error)
+    }
     return commandError(
       options.stderr,
       error instanceof Error ? error.message : String(error),
