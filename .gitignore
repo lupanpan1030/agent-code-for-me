@@ -20,6 +20,7 @@ Thumbs.db
 # Logs
 *.log
 npm-debug.log*
+.debug/
 
 # Local smoke artifacts
 .tmp-app-server-smoke/
