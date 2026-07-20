@@ -98,8 +98,9 @@
 - [x] 3.1 Add a "Runtime Core Import Boundary" section to
       `docs/OWNERSHIP_MAP.md`: the four guarded directories, the five banned
       direct-import categories, the dependency direction rule (routers import
-      the local API provider config lib owner; the guarded directories never
-      import its router), and an explicit note that representative,
+      lib owners, never the reverse — specifically the local API provider
+      config lib owner and its router), and an explicit note that
+      representative,
       non-exhaustive transitive reach-throughs via wrapper modules
       (`electron-app`, `db`, `secure-storage`, `provider-token`, `local-only`,
       `claude-credentials`, `codex/cli-path`, `codex/runtime-status`,

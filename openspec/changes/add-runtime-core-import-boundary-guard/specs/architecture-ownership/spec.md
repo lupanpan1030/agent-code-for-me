@@ -12,9 +12,11 @@ boundary for those four directories. Direct dependency specifiers include
 static and side-effect imports, export-from, dynamic imports, direct and
 parenthesized `require`, `module.require`, simple aliases of
 `require`/`module.require`, imported Node `createRequire` loaders, and
-type-only import forms. Local API provider configuration reads used by a
-guarded directory SHALL come from the main-process lib owner; a guarded
-directory SHALL NOT import those reads from the tRPC router.
+type-only import forms. Shared configuration read logic consumed by these
+directories SHALL live in main-process lib owners; tRPC route modules SHALL
+import from lib owners, never the reverse. In particular, local API provider
+configuration reads SHALL come from the main-process lib owner, and no module
+SHALL import those reads from the tRPC router.
 
 #### Scenario: Guarded directory adds a banned direct import
 
@@ -27,10 +29,10 @@ directory SHALL NOT import those reads from the tRPC router.
 - **AND** the failure message points to the ownership map's Runtime Core
   Import Boundary section
 
-#### Scenario: Guarded runtime-core code needs provider configuration reads
+#### Scenario: Main-process lib code needs provider configuration reads
 
-- **WHEN** code in one of the four guarded directories needs local API provider
-  configuration reads
+- **WHEN** main-process lib code — inside or outside the four guarded
+  directories — needs local API provider configuration reads
 - **THEN** it imports the main-process lib owner module
 - **AND** it does not import those reads from the tRPC route module
 
@@ -41,6 +43,7 @@ directory SHALL NOT import those reads from the tRPC router.
 - **THEN** it imports the listed symbols from the main-process lib owner
 - **AND** its `get`, `save`, and `clear` procedure bodies and route-local input
   schemas remain router-owned
+- **AND** it does not re-export the moved read logic from the router path
 
 #### Scenario: Guard rule validates itself before scanning
 
