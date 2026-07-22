@@ -1,5 +1,7 @@
 # Codex Runtime Capability Audit Plan
 
+> **Status: Superseded / historical (audit-method snapshot).** Codex capability parity is implemented and archived; current truth lives in `src/shared/agent-runtime-capabilities.ts` (Codex manifest) + `openspec/specs/codex-runtime-parity/spec.md`. Kept for provenance — not current state.
+
 This plan defines how to audit Codex support in Locus before opening
 implementation OpenSpecs. It is not an implementation spec and does not approve
 product-code changes.

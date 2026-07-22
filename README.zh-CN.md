@@ -151,7 +151,7 @@ worktree-aware controls，不是完整文件系统隔离。
 - [工作台定位与范围切割](docs/locus-workbench-focus.zh-CN.md)
 - [工作台和集成边界](docs/locus-local-agent-platform.zh-CN.md)
 - [Local Job API v1 下游接入手册](docs/local-job-api-v1-consumer-guide.zh-CN.md)
-- [Runtime environment center plan](docs/runtime-environment-center-plan.md)
+- [Runtime environment center plan（参考点子，非路线图）](docs/ideas/runtime-environment-center-plan.md)
 - [Security policy](SECURITY.md)
 - [Contributing](CONTRIBUTING.md)
 - [License](LICENSE)

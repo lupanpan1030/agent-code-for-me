@@ -1,5 +1,7 @@
 # Locus Provider Gateway Plan: CCX Track
 
+> **Status: Reference-only idea bank — NOT on the roadmap.** "Learn-from-ccx" notes. Locus's scope lock (`docs/locus-workbench-focus.md`) explicitly de-scopes building a Locus-embedded provider gateway as a product. Mine ideas/components from here; do not treat as planned work.
+
 This document records the future plan for learning from `ccx` without turning
 Locus into an embedded CCX gateway or a second provider-control product.
 

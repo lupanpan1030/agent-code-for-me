@@ -1,5 +1,7 @@
 # Claude Code Runtime Capability Audit Plan
 
+> **Status: Superseded / historical (audit-method snapshot).** The capability audit this plan describes is done; its output is now the live capability model. Current truth: `src/shared/agent-runtime-capabilities.ts` + `openspec/specs/agent-runtime-capabilities/spec.md`. Kept for provenance — not a description of current state.
+
 This plan defines how to audit Claude Code support in Locus before opening
 implementation OpenSpecs. It is not an implementation spec and does not approve
 product-code changes.

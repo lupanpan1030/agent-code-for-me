@@ -1,5 +1,7 @@
 # Locus runtime workbench 路线图
 
+> **状态：历史路线图快照（主线已完成）。** 本文主线"Codex app-server 迁移"已完成并归档（`openspec/changes/archive/2026-06-15-refactor-codex-official-runtime-adapter/`）。保留作为过程记录；当前状态以 specs + 已归档 change 为准，勿当现状。
+
 状态日期：2026-06-13
 
 状态基线：当前 Codex app-server desktop/chat 工作区。注意：本文记录当前实现和验证事实，不代表已完成归档。

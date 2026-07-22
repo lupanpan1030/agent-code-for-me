@@ -1,5 +1,7 @@
 # Runtime CLI Capability Inventory
 
+> **Status: 2026-06-05 snapshot — partially stale.** The capability-honesty discipline it advocates is now enforced by `openspec/specs/agent-runtime-capabilities` + `codex-runtime-parity`. The proposed `add-runtime-cli-capability-inventory` slice was never built and is deferred until the multi-runtime expansion (Qwen). Current capability truth is the manifest, not this snapshot. Known drift: capability count (14→15, adds `quickChatAssistant`); the `add-claude-dynamic-workflows-adapter` note is stale (now archived).
+
 Snapshot date: 2026-06-05
 
 This document aligns the current runtime CLI capability picture before opening

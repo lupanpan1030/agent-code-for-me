@@ -1,5 +1,7 @@
 # Locus Plugin and Tweak Runtime Plan: Codex++ Track
 
+> **Status: Reference-only idea bank — partially realized.** "Learn-from-Codex++" notes. The plugin system itself shipped (`openspec/specs/runtime-plugins`, `src/main/lib/trpc/routers/plugins.ts`); the remaining tweak/patch-runtime ideas are parked and out of scope per `docs/locus-workbench-focus.md`. Reference only.
+
 This document records the future plan for learning from `codex-plusplus`
 without turning Locus into a patched Codex Desktop runtime.
 

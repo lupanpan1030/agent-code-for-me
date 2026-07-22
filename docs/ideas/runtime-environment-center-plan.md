@@ -1,5 +1,7 @@
 # Locus Runtime Environment Center Plan: cc-switch Track
 
+> **Status: Reference-only idea bank — NOT on the roadmap.** "Learn-from-cc-switch" notes for a runtime environment center. Scope-locked out as a product by `docs/locus-workbench-focus.md` ("do not become a runtime hub"). Reference for provider diagnostics/config ideas only.
+
 This document records the future plan for learning from `cc-switch` without
 turning Locus into a direct wrapper around that project.
 

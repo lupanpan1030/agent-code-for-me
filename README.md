@@ -158,7 +158,7 @@ filesystem isolation.
 - [Workbench focus and scope lock](docs/locus-workbench-focus.md)
 - [Workbench and integration boundaries](docs/locus-local-agent-platform.md)
 - [Local Job API v1 Consumer Guide](docs/local-job-api-v1-consumer-guide.md)
-- [Runtime environment center plan](docs/runtime-environment-center-plan.md)
+- [Runtime environment center plan (reference-only idea)](docs/ideas/runtime-environment-center-plan.md)
 - [Security policy](SECURITY.md)
 - [Contributing](CONTRIBUTING.md)
 - [License](LICENSE)
