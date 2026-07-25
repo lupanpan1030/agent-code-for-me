@@ -1,12 +1,17 @@
-import { describe, expect, test } from "bun:test"
+import { beforeEach, describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import {
   assertValidCodexApiKey,
+  clearCachedCodexApiKeyModelIds,
+  getCachedCodexApiKeyModelIds,
+  subscribeCodexApiKeyModelIds,
   validateCodexApiKey,
 } from "../src/main/lib/codex/api-key-validation"
 
 describe("Codex API key validation", () => {
+  beforeEach(() => clearCachedCodexApiKeyModelIds())
+
   test("probes OpenAI models with the app-managed key without exposing it", async () => {
     const seen: Array<{ url: string; authorization: string | null }> = []
     const fetchImpl = async (input: string | URL, init?: RequestInit) => {
@@ -55,6 +60,128 @@ describe("Codex API key validation", () => {
     expect(JSON.stringify(result)).toContain("Incorrect API key provided: ***.")
   })
 
+  test("caches only Codex-capable ids from the existing models probe", async () => {
+    let requestCount = 0
+    const fetchImpl = async () => {
+      requestCount += 1
+      return new Response(
+        JSON.stringify({
+          data: [
+            { id: "gpt-5.5" },
+            { id: "o3-pro" },
+            { id: "codex-next" },
+            { id: "gpt-evil;drop" },
+            { id: "gpt-5.5" },
+            { id: "text-embedding-3-large" },
+            { id: 42 },
+            null,
+          ],
+        }),
+        { status: 200 },
+      )
+    }
+
+    await expect(
+      validateCodexApiKey("sk-valid_for_test", { fetchImpl }),
+    ).resolves.toEqual({ ok: true })
+    expect(requestCount).toBe(1)
+    expect(getCachedCodexApiKeyModelIds()).toEqual([
+      "gpt-5.5",
+      "o3-pro",
+      "codex-next",
+    ])
+  })
+
+  test("publishes live model ids after the existing validation probe", async () => {
+    const snapshots: string[][] = []
+    const unsubscribe = subscribeCodexApiKeyModelIds((modelIds) => {
+      snapshots.push(modelIds)
+    })
+
+    try {
+      await expect(
+        validateCodexApiKey("sk-valid_for_test", {
+          fetchImpl: async () =>
+            new Response(
+              JSON.stringify({ data: [{ id: "gpt-live-after-validation" }] }),
+              { status: 200 },
+            ),
+        }),
+      ).resolves.toEqual({ ok: true })
+      expect(snapshots).toEqual([["gpt-live-after-validation"]])
+    } finally {
+      unsubscribe()
+    }
+  })
+
+  test("caps unique safe live model ids", async () => {
+    const fetchImpl = async () =>
+      new Response(
+        JSON.stringify({
+          data: Array.from({ length: 600 }, (_, index) => ({
+            id: `gpt-safe-${index}`,
+          })),
+        }),
+        { status: 200 },
+      )
+
+    await expect(
+      validateCodexApiKey("sk-valid_for_test", { fetchImpl }),
+    ).resolves.toEqual({ ok: true })
+    expect(getCachedCodexApiKeyModelIds()).toHaveLength(500)
+    expect(getCachedCodexApiKeyModelIds().at(-1)).toBe("gpt-safe-499")
+  })
+
+  test("keeps validation successful and clears live ids for oversized streamed bodies", async () => {
+    await validateCodexApiKey("sk-valid_for_test", {
+      fetchImpl: async () =>
+        new Response(JSON.stringify({ data: [{ id: "gpt-5.5" }] }), {
+          status: 200,
+        }),
+    })
+    expect(getCachedCodexApiKeyModelIds()).toEqual(["gpt-5.5"])
+
+    let cancelled = false
+    const oversizedBody = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(
+          new TextEncoder().encode(
+            JSON.stringify({ data: [{ id: "gpt-too-large" }] }),
+          ),
+        )
+      },
+      cancel() {
+        cancelled = true
+      },
+    })
+
+    await expect(
+      validateCodexApiKey("sk-valid_for_test", {
+        fetchImpl: async () => new Response(oversizedBody, { status: 200 }),
+        maxResponseBytes: 16,
+      }),
+    ).resolves.toEqual({ ok: true })
+    expect(cancelled).toBe(true)
+    expect(getCachedCodexApiKeyModelIds()).toEqual([])
+  })
+
+  test("keeps validation successful and clears live ids for malformed bodies", async () => {
+    await validateCodexApiKey("sk-valid_for_test", {
+      fetchImpl: async () =>
+        new Response(JSON.stringify({ data: [{ id: "gpt-5.5" }] }), {
+          status: 200,
+        }),
+    })
+    expect(getCachedCodexApiKeyModelIds()).toEqual(["gpt-5.5"])
+
+    await expect(
+      validateCodexApiKey("sk-valid_for_test", {
+        fetchImpl: async () => new Response("not-json", { status: 200 }),
+      }),
+    ).resolves.toEqual({ ok: true })
+    expect(getCachedCodexApiKeyModelIds()).toEqual([])
+  })
+
   test("redacts masked OpenAI key echoes from validation errors", async () => {
     const fetchImpl = async () =>
       new Response(
@@ -67,9 +194,13 @@ describe("Codex API key validation", () => {
         { status: 401 },
       )
 
-    const result = await validateCodexApiKey("sk-invalid_for_test", { fetchImpl })
+    const result = await validateCodexApiKey("sk-invalid_for_test", {
+      fetchImpl,
+    })
 
-    expect(JSON.stringify(result)).toContain("Incorrect API key provided: sk-***.")
+    expect(JSON.stringify(result)).toContain(
+      "Incorrect API key provided: sk-***.",
+    )
     expect(JSON.stringify(result)).not.toContain("0608")
   })
 
@@ -112,6 +243,8 @@ describe("Codex API key validation", () => {
     expect(jobCreationIndex).toBeGreaterThan(validationIndex)
     expect(adapterCreationIndex).toBeGreaterThan(validationIndex)
     expect(codexRouterSource).toContain("buildCodexRuntimeStatusChunk(blocker)")
-    expect(codexRouterSource).toContain("buildCodexCapabilityErrorChunk(blocker)")
+    expect(codexRouterSource).toContain(
+      "buildCodexCapabilityErrorChunk(blocker)",
+    )
   })
 })

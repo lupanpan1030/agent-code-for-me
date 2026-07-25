@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { readFileSync, readdirSync } from "node:fs"
+import { readdirSync, readFileSync } from "node:fs"
 
 // The chats router is split across `chats*.ts` modules; read them together so
 // source guards verify the implementation regardless of internal file layout.
@@ -20,6 +20,10 @@ describe("agent guard runtime pipeline", () => {
     )
     const claudeControls = readFileSync(
       "src/main/lib/claude/agent-sdk-desktop-run-controls.ts",
+      "utf8",
+    )
+    const claudeChatInputSchema = readFileSync(
+      "src/main/lib/claude/chat-input-schema.ts",
       "utf8",
     )
     const ipc = readFileSync(
@@ -67,16 +71,21 @@ describe("agent guard runtime pipeline", () => {
     expect(ipc).toContain("applyRuntimeEventStateChunk")
     expect(runtimeEventState).toContain('chunk.type === "guard-event"')
     expect(runtimeEventState).toContain('chunk.type === "guard-audit"')
-    expect(claude).toContain(
+    expect(claudeChatInputSchema).toContain(
       "scopeContract: agentScopeContractInputSchema.optional()",
     )
+    expect(claude).toContain(".input(claudeChatInputSchema)")
     expect(claude).toContain("prepareClaudeAgentSdkDesktopRunControls")
     expect(claude).not.toContain("prepareActiveGuardedRunContract")
     expect(claudeControls).toContain("prepareActiveGuardedRunContract")
-    expect(claude).not.toContain("validateAgentScopeContract(input.scopeContract")
+    expect(claude).not.toContain(
+      "validateAgentScopeContract(input.scopeContract",
+    )
     expect(claude).not.toContain("setActiveGuardedContract(guardedContract)")
     expect(claude).not.toContain("captureGuardedGitStatus(runtimeCwd)")
-    expect(activeContracts).toContain("validateAgentScopeContract(scopeContract")
+    expect(activeContracts).toContain(
+      "validateAgentScopeContract(scopeContract",
+    )
     expect(activeContracts).toContain("setActiveGuardedContract(contract)")
     expect(activeContracts).toContain("captureGuardedGitStatus")
     expect(claude).not.toContain("permissionHandler: {")
@@ -103,10 +112,16 @@ describe("agent guard runtime pipeline", () => {
     expect(input).toContain("AgentGuardedRunCard")
     expect(input).toContain("approveGuardedRunDraft")
     expect(input).toContain("ensureGuardedRunReady")
-    expect(input).toContain("trpc.agentRuntime.respondScopeExpansion.useMutation()")
+    expect(input).toContain(
+      "trpc.agentRuntime.respondScopeExpansion.useMutation()",
+    )
     expect(input).not.toContain("trpc.claude.respondScopeExpansion")
-    expect(chunks).toContain('| { type: "guard-event"; event: AgentGuardEvent }')
-    expect(chunks).toContain('| { type: "guard-audit"; audit: GuardedRunAudit }')
+    expect(chunks).toContain(
+      '| { type: "guard-event"; event: AgentGuardEvent }',
+    )
+    expect(chunks).toContain(
+      '| { type: "guard-audit"; audit: GuardedRunAudit }',
+    )
   })
 
   test("Claude desktop stream ownership is fenced by run identity", () => {
@@ -128,9 +143,7 @@ describe("agent guard runtime pipeline", () => {
       "utf8",
     )
 
-    expect(activeSessions).toContain(
-      "controller: AbortController",
-    )
+    expect(activeSessions).toContain("controller: AbortController")
     expect(activeSessions).toContain("runId: string")
     expect(activeSessions).toContain("startActiveClaudeSessionForDesktopRun")
     expect(activeSessions).toContain(
@@ -142,7 +155,9 @@ describe("agent guard runtime pipeline", () => {
     expect(claude).toContain("cancelClaudeAgentSdkActiveDesktopRun")
     expect(claude).toContain("cleanupClaudeAgentSdkDesktopRunSubscription")
     expect(claude).toContain("superviseClaudeAgentSdkDesktopRun")
-    expect(claude).not.toContain("finalizeClaudeAgentSdkDesktopRunAfterLifecycle")
+    expect(claude).not.toContain(
+      "finalizeClaudeAgentSdkDesktopRunAfterLifecycle",
+    )
     expect(runSupervision).toContain(
       "finalizeClaudeAgentSdkDesktopRunAfterLifecycle",
     )
@@ -150,15 +165,11 @@ describe("agent guard runtime pipeline", () => {
     expect(claude).not.toContain("setActiveClaudeSession(input.subChatId")
     expect(claude).not.toContain("getActiveClaudeSession")
     expect(claude).not.toContain("deleteActiveClaudeSession(input.subChatId")
-    expect(claude).not.toContain(
-      "deleteActiveClaudeSessionIfController(",
-    )
+    expect(claude).not.toContain("deleteActiveClaudeSessionIfController(")
     expect(subscriptionCleanup).toContain(
       "deleteActiveClaudeSessionIfController(",
     )
-    expect(claude).not.toContain(
-      "input.runId && session.runId !== input.runId",
-    )
+    expect(claude).not.toContain("input.runId && session.runId !== input.runId")
     expect(subscriptionCleanup).toContain(
       "input.runId && session.runId !== input.runId",
     )
@@ -226,10 +237,7 @@ describe("agent guard runtime pipeline", () => {
       "src/main/lib/codex/app-server-controlled-edit.ts",
       "utf8",
     )
-    const codexErrors = readFileSync(
-      "src/main/lib/codex/errors.ts",
-      "utf8",
-    )
+    const codexErrors = readFileSync("src/main/lib/codex/errors.ts", "utf8")
     const acp = readFileSync(
       "src/renderer/features/agents/lib/acp-chat-transport.ts",
       "utf8",
@@ -257,20 +265,24 @@ describe("agent guard runtime pipeline", () => {
     )
     expect(codex).toContain("respondToolApproval")
     expect(codexAppServerAdapter).toContain("guardedContract")
-    expect(codexAppServerApproval).toContain(
-      "decideCodexToolPermission",
-    )
+    expect(codexAppServerApproval).toContain("decideCodexToolPermission")
     expect(codexAppServerControlledEdit).toContain(
       "codexControlledEditDeveloperInstructions",
     )
     expect(codex).not.toContain('enforcementMode: "contract-and-audit"')
     expect(runtimeEventState).toContain('chunk.type === "ask-user-question"')
-    expect(runtimeEventState).toContain('chunk.type === "ask-user-question-timeout"')
-    expect(runtimeEventState).toContain('chunk.type === "ask-user-question-result"')
+    expect(runtimeEventState).toContain(
+      'chunk.type === "ask-user-question-timeout"',
+    )
+    expect(runtimeEventState).toContain(
+      'chunk.type === "ask-user-question-result"',
+    )
     expect(codex).toContain("getCodexErrorDiagnostics(error)")
     expect(codexErrors).toContain("getCodexErrorDiagnostics")
     expect(codexErrors).toContain("isCodexAuthError")
-    expect(codex).not.toContain('console.error("[codex] chat stream error:", error)')
+    expect(codex).not.toContain(
+      'console.error("[codex] chat stream error:", error)',
+    )
   })
 
   test("Codex desktop route is wired to normalized runtime status before provider work", () => {
@@ -293,7 +305,9 @@ describe("agent guard runtime pipeline", () => {
     expect(codexRuntimeStatus).toContain(
       'getRegisteredAgentRuntimeManifest("codex")',
     )
-    expect(codex).toContain("const runtimeStatus = await getCodexRuntimeStatus()")
+    expect(codex).toContain(
+      "const runtimeStatus = await getCodexRuntimeStatus()",
+    )
     expect(codexRuntimeStatus).toContain(
       "const integration = await getCodexIntegrationStatus()",
     )

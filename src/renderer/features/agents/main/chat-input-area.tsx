@@ -116,11 +116,19 @@ import {
 } from "../lib/drafts"
 import { imageAttachmentBlockDescriptionKey } from "../lib/image-attachment-copy"
 import {
-  CLAUDE_MODELS,
-  CODEX_MODELS,
+  buildCodexApiKeyModels,
+  type ClaudeCatalogModel,
+  filterCatalogPickerModels,
+  getDefaultCodexCatalogModel,
+  getDefaultCodexThinking,
+  resolveClaudeCatalogModel,
+  resolveCodexCatalogModel,
+  useModelCatalogStore,
+} from "../lib/model-catalog-store"
+import {
   type CodexThinkingLevel,
-  getCodexModelsForSource,
   normalizeClaudeModelSourceForRun,
+  resolveCodexModelForSource,
 } from "../lib/models"
 import type { DiffTextContext, SelectedTextContext } from "../lib/queue-utils"
 import {
@@ -157,14 +165,12 @@ function useStableCallback<T extends (...args: any[]) => any>(callback: T): T {
 }
 
 // Hook to get available models (including offline models if Ollama is available and debug enabled)
-function useAvailableModels() {
+function useAvailableModels(baseModels: ClaudeCatalogModel[]) {
   const showOfflineFeatures = useAtomValue(showOfflineModeFeaturesAtom)
   const { data: ollamaStatus } = trpc.ollama.getStatus.useQuery(undefined, {
     refetchInterval: showOfflineFeatures ? 30000 : false,
     enabled: showOfflineFeatures, // Only query Ollama when offline mode is enabled
   })
-
-  const baseModels = CLAUDE_MODELS
 
   const isOffline = ollamaStatus ? !ollamaStatus.internet.online : false
   const hasOllama =
@@ -586,22 +592,13 @@ export const ChatInputArea = memo(function ChatInputArea({
   const [selectedOllamaModel, setSelectedOllamaModel] = useAtom(
     selectedOllamaModelAtom,
   )
-  const availableModels = useAvailableModels()
-  const [selectedModel, setSelectedModel] = useState(
+  const { claudeModels, codexModels } = useModelCatalogStore()
+  const availableModels = useAvailableModels(claudeModels)
+  const selectedModel = useMemo(
     () =>
-      availableModels.models.find((m) => m.id === selectedSubChatModelId) ||
-      availableModels.models[0],
+      resolveClaudeCatalogModel(availableModels.models, selectedSubChatModelId),
+    [availableModels.models, selectedSubChatModelId],
   )
-
-  // Sync selectedModel when per-subChat atom value changes (e.g., after localStorage hydration)
-  useEffect(() => {
-    const model = availableModels.models.find(
-      (m) => m.id === selectedSubChatModelId,
-    )
-    if (model && model.id !== selectedModel.id) {
-      setSelectedModel(model)
-    }
-  }, [availableModels.models, selectedModel.id, selectedSubChatModelId])
 
   // Materialize the resolved Claude model into per-subChat storage once mounted.
   // This prevents later global default changes from affecting existing sub-chats.
@@ -632,26 +629,44 @@ export const ChatInputArea = memo(function ChatInputArea({
     (selectedSubChatCodexModelSource === "chatgpt" &&
       setupStatus.codex.authMethod === "api_key" &&
       hasAppCodexApiKey)
+  const effectiveCodexFirstPartySource = shouldUseCodexApiKeyModels
+    ? "openai-api-key"
+    : selectedSubChatCodexModelSource === "chatgpt"
+      ? "chatgpt"
+      : null
+  const codexApiKeyModels = useMemo(
+    () =>
+      buildCodexApiKeyModels(codexApiKeyStatus?.modelIds ?? [], codexModels),
+    [codexApiKeyStatus?.modelIds, codexModels],
+  )
+  const selectableCodexModels = useMemo(
+    () => [...codexModels, ...codexApiKeyModels],
+    [codexApiKeyModels, codexModels],
+  )
   const codexUiModels = useMemo(
-    () => CODEX_MODELS.filter((model) => !hiddenModels.includes(model.id)),
-    [hiddenModels],
+    () => filterCatalogPickerModels(codexModels, hiddenModels),
+    [codexModels, hiddenModels],
   )
-  const compatibleCodexModels = useMemo(
-    () =>
-      shouldUseCodexApiKeyModels
-        ? getCodexModelsForSource(codexUiModels, "openai-api-key")
-        : codexUiModels,
-    [codexUiModels, shouldUseCodexApiKeyModels],
-  )
-  const selectedCodexModel = useMemo(
-    () =>
-      compatibleCodexModels.find(
-        (model) => model.id === selectedSubChatCodexModelId,
-      ) ||
-      compatibleCodexModels[0] ||
-      CODEX_MODELS[0]!,
-    [compatibleCodexModels, selectedSubChatCodexModelId],
-  )
+  const selectedCodexModel = useMemo(() => {
+    const selected = resolveCodexCatalogModel(
+      selectableCodexModels,
+      selectedSubChatCodexModelId,
+    )
+    if (selected.kind === "custom" || !effectiveCodexFirstPartySource) {
+      return selected
+    }
+    const resolved = resolveCodexModelForSource({
+      models: selectableCodexModels,
+      selectedModelId: selected.id,
+      source: effectiveCodexFirstPartySource,
+    })
+    return resolved.model ?? getDefaultCodexCatalogModel(codexModels)
+  }, [
+    codexModels,
+    effectiveCodexFirstPartySource,
+    selectableCodexModels,
+    selectedSubChatCodexModelId,
+  ])
 
   const selectedCodexThinking = useMemo<CodexThinkingLevel>(() => {
     if (
@@ -666,7 +681,7 @@ export const ChatInputArea = memo(function ChatInputArea({
       return "high"
     }
 
-    return selectedCodexModel.thinkings[0]!
+    return getDefaultCodexThinking(selectedCodexModel)
   }, [selectedCodexModel, selectedSubChatCodexThinking])
   const selectedCodexProfileId = parseProviderProfileSource(
     selectedSubChatCodexModelSource,
@@ -881,7 +896,7 @@ export const ChatInputArea = memo(function ChatInputArea({
       if (selectedProfile) {
         return `${selectedProfile.name} · ${selectedProfile.defaultModel}`
       }
-      return selectedCodexModel.name
+      return selectedCodexModel.displayLabel
     }
 
     if (availableModels.isOffline && availableModels.hasOllama) {
@@ -896,11 +911,11 @@ export const ChatInputArea = memo(function ChatInputArea({
       return "Select model"
     }
 
-    return `${selectedModel.name} ${selectedModel.version}`
+    return selectedModel.displayLabel
   }, [
     provider,
     providerProfiles,
-    selectedCodexModel.name,
+    selectedCodexModel.displayLabel,
     availableModels.isOffline,
     availableModels.hasOllama,
     currentOllamaModel,
@@ -965,7 +980,11 @@ export const ChatInputArea = memo(function ChatInputArea({
   const imageAttachmentBlocked =
     readyImageCount > 0 && !imageAttachmentCapability.supportsImages
   const imageAttachmentBlockDescription = imageAttachmentBlocked
-    ? t(imageAttachmentBlockDescriptionKey(imageAttachmentCapability.blockReason))
+    ? t(
+        imageAttachmentBlockDescriptionKey(
+          imageAttachmentCapability.blockReason,
+        ),
+      )
     : null
   const imageAttachmentNotice =
     readyImageCount === 0
@@ -2383,17 +2402,17 @@ export const ChatInputArea = memo(function ChatInputArea({
                         setSettingsOpen(true)
                       }}
                       claude={{
-                        models: availableModels.models.filter(
-                          (m) => !hiddenModels.includes(m.id),
+                        models: filterCatalogPickerModels(
+                          availableModels.models,
+                          hiddenModels,
                         ),
                         selectedModelId: selectedModel?.id,
+                        selectedModel,
                         onSelectModel: (modelId) => {
-                          const model =
-                            availableModels.models.find(
-                              (item) => item.id === modelId,
-                            ) || availableModels.models[0]
-                          if (!model) return
-                          setSelectedModel(model)
+                          const model = resolveClaudeCatalogModel(
+                            availableModels.models,
+                            modelId,
+                          )
                           setSelectedSubChatModelId(model.id)
                           setLastSelectedModelId(model.id)
                         },
@@ -2416,19 +2435,21 @@ export const ChatInputArea = memo(function ChatInputArea({
                       }}
                       codex={{
                         models: codexUiModels,
+                        apiKeyModels: codexApiKeyModels,
                         selectedModelId: selectedCodexModel.id,
+                        selectedModel: selectedCodexModel,
                         onSelectModel: (modelId) => {
-                          const model = codexUiModels.find(
-                            (item) => item.id === modelId,
+                          const model = resolveCodexCatalogModel(
+                            selectableCodexModels,
+                            modelId,
                           )
-                          if (!model) return
                           const nextThinking = model.thinkings.includes(
                             selectedSubChatCodexThinking as CodexThinkingLevel,
                           )
                             ? (selectedSubChatCodexThinking as CodexThinkingLevel)
                             : model.thinkings.includes("high")
                               ? "high"
-                              : (model.thinkings[0] ?? "medium")
+                              : getDefaultCodexThinking(model)
 
                           setSelectedSubChatCodexModelId(model.id)
                           setSelectedSubChatCodexThinking(nextThinking)
@@ -2436,6 +2457,8 @@ export const ChatInputArea = memo(function ChatInputArea({
                           setLastSelectedCodexThinking(nextThinking)
                         },
                         selectedModelSource: selectedSubChatCodexModelSource,
+                        effectiveFirstPartyModelSource:
+                          effectiveCodexFirstPartySource,
                         onSelectModelSource: (source) => {
                           setSelectedSubChatCodexModelSource(source)
                           setLastSelectedCodexModelSource(source)

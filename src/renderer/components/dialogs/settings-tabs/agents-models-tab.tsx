@@ -1,4 +1,4 @@
-import { useAtom, useAtomValue, useSetAtom } from "jotai"
+import { useAtom, useSetAtom } from "jotai"
 import {
   AlertTriangle,
   Check,
@@ -40,11 +40,8 @@ import {
   getProviderTargetLabel,
   ProviderProfileEditor,
 } from "../../../features/agents/components/provider-profile-editor"
+import { useModelCatalogStore } from "../../../features/agents/lib/model-catalog-store"
 import { runtimeCapabilityManifestsAtom } from "../../../features/agents/lib/runtime-manifest-store"
-import {
-  CLAUDE_MODELS,
-  CODEX_MODELS,
-} from "../../../features/agents/lib/models"
 import {
   agentsLoginModalOpenAtom,
   autoOfflineModeAtom,
@@ -1544,6 +1541,7 @@ function LocalApiProviderSettingsSection({
 
 export function AgentsModelsTab() {
   const { t } = useI18n()
+  const { claudeModels, codexModels } = useModelCatalogStore()
   const [isAdvancedRoutingOpen, setIsAdvancedRoutingOpen] = useState(true)
   const [confirmAction, setConfirmAction] = useState<ConfirmActionState>(null)
   const helperApisSectionRef = useRef<HTMLDivElement | null>(null)
@@ -2093,18 +2091,18 @@ export function AgentsModelsTab() {
   const allModels = useMemo(() => {
     const items: { id: string; name: string; provider: "claude" | "codex" }[] =
       []
-    for (const m of CLAUDE_MODELS) {
+    for (const m of claudeModels) {
       items.push({
         id: m.id,
-        name: `${m.name} ${m.version}`,
+        name: m.displayLabel,
         provider: "claude",
       })
     }
-    for (const m of CODEX_MODELS) {
-      items.push({ id: m.id, name: m.name, provider: "codex" })
+    for (const m of codexModels) {
+      items.push({ id: m.id, name: m.displayLabel, provider: "codex" })
     }
     return items
-  }, [])
+  }, [claudeModels, codexModels])
 
   const [modelSearch, setModelSearch] = useState("")
   const filteredModels = useMemo(() => {

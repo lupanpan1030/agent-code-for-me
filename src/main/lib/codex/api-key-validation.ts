@@ -1,10 +1,8 @@
 import { normalizeCodexApiKey } from "../../../shared/codex-api-key"
+import { isSafeProviderModel } from "../../../shared/local-job-api"
 import { redactProviderSecrets } from "../../../shared/provider-profile-security"
 
-type FetchLike = (
-  input: string | URL,
-  init?: RequestInit,
-) => Promise<Response>
+type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>
 
 export type CodexApiKeyValidationCategory =
   | "invalid_format"
@@ -32,10 +30,125 @@ export type CodexApiKeyValidationOptions = {
   signal?: AbortSignal
   timeoutMs?: number
   modelsUrl?: string
+  maxResponseBytes?: number
 }
 
 const DEFAULT_OPENAI_MODELS_URL = "https://api.openai.com/v1/models"
 const DEFAULT_VALIDATION_TIMEOUT_MS = 8_000
+const DEFAULT_MAX_RESPONSE_BYTES = 2_000_000
+const MAX_CODEX_API_MODEL_IDS = 500
+const CODEX_API_MODEL_PREFIX = /^(?:gpt-|o|codex)/
+
+let cachedModelIds: string[] = []
+let cachedModelIdsInitialized = false
+const modelIdListeners = new Set<(modelIds: string[]) => void>()
+
+export function normalizeCodexApiModelIds(entries: unknown): string[] {
+  if (!Array.isArray(entries)) return []
+
+  const seen = new Set<string>()
+  const modelIds: string[] = []
+  for (const entry of entries) {
+    if (!entry || typeof entry !== "object") continue
+    const id = (entry as { id?: unknown }).id
+    if (
+      typeof id !== "string" ||
+      !CODEX_API_MODEL_PREFIX.test(id) ||
+      !isSafeProviderModel(id) ||
+      seen.has(id)
+    ) {
+      continue
+    }
+    seen.add(id)
+    modelIds.push(id)
+    if (modelIds.length >= MAX_CODEX_API_MODEL_IDS) break
+  }
+  return modelIds
+}
+
+export function parseCodexApiModelIds(rawBody: string): string[] {
+  try {
+    const parsed = JSON.parse(rawBody) as { data?: unknown }
+    return normalizeCodexApiModelIds(parsed.data)
+  } catch {
+    return []
+  }
+}
+
+function replaceCachedModelIds(modelIds: string[]): void {
+  const changed =
+    !cachedModelIdsInitialized ||
+    cachedModelIds.length !== modelIds.length ||
+    cachedModelIds.some((modelId, index) => modelId !== modelIds[index])
+  cachedModelIds = [...modelIds]
+  cachedModelIdsInitialized = true
+  if (!changed) return
+
+  for (const listener of modelIdListeners) {
+    try {
+      listener([...cachedModelIds])
+    } catch {
+      // A renderer subscriber must not affect key validation.
+    }
+  }
+}
+
+async function readBoundedResponseText(
+  response: Response,
+  maxResponseBytes: number,
+): Promise<string | null> {
+  const contentLength = response.headers.get("content-length")
+  if (contentLength && Number(contentLength) > maxResponseBytes) {
+    await response.body?.cancel().catch(() => undefined)
+    return null
+  }
+
+  if (!response.body) return ""
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let responseBytes = 0
+  let text = ""
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      responseBytes += value.byteLength
+      if (responseBytes > maxResponseBytes) {
+        await reader.cancel().catch(() => undefined)
+        return null
+      }
+      text += decoder.decode(value, { stream: true })
+    }
+    text += decoder.decode()
+    return text
+  } catch {
+    return null
+  } finally {
+    reader.releaseLock()
+  }
+}
+
+export function getCachedCodexApiKeyModelIds(): string[] {
+  return [...cachedModelIds]
+}
+
+export function hasCachedCodexApiKeyModelIdsSnapshot(): boolean {
+  return cachedModelIdsInitialized
+}
+
+export function subscribeCodexApiKeyModelIds(
+  listener: (modelIds: string[]) => void,
+): () => void {
+  modelIdListeners.add(listener)
+  return () => modelIdListeners.delete(listener)
+}
+
+export function clearCachedCodexApiKeyModelIds(): void {
+  replaceCachedModelIds([])
+}
 
 export class CodexApiKeyValidationError extends Error {
   category: CodexApiKeyValidationCategory
@@ -100,7 +213,10 @@ function parseProviderErrorMessage(rawBody: string): string | null {
   return rawBody
 }
 
-function redactedProviderMessage(rawBody: string, apiKey: string): string | null {
+function redactedProviderMessage(
+  rawBody: string,
+  apiKey: string,
+): string | null {
   const message = parseProviderErrorMessage(rawBody)
   if (!message) return null
   return redactProviderSecrets(message, [apiKey])
@@ -119,13 +235,18 @@ function validationFailure(params: {
     status: params.status,
     message: params.message,
     hint: params.hint,
-    ...(params.httpStatus !== undefined ? { httpStatus: params.httpStatus } : {}),
+    ...(params.httpStatus !== undefined
+      ? { httpStatus: params.httpStatus }
+      : {}),
   }
 }
 
 function classifyHttpFailure(
   httpStatus: number,
-): Pick<Extract<CodexApiKeyValidationResult, { ok: false }>, "category" | "status" | "message" | "hint"> {
+): Pick<
+  Extract<CodexApiKeyValidationResult, { ok: false }>,
+  "category" | "status" | "message" | "hint"
+> {
   if (httpStatus === 401 || httpStatus === 403) {
     return {
       category: "auth_failed",
@@ -166,9 +287,18 @@ export async function validateCodexApiKey(
     })
   }
 
-  const timeout = Math.max(1, options.timeoutMs ?? DEFAULT_VALIDATION_TIMEOUT_MS)
+  clearCachedCodexApiKeyModelIds()
+
+  const timeout = Math.max(
+    1,
+    options.timeoutMs ?? DEFAULT_VALIDATION_TIMEOUT_MS,
+  )
   const { signal, cleanup } = createAbortController(options.signal, timeout)
   const fetchImpl = options.fetchImpl ?? fetch
+  const maxResponseBytes = Math.max(
+    1,
+    options.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES,
+  )
 
   try {
     const response = await fetchImpl(
@@ -183,10 +313,13 @@ export async function validateCodexApiKey(
     )
 
     if (response.ok) {
+      const rawBody = await readBoundedResponseText(response, maxResponseBytes)
+      replaceCachedModelIds(rawBody ? parseCodexApiModelIds(rawBody) : [])
       return { ok: true }
     }
 
-    const rawBody = await response.text().catch(() => "")
+    const rawBody =
+      (await readBoundedResponseText(response, maxResponseBytes)) ?? ""
     const classified = classifyHttpFailure(response.status)
     const upstreamMessage = redactedProviderMessage(rawBody, normalized)
     return validationFailure({

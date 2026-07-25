@@ -177,6 +177,7 @@ const RUNTIME_CORE_DIRECTORIES = [
   "src/main/lib/headless",
   "src/main/lib/agent-guard",
   "src/main/lib/provider-profiles",
+  "src/main/lib/model-catalog",
 ]
 const RUNTIME_CORE_SOURCE_EXTENSIONS = [
   ".ts",
@@ -602,8 +603,7 @@ function assertRuntimeCoreImportBoundarySelfTest() {
       name: "module.require alias",
       filePath:
         "src/main/lib/provider-profiles/__architecture_boundary_fixture__.cjs",
-      content:
-        'const load = module["require"]; load("trpc-electron/main")',
+      content: 'const load = module["require"]; load("trpc-electron/main")',
       expected: {
         specifier: "trpc-electron/main",
         syntax: "module.require alias call",

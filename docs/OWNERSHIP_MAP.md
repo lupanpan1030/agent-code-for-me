@@ -223,6 +223,7 @@ or UI helper.
   - `src/main/lib/headless/`
   - `src/main/lib/agent-guard/`
   - `src/main/lib/provider-profiles/`
+  - `src/main/lib/model-catalog/`
 - Rule: source files in these directories must not directly import:
   - Electron (`electron` or any `electron/*` subpath)
   - tRPC packages (`@trpc/*`, `trpc-electron`, or any

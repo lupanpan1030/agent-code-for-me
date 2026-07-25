@@ -1,4 +1,7 @@
-import type { ClaudeModelInfo } from "../../../../shared/custom-agent-models"
+import {
+  CODEX_MODELS,
+  type CodexThinkingLevel,
+} from "../../../../shared/model-catalog"
 import {
   type ProviderProfileMetadata,
   parseProviderProfileSource,
@@ -10,78 +13,43 @@ export {
   type ClaudeModel,
   type ClaudeModelInfo,
 } from "../../../../shared/custom-agent-models"
+export type { CodexThinkingLevel }
+export { CODEX_MODELS }
 
-export type ModelInfo = ClaudeModelInfo
+export type ModelInfo = {
+  summary?: string
+  bestFor?: string
+  tokenNote?: string
+  contextWindow?: string
+  maxOutput?: string
+  pricing?: string
+  cachedInput?: string
+  latency?: string
+}
 
-export type CodexThinkingLevel = "low" | "medium" | "high" | "xhigh"
 export type CodexFirstPartyModelSource = "chatgpt" | "openai-api-key"
 
-export const CODEX_MODELS = [
-  {
-    id: "gpt-5.5",
-    name: "GPT-5.5",
-    thinkings: ["low", "medium", "high", "xhigh"] as CodexThinkingLevel[],
-    info: {
-      summaryKey: "agent.model.info.summary.gpt55",
-      bestForKey: "agent.model.info.bestFor.gpt55",
-      tokenNoteKey: "agent.model.info.note.openaiLongContext",
-      contextWindow: "1.05M",
-      maxOutput: "128K",
-      pricing: "$5 in / $30 out per 1M",
-      cachedInput: "$0.50 / 1M",
-      latencyKey: "agent.model.info.latency.fast",
-    } satisfies ModelInfo,
-  },
-  {
-    id: "gpt-5.4",
-    name: "GPT-5.4",
-    thinkings: ["low", "medium", "high", "xhigh"] as CodexThinkingLevel[],
-    info: {
-      summaryKey: "agent.model.info.summary.gpt54",
-      bestForKey: "agent.model.info.bestFor.gpt54",
-      tokenNoteKey: "agent.model.info.note.openaiLongContext",
-      contextWindow: "1.05M",
-      maxOutput: "128K",
-      pricing: "$2.50 in / $15 out per 1M",
-      cachedInput: "$0.25 / 1M",
-      latencyKey: "agent.model.info.latency.medium",
-    } satisfies ModelInfo,
-  },
-  {
-    id: "gpt-5.4-mini",
-    name: "GPT-5.4 Mini",
-    thinkings: ["low", "medium", "high", "xhigh"] as CodexThinkingLevel[],
-    info: {
-      summaryKey: "agent.model.info.summary.gpt54Mini",
-      bestForKey: "agent.model.info.bestFor.gpt54Mini",
-      tokenNoteKey: "agent.model.info.note.codexThinking",
-      contextWindow: "400K",
-      maxOutput: "128K",
-      pricing: "$0.75 in / $4.50 out per 1M",
-      cachedInput: "$0.075 / 1M",
-      latencyKey: "agent.model.info.latency.fast",
-    } satisfies ModelInfo,
-  },
-  {
-    id: "gpt-5.3-codex-spark",
-    name: "GPT-5.3-Codex Spark",
-    thinkings: ["low", "medium", "high", "xhigh"] as CodexThinkingLevel[],
-    info: {
-      summaryKey: "agent.model.info.summary.gpt53CodexSpark",
-      bestForKey: "agent.model.info.bestFor.gpt53CodexSpark",
-      tokenNoteKey: "agent.model.info.note.sparkPricing",
-      contextWindow: "Preview",
-      maxOutput: "Preview",
-      pricing: "ChatGPT Pro credits",
-      latencyKey: "agent.model.info.latency.nearInstant",
-    } satisfies ModelInfo,
-  },
-]
-
-const CODEX_CHATGPT_AUTH_ONLY_MODEL_IDS = new Set(["gpt-5.3-codex-spark"])
+const CODEX_CHATGPT_AUTH_ONLY_MODEL_IDS = new Set(
+  CODEX_MODELS.filter((model) => model.authRestriction === "chatgpt-only").map(
+    (model) => model.id,
+  ),
+)
 
 export function isCodexApiKeySupportedModel(modelId: string): boolean {
   return !CODEX_CHATGPT_AUTH_ONLY_MODEL_IDS.has(modelId)
+}
+
+type CodexModelSupport = {
+  id: string
+  authRestriction?: "chatgpt-only" | "api-key-only"
+}
+
+function getCodexModelAuthRestriction(
+  model: string | CodexModelSupport,
+): CodexModelSupport["authRestriction"] {
+  if (typeof model !== "string") return model.authRestriction
+  return CODEX_MODELS.find((candidate) => candidate.id === model)
+    ?.authRestriction
 }
 
 export function isFirstPartyCodexModelSource(
@@ -92,21 +60,22 @@ export function isFirstPartyCodexModelSource(
 
 export function isCodexModelSupportedBySource(
   source: CodexFirstPartyModelSource,
-  modelId: string,
+  model: string | CodexModelSupport,
 ): boolean {
-  return source === "chatgpt" || isCodexApiKeySupportedModel(modelId)
+  const restriction = getCodexModelAuthRestriction(model)
+  if (restriction === "chatgpt-only") return source === "chatgpt"
+  if (restriction === "api-key-only") return source === "openai-api-key"
+  return true
 }
 
-export function getCodexModelsForSource<TModel extends { id: string }>(
+export function getCodexModelsForSource<TModel extends CodexModelSupport>(
   models: TModel[],
   source: CodexFirstPartyModelSource,
 ): TModel[] {
-  return models.filter((model) =>
-    isCodexModelSupportedBySource(source, model.id),
-  )
+  return models.filter((model) => isCodexModelSupportedBySource(source, model))
 }
 
-export function resolveCodexModelForSource<TModel extends { id: string }>({
+export function resolveCodexModelForSource<TModel extends CodexModelSupport>({
   models,
   selectedModelId,
   source,
@@ -116,17 +85,12 @@ export function resolveCodexModelForSource<TModel extends { id: string }>({
   source: CodexFirstPartyModelSource
 }): { model: TModel | undefined; changed: boolean } {
   const selectedModel = models.find((model) => model.id === selectedModelId)
-  if (
-    selectedModel &&
-    isCodexModelSupportedBySource(source, selectedModel.id)
-  ) {
+  if (selectedModel && isCodexModelSupportedBySource(source, selectedModel)) {
     return { model: selectedModel, changed: false }
   }
 
   return {
-    model: models.find((model) =>
-      isCodexModelSupportedBySource(source, model.id),
-    ),
+    model: models.find((model) => isCodexModelSupportedBySource(source, model)),
     changed: true,
   }
 }
@@ -261,4 +225,8 @@ export function normalizeClaudeModelSourceForRun(input: {
 export function formatCodexThinkingLabel(thinking: CodexThinkingLevel): string {
   if (thinking === "xhigh") return "Extra High"
   return thinking.charAt(0).toUpperCase() + thinking.slice(1)
+}
+
+export function formatModelLabel(name: string, version?: string): string {
+  return version ? `${name} ${version}` : name
 }

@@ -3304,6 +3304,15 @@ export const en = {
   "agent.model.dontAskAgain": "Don't ask again",
   "agent.model.newChat": "New Chat",
   "agent.model.customModel": "Custom Model",
+  "agent.model.deprecated": "Deprecated",
+  "agent.model.customEntry": "Custom model…",
+  "agent.model.customModelId": "Custom model ID",
+  "agent.model.customPlaceholder": "Enter a model ID",
+  "agent.model.customInvalid":
+    "Use 1–200 characters: letters, numbers, . _ : @ / + , - = only.",
+  "agent.model.useCustomModel": "Use model",
+  "agent.model.customCompatibilityUnknown":
+    "Compatibility with this account source is unknown; the runtime will decide.",
   "agent.model.customProvider": "Custom Provider",
   "agent.model.codexChatGPT": "Codex ChatGPT",
   "agent.model.codexApiKey": "Codex API Key",
@@ -3313,6 +3322,7 @@ export const en = {
   "agent.model.codexApiKeyCompatibilityNotice":
     "OpenAI API key only shows models available through the API.",
   "agent.model.codexRequiresChatGPTAccount": "Requires ChatGPT",
+  "agent.model.codexRequiresApiKey": "Requires API key",
   "agent.model.codexSourceAutoSwitchedModel":
     "Switched to {model}, which supports the selected account source.",
   "agent.model.selector": "Model selector",
@@ -3320,6 +3330,7 @@ export const en = {
   "agent.model.group.claudeCodeOAuth": "Claude Code OAuth",
   "agent.model.group.claudeProviderProfiles": "Claude Provider Profiles",
   "agent.model.group.codexOfficial": "OpenAI Models",
+  "agent.model.group.codexApiKeyAvailable": "Available via your API key",
   "agent.model.group.codexProviderProfiles": "Codex Provider Profiles",
   "agent.model.group.local": "Local",
   "agent.model.group.localProviderProfiles": "Local Provider Profiles",
@@ -6994,6 +7005,15 @@ export const zhCN: Partial<Record<TranslationKey, string>> = {
   "agent.model.dontAskAgain": "不再询问",
   "agent.model.newChat": "新建对话",
   "agent.model.customModel": "自定义模型",
+  "agent.model.deprecated": "已弃用",
+  "agent.model.customEntry": "自定义模型…",
+  "agent.model.customModelId": "自定义模型 ID",
+  "agent.model.customPlaceholder": "输入模型 ID",
+  "agent.model.customInvalid":
+    "请输入 1–200 个字符，仅可使用字母、数字及 . _ : @ / + , - =。",
+  "agent.model.useCustomModel": "使用模型",
+  "agent.model.customCompatibilityUnknown":
+    "无法确认该模型是否兼容此账号来源；最终由运行时决定。",
   "agent.model.customProvider": "自定义提供方",
   "agent.model.codexChatGPT": "Codex ChatGPT",
   "agent.model.codexApiKey": "Codex API 密钥",
@@ -7003,6 +7023,7 @@ export const zhCN: Partial<Record<TranslationKey, string>> = {
   "agent.model.codexApiKeyCompatibilityNotice":
     "OpenAI API 密钥只显示可通过 API 使用的模型。",
   "agent.model.codexRequiresChatGPTAccount": "需要 ChatGPT",
+  "agent.model.codexRequiresApiKey": "需要 API 密钥",
   "agent.model.codexSourceAutoSwitchedModel":
     "已切换到 {model}，该模型支持所选账号来源。",
   "agent.model.selector": "模型选择器",
@@ -7010,6 +7031,7 @@ export const zhCN: Partial<Record<TranslationKey, string>> = {
   "agent.model.group.claudeCodeOAuth": "Claude Code OAuth",
   "agent.model.group.claudeProviderProfiles": "Claude 提供方配置",
   "agent.model.group.codexOfficial": "OpenAI 模型",
+  "agent.model.group.codexApiKeyAvailable": "可通过你的 API 密钥使用",
   "agent.model.group.codexProviderProfiles": "Codex 提供方配置",
   "agent.model.group.local": "本地",
   "agent.model.group.localProviderProfiles": "本地提供方配置",

@@ -5,7 +5,6 @@ import {
   resolveChatImageModelVision,
 } from "../../../../shared/chat-attachment-capabilities"
 import {
-  agentScopeContractInputSchema,
   type GuardedGitStatusSnapshot,
   type ValidatedAgentScopeContract,
 } from "../../agent-guard"
@@ -27,10 +26,7 @@ import { prepareClaudeAgentSdkDesktopRunInputs } from "../../claude/agent-sdk-de
 import { runClaudeAgentSdkDesktopRuntimeWithMcpReadiness } from "../../claude/agent-sdk-desktop-run-runtime"
 import { prepareClaudeAgentSdkDesktopRunStartup } from "../../claude/agent-sdk-desktop-run-startup"
 import { superviseClaudeAgentSdkDesktopRun } from "../../claude/agent-sdk-desktop-run-supervision"
-import {
-  imageAttachmentSchema,
-  longTextAttachmentSchema,
-} from "../../claude/chat-input-schema"
+import { claudeChatInputSchema } from "../../claude/chat-input-schema"
 import { resolveClaudePendingToolApproval } from "../../claude/tool-approvals"
 import { getDatabase } from "../../db"
 import { getProviderProfileMetadata } from "../../provider-profiles/storage"
@@ -100,27 +96,7 @@ export const claudeRouter = router({
    * Stream chat with Claude - single subscription handles everything
    */
   chat: publicProcedure
-    .input(
-      z.object({
-        subChatId: z.string(),
-        chatId: z.string(),
-        runId: z.string().optional(),
-        prompt: z.string(),
-        cwd: z.string().optional(),
-        projectPath: z.string().optional(), // Original project path for MCP config lookup
-        mode: z.enum(["plan", "agent"]).default("agent"),
-        sessionId: z.string().optional(),
-        model: z.string().optional(),
-        modelSource: z.string().optional(),
-        maxThinkingTokens: z.number().optional(), // Enable extended thinking
-        images: z.array(imageAttachmentSchema).optional(), // Image attachments
-        longTextAttachments: z.array(longTextAttachmentSchema).optional(),
-        historyEnabled: z.boolean().optional(),
-        offlineModeEnabled: z.boolean().optional(), // Whether offline mode (Ollama) is enabled in settings
-        enableTasks: z.boolean().optional(), // Enable task management tools (TodoWrite, Task agents)
-        scopeContract: agentScopeContractInputSchema.optional(),
-      }),
-    )
+    .input(claudeChatInputSchema)
     .subscription(({ input }) => {
       return observable<UIMessageChunk>((emit) => {
         const db = getDatabase()

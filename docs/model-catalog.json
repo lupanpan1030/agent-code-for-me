@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 1,
+  "claude": [
+    {
+      "id": "fable",
+      "label": "Fable",
+      "version": "5",
+      "metadata": {
+        "contextWindow": "1M",
+        "maxOutput": "128K",
+        "pricing": "$10 in / $50 out per 1M"
+      }
+    },
+    {
+      "id": "opus",
+      "label": "Opus",
+      "version": "4.8",
+      "metadata": {
+        "contextWindow": "1M",
+        "maxOutput": "128K",
+        "pricing": "$5 in / $25 out per 1M",
+        "cachedInput": "$0.50 / 1M"
+      }
+    },
+    {
+      "id": "sonnet",
+      "label": "Sonnet",
+      "version": "4.6",
+      "metadata": {
+        "contextWindow": "1M",
+        "maxOutput": "64K",
+        "pricing": "$3 in / $15 out per 1M",
+        "cachedInput": "$0.30 / 1M"
+      }
+    },
+    {
+      "id": "haiku",
+      "label": "Haiku",
+      "version": "4.5",
+      "metadata": {
+        "contextWindow": "200K",
+        "maxOutput": "64K",
+        "pricing": "$1 in / $5 out per 1M",
+        "cachedInput": "$0.10 / 1M"
+      }
+    }
+  ],
+  "codex": [
+    {
+      "id": "gpt-5.5",
+      "label": "GPT-5.5",
+      "thinking": ["low", "medium", "high", "xhigh"],
+      "metadata": {
+        "contextWindow": "1.05M",
+        "maxOutput": "128K",
+        "pricing": "$5 in / $30 out per 1M",
+        "cachedInput": "$0.50 / 1M"
+      }
+    },
+    {
+      "id": "gpt-5.4",
+      "label": "GPT-5.4",
+      "thinking": ["low", "medium", "high", "xhigh"],
+      "metadata": {
+        "contextWindow": "1.05M",
+        "maxOutput": "128K",
+        "pricing": "$2.50 in / $15 out per 1M",
+        "cachedInput": "$0.25 / 1M"
+      }
+    },
+    {
+      "id": "gpt-5.4-mini",
+      "label": "GPT-5.4 Mini",
+      "thinking": ["low", "medium", "high", "xhigh"],
+      "metadata": {
+        "contextWindow": "400K",
+        "maxOutput": "128K",
+        "pricing": "$0.75 in / $4.50 out per 1M",
+        "cachedInput": "$0.075 / 1M"
+      }
+    },
+    {
+      "id": "gpt-5.3-codex-spark",
+      "label": "GPT-5.3-Codex Spark",
+      "thinking": ["low", "medium", "high", "xhigh"],
+      "authRestriction": "chatgpt-only",
+      "metadata": {
+        "contextWindow": "Preview",
+        "maxOutput": "Preview",
+        "pricing": "ChatGPT Pro credits"
+      }
+    }
+  ]
+}

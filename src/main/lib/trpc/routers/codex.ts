@@ -29,13 +29,19 @@ import {
 } from "../../agent-runtime/stream-event-mapper"
 import { prepareChatImageAttachmentsForDesktopRun } from "../../chat-attachments"
 import {
-  getCodexApiKeyStatus,
+  getStoredCodexApiKeyModelIds,
+  getCodexApiKeyStatus as getStoredCodexApiKeyStatus,
   readCodexApiKey,
   removeCodexApiKey as removeStoredCodexApiKey,
   saveCodexApiKey as saveStoredCodexApiKey,
+  updateStoredCodexApiKeyModelIds,
 } from "../../codex/api-key-store"
 import {
   CodexApiKeyValidationError,
+  clearCachedCodexApiKeyModelIds,
+  getCachedCodexApiKeyModelIds,
+  hasCachedCodexApiKeyModelIdsSnapshot,
+  subscribeCodexApiKeyModelIds,
   validateCodexApiKey,
 } from "../../codex/api-key-validation"
 import { createCodexAppServerAdapter } from "../../codex/app-server-adapter"
@@ -226,6 +232,17 @@ export function abortAllCodexStreams(): void {
   activeStreams.clear()
 }
 
+function getCodexApiKeyStatusResponse() {
+  const status = getStoredCodexApiKeyStatus()
+  const modelIds = hasCachedCodexApiKeyModelIdsSnapshot()
+    ? getCachedCodexApiKeyModelIds()
+    : getStoredCodexApiKeyModelIds()
+  return {
+    ...status,
+    modelIds: status.hasApiKey ? modelIds : [],
+  }
+}
+
 function extractCodexError(error: unknown): { message: string; code?: string } {
   return extractCodexErrorWithProviderRedaction(error, {
     redactLoginOutput: redactCodexLoginOutput,
@@ -237,7 +254,16 @@ export const codexRouter = router({
 
   getIntegration: publicProcedure.query(() => getCodexIntegrationStatus()),
 
-  getCodexApiKeyStatus: publicProcedure.query(() => getCodexApiKeyStatus()),
+  getCodexApiKeyStatus: publicProcedure.query(getCodexApiKeyStatusResponse),
+
+  apiKeyModelUpdates: publicProcedure.subscription(() =>
+    observable<ReturnType<typeof getCodexApiKeyStatusResponse>>((emit) => {
+      emit.next(getCodexApiKeyStatusResponse())
+      return subscribeCodexApiKeyModelIds(() => {
+        emit.next(getCodexApiKeyStatusResponse())
+      })
+    }),
+  ),
 
   saveCodexApiKey: publicProcedure
     .input(z.object({ apiKey: z.string().min(1) }))
@@ -254,22 +280,38 @@ export const codexRouter = router({
       ) {
         throw new CodexApiKeyValidationError(validation)
       }
-      const status = saveStoredCodexApiKey(input.apiKey)
+      let status: ReturnType<typeof saveStoredCodexApiKey>
+      try {
+        status = saveStoredCodexApiKey(
+          input.apiKey,
+          {},
+          validation.ok ? getCachedCodexApiKeyModelIds() : [],
+        )
+      } catch (error) {
+        clearCachedCodexApiKeyModelIds()
+        throw error
+      }
       if (!validation.ok) {
         return {
           ...status,
+          modelIds: [],
           verified: false as const,
           warning: validation.hint
             ? `${validation.message} ${validation.hint}`
             : validation.message,
         }
       }
-      return { ...status, verified: true as const }
+      return {
+        ...status,
+        modelIds: getCachedCodexApiKeyModelIds(),
+        verified: true as const,
+      }
     }),
 
   removeCodexApiKey: publicProcedure.mutation(() => {
+    clearCachedCodexApiKeyModelIds()
     const status = removeStoredCodexApiKey()
-    return status
+    return { ...status, modelIds: [] }
   }),
 
   logout: publicProcedure.mutation(async () => {
@@ -818,6 +860,14 @@ export const codexRouter = router({
                   ],
                 )
                 return
+              }
+              try {
+                updateStoredCodexApiKeyModelIds(getCachedCodexApiKeyModelIds())
+              } catch (error) {
+                console.warn(
+                  "[codex] Failed to persist the validated API-key model list; continuing with the in-memory snapshot.",
+                  error instanceof Error ? error.message : String(error),
+                )
               }
             } else {
               const integration = await getCodexIntegrationStatus()

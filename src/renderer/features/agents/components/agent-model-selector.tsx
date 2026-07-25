@@ -1,6 +1,6 @@
 "use client"
 
-import { Brain, ChevronRight, Info, Zap } from "lucide-react"
+import { Brain, ChevronRight, Info, Plus, Zap } from "lucide-react"
 import {
   useCallback,
   useEffect,
@@ -10,6 +10,7 @@ import {
   useState,
 } from "react"
 import { createPortal } from "react-dom"
+import { isSafeProviderModel } from "../../../../shared/local-job-api"
 import {
   isProviderProfileSource,
   providerProfileSource,
@@ -35,9 +36,14 @@ import {
   PopoverTrigger,
 } from "../../../components/ui/popover"
 import { Switch } from "../../../components/ui/switch"
-import { type TranslationKey, useI18n } from "../../../lib/i18n"
+import { useI18n } from "../../../lib/i18n"
 import { cn } from "../../../lib/utils"
 import type { ClaudeModelSource, CodexModelSource } from "../atoms"
+import {
+  type ClaudeCatalogModel,
+  type CodexCatalogModel,
+  getVisibleCodexApiKeyModels,
+} from "../lib/model-catalog-selection"
 import type {
   CodexFirstPartyModelSource,
   CodexThinkingLevel,
@@ -46,7 +52,6 @@ import type {
 import {
   formatCodexThinkingLabel,
   isCodexModelSupportedBySource,
-  isFirstPartyCodexModelSource,
   resolveCodexModelForSource,
 } from "../lib/models"
 
@@ -58,19 +63,9 @@ const CodexIcon = ({ className }: { className?: string }) => (
 
 export type AgentProviderId = "claude-code" | "codex"
 
-type ClaudeModelOption = {
-  id: string
-  name: string
-  version: string
-  info?: ModelInfo
-}
+type ClaudeModelOption = ClaudeCatalogModel
 
-type CodexModelOption = {
-  id: string
-  name: string
-  thinkings: CodexThinkingLevel[]
-  info?: ModelInfo
-}
+type CodexModelOption = CodexCatalogModel
 
 type ProviderProfileOption = {
   id: string
@@ -102,6 +97,7 @@ interface AgentModelSelectorProps {
   claude: {
     models: ClaudeModelOption[]
     selectedModelId?: string
+    selectedModel?: ClaudeModelOption
     onSelectModel: (modelId: string) => void
     selectedModelSource: ClaudeModelSource
     onSelectModelSource: (source: ClaudeModelSource) => void
@@ -116,9 +112,12 @@ interface AgentModelSelectorProps {
   }
   codex: {
     models: CodexModelOption[]
+    apiKeyModels: CodexModelOption[]
     selectedModelId: string
+    selectedModel: CodexModelOption
     onSelectModel: (modelId: string) => void
     selectedModelSource: CodexModelSource
+    effectiveFirstPartyModelSource: CodexFirstPartyModelSource | null
     onSelectModelSource: (source: CodexModelSource) => void
     selectedThinking: CodexThinkingLevel
     onSelectThinking: (thinking: CodexThinkingLevel) => void
@@ -140,6 +139,7 @@ type ModelGroupId =
   | "claude"
   | "claudeProfiles"
   | "codex"
+  | "codexApiKey"
   | "codexProfiles"
   | "local"
 
@@ -148,6 +148,27 @@ type ActiveModelInfo = {
   modelLabel: string
   top: number
   left: number
+}
+
+function ModelStatusBadge({
+  model,
+}: {
+  model: ClaudeModelOption | CodexModelOption
+}) {
+  const { t } = useI18n()
+  const label = model.deprecated
+    ? t("agent.model.deprecated")
+    : model.kind === "api-key"
+      ? t("common.apiKey")
+      : model.kind !== "catalog"
+        ? t("agent.model.customModel")
+        : null
+  if (!label) return null
+  return (
+    <span className="shrink-0 rounded border border-border/70 bg-muted/60 px-1 py-0.5 text-[9px] font-medium leading-none text-muted-foreground">
+      {label}
+    </span>
+  )
 }
 
 function getProviderProfileProvider(
@@ -377,7 +398,6 @@ function ModelInfoButton({
 
 function ModelInfoPanel({ activeInfo }: { activeInfo: ActiveModelInfo }) {
   const { t } = useI18n()
-  const translate = (key: string) => t(key as TranslationKey)
   const { info, modelLabel, top, left } = activeInfo
   const panelRef = useRef<HTMLDivElement>(null)
   const [panelTop, setPanelTop] = useState(top)
@@ -390,8 +410,8 @@ function ModelInfoPanel({ activeInfo }: { activeInfo: ActiveModelInfo }) {
     ...(info.cachedInput
       ? [[t("agent.model.info.cachedInput"), info.cachedInput]]
       : []),
-    [t("agent.model.info.latency"), translate(info.latencyKey)],
-  ]
+    ...(info.latency ? [[t("agent.model.info.latency"), info.latency]] : []),
+  ].filter((row): row is [string, string] => Boolean(row[1]))
 
   useLayoutEffect(() => {
     const gap = 8
@@ -426,35 +446,37 @@ function ModelInfoPanel({ activeInfo }: { activeInfo: ActiveModelInfo }) {
         <div className="text-sm font-medium text-popover-foreground">
           {modelLabel}
         </div>
-        <p className="text-xs text-muted-foreground">
-          {translate(info.summaryKey)}
-        </p>
+        {info.summary && (
+          <p className="text-xs text-muted-foreground">{info.summary}</p>
+        )}
       </div>
 
-      <div className="grid grid-cols-[88px_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-xs">
-        {rows.map(([label, value]) => (
-          <div key={label} className="contents">
-            <span className="text-muted-foreground">{label}</span>
-            <span className="min-w-0 text-popover-foreground">{value}</span>
-          </div>
-        ))}
-      </div>
-
-      <div className="space-y-1 border-t border-border/60 pt-2">
-        <div className="text-[11px] font-medium uppercase text-muted-foreground">
-          {t("agent.model.info.bestFor")}
+      {rows.length > 0 && (
+        <div className="grid grid-cols-[88px_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-xs">
+          {rows.map(([label, value]) => (
+            <div key={label} className="contents">
+              <span className="text-muted-foreground">{label}</span>
+              <span className="min-w-0 text-popover-foreground">{value}</span>
+            </div>
+          ))}
         </div>
-        <p className="text-xs text-popover-foreground">
-          {translate(info.bestForKey)}
-        </p>
-      </div>
+      )}
 
-      {info.tokenNoteKey && (
+      {info.bestFor && (
+        <div className="space-y-1 border-t border-border/60 pt-2">
+          <div className="text-[11px] font-medium uppercase text-muted-foreground">
+            {t("agent.model.info.bestFor")}
+          </div>
+          <p className="text-xs text-popover-foreground">{info.bestFor}</p>
+        </div>
+      )}
+
+      {info.tokenNote && (
         <div className="rounded-md bg-muted/50 px-2 py-1.5 text-[11px] text-muted-foreground">
           <span className="font-medium">
             {t("agent.model.info.tokenNote")}:{" "}
           </span>
-          {translate(info.tokenNoteKey)}
+          {info.tokenNote}
         </div>
       )}
     </div>
@@ -480,17 +502,25 @@ export function AgentModelSelector({
   const [codexCompatibilityNotice, setCodexCompatibilityNotice] = useState<
     string | null
   >(null)
+  const [customEntryProvider, setCustomEntryProvider] =
+    useState<AgentProviderId | null>(null)
+  const [customModelId, setCustomModelId] = useState("")
+  const [customModelAttempted, setCustomModelAttempted] = useState(false)
+  const customModelInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (!customEntryProvider) return
+    const timer = setTimeout(() => customModelInputRef.current?.focus(), 0)
+    return () => clearTimeout(timer)
+  }, [customEntryProvider])
 
   const providerIsAllowed = useCallback(
     (provider: AgentProviderId) => provider === selectedAgentId,
     [selectedAgentId],
   )
   const selectedClaudeModelSource = claude.selectedModelSource
-  const selectedFirstPartyCodexSource = isFirstPartyCodexModelSource(
-    codex.selectedModelSource,
-  )
-    ? codex.selectedModelSource
-    : null
+  const selectedFirstPartyCodexSource = codex.effectiveFirstPartyModelSource
+  const codexModelSelectionSource = selectedFirstPartyCodexSource ?? "chatgpt"
 
   // Build flat list of all models (show all regardless of connection status)
   const allModels = useMemo<FlatModelItem[]>(() => {
@@ -507,6 +537,7 @@ export function AgentModelSelector({
         }
       } else {
         for (const m of claude.models) {
+          if (m.deprecated) continue
           items.push({ type: "claude", model: m })
         }
       }
@@ -529,6 +560,13 @@ export function AgentModelSelector({
 
     if (providerIsAllowed("codex")) {
       for (const m of codex.models) {
+        if (m.deprecated) continue
+        items.push({ type: "codex", model: m })
+      }
+      for (const m of getVisibleCodexApiKeyModels(
+        codex.apiKeyModels,
+        selectedFirstPartyCodexSource,
+      )) {
         items.push({ type: "codex", model: m })
       }
     }
@@ -555,11 +593,10 @@ export function AgentModelSelector({
         case "claude":
           return (
             item.model.name.toLowerCase().includes(q) ||
-            item.model.version.toLowerCase().includes(q) ||
-            `${item.model.name} ${item.model.version}`.toLowerCase().includes(q)
+            item.model.displayLabel.toLowerCase().includes(q)
           )
         case "codex":
-          return item.model.name.toLowerCase().includes(q)
+          return item.model.displayLabel.toLowerCase().includes(q)
         case "ollama":
           return item.modelName.toLowerCase().includes(q)
         case "provider-profile":
@@ -581,7 +618,7 @@ export function AgentModelSelector({
         if (item.runtime === "codex") return "codexProfiles"
         return "local"
       case "codex":
-        return "codex"
+        return item.model.kind === "api-key" ? "codexApiKey" : "codex"
       case "ollama":
         return "local"
     }
@@ -596,6 +633,8 @@ export function AgentModelSelector({
           return t("agent.model.group.claudeProviderProfiles")
         case "codex":
           return t("agent.model.group.codexOfficial")
+        case "codexApiKey":
+          return t("agent.model.group.codexApiKeyAvailable")
         case "codexProfiles":
           return t("agent.model.group.codexProviderProfiles")
         case "local":
@@ -610,6 +649,7 @@ export function AgentModelSelector({
       claude: [],
       claudeProfiles: [],
       codex: [],
+      codexApiKey: [],
       codexProfiles: [],
       local: [],
     }
@@ -623,6 +663,7 @@ export function AgentModelSelector({
         "claude",
         "claudeProfiles",
         "codex",
+        "codexApiKey",
         "codexProfiles",
         "local",
       ] as ModelGroupId[]
@@ -637,9 +678,31 @@ export function AgentModelSelector({
       if (!nextOpen) {
         setSearch("")
         setActiveModelInfo(null)
+        setCustomEntryProvider(null)
+        setCustomModelId("")
+        setCustomModelAttempted(false)
       }
     },
     [onOpenChange],
+  )
+
+  const handleCustomModelSubmit = useCallback(
+    (event: React.FormEvent<HTMLFormElement>) => {
+      event.preventDefault()
+      if (!customEntryProvider || !isSafeProviderModel(customModelId)) {
+        setCustomModelAttempted(true)
+        return
+      }
+
+      if (customEntryProvider === "claude-code") {
+        claude.onSelectModel(customModelId)
+      } else {
+        setCodexCompatibilityNotice(null)
+        codex.onSelectModel(customModelId)
+      }
+      handleOpenChange(false)
+    },
+    [claude, codex, customEntryProvider, customModelId, handleOpenChange],
   )
 
   const showModelInfo = useCallback(
@@ -680,6 +743,22 @@ export function AgentModelSelector({
     ) : (
       <ClaudeCodeIcon className="h-3.5 w-3.5" />
     )
+  const selectedCatalogModel =
+    selectedAgentId === "codex"
+      ? selectedFirstPartyCodexSource
+        ? codex.selectedModel
+        : undefined
+      : selectedClaudeModelSource === "claude-oauth" && !claude.isOffline
+        ? claude.selectedModel
+        : undefined
+  const showCustomModelEntry =
+    (selectedAgentId === "codex" && selectedFirstPartyCodexSource !== null) ||
+    (selectedAgentId === "claude-code" &&
+      selectedClaudeModelSource === "claude-oauth" &&
+      !claude.isOffline)
+  const customModelIsInvalid =
+    (customModelAttempted || customModelId.length > 0) &&
+    !isSafeProviderModel(customModelId)
 
   const isItemSelected = (item: FlatModelItem): boolean => {
     switch (item.type) {
@@ -732,11 +811,7 @@ export function AgentModelSelector({
     }
     if (
       item.type === "codex" &&
-      selectedFirstPartyCodexSource &&
-      !isCodexModelSupportedBySource(
-        selectedFirstPartyCodexSource,
-        item.model.id,
-      )
+      !isCodexModelSupportedBySource(codexModelSelectionSource, item.model)
     ) {
       return true
     }
@@ -746,13 +821,11 @@ export function AgentModelSelector({
   const getItemDisabledReason = (item: FlatModelItem): string | null => {
     if (
       item.type === "codex" &&
-      selectedFirstPartyCodexSource === "openai-api-key" &&
-      !isCodexModelSupportedBySource(
-        selectedFirstPartyCodexSource,
-        item.model.id,
-      )
+      !isCodexModelSupportedBySource(codexModelSelectionSource, item.model)
     ) {
-      return t("agent.model.codexRequiresChatGPTAccount")
+      return codexModelSelectionSource === "openai-api-key"
+        ? t("agent.model.codexRequiresChatGPTAccount")
+        : t("agent.model.codexRequiresApiKey")
     }
     return null
   }
@@ -772,11 +845,7 @@ export function AgentModelSelector({
       case "codex":
         if (!providerIsAllowed("codex")) return
         if (
-          selectedFirstPartyCodexSource &&
-          !isCodexModelSupportedBySource(
-            selectedFirstPartyCodexSource,
-            item.model.id,
-          )
+          !isCodexModelSupportedBySource(codexModelSelectionSource, item.model)
         ) {
           return
         }
@@ -809,13 +878,20 @@ export function AgentModelSelector({
   const handleCodexAccountSourceSelect = useCallback(
     (source: CodexFirstPartyModelSource) => {
       if (!providerIsAllowed("codex")) return
+      codex.onSelectModelSource(source)
+      if (
+        codex.selectedModel.kind === "custom" ||
+        isCodexModelSupportedBySource(source, codex.selectedModel)
+      ) {
+        setCodexCompatibilityNotice(null)
+        return
+      }
       const resolved = resolveCodexModelForSource({
         models: codex.models,
         selectedModelId: codex.selectedModelId,
         source,
       })
 
-      codex.onSelectModelSource(source)
       if (resolved.model && resolved.changed) {
         codex.onSelectModel(resolved.model.id)
         setCodexCompatibilityNotice(
@@ -855,9 +931,9 @@ export function AgentModelSelector({
   const getItemLabel = (item: FlatModelItem): string => {
     switch (item.type) {
       case "claude":
-        return `${item.model.name} ${item.model.version}`
+        return item.model.displayLabel
       case "codex":
-        return item.model.name
+        return item.model.displayLabel
       case "ollama":
         return (
           item.modelName +
@@ -884,7 +960,7 @@ export function AgentModelSelector({
       case "claude":
         return `claude-${item.model.id}`
       case "codex":
-        return `codex-${item.model.id}`
+        return `codex-${item.model.kind}-${item.model.id}`
       case "ollama":
         return `ollama-${item.modelName}`
       case "provider-profile":
@@ -906,6 +982,9 @@ export function AgentModelSelector({
         >
           {triggerIcon}
           <span className="truncate">{selectedModelLabel}</span>
+          {selectedCatalogModel && (
+            <ModelStatusBadge model={selectedCatalogModel} />
+          )}
           <IconChevronDown className="h-3 w-3 shrink-0 opacity-50" />
         </button>
       </PopoverTrigger>
@@ -936,6 +1015,11 @@ export function AgentModelSelector({
                   {t("agent.model.codexApiKeyCompatibilityNotice")}
                 </div>
               )}
+              {codex.selectedModel.kind === "custom" && (
+                <div className="mx-2 mb-2 rounded-md border border-border/60 bg-muted/40 px-2 py-1.5 text-xs text-muted-foreground">
+                  {t("agent.model.customCompatibilityUnknown")}
+                </div>
+              )}
               <CommandSeparator />
             </>
           )}
@@ -963,14 +1047,10 @@ export function AgentModelSelector({
           {/* Codex thinking level selector with hover sub-menu */}
           {selectedAgentId === "codex" &&
             (() => {
-              const selectedCodexModel =
-                codex.models.find((m) => m.id === codex.selectedModelId) ||
-                codex.models[0]
-              if (!selectedCodexModel) return null
               return (
                 <>
                   <CodexThinkingSubMenu
-                    thinkings={selectedCodexModel.thinkings}
+                    thinkings={codex.selectedModel.thinkings}
                     selectedThinking={codex.selectedThinking}
                     onSelectThinking={codex.onSelectThinking}
                   />
@@ -1005,6 +1085,10 @@ export function AgentModelSelector({
                         {getItemIcon(item)}
                         <div className="flex min-w-0 flex-1 items-center gap-1.5">
                           <span className="min-w-0 truncate">{label}</span>
+                          {(item.type === "claude" ||
+                            item.type === "codex") && (
+                            <ModelStatusBadge model={item.model} />
+                          )}
                           {info && (
                             <ModelInfoButton
                               info={info}
@@ -1027,6 +1111,80 @@ export function AgentModelSelector({
               ))
             ) : (
               <CommandEmpty>{t("agent.model.noModelsFound")}</CommandEmpty>
+            )}
+            {showCustomModelEntry && (
+              <>
+                <CommandSeparator />
+                {customEntryProvider === selectedAgentId ? (
+                  <form
+                    className="mx-1 space-y-1.5 rounded-md border border-border/70 bg-muted/30 p-2"
+                    onSubmit={handleCustomModelSubmit}
+                    onKeyDown={(event) => {
+                      event.stopPropagation()
+                      if (event.key === "Escape") {
+                        event.preventDefault()
+                        setCustomEntryProvider(null)
+                        setCustomModelId("")
+                        setCustomModelAttempted(false)
+                      }
+                    }}
+                  >
+                    <label className="block text-[11px] font-medium text-muted-foreground">
+                      {t("agent.model.customEntry")}
+                      <input
+                        ref={customModelInputRef}
+                        value={customModelId}
+                        maxLength={200}
+                        aria-invalid={customModelIsInvalid}
+                        aria-label={t("agent.model.customModelId")}
+                        placeholder={t("agent.model.customPlaceholder")}
+                        onChange={(event) =>
+                          setCustomModelId(event.target.value)
+                        }
+                        className="mt-1 h-7 w-full rounded-md border border-border bg-background px-2 text-xs text-foreground outline-none placeholder:text-muted-foreground focus:border-ring"
+                      />
+                    </label>
+                    {customModelIsInvalid && (
+                      <p className="text-[10px] leading-4 text-destructive">
+                        {t("agent.model.customInvalid")}
+                      </p>
+                    )}
+                    <div className="flex justify-end gap-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCustomEntryProvider(null)
+                          setCustomModelId("")
+                          setCustomModelAttempted(false)
+                        }}
+                        className="rounded px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
+                      >
+                        {t("common.cancel")}
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={!isSafeProviderModel(customModelId)}
+                        className="rounded bg-primary px-2 py-1 text-[11px] text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {t("agent.model.useCustomModel")}
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <CommandItem
+                    value={`custom-model-${selectedAgentId}`}
+                    onSelect={() => {
+                      setCustomEntryProvider(selectedAgentId)
+                      setCustomModelId("")
+                      setCustomModelAttempted(false)
+                    }}
+                    className="gap-2"
+                  >
+                    <Plus className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <span>{t("agent.model.customEntry")}</span>
+                  </CommandItem>
+                )}
+              </>
             )}
           </CommandList>
 

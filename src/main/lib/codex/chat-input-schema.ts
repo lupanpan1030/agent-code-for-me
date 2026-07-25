@@ -1,5 +1,10 @@
 import { z } from "zod"
+import { isSafeProviderModel } from "../../../shared/local-job-api"
 import { agentScopeContractInputSchema } from "../agent-guard"
+import {
+  extractCodexModelId,
+  normalizeCodexAppServerModelId,
+} from "./model-selection"
 
 export const imageAttachmentSchema = z.object({
   base64Data: z.string().optional(),
@@ -42,5 +47,19 @@ export const codexChatInputSchema = z
     scopeContract: agentScopeContractInputSchema.optional(),
   })
   .strict()
+  .superRefine((input, ctx) => {
+    if (input.providerProfileId) return
+    const selectedModel = extractCodexModelId(input.model)
+    if (
+      selectedModel &&
+      !isSafeProviderModel(normalizeCodexAppServerModelId(selectedModel))
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["model"],
+        message: "Invalid first-party Codex model id",
+      })
+    }
+  })
 
 export type CodexChatInput = z.infer<typeof codexChatInputSchema>

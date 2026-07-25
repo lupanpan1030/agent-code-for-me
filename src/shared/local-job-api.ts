@@ -377,7 +377,7 @@ function hasControlCharacter(value: string): boolean {
   return false
 }
 
-function isSafeProviderModel(value: string): boolean {
+export function isSafeProviderModel(value: string): boolean {
   return (
     value.length > 0 &&
     value.length <= MAX_PROVIDER_MODEL_LENGTH &&

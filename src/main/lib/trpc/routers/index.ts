@@ -24,6 +24,7 @@ import { filesRouter } from "./files"
 import { githubWorkflowRouter } from "./github-workflow"
 import { localApiProviderConfigRouter } from "./local-api-provider-config"
 import { mcpRegistryRouter } from "./mcp-registry"
+import { modelCatalogRouter } from "./model-catalog"
 import { ollamaRouter } from "./ollama"
 import { pluginsRouter } from "./plugins"
 import { projectsRouter } from "./projects"
@@ -70,6 +71,7 @@ export function createAppRouter(getWindow: () => BrowserWindow | null) {
     agentJobs: agentJobsRouter,
     agentSchedules: agentSchedulesRouter,
     mcpRegistry: mcpRegistryRouter,
+    modelCatalog: modelCatalogRouter,
     // Git operations - named "changes" to match Superset API
     changes: createGitRouter(),
   })

@@ -33,8 +33,8 @@ import {
   isTextMessagePart,
   toAiSdkTransportChunk,
 } from "./chat-message-ui-adapter"
-import { CODEX_MODELS, type CodexThinkingLevel } from "./models"
 import { applyRuntimeEventStateChunk } from "./runtime-event-state"
+import { composeCodexTransportModel } from "./transport-model-selection"
 
 function tr(key: TranslationKey, values?: Record<string, string | number>) {
   const useZh =
@@ -72,7 +72,6 @@ type ImageAttachment = {
 
 // When a sub-chat hits auth-error, force one fresh Codex ACP session on next send.
 const forceFreshSessionSubChats = new Set<string>()
-const DEFAULT_CODEX_MODEL = "gpt-5.5/high"
 const PROVIDER_PROFILE_CODEX_REASONING = "none"
 
 function formatProviderProfileCodexModel(model: string): string {
@@ -131,28 +130,7 @@ function getSelectedCodexModel(subChatId: string): string {
   const selectedThinking = appStore.get(
     subChatCodexThinkingAtomFamily(subChatId),
   )
-  const selectedModel =
-    CODEX_MODELS.find((model) => model.id === selectedModelId) ||
-    CODEX_MODELS.find((model) => model.id === "gpt-5.5") ||
-    CODEX_MODELS[0]
-
-  if (!selectedModel) {
-    return DEFAULT_CODEX_MODEL
-  }
-
-  const normalizedThinking = selectedModel.thinkings.includes(
-    selectedThinking as CodexThinkingLevel,
-  )
-    ? (selectedThinking as CodexThinkingLevel)
-    : selectedModel.thinkings.includes("high")
-      ? "high"
-      : selectedModel.thinkings[0]
-
-  if (!normalizedThinking) {
-    return DEFAULT_CODEX_MODEL
-  }
-
-  return `${selectedModel.id}/${normalizedThinking}`
+  return composeCodexTransportModel(selectedModelId, selectedThinking)
 }
 
 export class ACPChatTransport implements ChatTransport<UIMessage> {

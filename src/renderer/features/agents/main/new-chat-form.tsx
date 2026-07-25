@@ -140,10 +140,18 @@ import {
 import { imageAttachmentBlockDescriptionKey } from "../lib/image-attachment-copy"
 import { buildAgentMessageParts } from "../lib/message-parts"
 import {
-  CLAUDE_MODELS,
-  CODEX_MODELS,
-  getCodexModelsForSource,
+  buildCodexApiKeyModels,
+  type ClaudeCatalogModel,
+  filterCatalogPickerModels,
+  getDefaultCodexCatalogModel,
+  getDefaultCodexThinking,
+  resolveClaudeCatalogModel,
+  resolveCodexCatalogModel,
+  useModelCatalogStore,
+} from "../lib/model-catalog-store"
+import {
   normalizeClaudeModelSourceForRun,
+  resolveCodexModelForSource,
   type CodexThinkingLevel,
 } from "../lib/models"
 // import type { PlanType } from "@/lib/config/subscription-plans"
@@ -161,15 +169,13 @@ const RUNTIME_SETUP_TEXT_KEYS: Record<string, TranslationKey> = {
     "settings.models.qwenCli.authHint",
   "Qwen Code runtime is disabled. Enable it in Settings to configure Qwen setup.":
     "settings.models.qwenCli.runtimeDisabled",
-  "Qwen Code CLI was not found on PATH.":
-    "settings.models.qwenCli.pathMissing",
+  "Qwen Code CLI was not found on PATH.": "settings.models.qwenCli.pathMissing",
   "Configure Kun with a BYO config file or keep provider profiles degraded until the Locus responses gateway is wired.":
     "settings.models.kunCli.authHint",
   "Configure Kun with a BYO config file before running it from Locus.":
     "settings.models.kunCli.configFallbackHint",
   "Kun CLI was not found on PATH.": "settings.models.kunCli.pathMissing",
-  "Kun config path is not configured.":
-    "settings.models.kunCli.configMissing",
+  "Kun config path is not configured.": "settings.models.kunCli.configMissing",
   "Kun runtime is disabled. Enable it in Settings to configure Kun setup.":
     "settings.models.kunCli.runtimeDisabled",
 }
@@ -184,14 +190,12 @@ function localizeRuntimeSetupText(
 }
 
 // Hook to get available models (including offline models if Ollama is available and debug enabled)
-function useAvailableModels() {
+function useAvailableModels(baseModels: ClaudeCatalogModel[]) {
   const showOfflineFeatures = useAtomValue(showOfflineModeFeaturesAtom)
   const { data: ollamaStatus } = trpc.ollama.getStatus.useQuery(undefined, {
     refetchInterval: showOfflineFeatures ? 30000 : false,
     enabled: showOfflineFeatures, // Only query Ollama when offline mode is enabled
   })
-
-  const baseModels = CLAUDE_MODELS
 
   const isOffline = ollamaStatus ? !ollamaStatus.internet.online : false
   const hasOllama =
@@ -643,7 +647,8 @@ export function NewChatForm({
   )
 
   // Get available models (with offline support)
-  const availableModels = useAvailableModels()
+  const { claudeModels, codexModels } = useModelCatalogStore()
+  const availableModels = useAvailableModels(claudeModels)
   const [selectedOllamaModel, setSelectedOllamaModel] = useAtom(
     selectedOllamaModelAtom,
   )
@@ -662,21 +667,11 @@ export function NewChatForm({
     extendedThinkingEnabledAtom,
   )
 
-  const [selectedModel, setSelectedModel] = useState(
+  const selectedModel = useMemo(
     () =>
-      availableModels.models.find((m) => m.id === lastSelectedModelId) ||
-      availableModels.models[0],
+      resolveClaudeCatalogModel(availableModels.models, lastSelectedModelId),
+    [availableModels.models, lastSelectedModelId],
   )
-
-  // Sync selectedModel when atom value changes (e.g., after localStorage hydration)
-  useEffect(() => {
-    const model = availableModels.models.find(
-      (m) => m.id === lastSelectedModelId,
-    )
-    if (model && model.id !== selectedModel.id) {
-      setSelectedModel(model)
-    }
-  }, [lastSelectedModelId])
 
   const { data: codexApiKeyStatus } = trpc.codex.getCodexApiKeyStatus.useQuery(
     undefined,
@@ -691,26 +686,44 @@ export function NewChatForm({
     (lastSelectedCodexModelSource === "chatgpt" &&
       setupStatus.codex.authMethod === "api_key" &&
       hasAppCodexApiKey)
+  const effectiveCodexFirstPartySource = shouldUseCodexApiKeyModels
+    ? "openai-api-key"
+    : lastSelectedCodexModelSource === "chatgpt"
+      ? "chatgpt"
+      : null
+  const codexApiKeyModels = useMemo(
+    () =>
+      buildCodexApiKeyModels(codexApiKeyStatus?.modelIds ?? [], codexModels),
+    [codexApiKeyStatus?.modelIds, codexModels],
+  )
+  const selectableCodexModels = useMemo(
+    () => [...codexModels, ...codexApiKeyModels],
+    [codexApiKeyModels, codexModels],
+  )
   const codexUiModels = useMemo(
-    () => CODEX_MODELS.filter((model) => !hiddenModels.includes(model.id)),
-    [hiddenModels],
+    () => filterCatalogPickerModels(codexModels, hiddenModels),
+    [codexModels, hiddenModels],
   )
-  const compatibleCodexModels = useMemo(
-    () =>
-      shouldUseCodexApiKeyModels
-        ? getCodexModelsForSource(codexUiModels, "openai-api-key")
-        : codexUiModels,
-    [codexUiModels, shouldUseCodexApiKeyModels],
-  )
-  const selectedCodexModel = useMemo(
-    () =>
-      compatibleCodexModels.find(
-        (model) => model.id === lastSelectedCodexModelId,
-      ) ||
-      compatibleCodexModels[0] ||
-      CODEX_MODELS[0]!,
-    [compatibleCodexModels, lastSelectedCodexModelId],
-  )
+  const selectedCodexModel = useMemo(() => {
+    const selected = resolveCodexCatalogModel(
+      selectableCodexModels,
+      lastSelectedCodexModelId,
+    )
+    if (selected.kind === "custom" || !effectiveCodexFirstPartySource) {
+      return selected
+    }
+    const resolved = resolveCodexModelForSource({
+      models: selectableCodexModels,
+      selectedModelId: selected.id,
+      source: effectiveCodexFirstPartySource,
+    })
+    return resolved.model ?? getDefaultCodexCatalogModel(codexModels)
+  }, [
+    codexModels,
+    effectiveCodexFirstPartySource,
+    lastSelectedCodexModelId,
+    selectableCodexModels,
+  ])
 
   const selectedCodexThinking = useMemo<CodexThinkingLevel>(() => {
     if (
@@ -725,7 +738,7 @@ export function NewChatForm({
       return "high"
     }
 
-    return selectedCodexModel.thinkings[0]!
+    return getDefaultCodexThinking(selectedCodexModel)
   }, [selectedCodexModel, lastSelectedCodexThinking])
   const selectedCodexProfileId = parseProviderProfileSource(
     lastSelectedCodexModelSource,
@@ -863,7 +876,7 @@ export function NewChatForm({
       if (selectedProfile) {
         return `${selectedProfile.name} · ${selectedProfile.defaultModel}`
       }
-      return selectedCodexModel.name
+      return selectedCodexModel.displayLabel
     }
 
     if (availableModels.isOffline && availableModels.hasOllama) {
@@ -878,11 +891,11 @@ export function NewChatForm({
       return "Select model"
     }
 
-    return `${selectedModel.name} ${selectedModel.version}`
+    return selectedModel.displayLabel
   }, [
     selectedAgent.id,
     providerProfiles,
-    selectedCodexModel.name,
+    selectedCodexModel.displayLabel,
     selectedKunProviderProfile,
     availableModels.isOffline,
     availableModels.hasOllama,
@@ -1029,7 +1042,11 @@ export function NewChatForm({
   const imageAttachmentBlocked =
     readyImageCount > 0 && !imageAttachmentCapability.supportsImages
   const imageAttachmentBlockDescription = imageAttachmentBlocked
-    ? t(imageAttachmentBlockDescriptionKey(imageAttachmentCapability.blockReason))
+    ? t(
+        imageAttachmentBlockDescriptionKey(
+          imageAttachmentCapability.blockReason,
+        ),
+      )
     : null
   const imageAttachmentNotice =
     readyImageCount === 0
@@ -2495,17 +2512,17 @@ export function NewChatForm({
                           setSettingsDialogOpen(true)
                         }}
                         claude={{
-                          models: availableModels.models.filter(
-                            (m) => !hiddenModels.includes(m.id),
+                          models: filterCatalogPickerModels(
+                            availableModels.models,
+                            hiddenModels,
                           ),
                           selectedModelId: selectedModel?.id,
+                          selectedModel,
                           onSelectModel: (modelId) => {
-                            const model =
-                              availableModels.models.find(
-                                (m) => m.id === modelId,
-                              ) || availableModels.models[0]
-                            if (!model) return
-                            setSelectedModel(model)
+                            const model = resolveClaudeCatalogModel(
+                              availableModels.models,
+                              modelId,
+                            )
                             setLastSelectedModelId(model.id)
                           },
                           selectedModelSource: effectiveClaudeModelSource,
@@ -2524,24 +2541,28 @@ export function NewChatForm({
                         }}
                         codex={{
                           models: codexUiModels,
+                          apiKeyModels: codexApiKeyModels,
                           selectedModelId: selectedCodexModel.id,
+                          selectedModel: selectedCodexModel,
                           onSelectModel: (modelId) => {
-                            const model = codexUiModels.find(
-                              (item) => item.id === modelId,
+                            const model = resolveCodexCatalogModel(
+                              selectableCodexModels,
+                              modelId,
                             )
-                            if (!model) return
                             const nextThinking = model.thinkings.includes(
                               lastSelectedCodexThinking as CodexThinkingLevel,
                             )
                               ? (lastSelectedCodexThinking as CodexThinkingLevel)
                               : model.thinkings.includes("high")
                                 ? "high"
-                                : "medium"
+                                : getDefaultCodexThinking(model)
 
                             setLastSelectedCodexModelId(model.id)
                             setLastSelectedCodexThinking(nextThinking)
                           },
                           selectedModelSource: lastSelectedCodexModelSource,
+                          effectiveFirstPartyModelSource:
+                            effectiveCodexFirstPartySource,
                           onSelectModelSource: setLastSelectedCodexModelSource,
                           selectedThinking: selectedCodexThinking,
                           onSelectThinking: setLastSelectedCodexThinking,

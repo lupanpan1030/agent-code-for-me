@@ -23,7 +23,6 @@ import {
   approvedGuardedRunContractsAtom,
   type ClaudeModelSource,
   compactingSubChatsAtom,
-  MODEL_ID_MAP,
   pendingAuthRetryMessageAtom,
   subChatClaudeModelSourceAtomFamily,
   subChatModelIdAtomFamily,
@@ -43,6 +42,7 @@ import {
   applyRuntimeEventStateChunk,
   clearPendingUserQuestionForRuntimeChunk,
 } from "./runtime-event-state"
+import { resolveClaudeTransportModelId } from "./transport-model-selection"
 
 /**
  * Whether the default Claude auth path can actually run. Desktop runs consume
@@ -240,10 +240,7 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
     const selectedModelId = appStore.get(
       subChatModelIdAtomFamily(this.config.subChatId),
     )
-    const modelString =
-      MODEL_ID_MAP[selectedModelId] ||
-      MODEL_ID_MAP["fable"] ||
-      MODEL_ID_MAP["opus"]
+    const modelString = resolveClaudeTransportModelId(selectedModelId)
     const selectedModelSource = appStore.get(
       subChatClaudeModelSourceAtomFamily(this.config.subChatId),
     )
