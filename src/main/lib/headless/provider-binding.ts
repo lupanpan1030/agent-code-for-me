@@ -161,7 +161,6 @@ function parseTargets(
       target === "claude" ||
       target === "codex" ||
       target === "helpers" ||
-      target === "kun" ||
       target === "local",
   )
 }

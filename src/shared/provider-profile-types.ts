@@ -14,7 +14,6 @@ export const providerProfileTargets = [
   "claude",
   "codex",
   "helpers",
-  "kun",
   "local",
 ] as const
 export type ProviderProfileTarget = (typeof providerProfileTargets)[number]
@@ -32,7 +31,6 @@ export type ProviderProfileCapabilities = {
   claude?: boolean
   codex?: boolean
   helpers?: boolean
-  kun?: boolean
   local?: boolean
   streaming?: boolean
   tools?: boolean

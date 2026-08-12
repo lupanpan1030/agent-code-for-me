@@ -55,7 +55,6 @@ import {
   customHotkeysAtom,
   extendedThinkingEnabledAtom,
   hiddenModelsAtom,
-  modelsSettingsTargetAtom,
   selectedOllamaModelAtom,
   showOfflineModeFeaturesAtom,
 } from "../../../lib/atoms"
@@ -74,12 +73,10 @@ import {
   approvedGuardedRunContractsAtom,
   type ClaudeModelSource,
   getNextMode,
-  type KunModelSource,
   lastSelectedClaudeModelSourceAtom,
   lastSelectedCodexModelIdAtom,
   lastSelectedCodexModelSourceAtom,
   lastSelectedCodexThinkingAtom,
-  lastSelectedKunModelSourceAtom,
   lastSelectedModelIdAtom,
   pendingScopeExpansionRequestsAtom,
   type SubChatFileChange,
@@ -87,7 +84,6 @@ import {
   subChatCodexModelIdAtomFamily,
   subChatCodexModelSourceAtomFamily,
   subChatCodexThinkingAtomFamily,
-  subChatKunModelSourceAtomFamily,
   subChatModeAtomFamily,
   subChatModelIdAtomFamily,
 } from "../atoms"
@@ -131,10 +127,7 @@ import {
   resolveCodexModelForSource,
 } from "../lib/models"
 import type { DiffTextContext, SelectedTextContext } from "../lib/queue-utils"
-import {
-  useRuntimeCapabilityManifestStore,
-  useRuntimeCapabilitySupported,
-} from "../lib/runtime-manifest-store"
+import { useRuntimeCapabilitySupported } from "../lib/runtime-manifest-store"
 import {
   AgentsFileMention,
   AgentsMentionsEditor,
@@ -499,7 +492,7 @@ export const ChatInputArea = memo(function ChatInputArea({
     pendingScopeExpansionRequestsAtom,
   )
   const respondScopeExpansionMutation =
-    trpc.agentRuntime.respondScopeExpansion.useMutation()
+    trpc.claude.respondScopeExpansion.useMutation()
   const hardToolGuardSupported = useRuntimeCapabilitySupported(
     provider,
     "hardToolGuard",
@@ -558,12 +551,6 @@ export const ChatInputArea = memo(function ChatInputArea({
   )
   const [selectedSubChatCodexModelSource, setSelectedSubChatCodexModelSource] =
     useAtom(subChatCodexModelSourceAtom)
-  const subChatKunModelSourceAtom = useMemo(
-    () => subChatKunModelSourceAtomFamily(subChatId),
-    [subChatId],
-  )
-  const [selectedSubChatKunModelSource, setSelectedSubChatKunModelSource] =
-    useAtom(subChatKunModelSourceAtom)
   const subChatCodexThinkingAtom = useMemo(
     () => subChatCodexThinkingAtomFamily(subChatId),
     [subChatId],
@@ -584,9 +571,6 @@ export const ChatInputArea = memo(function ChatInputArea({
   const setLastSelectedCodexModelId = useSetAtom(lastSelectedCodexModelIdAtom)
   const setLastSelectedCodexModelSource = useSetAtom(
     lastSelectedCodexModelSourceAtom,
-  )
-  const setLastSelectedKunModelSource = useSetAtom(
-    lastSelectedKunModelSourceAtom,
   )
   const setLastSelectedCodexThinking = useSetAtom(lastSelectedCodexThinkingAtom)
   const [selectedOllamaModel, setSelectedOllamaModel] = useAtom(
@@ -749,36 +733,6 @@ export const ChatInputArea = memo(function ChatInputArea({
     setSelectedSubChatCodexModelSource,
   ])
 
-  const selectedKunProfileId = parseProviderProfileSource(
-    selectedSubChatKunModelSource,
-  )
-  const selectedKunProviderProfile = selectedKunProfileId
-    ? providerProfiles.find(
-        (profile) =>
-          profile.id === selectedKunProfileId &&
-          profile.targetRuntimes.includes("kun"),
-      )
-    : undefined
-  const selectedKunProfileIsPending =
-    Boolean(selectedKunProfileId) && !providerProfilesData
-
-  useEffect(() => {
-    if (
-      selectedKunProfileId &&
-      !selectedKunProviderProfile &&
-      !selectedKunProfileIsPending
-    ) {
-      setSelectedSubChatKunModelSource("runtime-managed")
-      setLastSelectedKunModelSource("runtime-managed")
-    }
-  }, [
-    selectedKunProfileId,
-    selectedKunProviderProfile,
-    selectedKunProfileIsPending,
-    setLastSelectedKunModelSource,
-    setSelectedSubChatKunModelSource,
-  ])
-
   // OAuth is only usable when a non-expired OAuth credential and the runtime are
   // both ready — a saved Provider Profile is a separate selectable source.
   const canUseClaudeOAuth =
@@ -878,14 +832,6 @@ export const ChatInputArea = memo(function ChatInputArea({
   )
 
   const selectedModelLabel = useMemo(() => {
-    if (provider === "qwen-code") {
-      return "Qwen Code"
-    }
-    if (provider === "kun") {
-      return selectedKunProviderProfile
-        ? `${selectedKunProviderProfile.name} · ${selectedKunProviderProfile.defaultModel}`
-        : "Kun"
-    }
     if (provider === "codex") {
       const selectedProfileId = parseProviderProfileSource(
         selectedSubChatCodexModelSource,
@@ -920,7 +866,6 @@ export const ChatInputArea = memo(function ChatInputArea({
     availableModels.hasOllama,
     currentOllamaModel,
     selectedClaudeProviderProfile,
-    selectedKunProviderProfile,
     selectedModel,
   ])
   const readyImageCount = images.filter(
@@ -934,19 +879,11 @@ export const ChatInputArea = memo(function ChatInputArea({
         modelSource:
           provider === "claude-code"
             ? effectiveClaudeModelSource
-            : provider === "codex"
-              ? selectedSubChatCodexModelSource
-              : provider === "kun"
-                ? selectedSubChatKunModelSource
-                : null,
+            : selectedSubChatCodexModelSource,
         providerProfileId:
           provider === "claude-code"
             ? selectedClaudeProfileId
-            : provider === "codex"
-              ? selectedCodexProfileId
-              : provider === "kun"
-                ? selectedKunProfileId
-                : null,
+            : selectedCodexProfileId,
         providerProfiles,
       }),
     [
@@ -955,9 +892,7 @@ export const ChatInputArea = memo(function ChatInputArea({
       providerProfiles,
       selectedClaudeProfileId,
       selectedCodexProfileId,
-      selectedKunProfileId,
       selectedSubChatCodexModelSource,
-      selectedSubChatKunModelSource,
     ],
   )
   const imageAttachmentCapability = useMemo(
@@ -1189,98 +1124,12 @@ export const ChatInputArea = memo(function ChatInputArea({
   // MCP status - from getAllMcpConfig query (provides global/local grouping)
   const setSettingsOpen = useSetAtom(agentsSettingsDialogOpenAtom)
   const setSettingsTab = useSetAtom(agentsSettingsDialogActiveTabAtom)
-  const setModelsSettingsTarget = useSetAtom(modelsSettingsTargetAtom)
-  const { data: runtimeCapabilityManifests } =
-    useRuntimeCapabilityManifestStore()
-  const qwenRuntimeVisible = useMemo(
-    () =>
-      provider === "qwen-code" ||
-      (runtimeCapabilityManifests?.some(
-        (manifest) => manifest.runtimeId === "qwen-code",
-      ) ??
-        false),
-    [provider, runtimeCapabilityManifests],
-  )
-  const kunRuntimeVisible = useMemo(
-    () =>
-      provider === "kun" ||
-      (runtimeCapabilityManifests?.some(
-        (manifest) => manifest.runtimeId === "kun",
-      ) ??
-        false),
-    [provider, runtimeCapabilityManifests],
-  )
-  const { data: qwenCliStatus } = trpc.agentRuntime.getQwenCliStatus.useQuery(
-    undefined,
-    {
-      enabled: qwenRuntimeVisible,
-      staleTime: 15_000,
-    },
-  )
-  const { data: kunCliStatus } = trpc.agentRuntime.getKunCliStatus.useQuery(
-    undefined,
-    {
-      enabled: kunRuntimeVisible,
-      staleTime: 15_000,
-    },
-  )
-  const qwenCliReady = qwenCliStatus?.ok === true
-  const kunCliReady = kunCliStatus?.ok === true
-  const qwenSetupRequired =
-    qwenRuntimeVisible && qwenCliStatus !== undefined && !qwenCliReady
-  const kunSetupRequired =
-    kunRuntimeVisible && kunCliStatus !== undefined && !kunCliReady
-  const engineOptions = useMemo<AgentEngineOption[]>(() => {
-    const options: AgentEngineOption[] = [
+  const engineOptions = useMemo<AgentEngineOption[]>(
+    () => [
       { id: "claude-code", name: "Claude Code", status: "ready" },
       { id: "codex", name: "OpenAI Codex", status: "ready" },
-    ]
-    if (qwenRuntimeVisible) {
-      options.push({
-        id: "qwen-code",
-        name: "Qwen Code",
-        status:
-          qwenCliStatus === undefined
-            ? "unavailable"
-            : qwenSetupRequired
-              ? "setup-required"
-              : "ready",
-        experimental: true,
-      })
-    }
-    if (kunRuntimeVisible) {
-      options.push({
-        id: "kun",
-        name: "Kun",
-        status:
-          kunCliStatus === undefined
-            ? "unavailable"
-            : kunSetupRequired
-              ? "setup-required"
-              : "ready",
-        experimental: true,
-      })
-    }
-    return options
-  }, [
-    kunCliStatus,
-    kunRuntimeVisible,
-    kunSetupRequired,
-    qwenCliStatus,
-    qwenRuntimeVisible,
-    qwenSetupRequired,
-  ])
-  const handleEngineSetup = useCallback(
-    (engine: AgentChatProvider) => {
-      setSettingsTab("models")
-      if (engine === "qwen-code") {
-        setModelsSettingsTarget("qwen-cli")
-      } else if (engine === "kun") {
-        setModelsSettingsTarget("kun-cli")
-      }
-      setSettingsOpen(true)
-    },
-    [setModelsSettingsTarget, setSettingsOpen, setSettingsTab],
+    ],
+    [],
   )
 
   const {
@@ -2388,7 +2237,6 @@ export const ChatInputArea = memo(function ChatInputArea({
                         if (nextProvider === provider) return
                         onContinueWithProvider?.(nextProvider)
                       }}
-                      onSetupEngine={handleEngineSetup}
                     />
                     <RuntimeModelSelector
                       selectedEngineId={provider}
@@ -2469,14 +2317,6 @@ export const ChatInputArea = memo(function ChatInputArea({
                           setLastSelectedCodexThinking(thinking)
                         },
                         isConnected: setupStatus.codex.connected,
-                      }}
-                      kun={{
-                        selectedModelSource:
-                          selectedSubChatKunModelSource as KunModelSource,
-                        onSelectModelSource: (source) => {
-                          setSelectedSubChatKunModelSource(source)
-                          setLastSelectedKunModelSource(source)
-                        },
                       }}
                     />
                   </div>

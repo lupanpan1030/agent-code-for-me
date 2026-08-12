@@ -256,21 +256,5 @@ describe("rich chat attachment send pipeline", () => {
       supportsImages: false,
       blockReason: "model-no-vision",
     })
-
-    expect(
-      getChatImageAttachmentCapability({
-        provider: "qwen-code",
-        modelVision: "supported",
-      }).supportsImages,
-    ).toBe(false)
-    expect(
-      getChatImageAttachmentCapability({
-        provider: "kun",
-        modelVision: "supported",
-      }),
-    ).toMatchObject({
-      supportsImages: false,
-      blockReason: "runtime-transport",
-    })
   })
 })

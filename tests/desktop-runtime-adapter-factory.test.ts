@@ -1,20 +1,18 @@
 import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import {
-  DesktopRuntimeAdapterFactory,
+  CLAUDE_AGENT_SDK_DESKTOP_ADAPTER_METADATA,
+  CODEX_APP_SERVER_DESKTOP_ADAPTER_METADATA,
+} from "../src/main/lib/agent-runtime/desktop-adapter-metadata"
+import {
   type DesktopRuntimeAdapter,
+  DesktopRuntimeAdapterFactory,
   type DesktopRuntimeAdapterSource,
   emitDesktopRuntimeAdapterStarted,
 } from "../src/main/lib/agent-runtime/desktop-runner"
-import {
-  CLAUDE_AGENT_SDK_DESKTOP_ADAPTER_METADATA,
-  CODEX_APP_SERVER_DESKTOP_ADAPTER_METADATA,
-  KUN_HTTP_SSE_DESKTOP_ADAPTER_METADATA,
-  QWEN_ACP_CLIENT_DESKTOP_ADAPTER_METADATA,
-} from "../src/main/lib/agent-runtime/desktop-adapter-metadata"
 
 function fakeAdapter(
-  runtimeId: "claude-code" | "codex" | "qwen-code" | "kun",
+  runtimeId: "claude-code" | "codex",
   source: DesktopRuntimeAdapterSource,
 ): DesktopRuntimeAdapter {
   return {
@@ -44,18 +42,6 @@ describe("desktop runtime adapter factory", () => {
       fallbackReason: null,
       defaultDisableCondition: null,
       removalCondition: null,
-    })
-    expect(QWEN_ACP_CLIENT_DESKTOP_ADAPTER_METADATA).toMatchObject({
-      runtimeId: "qwen-code",
-      source: "qwen-acp-client",
-      temporaryFallback: false,
-      defaultDisableCondition: "Qwen runtime setting is disabled",
-    })
-    expect(KUN_HTTP_SSE_DESKTOP_ADAPTER_METADATA).toMatchObject({
-      runtimeId: "kun",
-      source: "kun-http-sse",
-      temporaryFallback: false,
-      defaultDisableCondition: "Kun runtime setting is disabled",
     })
   })
 
@@ -126,27 +112,14 @@ describe("desktop runtime adapter factory", () => {
   test("registers and resolves adapters by runtime and source", () => {
     const claude = fakeAdapter("claude-code", "claude-agent-sdk")
     const codex = fakeAdapter("codex", "codex-app-server")
-    const qwen = fakeAdapter("qwen-code", "qwen-acp-client")
-    const kun = fakeAdapter("kun", "kun-http-sse")
-    const factory = new DesktopRuntimeAdapterFactory([claude, codex, qwen, kun])
+    const factory = new DesktopRuntimeAdapterFactory([claude, codex])
 
     expect(factory.get({ runtimeId: "claude-code" })).toBe(claude)
     expect(factory.get({ runtimeId: "codex" })).toBe(codex)
-    expect(factory.get({ runtimeId: "qwen-code" })).toBe(qwen)
-    expect(factory.get({ runtimeId: "kun" })).toBe(kun)
     expect(
       factory.get({ runtimeId: "codex", source: "codex-app-server" }),
     ).toBe(codex)
-    expect(
-      factory.get({ runtimeId: "qwen-code", source: "qwen-acp-client" }),
-    ).toBe(qwen)
-    expect(factory.get({ runtimeId: "kun", source: "kun-http-sse" })).toBe(kun)
-    expect(factory.listMetadata()).toEqual([
-      claude.metadata,
-      codex.metadata,
-      qwen.metadata,
-      kun.metadata,
-    ])
+    expect(factory.listMetadata()).toEqual([claude.metadata, codex.metadata])
   })
 
   test("rejects duplicate and unsupported adapter lookups", () => {
@@ -161,7 +134,7 @@ describe("desktop runtime adapter factory", () => {
       "Desktop runtime adapter not registered",
     )
     expect(() => factory.get({ runtimeId: "unknown" as any })).toThrow(
-      "Unsupported desktop runtime adapter",
+      "Desktop runtime adapter not registered: unknown",
     )
   })
 

@@ -15,10 +15,7 @@ import {
   startAgentJob,
 } from "./headless/job-store"
 
-type DesktopAgentRuntime = Extract<
-  AgentRuntimeId,
-  "claude-code" | "codex" | "qwen-code" | "kun"
->
+type DesktopAgentRuntime = Extract<AgentRuntimeId, "claude-code" | "codex">
 
 export type CreateDesktopAgentJobInput = {
   runtime: DesktopAgentRuntime
@@ -85,15 +82,15 @@ type ActiveCancelRegistration = CancelRegistration & {
   heartbeatTimer: ReturnType<typeof setInterval> | null
 }
 
-const activeDesktopJobCancellations = new Map<string, ActiveCancelRegistration>()
+const activeDesktopJobCancellations = new Map<
+  string,
+  ActiveCancelRegistration
+>()
 
-function assertDesktopRuntime(runtime: string): asserts runtime is DesktopAgentRuntime {
-  if (
-    runtime !== "claude-code" &&
-    runtime !== "codex" &&
-    runtime !== "qwen-code" &&
-    runtime !== "kun"
-  ) {
+function assertDesktopRuntime(
+  runtime: string,
+): asserts runtime is DesktopAgentRuntime {
+  if (runtime !== "claude-code" && runtime !== "codex") {
     throw new Error(`Unsupported desktop job runtime: ${runtime}`)
   }
 }
@@ -178,7 +175,11 @@ export function registerActiveDesktopAgentJob(
   unregisterActiveDesktopAgentJob(registration.jobId)
   const heartbeatTimer = setInterval(() => {
     try {
-      heartbeatAgentJob(registration.db, registration.jobId, registration.workerId)
+      heartbeatAgentJob(
+        registration.db,
+        registration.jobId,
+        registration.workerId,
+      )
     } catch {
       unregisterActiveDesktopAgentJob(registration.jobId)
     }
@@ -237,13 +238,13 @@ export function requestCancelDesktopAgentJob(
   }
 }
 
-function desktopRuntimeLabel(
-  runtime: DesktopAgentRuntime,
-): "Claude" | "Codex" | "Qwen" | "Kun" {
-  if (runtime === "claude-code") return "Claude"
-  if (runtime === "codex") return "Codex"
-  if (runtime === "kun") return "Kun"
-  return "Qwen"
+function desktopRuntimeLabel(runtime: DesktopAgentRuntime): "Claude" | "Codex" {
+  switch (runtime) {
+    case "claude-code":
+      return "Claude"
+    case "codex":
+      return "Codex"
+  }
 }
 
 export function resolveDesktopChatJobCompletion({

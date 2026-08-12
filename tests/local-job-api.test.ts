@@ -172,8 +172,9 @@ describe("Local Job API v1 shared contract", () => {
     }
   })
 
-  test("rejects experimental runtimes from the non-desktop Local Job API contract", () => {
-    for (const runtimeId of ["qwen-code", "kun"]) {
+  test("rejects retired runtime identifiers from the Local Job API contract", () => {
+    const retiredRuntimeIds = ["qwen-code", "kun"]
+    for (const runtimeId of retiredRuntimeIds) {
       const request = validateLocalJobApiCreateRequest({
         apiVersion: LOCAL_JOB_API_VERSION,
         consumer: { id: "docs-workbench" },

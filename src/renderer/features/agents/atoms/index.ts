@@ -169,7 +169,6 @@ export type CodexModelSource =
   | "chatgpt"
   | "openai-api-key"
   | ProviderProfileSource
-export type KunModelSource = "runtime-managed" | ProviderProfileSource
 
 export const lastSelectedClaudeModelSourceAtom =
   atomWithStorage<ClaudeModelSource>(
@@ -187,14 +186,6 @@ export const lastSelectedCodexModelSourceAtom =
     { getOnInit: true },
   )
 
-export const lastSelectedKunModelSourceAtom =
-  atomWithStorage<KunModelSource>(
-    "agents:lastSelectedKunModelSource",
-    "runtime-managed",
-    undefined,
-    { getOnInit: true },
-  )
-
 export const lastSelectedCodexModelIdAtom = atomWithStorage<string>(
   "agents:lastSelectedCodexModelId",
   "gpt-5.5",
@@ -204,12 +195,13 @@ export const lastSelectedCodexModelIdAtom = atomWithStorage<string>(
 
 export type CodexThinkingPreference = "low" | "medium" | "high" | "xhigh"
 
-export const lastSelectedCodexThinkingAtom = atomWithStorage<CodexThinkingPreference>(
-  "agents:lastSelectedCodexThinking",
-  "high",
-  undefined,
-  { getOnInit: true },
-)
+export const lastSelectedCodexThinkingAtom =
+  atomWithStorage<CodexThinkingPreference>(
+    "agents:lastSelectedCodexThinking",
+    "high",
+    undefined,
+    { getOnInit: true },
+  )
 
 // Storage for per-subChat Claude model selection.
 // Falls back to lastSelectedModelIdAtom when sub-chat has no explicit selection yet.
@@ -224,7 +216,10 @@ export const subChatModelIdAtomFamily = atomFamily((subChatId: string) =>
   atom(
     (get) => {
       if (!subChatId) return get(lastSelectedModelIdAtom)
-      return get(subChatModelIdsStorageAtom)[subChatId] ?? get(lastSelectedModelIdAtom)
+      return (
+        get(subChatModelIdsStorageAtom)[subChatId] ??
+        get(lastSelectedModelIdAtom)
+      )
     },
     (get, set, newModelId: string) => {
       if (!subChatId) {
@@ -240,101 +235,60 @@ export const subChatModelIdAtomFamily = atomFamily((subChatId: string) =>
 
 const subChatClaudeModelSourcesStorageAtom = atomWithStorage<
   Record<string, ClaudeModelSource>
->(
-  "agents:subChatClaudeModelSources",
-  {},
-  undefined,
-  { getOnInit: true },
-)
+>("agents:subChatClaudeModelSources", {}, undefined, { getOnInit: true })
 
-export const subChatClaudeModelSourceAtomFamily = atomFamily((subChatId: string) =>
-  atom(
-    (get) => {
-      if (!subChatId) return get(lastSelectedClaudeModelSourceAtom)
-      return (
-        get(subChatClaudeModelSourcesStorageAtom)[subChatId] ??
-        get(lastSelectedClaudeModelSourceAtom)
-      )
-    },
-    (get, set, newModelSource: ClaudeModelSource) => {
-      if (!subChatId) {
-        set(lastSelectedClaudeModelSourceAtom, newModelSource)
-        return
-      }
-      const current = get(subChatClaudeModelSourcesStorageAtom)
-      if (current[subChatId] === newModelSource) return
-      set(subChatClaudeModelSourcesStorageAtom, {
-        ...current,
-        [subChatId]: newModelSource,
-      })
-    },
-  ),
+export const subChatClaudeModelSourceAtomFamily = atomFamily(
+  (subChatId: string) =>
+    atom(
+      (get) => {
+        if (!subChatId) return get(lastSelectedClaudeModelSourceAtom)
+        return (
+          get(subChatClaudeModelSourcesStorageAtom)[subChatId] ??
+          get(lastSelectedClaudeModelSourceAtom)
+        )
+      },
+      (get, set, newModelSource: ClaudeModelSource) => {
+        if (!subChatId) {
+          set(lastSelectedClaudeModelSourceAtom, newModelSource)
+          return
+        }
+        const current = get(subChatClaudeModelSourcesStorageAtom)
+        if (current[subChatId] === newModelSource) return
+        set(subChatClaudeModelSourcesStorageAtom, {
+          ...current,
+          [subChatId]: newModelSource,
+        })
+      },
+    ),
 )
 
 const subChatCodexModelSourcesStorageAtom = atomWithStorage<
   Record<string, CodexModelSource>
->(
-  "agents:subChatCodexModelSources",
-  {},
-  undefined,
-  { getOnInit: true },
-)
+>("agents:subChatCodexModelSources", {}, undefined, { getOnInit: true })
 
-export const subChatCodexModelSourceAtomFamily = atomFamily((subChatId: string) =>
-  atom(
-    (get) => {
-      if (!subChatId) return get(lastSelectedCodexModelSourceAtom)
-      return (
-        get(subChatCodexModelSourcesStorageAtom)[subChatId] ??
-        get(lastSelectedCodexModelSourceAtom)
-      )
-    },
-    (get, set, newModelSource: CodexModelSource) => {
-      if (!subChatId) {
-        set(lastSelectedCodexModelSourceAtom, newModelSource)
-        return
-      }
-      const current = get(subChatCodexModelSourcesStorageAtom)
-      if (current[subChatId] === newModelSource) return
-      set(subChatCodexModelSourcesStorageAtom, {
-        ...current,
-        [subChatId]: newModelSource,
-      })
-    },
-  ),
-)
-
-const subChatKunModelSourcesStorageAtom = atomWithStorage<
-  Record<string, KunModelSource>
->(
-  "agents:subChatKunModelSources",
-  {},
-  undefined,
-  { getOnInit: true },
-)
-
-export const subChatKunModelSourceAtomFamily = atomFamily((subChatId: string) =>
-  atom(
-    (get) => {
-      if (!subChatId) return get(lastSelectedKunModelSourceAtom)
-      return (
-        get(subChatKunModelSourcesStorageAtom)[subChatId] ??
-        get(lastSelectedKunModelSourceAtom)
-      )
-    },
-    (get, set, newModelSource: KunModelSource) => {
-      if (!subChatId) {
-        set(lastSelectedKunModelSourceAtom, newModelSource)
-        return
-      }
-      const current = get(subChatKunModelSourcesStorageAtom)
-      if (current[subChatId] === newModelSource) return
-      set(subChatKunModelSourcesStorageAtom, {
-        ...current,
-        [subChatId]: newModelSource,
-      })
-    },
-  ),
+export const subChatCodexModelSourceAtomFamily = atomFamily(
+  (subChatId: string) =>
+    atom(
+      (get) => {
+        if (!subChatId) return get(lastSelectedCodexModelSourceAtom)
+        return (
+          get(subChatCodexModelSourcesStorageAtom)[subChatId] ??
+          get(lastSelectedCodexModelSourceAtom)
+        )
+      },
+      (get, set, newModelSource: CodexModelSource) => {
+        if (!subChatId) {
+          set(lastSelectedCodexModelSourceAtom, newModelSource)
+          return
+        }
+        const current = get(subChatCodexModelSourcesStorageAtom)
+        if (current[subChatId] === newModelSource) return
+        set(subChatCodexModelSourcesStorageAtom, {
+          ...current,
+          [subChatId]: newModelSource,
+        })
+      },
+    ),
 )
 
 // Storage for per-subChat Codex model selection.
@@ -362,7 +316,10 @@ export const subChatCodexModelIdAtomFamily = atomFamily((subChatId: string) =>
       }
       const current = get(subChatCodexModelIdsStorageAtom)
       if (current[subChatId] === newModelId) return
-      set(subChatCodexModelIdsStorageAtom, { ...current, [subChatId]: newModelId })
+      set(subChatCodexModelIdsStorageAtom, {
+        ...current,
+        [subChatId]: newModelId,
+      })
     },
   ),
 )
@@ -371,12 +328,7 @@ export const subChatCodexModelIdAtomFamily = atomFamily((subChatId: string) =>
 // Falls back to lastSelectedCodexThinkingAtom when sub-chat has no explicit selection yet.
 const subChatCodexThinkingStorageAtom = atomWithStorage<
   Record<string, CodexThinkingPreference>
->(
-  "agents:subChatCodexThinking",
-  {},
-  undefined,
-  { getOnInit: true },
-)
+>("agents:subChatCodexThinking", {}, undefined, { getOnInit: true })
 
 export const subChatCodexThinkingAtomFamily = atomFamily((subChatId: string) =>
   atom(
@@ -394,7 +346,10 @@ export const subChatCodexThinkingAtomFamily = atomFamily((subChatId: string) =>
       }
       const current = get(subChatCodexThinkingStorageAtom)
       if (current[subChatId] === newThinking) return
-      set(subChatCodexThinkingStorageAtom, { ...current, [subChatId]: newThinking })
+      set(subChatCodexThinkingStorageAtom, {
+        ...current,
+        [subChatId]: newThinking,
+      })
     },
   ),
 )
@@ -436,16 +391,22 @@ export const agentsSidebarWidthAtom = atomWithStorage<number>(
   { getOnInit: true },
 )
 
-const pendingLocalBrowserReportStorageAtom = atom<Record<string, string | null>>({})
+const pendingLocalBrowserReportStorageAtom = atom<
+  Record<string, string | null>
+>({})
 
-export const pendingLocalBrowserReportAtomFamily = atomFamily((subChatId: string) =>
-  atom(
-    (get) => get(pendingLocalBrowserReportStorageAtom)[subChatId] ?? null,
-    (get, set, report: string | null) => {
-      const current = get(pendingLocalBrowserReportStorageAtom)
-      set(pendingLocalBrowserReportStorageAtom, { ...current, [subChatId]: report })
-    },
-  ),
+export const pendingLocalBrowserReportAtomFamily = atomFamily(
+  (subChatId: string) =>
+    atom(
+      (get) => get(pendingLocalBrowserReportStorageAtom)[subChatId] ?? null,
+      (get, set, report: string | null) => {
+        const current = get(pendingLocalBrowserReportStorageAtom)
+        set(pendingLocalBrowserReportStorageAtom, {
+          ...current,
+          [subChatId]: report,
+        })
+      },
+    ),
 )
 
 // Changes panel (file list) width within the diff sidebar
@@ -469,19 +430,21 @@ export type DiffViewDisplayMode = "details-expanded" | "full-page"
 type LegacyDiffViewDisplayMode = "side-peek" | "center-peek"
 
 export function normalizeDiffViewDisplayMode(
-  mode: DiffViewDisplayMode | LegacyDiffViewDisplayMode | string | null | undefined,
+  mode:
+    | DiffViewDisplayMode
+    | LegacyDiffViewDisplayMode
+    | string
+    | null
+    | undefined,
 ): DiffViewDisplayMode {
   return mode === "full-page" ? "full-page" : "details-expanded"
 }
 
 const diffViewDisplayModeStorageAtom = atomWithStorage<
   DiffViewDisplayMode | LegacyDiffViewDisplayMode
->(
-  "agents:diffViewDisplayMode",
-  "details-expanded",
-  undefined,
-  { getOnInit: true },
-)
+>("agents:diffViewDisplayMode", "details-expanded", undefined, {
+  getOnInit: true,
+})
 
 export const diffViewDisplayModeAtom = atom(
   (get) => normalizeDiffViewDisplayMode(get(diffViewDisplayModeStorageAtom)),
@@ -511,7 +474,9 @@ export const agentsFocusedDiffFileAtom = atom<string | null>(null)
 
 // Collapsed state for diff files per chat - preserved across narrow/wide layout changes
 // Map<fileKey, isCollapsed>
-const diffFilesCollapsedStorageAtom = atom<Record<string, Record<string, boolean>>>({})
+const diffFilesCollapsedStorageAtom = atom<
+  Record<string, Record<string, boolean>>
+>({})
 
 export const diffFilesCollapsedAtomFamily = atomFamily((chatId: string) =>
   atom(
@@ -532,20 +497,23 @@ export function getDefaultRatios(n: number): number[] {
 export function addPaneRatio(ratios: number[]): number[] {
   const n = ratios.length + 1
   const scale = (n - 1) / n
-  return [...ratios.map(r => r * scale), 1 / n]
+  return [...ratios.map((r) => r * scale), 1 / n]
 }
 
 export function removePaneRatio(ratios: number[], removeIdx: number): number[] {
-  if (removeIdx < 0 || removeIdx >= ratios.length) return getDefaultRatios(ratios.length)
+  if (removeIdx < 0 || removeIdx >= ratios.length)
+    return getDefaultRatios(ratios.length)
   const removed = ratios[removeIdx]!
   const rest = ratios.filter((_, i) => i !== removeIdx)
   if (rest.length === 0) return []
   const sum = rest.reduce((a, b) => a + b, 0)
   if (sum === 0) return getDefaultRatios(rest.length)
-  const result = rest.map(r => r + (r / sum) * removed)
+  const result = rest.map((r) => r + (r / sum) * removed)
   // Normalize to prevent floating-point drift
   const total = result.reduce((a, b) => a + b, 0)
-  return total > 0 ? result.map(r => r / total) : getDefaultRatios(rest.length)
+  return total > 0
+    ? result.map((r) => r / total)
+    : getDefaultRatios(rest.length)
 }
 
 // Sub-chats display mode - tabs (horizontal) or sidebar (vertical list)
@@ -585,7 +553,11 @@ const allTodosStorageAtom = atom<Record<string, TodoState>>({})
 // atomFamily to get/set todos per subChatId
 export const currentTodosAtomFamily = atomFamily((subChatId: string) =>
   atom(
-    (get) => get(allTodosStorageAtom)[subChatId] ?? { todos: [], creationToolCallId: null },
+    (get) =>
+      get(allTodosStorageAtom)[subChatId] ?? {
+        todos: [],
+        creationToolCallId: null,
+      },
     (get, set, newState: TodoState) => {
       const current = get(allTodosStorageAtom)
       set(allTodosStorageAtom, { ...current, [subChatId]: newState })
@@ -642,7 +614,12 @@ export const lastChatModesAtom = atom<Map<string, "plan" | "agent">>(
 )
 
 // Mobile view mode - chat (default, shows NewChatForm), chats list, preview, diff, or terminal
-export type AgentsMobileViewMode = "chats" | "chat" | "preview" | "diff" | "terminal"
+export type AgentsMobileViewMode =
+  | "chats"
+  | "chat"
+  | "preview"
+  | "diff"
+  | "terminal"
 export const agentsMobileViewModeAtom = atom<AgentsMobileViewMode>("chat")
 
 // Debug mode for testing first-time user experience
@@ -716,12 +693,12 @@ export const filteredSubChatIdAtom = atom<string | null>(null)
 // null = show working tree diff (current behavior)
 // When set, diff view shows files from this commit instead of working tree
 export type SelectedCommit = {
-	hash: string
-	shortHash: string
-	message: string
-	description?: string
-	author?: string
-	date?: Date
+  hash: string
+  shortHash: string
+  message: string
+  description?: string
+  author?: string
+  date?: Date
 } | null
 export const selectedCommitAtom = atom<SelectedCommit>(null)
 
@@ -731,31 +708,45 @@ export const diffActiveTabAtom = atom<"changes" | "history">("changes")
 
 // Pending PR message to send to chat
 // Set by ChatView when "Create PR" is clicked, consumed by ChatViewInner
-export const pendingPrMessageAtom = atom<{ message: string; subChatId: string } | null>(null)
+export const pendingPrMessageAtom = atom<{
+  message: string
+  subChatId: string
+} | null>(null)
 
 // Pending Review message to send to chat
 // Set by ChatView when "Review" is clicked, consumed by ChatViewInner
-export const pendingReviewMessageAtom = atom<{ message: string; subChatId: string } | null>(null)
+export const pendingReviewMessageAtom = atom<{
+  message: string
+  subChatId: string
+} | null>(null)
 
 // Pending GitHub context message to send to chat
 // Set by GitHub workflow context UI, consumed by ChatViewInner
-export const pendingGitHubContextMessageAtom = atom<{ message: string; subChatId: string } | null>(null)
+export const pendingGitHubContextMessageAtom = atom<{
+  message: string
+  subChatId: string
+} | null>(null)
 
 // Pending merge conflict resolution message to send to chat
 // Set when user clicks "Fix Conflicts" button, consumed by ChatViewInner
-export const pendingConflictResolutionMessageAtom = atom<{ message: string; subChatId: string } | null>(null)
+export const pendingConflictResolutionMessageAtom = atom<{
+  message: string
+  subChatId: string
+} | null>(null)
 
 // Pending auth retry - stores failed message when auth-error occurs
 // After successful OAuth flow, this triggers automatic retry of the message
 export type PendingAuthRetryMessage = {
-  subChatId: string  // Required: only retry in the correct chat
+  subChatId: string // Required: only retry in the correct chat
   provider: "claude-code" | "codex"
   prompt: string
   images?: ChatImageAttachmentSendInput[]
   longTextAttachments?: LongTextAttachmentPart[]
-  readyToRetry: boolean  // Only retry when this is true (set by modal on OAuth success)
+  readyToRetry: boolean // Only retry when this is true (set by modal on OAuth success)
 }
-export const pendingAuthRetryMessageAtom = atom<PendingAuthRetryMessage | null>(null)
+export const pendingAuthRetryMessageAtom = atom<PendingAuthRetryMessage | null>(
+  null,
+)
 
 // Pending chat history file to inject into a newly created sub-chat
 // Set when user switches provider mid-chat, consumed by ChatInputArea on mount
@@ -783,7 +774,10 @@ export const lastSelectedWorkModeAtom = atomWithStorage<WorkMode>(
 // Maps projectId -> { name: string, type: "local" | "remote" }
 // Custom storage with migration from old string format
 const lastSelectedBranchesStorage = {
-  getItem: (key: string, initialValue: Record<string, { name: string; type: "local" | "remote" }>) => {
+  getItem: (
+    key: string,
+    initialValue: Record<string, { name: string; type: "local" | "remote" }>,
+  ) => {
     const storedValue = localStorage.getItem(key)
     if (!storedValue) return initialValue
 
@@ -791,14 +785,25 @@ const lastSelectedBranchesStorage = {
       const parsed = JSON.parse(storedValue)
 
       // Migrate old format: Record<string, string> -> Record<string, { name, type }>
-      const migrated: Record<string, { name: string; type: "local" | "remote" }> = {}
+      const migrated: Record<
+        string,
+        { name: string; type: "local" | "remote" }
+      > = {}
       for (const [projectId, value] of Object.entries(parsed)) {
         if (typeof value === "string") {
           // Old format: string branch name -> assume "local" type
           migrated[projectId] = { name: value, type: "local" }
-        } else if (value && typeof value === "object" && "name" in value && "type" in value) {
+        } else if (
+          value &&
+          typeof value === "object" &&
+          "name" in value &&
+          "type" in value
+        ) {
           // New format: already migrated
-          migrated[projectId] = value as { name: string; type: "local" | "remote" }
+          migrated[projectId] = value as {
+            name: string
+            type: "local" | "remote"
+          }
         }
       }
 
@@ -812,7 +817,10 @@ const lastSelectedBranchesStorage = {
       return initialValue
     }
   },
-  setItem: (key: string, value: Record<string, { name: string; type: "local" | "remote" }>) => {
+  setItem: (
+    key: string,
+    value: Record<string, { name: string; type: "local" | "remote" }>,
+  ) => {
     localStorage.setItem(key, JSON.stringify(value))
   },
   removeItem: (key: string) => {
@@ -822,12 +830,9 @@ const lastSelectedBranchesStorage = {
 
 export const lastSelectedBranchesAtom = atomWithStorage<
   Record<string, { name: string; type: "local" | "remote" }>
->(
-  "agents:lastSelectedBranches",
-  {},
-  lastSelectedBranchesStorage,
-  { getOnInit: true },
-)
+>("agents:lastSelectedBranches", {}, lastSelectedBranchesStorage, {
+  getOnInit: true,
+})
 
 // Compacting status per sub-chat
 // Set<subChatId> - subChats currently being compacted
@@ -839,7 +844,8 @@ export const justCreatedIdsAtom = atom<Set<string>>(new Set<string>())
 
 // Pending user questions from AskUserQuestion tool
 // Set when Claude requests user input, cleared when answered or skipped
-export const QUESTIONS_SKIPPED_MESSAGE = "User skipped questions - proceed with defaults"
+export const QUESTIONS_SKIPPED_MESSAGE =
+  "User skipped questions - proceed with defaults"
 export const QUESTIONS_TIMED_OUT_MESSAGE = "Timed out"
 
 export type PendingUserQuestion = {
@@ -854,7 +860,9 @@ export type PendingUserQuestion = {
   }>
 }
 // Map<subChatId, PendingUserQuestion> - supports multiple pending questions across workspaces
-export const pendingUserQuestionsAtom = atom<Map<string, PendingUserQuestion>>(new Map())
+export const pendingUserQuestionsAtom = atom<Map<string, PendingUserQuestion>>(
+  new Map(),
+)
 
 // Legacy type alias for backwards compatibility
 export type PendingUserQuestions = PendingUserQuestion
@@ -862,7 +870,9 @@ export type PendingUserQuestions = PendingUserQuestion
 // Expired user questions - questions that timed out but should still be answerable
 // When answered, responses are sent as normal user messages instead of tool approvals
 // Map<subChatId, PendingUserQuestion>
-export const expiredUserQuestionsAtom = atom<Map<string, PendingUserQuestion>>(new Map())
+export const expiredUserQuestionsAtom = atom<Map<string, PendingUserQuestion>>(
+  new Map(),
+)
 
 // Track sub-chats with pending plan approval (plan ready but not yet implemented)
 // Map<subChatId, parentChatId> - allows filtering by workspace
@@ -889,9 +899,9 @@ export type PendingScopeExpansionRequest = {
 
 // Approved guarded-run contracts keyed by sub-chat. The transport reads this
 // at send time and clears the entry when the stream finishes.
-export const approvedGuardedRunContractsAtom = atom<Map<string, AgentScopeContract>>(
-  new Map(),
-)
+export const approvedGuardedRunContractsAtom = atom<
+  Map<string, AgentScopeContract>
+>(new Map())
 
 export const guardedRunEventsAtom = atom<Map<string, AgentGuardEvent[]>>(
   new Map(),
@@ -908,8 +918,17 @@ export const pendingScopeExpansionRequestsAtom = atom<
 // Unified undo stack for workspace and sub-chat archivation
 // Supports Cmd+Z to restore the last archived item (workspace or sub-chat)
 export type UndoItem =
-  | { type: "workspace"; chatId: string; timeoutId: ReturnType<typeof setTimeout> }
-  | { type: "subchat"; subChatId: string; chatId: string; timeoutId: ReturnType<typeof setTimeout> }
+  | {
+      type: "workspace"
+      chatId: string
+      timeoutId: ReturnType<typeof setTimeout>
+    }
+  | {
+      type: "subchat"
+      subChatId: string
+      chatId: string
+      timeoutId: ReturnType<typeof setTimeout>
+    }
 
 export const undoStackAtom = atom<UndoItem[]>([])
 
@@ -924,12 +943,7 @@ export type ViewedFileState = {
 // Structure: { [chatId]: { [fileKey]: ViewedFileState } }
 const viewedFilesStorageAtom = atomWithStorage<
   Record<string, Record<string, ViewedFileState>>
->(
-  "agents:viewedFiles",
-  {},
-  undefined,
-  { getOnInit: true },
-)
+>("agents:viewedFiles", {}, undefined, { getOnInit: true })
 
 // atomFamily to get/set viewed files per chatId
 export const viewedFilesAtomFamily = atomFamily((chatId: string) =>
@@ -969,7 +983,10 @@ export const planEditRefetchTriggerAtomFamily = atomFamily((chatId: string) =>
     (get, set) => {
       const current = get(planEditRefetchTriggerStorageAtom)
       const currentValue = current[chatId] ?? 0
-      set(planEditRefetchTriggerStorageAtom, { ...current, [chatId]: currentValue + 1 })
+      set(planEditRefetchTriggerStorageAtom, {
+        ...current,
+        [chatId]: currentValue + 1,
+      })
     },
   ),
 )
@@ -1018,7 +1035,9 @@ const DEFAULT_DIFF_STATS: DiffStatsCache = {
 }
 
 // Runtime cache for diff data per workspace (not persisted)
-const workspaceDiffCacheStorageAtom = atom<Record<string, WorkspaceDiffCache>>({})
+const workspaceDiffCacheStorageAtom = atom<Record<string, WorkspaceDiffCache>>(
+  {},
+)
 
 // Default cache value
 const DEFAULT_DIFF_CACHE: WorkspaceDiffCache = {
@@ -1031,10 +1050,16 @@ const DEFAULT_DIFF_CACHE: WorkspaceDiffCache = {
 export const workspaceDiffCacheAtomFamily = atomFamily((chatId: string) =>
   atom(
     (get) => get(workspaceDiffCacheStorageAtom)[chatId] ?? DEFAULT_DIFF_CACHE,
-    (get, set, update: WorkspaceDiffCache | ((prev: WorkspaceDiffCache) => WorkspaceDiffCache)) => {
+    (
+      get,
+      set,
+      update:
+        | WorkspaceDiffCache
+        | ((prev: WorkspaceDiffCache) => WorkspaceDiffCache),
+    ) => {
       const current = get(workspaceDiffCacheStorageAtom)
       const prevCache = current[chatId] ?? DEFAULT_DIFF_CACHE
-      const newCache = typeof update === 'function' ? update(prevCache) : update
+      const newCache = typeof update === "function" ? update(prevCache) : update
       set(workspaceDiffCacheStorageAtom, {
         ...current,
         [chatId]: newCache,
@@ -1070,22 +1095,25 @@ export type FileViewerDisplayMode = "details-expanded" | "full-page"
 type LegacyFileViewerDisplayMode = "side-peek" | "center-peek"
 
 export function normalizeFileViewerDisplayMode(
-  mode: FileViewerDisplayMode | LegacyFileViewerDisplayMode | string | null | undefined,
+  mode:
+    | FileViewerDisplayMode
+    | LegacyFileViewerDisplayMode
+    | string
+    | null
+    | undefined,
 ): FileViewerDisplayMode {
   return mode === "full-page" ? "full-page" : "details-expanded"
 }
 
 const fileViewerDisplayModeStorageAtom = atomWithStorage<
   FileViewerDisplayMode | LegacyFileViewerDisplayMode
->(
-  "agents:fileViewerDisplayMode",
-  "details-expanded",
-  undefined,
-  { getOnInit: true },
-)
+>("agents:fileViewerDisplayMode", "details-expanded", undefined, {
+  getOnInit: true,
+})
 
 export const fileViewerDisplayModeAtom = atom(
-  (get) => normalizeFileViewerDisplayMode(get(fileViewerDisplayModeStorageAtom)),
+  (get) =>
+    normalizeFileViewerDisplayMode(get(fileViewerDisplayModeStorageAtom)),
   (_get, set, mode: FileViewerDisplayMode) => {
     set(fileViewerDisplayModeStorageAtom, normalizeFileViewerDisplayMode(mode))
   },

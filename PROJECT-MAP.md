@@ -1,6 +1,6 @@
 # PROJECT-MAP.md — Locus 全项目只读审计
 
-> **范围**：`main` 分支，HEAD `b4ea0ed1`。**不包含** `codex/add-kun-runtime-settings-gate`（Kun gate 未合并进 main）。
+> **范围**：`main` 分支，HEAD `b4ea0ed1`。
 > **性质**：只读审计，未修改任何产品代码。本文是唯一产出物。
 > **方法**：4 个只读专家 agent 按 6 个风险区域分块审计 + `knip` 静态死代码扫描 + 人工逐条核对 `file:line`。
 > **约定**：
@@ -11,6 +11,7 @@
 > - **2026-06-26 P0 修复追记**：Critical R1 已在 `codex/harden-worktree-setup-trust` 上改为显式 trust gate，仓库提供的 setup 命令默认不执行。
 > - **2026-06-27 P2 清理追记**：正式 `knip.json` 已提交；确认死代码/双路径、未声明依赖、CLAUDE.md 陈旧项已按表内 commit 闭环。安全行为和 tRPC 认证边界未在本轮改动。
 > - **2026-07-03 依赖追记**：`package.json` top-level `overrides` 是 Bun 生效的精确 pin，用于把 `dompurify` 收敛到 `3.4.11`、把 Mermaid transitive `uuid` 收敛到 `11.1.1`。这会阻止 `bun update` 自动带上这些包的未来安全补丁；后续看到 DOMPurify/uuid 新通告时必须手动更新 override pin 并刷新 `bun.lock`。`pnpm.overrides` 仍只服务 pnpm 语义。
+> - **2026-08-12 运行时清理追记**：两个实验性桌面运行时已删除；下文运行时清单和依赖关系已按当前状态收窄，其余结论仍以原审计基线为准。
 
 ## 0. 机械基线（审计参照）
 
@@ -36,7 +37,7 @@
                                                               │ main (324 ts)               │
                                                               │ 32 个 tRPC router            │
                                                               │ agent-runtime / agent-guard │
-                                                              │ claude/codex/qwen/ollama/kun│
+                                                              │ claude / codex / ollama     │
                                                               │ git+worktree / db(SQLite)   │
                                                               │ headless CLI + job 队列      │
                                                               └─────────────────────────────┘
@@ -186,7 +187,7 @@
 - 修复：路由输入先收窄为 object envelope；Claude approval owner 记录 pending tool name 和原始 tool input，并按 `AskUserQuestion` approval schema 校验 `updatedInput`，拒绝 schema 外字段或替换原始 `questions`。测试：[claude-tool-approvals.test.ts](tests/claude-tool-approvals.test.ts) 覆盖 schema 外/越权字段拒绝、展示问题被替换时拒绝、合法 answer 通过；[claude-agent-sdk-tool-permission.test.ts](tests/claude-agent-sdk-tool-permission.test.ts) 覆盖 AskUserQuestion bridge 未回归。Commit：本提交 `fix: validate Claude approval input`。
 
 **R10 — guarded `requiresUserApproval` 仅咨询性** · **已修 / ✓核对**
-- 原问题：[decision.ts](src/main/lib/agent-guard/decision.ts) 对 guarded 有界 shell 写返回 `requiresUserApproval:true`；Codex app-server 与 Kun 已接用户确认，但 Claude Agent SDK guarded 路径直接 `toClaudePermissionResult(decision)`，未阻断等待用户确认。
+- 原问题：[decision.ts](src/main/lib/agent-guard/decision.ts) 对 guarded 有界 shell 写返回 `requiresUserApproval:true`；Codex app-server 已接用户确认，但 Claude Agent SDK guarded 路径直接 `toClaudePermissionResult(decision)`，未阻断等待用户确认。
 - 修复：Claude `agent+scopeContract` 且 `locus-guarded-tool-policy` 生效时，`resolveGuardedScopedShellWriteApproval` 命中会复用现有 `ask-user-question` pending 流；用户选择 Approve 才返回原始 Bash tool input，选择 Deny/跳过/超时均 deny。审批 owner 会校验问题未被替换，并拒绝 renderer 用 `updatedInput.command` 偷换 Bash 命令。
 - 回归测试：[claude-agent-sdk-tool-permission.test.ts](tests/claude-agent-sdk-tool-permission.test.ts)、[claude-tool-approvals.test.ts](tests/claude-tool-approvals.test.ts)。
 
@@ -232,7 +233,7 @@
 | D6 | `claude_code_credentials` 表标 DEPRECATED 但无迁移删除；仅为"迁移走"而读 | [schema/index.ts:96-104](src/main/lib/db/schema/index.ts:96) | **✓核对** |
 | D7 | `syncMessagesAtom` 导出但自述"not used"、0 调用方 | [message-store.ts:994-999](src/renderer/features/agents/stores/message-store.ts:994) | 待核对 |
 | D8 | `@agentclientprotocol/sdk` **被用但不在 package.json**（依赖卫生，影响可复现构建） | [codex/tool-permission.ts:7](src/main/lib/codex/tool-permission.ts:7) | **已修 / ✓核对（knip）**：`package.json` pin 为 `0.4.9`。Commit：`7eca3997` |
-| D9 | `CLAUDE.md` 陈旧：自述 3 表 / 单一 Claude 集成，误导后续 AI 会话 | [CLAUDE.md](CLAUDE.md) | **已修 / ✓核对**：更新为当前 16 表与 Claude/Codex/Qwen/Ollama/Kun/headless-job runtime 现实。Commit：`40f28cd2` |
+| D9 | `CLAUDE.md` 陈旧：自述 3 表 / 单一 Claude 集成，误导后续 AI 会话 | [CLAUDE.md](CLAUDE.md) | **已修 / ✓核对**：`40f28cd2` 更新为当时的 16 表与完整 runtime 现实；2026-08-12 runtime 清单再次收窄。 |
 
 ### 5.7 knip 全清单（候选，需逐条核对）
 
@@ -248,12 +249,12 @@
 1. **`FALLBACK_PREFIX` 是否纯历史遗留**：已确认历史提交 `16a6d578` 曾写入 `locus:v1:base64:` fallback；当前读取旁路已改为 fail-closed，旧 fallback 凭据需重新认证/重新保存。
 2. **local-only 的安全语义**：已定为 by design。local-only 只阻断 Locus/1Code 托管云与远程 sandbox，不是 air-gap；Anthropic/用户自带 provider key 不在阻断范围，完全离线走 Ollama。
 3. **`AuthManager`/`AuthStore` 去留**：已确认永久死代码并删除；`auth:*` IPC、preload 暴露和 debug logout 调用方同步移除。
-4. **`requiresUserApproval` 是否接到 UI 阻断**：Claude guarded 路径已接现有 `ask-user-question` pending 流；Codex app-server 与 Kun 已有对应消费。非 guarded / observe 路径仍不使用该 guard approval。
+4. **`requiresUserApproval` 是否接到 UI 阻断**：Claude guarded 路径已接现有 `ask-user-question` pending 流；Codex app-server 已有对应消费。非 guarded / observe 路径仍不使用该 guard approval。
 5. **`projectSlug` 是否在拼 worktree 路径前消毒**（[worktree.ts:985-986](src/main/lib/git/worktree.ts:985)，`~/.21st/worktrees/<slug>`）：未追到生成处与消毒逻辑。
 6. **`settingSources:["project","user"]`**（[agent-sdk-query-options.ts:272](src/main/lib/claude/agent-sdk-query-options.ts:272)）：恶意仓库的 `.claude/` 项目级设置能向 SDK 注入多少（system prompt / 工具配置）？范围待确认。
 7. **`allFullThemesAtom` 是否有命令式写入方**：已确认无引用且不可命令式写入，恒空派生 atom 已删除；主题功能走 `theme-provider.tsx`。
 8. **`<webview>` 分区是否继承 `webSecurity:true` 与 file: CORS 策略**：R16 已先收紧为只允许登记 worktree 根内 `file:` URL；分区继承语义不再是放行任意 `file:` 的前置条件。
-9. **CLAUDE.md 已更新**：见 D9，当前记录为 16 表 + Claude/Codex/Qwen/Ollama/Kun/headless-job runtime 现实。
+9. **CLAUDE.md 已更新**：见 D9；2026-08-12 已再次收窄为 16 表 + Claude/Codex/Ollama/headless-job runtime 现实。
 
 ---
 

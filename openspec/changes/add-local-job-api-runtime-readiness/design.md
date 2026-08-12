@@ -7,7 +7,7 @@ Discovery today is `listRegisteredAgentRuntimeManifests({ scope: "contract" })` 
 ## Goals / Non-Goals
 
 - Goals: consumers can distinguish "configured and ready" from "installed but needs auth" before creating a job; consumers can feature-detect contract additions.
-- Non-Goals: enforcing readiness at create time (advisory only); readiness for experimental runtimes (kun/qwen are not in contract scope); provider-profile-level diagnostics (that is `provider-diagnostics`, desktop surface); any `apiVersion` bump.
+- Non-Goals: enforcing readiness at create time (advisory only); readiness for runtimes outside the Local Job API contract; provider-profile-level diagnostics (that is `provider-diagnostics`, desktop surface); any `apiVersion` bump.
 
 ## Decisions
 

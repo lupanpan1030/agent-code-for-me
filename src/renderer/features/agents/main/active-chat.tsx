@@ -150,26 +150,31 @@ import {
   subChatCodexModelSourceAtomFamily,
   subChatCodexThinkingAtomFamily,
   subChatClaudeModelSourceAtomFamily,
-  subChatKunModelSourceAtomFamily,
   subChatModelIdAtomFamily,
   subChatModeAtomFamily,
   suppressInputFocusAtom,
   undoStackAtom,
   workspaceDiffCacheAtomFamily,
   type AgentMode,
-  type SelectedCommit
+  type SelectedCommit,
 } from "../atoms"
 import type { ContinueWithProviderSelection } from "../components/agent-engine-selector"
 import { AgentSendButton } from "../components/agent-send-button"
 import type { TextSelectionSource } from "../context/text-selection-context"
 import { TextSelectionProvider } from "../context/text-selection-context"
-import { useAgentsFileUpload, type UploadedImage } from "../hooks/use-agents-file-upload"
+import {
+  useAgentsFileUpload,
+  type UploadedImage,
+} from "../hooks/use-agents-file-upload"
 import { useAuthRetry } from "../hooks/use-auth-retry"
 import { useChangedFilesTracking } from "../hooks/use-changed-files-tracking"
 import { useDesktopNotifications } from "../hooks/use-desktop-notifications"
 import { useFocusInputOnEnter } from "../hooks/use-focus-input-on-enter"
 import { useHaptic } from "../hooks/use-haptic"
-import { usePastedTextFiles, type PastedTextFile } from "../hooks/use-pasted-text-files"
+import {
+  usePastedTextFiles,
+  type PastedTextFile,
+} from "../hooks/use-pasted-text-files"
 import { usePendingAgentMessages } from "../hooks/use-pending-agent-messages"
 import { useTextContextSelection } from "../hooks/use-text-context-selection"
 import { useToggleFocusOnCmdEsc } from "../hooks/use-toggle-focus-on-cmd-esc"
@@ -180,19 +185,21 @@ import {
   isDataImageMessagePart,
 } from "../lib/chat-message-ui-adapter"
 import { formatHistoryForContext } from "../lib/export-chat"
-import {
-  clearSubChatDraft,
-  getSubChatDraftFull
-} from "../lib/drafts"
+import { clearSubChatDraft, getSubChatDraftFull } from "../lib/drafts"
 import { IPCChatTransport } from "../lib/ipc-chat-transport"
 import { buildAgentMessageParts } from "../lib/message-parts"
-import { QwenChatTransport } from "../lib/qwen-chat-transport"
 import { useRuntimeCapabilitySupported } from "../lib/runtime-manifest-store"
 import {
-  createQueueItem, createTextPreview, generateQueueId,
+  createQueueItem,
+  createTextPreview,
+  generateQueueId,
   toQueuedFile,
   toQueuedImage,
-  toQueuedTextContext, toQueuedDiffTextContext, toQueuedPastedText, type DiffTextContext, type SelectedTextContext
+  toQueuedTextContext,
+  toQueuedDiffTextContext,
+  toQueuedPastedText,
+  type DiffTextContext,
+  type SelectedTextContext,
 } from "../lib/queue-utils"
 import { expandCustomSlashCommand } from "../lib/slash-command-expansion"
 import {
@@ -2569,10 +2576,6 @@ const ChatViewInner = memo(function ChatViewInner({
         await trpcClient.codex.respondToolApproval.mutate(input)
         return
       }
-      if (provider === "qwen-code" || provider === "kun") {
-        await trpcClient.agentRuntime.respondToolApproval.mutate(input)
-        return
-      }
       await trpcClient.claude.respondToolApproval.mutate(input)
     },
     [provider],
@@ -3175,10 +3178,6 @@ const ChatViewInner = memo(function ChatViewInner({
         appStore.set(
           subChatCodexModelSourceAtomFamily(newSubChat.id),
           appStore.get(subChatCodexModelSourceAtomFamily(subChatId)),
-        )
-        appStore.set(
-          subChatKunModelSourceAtomFamily(newSubChat.id),
-          appStore.get(subChatKunModelSourceAtomFamily(subChatId)),
         )
         appStore.set(
           subChatCodexThinkingAtomFamily(newSubChat.id),
@@ -4054,14 +4053,9 @@ const ChatViewInner = memo(function ChatViewInner({
           subChatCodexModelSourceAtomFamily(newId),
           selection?.codexModelSource ??
             (targetProvider === "codex" &&
-              isProviderProfileSource(inheritedCodexModelSource)
+            isProviderProfileSource(inheritedCodexModelSource)
               ? "chatgpt"
               : inheritedCodexModelSource),
-        )
-        appStore.set(
-          subChatKunModelSourceAtomFamily(newId),
-          selection?.kunModelSource ??
-            appStore.get(subChatKunModelSourceAtomFamily(subChatId)),
         )
         appStore.set(
           subChatCodexThinkingAtomFamily(newId),
@@ -5791,12 +5785,12 @@ Make sure to preserve all functionality from both branches when resolving confli
         const existingProvider: AgentChatProvider =
           (existing as any)?.transport instanceof ACPChatTransport
             ? "codex"
-            : (existing as any)?.transport instanceof QwenChatTransport
-              ? (existing as any).transport.runtimeId
-              : "claude-code"
+            : "claude-code"
         if (existingProvider === overrideProvider) return existing
 
-        const subChatForOverride = agentSubChats.find((sc) => sc.id === subChatId)
+        const subChatForOverride = agentSubChats.find(
+          (sc) => sc.id === subChatId,
+        )
         const rawExistingMessages = subChatForOverride?.messages
         const existingMessageCount = Array.isArray(rawExistingMessages)
           ? rawExistingMessages.length
@@ -5845,38 +5839,18 @@ Make sure to preserve all functionality from both branches when resolving confli
         workspaceKind: isFolderlessChat ? "folderless" : "project",
       })
 
-      let transport:
-        | IPCChatTransport
-        | ACPChatTransport
-        | QwenChatTransport
-        | null = null
+      let transport: IPCChatTransport | ACPChatTransport | null = null
 
       if (chatProvider === "codex") {
-        console.log("[getOrCreateChat] Using ACPChatTransport", { provider: chatProvider })
+        console.log("[getOrCreateChat] Using ACPChatTransport", {
+          provider: chatProvider,
+        })
         transport = new ACPChatTransport({
           chatId,
           subChatId,
           projectPath,
           mode: subChatMode,
           provider: "codex",
-        })
-      } else if (chatProvider === "qwen-code" || chatProvider === "kun") {
-        console.log("[getOrCreateChat] Using QwenChatTransport", { provider: chatProvider })
-        const kunModelSource =
-          chatProvider === "kun"
-            ? appStore.get(subChatKunModelSourceAtomFamily(subChatId))
-            : null
-        transport = new QwenChatTransport({
-          runtimeId: chatProvider,
-          chatId,
-          subChatId,
-          mode: subChatMode,
-          ...(kunModelSource
-            ? {
-                modelSource: kunModelSource,
-                providerProfileId: parseProviderProfileSource(kunModelSource),
-              }
-            : {}),
         })
       } else {
         transport = new IPCChatTransport({
@@ -6104,10 +6078,6 @@ Make sure to preserve all functionality from both branches when resolving confli
       appStore.get(subChatCodexModelSourceAtomFamily(sourceSubChatId)),
     )
     appStore.set(
-      subChatKunModelSourceAtomFamily(newId),
-      appStore.get(subChatKunModelSourceAtomFamily(sourceSubChatId)),
-    )
-    appStore.set(
       subChatCodexThinkingAtomFamily(newId),
       appStore.get(subChatCodexThinkingAtomFamily(sourceSubChatId)),
     )
@@ -6126,39 +6096,19 @@ Make sure to preserve all functionality from both branches when resolving confli
     })
 
     const chatProvider = newSubChatProvider
-    let newSubChatTransport:
-      | IPCChatTransport
-      | ACPChatTransport
-      | QwenChatTransport
-      | null = null
+    let newSubChatTransport: IPCChatTransport | ACPChatTransport | null = null
 
     if (worktreePath || isFolderlessChat) {
       if (chatProvider === "codex") {
-        console.log("[createNewSubChat] Using ACPChatTransport", { provider: chatProvider })
+        console.log("[createNewSubChat] Using ACPChatTransport", {
+          provider: chatProvider,
+        })
         newSubChatTransport = new ACPChatTransport({
           chatId,
           subChatId: newId,
           projectPath: isFolderlessChat ? undefined : projectPath,
           mode: newSubChatMode,
           provider: "codex",
-        })
-      } else if (chatProvider === "qwen-code" || chatProvider === "kun") {
-        console.log("[createNewSubChat] Using QwenChatTransport", { provider: chatProvider })
-        const kunModelSource =
-          chatProvider === "kun"
-            ? appStore.get(subChatKunModelSourceAtomFamily(newId))
-            : null
-        newSubChatTransport = new QwenChatTransport({
-          runtimeId: chatProvider,
-          chatId,
-          subChatId: newId,
-          mode: newSubChatMode,
-          ...(kunModelSource
-            ? {
-                modelSource: kunModelSource,
-                providerProfileId: parseProviderProfileSource(kunModelSource),
-              }
-            : {}),
         })
       } else {
         // Local worktree chat: use IPC transport

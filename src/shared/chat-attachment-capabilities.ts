@@ -8,17 +8,10 @@ import {
   parseProviderProfileSource,
 } from "./provider-profile-types"
 
-export type ChatAttachmentProvider =
-  | "claude-code"
-  | "codex"
-  | "qwen-code"
-  | "kun"
+export type ChatAttachmentProvider = "claude-code" | "codex"
 
 export type ChatImageModelVision = "supported" | "unsupported" | "unknown"
-export type ChatImageAttachmentBlockReason =
-  | "runtime-transport"
-  | "offline"
-  | "model-no-vision"
+export type ChatImageAttachmentBlockReason = "offline" | "model-no-vision"
 
 export type ChatImageProviderProfileMetadata = Pick<
   ProviderProfileMetadata,
@@ -109,17 +102,6 @@ export function getChatImageAttachmentCapability(input: {
   offlineModeEnabled?: boolean
   modelVision?: ChatImageModelVision
 }): ChatImageAttachmentCapability {
-  if (input.provider === "qwen-code" || input.provider === "kun") {
-    return {
-      supportsImages: false,
-      maxImages: CHAT_IMAGE_MAX_COUNT,
-      maxImageBytes: CHAT_IMAGE_SINGLE_LIMIT_BYTES,
-      supportedMediaTypes: supportedChatImageMediaTypes,
-      disclosureKey: "remote-provider",
-      blockReason: "runtime-transport",
-    }
-  }
-
   if (input.provider === "claude-code" && input.offlineModeEnabled) {
     return {
       supportsImages: false,

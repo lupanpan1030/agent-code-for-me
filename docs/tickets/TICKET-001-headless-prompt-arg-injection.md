@@ -45,7 +45,7 @@ flag 消费，**覆盖掉 Locus 为 plan 模式显式设置的 `--sandbox read-o
 
 **不要**用「拒绝以 `-` 开头的 prompt」作为主修复 —— 合法 prompt 可能以 `-` 开头（如 markdown 列表），会误伤。
 
-**统一处理**：同一模式也存在于其他 runtime adapter（Ollama / Qwen / Kun，若有 headless 适配）。
+**统一处理**：同一模式也可能存在于其他 runtime adapter（包括 Ollama，若有 headless 适配）。
 本工单范围内**检查 `src/main/lib/headless/adapters/` 下所有 adapter**，凡是把 `request.prompt`
 拼进 argv 的，一律加同样的 `--` 分隔（或 stdin）。
 

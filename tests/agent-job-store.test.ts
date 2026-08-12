@@ -15,36 +15,6 @@ import {
 import { createAgentJobTestDb } from "./helpers/agent-job-test-db"
 
 describe("agent job store", () => {
-  test("admits experimental runtimes only for desktop job persistence", () => {
-    const db = createAgentJobTestDb()
-
-    for (const runtime of ["qwen-code", "kun"] as const) {
-      expect(() =>
-        createAgentJob(db, {
-          source: "api",
-          runtime,
-          mode: "agent",
-          cwd: "/tmp/project",
-          prompt: "Run through non-desktop API.",
-        }),
-      ).toThrow(`Unsupported job runtime: ${runtime}`)
-
-      const desktopJob = createAgentJob(db, {
-        source: "desktop",
-        runtime,
-        mode: "agent",
-        cwd: "/tmp/project",
-        prompt: `Run through desktop ${runtime}.`,
-      })
-
-      expect(desktopJob).toMatchObject({
-        source: "desktop",
-        runtime,
-        status: "queued",
-      })
-    }
-  })
-
   test("creates, starts, appends events, and completes a job", () => {
     const db = createAgentJobTestDb()
     const job = createAgentJob(db, {

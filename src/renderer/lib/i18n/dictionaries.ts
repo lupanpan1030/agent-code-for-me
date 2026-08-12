@@ -57,7 +57,7 @@ export const en = {
   "onboarding.section.aiPath": "AI provider",
   "onboarding.aiPath.subhead": "One is enough — others connect later",
   "onboarding.aiPath.engineNote":
-    "Connect one usable AI to start. More engines (like Qwen/Kun) can be switched in later from the engine picker.",
+    "Connect one usable AI to start. You can switch engines later from the engine picker.",
   "onboarding.section.startContext": "Project",
   "onboarding.status.ready": "Ready",
   "onboarding.status.needsSignIn": "Needs sign-in",
@@ -74,22 +74,10 @@ export const en = {
     "Sign in with your subscription, or use an Anthropic API key.",
   "onboarding.path.codex": "Codex",
   "onboarding.path.codexHint": "Sign in with ChatGPT or use an OpenAI API key.",
-  "onboarding.path.qwen": "Qwen Code",
-  "onboarding.path.qwenHint": "Runtime-managed CLI engine.",
   "onboarding.path.experimental": "Experimental",
   "onboarding.path.customProvider": "Custom provider",
   "onboarding.path.customProviderHint": "Use a Claude-compatible endpoint.",
   "onboarding.path.readyNotice": "Connected — you're all set.",
-  "onboarding.qwen.cliDetected": "Qwen Code CLI detected",
-  "onboarding.qwen.cliDetectedHint":
-    "Finish Qwen authentication inside the CLI if needed. Qwen is configured after first-run setup from the engine picker.",
-  "onboarding.qwen.subtitle":
-    "Qwen Code is runtime-managed — it signs in inside its own CLI, not here.",
-  "onboarding.qwen.setupRequired": "Qwen Code CLI setup required",
-  "onboarding.qwen.step1": "Install the Qwen Code CLI",
-  "onboarding.qwen.step2": "Run qwen, then sign in with /auth inside the CLI",
-  "onboarding.qwen.step3": "Come back and re-check below",
-  "onboarding.qwen.recheck": "Re-check",
   "onboarding.claude.tabSubscription": "Subscription",
   "onboarding.claude.tabApiKey": "API key",
   "onboarding.claude.cliConfigHint":
@@ -478,172 +466,7 @@ export const en = {
     "Stored in system secure storage and takes priority over subscription",
   "settings.models.openaiApiKey.description":
     "Required for voice transcription (Whisper API)",
-  "settings.models.qwenCli.title": "Qwen Code CLI",
-  "settings.models.qwenCli.description":
-    "Use a local BYO Qwen Code CLI for the Qwen ACP runtime.",
-  "settings.models.qwenCli.status": "CLI status",
-  "settings.models.qwenCli.setupRequired": "Setup required",
-  "settings.models.qwenCli.availableHint":
-    "Locus can spawn qwen --acp. Qwen authentication and model setup still belong inside Qwen Code.",
-  "settings.models.qwenCli.missingHint":
-    "Install Qwen Code CLI or set an absolute executable path.",
-  "settings.models.qwenCli.installHint":
-    "Install Qwen Code CLI, run qwen, authenticate with /auth, then retry detection.",
-  "settings.models.qwenCli.pathMissing":
-    "Qwen Code CLI was not found on PATH.",
-  "settings.models.qwenCli.pathAbsolutePathRequired":
-    "Qwen executable path must be an absolute local file path.",
-  "settings.models.qwenCli.pathShellCommandRejected":
-    "Qwen executable path must be a file path, not a shell command.",
-  "settings.models.qwenCli.pathSecretRejected":
-    "Qwen executable path contains secret-like text and was rejected.",
-  "settings.models.qwenCli.pathInvalidOrNotExecutable":
-    "Qwen executable path is invalid or not executable.",
-  "settings.models.qwenCli.pathInvalid": "Qwen executable path is invalid.",
-  "settings.models.qwenCli.runtimeDisabled":
-    "Qwen Code runtime is disabled. Enable it in Settings to configure Qwen setup.",
-  "settings.models.qwenCli.runtimeDisabledBeforeChange":
-    "Qwen Code runtime is disabled. Enable it before changing Qwen setup.",
-  "settings.models.qwenCli.currentPath": "Path: {path}",
-  "settings.models.qwenCli.version": "Version: {version}",
-  "settings.models.qwenCli.versionProbeFailed":
-    "Version probe failed: {error}",
-  "settings.models.qwenCli.docs": "Docs",
-  "settings.models.qwenCli.authHint":
-    "Run qwen, then use /auth inside the Qwen Code CLI.",
-  "settings.models.qwenCli.configTitle": "Qwen-managed configuration",
-  "settings.models.qwenCli.configState.configured": "Configured",
-  "settings.models.qwenCli.configState.missing": "Needs configuration",
-  "settings.models.qwenCli.configState.invalid": "Invalid settings",
-  "settings.models.qwenCli.configUnknown": "unknown",
-  "settings.models.qwenCli.configHint.loading":
-    "Loading Qwen CLI configuration metadata.",
-  "settings.models.qwenCli.configHint.configured":
-    "Qwen CLI is set to auth {authType} and model {model}. Locus displays this only; Qwen Code still owns the provider setup.",
-  "settings.models.qwenCli.configHint.missing":
-    "No usable Qwen settings were found. Run qwen and use /auth, or configure ~/.qwen/settings.json.",
-  "settings.models.qwenCli.configHint.invalid":
-    "Qwen settings exist but could not be parsed. Fix ~/.qwen/settings.json, then retry.",
-  "settings.models.qwenCli.configRuntimeManaged":
-    "This is not a Locus Provider Profile and does not use the Locus provider gateway.",
-  "settings.models.qwenCli.configParseError":
-    "Settings parse error: {error}",
-  "settings.models.qwenCli.configSelectedAuth":
-    "Selected auth: {authType}",
-  "settings.models.qwenCli.configSelectedModel":
-    "Selected model: {model}",
-  "settings.models.qwenCli.configEnvFilePresent": ".env file found",
-  "settings.models.qwenCli.configEnvFileMissing": ".env file not found",
-  "settings.models.qwenCli.configEnvKeys":
-    "Env keys declared in settings: {keys}",
-  "settings.models.qwenCli.configProvidersTitle": "Configured providers",
-  "settings.models.qwenCli.configProviderModels": "{count} models",
-  "settings.models.qwenCli.configProviderOrigin": "Origin: {origin}",
-  "settings.models.qwenCli.configProviderEnvKey": "Env: {envKey}",
-  "settings.models.qwenCli.configNoProviders":
-    "No modelProviders entries were found in Qwen settings.",
-  "settings.models.qwenCli.overridePath": "Executable path override",
-  "settings.models.qwenCli.overrideHint":
-    "Use an absolute path when the desktop app cannot see your shell PATH. This stores only the path, never Qwen auth files or provider secrets.",
   "settings.models.experimental.title": "Experimental",
-  "settings.models.qwenRuntime.title": "Enable Qwen Code runtime",
-  "settings.models.kunRuntime.title": "Enable Kun runtime",
-  "settings.models.kunCli.title": "Kun CLI",
-  "settings.models.kunCli.description":
-    "Install a pinned Kun build through Locus or bring your own executable for the local HTTP/SSE runtime.",
-  "settings.models.kunCli.status": "Status",
-  "settings.models.kunCli.setupRequired": "Setup required",
-  "settings.models.kunCli.configNeeded": "Config needed",
-  "settings.models.kunCli.configReady": "Config ready",
-  "settings.models.kunCli.hashMismatch": "Hash mismatch",
-  "settings.models.kunCli.readyHint":
-    "Kun executable and config are ready for flag-gated desktop runs.",
-  "settings.models.kunCli.configNeededHint":
-    "Kun executable is ready. Add a config.json or select a Kun provider profile before running.",
-  "settings.models.kunCli.missingHint":
-    "Install Kun through Locus or set a BYO executable before running.",
-  "settings.models.kunCli.executableAbsolutePathRequired":
-    "Kun executable path must be an absolute local file path.",
-  "settings.models.kunCli.executableShellCommandRejected":
-    "Kun executable path must be a file path, not a shell command.",
-  "settings.models.kunCli.executableSecretRejected":
-    "Kun executable path contains secret-like text and was rejected.",
-  "settings.models.kunCli.executableInvalidOrNotExecutable":
-    "Kun executable path is invalid or not executable.",
-  "settings.models.kunCli.executableInvalid":
-    "Kun executable path is invalid.",
-  "settings.models.kunCli.executablePath": "Executable: {path}",
-  "settings.models.kunCli.configPath": "Config: {path}",
-  "settings.models.kunCli.configError": "Config: {error}",
-  "settings.models.kunCli.version": "Version: {version}",
-  "settings.models.kunCli.versionProbeFailed":
-    "Version probe failed: {error}",
-  "settings.models.kunCli.managedInstall": "Managed install",
-  "settings.models.kunCli.installed": "Installed",
-  "settings.models.kunCli.updateAvailable": "Update available",
-  "settings.models.kunCli.installedManagedVersion":
-    "Kun {version} is installed in app-managed storage.",
-  "settings.models.kunCli.install": "Install Kun",
-  "settings.models.kunCli.update": "Update Kun",
-  "settings.models.kunCli.guardedShell": "Guarded shell",
-  "settings.models.kunCli.shellApproved": "Approved",
-  "settings.models.kunCli.currentHash": "Current hash: {hash}",
-  "settings.models.kunCli.approvedHash": "Approved hash: {hash}",
-  "settings.models.kunCli.approveCurrentBuild": "Approve current build",
-  "settings.models.kunCli.executablePathOverride":
-    "Executable path override",
-  "settings.models.kunCli.executablePathHint":
-    "Use an absolute local path. Project-local shadow binaries are ignored during PATH discovery.",
-  "settings.models.kunCli.configPathOverride": "Config path override",
-  "settings.models.kunCli.configPathHint":
-    "Use an absolute Kun config.json path. Locus passes the path to Kun but does not read or render provider credentials.",
-  "settings.models.kunCli.installCommand":
-    "Install Kun from the upstream project.",
-  "settings.models.kunCli.authHint":
-    "Configure Kun with a BYO config file or keep provider profiles degraded until the Locus responses gateway is wired.",
-  "settings.models.kunCli.configFallbackHint":
-    "Configure Kun with a BYO config file before running it from Locus.",
-  "settings.models.kunCli.pathMissing": "Kun CLI was not found on PATH.",
-  "settings.models.kunCli.configMissing":
-    "Kun config path is not configured.",
-  "settings.models.kunCli.configAbsolutePathRequired":
-    "Kun config path must be an absolute local file path.",
-  "settings.models.kunCli.configShellCommandRejected":
-    "Kun config path must be a file path, not a shell command.",
-  "settings.models.kunCli.configSecretRejected":
-    "Kun config path contains secret-like text and was rejected.",
-  "settings.models.kunCli.configFileMissing":
-    "Kun config file was not found.",
-  "settings.models.kunCli.configNotFile":
-    "Kun config path exists but is not a file.",
-  "settings.models.kunCli.configRequiredBeforeRun":
-    "Kun config path must be configured before Kun runs.",
-  "settings.models.kunCli.detectedVersionUnavailable":
-    "Kun CLI detected (version unavailable)",
-  "settings.models.kunCli.shellApprovalHint":
-    "Approve the current Kun executable hash in Settings before enabling guarded shell.",
-  "settings.models.kunCli.managedUnavailableReason":
-    "No production Kun managed build is enabled. Current upstream release assets are Electron GUI archives; Locus must not install them as direct `kun serve` executables until the embedded runtime launch model is implemented and smoke-tested.",
-  "settings.models.kunCli.managedUnavailableHint":
-    "Use guided BYO setup until Locus has a pinned Kun runtime asset with a verified headless launch model.",
-  "settings.models.kunCli.runtimeDisabled":
-    "Kun runtime is disabled. Enable it in Settings to configure Kun setup.",
-  "settings.models.kunCli.runtimeDisabledBeforeInstall":
-    "Kun runtime is disabled. Enable it before installing managed Kun.",
-  "settings.models.kunCli.runtimeDisabledBeforeUpdate":
-    "Kun runtime is disabled. Enable it before updating managed Kun.",
-  "settings.models.kunCli.runtimeDisabledBeforeChange":
-    "Kun runtime is disabled. Enable it before changing Kun setup.",
-  "settings.models.kunCli.runtimeDisabledBeforeShellApproval":
-    "Kun runtime is disabled. Enable it before approving Kun shell.",
-  "settings.models.kunCli.runtimeDisabledBeforeShellApprovalChange":
-    "Kun runtime is disabled. Enable it before changing Kun shell approval.",
-  "settings.models.kunCli.shellReasonApproved": "approved",
-  "settings.models.kunCli.shellReasonUnapproved": "unapproved",
-  "settings.models.kunCli.shellReasonHashMismatch": "hash mismatch",
-  "settings.models.kunCli.shellReasonHashUnavailable": "hash unavailable",
-  "settings.models.kunCli.shellReasonRuntimeDisabled": "runtime disabled",
-  "settings.models.kunCli.unknown": "Unknown",
   "settings.models.visibilityToggle": "Show {model} in model selectors",
   "settings.models.advancedRouting.title": "Provider profiles and helper APIs",
   "settings.models.advancedRouting.description":
@@ -694,7 +517,6 @@ export const en = {
   "settings.models.providerProfiles.targetClaude": "Claude",
   "settings.models.providerProfiles.targetCodex": "Codex",
   "settings.models.providerProfiles.targetHelpers": "Helpers",
-  "settings.models.providerProfiles.targetKun": "Kun",
   "settings.models.providerProfiles.targetLocal": "Local",
   "settings.models.providerProfiles.authBearer": "Bearer token",
   "settings.models.providerProfiles.authXApiKey": "x-api-key",
@@ -2112,44 +1934,6 @@ export const en = {
   "toast.models.codexDisconnected": "Codex disconnected",
   "toast.models.codexApiKeySaved": "Codex API key saved",
   "toast.models.codexApiKeyRemoved": "Codex API key removed",
-  "toast.models.qwenExecutablePathSaved": "Qwen executable path saved",
-  "toast.models.qwenExecutablePathReset": "Qwen executable path reset",
-  "toast.models.failedToSaveQwenExecutablePath":
-    "Failed to save Qwen executable path",
-  "toast.models.failedToResetQwenExecutablePath":
-    "Failed to reset Qwen executable path",
-  "toast.models.failedToCopyQwenInstallCommand":
-    "Failed to copy Qwen install command",
-  "toast.models.qwenRuntimeEnabled": "Qwen Code runtime enabled",
-  "toast.models.qwenRuntimeDisabled": "Qwen Code runtime disabled",
-  "toast.models.failedToUpdateQwenRuntimeSetting":
-    "Failed to update Qwen Code runtime setting",
-  "toast.models.kunRuntimeEnabled": "Kun runtime enabled",
-  "toast.models.kunRuntimeDisabled": "Kun runtime disabled",
-  "toast.models.failedToUpdateKunRuntimeSetting":
-    "Failed to update Kun runtime setting",
-  "toast.models.failedToCopyKunInstallCommand":
-    "Failed to copy Kun install guidance",
-  "toast.models.kunInstalled": "Kun installed",
-  "toast.models.failedToInstallKun": "Failed to install Kun",
-  "toast.models.kunUpdated": "Kun updated",
-  "toast.models.failedToUpdateKun": "Failed to update Kun",
-  "toast.models.kunExecutablePathSaved": "Kun executable path saved",
-  "toast.models.failedToSaveKunExecutablePath":
-    "Failed to save Kun executable path",
-  "toast.models.kunConfigPathSaved": "Kun config path saved",
-  "toast.models.failedToSaveKunConfigPath": "Failed to save Kun config path",
-  "toast.models.kunExecutablePathReset": "Kun executable path reset",
-  "toast.models.failedToResetKunExecutablePath":
-    "Failed to reset Kun executable path",
-  "toast.models.kunConfigPathReset": "Kun config path reset",
-  "toast.models.failedToResetKunConfigPath": "Failed to reset Kun config path",
-  "toast.models.kunShellBuildApproved": "Kun shell build approved",
-  "toast.models.failedToApproveKunShellBuild":
-    "Failed to approve Kun shell build",
-  "toast.models.kunShellApprovalReset": "Kun shell approval reset",
-  "toast.models.failedToResetKunShellApproval":
-    "Failed to reset Kun shell approval",
   "toast.models.openaiApiKeySaved": "OpenAI API key saved",
   "toast.models.openaiApiKeyRemoved": "OpenAI API key removed",
   "toast.models.subChatTitleSettingsSaved": "Chat title API saved",
@@ -2666,8 +2450,6 @@ export const en = {
   "agent.image.copy": "Copy Image",
   "agent.image.save": "Save Image",
   "agent.attachments.imagesUnsupportedTitle": "Images are not supported",
-  "agent.attachments.imagesUnsupportedRuntime":
-    "The current runtime cannot process image attachments.",
   "agent.attachments.imagesUnsupportedOffline":
     "The current offline Ollama model cannot process image attachments.",
   "agent.attachments.imagesUnsupportedModel":
@@ -2920,12 +2702,6 @@ export const en = {
   "agent.transport.unexpectedCodexError":
     "An unexpected Codex error occurred.",
   "agent.transport.codexRequestFailed": "Codex request failed",
-  "agent.qwenCli.setupRequired": "Qwen Code CLI setup required.",
-  "agent.qwenCli.openSetup": "Open setup",
-  "agent.kunCli.setupRequired": "Kun setup required.",
-  "agent.kunCli.openSetup": "Open setup",
-  "agent.kunCli.providerProfileUnavailable":
-    "Selected Kun provider profile is unavailable.",
   "agent.providerProfiles.loading": "Provider Profiles are still loading.",
   "agent.todo.creatingList": "Creating to-do list...",
   "agent.todo.list": "To-do list",
@@ -3338,9 +3114,6 @@ export const en = {
   "agent.model.searchPlaceholder": "Search models...",
   "agent.model.noModelsFound": "No models found.",
   "agent.model.addModels": "Add Models",
-  "agent.model.qwenRuntimeManaged": "Qwen Code runtime managed",
-  "agent.model.kunByoConfig": "Kun BYO config",
-  "agent.model.noKunProviderProfiles": "No Kun provider profiles",
   "agent.model.info.aria": "Show model details for {model}",
   "agent.model.info.context": "Context",
   "agent.model.info.maxOutput": "Max output",
@@ -3797,7 +3570,7 @@ export const zhCN: Partial<Record<TranslationKey, string>> = {
   "onboarding.section.aiPath": "AI 提供方",
   "onboarding.aiPath.subhead": "连接一个即可，其余可稍后连接",
   "onboarding.aiPath.engineNote":
-    "先连一个能用的 AI 即可开始。更多引擎（如 Qwen/Kun）可进入后在引擎选择器里切换。",
+    "先连接一个可用的 AI 即可开始。之后可在引擎选择器中切换引擎。",
   "onboarding.section.startContext": "项目",
   "onboarding.status.ready": "就绪",
   "onboarding.status.needsSignIn": "需要登录",
@@ -3813,8 +3586,6 @@ export const zhCN: Partial<Record<TranslationKey, string>> = {
   "onboarding.path.claudeHint": "用订阅登录,或使用 Anthropic API 密钥。",
   "onboarding.path.codex": "Codex",
   "onboarding.path.codexHint": "使用 ChatGPT 登录或使用 OpenAI API 密钥。",
-  "onboarding.path.qwen": "Qwen Code",
-  "onboarding.path.qwenHint": "运行时托管的 CLI 引擎。",
   "onboarding.path.experimental": "实验",
   "onboarding.claude.tabSubscription": "订阅登录",
   "onboarding.claude.tabApiKey": "API 密钥",
@@ -3823,15 +3594,6 @@ export const zhCN: Partial<Record<TranslationKey, string>> = {
   "onboarding.path.customProvider": "自定义提供方",
   "onboarding.path.customProviderHint": "使用兼容 Claude 的接口。",
   "onboarding.path.readyNotice": "已连接 — 一切就绪。",
-  "onboarding.qwen.cliDetected": "已检测到 Qwen Code CLI",
-  "onboarding.qwen.cliDetectedHint":
-    "如有需要，请先在 Qwen CLI 内完成认证。Qwen 可在首次设置完成后从引擎选择器里配置和使用。",
-  "onboarding.qwen.subtitle": "Qwen Code 由运行时托管 — 在它自己的 CLI 内登录，而不是这里。",
-  "onboarding.qwen.setupRequired": "需要安装 / 设置 Qwen Code CLI",
-  "onboarding.qwen.step1": "安装 Qwen Code CLI",
-  "onboarding.qwen.step2": "运行 qwen，在 CLI 内用 /auth 登录",
-  "onboarding.qwen.step3": "回到这里点下方「重新检测」",
-  "onboarding.qwen.recheck": "重新检测",
   "onboarding.startContext.connectFirst": "请先连接一个 AI 提供方以继续。",
   "onboarding.startContext.quickChat": "开始快速对话",
   "onboarding.startContext.quickChatHint": "暂时跳过，不选择项目直接使用 Locus。",
@@ -4204,165 +3966,7 @@ export const zhCN: Partial<Record<TranslationKey, string>> = {
     "保存在系统安全存储中，优先级高于订阅",
   "settings.models.openaiApiKey.description":
     "语音转写需要使用（Whisper API）",
-  "settings.models.qwenCli.title": "Qwen Code CLI",
-  "settings.models.qwenCli.description":
-    "使用本地自带的 Qwen Code CLI 作为 Qwen ACP 运行时。",
-  "settings.models.qwenCli.status": "CLI 状态",
-  "settings.models.qwenCli.setupRequired": "需要设置",
-  "settings.models.qwenCli.availableHint":
-    "Locus 可以启动 qwen --acp。Qwen 登录和模型配置仍由 Qwen Code 自己管理。",
-  "settings.models.qwenCli.missingHint":
-    "安装 Qwen Code CLI，或设置一个绝对可执行文件路径。",
-  "settings.models.qwenCli.installHint":
-    "安装 Qwen Code CLI，运行 qwen，用 /auth 完成登录，然后重新检测。",
-  "settings.models.qwenCli.pathMissing":
-    "PATH 中没有找到 Qwen Code CLI。",
-  "settings.models.qwenCli.pathAbsolutePathRequired":
-    "Qwen 可执行文件路径必须是本机绝对路径。",
-  "settings.models.qwenCli.pathShellCommandRejected":
-    "Qwen 可执行文件路径必须是文件路径，不能是 shell 命令。",
-  "settings.models.qwenCli.pathSecretRejected":
-    "Qwen 可执行文件路径包含疑似密钥内容，已被拒绝。",
-  "settings.models.qwenCli.pathInvalidOrNotExecutable":
-    "Qwen 可执行文件路径无效或不可执行。",
-  "settings.models.qwenCli.pathInvalid": "Qwen 可执行文件路径无效。",
-  "settings.models.qwenCli.runtimeDisabled":
-    "Qwen Code 运行时已禁用。请先在设置中启用后再配置 Qwen。",
-  "settings.models.qwenCli.runtimeDisabledBeforeChange":
-    "Qwen Code 运行时已禁用。启用后才能修改 Qwen 设置。",
-  "settings.models.qwenCli.currentPath": "路径：{path}",
-  "settings.models.qwenCli.version": "版本：{version}",
-  "settings.models.qwenCli.versionProbeFailed": "版本探测失败：{error}",
-  "settings.models.qwenCli.docs": "文档",
-  "settings.models.qwenCli.authHint":
-    "运行 qwen，然后在 Qwen Code CLI 里使用 /auth。",
-  "settings.models.qwenCli.configTitle": "Qwen 管理的配置",
-  "settings.models.qwenCli.configState.configured": "已配置",
-  "settings.models.qwenCli.configState.missing": "需要配置",
-  "settings.models.qwenCli.configState.invalid": "设置无效",
-  "settings.models.qwenCli.configUnknown": "未知",
-  "settings.models.qwenCli.configHint.loading":
-    "正在读取 Qwen CLI 配置元数据。",
-  "settings.models.qwenCli.configHint.configured":
-    "Qwen CLI 当前选择 auth {authType} 和模型 {model}。Locus 这里只展示摘要，提供方设置仍由 Qwen Code 管理。",
-  "settings.models.qwenCli.configHint.missing":
-    "没有找到可用的 Qwen 设置。请运行 qwen 并使用 /auth，或配置 ~/.qwen/settings.json。",
-  "settings.models.qwenCli.configHint.invalid":
-    "Qwen 设置文件存在，但无法解析。修复 ~/.qwen/settings.json 后再重试。",
-  "settings.models.qwenCli.configRuntimeManaged":
-    "这不是 Locus 提供方配置，也不会走 Locus provider gateway。",
-  "settings.models.qwenCli.configParseError":
-    "设置解析错误：{error}",
-  "settings.models.qwenCli.configSelectedAuth":
-    "当前 auth：{authType}",
-  "settings.models.qwenCli.configSelectedModel":
-    "当前模型：{model}",
-  "settings.models.qwenCli.configEnvFilePresent": "已找到 .env 文件",
-  "settings.models.qwenCli.configEnvFileMissing": "未找到 .env 文件",
-  "settings.models.qwenCli.configEnvKeys":
-    "settings 中声明的环境变量名：{keys}",
-  "settings.models.qwenCli.configProvidersTitle": "已配置的提供方",
-  "settings.models.qwenCli.configProviderModels": "{count} 个模型",
-  "settings.models.qwenCli.configProviderOrigin": "Origin：{origin}",
-  "settings.models.qwenCli.configProviderEnvKey": "Env：{envKey}",
-  "settings.models.qwenCli.configNoProviders":
-    "Qwen settings 中没有找到 modelProviders 条目。",
-  "settings.models.qwenCli.overridePath": "可执行文件路径覆盖",
-  "settings.models.qwenCli.overrideHint":
-    "当桌面应用看不到你的命令行 PATH 时，填写绝对路径。这里只保存路径，不写入 Qwen 认证文件或提供方密钥。",
   "settings.models.experimental.title": "实验功能",
-  "settings.models.qwenRuntime.title": "启用 Qwen Code 运行时",
-  "settings.models.kunRuntime.title": "启用 Kun 运行时",
-  "settings.models.kunCli.title": "Kun CLI",
-  "settings.models.kunCli.description":
-    "通过 Locus 安装固定版本的 Kun，或自带用于本地 HTTP/SSE 运行时的可执行文件。",
-  "settings.models.kunCli.status": "状态",
-  "settings.models.kunCli.setupRequired": "需要设置",
-  "settings.models.kunCli.configNeeded": "需要配置",
-  "settings.models.kunCli.configReady": "配置就绪",
-  "settings.models.kunCli.hashMismatch": "哈希不匹配",
-  "settings.models.kunCli.readyHint":
-    "Kun 可执行文件和配置已就绪，可用于功能开关保护下的桌面运行。",
-  "settings.models.kunCli.configNeededHint":
-    "Kun 可执行文件已就绪。运行前请添加 config.json，或选择 Kun 提供方配置。",
-  "settings.models.kunCli.missingHint":
-    "运行前请通过 Locus 安装 Kun，或设置自带可执行文件。",
-  "settings.models.kunCli.executableAbsolutePathRequired":
-    "Kun 可执行文件路径必须是本机绝对路径。",
-  "settings.models.kunCli.executableShellCommandRejected":
-    "Kun 可执行文件路径必须是文件路径，不能是 shell 命令。",
-  "settings.models.kunCli.executableSecretRejected":
-    "Kun 可执行文件路径包含疑似密钥内容，已被拒绝。",
-  "settings.models.kunCli.executableInvalidOrNotExecutable":
-    "Kun 可执行文件路径无效或不可执行。",
-  "settings.models.kunCli.executableInvalid": "Kun 可执行文件路径无效。",
-  "settings.models.kunCli.executablePath": "可执行文件：{path}",
-  "settings.models.kunCli.configPath": "配置：{path}",
-  "settings.models.kunCli.configError": "配置：{error}",
-  "settings.models.kunCli.version": "版本：{version}",
-  "settings.models.kunCli.versionProbeFailed": "版本探测失败：{error}",
-  "settings.models.kunCli.managedInstall": "托管安装",
-  "settings.models.kunCli.installed": "已安装",
-  "settings.models.kunCli.updateAvailable": "有可用更新",
-  "settings.models.kunCli.installedManagedVersion":
-    "Kun {version} 已安装在应用托管存储中。",
-  "settings.models.kunCli.install": "安装 Kun",
-  "settings.models.kunCli.update": "更新 Kun",
-  "settings.models.kunCli.guardedShell": "受保护命令执行",
-  "settings.models.kunCli.shellApproved": "已批准",
-  "settings.models.kunCli.currentHash": "当前哈希：{hash}",
-  "settings.models.kunCli.approvedHash": "已批准哈希：{hash}",
-  "settings.models.kunCli.approveCurrentBuild": "批准当前构建",
-  "settings.models.kunCli.executablePathOverride": "可执行文件路径覆盖",
-  "settings.models.kunCli.executablePathHint":
-    "使用绝对本地路径。PATH 检测会忽略项目目录里的影子二进制。",
-  "settings.models.kunCli.configPathOverride": "配置文件路径覆盖",
-  "settings.models.kunCli.configPathHint":
-    "使用绝对 Kun config.json 路径。Locus 会把路径传给 Kun，但不会读取或渲染提供方凭证。",
-  "settings.models.kunCli.installCommand": "从上游项目安装 Kun。",
-  "settings.models.kunCli.authHint":
-    "使用自带 Kun 配置文件；在 Locus 响应网关接入前，提供方配置会保持降级。",
-  "settings.models.kunCli.configFallbackHint":
-    "从 Locus 运行 Kun 前，请先配置自带 Kun 配置文件。",
-  "settings.models.kunCli.pathMissing": "PATH 中未找到 Kun CLI。",
-  "settings.models.kunCli.configMissing": "尚未配置 Kun 配置路径。",
-  "settings.models.kunCli.configAbsolutePathRequired":
-    "Kun 配置路径必须是绝对本地文件路径。",
-  "settings.models.kunCli.configShellCommandRejected":
-    "Kun 配置路径必须是文件路径，不能是命令字符串。",
-  "settings.models.kunCli.configSecretRejected":
-    "Kun 配置路径包含疑似密钥文本，已拒绝。",
-  "settings.models.kunCli.configFileMissing": "未找到 Kun 配置文件。",
-  "settings.models.kunCli.configNotFile":
-    "Kun 配置路径存在，但不是文件。",
-  "settings.models.kunCli.configRequiredBeforeRun":
-    "运行 Kun 前必须先配置 Kun 配置路径。",
-  "settings.models.kunCli.detectedVersionUnavailable":
-    "已检测到 Kun CLI（版本不可用）",
-  "settings.models.kunCli.shellApprovalHint":
-    "启用受保护命令执行前，请先在设置中批准当前 Kun 可执行文件哈希。",
-  "settings.models.kunCli.managedUnavailableReason":
-    "当前未启用可用于生产的 Kun 托管构建。上游发布产物目前是 Electron 图形界面归档；在嵌入式运行时启动模型完成实现并通过验证前，Locus 不能把它们当作可直接执行的 `kun serve`。",
-  "settings.models.kunCli.managedUnavailableHint":
-    "在 Locus 拥有固定版本且已验证无头启动模型的 Kun 运行时产物前，请使用引导式自带配置。",
-  "settings.models.kunCli.runtimeDisabled":
-    "Kun 运行时已禁用。请在设置中启用后再配置 Kun。",
-  "settings.models.kunCli.runtimeDisabledBeforeInstall":
-    "Kun 运行时已禁用。启用后才能安装托管 Kun。",
-  "settings.models.kunCli.runtimeDisabledBeforeUpdate":
-    "Kun 运行时已禁用。启用后才能更新托管 Kun。",
-  "settings.models.kunCli.runtimeDisabledBeforeChange":
-    "Kun 运行时已禁用。启用后才能修改 Kun 设置。",
-  "settings.models.kunCli.runtimeDisabledBeforeShellApproval":
-    "Kun 运行时已禁用。启用后才能批准 Kun 受保护命令执行。",
-  "settings.models.kunCli.runtimeDisabledBeforeShellApprovalChange":
-    "Kun 运行时已禁用。启用后才能修改 Kun 受保护命令执行批准状态。",
-  "settings.models.kunCli.shellReasonApproved": "已批准",
-  "settings.models.kunCli.shellReasonUnapproved": "未批准",
-  "settings.models.kunCli.shellReasonHashMismatch": "哈希不匹配",
-  "settings.models.kunCli.shellReasonHashUnavailable": "哈希不可用",
-  "settings.models.kunCli.shellReasonRuntimeDisabled": "运行时已禁用",
-  "settings.models.kunCli.unknown": "未知",
   "settings.models.visibilityToggle": "在模型选择器中显示 {model}",
   "settings.models.advancedRouting.title": "提供方配置与辅助 API",
   "settings.models.advancedRouting.description":
@@ -4413,7 +4017,6 @@ export const zhCN: Partial<Record<TranslationKey, string>> = {
   "settings.models.providerProfiles.targetClaude": "Claude",
   "settings.models.providerProfiles.targetCodex": "Codex",
   "settings.models.providerProfiles.targetHelpers": "辅助",
-  "settings.models.providerProfiles.targetKun": "Kun",
   "settings.models.providerProfiles.targetLocal": "本地",
   "settings.models.providerProfiles.authBearer": "Bearer 令牌",
   "settings.models.providerProfiles.authXApiKey": "x-api-key",
@@ -5821,44 +5424,6 @@ export const zhCN: Partial<Record<TranslationKey, string>> = {
   "toast.models.codexDisconnected": "Codex 已断开连接",
   "toast.models.codexApiKeySaved": "Codex API 密钥已保存",
   "toast.models.codexApiKeyRemoved": "Codex API 密钥已移除",
-  "toast.models.qwenExecutablePathSaved": "Qwen 可执行文件路径已保存",
-  "toast.models.qwenExecutablePathReset": "Qwen 可执行文件路径已重置",
-  "toast.models.failedToSaveQwenExecutablePath":
-    "保存 Qwen 可执行文件路径失败",
-  "toast.models.failedToResetQwenExecutablePath":
-    "重置 Qwen 可执行文件路径失败",
-  "toast.models.failedToCopyQwenInstallCommand":
-    "复制 Qwen 安装命令失败",
-  "toast.models.qwenRuntimeEnabled": "Qwen Code 运行时已启用",
-  "toast.models.qwenRuntimeDisabled": "Qwen Code 运行时已禁用",
-  "toast.models.failedToUpdateQwenRuntimeSetting":
-    "更新 Qwen Code 运行时设置失败",
-  "toast.models.kunRuntimeEnabled": "Kun 运行时已启用",
-  "toast.models.kunRuntimeDisabled": "Kun 运行时已禁用",
-  "toast.models.failedToUpdateKunRuntimeSetting":
-    "更新 Kun 运行时设置失败",
-  "toast.models.failedToCopyKunInstallCommand":
-    "复制 Kun 安装指引失败",
-  "toast.models.kunInstalled": "Kun 已安装",
-  "toast.models.failedToInstallKun": "安装 Kun 失败",
-  "toast.models.kunUpdated": "Kun 已更新",
-  "toast.models.failedToUpdateKun": "更新 Kun 失败",
-  "toast.models.kunExecutablePathSaved": "Kun 可执行文件路径已保存",
-  "toast.models.failedToSaveKunExecutablePath":
-    "保存 Kun 可执行文件路径失败",
-  "toast.models.kunConfigPathSaved": "Kun 配置路径已保存",
-  "toast.models.failedToSaveKunConfigPath": "保存 Kun 配置路径失败",
-  "toast.models.kunExecutablePathReset": "Kun 可执行文件路径已重置",
-  "toast.models.failedToResetKunExecutablePath":
-    "重置 Kun 可执行文件路径失败",
-  "toast.models.kunConfigPathReset": "Kun 配置路径已重置",
-  "toast.models.failedToResetKunConfigPath": "重置 Kun 配置路径失败",
-  "toast.models.kunShellBuildApproved": "Kun 受保护命令执行已批准",
-  "toast.models.failedToApproveKunShellBuild":
-    "批准 Kun 受保护命令执行失败",
-  "toast.models.kunShellApprovalReset": "Kun 受保护命令执行批准状态已重置",
-  "toast.models.failedToResetKunShellApproval":
-    "重置 Kun 受保护命令执行批准状态失败",
   "toast.models.openaiApiKeySaved": "OpenAI API 密钥已保存",
   "toast.models.openaiApiKeyRemoved": "OpenAI API 密钥已移除",
   "toast.models.subChatTitleSettingsSaved": "对话标题 API 已保存",
@@ -6369,8 +5934,6 @@ export const zhCN: Partial<Record<TranslationKey, string>> = {
   "agent.image.copy": "复制图片",
   "agent.image.save": "保存图片",
   "agent.attachments.imagesUnsupportedTitle": "当前模型不支持图片",
-  "agent.attachments.imagesUnsupportedRuntime":
-    "当前运行时不能处理图片附件。",
   "agent.attachments.imagesUnsupportedOffline":
     "当前离线 Ollama 模型不能处理图片附件。",
   "agent.attachments.imagesUnsupportedModel":
@@ -6622,12 +6185,6 @@ export const zhCN: Partial<Record<TranslationKey, string>> = {
   "agent.transport.unexpectedCodexError":
     "发生了未知 Codex 错误。",
   "agent.transport.codexRequestFailed": "Codex 请求失败",
-  "agent.qwenCli.setupRequired": "需要设置 Qwen Code CLI。",
-  "agent.qwenCli.openSetup": "打开设置",
-  "agent.kunCli.setupRequired": "需要设置 Kun。",
-  "agent.kunCli.openSetup": "打开设置",
-  "agent.kunCli.providerProfileUnavailable":
-    "所选 Kun 提供方配置不可用。",
   "agent.providerProfiles.loading": "提供方配置仍在加载中。",
   "agent.todo.creatingList": "正在创建待办列表...",
   "agent.todo.list": "待办列表",
@@ -7039,9 +6596,6 @@ export const zhCN: Partial<Record<TranslationKey, string>> = {
   "agent.model.searchPlaceholder": "搜索模型...",
   "agent.model.noModelsFound": "没有找到模型。",
   "agent.model.addModels": "添加模型",
-  "agent.model.qwenRuntimeManaged": "Qwen Code 由运行时管理",
-  "agent.model.kunByoConfig": "Kun BYO 配置",
-  "agent.model.noKunProviderProfiles": "没有 Kun 提供方配置",
   "agent.model.info.aria": "查看 {model} 的模型信息",
   "agent.model.info.context": "上下文",
   "agent.model.info.maxOutput": "最大输出",

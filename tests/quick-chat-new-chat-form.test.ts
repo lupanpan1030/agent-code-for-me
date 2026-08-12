@@ -11,22 +11,9 @@ describe("quick chat new chat form", () => {
       "src/renderer/features/agents/components/agent-engine-selector.tsx",
       "utf8",
     )
-    const runtimeModelSelector = readFileSync(
-      "src/renderer/features/agents/components/runtime-model-selector.tsx",
-      "utf8",
-    )
-
     expect(form).toContain("useRuntimeCapabilityManifestStore")
     expect(form).toContain('capability.id === "quickChatAssistant"')
     expect(form).toContain('capability.status === "supported"')
-    expect(form).toContain("qwenRuntimeVisible")
-    expect(form).toContain("kunRuntimeVisible")
-    expect(form).toContain('manifest.runtimeId === "qwen-code"')
-    expect(form).toContain('manifest.runtimeId === "kun"')
-    expect(form).toContain("qwenCliReady")
-    expect(form).toContain("kunCliReady")
-    expect(form).toContain("disabled: !qwenCliReady")
-    expect(form).toContain("disabled: !kunCliReady")
     expect(form).toContain("const engineOptions = useMemo<AgentEngineOption[]>")
     expect(form).toContain("isAgentOptionDisabled(agent)")
     expect(form).toContain("<AgentEngineSelector")
@@ -38,10 +25,6 @@ describe("quick chat new chat form", () => {
     expect(selector).toContain('option.status === "setup-required"')
     expect(selector).toContain("onSetupEngine?.(option.id)")
     expect(selector).toContain("onSelectEngine(option.id)")
-    expect(runtimeModelSelector).toContain('selectedEngineId === "qwen-code"')
-    expect(runtimeModelSelector).toContain(
-      'profile.targetRuntimes.includes("kun")',
-    )
   })
 
   test("drives new-chat project state from explicit target instead of selected project", () => {

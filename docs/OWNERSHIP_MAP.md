@@ -9,6 +9,8 @@ or UI helper.
 
 - Canonical owner: `src/shared/agent-runtime-capabilities.ts`
 - Facades: `src/shared/codex-runtime-capabilities.ts`
+- Supported runtime IDs: `claude-code` and `codex`; the desktop and contract
+  runtime sets currently match.
 - Tests: `tests/agent-runtime-capabilities.test.ts`,
   `tests/codex-runtime-capabilities.test.ts`
 - Rule: runtime-specific files may expose facades, but must not define a second

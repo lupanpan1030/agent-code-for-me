@@ -5,7 +5,6 @@ import { CheckCircle2 } from "lucide-react"
 import type { ReactNode } from "react"
 import { providerProfileSource } from "../../../../shared/provider-profile-types"
 import {
-  AgentIcon,
   ClaudeCodeIcon,
   CodexIcon,
   SettingsFilledIcon,
@@ -30,7 +29,6 @@ import type { SetupStatus } from "../lib/use-setup-status"
 import { ClaudeCodeAction } from "./panels/claude-code-action"
 import { CodexAction } from "./panels/codex-action"
 import { ProviderProfileAction } from "./panels/provider-profile-action"
-import { QwenAction } from "./panels/qwen-action"
 import { StatusBadge } from "./status-badge"
 
 type PathMeta = {
@@ -52,12 +50,6 @@ const PATH_META: Record<OnboardingPathId, PathMeta> = {
     iconClass: "bg-foreground text-background",
     titleKey: "onboarding.path.codex",
     hintKey: "onboarding.path.codexHint",
-  },
-  qwen: {
-    icon: <AgentIcon className="h-5 w-5" />,
-    iconClass: "bg-muted text-foreground",
-    titleKey: "onboarding.path.qwen",
-    hintKey: "onboarding.path.qwenHint",
   },
   "custom-provider": {
     icon: <SettingsFilledIcon className="h-5 w-5" />,
@@ -158,8 +150,6 @@ function PathAction({
       return <ClaudeAction />
     case "codex":
       return <CodexAction />
-    case "qwen":
-      return <QwenAction />
     case "custom-provider":
       return <CustomProviderAction />
   }
@@ -170,8 +160,8 @@ export function AiPathPanel({ status }: { status: SetupStatus }) {
   const [providerMode, setProviderMode] = useAtom(onboardingProviderModeAtom)
   const recommended = recommendedPath(status)
   const paths = visibleOnboardingPaths(status)
-  // A persisted selection may point at a now-hidden path (e.g. Qwen disabled
-  // since last run) — fall back to the recommendation in that case.
+  // A persisted selection may point at a path that no longer exists, so fall
+  // back to the recommendation in that case.
   const resolvedPath = providerModeToPath(providerMode) ?? recommended
   const selectedPath = paths.includes(resolvedPath) ? resolvedPath : recommended
   const selectedMeta = PATH_META[selectedPath]
@@ -224,11 +214,6 @@ export function AiPathPanel({ status }: { status: SetupStatus }) {
                     {path === recommended && (
                       <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
                         {t("onboarding.billing.recommended")}
-                      </span>
-                    )}
-                    {path === "qwen" && (
-                      <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-                        {t("onboarding.path.experimental")}
                       </span>
                     )}
                   </span>

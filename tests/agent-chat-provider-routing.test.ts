@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import {
+  agentChatProviders,
   buildAgentChatMessageMetadata,
   inferAgentChatProviderFromMessages,
   normalizeAgentChatMetadataModel,
@@ -24,49 +25,41 @@ describe("agent chat provider routing metadata", () => {
     expect(inferAgentChatProviderFromMessages([{ metadata }])).toBe("codex")
   })
 
-  test("persists explicit Qwen provider metadata without model inference", () => {
-    const metadata = buildAgentChatMessageMetadata({
-      model: "qwen-code",
-      provider: "qwen-code",
-      modelSource: "runtime-managed",
-      providerProfileId: null,
-    })
-
-    expect(metadata).toEqual({
-      model: "qwen-code",
-      provider: "qwen-code",
-      modelSource: "runtime-managed",
-    })
-    expect(inferAgentChatProviderFromMessages([{ metadata }])).toBe("qwen-code")
-  })
-
-  test("persists explicit Kun provider metadata without model inference", () => {
-    const metadata = buildAgentChatMessageMetadata({
-      model: "kun",
-      provider: "kun",
-      modelSource: "runtime-managed",
-      providerProfileId: null,
-    })
-
-    expect(metadata).toEqual({
-      model: "kun",
-      provider: "kun",
-      modelSource: "runtime-managed",
-    })
-    expect(inferAgentChatProviderFromMessages([{ metadata }])).toBe("kun")
-  })
-
   test("keeps legacy model-name inference as a fallback only", () => {
     expect(
-      inferAgentChatProviderFromMessages([
-        { metadata: { model: "gpt-5.5" } },
-      ]),
+      inferAgentChatProviderFromMessages([{ metadata: { model: "gpt-5.5" } }]),
     ).toBe("codex")
     expect(
       inferAgentChatProviderFromMessages([
         { metadata: { model: "deepseek-v4-flash" } },
       ]),
     ).toBe("claude-code")
+  })
+
+  test("falls back for legacy and unknown providers without escaping the provider union", () => {
+    const retiredCliRuntimeId = "qwen-code"
+    const retiredManagedRuntimeId = "kun"
+    const legacyOrUnknownMessages = [
+      {
+        metadata: {
+          provider: retiredCliRuntimeId,
+          model: retiredCliRuntimeId,
+        },
+      },
+      {
+        metadata: {
+          provider: retiredManagedRuntimeId,
+          model: retiredManagedRuntimeId,
+        },
+      },
+      { metadata: { provider: "skunkworks", model: "skunkworks-agent" } },
+    ]
+
+    for (const message of legacyOrUnknownMessages) {
+      const provider = inferAgentChatProviderFromMessages([message])
+      expect(provider).toBe("claude-code")
+      expect(agentChatProviders).toContain(provider)
+    }
   })
 
   test("explicit provider metadata wins over model-name inference", () => {

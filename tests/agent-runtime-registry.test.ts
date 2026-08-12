@@ -26,142 +26,6 @@ describe("agent runtime registry", () => {
     expect(JSON.stringify(manifests)).not.toContain("access_token")
   })
 
-  test("keeps experimental runtimes out of contract registry lists unless their desktop flags are enabled", () => {
-    expect(
-      listRegisteredAgentRuntimeManifests({
-        scope: "contract",
-        env: {
-          LOCUS_ENABLE_QWEN_CODE_RUNTIME: "1",
-          LOCUS_ENABLE_KUN_RUNTIME: "1",
-        },
-      }).map((manifest) => manifest.runtimeId),
-    ).toEqual(["claude-code", "codex"])
-    expect(
-      listRegisteredAgentRuntimeManifests({
-        scope: "desktop",
-        env: {},
-      }).map((manifest) => manifest.runtimeId),
-    ).toEqual(["claude-code", "codex"])
-    expect(
-      listRegisteredAgentRuntimeManifests({
-        scope: "desktop",
-        env: { LOCUS_ENABLE_QWEN_CODE_RUNTIME: "1" },
-        runtimeFeatureSettings: { qwenRuntimeEnabled: false },
-      }).map((manifest) => manifest.runtimeId),
-    ).toEqual(["claude-code", "codex"])
-    expect(
-      listRegisteredAgentRuntimeManifests({
-        scope: "desktop",
-        env: {},
-        runtimeFeatureSettings: { qwenRuntimeEnabled: true },
-      }).map((manifest) => manifest.runtimeId),
-    ).toEqual(["claude-code", "codex", "qwen-code"])
-    expect(
-      listRegisteredAgentRuntimeManifests({
-        scope: "desktop",
-        env: { LOCUS_ENABLE_KUN_RUNTIME: "1" },
-        runtimeFeatureSettings: { kunRuntimeEnabled: false },
-      }).map((manifest) => manifest.runtimeId),
-    ).toEqual(["claude-code", "codex"])
-    expect(
-      listRegisteredAgentRuntimeManifests({
-        scope: "desktop",
-        env: {},
-        runtimeFeatureSettings: { kunRuntimeEnabled: true },
-      }).map((manifest) => manifest.runtimeId),
-    ).toEqual(["claude-code", "codex", "kun"])
-    expect(
-      listRegisteredAgentRuntimeManifests({
-        scope: "desktop",
-        env: {
-          LOCUS_ENABLE_QWEN_CODE_RUNTIME: "1",
-          LOCUS_ENABLE_KUN_RUNTIME: "1",
-        },
-        runtimeFeatureSettings: {
-          qwenRuntimeEnabled: true,
-          kunRuntimeEnabled: true,
-        },
-      }).map((manifest) => manifest.runtimeId),
-    ).toEqual(["claude-code", "codex", "qwen-code", "kun"])
-
-    expect(
-      resolveRegisteredAgentRuntimeManifest("qwen-code", {
-        scope: "desktop",
-        env: {},
-      }),
-    ).toMatchObject({
-      ok: false,
-      diagnostic: {
-        type: "unavailable-runtime",
-        runtimeId: "qwen-code",
-      },
-    })
-    expect(
-      resolveRegisteredAgentRuntimeManifest("qwen-code", {
-        scope: "desktop",
-        env: { LOCUS_ENABLE_QWEN_CODE_RUNTIME: "1" },
-        runtimeFeatureSettings: { qwenRuntimeEnabled: false },
-      }),
-    ).toMatchObject({
-      ok: false,
-      diagnostic: {
-        type: "unavailable-runtime",
-        runtimeId: "qwen-code",
-      },
-    })
-    expect(
-      resolveRegisteredAgentRuntimeManifest("qwen-code", {
-        scope: "desktop",
-        env: {},
-        runtimeFeatureSettings: { qwenRuntimeEnabled: true },
-      }),
-    ).toMatchObject({
-      ok: true,
-      runtimeId: "qwen-code",
-    })
-    expect(
-      resolveRegisteredAgentRuntimeManifest("kun", {
-        scope: "desktop",
-        env: {},
-      }),
-    ).toMatchObject({
-      ok: false,
-      diagnostic: {
-        type: "unavailable-runtime",
-        runtimeId: "kun",
-      },
-    })
-    expect(
-      resolveRegisteredAgentRuntimeManifest("kun", {
-        scope: "desktop",
-        env: { LOCUS_ENABLE_KUN_RUNTIME: "1" },
-        runtimeFeatureSettings: { kunRuntimeEnabled: false },
-      }),
-    ).toMatchObject({
-      ok: false,
-      diagnostic: {
-        type: "unavailable-runtime",
-        runtimeId: "kun",
-      },
-    })
-    expect(
-      resolveRegisteredAgentRuntimeManifest("kun", {
-        scope: "desktop",
-        env: {},
-        runtimeFeatureSettings: { kunRuntimeEnabled: true },
-      }),
-    ).toMatchObject({
-      ok: true,
-      runtimeId: "kun",
-    })
-    expect(
-      getRegisteredAgentRuntimeManifest("kun", {
-        scope: "desktop",
-        env: { LOCUS_ENABLE_KUN_RUNTIME: "1" },
-      }).runtimeId,
-    ).toBe("kun")
-  })
-
   test("provides reusable runtime gating for future desktop CLI job and protocol callers", () => {
     expect(
       checkRegisteredAgentRuntimeCapability({
@@ -211,59 +75,45 @@ describe("agent runtime registry", () => {
       "src/main/lib/trpc/routers/agent-runtime.ts",
       "utf8",
     )
+    const activeChat = readFileSync(
+      "src/renderer/features/agents/main/active-chat.tsx",
+      "utf8",
+    )
+    const runtimeCapabilities = readFileSync(
+      "src/shared/agent-runtime-capabilities.ts",
+      "utf8",
+    )
+    const retiredManagedRuntimeId = "kun"
+    const retiredCliRuntimeId = "qwen-code"
 
     expect(appRouter).toContain("agentRuntime: agentRuntimeRouter")
     expect(runtimeRouter).toContain("listManifests")
-    expect(runtimeRouter).toContain("getManifest")
-    expect(runtimeRouter).toContain("checkCapability")
-    expect(runtimeRouter).toContain("respondScopeExpansion")
-    expect(runtimeRouter).toContain("getQwenCliStatus")
-    expect(runtimeRouter).toContain("updateQwenExecutablePath")
-    expect(runtimeRouter).toContain("resetQwenExecutablePath")
-    expect(runtimeRouter).toContain("getKunCliStatus")
-    expect(runtimeRouter).toContain("installKunManagedBuild")
-    expect(runtimeRouter).toContain("updateKunManagedBuild")
-    expect(runtimeRouter).toContain("updateKunExecutablePath")
-    expect(runtimeRouter).toContain("resetKunExecutablePath")
-    expect(runtimeRouter).toContain("updateKunConfigPath")
-    expect(runtimeRouter).toContain("resetKunConfigPath")
-    expect(runtimeRouter).toContain("approveKunShellExecutableHash")
-    expect(runtimeRouter).toContain("resetKunShellExecutableHash")
-    expect(runtimeRouter).toContain("chat: publicProcedure")
-    expect(runtimeRouter).toContain('runtimeId: z.enum(["qwen-code", "kun"])')
-    expect(runtimeRouter).toContain(
-      "scopeContract: agentScopeContractInputSchema.optional()",
+    for (const removedRouterMember of [
+      "getManifest",
+      "checkCapability",
+      "respondScopeExpansion",
+      "getRuntimeFeatureSettings",
+      "chat: publicProcedure",
+      "respondToolApproval",
+      "activeRuntimeStreams",
+      "pendingRuntimeToolApprovals",
+      "scopeContract",
+    ]) {
+      expect(runtimeRouter).not.toContain(removedRouterMember)
+    }
+    for (const retiredSymbol of ["Kun", "Qwen"]) {
+      expect(runtimeRouter).not.toContain(retiredSymbol)
+    }
+    expect(activeChat).not.toContain(
+      `provider === "${retiredManagedRuntimeId}"`,
     )
-    expect(runtimeRouter).toContain("function runtimeStreamKey(")
-    expect(runtimeRouter).toContain(
-      "return `" + "$" + "{runtimeId}:" + "$" + "{subChatId}`",
+    expect(activeChat).not.toContain(`provider === "${retiredCliRuntimeId}"`)
+    expect(runtimeCapabilities).not.toContain(
+      "KUN_RUNTIME_MANIFEST",
     )
-    expect(runtimeRouter).toContain(
-      "const existingStream = activeRuntimeStreams.get(streamKey)",
+    expect(runtimeCapabilities).not.toContain(
+      "QWEN_CODE_RUNTIME_MANIFEST",
     )
-    expect(runtimeRouter).toContain("clearPendingRuntimeApprovals(")
-    expect(runtimeRouter).toContain("pending.runtimeId !== runtimeId")
-    expect(runtimeRouter).toContain("pending.subChatId !== subChatId")
-    expect(runtimeRouter).toContain("isQwenRuntimeEnabledForRuntime()")
-    expect(runtimeRouter).toContain("isKunRuntimeEnabledForRuntime()")
-    expect(runtimeRouter).toContain("runtimeRegistryFeatureSettings()")
-    expect(runtimeRouter).toContain("setQwenRuntimeEnabled")
-    expect(runtimeRouter).toContain("setKunRuntimeEnabled")
-    expect(runtimeRouter).toContain(
-      "runtimeFeatureSettingsForRequest().resolved.qwenRuntimeEnabled",
-    )
-    expect(runtimeRouter).toContain("runtimeDisabledMessage(input.runtimeId)")
-    expect(runtimeRouter).toContain('type: "capability-error"')
-    expect(runtimeRouter).toContain("verifyDesktopRunPreflight")
-    expect(runtimeRouter).toContain("resolveQwenCliSetupStatus")
-    expect(runtimeRouter).toContain("resolveKunCliSetupStatus")
-    expect(runtimeRouter).toContain("createAndRegisterDesktopChatAgentJob")
-    expect(runtimeRouter).toContain("createQwenAcpClientAdapter")
-    expect(runtimeRouter).toContain("createKunHttpSseAdapter")
-    expect(runtimeRouter).toContain("executable: executablePath")
-    expect(runtimeRouter).toContain("configPath: kunConfigPath")
-    expect(runtimeRouter).toContain("sandboxMode: kunSandboxMode")
-    expect(runtimeRouter).toContain("guardedContract")
   })
 
   test("renderer consumes runtime manifests through a store instead of static capability truth", () => {
@@ -290,32 +140,5 @@ describe("agent runtime registry", () => {
       'isRuntimeCapabilitySupported } from "../../../../shared/agent-runtime-capabilities"',
     )
     expect(guardedRunCard).not.toContain("isRuntimeCapabilitySupported")
-  })
-
-  test("Qwen permission approval uses the runtime route and shared question state", () => {
-    const runtimeRouter = readFileSync(
-      "src/main/lib/trpc/routers/agent-runtime.ts",
-      "utf8",
-    )
-    const activeChat = readFileSync(
-      "src/renderer/features/agents/main/active-chat.tsx",
-      "utf8",
-    )
-    const qwenTransport = readFileSync(
-      "src/renderer/features/agents/lib/qwen-chat-transport.ts",
-      "utf8",
-    )
-
-    expect(runtimeRouter).toContain("pendingRuntimeToolApprovals")
-    expect(runtimeRouter).toContain("registerPendingPermission")
-    expect(runtimeRouter).toContain("registerPendingApproval")
-    expect(runtimeRouter).toContain("respondToolApproval")
-    expect(qwenTransport).toContain("applyRuntimeEventStateChunk")
-    expect(activeChat).toContain('provider === "qwen-code"')
-    expect(activeChat).toContain('provider === "kun"')
-    expect(activeChat).toContain('chatProvider === "kun"')
-    expect(activeChat).toContain(
-      "trpcClient.agentRuntime.respondToolApproval.mutate(input)",
-    )
   })
 })

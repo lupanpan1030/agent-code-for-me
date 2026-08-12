@@ -141,8 +141,6 @@ const projectChats = db.select().from(chats).where(eq(chats.projectId, id)).all(
 ### Runtime Integrations
 - Claude Code: `@anthropic-ai/claude-agent-sdk` for desktop chat plus bundled Claude Code executable for local runtime/auth surfaces
 - Codex: bundled Codex CLI/app-server adapter for desktop chat, provider binding, approvals, and headless/batch fallback
-- Qwen Code: experimental desktop runtime behind the Qwen runtime feature gate
-- Kun: experimental desktop runtime behind the Kun feature gate, with CLI/config status and guarded shell approval
 - Ollama: local/offline Claude-compatible fallback and diagnostics for model availability
 - Headless jobs: Local Job API, CLI, daemon, schedule, and protocol runners using `src/main/lib/headless/`
 - Shared modes: "plan" (read-only) and "agent" (write-capable under the selected runtime policy)
@@ -157,7 +155,7 @@ const projectChats = db.select().from(chats).where(eq(chats.projectId, id)).all(
 | Components | Radix UI, Lucide icons, Motion, Sonner |
 | State | Jotai, Zustand, React Query |
 | Backend | tRPC, Drizzle ORM, better-sqlite3 |
-| AI runtimes | Claude Code, Codex, Qwen Code, Kun, Ollama, headless Local Job API |
+| AI runtimes | Claude Code, Codex, Ollama, headless Local Job API |
 | Package Manager | bun |
 
 ## File Naming
@@ -267,7 +265,7 @@ Automatic update production readiness depends on signing. macOS builds need Deve
 
 ## Current Status
 
-Locus is a multi-runtime desktop workbench. Core shipped areas include Drizzle auto-migrations, project/chat/sub-chat persistence, worktree isolation with setup trust decisions, Claude and Codex desktop runtimes, experimental Qwen/Kun runtime gates, Ollama fallback, provider profiles, MCP registry/auth surfaces, app agents, and headless Local Job API jobs/schedules.
+Locus is a multi-runtime desktop workbench. Core shipped areas include Drizzle auto-migrations, project/chat/sub-chat persistence, worktree isolation with setup trust decisions, Claude and Codex desktop runtimes, Ollama fallback, provider profiles, MCP registry/auth surfaces, app agents, and headless Local Job API jobs/schedules.
 
 ## Debug Mode
 

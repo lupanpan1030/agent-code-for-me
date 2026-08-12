@@ -31,6 +31,7 @@ import { recoverStaleAgentJobs } from "./lib/headless/job-recovery"
 import { flushHeadlessStdio } from "./lib/headless/stdio"
 import { isLocalOnlyMode, openExternalUrl } from "./lib/local-only"
 import { cancelAllPendingOAuth, handleMcpOAuthCallback } from "./lib/mcp-auth"
+import { cleanupRetiredRuntimeState } from "./lib/retired-runtime-state-cleanup"
 import { getAllMcpConfigHandler } from "./lib/trpc/routers/claude"
 import { abortAllCodexStreams, getAllCodexMcpConfigHandler, hasActiveCodexStreams } from "./lib/trpc/routers/codex"
 import { resolveUserDataPath } from "./lib/user-data-path"
@@ -835,6 +836,15 @@ if (gotTheLock) {
     startAuthCallbackServer()
 
     console.log("[Analytics] Hosted telemetry removed from local-first build")
+
+    // One-time sweep of on-disk state left behind by the retired experimental
+    // runtimes (openspec change remove-experimental-runtimes, design Decision 5).
+    // Fire-and-forget: every deletion is individually guarded inside the module,
+    // and removing a large directory must not delay window startup.
+    // Removable in a later release once existing installs have run it once.
+    void cleanupRetiredRuntimeState(app.getPath("userData")).catch((error) => {
+      console.warn("[App] Retired-runtime state cleanup failed:", error)
+    })
 
     // Initialize database
     try {

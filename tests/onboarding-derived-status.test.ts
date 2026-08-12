@@ -47,9 +47,6 @@ describe("onboarding setup status is derived, not duplicated", () => {
     expect(status).toContain("trpc.claudeProviderConfig.get")
     expect(status).toContain("trpc.codex.getIntegration")
     expect(status).toContain("trpc.codex.getCodexApiKeyStatus")
-    // Qwen is a conditionally-enabled, runtime-managed setup guidance path.
-    expect(status).toContain("trpc.agentRuntime.listManifests")
-    expect(status).toContain("trpc.agentRuntime.getQwenCliStatus")
     // No new durable onboarding "completed" truth is introduced.
     expect(status).not.toContain("OnboardingCompletedAtom")
   })
@@ -61,7 +58,6 @@ describe("onboarding setup status is derived, not duplicated", () => {
       "src/renderer/features/onboarding/lib/derive-setup-status.ts",
     )
     expect(derive).toContain("claude.usable || codex.usable")
-    expect(derive).not.toContain("|| qwen.usable")
     expect(derive).toContain("claudeCredentialUsable && claude.runtimeReady")
     expect(derive).not.toContain("OnboardingCompletedAtom")
     // The flow/surface gate on a usable path, not merely a stored credential.
@@ -102,20 +98,5 @@ describe("onboarding setup status is derived, not duplicated", () => {
     // first-party Anthropic credential, not any custom claude-target profile.
     expect(apiKey).toContain('profile.protocol === "anthropic"')
     expect(apiKey).toContain("claudeProviderConfig.get")
-  })
-
-  test("Qwen onboarding guidance localizes main-process status text", () => {
-    const qwen = read(
-      "src/renderer/features/onboarding/components/panels/qwen-action.tsx",
-    )
-
-    expect(qwen).toContain("localizeQwenStatusText")
-    expect(qwen).toContain("status?.blocker?.message")
-    expect(qwen).toContain("status?.guidance.authHint")
-    expect(qwen).toContain("Runtime executable was not found.")
-    expect(qwen).toContain("pathInvalidOrNotExecutable")
-    expect(qwen).not.toContain("CheckCircle2")
-    expect(qwen).not.toContain("const authHint = status?.guidance.authHint")
-    expect(qwen).not.toContain("const blockerMessage =\n    status?.blocker")
   })
 })

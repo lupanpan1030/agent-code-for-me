@@ -35,10 +35,6 @@ export function useAuthRetry({
   )
 
   useEffect(() => {
-    if (provider === "qwen-code") {
-      return
-    }
-
     if (
       !pendingAuthRetry ||
       !pendingAuthRetry.readyToRetry ||

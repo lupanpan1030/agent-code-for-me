@@ -54,13 +54,13 @@ describe("runtime trace redaction", () => {
       "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
     const result = redactRuntimePayload(
       {
-        message: `Kun stderr echoed token ${runtimeToken}`,
+        message: `Codex stderr echoed token ${runtimeToken}`,
         nested: {
           header: `Authorization: Bearer ${runtimeToken}`,
         },
       },
       {
-        runtimeId: "kun",
+        runtimeId: "codex",
         runId: "run-1",
         source: "desktop-adapter",
         secretHints: [runtimeToken],
@@ -69,7 +69,7 @@ describe("runtime trace redaction", () => {
 
     expect(JSON.stringify(result.payload)).not.toContain(runtimeToken)
     expect(result.payload).toEqual({
-      message: "Kun stderr echoed token <redacted>",
+      message: "Codex stderr echoed token <redacted>",
       nested: {
         header: "Authorization: Bearer <redacted>",
       },
@@ -97,7 +97,7 @@ describe("runtime trace redaction", () => {
   test("redacts secret hints from renderer runtime chunks", () => {
     const gatewayToken = "gateway-token-secret-value"
     const chunk = redactRendererRuntimeChunk({
-      runtimeId: "kun",
+      runtimeId: "claude-code",
       runId: "run-1",
       source: "runtime-diagnostic",
       secretHints: [gatewayToken],

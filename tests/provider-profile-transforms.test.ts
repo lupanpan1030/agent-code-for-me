@@ -1,10 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
-import {
-  parseProviderProfileSource,
-  providerProfileSource,
-} from "../src/shared/provider-profile-types"
 import { PROVIDER_PROFILE_PRESETS } from "../src/main/lib/provider-profiles/presets"
 import {
   hasProviderGatewayAuthHeader,
@@ -18,6 +14,10 @@ import {
   responsesToChatCompletions,
   responsesToChatCompletionsWithToolMappings,
 } from "../src/shared/provider-profile-transforms"
+import {
+  parseProviderProfileSource,
+  providerProfileSource,
+} from "../src/shared/provider-profile-types"
 
 describe("provider profile source ids", () => {
   test("round trips provider-profile source ids", () => {
@@ -31,18 +31,20 @@ describe("provider profile source ids", () => {
 
 describe("provider profile presets", () => {
   test("uses the current DeepSeek OpenAI-compatible default", () => {
-    const preset = PROVIDER_PROFILE_PRESETS.find((item) => item.id === "deepseek")
+    const preset = PROVIDER_PROFILE_PRESETS.find(
+      (item) => item.id === "deepseek",
+    )
 
     expect(preset).toMatchObject({
       protocol: "openai-chat",
       baseUrl: "https://api.deepseek.com",
       defaultModel: "deepseek-v4-flash",
       authMode: "bearer",
-      targetRuntimes: ["claude", "codex", "helpers", "kun"],
+      targetRuntimes: ["claude", "codex", "helpers"],
     })
   })
 
-  test("keeps Anthropic-only presets out of Kun profile targets", () => {
+  test("keeps Anthropic-only presets scoped to Claude and helpers", () => {
     const preset = PROVIDER_PROFILE_PRESETS.find(
       (item) => item.id === "generic-anthropic",
     )
@@ -50,7 +52,6 @@ describe("provider profile presets", () => {
     expect(preset).toBeDefined()
     if (!preset) throw new Error("generic-anthropic preset is missing")
     expect(preset.targetRuntimes).toEqual(["claude", "helpers"])
-    expect(preset.targetRuntimes).not.toContain("kun")
   })
 })
 
@@ -108,7 +109,7 @@ describe("provider profile request transforms", () => {
             {
               type: "tool_result",
               tool_use_id: "toolu_1",
-              content: [{ type: "text", text: "{\"name\":\"locus\"}" }],
+              content: [{ type: "text", text: '{"name":"locus"}' }],
             },
           ],
         },
@@ -125,7 +126,7 @@ describe("provider profile request transforms", () => {
             type: "function",
             function: {
               name: "read_file",
-              arguments: "{\"path\":\"package.json\"}",
+              arguments: '{"path":"package.json"}',
             },
           },
         ],
@@ -133,7 +134,7 @@ describe("provider profile request transforms", () => {
       {
         role: "tool",
         tool_call_id: "toolu_1",
-        content: "{\"name\":\"locus\"}",
+        content: '{"name":"locus"}',
       },
     ])
   })
@@ -228,12 +229,12 @@ describe("provider profile request transforms", () => {
           type: "function_call",
           call_id: "call_1",
           name: "read_file",
-          arguments: "{\"path\":\"package.json\"}",
+          arguments: '{"path":"package.json"}',
         },
         {
           type: "function_call_output",
           call_id: "call_1",
-          output: "{\"name\":\"locus\"}",
+          output: '{"name":"locus"}',
         },
       ],
     })
@@ -248,7 +249,7 @@ describe("provider profile request transforms", () => {
             type: "function",
             function: {
               name: "read_file",
-              arguments: "{\"path\":\"package.json\"}",
+              arguments: '{"path":"package.json"}',
             },
           },
         ],
@@ -256,7 +257,7 @@ describe("provider profile request transforms", () => {
       {
         role: "tool",
         tool_call_id: "call_1",
-        content: "{\"name\":\"locus\"}",
+        content: '{"name":"locus"}',
       },
     ])
   })
@@ -273,18 +274,18 @@ describe("provider profile request transforms", () => {
           type: "function_call",
           call_id: "call_package",
           name: "read_file",
-          arguments: "{\"path\":\"package.json\"}",
+          arguments: '{"path":"package.json"}',
         },
         {
           type: "function_call",
           call_id: "call_readme",
           name: "read_file",
-          arguments: "{\"path\":\"README.md\"}",
+          arguments: '{"path":"README.md"}',
         },
         {
           type: "function_call_output",
           call_id: "call_package",
-          output: "{\"name\":\"locus\"}",
+          output: '{"name":"locus"}',
         },
         {
           type: "function_call_output",
@@ -308,7 +309,7 @@ describe("provider profile request transforms", () => {
             type: "function",
             function: {
               name: "read_file",
-              arguments: "{\"path\":\"package.json\"}",
+              arguments: '{"path":"package.json"}',
             },
           },
           {
@@ -316,7 +317,7 @@ describe("provider profile request transforms", () => {
             type: "function",
             function: {
               name: "read_file",
-              arguments: "{\"path\":\"README.md\"}",
+              arguments: '{"path":"README.md"}',
             },
           },
         ],
@@ -324,7 +325,7 @@ describe("provider profile request transforms", () => {
       {
         role: "tool",
         tool_call_id: "call_package",
-        content: "{\"name\":\"locus\"}",
+        content: '{"name":"locus"}',
       },
       {
         role: "tool",
@@ -368,7 +369,7 @@ describe("provider profile request transforms", () => {
                 type: "function",
                 function: {
                   name: "read_file",
-                  arguments: "{\"path\":\"package.json\"}",
+                  arguments: '{"path":"package.json"}',
                 },
               },
             ],
@@ -401,7 +402,7 @@ describe("provider profile request transforms", () => {
         status: "completed",
         call_id: "call_1",
         name: "read_file",
-        arguments: "{\"path\":\"package.json\"}",
+        arguments: '{"path":"package.json"}',
       },
     ])
   })
@@ -441,7 +442,7 @@ describe("provider profile request transforms", () => {
                   type: "function",
                   function: {
                     name: "mcp__locus_edit__propose_file_edit",
-                    arguments: "{\"path\":\"src/generated.txt\"}",
+                    arguments: '{"path":"src/generated.txt"}',
                   },
                 },
               ],
@@ -463,7 +464,7 @@ describe("provider profile request transforms", () => {
         call_id: "call_namespace",
         name: "propose_file_edit",
         namespace: "mcp__locus_edit__",
-        arguments: "{\"path\":\"src/generated.txt\"}",
+        arguments: '{"path":"src/generated.txt"}',
       },
     ])
   })
@@ -471,7 +472,9 @@ describe("provider profile request transforms", () => {
 
 describe("provider profile gateway security helpers", () => {
   test("disables DeepSeek thinking mode for OpenAI chat gateway requests", () => {
-    const deepSeek = PROVIDER_PROFILE_PRESETS.find((item) => item.id === "deepseek")
+    const deepSeek = PROVIDER_PROFILE_PRESETS.find(
+      (item) => item.id === "deepseek",
+    )
     expect(deepSeek).toBeDefined()
 
     const body = buildProviderChatCompletionBody(deepSeek!, {
@@ -484,7 +487,9 @@ describe("provider profile gateway security helpers", () => {
   })
 
   test("leaves non-DeepSeek OpenAI chat gateway requests unchanged", () => {
-    const qwen = PROVIDER_PROFILE_PRESETS.find((item) => item.id === "dashscope-qwen")
+    const qwen = PROVIDER_PROFILE_PRESETS.find(
+      (item) => item.id === "dashscope-qwen",
+    )
     expect(qwen).toBeDefined()
     const input = {
       model: "qwen-plus",
@@ -517,13 +522,22 @@ describe("provider profile gateway security helpers", () => {
 
   test("accepts only the per-process gateway token", () => {
     expect(
-      hasProviderGatewayAuthHeader({ authorization: "Bearer gateway-token" }, "gateway-token"),
+      hasProviderGatewayAuthHeader(
+        { authorization: "Bearer gateway-token" },
+        "gateway-token",
+      ),
     ).toBe(true)
     expect(
-      hasProviderGatewayAuthHeader({ "x-api-key": "gateway-token" }, "gateway-token"),
+      hasProviderGatewayAuthHeader(
+        { "x-api-key": "gateway-token" },
+        "gateway-token",
+      ),
     ).toBe(true)
     expect(
-      hasProviderGatewayAuthHeader({ authorization: "Bearer wrong" }, "gateway-token"),
+      hasProviderGatewayAuthHeader(
+        { authorization: "Bearer wrong" },
+        "gateway-token",
+      ),
     ).toBe(false)
   })
 

@@ -52,23 +52,20 @@ const SECRET_HEADER_VALUE_REGEX =
 
 export const providerProfileProtocolSchema = z.enum(providerProfileProtocols)
 export const providerProfileAuthModeSchema = z.enum(providerProfileAuthModes)
-export const providerProfileTargetSchema: z.ZodType<ProviderProfileTarget> = z
-  .enum(providerProfileTargets)
-  .exclude(["kun"])
+export const providerProfileTargetSchema = z.enum(providerProfileTargets)
 export const providerProfileDefaultPurposeSchema = z.enum(
   providerProfileDefaultPurposes,
 )
 
-export const providerProfileCapabilitiesSchema: z.ZodType<ProviderProfileCapabilities> =
-  z.object({
-    claude: z.boolean().optional(),
-    codex: z.boolean().optional(),
-    helpers: z.boolean().optional(),
-    local: z.boolean().optional(),
-    streaming: z.boolean().optional(),
-    tools: z.boolean().optional(),
-    vision: z.boolean().optional(),
-  })
+export const providerProfileCapabilitiesSchema = z.object({
+  claude: z.boolean().optional(),
+  codex: z.boolean().optional(),
+  helpers: z.boolean().optional(),
+  local: z.boolean().optional(),
+  streaming: z.boolean().optional(),
+  tools: z.boolean().optional(),
+  vision: z.boolean().optional(),
+})
 
 const providerDiagnosticCheckSchema = z.object({
   id: z.enum(providerDiagnosticCheckIds),

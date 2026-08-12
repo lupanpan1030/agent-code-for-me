@@ -342,14 +342,6 @@ export function createChatImageAttachmentPreflightBlocker(
 function createChatImageAttachmentCapabilityBlocker(
   reason: ChatImageAttachmentBlockReason | undefined,
 ): DesktopRunPreflightBlocker {
-  if (reason === "runtime-transport") {
-    return {
-      id: "attachment",
-      status: "blocked",
-      message:
-        "Image attachment unavailable: current runtime does not support image attachments",
-    }
-  }
 
   if (reason === "offline") {
     return {

@@ -19,11 +19,7 @@ import {
 } from "../../../components/ui/icons"
 import { useI18n } from "../../../lib/i18n"
 import { cn } from "../../../lib/utils"
-import type {
-  ClaudeModelSource,
-  CodexModelSource,
-  KunModelSource,
-} from "../atoms"
+import type { ClaudeModelSource, CodexModelSource } from "../atoms"
 import type { CodexThinkingLevel } from "../lib/models"
 
 export const ENGINE_SWITCH_DIALOG_DISMISSED_KEY =
@@ -35,7 +31,6 @@ export type ContinueWithProviderSelection = {
   codexModelId?: string
   codexModelSource?: CodexModelSource
   codexThinking?: CodexThinkingLevel
-  kunModelSource?: KunModelSource
 }
 
 export type AgentEngineOptionStatus = "ready" | "setup-required" | "unavailable"
@@ -44,7 +39,6 @@ export type AgentEngineOption = {
   id: AgentChatProvider
   name: string
   status: AgentEngineOptionStatus
-  experimental?: boolean
   statusLabel?: string
 }
 
@@ -304,9 +298,7 @@ export function AgentEngineSelector({
                 ? t("agent.engine.status.setupRequired")
                 : option.status === "unavailable"
                   ? t("agent.engine.status.unavailable")
-                  : option.experimental
-                    ? t("agent.engine.status.experimental")
-                    : null)
+                  : null)
             return (
               <DropdownMenuItem
                 key={option.id}

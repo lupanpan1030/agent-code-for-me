@@ -10,12 +10,12 @@ import type {
 import { z } from "zod"
 import type { AgentChatMessageMetadata } from "./agent-chat-provider"
 import {
-  supportedChatImageMediaTypes,
   type ChatImageAttachmentPart,
+  supportedChatImageMediaTypes,
 } from "./chat-attachments"
 import {
-  longTextAttachmentKinds,
   type LongTextAttachmentPart,
+  longTextAttachmentKinds,
 } from "./long-text-attachments"
 
 export const canonicalToolStates = [
@@ -351,7 +351,7 @@ export const renderableMessagePartSchema = z.union([
 export const chatMessageMetadataSchema = z
   .object({
     model: z.string().optional(),
-    provider: z.enum(["claude-code", "codex", "qwen-code", "kun"]).optional(),
+    provider: z.enum(["claude-code", "codex"]).optional(),
     modelSource: z.string().optional(),
     providerProfileId: z.string().optional(),
     sessionId: z.string().optional(),

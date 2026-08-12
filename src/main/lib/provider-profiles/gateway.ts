@@ -1,19 +1,21 @@
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
 import { randomBytes } from "node:crypto"
 import { appendFileSync } from "node:fs"
+import {
+  createServer,
+  type IncomingMessage,
+  type ServerResponse,
+} from "node:http"
+import { redactProviderSecrets } from "../../../shared/provider-profile-security"
 import {
   anthropicMessagesToChatCompletions,
   anthropicMessagesToResponses,
   buildProviderChatCompletionBody,
   chatCompletionToAnthropicMessage,
   chatCompletionToResponse,
+  type ProviderProfileNamespaceToolNameMap,
   resolveProviderChatToolCallForResponses,
   responsesToChatCompletionsWithToolMappings,
-  type ProviderProfileNamespaceToolNameMap,
 } from "../../../shared/provider-profile-transforms"
-import {
-  redactProviderSecrets,
-} from "../../../shared/provider-profile-security"
 import type {
   ProviderDiagnosticCategory,
   ProviderDiagnosticCheck,
@@ -25,8 +27,8 @@ import type {
 import {
   getProviderProfileRuntimeConfig,
   normalizeProviderBaseUrl,
-  saveProviderProfile,
   type ProviderProfileRuntimeConfig,
+  saveProviderProfile,
 } from "./storage"
 
 type GatewayEndpointKind = "anthropic" | "responses"
@@ -62,20 +64,15 @@ const CODEX_CURRENT_GATEWAY_MODEL_IDS = new Set([
   "gpt-5.3-codex-spark",
 ])
 
-const CODEX_LEGACY_GATEWAY_MODEL_IDS = new Set([
-  "gpt-5.3-codex",
-  "gpt-5.2",
-])
+const CODEX_LEGACY_GATEWAY_MODEL_IDS = new Set(["gpt-5.3-codex", "gpt-5.2"])
 
 const DEFAULT_PROVIDER_GATEWAY_TOKEN_TTL_MS = 24 * 60 * 60 * 1000
 
-let serverState:
-  | {
-      server: ReturnType<typeof createServer>
-      origin: string
-      tokens: Map<string, GatewayTokenScope>
-    }
-  | null = null
+let serverState: {
+  server: ReturnType<typeof createServer>
+  origin: string
+  tokens: Map<string, GatewayTokenScope>
+} | null = null
 
 function readBody(req: IncomingMessage): Promise<any> {
   return new Promise((resolve, reject) => {
@@ -113,7 +110,10 @@ function sendText(res: ServerResponse, status: number, body: string): void {
   res.end(body)
 }
 
-function sendModelsList(res: ServerResponse, profile: ProviderProfileRuntimeConfig): void {
+function sendModelsList(
+  res: ServerResponse,
+  profile: ProviderProfileRuntimeConfig,
+): void {
   const modelId = profile.defaultModel
   const displayName = profile.defaultModel
   const description = profile.name
@@ -160,7 +160,9 @@ function sendModelsList(res: ServerResponse, profile: ProviderProfileRuntimeConf
         auto_compact_token_limit: null,
         effective_context_window_percent: 100,
         experimental_supported_tools: [],
-        input_modalities: profile.capabilities.vision ? ["text", "image"] : ["text"],
+        input_modalities: profile.capabilities.vision
+          ? ["text", "image"]
+          : ["text"],
         supports_search_tool: false,
       },
     ],
@@ -188,10 +190,12 @@ function summarizeGatewayTools(tools: unknown): Array<{
 }> {
   if (!Array.isArray(tools)) return []
   return tools.map((tool) => {
-    const record = tool && typeof tool === "object" ? (tool as Record<string, any>) : {}
-    const fn = record.function && typeof record.function === "object"
-      ? (record.function as Record<string, any>)
-      : null
+    const record =
+      tool && typeof tool === "object" ? (tool as Record<string, any>) : {}
+    const fn =
+      record.function && typeof record.function === "object"
+        ? (record.function as Record<string, any>)
+        : null
     const nestedTools = Array.isArray(record.tools)
       ? summarizeGatewayTools(record.tools)
       : undefined
@@ -203,7 +207,12 @@ function summarizeGatewayTools(tools: unknown): Array<{
           : typeof fn?.name === "string"
             ? fn.name
             : null,
-      hasParameters: Boolean(record.parameters || fn?.parameters || record.input_schema || record.inputSchema),
+      hasParameters: Boolean(
+        record.parameters ||
+          fn?.parameters ||
+          record.input_schema ||
+          record.inputSchema,
+      ),
       ...(nestedTools ? { nestedTools } : {}),
     }
   })
@@ -230,7 +239,8 @@ function summarizeGatewayPayload(body: any): Record<string, unknown> {
     })),
     messageRoles: messages.map((message: any) => ({
       role: typeof message?.role === "string" ? message.role : null,
-      hasToolCalls: Array.isArray(message?.tool_calls) && message.tool_calls.length > 0,
+      hasToolCalls:
+        Array.isArray(message?.tool_calls) && message.tool_calls.length > 0,
     })),
   }
 }
@@ -275,10 +285,8 @@ function resolveProviderModel(
   const [baseModel, reasoningSuffix] = normalized.split("/")
   if (
     baseModel &&
-    (
-      CODEX_CURRENT_GATEWAY_MODEL_IDS.has(baseModel) ||
-      CODEX_LEGACY_GATEWAY_MODEL_IDS.has(baseModel)
-    ) &&
+    (CODEX_CURRENT_GATEWAY_MODEL_IDS.has(baseModel) ||
+      CODEX_LEGACY_GATEWAY_MODEL_IDS.has(baseModel)) &&
     (!reasoningSuffix || CODEX_REASONING_SUFFIXES.has(reasoningSuffix))
   ) {
     return profile.defaultModel
@@ -374,7 +382,9 @@ function appendPath(baseUrl: string, path: string): string {
   return `${normalizedBase}${normalizedPath}`
 }
 
-function upstreamHeaders(profile: ProviderProfileRuntimeConfig): Record<string, string> {
+function upstreamHeaders(
+  profile: ProviderProfileRuntimeConfig,
+): Record<string, string> {
   const headers: Record<string, string> = {
     "content-type": "application/json",
     ...profile.headers,
@@ -460,7 +470,11 @@ async function pipeDirectUpstreamResponse(params: {
   res: ServerResponse
 }): Promise<void> {
   if (!params.upstream.ok) {
-    await sendSanitizedUpstreamError(params.res, params.upstream, params.profile)
+    await sendSanitizedUpstreamError(
+      params.res,
+      params.upstream,
+      params.profile,
+    )
     return
   }
 
@@ -550,12 +564,19 @@ export function classifyProviderDiagnosticFailure(input: {
   const status = input.status
   const errorName = input.errorName?.toLowerCase() ?? ""
 
-  if (errorName === "aborterror" || /timeout|timed out|fetch failed|econnrefused|enotfound|network/.test(message)) {
+  if (
+    errorName === "aborterror" ||
+    /timeout|timed out|fetch failed|econnrefused|enotfound|network/.test(
+      message,
+    )
+  ) {
     return "endpoint_unreachable"
   }
   if (status === 401) return "auth_failed"
   if (status === 403) {
-    if (/model|permission|access|denied|unauthorized|not authorized/.test(message)) {
+    if (
+      /model|permission|access|denied|unauthorized|not authorized/.test(message)
+    ) {
       return "model_denied"
     }
     return "auth_failed"
@@ -565,20 +586,28 @@ export function classifyProviderDiagnosticFailure(input: {
     return "protocol_mismatch"
   }
   if (status === 400 || status === 422) {
-    if (/model|not found|does not exist|permission|denied|authorized/.test(message)) {
+    if (
+      /model|not found|does not exist|permission|denied|authorized/.test(
+        message,
+      )
+    ) {
       return "model_denied"
     }
     if (/stream|streaming/.test(message)) return "streaming_unsupported"
     return "protocol_mismatch"
   }
   if (/stream|streaming/.test(message)) return "streaming_unsupported"
-  if (/model|not found|does not exist|permission|denied|authorized/.test(message)) {
+  if (
+    /model|not found|does not exist|permission|denied|authorized/.test(message)
+  ) {
     return "model_denied"
   }
   return "gateway_failed"
 }
 
-function failureCheckId(category: ProviderDiagnosticCategory): ProviderDiagnosticCheckId {
+function failureCheckId(
+  category: ProviderDiagnosticCategory,
+): ProviderDiagnosticCheckId {
   switch (category) {
     case "endpoint_unreachable":
       return "endpoint"
@@ -639,12 +668,13 @@ function buildFailureChecks(
   return checks
 }
 
-function inferredCapabilities(profile: ProviderProfileRuntimeConfig): ProviderProfileCapabilities {
+function inferredCapabilities(
+  profile: ProviderProfileRuntimeConfig,
+): ProviderProfileCapabilities {
   return {
     claude: profile.targetRuntimes.includes("claude"),
     codex: profile.targetRuntimes.includes("codex"),
     helpers: profile.targetRuntimes.includes("helpers"),
-    kun: profile.targetRuntimes.includes("kun"),
     local: profile.targetRuntimes.includes("local"),
     streaming: profile.capabilities.streaming ?? true,
     tools: profile.capabilities.tools,
@@ -675,7 +705,11 @@ async function runStreamingDiagnostic(
 
   if (response.ok && response.body) {
     await response.body.cancel().catch(() => undefined)
-    return providerDiagnosticCheck("streaming", "ok", "Streaming endpoint accepted a probe request.")
+    return providerDiagnosticCheck(
+      "streaming",
+      "ok",
+      "Streaming endpoint accepted a probe request.",
+    )
   }
 
   const text = await response.text().catch(() => response.statusText)
@@ -683,7 +717,11 @@ async function runStreamingDiagnostic(
     status: response.status,
     message: text || response.statusText,
   })
-  if (category === "streaming_unsupported" || response.status === 400 || response.status === 422) {
+  if (
+    category === "streaming_unsupported" ||
+    response.status === 400 ||
+    response.status === 422
+  ) {
     return providerDiagnosticCheck(
       "streaming",
       "unsupported",
@@ -863,7 +901,9 @@ async function streamChatAsAnthropic(params: {
       index: textIndex,
     })
   }
-  for (const block of [...toolBlocks.values()].sort((a, b) => a.index - b.index)) {
+  for (const block of [...toolBlocks.values()].sort(
+    (a, b) => a.index - b.index,
+  )) {
     if (!block.started) {
       writeSse(params.res, "content_block_start", {
         type: "content_block_start",
@@ -894,7 +934,10 @@ async function streamChatAsAnthropic(params: {
   }
   writeSse(params.res, "message_delta", {
     type: "message_delta",
-    delta: { stop_reason: anthropicStopReason(finishReason), stop_sequence: null },
+    delta: {
+      stop_reason: anthropicStopReason(finishReason),
+      stop_sequence: null,
+    },
     usage: { output_tokens: 0 },
   })
   writeSse(params.res, "message_stop", { type: "message_stop" })
@@ -934,14 +977,12 @@ async function streamChatAsResponses(params: {
   const responseId = `resp_${randomBytes(8).toString("hex")}`
   const model = params.body.model || params.profile.defaultModel
   const textItemRef: {
-    current:
-      | {
-        id: string
-        outputIndex: number
-        text: string
-        started: boolean
-      }
-      | null
+    current: {
+      id: string
+      outputIndex: number
+      text: string
+      started: boolean
+    } | null
   } = { current: null }
   const toolItems = new Map<
     number,
@@ -1126,14 +1167,20 @@ async function streamChatAsResponses(params: {
       item_id: completedTextItem.id,
       output_index: completedTextItem.outputIndex,
       content_index: 0,
-      part: { type: "output_text", text: completedTextItem.text, annotations: [] },
+      part: {
+        type: "output_text",
+        text: completedTextItem.text,
+        annotations: [],
+      },
     })
     const item = {
       id: completedTextItem.id,
       type: "message",
       role: "assistant",
       status: "completed",
-      content: [{ type: "output_text", text: completedTextItem.text, annotations: [] }],
+      content: [
+        { type: "output_text", text: completedTextItem.text, annotations: [] },
+      ],
     }
     output.push(item)
     writeSse(params.res, "response.output_item.done", {
@@ -1143,7 +1190,9 @@ async function streamChatAsResponses(params: {
     })
   }
 
-  for (const item of [...toolItems.values()].sort((a, b) => a.outputIndex - b.outputIndex)) {
+  for (const item of [...toolItems.values()].sort(
+    (a, b) => a.outputIndex - b.outputIndex,
+  )) {
     if (!item.started) {
       item.started = true
       writeSse(params.res, "response.output_item.added", {
@@ -1262,7 +1311,9 @@ async function handleAnthropicRequest(
     }
     const text =
       json?.output_text ||
-      json?.output?.[0]?.content?.find?.((part: any) => part.type === "output_text")?.text ||
+      json?.output?.[0]?.content?.find?.(
+        (part: any) => part.type === "output_text",
+      )?.text ||
       ""
     sendJson(res, 200, {
       id: json.id || `msg_${randomBytes(8).toString("hex")}`,
@@ -1349,11 +1400,11 @@ async function handleResponsesRequest(
     return
   }
 
-  const chatBridge = responsesToChatCompletionsWithToolMappings({ ...body, model })
-  const chatBody = buildProviderChatCompletionBody(
-    profile,
-    chatBridge.body,
-  )
+  const chatBridge = responsesToChatCompletionsWithToolMappings({
+    ...body,
+    model,
+  })
+  const chatBody = buildProviderChatCompletionBody(profile, chatBridge.body)
   recordGatewayToolTrace({
     phase: "forwarded",
     endpointKind: "responses",
@@ -1549,17 +1600,36 @@ export async function runProviderProfileDiagnostics(
 
     const capabilities = inferredCapabilities(profile)
     const checks: ProviderDiagnosticCheck[] = [
-      providerDiagnosticCheck("endpoint", "ok", "Endpoint accepted a diagnostic request."),
+      providerDiagnosticCheck(
+        "endpoint",
+        "ok",
+        "Endpoint accepted a diagnostic request.",
+      ),
       providerDiagnosticCheck("auth", "ok", "Authentication was accepted."),
-      providerDiagnosticCheck("model", "ok", "Model accepted a diagnostic request."),
-      providerDiagnosticCheck("protocol", "ok", `${profile.protocol} protocol probe succeeded.`),
+      providerDiagnosticCheck(
+        "model",
+        "ok",
+        "Model accepted a diagnostic request.",
+      ),
+      providerDiagnosticCheck(
+        "protocol",
+        "ok",
+        `${profile.protocol} protocol probe succeeded.`,
+      ),
     ]
 
-    const streamingCheck = await runStreamingDiagnostic(profile, controller.signal)
+    const streamingCheck = await runStreamingDiagnostic(
+      profile,
+      controller.signal,
+    )
     checks.push(streamingCheck)
     checks.push(
       profile.capabilities.tools
-        ? providerDiagnosticCheck("tools", "ok", "Tool calling is advertised for this profile.")
+        ? providerDiagnosticCheck(
+            "tools",
+            "ok",
+            "Tool calling is advertised for this profile.",
+          )
         : providerDiagnosticCheck(
             "tools",
             "unsupported",
@@ -1569,7 +1639,11 @@ export async function runProviderProfileDiagnostics(
     )
     checks.push(
       profile.capabilities.vision
-        ? providerDiagnosticCheck("vision", "ok", "Vision is advertised for this profile.")
+        ? providerDiagnosticCheck(
+            "vision",
+            "ok",
+            "Vision is advertised for this profile.",
+          )
         : providerDiagnosticCheck(
             "vision",
             "unsupported",
@@ -1580,7 +1654,7 @@ export async function runProviderProfileDiagnostics(
 
     if (
       profile.targetRuntimes.some(
-        (target) => target === "claude" || target === "codex" || target === "kun",
+        (target) => target === "claude" || target === "codex",
       )
     ) {
       const gateway = await ensureProviderGateway()
@@ -1596,7 +1670,7 @@ export async function runProviderProfileDiagnostics(
         providerDiagnosticCheck(
           "gateway",
           "skipped",
-          "Gateway check skipped because no Claude, Codex, or Kun runtime target is selected.",
+          "Gateway check skipped because no Claude or Codex runtime target is selected.",
         ),
       )
     }
@@ -1636,7 +1710,7 @@ export async function runProviderProfileDiagnostics(
       checkedAt,
       message: ok
         ? "Provider diagnostics completed"
-        : failedCheck?.message ?? "Provider diagnostics failed",
+        : (failedCheck?.message ?? "Provider diagnostics failed"),
       diagnosticVersion: 1 as const,
       ...(category ? { category } : {}),
       checks,

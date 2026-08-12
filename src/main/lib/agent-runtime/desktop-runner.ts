@@ -1,16 +1,11 @@
 import type { AgentRuntimeId } from "../../../shared/agent-runtime-capabilities"
-import type {
-  DesktopRunRequest,
-  DesktopRunResult,
-} from "./desktop-run-request"
+import type { DesktopRunRequest, DesktopRunResult } from "./desktop-run-request"
 import type { DesktopPermissionRuntime } from "./permission-policy"
 import { createRunEvent } from "./runtime-events"
 
 export type DesktopRuntimeAdapterSource =
   | "claude-agent-sdk"
   | "codex-app-server"
-  | "qwen-acp-client"
-  | "kun-http-sse"
 
 export type DesktopRuntimeAdapterMetadata = {
   runtimeId: DesktopPermissionRuntime
@@ -95,20 +90,16 @@ export class DesktopRuntimeAdapterFactory {
     this.adapters.set(key, adapter)
   }
 
-  get({ runtimeId, source }: DesktopRuntimeAdapterLookup): DesktopRuntimeAdapter {
-    if (
-      runtimeId !== "claude-code" &&
-      runtimeId !== "codex" &&
-      runtimeId !== "qwen-code" &&
-      runtimeId !== "kun"
-    ) {
-      throw new Error(`Unsupported desktop runtime adapter: ${runtimeId}`)
-    }
-
+  get({
+    runtimeId,
+    source,
+  }: DesktopRuntimeAdapterLookup): DesktopRuntimeAdapter {
     if (source) {
       const adapter = this.adapters.get(adapterKey(runtimeId, source))
       if (!adapter) {
-        throw new Error(`Desktop runtime adapter not registered: ${runtimeId}:${source}`)
+        throw new Error(
+          `Desktop runtime adapter not registered: ${runtimeId}:${source}`,
+        )
       }
       return adapter
     }
@@ -129,6 +120,8 @@ export class DesktopRuntimeAdapterFactory {
   }
 
   listMetadata(): DesktopRuntimeAdapterMetadata[] {
-    return [...this.adapters.values()].map((adapter) => ({ ...adapter.metadata }))
+    return [...this.adapters.values()].map((adapter) => ({
+      ...adapter.metadata,
+    }))
   }
 }

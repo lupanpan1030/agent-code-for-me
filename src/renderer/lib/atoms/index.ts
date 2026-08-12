@@ -164,7 +164,7 @@ export type SettingsTab =
   | "about"
 export const agentsSettingsDialogActiveTabAtom =
   atom<SettingsTab>("preferences")
-export type ModelsSettingsTarget = "helper-apis" | "qwen-cli" | "kun-cli" | null
+export type ModelsSettingsTarget = "helper-apis" | null
 export const modelsSettingsTargetAtom = atom<ModelsSettingsTarget>(null)
 // Derived atom: maps settings open/close to desktopView navigation
 export const agentsSettingsDialogOpenAtom = atom(
@@ -552,7 +552,6 @@ export const isFullscreenAtom = atom<boolean | null>(null)
 // "custom-model" = use custom base URL and model (e.g. for proxies or alternative providers)
 // "codex-subscription" = use Codex via ChatGPT subscription login
 // "codex-api-key" = use Codex via app-managed API key
-// "qwen" = use the runtime-managed Qwen Code engine (CLI handles its own auth)
 // null = not yet selected (show provider/auth selection screen)
 export type OnboardingProviderMode =
   | "claude-subscription"
@@ -560,7 +559,6 @@ export type OnboardingProviderMode =
   | "custom-model"
   | "codex-subscription"
   | "codex-api-key"
-  | "qwen"
   | null
 
 // Onboarding provider/auth selection. Named for what it does (not billing — there

@@ -7,7 +7,7 @@ Desktop runs already carry `AgentRuntimeProviderReference` (`model`, `modelSourc
 ## Goals / Non-Goals
 
 - Goals: headless runs and schedules can select a stored provider profile and/or model by reference; `agent_provider_defaults` `claude-main`/`codex-main` become the headless default source (D3); no secret material ever crosses the API/CLI boundary; behavior is explainable — explicit selection never silently degrades.
-- Non-Goals: qwen/kun headless support (not contract runtimes); desktop selection changes; completion job kind (RT-5); per-profile readiness diagnostics; new provider protocols.
+- Non-Goals: headless support for runtimes outside the Local Job API contract; desktop selection changes; completion job kind (RT-5); per-profile readiness diagnostics; new provider protocols.
 
 ## Decisions
 
@@ -16,7 +16,7 @@ Desktop runs already carry `AgentRuntimeProviderReference` (`model`, `modelSourc
 - **Provider object validation**: strict shape — only `profileId` and `model` keys, both strings with length caps; anything else rejects. Keeps the smuggling surface closed while the outer secret scanner continues to run over the whole request.
 - **Binding construction**: one main-process helper resolves profile → `getProviderProfileRuntimeConfig` + `getProviderGatewayEndpoint` → `AgentRuntimeProviderReference` with `authMode: "provider-profile"`; native paths keep `authMode: "runtime-managed"` (claude app-token injection from RT-2 is unchanged and orthogonal). `createAgentRuntimeRunRequest` accepts the resolved binding instead of hardcoding null.
 - **Adapter wiring (least-invasive, audit-verified)**: claude batch = `buildClaudeEnv({ customEnv: buildClaudeProviderEnv(gatewayConfig) })` + append `--model`; codex batch = pass `providerGatewayToken`/`appManagedApiKey` through `buildCodexProviderEnv` + append `buildCodexProviderProfileArgs(profile)` and `-m`; codex app-server = pass resolved secrets into `createHeadlessCodexAppServerDesktopAdapter` mirroring the desktop tRPC caller. No adapter parses profiles itself; secrets reach adapters only as already-scoped gateway tokens.
-- **Token lifecycle**: per-run scoped gateway token synthesized at job start, revoked on every terminal path (success, failure, cancel) — mirrors the Kun synthesized-config cleanup. Matters for the daemon (long-lived process); the one-shot CLI additionally tears down with process exit.
+- **Token lifecycle**: per-run scoped gateway token synthesized at job start, revoked on every terminal path (success, failure, cancel). Matters for the daemon (long-lived process); the one-shot CLI additionally tears down with process exit.
 - **Persistence**: nullable `providerProfileId`/`modelOverride` on `agent_jobs` and `agent_schedules` (profile ids are non-secret). Retry reuses the stored reference and re-resolves at run time; a deleted profile makes retry fail closed with the same structured error.
 - **Contract compatibility (D5)**: `apiVersion` unchanged; discovery `features` gains `"provider-binding"`; the result envelope echoes `resolvedProvider { source: "request-profile" | "default-profile" | "native", profileId?, model? }`. Older builds silently drop the request field — consumers MUST feature-detect, and the echo lets them assert what actually applied.
 

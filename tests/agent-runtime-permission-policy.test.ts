@@ -4,8 +4,6 @@ import {
   decideAssistantToolPermission,
   getClaudeAssistantSdkDisallowedTools,
   getCodexAppServerPermissionMapping,
-  getKunHttpSsePermissionMapping,
-  getQwenAcpClientPermissionMapping,
   resolveDesktopPermissionPolicy,
 } from "../src/main/lib/agent-runtime/permission-policy"
 import { DESKTOP_RUNTIME_CONTROL_LEVELS } from "../src/shared/agent-runtime-control"
@@ -141,104 +139,6 @@ describe("desktop runtime permission policy", () => {
     )
   })
 
-  test("maps Qwen ACP client policies to fail-closed permission gates", () => {
-    const planPolicy = resolveDesktopPermissionPolicy({
-      runtimeId: "qwen-code",
-      mode: "plan",
-    })
-    const guardedPolicy = resolveDesktopPermissionPolicy({
-      runtimeId: "qwen-code",
-      mode: "agent",
-      hasScopeContract: true,
-    })
-    const observedPolicy = resolveDesktopPermissionPolicy({
-      runtimeId: "qwen-code",
-      mode: "agent",
-    })
-
-    expect(planPolicy.enforcement).toBe("qwen-acp-client-plan-permission-gate")
-    expect(planPolicy.requiresPreExecutionEnforcement).toBe(true)
-    expect(getQwenAcpClientPermissionMapping(planPolicy)).toMatchObject({
-      runtime: "qwen-code",
-      adapterSource: "qwen-acp-client",
-      controlLevel: "plan",
-      acpPermissionPolicy: "ask",
-      requiresApprovalGate: true,
-      permissionHandlerFailure: "fail-closed",
-    })
-
-    expect(guardedPolicy.enforcement).toBe(
-      "qwen-acp-client-guarded-permission-gate",
-    )
-    expect(guardedPolicy.requiresPreExecutionEnforcement).toBe(true)
-    expect(getQwenAcpClientPermissionMapping(guardedPolicy)).toMatchObject({
-      controlLevel: "guarded",
-      permissionHandlerFailure: "fail-closed",
-    })
-
-    expect(observedPolicy.enforcement).toBe(
-      "qwen-acp-client-agent-permission-gate",
-    )
-    expect(observedPolicy.requiresPreExecutionEnforcement).toBe(true)
-    expect(observedPolicy.observedToolPolicy).toMatchObject({
-      enabled: true,
-      degradation: "fail-closed-when-hook-unavailable",
-    })
-    expect(getQwenAcpClientPermissionMapping(observedPolicy)).toMatchObject({
-      controlLevel: "observe",
-      permissionHandlerFailure: "fail-closed",
-    })
-  })
-
-  test("maps Kun HTTP/SSE policies to hardened fail-closed approval gates", () => {
-    const planPolicy = resolveDesktopPermissionPolicy({
-      runtimeId: "kun",
-      mode: "plan",
-    })
-    const guardedPolicy = resolveDesktopPermissionPolicy({
-      runtimeId: "kun",
-      mode: "agent",
-      hasScopeContract: true,
-    })
-    const observedPolicy = resolveDesktopPermissionPolicy({
-      runtimeId: "kun",
-      mode: "agent",
-    })
-
-    expect(planPolicy.enforcement).toBe("kun-http-sse-plan-blocked")
-    expect(planPolicy.requiresPreExecutionEnforcement).toBe(true)
-    expect(planPolicy.diagnostics.join(" ")).toContain("degraded in v1")
-    expect(getKunHttpSsePermissionMapping(planPolicy)).toMatchObject({
-      runtime: "kun",
-      adapterSource: "kun-http-sse",
-      controlLevel: "plan",
-      approvalPolicy: "on-request",
-      sandboxMode: "danger-full-access",
-      commandExecution: "guarded-by-locus",
-      permissionHandlerFailure: "fail-closed",
-    })
-
-    expect(guardedPolicy.enforcement).toBe(
-      "kun-http-sse-guarded-approval-gate",
-    )
-    expect(getKunHttpSsePermissionMapping(guardedPolicy)).toMatchObject({
-      controlLevel: "guarded",
-      requiresApprovalGate: true,
-      sandboxMode: "danger-full-access",
-      commandExecution: "guarded-by-locus",
-    })
-
-    expect(observedPolicy.enforcement).toBe("kun-http-sse-agent-approval-gate")
-    expect(observedPolicy.requiresPreExecutionEnforcement).toBe(true)
-    expect(getKunHttpSsePermissionMapping(observedPolicy)).toMatchObject({
-      controlLevel: "observe",
-      observedToolPolicy: {
-        enabled: true,
-        degradation: "fail-closed-when-hook-unavailable",
-      },
-    })
-  })
-
   test("selects assistant control from folderless workspace kind and fails closed by tool category", () => {
     const claudePolicy = resolveDesktopPermissionPolicy({
       runtimeId: "claude-code",
@@ -251,16 +151,6 @@ describe("desktop runtime permission policy", () => {
       mode: "agent",
       workspaceKind: "folderless",
       codexAdapterSource: "codex-app-server",
-    })
-    const qwenPolicy = resolveDesktopPermissionPolicy({
-      runtimeId: "qwen-code",
-      mode: "agent",
-      workspaceKind: "folderless",
-    })
-    const kunPolicy = resolveDesktopPermissionPolicy({
-      runtimeId: "kun",
-      mode: "agent",
-      workspaceKind: "folderless",
     })
 
     expect(claudePolicy).toMatchObject({
@@ -304,34 +194,6 @@ describe("desktop runtime permission policy", () => {
       },
       permissionHandlerFailure: "fail-closed",
     })
-    expect(qwenPolicy).toMatchObject({
-      runtimeId: "qwen-code",
-      controlLevel: "assistant",
-      enforcement: "qwen-acp-client-assistant-permission-gate",
-      requiresPreExecutionEnforcement: true,
-    })
-    expect(getQwenAcpClientPermissionMapping(qwenPolicy)).toMatchObject({
-      runtime: "qwen-code",
-      adapterSource: "qwen-acp-client",
-      controlLevel: "assistant",
-      permissionHandlerFailure: "fail-closed",
-    })
-    expect(kunPolicy).toMatchObject({
-      runtimeId: "kun",
-      controlLevel: "assistant",
-      enforcement: "kun-http-sse-assistant-approval-gate",
-      requiresPreExecutionEnforcement: true,
-    })
-    expect(getKunHttpSsePermissionMapping(kunPolicy)).toMatchObject({
-      runtime: "kun",
-      adapterSource: "kun-http-sse",
-      controlLevel: "assistant",
-      approvalPolicy: "on-request",
-      sandboxMode: "danger-full-access",
-      commandExecution: "guarded-by-locus",
-      permissionHandlerFailure: "fail-closed",
-    })
-
     expect(decideAssistantToolPermission({ toolName: "WebSearch" })).toEqual({
       decision: "allow",
       category: "web-information",
@@ -414,9 +276,7 @@ describe("desktop runtime permission policy", () => {
     })
 
     expect(codexPolicy.controlLevel).toBe("observe")
-    expect(codexPolicy.enforcement).toBe(
-      "codex-app-server-agent-approval-gate",
-    )
+    expect(codexPolicy.enforcement).toBe("codex-app-server-agent-approval-gate")
     expect(codexPolicy.requiresPreExecutionEnforcement).toBe(true)
     expect(codexPolicy.observedToolPolicy).toMatchObject({
       enabled: true,

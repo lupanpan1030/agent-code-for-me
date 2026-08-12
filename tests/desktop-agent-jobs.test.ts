@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { chats, projects, subChats } from "../src/main/lib/db/schema"
 import { resolveDesktopPermissionPolicy } from "../src/main/lib/agent-runtime/permission-policy"
+import { chats, projects, subChats } from "../src/main/lib/db/schema"
 import {
   completeDesktopAgentJobSafely,
   completeDesktopChatAgentJobSafely,
@@ -12,7 +12,10 @@ import {
   resolveDesktopChatJobCompletion,
   unregisterActiveDesktopAgentJob,
 } from "../src/main/lib/desktop-agent-jobs"
-import { getAgentJob, listAgentJobEvents } from "../src/main/lib/headless/job-store"
+import {
+  getAgentJob,
+  listAgentJobEvents,
+} from "../src/main/lib/headless/job-store"
 import { createAgentJobTestDb } from "./helpers/agent-job-test-db"
 
 function seedChat(db: ReturnType<typeof createAgentJobTestDb>) {
@@ -225,7 +228,8 @@ describe("desktop agent jobs", () => {
       prompt: "Long running inspect",
       runId: "run-heartbeat",
     })
-    const initialHeartbeat = getAgentJob(db, job.id)?.heartbeatAt?.getTime() ?? 0
+    const initialHeartbeat =
+      getAgentJob(db, job.id)?.heartbeatAt?.getTime() ?? 0
 
     registerActiveDesktopAgentJob({
       jobId: job.id,
@@ -239,7 +243,8 @@ describe("desktop agent jobs", () => {
     })
 
     await new Promise((resolve) => setTimeout(resolve, 30))
-    const refreshedHeartbeat = getAgentJob(db, job.id)?.heartbeatAt?.getTime() ?? 0
+    const refreshedHeartbeat =
+      getAgentJob(db, job.id)?.heartbeatAt?.getTime() ?? 0
     unregisterActiveDesktopAgentJob(job.id)
 
     expect(refreshedHeartbeat).toBeGreaterThanOrEqual(initialHeartbeat)
@@ -360,60 +365,51 @@ describe("desktop agent jobs", () => {
   })
 
   test("resolves desktop chat completion status consistently across runtimes", () => {
-    expect(
-      resolveDesktopChatJobCompletion({
-        runtime: "claude-code",
-        aborted: false,
-        reachedNaturalFinish: true,
-        sawError: false,
-      }),
-    ).toEqual({
-      status: "succeeded",
-      exitCode: 0,
-      errorCode: null,
-      errorMessage: null,
-    })
+    for (const [runtime, label] of [
+      ["claude-code", "Claude"],
+      ["codex", "Codex"],
+    ] as const) {
+      expect(
+        resolveDesktopChatJobCompletion({
+          runtime,
+          aborted: false,
+          reachedNaturalFinish: true,
+          sawError: false,
+        }),
+      ).toEqual({
+        status: "succeeded",
+        exitCode: 0,
+        errorCode: null,
+        errorMessage: null,
+      })
 
-    expect(
-      resolveDesktopChatJobCompletion({
-        runtime: "claude-code",
-        aborted: false,
-        reachedNaturalFinish: false,
-        sawError: true,
-      }),
-    ).toEqual({
-      status: "failed",
-      exitCode: 1,
-      errorCode: "desktop_chat_failed",
-      errorMessage: "Desktop Claude chat stream failed.",
-    })
+      expect(
+        resolveDesktopChatJobCompletion({
+          runtime,
+          aborted: false,
+          reachedNaturalFinish: false,
+          sawError: true,
+        }),
+      ).toEqual({
+        status: "failed",
+        exitCode: 1,
+        errorCode: "desktop_chat_failed",
+        errorMessage: `Desktop ${label} chat stream failed.`,
+      })
 
-    expect(
-      resolveDesktopChatJobCompletion({
-        runtime: "codex",
-        aborted: true,
-        reachedNaturalFinish: false,
-        sawError: true,
-      }),
-    ).toEqual({
-      status: "canceled",
-      exitCode: 5,
-      errorCode: "desktop_chat_canceled",
-      errorMessage: "Desktop Codex chat stream was canceled.",
-    })
-
-    expect(
-      resolveDesktopChatJobCompletion({
-        runtime: "kun",
-        aborted: false,
-        reachedNaturalFinish: false,
-        sawError: true,
-      }),
-    ).toEqual({
-      status: "failed",
-      exitCode: 1,
-      errorCode: "desktop_chat_failed",
-      errorMessage: "Desktop Kun chat stream failed.",
-    })
+      expect(
+        resolveDesktopChatJobCompletion({
+          runtime,
+          aborted: true,
+          reachedNaturalFinish: false,
+          sawError: true,
+        }),
+      ).toEqual({
+        status: "canceled",
+        exitCode: 5,
+        errorCode: "desktop_chat_canceled",
+        errorMessage: `Desktop ${label} chat stream was canceled.`,
+      })
+    }
   })
 })

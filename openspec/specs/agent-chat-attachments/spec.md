@@ -73,8 +73,8 @@ ability to deliver images (transport) AND the resolved target model's vision cap
 block image send whenever either is unavailable. First-party Claude/Codex sources with runtime-known
 image support SHALL resolve to an explicit supported vision state. Provider Profile/custom sources
 whose vision capability is unknown or unset SHALL be treated as unsupported (fail closed). The block
-explanation SHALL identify the actual cause (runtime/transport, offline local model, or text-only
-model) rather than a generic or mismatched reason. For desktop UI requests, raw Claude selector
+explanation SHALL identify the actual cause (offline local model or text-only model) rather than a
+generic or mismatched reason. For desktop UI requests, raw Claude selector
 values such as `auto` and `custom-provider` SHALL be normalized by renderer/transport run admission
 before model vision lookup; the main process SHALL consume the resulting target identity rather than
 importing renderer-only normalization logic.
@@ -99,12 +99,6 @@ importing renderer-only normalization logic.
 - **AND** the selected runtime can deliver images
 - **AND** the active Provider Profile declares `vision: true`
 - **THEN** the app allows send subject to size and count limits
-
-#### Scenario: Runtime transport cannot deliver images
-- **WHEN** the input contains image attachments
-- **AND** the selected runtime does not support image delivery (for example `qwen-code` or `kun`)
-- **THEN** the app blocks send
-- **AND** explains that the current runtime does not support image attachments
 
 #### Scenario: Selected model is text-only
 - **WHEN** the input contains image attachments
@@ -149,6 +143,11 @@ importing renderer-only normalization logic.
 - **WHEN** the user changes provider or model while image attachments are staged
 - **THEN** the app re-evaluates image support and limits
 - **AND** updates warnings or blocking state without losing the staged attachments
+
+#### Scenario: Supported runtimes have image-delivery capability
+- **WHEN** image-attachment capability is resolved for any supported runtime
+- **THEN** the runtime is one of the closed supported set: `claude-code` or `codex`
+- **AND** both supported runtimes deliver images without a runtime-specific transport block
 
 ### Requirement: Attachment Guardrails
 The system SHALL enforce clear attachment limits and unsupported-type handling.

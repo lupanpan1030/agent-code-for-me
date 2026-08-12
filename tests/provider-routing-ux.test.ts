@@ -44,28 +44,10 @@ describe("provider routing UX source guards", () => {
     ),
     "utf8",
   )
-  const activeChatSource = readFileSync(
-    join(process.cwd(), "src/renderer/features/agents/main/active-chat.tsx"),
-    "utf8",
-  )
-  const qwenChatTransportSource = readFileSync(
-    join(
-      process.cwd(),
-      "src/renderer/features/agents/lib/qwen-chat-transport.ts",
-    ),
-    "utf8",
-  )
   const agentEngineSelectorSource = readFileSync(
     join(
       process.cwd(),
       "src/renderer/features/agents/components/agent-engine-selector.tsx",
-    ),
-    "utf8",
-  )
-  const runtimeModelSelectorSource = readFileSync(
-    join(
-      process.cwd(),
-      "src/renderer/features/agents/components/runtime-model-selector.tsx",
     ),
     "utf8",
   )
@@ -78,14 +60,6 @@ describe("provider routing UX source guards", () => {
   )
   const dictionariesSource = readFileSync(
     join(process.cwd(), "src/renderer/lib/i18n/dictionaries.ts"),
-    "utf8",
-  )
-  const providerGatewaySource = readFileSync(
-    join(process.cwd(), "src/main/lib/provider-profiles/gateway.ts"),
-    "utf8",
-  )
-  const agentRuntimeRouterSource = readFileSync(
-    join(process.cwd(), "src/main/lib/trpc/routers/agent-runtime.ts"),
     "utf8",
   )
   const chatsRouterSource = readChatsRouterSource()
@@ -190,11 +164,6 @@ describe("provider routing UX source guards", () => {
 
   test("new chats persist selected provider metadata for transport routing", () => {
     expect(newChatFormSource).toContain("provider: selectedRuntimeProvider")
-    expect(newChatFormSource).toContain(
-      'selectedRuntimeProvider === "qwen-code"',
-    )
-    expect(newChatFormSource).toContain('selectedRuntimeProvider === "kun"')
-    expect(newChatFormSource).toContain('"runtime-managed"')
     expect(newChatFormSource).toContain("modelSource:")
     expect(newChatFormSource).toContain("providerProfileId:")
     expect(chatsRouterSource).toContain("buildAgentChatMessageMetadata")
@@ -227,69 +196,5 @@ describe("provider routing UX source guards", () => {
     expect(agentModelSelectorSource).not.toContain("CrossProviderConfirmDialog")
     expect(dictionariesSource).toContain("agent.engine.selector")
     expect(dictionariesSource).toContain("agent.engine.switchToEngine")
-    expect(dictionariesSource).toContain("agent.model.qwenRuntimeManaged")
-  })
-
-  test("Kun provider profiles use a runtime-scoped Model control and routing", () => {
-    expect(providerEditorSource).toContain(
-      'kun: "settings.models.providerProfiles.targetKun"',
-    )
-    expect(runtimeModelSelectorSource).toContain(
-      'profile.targetRuntimes.includes("kun")',
-    )
-    expect(runtimeModelSelectorSource).toContain(
-      'selectedEngineId === "qwen-code"',
-    )
-    expect(runtimeModelSelectorSource).toContain(
-      "agent.model.qwenRuntimeManaged",
-    )
-    expect(modelsTabSource).toContain("qwenCliStatus?.configuration")
-    expect(modelsTabSource).toContain(
-      "settings.models.qwenCli.configRuntimeManaged",
-    )
-    expect(dictionariesSource).toContain(
-      "settings.models.qwenCli.configTitle",
-    )
-    expect(dictionariesSource).toContain(
-      "This is not a Locus Provider Profile",
-    )
-    expect(runtimeModelSelectorSource).not.toContain(
-      'targetRuntimes.includes("qwen-code")',
-    )
-    expect(providerEditorSource).not.toContain('qwen-code: "')
-    expect(newChatFormSource).toContain("lastSelectedKunModelSourceAtom")
-    expect(newChatFormSource).toContain('selectedRuntimeProvider === "kun"')
-    expect(chatInputAreaSource).toContain("subChatKunModelSourceAtomFamily")
-    expect(chatInputAreaSource).toContain(
-      "onProviderChange?: (provider: AgentChatProvider) => void",
-    )
-    expect(chatInputAreaSource).toContain("provider: AgentChatProvider,")
-    expect(activeChatSource).toContain("subChatKunModelSourceAtomFamily")
-    expect(activeChatSource).toContain("selection?.kunModelSource")
-    expect(activeChatSource).toContain("nextProvider: AgentChatProvider")
-    expect(activeChatSource).toContain(
-      "parseProviderProfileSource(kunModelSource)",
-    )
-    expect(providerGatewaySource).toContain('target === "kun"')
-    expect(agentRuntimeRouterSource).toContain("synthesizeKunProviderConfig")
-    expect(agentRuntimeRouterSource).toContain("kunProviderConfig?.cleanup()")
-    expect(newChatFormSource).not.toContain("KunProviderProfileSelector")
-    expect(chatInputAreaSource).not.toContain("KunProviderProfileSelector")
-    expect(runtimeModelSelectorSource).not.toContain(
-      'targetRuntimes.includes("local")',
-    )
-  })
-
-  test("experimental runtime transport finalizes AI SDK message streams", () => {
-    expect(qwenChatTransportSource).toContain(
-      "createExperimentalRuntimeUiStreamState",
-    )
-    expect(qwenChatTransportSource).toContain(
-      "normalizeExperimentalRuntimeUiChunk",
-    )
-    expect(qwenChatTransportSource).toContain(
-      "finalizeExperimentalRuntimeUiStream",
-    )
-    expect(qwenChatTransportSource).toContain("controller.close()")
   })
 })
