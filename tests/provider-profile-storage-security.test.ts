@@ -1,6 +1,9 @@
-import { describe, expect, mock, test } from "bun:test"
+import { beforeEach, describe, expect, mock, test } from "bun:test"
+import * as schema from "../src/main/lib/db/schema"
+import { createAgentJobTestDb } from "./helpers/agent-job-test-db"
 
-let userDataDir = ""
+const userDataDir = ""
+let testDb = createAgentJobTestDb()
 
 mock.module("electron", () => ({
   app: {
@@ -29,9 +32,26 @@ mock.module("electron", () => ({
   },
 }))
 
+mock.module("../src/main/lib/db", () => ({
+  ...schema,
+  getDatabase: () => testDb,
+}))
+
+mock.module("../src/main/lib/claude/provider-config-store", () => ({
+  getActiveClaudeProviderConfig: () => undefined,
+}))
+
+mock.module("../src/main/lib/local-api-provider-config", () => ({
+  getActiveLocalApiProviderConfig: () => undefined,
+}))
+
 const storageModule = await import("../src/main/lib/provider-profiles/storage")
 
 describe("provider profile storage security", () => {
+  beforeEach(() => {
+    testDb = createAgentJobTestDb()
+  })
+
   test("requires token re-entry before reusing saved credentials for a new destination", () => {
     const existing = {
       existingEncryptedToken: "encrypted-token",
@@ -85,5 +105,57 @@ describe("provider profile storage security", () => {
         token: "sk-reentered",
       }),
     ).toBe("none")
+  })
+
+  test("loads a retired-only target as empty and re-saves with a valid target", () => {
+    const retiredRuntimeId = "kun"
+    const profileId = `legacy-${retiredRuntimeId}-only`
+    testDb
+      .insert(schema.agentProviderProfiles)
+      .values({
+        id: profileId,
+        name: "Legacy retired-runtime profile",
+        protocol: "openai-chat",
+        baseUrl: "https://api.example.com/v1",
+        defaultModel: "legacy-model",
+        authMode: "none",
+        targetRuntimesJson: JSON.stringify([retiredRuntimeId]),
+        capabilitiesJson: JSON.stringify({ [retiredRuntimeId]: true }),
+      })
+      .run()
+
+    const loaded = storageModule.getProviderProfileMetadata(profileId)
+    expect(loaded?.targetRuntimes).toEqual([])
+
+    if (!loaded) throw new Error("Legacy provider profile was not loaded")
+    expect(() =>
+      storageModule.saveProviderProfile({
+        id: loaded.id,
+        name: loaded.name,
+        presetId: loaded.presetId,
+        protocol: loaded.protocol,
+        baseUrl: loaded.baseUrl,
+        defaultModel: loaded.defaultModel,
+        authMode: loaded.authMode,
+        targetRuntimes: [],
+      }),
+    ).toThrow("Select at least one provider target.")
+
+    const saved = storageModule.saveProviderProfile({
+      id: loaded.id,
+      name: loaded.name,
+      presetId: loaded.presetId,
+      protocol: loaded.protocol,
+      baseUrl: loaded.baseUrl,
+      defaultModel: loaded.defaultModel,
+      authMode: loaded.authMode,
+      targetRuntimes: ["codex"],
+      capabilities: { codex: true },
+    })
+
+    expect(saved.targetRuntimes).toEqual(["codex"])
+    expect(
+      storageModule.getProviderProfileMetadata(profileId)?.targetRuntimes,
+    ).toEqual(["codex"])
   })
 })

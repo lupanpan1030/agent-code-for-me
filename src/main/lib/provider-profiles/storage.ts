@@ -16,7 +16,6 @@ import {
   providerProfileProtocols,
   providerProfileTargets,
 } from "../../../shared/provider-profile-types"
-import { getRuntimeFeatureSettingsSnapshot } from "../agent-runtime/runtime-feature-settings"
 import { getActiveClaudeProviderConfig } from "../claude/provider-config-store"
 import {
   agentProviderDefaults,
@@ -53,21 +52,23 @@ const SECRET_HEADER_VALUE_REGEX =
 
 export const providerProfileProtocolSchema = z.enum(providerProfileProtocols)
 export const providerProfileAuthModeSchema = z.enum(providerProfileAuthModes)
-export const providerProfileTargetSchema = z.enum(providerProfileTargets)
+export const providerProfileTargetSchema: z.ZodType<ProviderProfileTarget> = z
+  .enum(providerProfileTargets)
+  .exclude(["kun"])
 export const providerProfileDefaultPurposeSchema = z.enum(
   providerProfileDefaultPurposes,
 )
 
-export const providerProfileCapabilitiesSchema = z.object({
-  claude: z.boolean().optional(),
-  codex: z.boolean().optional(),
-  helpers: z.boolean().optional(),
-  kun: z.boolean().optional(),
-  local: z.boolean().optional(),
-  streaming: z.boolean().optional(),
-  tools: z.boolean().optional(),
-  vision: z.boolean().optional(),
-})
+export const providerProfileCapabilitiesSchema: z.ZodType<ProviderProfileCapabilities> =
+  z.object({
+    claude: z.boolean().optional(),
+    codex: z.boolean().optional(),
+    helpers: z.boolean().optional(),
+    local: z.boolean().optional(),
+    streaming: z.boolean().optional(),
+    tools: z.boolean().optional(),
+    vision: z.boolean().optional(),
+  })
 
 const providerDiagnosticCheckSchema = z.object({
   id: z.enum(providerDiagnosticCheckIds),
@@ -98,10 +99,6 @@ export type ProviderProfileRuntimeConfig = {
   headers: Record<string, string>
   targetRuntimes: ProviderProfileTarget[]
   capabilities: ProviderProfileCapabilities
-}
-
-export type SaveProviderProfileOptions = {
-  kunRuntimeEnabled?: boolean
 }
 
 function parseJson<T>(value: string | null | undefined, fallback: T): T {
@@ -294,70 +291,20 @@ export function getProviderProfileTokenRequirement(input: {
   return "none"
 }
 
-function resolveKunRuntimeEnabledForSave(
-  options: SaveProviderProfileOptions,
-): boolean {
-  if (typeof options.kunRuntimeEnabled === "boolean") {
-    return options.kunRuntimeEnabled
-  }
-
-  try {
-    return getRuntimeFeatureSettingsSnapshot({
-      env: process.env,
-    }).resolved.kunRuntimeEnabled
-  } catch {
-    return true
-  }
-}
-
-export function normalizeProviderProfileTargetsForKunRuntimeGate(input: {
+export function saveProviderProfile(input: {
+  id?: string
+  name: string
+  presetId?: string | null
+  protocol: ProviderProfileProtocol
+  baseUrl: string
+  defaultModel: string
+  authMode: ProviderProfileAuthMode
+  token?: string
+  headers?: Record<string, string>
   targetRuntimes: ProviderProfileTarget[]
   capabilities?: ProviderProfileCapabilities
-  existingTargetRuntimes?: ProviderProfileTarget[]
-  kunRuntimeEnabled: boolean
-}): {
-  targetRuntimes: ProviderProfileTarget[]
-  capabilities?: ProviderProfileCapabilities
-} {
-  if (input.kunRuntimeEnabled) {
-    return {
-      targetRuntimes: input.targetRuntimes,
-      capabilities: input.capabilities,
-    }
-  }
-
-  const preserveExistingKun =
-    input.existingTargetRuntimes?.includes("kun") ?? false
-  const targetRuntimes: ProviderProfileTarget[] = input.targetRuntimes.filter(
-    (target) => target !== "kun",
-  )
-  if (preserveExistingKun) targetRuntimes.push("kun")
-  return {
-    targetRuntimes,
-    capabilities: {
-      ...(input.capabilities ?? {}),
-      kun: preserveExistingKun,
-    },
-  }
-}
-
-export function saveProviderProfile(
-  input: {
-    id?: string
-    name: string
-    presetId?: string | null
-    protocol: ProviderProfileProtocol
-    baseUrl: string
-    defaultModel: string
-    authMode: ProviderProfileAuthMode
-    token?: string
-    headers?: Record<string, string>
-    targetRuntimes: ProviderProfileTarget[]
-    capabilities?: ProviderProfileCapabilities
-    lastTestStatus?: ProviderProfileTestStatus | null
-  },
-  options: SaveProviderProfileOptions = {},
-): ProviderProfileMetadata {
+  lastTestStatus?: ProviderProfileTestStatus | null
+}): ProviderProfileMetadata {
   const db = getDatabase()
   const id = input.id?.trim() || createId()
   const existing = id
@@ -397,16 +344,11 @@ export function saveProviderProfile(
     : authMode === "none"
       ? null
       : existing?.encryptedToken
-  const normalizedTargets = normalizeProviderProfileTargetsForKunRuntimeGate({
-    targetRuntimes: input.targetRuntimes,
-    capabilities: input.capabilities,
-    existingTargetRuntimes: existing
-      ? rowToMetadata(existing).targetRuntimes
-      : undefined,
-    kunRuntimeEnabled: resolveKunRuntimeEnabledForSave(options),
-  })
-  if (normalizedTargets.targetRuntimes.length === 0) {
-    throw new Error("Kun runtime is disabled. Select another provider target.")
+  const targetRuntimes = input.targetRuntimes.filter(
+    (target) => providerProfileTargetSchema.safeParse(target).success,
+  )
+  if (targetRuntimes.length === 0) {
+    throw new Error("Select at least one provider target.")
   }
 
   const values = {
@@ -422,12 +364,8 @@ export function saveProviderProfile(
       input.headers,
       existing?.headersJson,
     ),
-    targetRuntimesJson: JSON.stringify(
-      normalizedTargets.targetRuntimes.filter(
-        (target) => providerProfileTargetSchema.safeParse(target).success,
-      ),
-    ),
-    capabilitiesJson: JSON.stringify(normalizedTargets.capabilities || {}),
+    targetRuntimesJson: JSON.stringify(targetRuntimes),
+    capabilitiesJson: JSON.stringify(input.capabilities || {}),
     lastTestStatusJson:
       input.lastTestStatus === undefined
         ? (existing?.lastTestStatusJson ?? null)

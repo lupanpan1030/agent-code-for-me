@@ -1,5 +1,4 @@
 import { z } from "zod"
-import { getRuntimeFeatureSettingsSnapshot } from "../../agent-runtime/runtime-feature-settings"
 import { testProviderProfile } from "../../provider-profiles/gateway"
 import { PROVIDER_PROFILE_PRESETS } from "../../provider-profiles/presets"
 import {
@@ -49,12 +48,6 @@ const saveInputSchema = z.object({
   capabilities: providerProfileCapabilitiesSchema.optional(),
 })
 
-function getKunRuntimeEnabledForProviderProfileSave(): boolean {
-  return getRuntimeFeatureSettingsSnapshot({
-    env: process.env,
-  }).resolved.kunRuntimeEnabled
-}
-
 export const providerProfilesRouter = router({
   listPresets: publicProcedure.query(() => ({
     presets: PROVIDER_PROFILE_PRESETS,
@@ -69,9 +62,7 @@ export const providerProfilesRouter = router({
   })),
 
   saveProfile: publicProcedure.input(saveInputSchema).mutation(({ input }) => ({
-    profile: saveProviderProfile(input, {
-      kunRuntimeEnabled: getKunRuntimeEnabledForProviderProfileSave(),
-    }),
+    profile: saveProviderProfile(input),
   })),
 
   deleteProfile: publicProcedure
