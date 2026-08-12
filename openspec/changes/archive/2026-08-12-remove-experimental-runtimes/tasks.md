@@ -182,18 +182,24 @@
       `-74 - 13 + 3 = -84`. Files close as `-14 + 1 = -13`. The per-suite ledger is recorded in
       `desktop-smoke-evidence.md`.
 - [x] 10.2 `openspec validate --strict --no-interactive` across all changes and specs.
-- [x] 10.3 Residue grep — **must exclude binary/asset files**:
-      `grep -rnE '\bkun\b|kun-|kun[A-Z]|\bKun\b|Kun[A-Z]|KUN_|qwen-code|QwenC' src/ tests/ scripts/ openspec/specs/ docs/ CLAUDE.md PROJECT-MAP.md --exclude='*.svg' --exclude='*.png' --exclude='*.ico' --exclude='*.icns'`
-      ACCEPTANCE: zero hits. **Result: zero.**
+- [x] 10.3 Residue gate — **must exclude binary/asset files and permit only reviewed,
+      explicitly allowlisted compatibility/removal-proof references**:
+      `node scripts/check-retired-runtime-residue.mjs`
+      ACCEPTANCE: zero unallowlisted hits; every allowlisted file has a stated reason.
+      **Result (2026-08-12): pass — 1108 files scanned, 9 explicitly allowlisted.**
+      The original draft used a raw grep with zero-hit acceptance. That criterion was replaced
+      during verification because it conflicts with the startup cleanup required by 9.1, the
+      negative/rejection tests required by 10.3b, and the protected Ollama `qwen-coder` model
+      surface. The mismatch and current raw-grep count are recorded in `verification.md`.
       Two gotchas, both hit during implementation:
       1. A case-insensitive (`-i`) grep produces false positives on `markUnviewed`,
-         `RollbackUnsupported`, `SdkUnexpected` — use the case-sensitive pattern above.
+         `RollbackUnsupported`, `SdkUnexpected` — the executable gate uses case-sensitive patterns.
       2. `src/renderer/assets/app-icons/cursor.svg` embeds a base64 PNG whose payload coincidentally
          contains `KunP` and `kunP`. **That is not residue and the asset must NOT be edited.** The
          first implementation attempt XML-entity-escaped the base64 to break the match; it was
          reverted on review. (The decoded PNG sha256 was verified identical before and after, so no
          image damage occurred — but mutating a shipped asset to satisfy a grep fixes the wrong
-         thing.) Exclude asset extensions instead.
+         thing.) The executable gate excludes asset extensions instead.
 - [x] 10.3b **Restore removal-proving test coverage** (review finding, batch 1 2026-08-12).
       Task 1.3 legitimately deleted the source-text assertions in
       `tests/agent-runtime-registry.test.ts` that pinned the *old* router shape — but the surviving
