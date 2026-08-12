@@ -38,6 +38,7 @@ trusting any doc as "current state," check which bucket it is in.
 | --- | --- |
 | [local-job-api-v1-consumer-guide.md](local-job-api-v1-consumer-guide.md) ([zh](local-job-api-v1-consumer-guide.zh-CN.md)) | How downstream local tools submit jobs to Locus (v1). |
 | [local-job-api-v1.schema.json](local-job-api-v1.schema.json) | Machine-readable v1 request/response schema. |
+| [model-catalog.json](model-catalog.json) | ⚠️ **Not documentation — a live runtime manifest.** Fetched at run time from this repo's raw GitHub URL on a 24h TTL by `src/main/lib/model-catalog/fetcher.ts`. Note it is currently unreachable in default builds (local-only mode defaults on and the fetcher blocks on it). |
 
 ## `archive/` — superseded / historical snapshots
 
@@ -55,21 +56,25 @@ Individual issue write-ups (TICKET-001…) with their own
 [tickets/README.md](tickets/README.md) index. Check a ticket's own status line;
 resolved tickets stay for the record.
 
-## `ideas/` — mixed: active working docs + reference-only idea banks
+## `ideas/` — decision-track working docs
 
-Two different kinds of documents share this folder — check the status line at
-the top of each file:
+Check the status line at the top of each file before trusting it.
+
+> The three reference-only "learn-from-X" idea banks (ccx / cc-switch / Codex++,
+> 1,931 lines) were **deleted 2026-08-12** during roadmap triage. Everything in them
+> was already shipped-and-ratified, explicitly rejected in spec, or parked product
+> surface. The one unharvested idea was extracted first as
+> [tickets/TICKET-107](tickets/TICKET-107-external-config-write-safety.md).
 
 **Active / authoritative** (trust these):
 
-- [ideas/canonical-vocabulary.md](ideas/canonical-vocabulary.md) — **RATIFIED 2026-06-18**; the authoritative entity-naming source (Project · Workspace · Chat · Quick chat · Agent · Run).
-- [ideas/settings-per-tab-audit.md](ideas/settings-per-tab-audit.md) — working audit of the Settings surface.
-- [ideas/settings-reconciliation-ledger.md](ideas/settings-reconciliation-ledger.md) — active Settings reconciliation ledger.
+- [ideas/canonical-vocabulary.md](ideas/canonical-vocabulary.md) — **RATIFIED 2026-06-18**; the authoritative entity-naming source (Project · Workspace · Chat · Quick chat · Agent · Run). ⚠️ Known gap: it defines no term for the ENGINE concept (Claude Code / Codex / …), which the UI already ships as "Engine".
 
-**Reference-only "learn-from-X" idea banks** (NOT roadmap; scope-locked out as
-products by [locus-workbench-focus.md](locus-workbench-focus.md) — mine
-components/ideas from them, do not treat as planned work):
+**Deferred — written, not started** (do not treat as planned work):
 
-- [ideas/ccx-provider-gateway-plan.md](ideas/ccx-provider-gateway-plan.md) — learn-from-`ccx` provider gateway ideas.
-- [ideas/runtime-environment-center-plan.md](ideas/runtime-environment-center-plan.md) — learn-from-`cc-switch` runtime environment center ideas.
-- [ideas/locus-plugin-tweak-runtime-plan.md](ideas/locus-plugin-tweak-runtime-plan.md) — learn-from-`Codex++`; plugin system shipped, tweak/patch ideas parked.
+- [ideas/cross-engine-delegation.md](ideas/cross-engine-delegation.md) — **DEFERRED 2026-08-12.** Cross-engine delegation (one engine dispatching work to another). Researched and scoped, zero code. Blocked behind the isolation + adjudication line landing first; see its own Status block.
+
+**Completed — kept for the record** (not live work):
+
+- [ideas/settings-per-tab-audit.md](ideas/settings-per-tab-audit.md) — Settings surface audit, self-declared COMPLETE. Its per-tab line counts are stale (tabs have since grown 20–100%).
+- [ideas/settings-reconciliation-ledger.md](ideas/settings-reconciliation-ledger.md) — Settings reconciliation ledger, self-declared COMPLETE; findings closed by named archived OpenSpec changes.

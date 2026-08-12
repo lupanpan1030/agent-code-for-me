@@ -38,7 +38,26 @@
 | [TICKET-106](TICKET-106-arch-guard-dangerous-router-inputs.md) | 架构守卫：危险输入必经解析器 | 🟡 结构防回归 | 4（最后） |
 
 **顺序**：101 前置 → 102/103/105 可并行 → 104 单独一 PR（改动最大、热路径）→ 106 最后（依赖前面收敛完成，否则守卫会因现存违规而红）。
-Phase 2（渲染层 markdown/webview 隔离）与 Phase 3（capability 中间件/consent/audit）待 Phase 1 收敛后再拆。
+
+**状态（2026-08-12 核实）**：101–106 **全部已实施并合入**，各自有具名 commit —
+`583096cc`(101) / `d941aa23`(102) / `da8f688f`(103) / `c8bc01e1`(104) / `bb4f7d97`(105) / `0c805948`(106)。
+本批工单不再是待办，保留仅作记录。Phase 1 的收敛成果（服务端从注册实体解析 cwd、拒绝渲染层伪造）
+是 **worktree-per-run + cwd 租约** 工作的现成基础，见 [../ideas/cross-engine-delegation.md](../ideas/cross-engine-delegation.md) P1-2。
+
+Phase 2（渲染层 markdown/webview 隔离）与 Phase 3（capability 中间件/consent/audit）仍未拆工单，
+对应 openspec `update-trpc-capability-boundary` 剩余的 8 条任务。
+
+## 第三批 — 并行安全（2026-08-12 路线图梳理产出）
+
+对应产品取景框收敛为「在真实 git 仓库上安全并行地跑 agent」后，识别出的活缺陷。
+
+| 工单 | 标题 | 级别 | 状态 |
+|------|------|------|------|
+| [TICKET-107](TICKET-107-external-config-write-safety.md) | 外部运行时配置写入安全（备份/校验/回滚/串行） | 🟠 Medium | 待实施 |
+
+**背景**：Locus 对用户全局 `~/.codex/config.toml` 的写入是无锁读-改-写，无备份无回滚。
+这是**跨所有并行运行的共享可变状态**，worktree 隔离解决不了它——每个 worktree 独立，
+但指向的是同一份用户配置。并行度越高，交错窗口越大。
 
 ## 暂不立工单的结构性改进（需先设计，不适合直接实施-审查闭环）
 
