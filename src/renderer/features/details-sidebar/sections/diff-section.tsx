@@ -5,17 +5,7 @@ import { GitCommit } from "lucide-react"
 import { IconSpinner, DiffIcon } from "@/components/ui/icons"
 import { getFileIconByExtension } from "@/features/agents/mentions/agents-file-mention"
 import { useI18n } from "@/lib/i18n"
-
-/** Parsed diff file type */
-interface ParsedDiffFile {
-  key: string
-  oldPath: string
-  newPath: string
-  additions: number
-  deletions: number
-  isNewFile?: boolean
-  isDeletedFile?: boolean
-}
+import type { ParsedDiffFile } from "../types"
 
 interface DiffSectionProps {
   diffStats?: { additions: number; deletions: number; fileCount: number } | null

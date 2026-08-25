@@ -1,4 +1,4 @@
-import type { ParsedDiffFile } from "../../git/diff-parser"
+import type { ParsedDiffFile } from "../../../../shared/unified-diff-parser"
 
 const COMMIT_MESSAGE_TYPES = [
   "feat",

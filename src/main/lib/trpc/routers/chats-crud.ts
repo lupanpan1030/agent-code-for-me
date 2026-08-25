@@ -185,6 +185,7 @@ export const chatCrudProcedures = {
         worktreePath?: string
         branch?: string
         baseBranch?: string
+        baseCommit?: string
       } = {}
       if (!project) {
         console.log("[chats.create] folderless quick chat - no worktree")
@@ -220,6 +221,7 @@ export const chatCrudProcedures = {
         worktreePath: worktreeResult.worktreePath || project?.path || null,
         branch: worktreeResult.branch,
         baseBranch: worktreeResult.baseBranch,
+        baseCommit: worktreeResult.baseCommit,
         subChats: [subChat],
       }
 

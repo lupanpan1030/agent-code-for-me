@@ -14,11 +14,47 @@ export type AgentWorkbenchFilter =
   | "blocked"
   | "clean"
 
+export type AgentWorkbenchDiffFile = {
+  path: string
+  deleted: boolean
+  renamedTo?: string
+}
+
 export type AgentWorkbenchDiffSummary = {
   fileCount: number
   additions: number | null
   deletions: number | null
+  files: AgentWorkbenchDiffFile[]
   error?: string
+}
+
+export function collectAgentWorkbenchDiffFiles(
+  statusFiles: Array<{
+    path: string
+    from?: string
+    index: string
+    working_dir: string
+  }>,
+): AgentWorkbenchDiffFile[] {
+  const filesByPath = new Map<string, AgentWorkbenchDiffFile>()
+  const addFile = (path: string, deleted: boolean, renamedTo?: string) => {
+    const previous = filesByPath.get(path)
+    const renameDestination = renamedTo ?? previous?.renamedTo
+    filesByPath.set(path, {
+      path,
+      deleted: previous === undefined ? deleted : previous.deleted && deleted,
+      ...(renameDestination ? { renamedTo: renameDestination } : {}),
+    })
+  }
+
+  for (const file of statusFiles) {
+    addFile(file.path, file.index === "D" || file.working_dir === "D")
+    if (file.from && file.from !== file.path) {
+      addFile(file.from, true, file.path)
+    }
+  }
+
+  return Array.from(filesByPath.values())
 }
 
 export type AgentWorkbenchLatestSubChat = {

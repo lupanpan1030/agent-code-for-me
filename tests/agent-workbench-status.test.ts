@@ -13,7 +13,7 @@ const cleanInput = {
   hasPendingPlanApproval: false,
   runtimeError: null,
   guardedRunStatus: null,
-  diff: { fileCount: 0, additions: 0, deletions: 0 },
+  diff: { fileCount: 0, additions: 0, deletions: 0, files: [] },
   prUrl: null,
   prNumber: null,
 }
@@ -38,7 +38,7 @@ describe("agent workbench status", () => {
     expect(
       classifyAgentWorkbenchStatus({
         ...cleanInput,
-        diff: { fileCount: 2, additions: 10, deletions: 1 },
+        diff: { fileCount: 2, additions: 10, deletions: 1, files: [] },
       }).status,
     ).toBe("needs-review")
 

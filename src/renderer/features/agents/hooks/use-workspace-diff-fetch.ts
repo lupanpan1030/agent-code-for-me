@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef } from "react"
-import { trpcClient } from "../../../lib/trpc"
+import type { ParsedDiffFile } from "../../../../shared/unified-diff-parser"
 import {
   useFileChangeListener,
   useGitWatcher,
 } from "../../../lib/hooks/use-file-change-listener"
-import type { DiffStats, ParsedDiffFile } from "../ui/agent-diff-view"
+import { trpcClient } from "../../../lib/trpc"
+import type { DiffStats } from "../ui/agent-diff-view"
 
 const DIFF_THROTTLE_MS = 2000
 

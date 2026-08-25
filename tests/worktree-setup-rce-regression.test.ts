@@ -74,8 +74,43 @@ afterEach(async () => {
 })
 
 describe("worktree setup RCE regression", () => {
+  test("returns the resolved start-point commit for a created chat worktree", async () => {
+    const projectPath = await makeGitProject()
+    const worktreesDir = await makeTempDir("locus-worktrees-")
+    const { stdout: expectedBaseCommit } = await execFileAsync(
+      "git",
+      ["rev-parse", "HEAD"],
+      { cwd: projectPath },
+    )
+
+    const result = await createWorktreeForChat(
+      projectPath,
+      "base-commit-regression",
+      "chat-base-commit",
+      "main",
+      "local",
+      { worktreesDir },
+    )
+
+    if (result.worktreePath) {
+      worktreesToRemove.push(result.worktreePath)
+    }
+
+    expect(result.success).toBe(true)
+    expect(result.baseCommit).toBe(expectedBaseCommit.trim())
+    if (result.worktreePath) {
+      const { stdout: createdWorktreeCommit } = await execFileAsync(
+        "git",
+        ["rev-parse", "HEAD"],
+        { cwd: result.worktreePath },
+      )
+      expect(result.baseCommit).toBe(createdWorktreeCommit.trim())
+    }
+  })
+
   test("does not execute untrusted .cursor setup commands when creating a chat worktree", async () => {
     const projectPath = await makeGitProject()
+    const worktreesDir = await makeTempDir("locus-worktrees-")
     const payloadPath = join(
       await makeTempDir("locus-worktree-rce-payload-"),
       "pwned",
@@ -104,6 +139,7 @@ describe("worktree setup RCE regression", () => {
       "local",
       {
         projectId: "project-cursor-rce",
+        worktreesDir,
         onSetupApprovalRequired: (request) => {
           approvalRequest = request
         },

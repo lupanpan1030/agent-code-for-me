@@ -73,25 +73,8 @@ export interface FileContents {
 	language: string; // Detected language for syntax highlighting
 }
 
-/** Parsed diff file for the diff viewer */
-export interface ParsedDiffFile {
-	key: string;
-	oldPath: string;
-	newPath: string;
-	diffText: string;
-	isBinary: boolean;
-	additions: number;
-	deletions: number;
-	isValid: boolean;
-	fileLang: string | null;
-	isNewFile: boolean;
-	isDeletedFile: boolean;
-}
-
-/** Response from getParsedDiff endpoint */
-export interface ParsedDiffResponse {
-	files: ParsedDiffFile[];
-	totalAdditions: number;
-	totalDeletions: number;
-	fileContents: Record<string, string>;
-}
+/** Canonical parsed diff contracts are owned by unified-diff-parser.ts. */
+export type {
+	ParsedDiffFile,
+	ParsedDiffResponse,
+} from "./unified-diff-parser";

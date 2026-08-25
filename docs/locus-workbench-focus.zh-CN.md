@@ -2,16 +2,19 @@
 
 语言：[English](locus-workbench-focus.md) | 简体中文
 
+> **状态：产品方向已于 2026-08-25 被取代。** Canonical 产品方向见
+> [Locus 产品方向与 Harness 战略](ideas/locus-product-direction-harness-strategy.zh-CN.md)。
+> 本文仅保留为历史执行切片记录；该状态既不撤销、也不批准任何 OpenSpec change。
+
 ## 稳定定位
 
-Locus 是一个 AI 工作台：底层使用 Claude Code、Codex 等成熟 CLI 的 agent
-流程，但模型后端可以切换为官方模型、第三方 API、低成本模型或本地模型。Locus
-负责在一个桌面工作区里展示 runtime 能力、provider 兼容性、MCP 状态、工具调用、
-文件变化、token/usage 和运行历史。
+Locus 是一个用于在真实 Git 仓库上安全并行运行 coding agent 的工作台。
 
-主产品是用户可见的 workbench。Runtime adapters、provider profiles、gateway routing、
-local jobs、daemon、schedules 和 protocol surfaces 都是支撑层，不应该反过来成为产品
-定位。
+用户可见的产品是一个面向项目 Workspace 的 local-first 桌面工作台。它把 agent 活动、
+本地变更、冲突证据、runtime 状态、usage 和审查操作集中在一处，同时让用户保有控制权。
+
+Runtime adapter、provider profile、gateway routing、local job、daemon、schedule 和 protocol
+surface 都是支撑层，不应该反过来成为产品定位。
 
 不要把 Locus 的主定位写成 AI OS、通用 workflow orchestrator、local job platform 或
 runtime hub。
@@ -20,97 +23,88 @@ runtime hub。
 
 当前代码已经有足够底座，不需要继续横向发散：
 
-- Claude Code 和 Codex 已经有 runtime adapter、capability manifest 和 run gate
-- local job 层已经支持 `locus run`、`locus jobs`、daemon、schedules、API runs、
-  status、events、cancel、retry 和 heartbeat
-- provider profile 和 provider gateway 已经能表达第三方或本地模型后端，并避免把
-  provider secret 传给 renderer
-- 当前 Codex desktop 路线比 headless Codex 更接近工作台目标，因为它已经有 provider
-  profile binding、MCP integration、streaming、usage 和 session metadata；但 ACP transport
-  只是兼容路径，不是长期 desktop/chat 目标
-- headless Codex 现在仍然较薄，因为 `codex exec` 主要还是把 stdout/stderr 粗粒度转成
-  events，而不是完整 runtime event stream
+- engine 集合封闭为两个：Claude Code 和 Codex，并已有 capability manifest 和 run gate
+- Codex desktop/chat adapter 只使用 app-server；ACP 仅保留为 Locus 自有的 `locus acp`
+  stdio surface，不是 Codex desktop adapter
+- local job 层已经支持 `locus run`、`locus jobs`、daemon、schedule、API run、status、
+  event、cancel、retry 和 heartbeat
+- provider profile 和 provider gateway 已能表达第三方或本地模型后端，并避免把 provider
+  secret 传给 renderer
+- Agent Workbench 已经聚合面向项目的 Workspace，并复用现有 chat、diff/review 和 GitHub
+  workflow surface
 
-下一步不是继续接更多 runtime。下一步是把已经接入的 CLI workflow 做成可理解、可选择、
-可诊断、可观察的工作台。
+下一步应让并行 agent 操作更安全、更容易裁决，而不是再增加 engine 或审查界面。
 
 ## 当前切片
 
-下一阶段只做：
+并行安全的推进顺序是：
 
 ```text
-Codex CLI workflow + provider profile backend + capability display + run trace
+现在做跨 Workspace 冲突检测；下一步做 Workspace 隔离
 ```
 
-把范围固定成四个 issue：
+把顺序固定为两个有边界的切片：
 
-1. Runtime Capability Panel
-   把现有 capability manifest 展示到 UI，显示 supported、degraded、unsupported、reason
-   和 hint。
+1. 现在：跨 Workspace 冲突检测
+   根据 Workbench 已收集的状态显示同路径警告。只有用户明确操作时才运行更深的 hunk
+   和 committed-tree 检查，清楚标注其边界，并把审查路由到现有的过滤 diff surface。
+   冲突是标注，不是任务状态。
 
-2. Provider Profile Run Binding
-   把 model、provider profile、backend label、protocol 和 gateway kind 绑定到 run
-   metadata 和 job history。运行历史应该能说清楚 `Codex + DeepSeek + responses gateway`，
-   而不是只写 `Codex`。
+2. 下一步：Workspace 隔离
+   在另一个经过批准的 OpenSpec change 中定义 cwd lease、rollback safety 和
+   worktree-per-run。本次冲突检测不会实现或暗示这些保证。
 
-3. Codex Workbench Run Trace
-   trace contract 对准 app-server desktop/chat 目标来设计。当前 ACP 路径只能在迁移期提供
-   对比数据，不能作为最终完成口径。把 provider selection、MCP state、tool/command
-   activity、file changes、usage、session ID、duration 和 final state 展示成结构化 timeline。
-
-4. Headless Parity Later
-   `codex exec` 和 process-runner 先作为 fallback 或 batch mode。等 workbench trace
-   稳定后，再单独做 headless JSON/JSONL event parser。
-
-Provider diagnostics 和 run preflight 合并进前两个 issue。它们要回答：当前 runtime +
-provider profile 组合能不能运行、能不能 streaming、能不能 tool use、能不能加载 MCP、
-能不能回传 usage。
+两个切片都不会让 Locus 自动 merge 或解决冲突；裁决权仍在用户手中。
 
 ## 范围规则
 
-现在只允许推进直接服务当前切片的工作：
+现在只允许推进直接服务并行安全切片的工作：
 
-- 展示 runtime capability truth
-- 把 provider profile 和 model metadata 绑定到真实 run
-- 让 Codex workbench execution 可见、可诊断
-- 准确记录 run trace、usage、errors、file/tool activity
-- provider secrets 留在 main process，renderer 只拿脱敏数据
+- 如实展示跨 Workspace 活动和重叠
+- 在保留现有状态分类的同时增加冲突标注
+- 按真实置信度和覆盖范围标注 path、hunk 与 committed-tree 证据
+- 复用现有 per-Workspace diff/review surface 和 registered-root 边界
+- 为安全性和 subprocess 成本声明记录可复现的验证证据
 
 不属于当前切片的工作先停到 backlog：
 
-- 第 3 个或第 4 个 agent CLI
-- Codex workbench 还没成型前继续铺 Claude
+- 自动 merge、rebase 或解决冲突
+- 在当前冲突 change 中加入 cwd lease、rollback 改动或 worktree-per-run
+- 重新把 engine 集合扩到 Claude Code 和 Codex 之外
+- 与安全并行无关的 runtime 功能扩张
 - 通用 workflow engine
 - AI OS 定位
 - computer-use 或 screen-control 功能
-- plugin marketplace
+- 继续扩张已经交付的 runtime-scoped plugin marketplace center
 - 全模型 benchmark
 - 完整 hosted/headless SaaS
-- ACP 作为最终产品目标
+- 把 ACP 当作 Codex desktop adapter 或主产品目标
 - durable workflow management
 
 ## 活跃 Proposal 切割
 
-`openspec/changes/add-claude-dynamic-workflows-adapter` 保持 proposal-only，并排在这次
-范围切割之后。它可以继续作为 Claude-specific adapter proposal 存在，但不是下一阶段主线，
-也不能被描述成已经支持。
+以 `openspec list` 为准。在当前列表中，`add-cross-workspace-conflicts` 是面向用户的焦点。
+`update-trpc-capability-boundary`、`add-local-job-api-runtime-readiness`、
+`add-headless-provider-binding`，以及已完成但尚未 archive 的 `add-remote-model-catalog`，
+都属于支撑或安全工作，不会重新定义产品主张。
 
-只有在 Codex Workbench 这条线完成，或者明确重新排序后，才应该实现这个 proposal。
+`add-agent-native-projection-writes` 和 `add-policy-grant-scope-enforcement` 继续保持 deferred。
+Workspace 隔离必须先形成单独获批的 change，之后才能实现。
 
 ## 文档规则
 
 可以使用：
 
 ```text
-local-first AI workbench
-selectable model backends
-runtime capability truth
-provider compatibility and diagnostics
-MCP state, tool activity, file changes, usage, and run history
-Local Job API 作为支撑自动化基础设施
-codex app-server 用于 desktop/chat
-codex exec 用于 headless/batch
-ACP 只作为迁移期 temporary compatibility fallback
+Locus 是一个用于在真实 Git 仓库上安全并行运行 coding agent 的工作台
+面向项目的 Workspace
+跨 Workspace 冲突标注
+诚实标注的 path、hunk 和 committed-tree 证据
+现有 per-Workspace diff/review surface
+Claude Code 和 Codex 是封闭的 engine 集合
+Codex app-server 用于 desktop/chat
+Locus 自有的 `locus acp` stdio surface
+Workspace 隔离是下一个需单独获批的切片
 ```
 
 不要作为主定位使用：
@@ -120,13 +114,11 @@ AI OS
 local job platform
 runtime hub
 workflow orchestrator
+自动冲突解决器
 complete ACP server
-ACP 作为长期 Codex adapter
+ACP 是 Codex desktop adapter
 universal automation platform
 computer-control platform
-Claude and Codex parity
 cloud agent platform
-offline-only
-fully private
 complete filesystem isolation
 ```

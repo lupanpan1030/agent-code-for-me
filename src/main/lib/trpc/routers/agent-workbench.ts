@@ -1,15 +1,30 @@
+import { TRPCError } from "@trpc/server"
 import { and, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm"
-import simpleGit from "simple-git"
 import { z } from "zod"
 import {
-  type AgentWorkbenchDiffSummary,
+  type AgentWorkbenchDeepCheckIneligibilityReason,
+  computeAgentWorkbenchStatusHash,
+  computeCrossWorkspaceConflicts,
+  computeEligibleDeepCheckTaskIdsByTaskId,
+  validateAgentWorkbenchDeepCheckCandidates,
+} from "../../agent-workbench/conflicts"
+import {
+  checkCrossWorkspaceConflicts,
+  getAgentWorkbenchDiffSummary,
+  getGitHeadSha,
+  probeMergeTreeCapability,
+  runGitMergeTreeTrial,
+} from "../../agent-workbench/deep-conflicts"
+import {
   type AgentWorkbenchFilter,
   classifyAgentWorkbenchStatus,
   matchesAgentWorkbenchFilter,
   summarizeLatestSubChat,
 } from "../../agent-workbench/status"
+import { ensureChatBaseCommit } from "../../chat-base-commit"
 import { chats, getDatabase, projects, subChats } from "../../db"
 import { assertRegisteredWorktree } from "../../git/security"
+import { getWorktreeDiff } from "../../git/worktree"
 import { publicProcedure, router } from "../index"
 
 const workbenchFilterSchema = z.enum([
@@ -31,6 +46,32 @@ const listTasksInputSchema = z
   })
   .optional()
 
+const checkConflictsInputSchema = z.object({
+  taskIds: z
+    .array(z.string().trim().min(1))
+    .min(2)
+    .max(10)
+    .refine((taskIds) => new Set(taskIds).size === taskIds.length, {
+      message: "Task ids must be unique",
+    }),
+})
+
+const deepCheckEligibilityErrorMessages: Record<
+  AgentWorkbenchDeepCheckIneligibilityReason,
+  string
+> = {
+  "too-few-tasks": "Conflict checks require at least two tasks",
+  "too-many-tasks": "Conflict checks support at most ten tasks",
+  "duplicate-task-id": "Conflict checks require unique task ids",
+  "archived-task": "Conflict checks do not allow archived tasks",
+  "missing-project": "Every task must belong to a registered project",
+  "mixed-projects": "Conflict checks require tasks from one project",
+  "missing-branch": "Conflict checks require an active branch for every task",
+  "missing-worktree": "Conflict checks require a worktree for every task",
+  "shared-worktree":
+    "Conflict checks require tasks from distinct worktree directories",
+}
+
 type ChatRow = typeof chats.$inferSelect & {
   projectName: string
   projectPath: string
@@ -51,63 +92,16 @@ type SubChatRow = Pick<
   | "updatedAt"
 >
 
-async function getDiffSummary(
-  worktreePath: string | null,
-): Promise<AgentWorkbenchDiffSummary> {
-  if (!worktreePath) {
-    return { fileCount: 0, additions: null, deletions: null }
-  }
-
-  try {
-    assertRegisteredWorktree(worktreePath)
-    const git = simpleGit(worktreePath)
-    const status = await git.status()
-    const fileCount = status.files.length
-
-    if (fileCount === 0) {
-      return { fileCount: 0, additions: 0, deletions: 0 }
-    }
-
-    let additions = 0
-    let deletions = 0
-    try {
-      const [unstagedNumstat, stagedNumstat] = await Promise.all([
-        git.diff(["--numstat"]),
-        git.diff(["--cached", "--numstat"]),
-      ])
-      const numstat = [unstagedNumstat, stagedNumstat]
-        .filter(Boolean)
-        .join("\n")
-      for (const line of numstat.split("\n")) {
-        const [added, removed] = line.trim().split(/\s+/)
-        const addedCount = Number.parseInt(added ?? "", 10)
-        const removedCount = Number.parseInt(removed ?? "", 10)
-        if (Number.isFinite(addedCount)) additions += addedCount
-        if (Number.isFinite(removedCount)) deletions += removedCount
-      }
-    } catch {
-      return { fileCount, additions: null, deletions: null }
-    }
-
-    return { fileCount, additions, deletions }
-  } catch (error) {
-    return {
-      fileCount: 0,
-      additions: null,
-      deletions: null,
-      error: error instanceof Error ? error.message : String(error),
-    }
-  }
-}
-
 function chooseLatestSubChat(rows: SubChatRow[]): SubChatRow | null {
   if (rows.length === 0) return null
 
-  return rows.slice().sort((left, right) => {
-    const leftTime = left.updatedAt?.getTime() ?? 0
-    const rightTime = right.updatedAt?.getTime() ?? 0
-    return rightTime - leftTime
-  })[0]!
+  return (
+    rows.slice().sort((left, right) => {
+      const leftTime = left.updatedAt?.getTime() ?? 0
+      const rightTime = right.updatedAt?.getTime() ?? 0
+      return rightTime - leftTime
+    })[0] ?? null
+  )
 }
 
 export const agentWorkbenchRouter = router({
@@ -191,7 +185,7 @@ export const agentWorkbenchRouter = router({
           const latestSubChat = latestRawSubChat
             ? summarizeLatestSubChat(latestRawSubChat)
             : null
-          const diff = await getDiffSummary(chat.worktreePath)
+          const diff = await getAgentWorkbenchDiffSummary(chat.worktreePath)
           const hasActiveStream =
             !!latestSubChat?.streamId ||
             (latestSubChat ? runningSubChatIds.has(latestSubChat.id) : false)
@@ -211,6 +205,7 @@ export const agentWorkbenchRouter = router({
             prUrl: chat.prUrl,
             prNumber: chat.prNumber,
           })
+          const statusHash = computeAgentWorkbenchStatusHash(diff)
 
           return {
             id: chat.id,
@@ -229,6 +224,7 @@ export const agentWorkbenchRouter = router({
             localDirectoryMode: !chat.branch,
             latestSubChat,
             diff,
+            statusHash,
             pr:
               chat.prUrl || chat.prNumber
                 ? {
@@ -251,6 +247,31 @@ export const agentWorkbenchRouter = router({
         }),
       )
 
+      const conflictsByTaskId = computeCrossWorkspaceConflicts(
+        tasks
+          .filter((task) => !task.archivedAt)
+          .map((task) => ({
+            taskId: task.id,
+            projectId: task.project.id,
+            worktreePath: task.worktreePath,
+            diff: task.diff,
+          })),
+      )
+      const eligibleDeepCheckTaskIdsByTaskId =
+        computeEligibleDeepCheckTaskIdsByTaskId(
+          tasks.map((task) => ({
+            taskId: task.id,
+            projectId: task.project.id,
+            worktreePath: task.worktreePath,
+            branch: task.branch,
+            archived: !!task.archivedAt,
+          })),
+        )
+      const tasksWithConflicts = tasks.map((task) => ({
+        ...task,
+        conflicts: conflictsByTaskId.get(task.id) ?? [],
+      }))
+
       const counts = {
         all: tasks.length,
         running: tasks.filter((task) => task.status === "running").length,
@@ -262,11 +283,104 @@ export const agentWorkbenchRouter = router({
       }
 
       return {
-        tasks: tasks.filter((task) =>
+        tasks: tasksWithConflicts.filter((task) =>
           matchesAgentWorkbenchFilter(task.status, filter),
         ),
+        workspaceTitlesByTaskId: Object.fromEntries(
+          tasks.map((task) => [task.id, task.title]),
+        ),
+        workspaceStatusHashesByTaskId: Object.fromEntries(
+          tasks.map((task) => [task.id, task.statusHash]),
+        ),
+        eligibleDeepCheckTaskIdsByTaskId,
         counts,
         loadedAt: new Date(),
       }
+    }),
+  checkConflicts: publicProcedure
+    .input(checkConflictsInputSchema)
+    .mutation(async ({ input }) => {
+      const db = getDatabase()
+      const taskIds = input.taskIds.slice().sort()
+      const rows = db
+        .select({
+          taskId: chats.id,
+          projectId: chats.projectId,
+          projectPath: projects.path,
+          worktreePath: chats.worktreePath,
+          branch: chats.branch,
+          baseBranch: chats.baseBranch,
+          archivedAt: chats.archivedAt,
+        })
+        .from(chats)
+        .innerJoin(projects, eq(chats.projectId, projects.id))
+        .where(inArray(chats.id, taskIds))
+        .all()
+
+      if (rows.length !== taskIds.length) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Every task must belong to a registered project",
+        })
+      }
+
+      const eligibility = validateAgentWorkbenchDeepCheckCandidates(
+        rows.map((row) => ({
+          taskId: row.taskId,
+          projectId: row.projectId,
+          worktreePath: row.worktreePath,
+          branch: row.branch,
+          archived: row.archivedAt !== null,
+        })),
+      )
+      if (!eligibility.eligible) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: deepCheckEligibilityErrorMessages[eligibility.reason],
+        })
+      }
+
+      const projectPath = rows[0]?.projectPath
+      if (!projectPath) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Conflict checks require a registered project path",
+        })
+      }
+      try {
+        assertRegisteredWorktree(projectPath)
+        for (const worktreePath of eligibility.worktreePaths) {
+          assertRegisteredWorktree(worktreePath)
+        }
+      } catch (cause) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Conflict checks require registered worktree paths",
+          cause,
+        })
+      }
+
+      const workspaces = rows.map((row) => ({
+        taskId: row.taskId,
+        projectPath: row.projectPath,
+        worktreePath: row.worktreePath,
+        branch: row.branch,
+        baseBranch: row.baseBranch,
+      }))
+
+      return checkCrossWorkspaceConflicts(workspaces, {
+        ensureBaseCommit: (taskId) => ensureChatBaseCommit(db, taskId),
+        getHeadSha: getGitHeadSha,
+        getWorkspaceSummary: (worktreePath, options) =>
+          getAgentWorkbenchDiffSummary(worktreePath, options),
+        getWorkspaceDiff: (worktreePath, options) =>
+          getWorktreeDiff(worktreePath, undefined, {
+            onlyUncommitted: true,
+            signal: options?.signal,
+            timeoutMs: options?.timeoutMs,
+          }),
+        probeMergeTreeCapability,
+        runMergeTreeTrial: runGitMergeTreeTrial,
+      })
     }),
 })

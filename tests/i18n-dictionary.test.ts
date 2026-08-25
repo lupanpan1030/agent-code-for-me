@@ -31,6 +31,58 @@ describe("i18n dictionary parity", () => {
     expect(en["chat.creatingWorktree"]).toBe("Creating worktree...")
   })
 
+  test("localizes cross-workspace conflict annotations", () => {
+    expect(en["workbench.crossWorkspaceConflicts"]).toBe(
+      "Cross-Workspace Conflicts",
+    )
+    expect(en["workbench.conflictAnnotation"]).toContain("{workspaces}")
+    expect(en["workbench.deleteEditConflict"]).toContain("{count}")
+    expect(en["workbench.deleteDeleteConflict"]).toContain("{count}")
+    expect(zhCN["workbench.crossWorkspaceConflicts"]).toBe("跨工作区冲突")
+    expect(zhCN["workbench.conflictAnnotation"]).toContain("{workspaces}")
+    expect(zhCN["workbench.deleteEditConflict"]).toContain("{count}")
+    expect(zhCN["workbench.deleteDeleteConflict"]).toContain("{count}")
+    expect(en["workbench.deepCheck"]).toBe("Deep check")
+    expect(en["workbench.deepCheckNoWarnings"]).toContain(
+      "committed changes",
+    )
+    expect(en["workbench.conflictVerdictStale"]).toContain("Stale")
+    expect(en["workbench.mergeTrialCleanCommittedOnly"]).toContain(
+      "Committed changes only",
+    )
+    expect(en["workbench.mergeTrialOldGit"]).toContain("{minimum}")
+    expect(en["workbench.hunkSkippedWorkspaceChanged"]).toContain(
+      "HEAD changed",
+    )
+    expect(en["workbench.hunkSkippedWorkspaceDiffChanged"]).toContain(
+      "diff changed",
+    )
+    expect(en["workbench.hunkSkippedWorkspaceDiffTooLarge"]).toContain("2 MiB")
+    expect(en["workbench.hunkSkippedBatchDeadline"]).toContain("deadline")
+    expect(en["workbench.mergeTrialTimedOut"]).toContain("timed out")
+    expect(en["workbench.mergeTrialBatchDeadline"]).toContain("deadline")
+    expect(zhCN["workbench.deepCheck"]).toBe("深度检查")
+    expect(zhCN["workbench.deepCheckNoWarnings"]).toContain("已提交改动")
+    expect(zhCN["workbench.conflictVerdictStale"]).toContain("已过期")
+    expect(zhCN["workbench.mergeTrialCleanCommittedOnly"]).toContain(
+      "仅限已提交的改动",
+    )
+    expect(zhCN["workbench.mergeTrialOldGit"]).toContain("{minimum}")
+    expect(zhCN["workbench.hunkSkippedWorkspaceChanged"]).toContain(
+      "HEAD 已改变",
+    )
+    expect(zhCN["workbench.hunkSkippedWorkspaceDiffChanged"]).toContain(
+      "差异已改变",
+    )
+    expect(zhCN["workbench.hunkSkippedWorkspaceDiffTooLarge"]).toContain(
+      "2 MiB",
+    )
+    expect(zhCN["workbench.hunkSkippedBatchDeadline"]).toContain("总时限")
+    expect(zhCN["workbench.mergeTrialTimedOut"]).toContain("超时")
+    expect(en["workbench.unknownValue"]).toBe("unknown")
+    expect(zhCN["workbench.unknownValue"]).toBe("未知")
+  })
+
   test("Simplified Chinese localizes first-run visible labels and prompts", () => {
     const expectedChinese = {
       "settings.sidebar.models": "模型",

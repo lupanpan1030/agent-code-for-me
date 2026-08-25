@@ -10,6 +10,11 @@ import {
   animals,
   uniqueNamesGenerator,
 } from "unique-names-generator"
+import {
+  GIT_DIFF_EXCLUSION_ARGS,
+  isGitDiffExcludedPath,
+} from "./diff-exclusions"
+import { createGit } from "./git-factory"
 import { checkGitLfsAvailable, getShellEnvironment } from "./shell-env"
 import {
   executeWorktreeSetupCommands,
@@ -222,7 +227,7 @@ export async function createWorktree(
   branch: string,
   worktreePath: string,
   startPoint = "origin/main",
-): Promise<void> {
+): Promise<string> {
   const usesLfs = await repoUsesLfs(mainRepoPath)
 
   try {
@@ -270,6 +275,7 @@ export async function createWorktree(
       ],
       { env, timeout: WORKTREE_CREATE_TIMEOUT_MS },
     )
+    return commitHash
   } catch (error) {
     const worktreeError = getWorktreeCreateError(error, usesLfs)
     console.error(`Failed to create worktree: ${worktreeError.message}`)
@@ -878,7 +884,7 @@ export async function checkoutBranch(
  */
 /**
  * Checks if a git ref exists locally (without network access).
- * Uses --verify --quiet to only check exit code without output.
+ * Uses --verify --quiet and requires a resolved commit SHA in stdout.
  * @param repoPath - Path to the repository
  * @param ref - The ref to check (e.g., "main", "origin/main")
  * @returns true if the ref exists locally, false otherwise
@@ -889,10 +895,16 @@ export async function refExistsLocally(
 ): Promise<boolean> {
   const git = simpleGit(repoPath)
   try {
-    // Use --verify --quiet to check if ref exists without output
-    // Append ^{commit} to ensure it resolves to a commit-ish
-    await git.raw(["rev-parse", "--verify", "--quiet", `${ref}^{commit}`])
-    return true
+    // Append ^{commit} to ensure the ref resolves to a commit-ish.
+    const resolvedRef = await git.raw([
+      "rev-parse",
+      "--verify",
+      "--quiet",
+      `${ref}^{commit}`,
+    ])
+    // simple-git can resolve with an empty string when quiet rev-parse exits 1,
+    // so output—not promise rejection—is the reliable existence signal.
+    return resolvedRef.trim().length > 0
   } catch {
     return false
   }
@@ -947,6 +959,7 @@ export interface WorktreeResult {
   worktreePath?: string
   branch?: string
   baseBranch?: string
+  baseCommit?: string
   error?: string
   failureReason?: WorktreeCreateFailureReason
   cleanupErrors?: string[]
@@ -959,6 +972,7 @@ export type WorktreeSetupApprovalRequired = WorktreeSetupTrustRequest & {
 
 export interface CreateWorktreeForChatOptions {
   projectId?: string
+  worktreesDir?: string
   onSetupComplete?: (result: WorktreeSetupResult) => void
   onSetupApprovalRequired?: (request: WorktreeSetupApprovalRequired) => void
 }
@@ -994,7 +1008,8 @@ export async function createWorktreeForChat(
       selectedBaseBranch || (await getDefaultBranch(projectPath))
 
     branch = generateBranchName()
-    const worktreesDir = join(homedir(), ".21st", "worktrees")
+    const worktreesDir =
+      options?.worktreesDir ?? join(homedir(), ".21st", "worktrees")
     const projectWorktreeDir = join(worktreesDir, projectSlug)
     const folderName = generateWorktreeFolderName(projectWorktreeDir)
     worktreePath = join(projectWorktreeDir, folderName)
@@ -1005,7 +1020,12 @@ export async function createWorktreeForChat(
     const startPoint =
       branchType === "local" ? baseBranch : `origin/${baseBranch}`
 
-    await createWorktree(projectPath, branch, worktreePath, startPoint)
+    const baseCommit = await createWorktree(
+      projectPath,
+      branch,
+      worktreePath,
+      startPoint,
+    )
 
     if (options?.projectId) {
       const setupTrust = await getWorktreeSetupTrustStatus({
@@ -1055,7 +1075,7 @@ export async function createWorktreeForChat(
       console.warn("[worktree] Skipping setup trust check without project id")
     }
 
-    return { success: true, worktreePath, branch, baseBranch }
+    return { success: true, worktreePath, branch, baseBranch, baseCommit }
   } catch (error) {
     const cleanupErrors =
       branch && worktreePath
@@ -1125,37 +1145,32 @@ async function cleanupFailedWorktree(
 export async function getWorktreeDiff(
   worktreePath: string,
   baseBranch?: string,
-  options?: { onlyUncommitted?: boolean },
+  options?: {
+    onlyUncommitted?: boolean
+    signal?: AbortSignal
+    timeoutMs?: number
+  },
 ): Promise<{ success: boolean; diff?: string; error?: string }> {
   try {
-    const git = simpleGit(worktreePath)
+    const git = createGit(worktreePath, {
+      timeoutMs: options?.timeoutMs,
+      signal: options?.signal,
+      absoluteTimeout: true,
+    })
     const status = await git.status()
 
     // Has uncommitted changes - diff against HEAD
     if (!status.isClean()) {
-      const exclusionArgs = [
-        ":!*.lock",
-        ":!*-lock.*",
-        ":!package-lock.json",
-        ":!pnpm-lock.yaml",
-        ":!yarn.lock",
-      ]
-
       const workingDiff = await git.diff([
         "HEAD",
         "--no-color",
         "--",
-        ...exclusionArgs,
+        ...GIT_DIFF_EXCLUSION_ARGS,
       ])
 
-      const untrackedFiles = status.not_added.filter((file) => {
-        if (file.endsWith(".lock")) return false
-        if (file.includes("-lock.")) return false
-        if (file.endsWith("package-lock.json")) return false
-        if (file.endsWith("pnpm-lock.yaml")) return false
-        if (file.endsWith("yarn.lock")) return false
-        return true
-      })
+      const untrackedFiles = status.not_added.filter(
+        (file) => !isGitDiffExcludedPath(file),
+      )
 
       // git diff --no-index only accepts 2 paths, so we need to diff each file separately
       // Also, git diff --no-index returns exit code 1 when files differ, which simple-git treats as error
@@ -1216,11 +1231,7 @@ export async function getWorktreeDiff(
         `${baseRef}...HEAD`,
         "--no-color",
         "--",
-        ":!*.lock",
-        ":!*-lock.*",
-        ":!package-lock.json",
-        ":!pnpm-lock.yaml",
-        ":!yarn.lock",
+        ...GIT_DIFF_EXCLUSION_ARGS,
       ])
       return { success: true, diff: diff || "" }
     } catch {

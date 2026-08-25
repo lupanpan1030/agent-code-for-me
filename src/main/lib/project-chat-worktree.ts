@@ -52,6 +52,7 @@ export type ResolvedProjectChatWorktree = {
   worktreePath?: string
   branch?: string
   baseBranch?: string
+  baseCommit?: string
 }
 
 export async function resolveProjectChatWorktree(
@@ -101,6 +102,7 @@ export async function resolveProjectChatWorktree(
       worktreePath: result.worktreePath,
       branch: result.branch,
       baseBranch: result.baseBranch,
+      baseCommit: result.baseCommit,
     }
   }
 

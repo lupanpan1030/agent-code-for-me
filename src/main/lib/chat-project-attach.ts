@@ -45,6 +45,7 @@ export async function attachProjectToChat(
     chat.worktreePath ||
     chat.branch ||
     chat.baseBranch ||
+    chat.baseCommit ||
     chat.prUrl ||
     chat.prNumber !== null
   ) {
@@ -102,6 +103,7 @@ export async function attachProjectToChat(
       worktreePath: worktree.worktreePath,
       branch: worktree.branch ?? null,
       baseBranch: worktree.baseBranch ?? null,
+      baseCommit: worktree.baseCommit ?? null,
       updatedAt: now,
     })
     .where(eq(chats.id, input.chatId))

@@ -54,12 +54,16 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "../../../components/ui/tooltip"
+import { useIsMobile } from "../../../lib/hooks/use-mobile"
 import { type TranslationKey, useI18n } from "../../../lib/i18n"
 import { trpc } from "../../../lib/trpc"
 import { cn } from "../../../lib/utils"
+import { useOpenDetailsWidget } from "../../details-sidebar/use-open-details-widget"
 import {
+  agentsMobileViewModeAtom,
   desktopViewAtom,
   diffSidebarOpenAtomFamily,
+  diffViewDisplayModeAtom,
   filteredDiffFilesAtom,
   filteredSubChatIdAtom,
   pendingUserQuestionsAtom,
@@ -70,12 +74,14 @@ import {
 } from "../atoms"
 import { useStreamingStatusStore } from "../stores/streaming-status-store"
 import { useAgentSubChatStore } from "../stores/sub-chat-store"
+import { openWorkbenchDiffSurface } from "./diff-surface-routing"
 import {
   formatTracePayload,
   getWorkbenchTraceRow,
   type WorkbenchObservedPermission,
   type WorkbenchTraceEvent,
 } from "./workbench-trace-presenter"
+import { WorkspaceConflictSection } from "./workspace-conflict-section"
 
 type WorkbenchFilter =
   | "all"
@@ -122,8 +128,19 @@ type WorkbenchTask = {
     fileCount: number
     additions: number | null
     deletions: number | null
+    files: Array<{
+      path: string
+      deleted: boolean
+      renamedTo?: string
+    }>
     error?: string
   }
+  statusHash: string
+  conflicts: Array<{
+    path: string
+    withTaskIds: string[]
+    kind: "edit-edit" | "delete-edit" | "delete-delete"
+  }>
   pr: {
     url: string | null
     number: number | null
@@ -597,6 +614,9 @@ function TaskCard({
   task,
   onOpen,
   onReview,
+  eligibleDeepCheckTaskIds,
+  workspaceTitlesByTaskId,
+  workspaceStatusHashesByTaskId,
   onOpenPr,
   onPreparePr,
   isPreparingPr,
@@ -605,8 +625,12 @@ function TaskCard({
   onOpen: (task: WorkbenchTask) => void
   onReview: (
     task: WorkbenchTask,
-    setDiffSidebarOpen: (open: boolean) => void,
+    openDiffSurface: () => void,
+    filteredFiles: string[] | null,
   ) => void
+  eligibleDeepCheckTaskIds: string[]
+  workspaceTitlesByTaskId: Record<string, string>
+  workspaceStatusHashesByTaskId: Record<string, string>
   onOpenPr: (task: WorkbenchTask) => void
   onPreparePr: (task: WorkbenchTask) => void
   isPreparingPr: boolean
@@ -621,11 +645,34 @@ function TaskCard({
     [task.id],
   )
   const setDiffSidebarOpen = useSetAtom(diffSidebarAtom)
+  const setDiffDisplayMode = useSetAtom(diffViewDisplayModeAtom)
+  const setMobileViewMode = useSetAtom(agentsMobileViewModeAtom)
+  const isMobile = useIsMobile()
+  const openDetailsWidget = useOpenDetailsWidget(task.id)
+  const openDiffSurface = useCallback(() => {
+    openWorkbenchDiffSurface({
+      isMobile,
+      openDetailsWidget,
+      setDiffDisplayMode,
+      setDiffSidebarOpen,
+      setMobileViewMode,
+    })
+  }, [
+    isMobile,
+    openDetailsWidget,
+    setDiffDisplayMode,
+    setDiffSidebarOpen,
+    setMobileViewMode,
+  ])
   const reviewDisabledReason = getReviewDisabledReason(task, t)
   const preparePrHint = getPreparePrHint(task, t)
   const handleReview = useCallback(
-    () => onReview(task, setDiffSidebarOpen),
-    [onReview, setDiffSidebarOpen, task],
+    () => onReview(task, openDiffSurface, null),
+    [onReview, openDiffSurface, task],
+  )
+  const handleConflictReview = useCallback(
+    (filteredFiles: string[]) => onReview(task, openDiffSurface, filteredFiles),
+    [onReview, openDiffSurface, task],
   )
   const handlePreparePr = useCallback(
     () => onPreparePr(task),
@@ -633,151 +680,169 @@ function TaskCard({
   )
 
   return (
-    <article className="rounded-lg border border-border bg-background px-4 py-3">
-      <div className="flex min-w-0 items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex min-w-0 items-center gap-2">
-            <StatusIcon
-              className={cn(
-                "h-4 w-4 flex-shrink-0",
-                getStatusClassName(task.status),
-                task.status === "running" && "animate-spin",
-              )}
-            />
-            <h3 className="truncate text-sm font-medium text-foreground">
-              {task.title}
-            </h3>
-          </div>
-          <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-            <span className="truncate">{task.project.name}</span>
-            <span className="flex min-w-0 items-center gap-1">
-              <GitBranch className="h-3.5 w-3.5 flex-shrink-0" />
-              <span className="truncate">
-                {task.branch ||
-                  (task.localDirectoryMode
-                    ? t("workbench.localDirectory")
-                    : t("workbench.noBranch"))}
-              </span>
+    <WorkspaceConflictSection
+      taskId={task.id}
+      conflicts={task.conflicts}
+      diffFiles={task.diff.files}
+      eligibleDeepCheckTaskIds={eligibleDeepCheckTaskIds}
+      workspaceTitlesByTaskId={workspaceTitlesByTaskId}
+      workspaceStatusHashesByTaskId={workspaceStatusHashesByTaskId}
+      onReviewConflicts={handleConflictReview}
+    >
+      {({ summary: conflictSummary, details: conflictDetails, action }) => (
+        <article className="rounded-lg border border-border bg-background px-4 py-3">
+          <div className="flex min-w-0 items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex min-w-0 items-center gap-2">
+                <StatusIcon
+                  className={cn(
+                    "h-4 w-4 flex-shrink-0",
+                    getStatusClassName(task.status),
+                    task.status === "running" && "animate-spin",
+                  )}
+                />
+                <h3 className="truncate text-sm font-medium text-foreground">
+                  {task.title}
+                </h3>
+              </div>
+              <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                <span className="truncate">{task.project.name}</span>
+                <span className="flex min-w-0 items-center gap-1">
+                  <GitBranch className="h-3.5 w-3.5 flex-shrink-0" />
+                  <span className="truncate">
+                    {task.branch ||
+                      (task.localDirectoryMode
+                        ? t("workbench.localDirectory")
+                        : t("workbench.noBranch"))}
+                  </span>
+                </span>
+                {task.latestSubChat && (
+                  <span className="flex min-w-0 items-center gap-1">
+                    <MessageSquare className="h-3.5 w-3.5 flex-shrink-0" />
+                    <span className="truncate">
+                      {task.latestSubChat.name || t("chat.defaultTitle")}
+                    </span>
+                  </span>
+                )}
+                {updatedAt && <span>{updatedAt}</span>}
+              </div>
+            </div>
+
+            <span className="flex-shrink-0 rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground">
+              {t(`workbench.status.${task.status}` as TranslationKey)}
             </span>
-            {task.latestSubChat && (
-              <span className="flex min-w-0 items-center gap-1">
-                <MessageSquare className="h-3.5 w-3.5 flex-shrink-0" />
-                <span className="truncate">
-                  {task.latestSubChat.name || t("chat.defaultTitle")}
-                </span>
-              </span>
-            )}
-            {updatedAt && <span>{updatedAt}</span>}
           </div>
-        </div>
 
-        <span className="flex-shrink-0 rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground">
-          {t(`workbench.status.${task.status}` as TranslationKey)}
-        </span>
-      </div>
+          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
+            <div className="flex items-baseline gap-1.5">
+              <span className="font-medium text-foreground">
+                {task.diff.fileCount}
+              </span>
+              <span>{t("workbench.filesChanged")}</span>
+            </div>
+            <div className="flex items-baseline gap-1.5">
+              <span className="font-medium text-foreground">
+                {diffHasLines ? (
+                  <>
+                    <span className="text-green-600 dark:text-green-400">
+                      +{task.diff.additions ?? 0}
+                    </span>{" "}
+                    <span className="text-red-600 dark:text-red-400">
+                      -{task.diff.deletions ?? 0}
+                    </span>
+                  </>
+                ) : (
+                  t("workbench.notAvailable")
+                )}
+              </span>
+              <span>{t("workbench.lineChanges")}</span>
+            </div>
+            <div className="flex min-w-0 items-baseline gap-1.5">
+              <span className="truncate font-medium text-foreground">
+                {task.pr?.number ? `#${task.pr.number}` : t("workbench.none")}
+              </span>
+              <span>{t("workbench.pullRequest")}</span>
+            </div>
+            {conflictSummary}
+          </div>
 
-      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
-        <div className="flex items-baseline gap-1.5">
-          <span className="font-medium text-foreground">
-            {task.diff.fileCount}
-          </span>
-          <span>{t("workbench.filesChanged")}</span>
-        </div>
-        <div className="flex items-baseline gap-1.5">
-          <span className="font-medium text-foreground">
-            {diffHasLines ? (
-              <>
-                <span className="text-green-600 dark:text-green-400">
-                  +{task.diff.additions ?? 0}
-                </span>{" "}
-                <span className="text-red-600 dark:text-red-400">
-                  -{task.diff.deletions ?? 0}
+          {task.statusReason && (
+            <p className="mt-3 line-clamp-2 text-xs text-muted-foreground">
+              {task.statusReason}
+            </p>
+          )}
+
+          {conflictDetails}
+
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              className="h-7 px-3 text-xs"
+              onClick={() => onOpen(task)}
+            >
+              {task.latestSubChat
+                ? t("workbench.continue")
+                : t("workbench.open")}
+            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="h-7 px-3 text-xs"
+                    disabled={!task.actions.canReviewDiff}
+                    onClick={handleReview}
+                  >
+                    <FileDiff className="mr-1.5 h-3.5 w-3.5" />
+                    {t("workbench.reviewDiff")}
+                  </Button>
                 </span>
-              </>
-            ) : (
-              t("workbench.notAvailable")
-            )}
-          </span>
-          <span>{t("workbench.lineChanges")}</span>
-        </div>
-        <div className="flex min-w-0 items-baseline gap-1.5">
-          <span className="truncate font-medium text-foreground">
-            {task.pr?.number ? `#${task.pr.number}` : t("workbench.none")}
-          </span>
-          <span>{t("workbench.pullRequest")}</span>
-        </div>
-      </div>
-
-      {task.statusReason && (
-        <p className="mt-3 line-clamp-2 text-xs text-muted-foreground">
-          {task.statusReason}
-        </p>
-      )}
-
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <Button
-          size="sm"
-          className="h-7 px-3 text-xs"
-          onClick={() => onOpen(task)}
-        >
-          {task.latestSubChat ? t("workbench.continue") : t("workbench.open")}
-        </Button>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <span>
+              </TooltipTrigger>
+              {reviewDisabledReason && (
+                <TooltipContent>{reviewDisabledReason}</TooltipContent>
+              )}
+            </Tooltip>
+            {action}
+            {task.pr?.url ? (
               <Button
-                variant="secondary"
+                variant="outline"
                 size="sm"
                 className="h-7 px-3 text-xs"
-                disabled={!task.actions.canReviewDiff}
-                onClick={handleReview}
+                onClick={() => onOpenPr(task)}
               >
-                <FileDiff className="mr-1.5 h-3.5 w-3.5" />
-                {t("workbench.reviewDiff")}
+                <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
+                {t("workbench.openPr")}
               </Button>
-            </span>
-          </TooltipTrigger>
-          {reviewDisabledReason && (
-            <TooltipContent>{reviewDisabledReason}</TooltipContent>
-          )}
-        </Tooltip>
-        {task.pr?.url ? (
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7 px-3 text-xs"
-            onClick={() => onOpenPr(task)}
-          >
-            <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
-            {t("workbench.openPr")}
-          </Button>
-        ) : (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-7 px-3 text-xs"
-                  disabled={!task.actions.canCreatePr || isPreparingPr}
-                  onClick={handlePreparePr}
-                >
-                  {isPreparingPr ? (
-                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <GitPullRequest className="mr-1.5 h-3.5 w-3.5" />
-                  )}
-                  {isPreparingPr
-                    ? t("githubWorkflow.draftPr.preparing")
-                    : t("workbench.preparePr")}
-                </Button>
-              </span>
-            </TooltipTrigger>
-            <TooltipContent>{preparePrHint}</TooltipContent>
-          </Tooltip>
-        )}
-      </div>
-    </article>
+            ) : (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 px-3 text-xs"
+                      disabled={!task.actions.canCreatePr || isPreparingPr}
+                      onClick={handlePreparePr}
+                    >
+                      {isPreparingPr ? (
+                        <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <GitPullRequest className="mr-1.5 h-3.5 w-3.5" />
+                      )}
+                      {isPreparingPr
+                        ? t("githubWorkflow.draftPr.preparing")
+                        : t("workbench.preparePr")}
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>{preparePrHint}</TooltipContent>
+              </Tooltip>
+            )}
+          </div>
+        </article>
+      )}
+    </WorkspaceConflictSection>
   )
 }
 
@@ -1604,6 +1669,11 @@ export function AgentWorkbench() {
   )
 
   const tasks = (tasksQuery.data?.tasks ?? []) as WorkbenchTask[]
+  const eligibleDeepCheckTaskIdsByTaskId =
+    tasksQuery.data?.eligibleDeepCheckTaskIdsByTaskId ?? {}
+  const workspaceTitlesByTaskId = tasksQuery.data?.workspaceTitlesByTaskId ?? {}
+  const workspaceStatusHashesByTaskId =
+    tasksQuery.data?.workspaceStatusHashesByTaskId ?? {}
   const schedules = (schedulesQuery.data?.schedules ?? []) as AgentSchedule[]
   const headlessJobs = useMemo(() => {
     const jobs = [
@@ -1703,12 +1773,16 @@ export function AgentWorkbench() {
   )
 
   const handleReview = useCallback(
-    (task: WorkbenchTask, setDiffSidebarOpen: (open: boolean) => void) => {
+    (
+      task: WorkbenchTask,
+      openDiffSurface: () => void,
+      filteredFiles: string[] | null,
+    ) => {
       openTask(task)
-      setFilteredDiffFiles(null)
+      setFilteredDiffFiles(filteredFiles)
       setFilteredSubChatId(task.latestSubChat?.id ?? null)
       setSelectedDiffFilePath(null)
-      setDiffSidebarOpen(true)
+      openDiffSurface()
     },
     [
       openTask,
@@ -2136,6 +2210,13 @@ export function AgentWorkbench() {
                     task={task}
                     onOpen={openTask}
                     onReview={handleReview}
+                    eligibleDeepCheckTaskIds={
+                      eligibleDeepCheckTaskIdsByTaskId[task.id] ?? []
+                    }
+                    workspaceTitlesByTaskId={workspaceTitlesByTaskId}
+                    workspaceStatusHashesByTaskId={
+                      workspaceStatusHashesByTaskId
+                    }
                     onOpenPr={handleOpenPr}
                     onPreparePr={handlePreparePr}
                     isPreparingPr={preparingPrTaskId === task.id}

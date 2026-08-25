@@ -1,17 +1,18 @@
 import { atom } from "jotai"
 import { atomFamily, atomWithStorage } from "jotai/utils"
-import { atomWithWindowStorage } from "../../../lib/window-storage"
-import type { FileMentionOption } from "../mentions/agents-mentions-editor"
-import type {
-  LongTextAttachment,
-  LongTextAttachmentPart,
-} from "../../../../shared/long-text-attachments"
-import type { ChatImageAttachmentSendInput } from "../../../../shared/chat-attachments"
 import type {
   AgentGuardEvent,
   AgentScopeContract,
   GuardedRunAudit,
 } from "../../../../shared/agent-scope-contracts"
+import type { ChatImageAttachmentSendInput } from "../../../../shared/chat-attachments"
+import type {
+  LongTextAttachment,
+  LongTextAttachmentPart,
+} from "../../../../shared/long-text-attachments"
+import type { ParsedDiffFile } from "../../../../shared/unified-diff-parser"
+import { atomWithWindowStorage } from "../../../lib/window-storage"
+import type { FileMentionOption } from "../mentions/agents-mentions-editor"
 
 // Agent mode type - extensible for future modes like "debug"
 export type AgentMode = "agent" | "plan"
@@ -995,20 +996,7 @@ export const planEditRefetchTriggerAtomFamily = atomFamily((chatId: string) =>
 // Diff Data Cache (per workspace) - prevents data loss when switching workspaces
 // ============================================================================
 
-// ParsedDiffFile type (same as in shared/changes-types.ts but avoiding import cycle)
-export interface CachedParsedDiffFile {
-  key: string
-  oldPath: string
-  newPath: string
-  diffText: string
-  isBinary: boolean
-  additions: number
-  deletions: number
-  isValid: boolean
-  fileLang: string | null
-  isNewFile: boolean
-  isDeletedFile: boolean
-}
+export type CachedParsedDiffFile = ParsedDiffFile
 
 export interface DiffStatsCache {
   fileCount: number

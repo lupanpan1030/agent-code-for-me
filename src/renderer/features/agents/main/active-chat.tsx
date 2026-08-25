@@ -70,6 +70,7 @@ import {
   isProviderProfileSource,
   parseProviderProfileSource,
 } from "../../../../shared/provider-profile-types"
+import type { ParsedDiffFile } from "../../../../shared/unified-diff-parser"
 import { getQueryClient } from "../../../contexts/TRPCProvider"
 import { trackMessageSent } from "../../../lib/analytics"
 import {
@@ -83,6 +84,7 @@ import { useResolvedHotkeyDisplay } from "../../../lib/hotkeys"
 import { useI18n } from "../../../lib/i18n"
 import { appStore } from "../../../lib/jotai-store"
 import { agentChatApi } from "../lib/agent-chat-api"
+import { reconcileDiffOpenFilterState } from "../lib/diff-open-filter-state"
 import { trpc, trpcClient } from "../../../lib/trpc"
 import { cn } from "../../../lib/utils"
 import { isDesktopApp } from "../../../lib/utils/platform"
@@ -230,7 +232,6 @@ import {
   AgentDiffView,
   diffViewModeAtom,
   type AgentDiffViewRef,
-  type ParsedDiffFile,
 } from "../ui/agent-diff-view"
 import { AgentQueueIndicator } from "../ui/agent-queue-indicator"
 import { AgentToolCall } from "../ui/agent-tool-call"
@@ -1279,40 +1280,31 @@ const DiffStateProvider = memo(function DiffStateProvider({
 
   // All diff-related atoms are read HERE, not in ChatView
   const [selectedFilePath, setSelectedFilePath] = useAtom(selectedDiffFilePathAtom)
-  const [, setFilteredDiffFiles] = useAtom(filteredDiffFilesAtom)
+  const [filteredDiffFiles, setFilteredDiffFiles] = useAtom(filteredDiffFilesAtom)
   const [filteredSubChatId, setFilteredSubChatId] = useAtom(filteredSubChatIdAtom)
   const isChangesPanelCollapsed = useAtomValue(agentsChangesPanelCollapsedAtom)
 
   // Auto-select first file when diff sidebar opens - use useLayoutEffect for synchronous update
   // This prevents the initial render from showing all 11 files before filter kicks in
   useLayoutEffect(() => {
-    if (!isDiffSidebarOpen) {
-      setSelectedFilePath(null)
-      setFilteredDiffFiles(null)
-      return
-    }
+    const next = reconcileDiffOpenFilterState({
+      isOpen: isDiffSidebarOpen,
+      selectedFilePath,
+      filteredDiffFiles,
+      parsedFileDiffs,
+      showAllFilesForLayout:
+        isDiffSidebarNarrow && isChangesPanelCollapsed,
+    })
 
-    // Determine which file to select
-    let fileToSelect = selectedFilePath
-    if (!fileToSelect && parsedFileDiffs && parsedFileDiffs.length > 0) {
-      const firstFile = parsedFileDiffs[0]
-      fileToSelect = firstFile.newPath !== '/dev/null' ? firstFile.newPath : firstFile.oldPath
-      if (fileToSelect && fileToSelect !== '/dev/null') {
-        setSelectedFilePath(fileToSelect)
-      }
+    if (next.selectedFilePath !== selectedFilePath) {
+      setSelectedFilePath(next.selectedFilePath)
     }
-
-    // Filter logic based on layout mode
-    const shouldShowAllFiles = isDiffSidebarNarrow && isChangesPanelCollapsed
-
-    if (shouldShowAllFiles) {
-      setFilteredDiffFiles(null)
-    } else if (fileToSelect) {
-      setFilteredDiffFiles([fileToSelect])
-    } else {
-      setFilteredDiffFiles(null)
+    const currentFilter = filteredDiffFiles?.join("\0") ?? null
+    const nextFilter = next.filteredDiffFiles?.join("\0") ?? null
+    if (currentFilter !== nextFilter) {
+      setFilteredDiffFiles(next.filteredDiffFiles)
     }
-  }, [isDiffSidebarOpen, selectedFilePath, parsedFileDiffs, isDiffSidebarNarrow, isChangesPanelCollapsed, setFilteredDiffFiles, setSelectedFilePath])
+  }, [isDiffSidebarOpen, selectedFilePath, filteredDiffFiles, parsedFileDiffs, isDiffSidebarNarrow, isChangesPanelCollapsed, setFilteredDiffFiles, setSelectedFilePath])
 
   // Stable callbacks
   const handleDiffFileSelect = useCallback((file: { path: string }, _category: string) => {
@@ -4632,7 +4624,7 @@ export function ChatView({
 
   // Extract diff data from cache
   const diffStats = diffCache.diffStats
-  const parsedFileDiffs = diffCache.parsedFileDiffs as ParsedDiffFile[] | null
+  const parsedFileDiffs = diffCache.parsedFileDiffs
   const prefetchedFileContents = diffCache.prefetchedFileContents
   const diffContent = diffCache.diffContent
 
@@ -4655,7 +4647,7 @@ export function ChatView({
   }, [setDiffCache])
 
   const setParsedFileDiffs = useCallback((files: ParsedDiffFile[] | null) => {
-    setDiffCache((prev) => ({ ...prev, parsedFileDiffs: files as any }))
+    setDiffCache((prev) => ({ ...prev, parsedFileDiffs: files }))
   }, [setDiffCache])
 
   const setPrefetchedFileContents = useCallback((contents: Record<string, string>) => {

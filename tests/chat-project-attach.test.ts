@@ -115,6 +115,7 @@ describe("attachProjectToChat", () => {
         worktreePath: "/tmp/project-worktree",
         branch: "locus-worktree",
         baseBranch: "main",
+        baseCommit: "fork-commit-sha",
       }
     }
 
@@ -142,7 +143,15 @@ describe("attachProjectToChat", () => {
       worktreePath: "/tmp/project-worktree",
       branch: "locus-worktree",
       baseBranch: "main",
+      baseCommit: "fork-commit-sha",
     })
+    expect(
+      db
+        .select({ baseCommit: chats.baseCommit })
+        .from(chats)
+        .where(eq(chats.id, "quick-chat-1"))
+        .get()?.baseCommit,
+    ).toBe("fork-commit-sha")
     expect(attached.subChats).toHaveLength(1)
     expect(attached.subChats[0]?.mode).toBe("plan")
     expect(attached.subChats[0]?.sessionId).toBeNull()

@@ -10,6 +10,10 @@ import {
 } from "../../../../shared/agent-chat-provider"
 import { buildAgentRuntimeCapabilityDiagnostic } from "../../../../shared/agent-runtime-capabilities"
 import {
+  type ParsedDiffResponse,
+  splitUnifiedDiffByFile,
+} from "../../../../shared/unified-diff-parser"
+import {
   trackPRCreated,
   trackWorkspaceArchived,
   trackWorkspaceCreated,
@@ -24,7 +28,6 @@ import {
   sanitizeProjectName,
 } from "../../git"
 import { computeContentHash, gitCache } from "../../git/cache"
-import { splitUnifiedDiffByFile } from "../../git/diff-parser"
 import { execWithShellEnv } from "../../git/shell-env"
 import { applyRollbackStash } from "../../git/stash"
 import type { WorktreeSetupResult } from "../../git/worktree-config"
@@ -114,12 +117,6 @@ export const diffProcedures = {
 
       // 2. Check cache using diff hash
       const diffHash = computeContentHash(result.diff || "")
-      type ParsedDiffResponse = {
-        files: ReturnType<typeof splitUnifiedDiffByFile>
-        totalAdditions: number
-        totalDeletions: number
-        fileContents: Record<string, string>
-      }
       const cached = gitCache.getParsedDiff<ParsedDiffResponse>(chat.worktreePath, diffHash)
       if (cached) {
         return cached

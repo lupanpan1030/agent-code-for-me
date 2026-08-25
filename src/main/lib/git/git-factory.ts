@@ -14,6 +14,12 @@ export const GIT_TIMEOUTS = {
 	LONG: 300_000, // 5 minutes
 } as const;
 
+export type CreateGitOptions = {
+	timeoutMs?: number;
+	signal?: AbortSignal;
+	absoluteTimeout?: boolean;
+};
+
 /**
  * Per-worktree operation locks to prevent concurrent git operations
  */
@@ -23,19 +29,29 @@ const operationLocks = new Map<string, Promise<void>>();
  * Creates a simple-git instance with configured timeouts.
  *
  * @param worktreePath - Path to the git worktree/repository
- * @param timeout - Timeout in milliseconds (defaults to LOCAL timeout)
+ * @param timeoutOrOptions - A legacy numeric timeout or options for timeout,
+ * abort signaling, and an absolute (non-idle-resetting) deadline.
  * @returns Configured SimpleGit instance
  */
 export function createGit(
 	worktreePath: string,
-	timeout: number = GIT_TIMEOUTS.LOCAL
+	timeoutOrOptions: number | CreateGitOptions = GIT_TIMEOUTS.LOCAL
 ): SimpleGit {
+	const operationOptions =
+		typeof timeoutOrOptions === "number"
+			? { timeoutMs: timeoutOrOptions }
+			: timeoutOrOptions;
+	const timeout = operationOptions.timeoutMs ?? GIT_TIMEOUTS.LOCAL;
 	const options: Partial<SimpleGitOptions> = {
 		baseDir: worktreePath,
 		binary: "git",
 		maxConcurrentProcesses: 6,
+		...(operationOptions.signal ? { abort: operationOptions.signal } : {}),
 		timeout: {
 			block: timeout,
+			...(operationOptions.absoluteTimeout
+				? { stdErr: false, stdOut: false }
+				: {}),
 		},
 	};
 

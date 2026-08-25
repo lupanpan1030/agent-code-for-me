@@ -2,122 +2,112 @@
 
 Languages: English | [Simplified Chinese](locus-workbench-focus.zh-CN.md)
 
+> **Status: SUPERSEDED FOR PRODUCT DIRECTION — 2026-08-25.** The canonical product direction is
+> [Locus Product Direction and Harness Strategy](ideas/locus-product-direction-harness-strategy.zh-CN.md).
+> This file remains as a historical execution-slice record. This marker neither cancels nor
+> authorizes any OpenSpec change.
+
 ## Stable Positioning
 
-Locus is an AI workbench that runs mature agent CLI workflows through selectable
-model backends. It shows runtime capabilities, provider compatibility, MCP
-state, tool activity, file changes, usage, and run history in one desktop
-workspace.
+Locus is a workbench for running coding agents safely in parallel on real git repos.
 
-The headline product is the visible workbench. Runtime adapters, provider
-profiles, gateway routing, local jobs, daemon, schedules, and protocol surfaces
-are supporting infrastructure. They should not become the product identity.
+The visible product is a local-first desktop workbench for project-backed Workspaces. It brings
+agent activity, local changes, conflict evidence, runtime state, usage, and review actions into one
+place while keeping the user in control.
 
-Do not describe Locus as an AI OS, generic workflow orchestrator, local job
-platform, or runtime hub as the main positioning.
+Runtime adapters, provider profiles, gateway routing, local jobs, daemon, schedules, and protocol
+surfaces are supporting infrastructure. They should not become the product identity.
+
+Do not describe Locus as an AI OS, generic workflow orchestrator, local job platform, or runtime
+hub as the main positioning.
 
 ## Current Foundation
 
 The current codebase already has enough foundation to stop expanding sideways:
 
-- runtime adapters exist for Claude Code and Codex, with capability manifests
-  and run gates
-- local job infrastructure exists for `locus run`, `locus jobs`, daemon,
-  schedules, API runs, status, events, cancel, retry, and heartbeat
-- provider profiles and the provider gateway already model third-party or local
-  model backends without sending provider secrets to the renderer
-- the current Codex desktop path is stronger than headless Codex because it
-  already has provider profile binding, MCP integration, streaming, usage, and
-  session metadata, but its ACP transport is a compatibility path, not the
-  long-term desktop/chat target
-- the headless Codex path is still thin because `codex exec` output is mostly
-  normalized from stdout and stderr rather than rich runtime events
+- the engine set is a closed two: Claude Code and Codex, with capability manifests and run gates
+- the Codex desktop/chat adapter is app-server-only; ACP remains only as the Locus-owned
+  `locus acp` stdio surface, not as a Codex desktop adapter
+- local job infrastructure exists for `locus run`, `locus jobs`, daemon, schedules, API runs,
+  status, events, cancel, retry, and heartbeat
+- provider profiles and the provider gateway model third-party or local model backends without
+  sending provider secrets to the renderer
+- the Agent Workbench already aggregates project-backed Workspaces and reuses existing chat,
+  diff/review, and GitHub workflow surfaces
 
-The next step is not to add more runtimes. The next step is to make the existing
-CLI workflows understandable, selectable, diagnosable, and observable.
+The next work should make parallel agent operation safer and easier to adjudicate, not add another
+engine or another review surface.
 
 ## Current Cut
 
-The next product slice is:
+The parallel-safety sequence is:
 
 ```text
-Codex CLI workflow + provider profile backend + capability display + run trace
+cross-Workspace conflict detection now; Workspace isolation next
 ```
 
-Keep the slice to four issues:
+Keep the sequence to two bounded slices:
 
-1. Runtime Capability Panel
-   Surface the existing capability manifest in the UI with supported,
-   degraded, and unsupported states, including reasons and hints.
+1. Cross-Workspace Conflict Detection Now
+   Show same-path warnings from state the Workbench already collects. Run deeper hunk and
+   committed-tree checks only on explicit user action, label their limits, and route review into
+   the existing filtered diff surface. Conflicts are annotations, not task statuses.
 
-2. Provider Profile Run Binding
-   Make model, provider profile, backend label, protocol, and gateway kind part
-   of run metadata and job history. A run should say "Codex + DeepSeek +
-   responses gateway", not only "Codex".
+2. Workspace Isolation Next
+   Define cwd leases, rollback safety, and worktree-per-run in a separate approved OpenSpec
+   change. This conflict-detection slice does not implement or imply those guarantees.
 
-3. Codex Workbench Run Trace
-   Build the trace contract for the app-server desktop/chat target. The current
-   ACP path may only feed temporary migration comparison data while app-server is
-   proven. Show provider selection, MCP state, tool and command activity, file
-   changes, usage, session ID, duration, and final state as structured timeline
-   data.
-
-4. Headless Parity Later
-   Keep `codex exec` and process-runner output as fallback or batch mode for
-   now. Rich JSON or JSONL parsing for headless parity is a later slice after
-   the workbench trace is proven.
-
-Provider diagnostics and run preflight belong inside the first two issues. They
-must answer whether the selected runtime plus provider profile can run, stream,
-use tools, load MCP, and report usage before the user starts work.
+Neither slice makes Locus an automatic merger or resolver. The user remains the adjudicator.
 
 ## Scope Rules
 
-Allow work now only when it directly improves the current cut:
+Allow work now only when it directly improves the parallel-safety cut:
 
-- shows runtime capability truth
-- binds provider profile and model metadata to an actual run
-- makes Codex workbench execution visible and diagnosable
-- records run trace, usage, errors, and file/tool activity accurately
-- keeps provider secrets in the main process and renderer data redacted
+- shows cross-Workspace activity and overlap truthfully
+- preserves the existing status taxonomy while adding conflict annotations
+- labels path, hunk, and committed-tree evidence at their actual confidence and scope
+- reuses the existing per-Workspace diff/review surface and registered-root boundary
+- records reproducible verification evidence for safety and subprocess-cost claims
 
-Park work when it does not fit that slice, even if it is useful later:
+Park work when it does not fit that cut, even if it is useful later:
 
-- third or fourth agent CLI integrations
-- broad Claude expansion before the Codex workbench is coherent
+- automatic merge, rebase, or conflict resolution
+- cwd leases, rollback changes, or worktree-per-run inside the current conflict change
+- reopening the engine set beyond Claude Code and Codex
+- runtime feature expansion unrelated to safe parallel work
 - generic workflow engines
 - AI OS positioning
 - computer-use or screen-control features
-- plugin marketplace work
+- further expansion of the already-shipped runtime-scoped plugin marketplace center
 - all-model benchmarking
 - full hosted or headless SaaS
-- ACP as a final product target
+- ACP as a Codex desktop adapter or headline product target
 - durable workflow management
 
 ## Active Proposal Triage
 
-`openspec/changes/add-claude-dynamic-workflows-adapter` is proposal-only and
-parked behind this focus cut. It may remain as a scoped Claude-specific adapter
-proposal, but it is not the next implementation slice and must not be described
-as supported.
+`openspec list` is authoritative. In the current list, `add-cross-workspace-conflicts` is the
+user-visible focus. `update-trpc-capability-boundary`, `add-local-job-api-runtime-readiness`,
+`add-headless-provider-binding`, and the complete-but-unarchived `add-remote-model-catalog` are
+supporting or security work; they do not redefine the product thesis.
 
-Implementing that proposal requires separate approval after the Codex Workbench
-focus is complete or deliberately reprioritized.
+`add-agent-native-projection-writes` and `add-policy-grant-scope-enforcement` remain deferred.
+Workspace isolation requires its own approved change before implementation.
 
 ## Documentation Rule
 
 Use:
 
 ```text
-local-first AI workbench
-selectable model backends
-runtime capability truth
-provider compatibility and diagnostics
-MCP state, tool activity, file changes, usage, and run history
-Local Job API as supporting automation infrastructure
-codex app-server for desktop/chat
-codex exec for headless/batch
-temporary ACP compatibility fallback only during migration
+Locus is a workbench for running coding agents safely in parallel on real git repos
+project-backed Workspaces
+cross-Workspace conflict annotations
+honest path, hunk, and committed-tree evidence
+existing per-Workspace diff/review surface
+Claude Code and Codex as the closed engine set
+Codex app-server for desktop/chat
+Locus-owned `locus acp` stdio surface
+Workspace isolation as the next separately approved slice
 ```
 
 Avoid as headline positioning:
@@ -127,13 +117,11 @@ AI OS
 local job platform
 runtime hub
 workflow orchestrator
+automatic conflict resolver
 complete ACP server
-ACP as the long-term Codex adapter
+ACP as the Codex desktop adapter
 universal automation platform
 computer-control platform
-Claude and Codex parity
 cloud agent platform
-offline-only
-fully private
 complete filesystem isolation
 ```

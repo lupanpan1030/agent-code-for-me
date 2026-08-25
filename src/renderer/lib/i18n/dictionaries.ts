@@ -2109,9 +2109,70 @@ export const en = {
   "workbench.localDirectory": "Local directory",
   "workbench.noBranch": "No branch",
   "workbench.filesChanged": "Files changed",
+  "workbench.crossWorkspaceConflicts": "Cross-Workspace Conflicts",
+  "workbench.conflictAnnotation":
+    "Overlapping files: {count} · Workspaces: {workspaces}",
+  "workbench.deleteEditConflict": "Delete vs edit: {count}",
+  "workbench.deleteDeleteConflict": "Delete vs delete: {count}",
+  "workbench.deepCheck": "Deep check",
+  "workbench.deepCheckNoWarnings": "Deep check committed changes",
+  "workbench.deepChecking": "Checking...",
+  "workbench.deepCheckFailed": "Deep check failed",
+  "workbench.conflictVerdictStale": "Stale — Workspace state changed",
+  "workbench.conflictVerdictComputedAt": "Computed {time} · {provenance}",
+  "workbench.conflictVerdictWorkspaceState": "{workspace} @ {sha}",
+  "workbench.hunkLikelyConflict": "Likely hunk conflict: {files}",
+  "workbench.hunkNoOverlap": "No overlapping hunks detected",
+  "workbench.hunkSkippedBaseCommitMissing":
+    "Hunk check unavailable: a fork commit is missing",
+  "workbench.hunkSkippedBaseCommitsDiffer":
+    "Hunk check unavailable: Workspaces have different fork commits",
+  "workbench.hunkSkippedHeadCommitMissing":
+    "Hunk check unavailable: a current HEAD commit is missing",
+  "workbench.hunkSkippedHeadCommitsDiffer":
+    "Hunk check unavailable: Workspaces have different current HEAD commits",
+  "workbench.hunkSkippedDiffUnavailable":
+    "Hunk check unavailable: a Workspace diff could not be read",
+  "workbench.hunkSkippedWorkspaceChanged":
+    "Hunk check unavailable: a Workspace HEAD changed during the snapshot",
+  "workbench.hunkSkippedWorkspaceDiffChanged":
+    "Hunk check unavailable: a Workspace diff changed during the snapshot",
+  "workbench.hunkSkippedWorkspaceDiffTooLarge":
+    "Hunk check unavailable: a Workspace diff exceeds the 2 MiB deep-check limit; path warnings and the committed-changes merge trial remain independent",
+  "workbench.hunkSkippedBatchDeadline":
+    "Hunk check unavailable: the conflict-check deadline was reached before stable hunk evidence was ready",
+  "workbench.hunkDataUnavailable":
+    "Hunk check unavailable: comparable hunk ranges were not available",
+  "workbench.pathOverlapWarning": "Path-overlap warning",
+  "workbench.editEditConflictLabel": "Edit vs edit",
+  "workbench.deleteEditConflictLabel": "Delete vs edit",
+  "workbench.deleteDeleteConflictLabel": "Delete vs delete",
+  "workbench.mergeTrialCleanCommittedOnly":
+    "Committed changes only: merge trial is clean",
+  "workbench.mergeTrialConflictsCommittedOnly":
+    "Committed changes only: merge trial found conflicts in {files}",
+  "workbench.mergeTrialOldGit":
+    "Merge trial unavailable: Git {minimum}+ is required (detected {version})",
+  "workbench.mergeTrialVersionUnavailable":
+    "Merge trial unavailable: the Git version could not be read",
+  "workbench.mergeTrialVersionUnparseable":
+    "Merge trial unavailable: the Git version was not recognized",
+  "workbench.mergeTrialBranchMissing":
+    "Committed-changes merge trial unavailable: a Workspace branch is missing",
+  "workbench.mergeTrialWorkspaceChanged":
+    "Committed-changes merge trial unavailable: a Workspace HEAD changed during the snapshot",
+  "workbench.mergeTrialHeadUnavailable":
+    "Committed-changes merge trial unavailable: a captured HEAD commit is missing",
+  "workbench.mergeTrialTimedOut":
+    "Committed-changes merge trial timed out",
+  "workbench.mergeTrialBatchDeadline":
+    "Committed-changes merge trial skipped: the check deadline was reached",
+  "workbench.mergeTrialFailedCommittedOnly":
+    "Committed-changes merge trial failed",
   "workbench.lineChanges": "Line changes",
   "workbench.pullRequest": "Pull request",
   "workbench.notAvailable": "n/a",
+  "workbench.unknownValue": "unknown",
   "workbench.none": "None",
   "workbench.open": "Open",
   "workbench.continue": "Continue",
@@ -5597,9 +5658,69 @@ export const zhCN: Partial<Record<TranslationKey, string>> = {
   "workbench.localDirectory": "本地目录",
   "workbench.noBranch": "无分支",
   "workbench.filesChanged": "改动文件",
+  "workbench.crossWorkspaceConflicts": "跨工作区冲突",
+  "workbench.conflictAnnotation":
+    "重叠文件：{count} · 工作区：{workspaces}",
+  "workbench.deleteEditConflict": "删除与编辑冲突：{count}",
+  "workbench.deleteDeleteConflict": "删除与删除冲突：{count}",
+  "workbench.deepCheck": "深度检查",
+  "workbench.deepCheckNoWarnings": "深度检查已提交改动",
+  "workbench.deepChecking": "检查中...",
+  "workbench.deepCheckFailed": "深度检查失败",
+  "workbench.conflictVerdictStale": "已过期 — 工作区状态已改变",
+  "workbench.conflictVerdictComputedAt": "计算于 {time} · {provenance}",
+  "workbench.conflictVerdictWorkspaceState": "{workspace} @ {sha}",
+  "workbench.hunkLikelyConflict": "可能存在区块冲突：{files}",
+  "workbench.hunkNoOverlap": "未检测到重叠区块",
+  "workbench.hunkSkippedBaseCommitMissing":
+    "无法检查区块：缺少分叉提交记录",
+  "workbench.hunkSkippedBaseCommitsDiffer":
+    "无法检查区块：工作区的分叉提交不同",
+  "workbench.hunkSkippedHeadCommitMissing":
+    "无法检查区块：缺少当前 HEAD 提交",
+  "workbench.hunkSkippedHeadCommitsDiffer":
+    "无法检查区块：工作区的当前 HEAD 提交不同",
+  "workbench.hunkSkippedDiffUnavailable":
+    "无法检查区块：无法读取工作区差异",
+  "workbench.hunkSkippedWorkspaceChanged":
+    "无法检查区块：生成快照期间工作区 HEAD 已改变",
+  "workbench.hunkSkippedWorkspaceDiffChanged":
+    "无法检查区块：生成快照期间工作区差异已改变",
+  "workbench.hunkSkippedWorkspaceDiffTooLarge":
+    "无法检查区块：工作区差异超过 2 MiB 深度检查上限；路径警告和仅限已提交改动的合并试验不受影响",
+  "workbench.hunkSkippedBatchDeadline":
+    "无法检查区块：在生成稳定区块证据前，冲突检查已达到总时限",
+  "workbench.hunkDataUnavailable": "无法检查区块：没有可比较的区块范围",
+  "workbench.pathOverlapWarning": "路径重叠警告",
+  "workbench.editEditConflictLabel": "编辑与编辑",
+  "workbench.deleteEditConflictLabel": "删除与编辑",
+  "workbench.deleteDeleteConflictLabel": "删除与删除",
+  "workbench.mergeTrialCleanCommittedOnly":
+    "仅限已提交的改动：合并试验无冲突",
+  "workbench.mergeTrialConflictsCommittedOnly":
+    "仅限已提交的改动：合并试验在 {files} 中发现冲突",
+  "workbench.mergeTrialOldGit":
+    "无法进行合并试验：需要 Git {minimum}+（检测到 {version}）",
+  "workbench.mergeTrialVersionUnavailable":
+    "无法进行合并试验：无法读取 Git 版本",
+  "workbench.mergeTrialVersionUnparseable":
+    "无法进行合并试验：无法识别 Git 版本",
+  "workbench.mergeTrialBranchMissing":
+    "无法进行仅限已提交改动的合并试验：缺少工作区分支",
+  "workbench.mergeTrialWorkspaceChanged":
+    "无法进行仅限已提交改动的合并试验：生成快照期间工作区 HEAD 已改变",
+  "workbench.mergeTrialHeadUnavailable":
+    "无法进行仅限已提交改动的合并试验：缺少已捕获的 HEAD 提交",
+  "workbench.mergeTrialTimedOut":
+    "仅限已提交改动的合并试验已超时",
+  "workbench.mergeTrialBatchDeadline":
+    "已跳过仅限已提交改动的合并试验：检查已达到总时限",
+  "workbench.mergeTrialFailedCommittedOnly":
+    "仅限已提交改动的合并试验失败",
   "workbench.lineChanges": "行数变更",
   "workbench.pullRequest": "Pull Request",
   "workbench.notAvailable": "不可用",
+  "workbench.unknownValue": "未知",
   "workbench.none": "无",
   "workbench.open": "打开",
   "workbench.continue": "继续",

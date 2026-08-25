@@ -1,7 +1,12 @@
 # agent-workbench Specification
 
 ## Purpose
-TBD - created by archiving change add-agent-workbench. Update Purpose after archive.
+
+The Agent Workbench is Locus's local-first, cross-Workspace overview for project-backed coding-agent
+tasks. It classifies each task's current status, exposes safe actions that reuse existing chat,
+diff/review, and GitHub workflows, and annotates overlapping file changes across Workspaces so users
+can prioritize potential conflicts without changing the underlying task status.
+
 ## Requirements
 ### Requirement: Local Agent Workbench Overview
 The system SHALL provide a local Agent Workbench that summarizes coding-agent tasks from local projects, project-backed chats, worktrees, and sub-chats.

@@ -57,6 +57,7 @@ export const chats = sqliteTable(
     worktreePath: text("worktree_path"),
     branch: text("branch"),
     baseBranch: text("base_branch"),
+    baseCommit: text("base_commit"),
     // PR tracking fields
     prUrl: text("pr_url"),
     prNumber: integer("pr_number"),
