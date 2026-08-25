@@ -104,38 +104,11 @@ import {
   startCodexMcpOAuth,
 } from "../../runtime-mcp-config/codex"
 import {
-  normalizeMcpArgs,
-  normalizeMcpServerUrl,
+  mcpArgsInputSchema,
+  mcpStringInputSchema,
+  mcpUrlInputSchema,
 } from "../../runtime-mcp-config/input-validation"
 import { publicProcedure, router } from "../index"
-
-function zodMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "Invalid input"
-}
-
-const mcpStringInputSchema = z
-  .string()
-  .refine((value) => !value.includes("\0"), {
-    message: "Value must not contain null bytes",
-  })
-
-const mcpArgsInputSchema = z
-  .array(mcpStringInputSchema)
-  .superRefine((value, ctx) => {
-    try {
-      normalizeMcpArgs(value)
-    } catch (error) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: zodMessage(error) })
-    }
-  })
-
-const mcpUrlInputSchema = z.string().superRefine((value, ctx) => {
-  try {
-    normalizeMcpServerUrl(value)
-  } catch (error) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, message: zodMessage(error) })
-  }
-})
 
 function getCodexApiKeyStatusResponse() {
   const status = getStoredCodexApiKeyStatus()

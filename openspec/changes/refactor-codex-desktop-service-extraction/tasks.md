@@ -92,11 +92,11 @@
 
 ## 5. MCP zod wrapper dedupe
 
-- [ ] 5.1 Move the wrapper schemas (`mcpStringInputSchema`, `mcpArgsInputSchema`,
+- [x] 5.1 Move the wrapper schemas (`mcpStringInputSchema`, `mcpArgsInputSchema`,
       `mcpEnvInputSchema`, `mcpUrlInputSchema`, `zodMessage`) into
       `src/main/lib/runtime-mcp-config/input-validation.ts` beside the normalizers they
       wrap; export them for router use.
-- [ ] 5.2 Delete both router-local copies (`claude.ts` ~`:57-92`, `codex.ts` ~`:129-155`)
+- [x] 5.2 Delete both router-local copies (`claude.ts` ~`:57-92`, `codex.ts` ~`:129-155`)
       and import from the owner. ACCEPTANCE: `grep -rn "mcpStringInputSchema"
       src/main/lib/trpc/routers/` shows imports only; `tests/mcp-config-boundaries.test.ts`
       re-pointed and green.

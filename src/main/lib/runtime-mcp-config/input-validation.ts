@@ -1,3 +1,5 @@
+import { z } from "zod"
+
 const ENV_NAME_REGEX = /^[A-Za-z_][A-Za-z0-9_]*$/
 const HTTP_HEADER_NAME_REGEX = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/
 
@@ -83,6 +85,44 @@ export function normalizeMcpEnv(
   }
   return normalized
 }
+
+export function zodMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Invalid input"
+}
+
+export const mcpStringInputSchema = z
+  .string()
+  .refine((value) => !value.includes("\0"), {
+    message: "Value must not contain null bytes",
+  })
+
+export const mcpArgsInputSchema = z
+  .array(mcpStringInputSchema)
+  .superRefine((value, ctx) => {
+    try {
+      normalizeMcpArgs(value)
+    } catch (error) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: zodMessage(error) })
+    }
+  })
+
+export const mcpEnvInputSchema = z
+  .record(z.string(), z.string())
+  .superRefine((value, ctx) => {
+    try {
+      normalizeMcpEnv(value)
+    } catch (error) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: zodMessage(error) })
+    }
+  })
+
+export const mcpUrlInputSchema = z.string().superRefine((value, ctx) => {
+  try {
+    normalizeMcpServerUrl(value)
+  } catch (error) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: zodMessage(error) })
+  }
+})
 
 export function normalizeMcpEnvNames(
   envNames: string[] | undefined,

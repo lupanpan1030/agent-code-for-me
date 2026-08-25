@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
+import {
+  mcpArgsInputSchema,
+  mcpEnvInputSchema,
+  mcpStringInputSchema,
+  mcpUrlInputSchema,
+} from "../src/main/lib/runtime-mcp-config/input-validation"
 
 function getProcedureBlock(source: string, procedure: string): string {
   const mutationStart = source.indexOf(`${procedure}: publicProcedure`)
@@ -15,7 +21,52 @@ function getProcedureBlock(source: string, procedure: string): string {
   )
 }
 
+function getIssueMessages(result: ReturnType<typeof mcpStringInputSchema.safeParse>) {
+  return result.success ? [] : result.error.issues.map((issue) => issue.message)
+}
+
+describe("shared MCP input schemas", () => {
+  test("preserves the router-local validation behavior", () => {
+    expect(getIssueMessages(mcpStringInputSchema.safeParse("bad\0value"))).toEqual(
+      ["Value must not contain null bytes"],
+    )
+    expect(
+      getIssueMessages(mcpArgsInputSchema.safeParse(["bad\0argument"])),
+    ).toEqual(["Value must not contain null bytes", "MCP args[0] must not contain null bytes"])
+    expect(
+      getIssueMessages(mcpEnvInputSchema.safeParse({ "BAD KEY": "value" })),
+    ).toEqual(["MCP env key must be a valid environment variable name"])
+    expect(
+      getIssueMessages(mcpEnvInputSchema.safeParse({ GOOD: "bad\0value" })),
+    ).toEqual(["MCP env value for GOOD must not contain null bytes"])
+    expect(getIssueMessages(mcpUrlInputSchema.safeParse("ftp://example.com"))).toEqual(
+      ["MCP server URL must use http or https"],
+    )
+    expect(mcpUrlInputSchema.safeParse("https://example.com").success).toBe(true)
+  })
+})
+
 describe("Claude MCP config mutation boundaries", () => {
+  test("shares MCP input schemas from the validation owner", () => {
+    const route = readFileSync("src/main/lib/trpc/routers/claude.ts", "utf8")
+    const validation = readFileSync(
+      "src/main/lib/runtime-mcp-config/input-validation.ts",
+      "utf8",
+    )
+
+    expect(validation).toContain("export const mcpStringInputSchema")
+    expect(validation).toContain("export const mcpArgsInputSchema")
+    expect(validation).toContain("export const mcpEnvInputSchema")
+    expect(validation).toContain("export const mcpUrlInputSchema")
+    expect(validation).toContain("export function zodMessage")
+    expect(route).toContain("mcpEnvInputSchema,")
+    expect(route).not.toContain("const mcpStringInputSchema")
+    expect(route).not.toContain("const mcpArgsInputSchema")
+    expect(route).not.toContain("const mcpEnvInputSchema")
+    expect(route).not.toContain("const mcpUrlInputSchema")
+    expect(route).not.toContain("function zodMessage")
+  })
+
   test("routes project-scoped MCP writes through main-layer project and name guards", () => {
     const route = readFileSync("src/main/lib/trpc/routers/claude.ts", "utf8")
     const service = readFileSync(
@@ -66,6 +117,18 @@ describe("Claude MCP config mutation boundaries", () => {
 })
 
 describe("Codex MCP config mutation boundaries", () => {
+  test("shares MCP input schemas from the validation owner", () => {
+    const route = readFileSync("src/main/lib/trpc/routers/codex.ts", "utf8")
+
+    expect(route).toContain("mcpStringInputSchema,")
+    expect(route).toContain("mcpArgsInputSchema,")
+    expect(route).toContain("mcpUrlInputSchema,")
+    expect(route).not.toContain("const mcpStringInputSchema")
+    expect(route).not.toContain("const mcpArgsInputSchema")
+    expect(route).not.toContain("const mcpUrlInputSchema")
+    expect(route).not.toContain("function zodMessage")
+  })
+
   test("OAuth and logout cwd are limited to registered projects", () => {
     const route = readFileSync("src/main/lib/trpc/routers/codex.ts", "utf8")
     const service = readFileSync(

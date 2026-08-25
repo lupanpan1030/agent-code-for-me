@@ -164,6 +164,21 @@ and the reverse imports from `src/main/index.ts` and `src/main/windows/main.ts`.
 - `bun run check`: architecture and retired-runtime guards passed; TypeScript passed;
   **1,673 tests passed / 0 failed across 285 files**.
 
+### MCP input-schema owner (tasks 5.1–5.2)
+
+- The shared string, args, env, and URL Zod wrappers and their error-message helper now
+  live beside the normalizers in `runtime-mcp-config/input-validation.ts`; both routers
+  import those schemas and no longer carry local copies.
+- `tests/mcp-config-boundaries.test.ts` now pins the shared owner and rejects router-local
+  schema/helper definitions; direct `safeParse` coverage locks null-byte, environment-name,
+  environment-value, URL-protocol, and valid HTTPS behavior.
+- A read-only behavior review found no P0/P1/P2 regression. Its P3 request for executable
+  schema parity coverage and complete negative guards was closed before this stage commit.
+- `bun test --isolate tests/mcp-config-boundaries.test.ts
+  tests/runtime-mcp-config-service.test.ts`: **21 passed / 0 failed / 159 expectations
+  across 2 files**.
+- `bun run lint`, `bun run ts:check`, and `git diff --check`: passed.
+
 ## W7 scope ledger
 
 - Green work is implemented only as named in the approved proposal.
