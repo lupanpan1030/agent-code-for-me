@@ -42,9 +42,8 @@ import {
   subscribeCodexApiKeyModelIds,
   validateCodexApiKey,
 } from "../../codex/api-key-validation"
-import { createCodexAppServerAdapter } from "../../codex/app-server-adapter"
+import { runCodexAppServerDesktopAdapter } from "../../codex/app-server-adapter-runner"
 import { createCodexAppServerFinishGate } from "../../codex/app-server-finish-gate"
-import { resolveCodexAppServerPluginConfigOverrides } from "../../codex/app-server-plugin-allowlist"
 import { getLastCodexSessionId } from "../../codex/chat-history"
 import { codexChatInputSchema } from "../../codex/chat-input-schema"
 import { resolveBundledCodexCliPath } from "../../codex/cli-path"
@@ -711,59 +710,23 @@ export const codexRouter = router({
               },
             })
 
-            const appServerPluginConfig =
-              await resolveCodexAppServerPluginConfigOverrides({
-                projectId: desktopRunRequest.context.projectId,
-                chatId: desktopRunRequest.context.chatId,
-                subChatId: desktopRunRequest.context.subChatId,
-              })
-
-            const codexAdapter = createCodexAppServerAdapter({
-              enabled: true,
-              experimentalApi:
-                process.env.LOCUS_CODEX_APP_SERVER_EXPERIMENTAL_API === "1" ||
-                process.env.LOCUS_CODEX_APP_SERVER_CONTROLLED_EDIT_EXECUTOR ===
-                  "1",
-              // Smoke-only diagnostic hook for the 6.8 apply_patch
-              // enablement probe. Product app-server runs leave this
-              // unset unless a developer explicitly opts into the env gate.
-              configOverrides:
-                process.env.LOCUS_CODEX_APP_SERVER_APPLY_PATCH_EXPERIMENT ===
-                "1"
-                  ? {
-                      "features.apply_patch_freeform": true,
-                      "features.apply_patch_streaming_events": true,
-                      include_apply_patch_tool: true,
-                      "tools.apply_patch.enabled": true,
-                      "tools.apply_patch.approval_mode": "prompt",
-                      "model_providers.locus_profile.apply_patch_tool_type":
-                        "freeform",
-                      "model_providers.locus_profile.experimental_supported_tools":
-                        ["apply_patch"],
-                    }
-                  : undefined,
-              providerGatewayToken: codexProviderProfile?.token ?? null,
-              secretHints: providerSecretHints(),
-              appManagedApiKey: codexProviderProfile
-                ? null
-                : appManagedCodexApiKey,
-              pluginConfig: appServerPluginConfig,
-              controlledEditEnabled:
-                process.env.LOCUS_CODEX_APP_SERVER_CONTROLLED_EDIT_EXECUTOR ===
-                "1",
-              resolvedImages,
-              guardedContract,
-              emit: safeEmit,
-              registerPendingQuestion: (toolUseId, pending) => {
-                setCodexPendingToolApproval(toolUseId, pending)
-              },
-              unregisterPendingQuestion: (toolUseId) => {
-                deleteCodexPendingToolApproval(toolUseId)
-              },
-            })
-
             await appServerFinishGate.runWithDeferredFinish(
-              () => codexAdapter.run(desktopRunRequest),
+              () =>
+                runCodexAppServerDesktopAdapter({
+                  request: desktopRunRequest,
+                  providerGatewayToken: codexProviderProfile?.token ?? null,
+                  appManagedApiKey: appManagedCodexApiKey,
+                  secretHints: providerSecretHints(),
+                  resolvedImages,
+                  guardedContract,
+                  emit: safeEmit,
+                  registerPendingQuestion: (toolUseId, pending) => {
+                    setCodexPendingToolApproval(toolUseId, pending)
+                  },
+                  unregisterPendingQuestion: (toolUseId) => {
+                    deleteCodexPendingToolApproval(toolUseId)
+                  },
+                }),
               (adapterResult) => {
                 desktopRunState.setAdapterFailed(
                   adapterResult.status === "failed",

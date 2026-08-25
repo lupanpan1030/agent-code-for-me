@@ -250,7 +250,7 @@ describe("Codex API key validation", () => {
       "const desktopJob = createAndRegisterCodexDesktopRunJob",
     )
     const adapterCreationIndex = codexRouterSource.indexOf(
-      "const codexAdapter = createCodexAppServerAdapter",
+      "runCodexAppServerDesktopAdapter({",
     )
 
     expect(validationIndex).toBeGreaterThan(0)

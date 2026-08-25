@@ -140,6 +140,30 @@ and the reverse imports from `src/main/index.ts` and `src/main/windows/main.ts`.
 - `bun run check`: architecture and retired-runtime guards passed; TypeScript passed;
   **1,672 tests passed / 0 failed across 285 files**.
 
+### App-server adapter runner (tasks 4.1–4.3)
+
+- Adapter selection, plugin resolution, all three `LOCUS_CODEX_APP_SERVER_*` switches,
+  the smoke-only override object, adapter construction, and factory dispatch now live in
+  `lib/codex/app-server-adapter-runner.ts`. The finish gate and result/error suppression
+  remain in the router.
+- `rg -n "createCodexAppServerAdapter|LOCUS_CODEX_APP_SERVER" src/main/lib/trpc`:
+  no matches. Source guards now require the route to call the runner and the runner to
+  construct and resolve through `DesktopRuntimeAdapterFactory` before `run(request)`.
+- `bun test --isolate tests/codex-app-server-adapter-runner.test.ts
+  tests/desktop-runtime-adapter-factory.test.ts tests/agent-runtime-preflight.test.ts
+  tests/codex-api-key-validation.test.ts tests/provider-credential-storage.test.ts
+  tests/agent-runtime-permission-policy.test.ts tests/runtime-stream-event-mapper.test.ts
+  tests/provider-routing-ux.test.ts`: **66 passed / 0 failed / 437 expectations across
+  8 files**.
+- The complete router source-assertion inventory plus the runner suite passed: **107
+  passed / 0 failed / 716 expectations across 16 files**.
+- A read-only behavior review found no P0/P1/P2 regression. Its P3 passthrough gap was
+  closed by pinning selection-env identity and plugin config, images, guarded contract,
+  emit, and approval callback identity.
+- `bun run lint`, `bun run ts:check`, and `git diff --check`: passed.
+- `bun run check`: architecture and retired-runtime guards passed; TypeScript passed;
+  **1,673 tests passed / 0 failed across 285 files**.
+
 ## W7 scope ledger
 
 - Green work is implemented only as named in the approved proposal.

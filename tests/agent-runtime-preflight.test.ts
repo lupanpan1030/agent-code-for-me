@@ -252,6 +252,10 @@ describe("desktop runtime preflight", () => {
       "src/main/lib/codex/desktop-run-provider-binding.ts",
       "utf8",
     )
+    const codexAdapterRunner = readFileSync(
+      "src/main/lib/codex/app-server-adapter-runner.ts",
+      "utf8",
+    )
     const blockerIndex = codexPreflight.indexOf(
       "new DesktopRunPreflightError(blocker)",
     )
@@ -295,11 +299,18 @@ describe("desktop runtime preflight", () => {
       "const desktopRunRequest = createCodexDesktopRunRequest({",
     )
     const adapterIndex = codex.indexOf(
-      "const codexAdapter = createCodexAppServerAdapter",
+      "runCodexAppServerDesktopAdapter({",
     )
-    const adapterRunIndex = codex.indexOf(
-      "codexAdapter.run(desktopRunRequest)",
-      adapterIndex,
+    const adapterConstructionIndex = codexAdapterRunner.indexOf(
+      "const adapter = dependencies.createAdapter({",
+    )
+    const adapterFactoryIndex = codexAdapterRunner.indexOf(
+      "resolveCodexAppServerDesktopAdapter({",
+      adapterConstructionIndex,
+    )
+    const adapterRunIndex = codexAdapterRunner.indexOf(
+      "desktopAdapter.run(input.request)",
+      adapterFactoryIndex,
     )
 
     expect(blockerIndex).toBeGreaterThan(0)
@@ -318,9 +329,11 @@ describe("desktop runtime preflight", () => {
     expect(jobIndex).toBeGreaterThan(mcpIndex)
     expect(runRequestIndex).toBeGreaterThan(jobIndex)
     expect(adapterIndex).toBeGreaterThan(runRequestIndex)
-    expect(adapterRunIndex).toBeGreaterThan(adapterIndex)
+    expect(adapterConstructionIndex).toBeGreaterThan(0)
+    expect(adapterFactoryIndex).toBeGreaterThan(adapterConstructionIndex)
+    expect(adapterRunIndex).toBeGreaterThan(adapterFactoryIndex)
     expect(codex).toContain("cwd: runtimeCwd")
-    expect(codex).toContain("codexAdapter.run(desktopRunRequest)")
+    expect(codex).toContain("runCodexAppServerDesktopAdapter({")
     expect(codexPreflight).toContain('id: "local-only"')
     expect(codex).not.toContain("cwd: input.cwd,\n              mcpServers")
   })

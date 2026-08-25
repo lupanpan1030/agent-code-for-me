@@ -343,6 +343,10 @@ describe("desktop runtime permission policy", () => {
       "src/main/lib/codex/app-server-adapter.ts",
       "utf8",
     )
+    const codexAppServerRunner = readFileSync(
+      "src/main/lib/codex/app-server-adapter-runner.ts",
+      "utf8",
+    )
 
     expect(claude).toContain("prepareClaudeAgentSdkDesktopRunControls")
     expect(claude).not.toContain("resolveDesktopPermissionPolicy")
@@ -371,7 +375,11 @@ describe("desktop runtime permission policy", () => {
     expect(codex).toContain("resolveDesktopPermissionPolicy")
     expect(codex).toContain("workspaceKind: verifiedRunContext.kind")
     expect(codex).toContain('codexAdapterSource: "codex-app-server"')
-    expect(codex).toContain("createCodexAppServerAdapter")
+    expect(codex).toContain("runCodexAppServerDesktopAdapter")
+    expect(codex).not.toContain("createCodexAppServerAdapter")
+    expect(codexAppServerRunner).toContain(
+      "createAdapter: createCodexAppServerAdapter",
+    )
     expect(codex).not.toContain(
       ["createCodex", "TemporaryCompatAdapter"].join("Acp"),
     )

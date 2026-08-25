@@ -138,6 +138,13 @@ describe("provider credential storage hardening", () => {
       join(process.cwd(), "src/main/lib/codex/app-server-adapter.ts"),
       "utf-8",
     )
+    const codexAppServerRunnerSource = readFileSync(
+      join(
+        process.cwd(),
+        "src/main/lib/codex/app-server-adapter-runner.ts",
+      ),
+      "utf-8",
+    )
 
     expect(atomsSource).not.toContain("codexApiKeyAtom")
     expect(atomsSource).not.toContain("onboarding:codex-api-key")
@@ -146,7 +153,11 @@ describe("provider credential storage hardening", () => {
     expect(codexRouterSource).not.toContain("authConfig")
     expect(codexDesktopProviderBindingSource).not.toContain("authConfig")
     expect(codexDesktopProviderBindingSource).toContain("codexAuthMethod")
-    expect(codexRouterSource).toContain("createCodexAppServerAdapter")
+    expect(codexRouterSource).toContain("runCodexAppServerDesktopAdapter")
+    expect(codexRouterSource).not.toContain("createCodexAppServerAdapter")
+    expect(codexAppServerRunnerSource).toContain(
+      "createAdapter: createCodexAppServerAdapter",
+    )
     const removedTemporaryFactory = [
       "createCodex",
       "TemporaryCompatAdapter",

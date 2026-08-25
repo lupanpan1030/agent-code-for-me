@@ -151,6 +151,10 @@ describe("desktop runtime adapter factory", () => {
       "src/main/lib/codex/app-server-adapter.ts",
       "utf8",
     )
+    const codexAppServerRunner = readFileSync(
+      "src/main/lib/codex/app-server-adapter-runner.ts",
+      "utf8",
+    )
     const codexRuntimeStatus = readFileSync(
       "src/main/lib/codex/runtime-status.ts",
       "utf8",
@@ -170,15 +174,24 @@ describe("desktop runtime adapter factory", () => {
     ].join("_ACP_")
     const removedSpawnProbe = ["probeCodex", "Spawn"].join("Acp")
 
-    expect(codexRouter).toContain("../../codex/app-server-adapter")
+    expect(codexRouter).toContain("../../codex/app-server-adapter-runner")
+    expect(codexRouter).not.toContain(
+      'from "../../codex/app-server-adapter"',
+    )
     expect(codexRouter).toContain("../../codex/desktop-run-request")
     expect(codexRouter).toContain("../../codex/chat-history")
     expect(codexRouter).toContain("../../codex/cli-runner")
     expect(codexRouter).toContain("../../codex/runtime-status")
-    expect(codexRouter).toContain("createCodexAppServerAdapter")
+    expect(codexRouter).toContain("runCodexAppServerDesktopAdapter")
+    expect(codexRouter).not.toContain("createCodexAppServerAdapter")
     expect(codexRouter).toContain('codexAdapterSource: "codex-app-server"')
     expect(codexRouter).toContain("createCodexAppServerFinishGate")
-    expect(codexRouter).toContain("codexAdapter.run(desktopRunRequest)")
+    expect(codexAppServerRunner).toContain("createCodexAppServerAdapter")
+    expect(codexAppServerRunner).toContain("DesktopRuntimeAdapterFactory")
+    expect(codexAppServerRunner).toContain(
+      "resolveCodexAppServerDesktopAdapter({",
+    )
+    expect(codexAppServerRunner).toContain("desktopAdapter.run(input.request)")
     expect(codexRouter).not.toContain(removedTemporaryFactory)
     expect(codexRouter).not.toContain("getOrCreateCodexAcpProvider")
     expect(codexRouter).not.toContain("resolveCodexAcpBinaryPath")

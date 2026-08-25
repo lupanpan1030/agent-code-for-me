@@ -74,7 +74,7 @@
 
 ## 4. Adapter construction through the factory
 
-- [ ] 4.1 Create `src/main/lib/codex/app-server-adapter-runner.ts` mirroring
+- [x] 4.1 Create `src/main/lib/codex/app-server-adapter-runner.ts` mirroring
       `lib/claude/agent-sdk-adapter-runner.ts`: consume
       `resolveCodexDesktopAdapterSelection`, build the app-server adapter config —
       moving the `LOCUS_CODEX_APP_SERVER_EXPERIMENTAL_API`,
@@ -82,11 +82,11 @@
       `LOCUS_CODEX_APP_SERVER_APPLY_PATCH_EXPERIMENT` env reads and the smoke-only
       `configOverrides` block down from `codex.ts:1115-1156` — and dispatch through
       `DesktopRuntimeAdapterFactory` (`lib/agent-runtime/desktop-runner.ts`).
-- [ ] 4.2 Delete the direct `createCodexAppServerAdapter` import (`codex.ts:47`) and call
+- [x] 4.2 Delete the direct `createCodexAppServerAdapter` import (`codex.ts:47`) and call
       from the router; the router passes emit/approval callbacks (now lib-owned) and the
       `DesktopRunRequest`. ACCEPTANCE: `grep -rn "createCodexAppServerAdapter" src/main/lib/trpc/`
       is empty; `grep -rn "LOCUS_CODEX_APP_SERVER" src/main/lib/trpc/` is empty.
-- [ ] 4.3 Re-point `tests/desktop-runtime-adapter-factory.test.ts` ("keeps Codex desktop
+- [x] 4.3 Re-point `tests/desktop-runtime-adapter-factory.test.ts` ("keeps Codex desktop
       chat on the app-server adapter boundary", `:141`) at the adapter runner, and add the
       positive assertion that Codex construction goes through the factory.
 
