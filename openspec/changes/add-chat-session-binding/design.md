@@ -157,53 +157,50 @@ permitted call site of the inference outside its defining module and tests (guar
 Per W4.2 (PRE-PRODUCTION / DISPOSABLE TEST DATA) the backfill is deliberately lossy about
 renderer-only state: per-sub-chat localStorage model/thinking overrides for existing chats are
 not migrated (main cannot read renderer localStorage, and the data stage does not warrant a
-renderer-side export hop). Existing chats fall back to `NULL` binding fields, which resolve
-through the documented read order (DB > defaults). This loss is accepted and documented here;
-it does not touch project/Git data or external consumers.
+renderer-side export hop). Existing chats fall back to `NULL` binding fields, which resolve at
+send time through the runtime-default handling the transports already apply when no explicit
+selection exists — localStorage is not consulted for existing chats. This loss is accepted and
+documented here; it does not touch project/Git data or external consumers.
 
-**Decision 5: localStorage demotion and the temporary dual path.**
+**Decision 5: Delete the per-sub-chat binding atoms — no temporary dual path.**
 
-After this change the atoms split into two roles:
+After this change the atoms split into two fates:
 
 - `lastSelectedAgentIdAtom` / `projectAgentIdAtomFamily` / `lastSelectedModelIdAtom` /
   `lastSelectedClaudeModelSourceAtom` / `lastSelectedCodexModelSourceAtom` /
   `lastSelectedCodexModelIdAtom` / `lastSelectedCodexThinkingAtom` — **kept, legitimate**:
   defaults used by the creators (`new-chat-form.tsx`, `handleCreateNewSubChat`) to seed the
-  binding row of NEW chats. Read order everywhere: DB binding value > these defaults.
+  binding row of NEW chats. They apply only at creation time; existing chats read the DB
+  binding only, and localStorage is never consulted for an existing chat.
 - The five per-sub-chat storage families (`subChatModelIdAtomFamily`,
   `subChatClaudeModelSourceAtomFamily`, `subChatCodexModelSourceAtomFamily`,
   `subChatCodexModelIdAtomFamily`, `subChatCodexThinkingAtomFamily`, and their storage atoms)
-  — **demoted**: `chat-input-area.tsx` (~L536–561) reads the binding from the sub-chat DTO and
-  writes through the mutation; `new-chat-form.tsx` (~L1311–1315) seeds via the creation input
-  instead. The definitions are NOT deleted in this change (Owner scope: "no removal of the
-  atoms themselves beyond the demotion").
+  — **deleted in this same change, together with all their remaining read/write call sites**
+  (Owner decision 2026-08-26): `chat-input-area.tsx` (~L536–561) reads the binding from the
+  sub-chat DTO and writes through the mutation; `new-chat-form.tsx` (~L1311–1315) seeds via
+  the creation input instead. Once transports and UI read/write binding via the DB-backed DTO
+  and `updateSubChatBinding`, the families have zero legitimate readers; atomic same-change
+  replacement matches the repo's no-dual-path rule (W4.2/C7). Stale per-sub-chat localStorage
+  keys on disk are simply no longer read — no cleanup migration (pre-production data policy).
 
-Because the demoted families remain defined while the DB is truth, this is a sanctioned
-**temporary dual path** with the five required elements:
-
-1. **Canonical owner**: `src/main/lib/chat-session-binding.ts` (DB truth).
-2. **Migration gate**: the Decision 4 backfill.
-3. **Deletion date / follow-up**: a `docs/tickets/` ticket filed by this change ("delete the
-   demoted per-sub-chat binding atom families"), scheduled for Phase 5 Portable Sessions or
-   the next change touching `src/renderer/features/agents/atoms/index.ts`, whichever first.
-4. **Boundary test/guard**: the architecture guard (Decision 6) pins the demoted families to
-   an allowlist and fails on any reader outside `atoms/index.ts` itself — new readers cannot
-   appear; transports are additionally asserted to import no binding atoms.
-5. **Deprecation comment**: each demoted definition gets a comment naming the owner module,
-   the guard, and the follow-up ticket.
+**No temporary dual path**: with the families deleted, the DB binding is the only truth for
+existing chats from the moment this change lands, so no deprecation comments, reader-freeze
+allowlist, or deletion follow-up ticket is needed. The global `lastSelected*` atoms are not a
+dual path because they only seed new-chat defaults and never describe an existing chat's
+binding.
 
 **Decision 6: Guards.**
 
 In `scripts/check-architecture-guards.mjs` (existing framework; atom matcher precedent at
 ~L1657):
 
-- *Binding-atom freeze*: parse `src/renderer/features/agents/atoms/index.ts`; any
+- *Binding-atom ban*: parse `src/renderer/features/agents/atoms/index.ts`; any
   `atomWithStorage`/storage-backed `atomFamily` whose key or name matches binding semantics
   (`model`, `modelSource`, `thinking`, `agentId`, `runtime`, `provider` — case-insensitive,
-  scoped to per-chat keys) must be on the explicit allowlist (the current definitions).
-  A new binding-semantics storage atom fails the guard.
-- *Demoted-family reader freeze*: the five demoted family names have zero references outside
-  `atoms/index.ts` (mirroring the liveness scan in `assertNoDeadSettingsState`).
+  scoped to per-chat keys) fails the guard. No allowlist is needed: no per-chat binding
+  storage atom may exist at all, so the five deleted families cannot reappear.
+- *Deleted-family residue*: the five deleted family identifiers have zero references anywhere
+  in `src/` (mirroring the liveness scan in `assertNoDeadSettingsState`).
 - *Inference retirement*: `inferAgentChatProviderFromMessages` is referenced only in
   `src/shared/agent-chat-provider.ts`, `src/main/lib/chat-session-binding.ts`, and `tests/`.
 - *Transport purity*: `ipc-chat-transport.ts` and `acp-chat-transport.ts` contain no
@@ -230,8 +227,10 @@ only; metadata inference lives only in the backfill).
   standing divert is a Yellow follow-up.
 - **`chats.get` grows a join/second query.** Trivial for SQLite at this row count; the owner
   batches with a single `IN` select in `attachBindingsToSubChats`.
-- **Guard false positives** on the name-based binding-atom scan. → Mitigation: explicit
-  allowlist + scoped key-prefix matching (`agents:subChat*`), same style as existing guards.
+- **Guard false positives** on the name-based binding-atom scan. → Mitigation: scoped
+  key-prefix matching (`agents:subChat*`) plus the semantic-term list, same style as existing
+  guards; `subChatModeAtomFamily` (mode, not binding) and the global `lastSelected*` atoms
+  fall outside the per-chat binding scan by construction.
 
 ## Migration Plan
 
@@ -242,8 +241,9 @@ only; metadata inference lives only in the backfill).
 4. Renderer point surgery in one commit (W4.2 atomic replacement): transports consume injected
    binding; `active-chat.tsx` / `chat-input-area.tsx` / `new-chat-form.tsx` switch to DTO +
    mutation; delete `subChatProviderOverrides`, `inferProviderFromMessages`, both transport
-   steal-read/write-back blocks, `handleProviderChange` override logic.
-5. Demote atoms (deprecation comments), guards, OWNERSHIP_MAP, follow-up ticket.
+   steal-read/write-back blocks, `handleProviderChange` override logic, and the five
+   per-sub-chat binding atom family definitions.
+5. Guards, OWNERSHIP_MAP.
 6. Verify: unit tests, `bun run check`, desktop smoke (localStorage-clear survival), then
    closeout gates.
 

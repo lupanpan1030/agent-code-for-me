@@ -21,8 +21,9 @@ per chat.
 - **WHEN** a new chat is created
 - **THEN** a binding row is created for it in the same creation flow, with the runtime taken
   from the creator's request
-- **AND** unset binding fields default at read time to the user's stored new-chat defaults
-  rather than being invented in the database
+- **AND** the creator seeds the remaining binding fields from the user's stored new-chat
+  defaults in the creation input; fields with no default remain unset rather than being
+  invented in the database
 
 #### Scenario: Forked chat copies the source binding
 
@@ -82,18 +83,18 @@ one-time binding backfill, and SHALL enforce this with an architecture guard.
 - **THEN** it fails if the message-metadata provider inference is referenced anywhere outside
   its defining shared module, the backfill owner module, and tests
 
-### Requirement: Renderer Binding Stores Demoted To New-Chat Defaults
+### Requirement: Renderer Binding Stores Restricted To New-Chat Default Seeding
 
-Renderer localStorage binding atoms SHALL serve only as defaults for newly created chats; for
-existing chats the persisted binding SHALL take precedence, and no new renderer storage atom
-may carry per-chat runtime/model binding semantics.
+Renderer localStorage binding atoms SHALL serve only to seed defaults for newly created
+chats; an existing chat's binding truth SHALL be read from the persisted database binding
+only, and no renderer storage atom may carry per-chat runtime/model binding semantics.
 
-#### Scenario: Read order prefers the database
+#### Scenario: Existing chats read the persisted binding only
 
-- **WHEN** a chat has a persisted binding value and the renderer holds a different stored
+- **WHEN** a chat has a persisted binding and the renderer holds a different stored new-chat
   default
-- **THEN** the persisted value is used for display and for sending
-- **AND** the stored default applies only where the persisted field is unset
+- **THEN** the persisted binding is used for display and for sending
+- **AND** the renderer's stored defaults are not consulted for the existing chat
 
 #### Scenario: Changing defaults does not rebind existing chats
 
@@ -101,10 +102,10 @@ may carry per-chat runtime/model binding semantics.
 - **THEN** existing chats keep their persisted bindings unchanged
 - **AND** only subsequently created chats are seeded from the new default
 
-#### Scenario: Guard freezes binding-semantics storage atoms
+#### Scenario: Guard bans binding-semantics storage atoms
 
 - **WHEN** the architecture guard runs
-- **THEN** it fails if a renderer storage atom outside the explicit allowlist carries per-chat
-  runtime/model binding semantics
-- **AND** it fails if a demoted per-chat binding atom family gains any reader outside its
-  defining atoms module
+- **THEN** it fails if any renderer storage atom carries per-chat runtime/model binding
+  semantics
+- **AND** it fails if any deleted per-chat binding atom family identifier reappears anywhere
+  in the renderer or main source tree

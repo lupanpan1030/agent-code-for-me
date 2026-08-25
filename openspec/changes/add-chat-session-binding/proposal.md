@@ -64,17 +64,17 @@ Foundation Stabilization batch, shaped per C4 SessionBinding, so Phase 5 Portabl
   `handleProviderChange` override path at `active-chat.tsx` ~L5963–5998). Creation paths
   (`chats.create` in `chats-crud.ts` ~L173, `chats.createSubChat` in `chats-sub-chats.ts`
   ~L93) seed a binding row; `forkSubChat` (~L197) copies the source binding.
-- **localStorage atoms demote to "defaults for NEW chats" only**; read order is DB binding >
-  localStorage default. The `lastSelected*` global atoms keep their default-seeding role. The
-  five per-sub-chat storage families are **not deleted** in this change (Owner scope) — they are
-  demoted with deprecation comments, a zero-new-readers guard, and a deletion follow-up ticket
-  (see design.md "Temporary dual path" for the five required elements).
+- **The five per-sub-chat binding atom families are deleted in this same change**, together
+  with all their remaining read/write call sites (Owner decision 2026-08-26; see design.md
+  "No temporary dual path"). The `lastSelected*` global atoms keep their default-seeding role
+  for NEW chats only. Existing chats read their binding from the DB alone — localStorage is no
+  longer consulted for existing chats; the stored defaults apply only at creation time.
 - **Register ownership and guards**: `docs/OWNERSHIP_MAP.md` gains a "Chat Session Binding"
   section naming `src/main/lib/chat-session-binding.ts` as canonical owner;
-  `scripts/check-architecture-guards.mjs` gains assertions that (a) no new `atomWithStorage`
-  carries runtime/model binding semantics for existing chats (allowlist pins the current
-  definitions), and (b) `inferAgentChatProviderFromMessages` has no call site outside
-  `src/shared/agent-chat-provider.ts`, the backfill in the owner module, and tests.
+  `scripts/check-architecture-guards.mjs` gains assertions that (a) no `atomWithStorage`
+  carries per-chat runtime/model binding semantics at all (the five deleted families must not
+  reappear; no allowlist needed), and (b) `inferAgentChatProviderFromMessages` has no call site
+  outside `src/shared/agent-chat-provider.ts`, the backfill in the owner module, and tests.
 - **Data lifecycle note (W4.2)**: the repo is PRE-PRODUCTION / DISPOSABLE TEST DATA, so the
   migration is deliberately simple (no rollback path, per-sub-chat localStorage model/thinking
   overrides for existing chats are not migrated — they fall back to DB `NULL` + global
@@ -100,7 +100,6 @@ routers, DB schema, and shared chat-provider code, none of which that extraction
 - Moving renderer pre-resolution (`normalizeClaudeModelSourceForRun`, OAuth divert) into main —
   registered debt per the dual-path audit (c); the divert becomes per-send-effective-only here
   (no persistence), relocation is a follow-up.
-- Deleting the demoted per-sub-chat atom families (follow-up ticket; see design.md).
 - `mode` handling (`sub_chats.mode` / `subChatModeAtomFamily`) — mode is not binding and is
   already DB-persisted.
 
@@ -122,7 +121,8 @@ routers, DB schema, and shared chat-provider code, none of which that extraction
     `src/renderer/features/agents/main/active-chat.tsx`,
     `src/renderer/features/agents/main/chat-input-area.tsx`,
     `src/renderer/features/agents/main/new-chat-form.tsx`,
-    `src/renderer/features/agents/atoms/index.ts` (deprecation comments only),
+    `src/renderer/features/agents/atoms/index.ts` (the five per-sub-chat binding atom
+    families deleted),
     `scripts/check-architecture-guards.mjs`, `docs/OWNERSHIP_MAP.md`.
 - **Persisted data**: new table + backfill (migration gate; W4.2 pre-production simplicity).
 - **Public consumers**: none. The Local Job API surface is untouched; `chats.*` tRPC is a
@@ -135,6 +135,10 @@ routers, DB schema, and shared chat-provider code, none of which that extraction
   `claude-code` default), binding normalization (provider-profile source ↔ `providerProfileId`
   consistency), and a transport-construction test asserting binding is consumed from config
   (no `appStore` binding atom imports in either transport — also enforced by guard).
+- Negative assertion (residue proof): the five deleted family identifiers
+  (`subChatModelIdAtomFamily`, `subChatClaudeModelSourceAtomFamily`,
+  `subChatCodexModelSourceAtomFamily`, `subChatCodexModelIdAtomFamily`,
+  `subChatCodexThinkingAtomFamily`) no longer appear anywhere in `src/`.
 - `scripts/check-architecture-guards.mjs` (via `bun run architecture:check` inside
   `bun run check`): new binding-atom and inference-call-site assertions fail on regression.
 - Existing suites that exercise chat creation/fork and transports must stay green.
@@ -149,9 +153,10 @@ routers, DB schema, and shared chat-provider code, none of which that extraction
 - **Green (implementer may do autonomously)**: exact migration filename; owner-module internal
   structure and helper naming; DTO field naming (`binding`) and `agent-chat-api.ts` mapping;
   backfill batching/ordering; transport-recreation mechanics on binding update; test file
-  placement; guard allowlist wording; deprecation comment wording; copying binding on fork.
-- **Yellow (log a follow-up ticket, do not implement)**: deleting the demoted per-sub-chat atom
-  families; persisting the OAuth-divert result into the binding; moving
+  placement; guard assertion wording; deleting the five per-sub-chat binding atom families and
+  rewiring/removing every call site; copying binding on fork.
+- **Yellow (log a follow-up ticket, do not implement)**: persisting the OAuth-divert result
+  into the binding; moving
   `normalizeClaudeModelSourceForRun` / renderer pre-resolution into main; surfacing binding in
   History/Workbench UI; a per-chat Claude thinking level (today Claude thinking is the global
   `extendedThinkingEnabledAtom` settings toggle and stays out of the binding row).

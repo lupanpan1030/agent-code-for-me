@@ -76,22 +76,26 @@
 - [ ] 5.5 `new-chat-form.tsx` (~L1311–1315) and `handleCreateNewSubChat`
       (`active-chat.tsx` ~L6001): seed the creation mutation's binding input from the global
       default atoms instead of writing per-sub-chat atom families.
-- [ ] 5.6 `bun run ts:check`; the compiler enumerates any missed reader of the demoted
-      families on the existing-chat path.
+- [ ] 5.6 Delete the five per-sub-chat binding atom families (`subChatModelIdAtomFamily`,
+      `subChatClaudeModelSourceAtomFamily`, `subChatCodexModelSourceAtomFamily`,
+      `subChatCodexModelIdAtomFamily`, `subChatCodexThinkingAtomFamily`, and their underlying
+      storage atoms) from `src/renderer/features/agents/atoms/index.ts` in the same commit,
+      together with any remaining read/write call site (Owner decision 2026-08-26). Keep the
+      global `lastSelected*` atoms and `subChatModeAtomFamily`. Stale localStorage keys on
+      disk are simply no longer read — no cleanup migration. ACCEPTANCE: the five family
+      identifiers appear nowhere in `src/`.
+- [ ] 5.7 `bun run ts:check`; with the five family definitions deleted, the compiler
+      enumerates any missed call site.
 
-## 6. Demotion, guards, ownership registration
+## 6. Guards and ownership registration
 
-- [ ] 6.1 Add deprecation comments to the five demoted per-sub-chat storage families in
-      `src/renderer/features/agents/atoms/index.ts` naming the owner module, the guard, and
-      the follow-up ticket. Do NOT delete the definitions (Owner scope).
-- [ ] 6.2 File the follow-up ticket under `docs/tickets/`: delete the demoted families in
-      Phase 5 Portable Sessions or the next change touching that atoms file.
-- [ ] 6.3 `scripts/check-architecture-guards.mjs`: add the four assertions from design.md
-      Decision 6 (binding-atom allowlist freeze; zero readers of demoted families outside
-      `atoms/index.ts`; `inferAgentChatProviderFromMessages` call sites limited to its module,
+- [ ] 6.1 `scripts/check-architecture-guards.mjs`: add the four assertions from design.md
+      Decision 6 (per-chat binding-semantics storage atoms banned outright — no allowlist;
+      the five deleted family identifiers have zero references anywhere in `src/`;
+      `inferAgentChatProviderFromMessages` call sites limited to its module,
       the owner backfill, and tests; transport files free of binding-atom identifiers).
       ACCEPTANCE: each guard demonstrably fails when its rule is violated on a scratch edit.
-- [ ] 6.4 `docs/OWNERSHIP_MAP.md`: add the "Chat Session Binding" section (canonical owner
+- [ ] 6.2 `docs/OWNERSHIP_MAP.md`: add the "Chat Session Binding" section (canonical owner
       `src/main/lib/chat-session-binding.ts`; consumers: `chats-*` routers, renderer
       transports via injected binding, startup backfill; rule per design.md Decision 6).
 
@@ -101,7 +105,8 @@
 - [ ] 7.2 `openspec validate --strict --no-interactive` across changes and specs.
 - [ ] 7.3 Residue proof: repo grep shows `inferAgentChatProviderFromMessages` referenced only
       in `src/shared/agent-chat-provider.ts`, `src/main/lib/chat-session-binding.ts`, and
-      tests; `subChatProviderOverrides` returns zero hits.
+      tests; `subChatProviderOverrides` and the five deleted binding atom family identifiers
+      return zero hits in `src/`.
 - [ ] 7.4 Desktop smoke (record in `verification.md`): create one Claude chat and one Codex
       chat; send a message in each; change the Codex chat's model and thinking level; quit,
       clear renderer localStorage, relaunch; both chats reopen with correct runtime/model
