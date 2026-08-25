@@ -22,6 +22,10 @@ import {
   parseLaunchDirectory,
   uninstallCli,
 } from "./lib/cli"
+import {
+  abortAllCodexStreams,
+  hasActiveCodexStreams,
+} from "./lib/codex/active-streams"
 import { closeDatabase, initDatabase } from "./lib/db"
 import { cleanupGitWatchers } from "./lib/git/watcher"
 import { isHeadlessCliInvocation } from "./lib/headless/cli-args"
@@ -32,8 +36,8 @@ import { flushHeadlessStdio } from "./lib/headless/stdio"
 import { isLocalOnlyMode, openExternalUrl } from "./lib/local-only"
 import { cancelAllPendingOAuth, handleMcpOAuthCallback } from "./lib/mcp-auth"
 import { cleanupRetiredRuntimeState } from "./lib/retired-runtime-state-cleanup"
+import { getAllCodexMcpConfigHandler } from "./lib/runtime-mcp-config/codex"
 import { getAllMcpConfigHandler } from "./lib/trpc/routers/claude"
-import { abortAllCodexStreams, getAllCodexMcpConfigHandler, hasActiveCodexStreams } from "./lib/trpc/routers/codex"
 import { resolveUserDataPath } from "./lib/user-data-path"
 import {
   createMainWindow,

@@ -30,6 +30,11 @@ import {
 } from "../../agent-runtime/stream-event-mapper"
 import { prepareChatImageAttachmentsForDesktopRun } from "../../chat-attachments"
 import {
+  deleteActiveCodexStreamIfRun,
+  getActiveCodexStream,
+  setActiveCodexStream,
+} from "../../codex/active-streams"
+import {
   getStoredCodexApiKeyModelIds,
   getCodexApiKeyStatus as getStoredCodexApiKeyStatus,
   readCodexApiKey,
@@ -48,10 +53,6 @@ import {
 import { createCodexAppServerAdapter } from "../../codex/app-server-adapter"
 import { createCodexAppServerFinishGate } from "../../codex/app-server-finish-gate"
 import { resolveCodexAppServerPluginConfigOverrides } from "../../codex/app-server-plugin-allowlist"
-import type {
-  CodexAskUserQuestionApproval,
-  CodexAskUserQuestionPending,
-} from "../../codex/ask-user-question"
 import {
   buildCodexUserParts,
   codexImageAttachmentSignatureFromInput,
@@ -93,6 +94,12 @@ import {
 } from "../../codex/model-selection"
 import type { CodexProviderProfileBinding } from "../../codex/provider-runtime-binding"
 import { getCodexRuntimeStatus } from "../../codex/runtime-status"
+import {
+  clearPendingCodexApprovals,
+  deleteCodexPendingToolApproval,
+  resolveCodexPendingToolApproval,
+  setCodexPendingToolApproval,
+} from "../../codex/tool-approvals"
 import { getDatabase, subChats } from "../../db"
 import {
   completeDesktopChatAgentJobSafely,
@@ -124,8 +131,6 @@ import {
   normalizeMcpServerUrl,
 } from "../../runtime-mcp-config/input-validation"
 import { publicProcedure, router } from "../index"
-
-export { getAllCodexMcpConfigHandler }
 
 function zodMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Invalid input"
@@ -197,43 +202,6 @@ function buildCodexAppServerAssistantMessage(input: {
     parts: [{ type: "text", text }],
     metadata,
   })
-}
-
-type ActiveCodexStream = {
-  runId: string
-  controller: AbortController
-  cancelRequested: boolean
-}
-
-const activeStreams = new Map<string, ActiveCodexStream>()
-const pendingCodexToolApprovals = new Map<string, CodexAskUserQuestionPending>()
-
-function clearPendingCodexApprovals(
-  message = "Session cancelled.",
-  subChatId?: string,
-): void {
-  for (const [toolUseId, pending] of pendingCodexToolApprovals) {
-    if (subChatId && pending.subChatId !== subChatId) {
-      continue
-    }
-    pending.resolve({ approved: false, message })
-    pendingCodexToolApprovals.delete(toolUseId)
-  }
-}
-
-/** Check if there are any active Codex streaming sessions */
-export function hasActiveCodexStreams(): boolean {
-  return activeStreams.size > 0
-}
-
-/** Abort all active Codex streams so their cleanup saves partial state */
-export function abortAllCodexStreams(): void {
-  for (const [subChatId, stream] of activeStreams) {
-    console.log(`[codex] Aborting stream ${subChatId} before reload`)
-    stream.controller.abort()
-    clearPendingCodexApprovals("Session cancelled.", subChatId)
-  }
-  activeStreams.clear()
 }
 
 function getCodexApiKeyStatusResponse() {
@@ -522,14 +490,14 @@ export const codexRouter = router({
     .input(codexChatInputSchema)
     .subscription(({ input }) => {
       return observable<any>((emit) => {
-        const existingStream = activeStreams.get(input.subChatId)
+        const existingStream = getActiveCodexStream(input.subChatId)
         if (existingStream) {
           existingStream.cancelRequested = true
           existingStream.controller.abort()
         }
 
         const abortController = new AbortController()
-        activeStreams.set(input.subChatId, {
+        setActiveCodexStream(input.subChatId, {
           runId: input.runId,
           controller: abortController,
           cancelRequested: false,
@@ -953,7 +921,7 @@ export const codexRouter = router({
 
             let messagesForStream = existingMessages
             const isAuthoritativeRun = () => {
-              const currentStream = activeStreams.get(input.subChatId)
+              const currentStream = getActiveCodexStream(input.subChatId)
               return !currentStream || currentStream.runId === input.runId
             }
 
@@ -1069,7 +1037,7 @@ export const codexRouter = router({
               runId: input.runId,
               permissionPolicy,
               cancel: () => {
-                const activeStream = activeStreams.get(input.subChatId)
+                const activeStream = getActiveCodexStream(input.subChatId)
                 if (activeStream?.runId !== input.runId) return
                 activeStream.cancelRequested = true
                 activeStream.controller.abort()
@@ -1158,10 +1126,10 @@ export const codexRouter = router({
               guardedContract,
               emit: safeEmit,
               registerPendingQuestion: (toolUseId, pending) => {
-                pendingCodexToolApprovals.set(toolUseId, pending)
+                setCodexPendingToolApproval(toolUseId, pending)
               },
               unregisterPendingQuestion: (toolUseId) => {
-                pendingCodexToolApprovals.delete(toolUseId)
+                deleteCodexPendingToolApproval(toolUseId)
               },
             })
 
@@ -1251,10 +1219,8 @@ export const codexRouter = router({
                 },
               })
             }
-            const activeStream = activeStreams.get(input.subChatId)
-            if (activeStream?.runId === input.runId) {
+            if (deleteActiveCodexStreamIfRun(input.subChatId, input.runId)) {
               clearPendingCodexApprovals("Session cancelled.", input.subChatId)
-              activeStreams.delete(input.subChatId)
             }
             codexProviderUpstreamToken = null
             codexProviderGatewayToken = null
@@ -1275,7 +1241,7 @@ export const codexRouter = router({
           abortController.abort()
           revokeCodexProviderGatewayToken()
 
-          const activeStream = activeStreams.get(input.subChatId)
+          const activeStream = getActiveCodexStream(input.subChatId)
           if (activeStream?.runId === input.runId) {
             activeStream.cancelRequested = true
           }
@@ -1291,7 +1257,7 @@ export const codexRouter = router({
       }),
     )
     .mutation(({ input }) => {
-      const activeStream = activeStreams.get(input.subChatId)
+      const activeStream = getActiveCodexStream(input.subChatId)
       if (!activeStream) {
         return { cancelled: false, ignoredStale: false }
       }
@@ -1317,28 +1283,26 @@ export const codexRouter = router({
       }),
     )
     .mutation(({ input }) => {
-      const pending = pendingCodexToolApprovals.get(input.toolUseId)
-      if (!pending) {
-        return { ok: false }
+      return {
+        ok: resolveCodexPendingToolApproval({
+          toolUseId: input.toolUseId,
+          decision: {
+            approved: input.approved,
+            message: input.message,
+            updatedInput: input.updatedInput,
+          },
+        }),
       }
-      const response: CodexAskUserQuestionApproval = {
-        approved: input.approved,
-        message: input.message,
-        updatedInput: input.updatedInput,
-      }
-      pending.resolve(response)
-      pendingCodexToolApprovals.delete(input.toolUseId)
-      return { ok: true }
     }),
 
   cleanup: publicProcedure
     .input(z.object({ subChatId: z.string() }))
     .mutation(({ input }) => {
-      const activeStream = activeStreams.get(input.subChatId)
+      const activeStream = getActiveCodexStream(input.subChatId)
       if (activeStream) {
         activeStream.controller.abort()
         clearPendingCodexApprovals("Session cancelled.", input.subChatId)
-        activeStreams.delete(input.subChatId)
+        deleteActiveCodexStreamIfRun(input.subChatId, activeStream.runId)
       }
 
       return { success: true }

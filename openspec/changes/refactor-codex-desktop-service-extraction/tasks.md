@@ -2,13 +2,13 @@
 
 ## 1. Pre-flight
 
-- [ ] 1.1 Capture a baseline `bun run check` receipt on the pre-change commit so later
+- [x] 1.1 Capture a baseline `bun run check` receipt on the pre-change commit so later
       failures are attributable.
-- [ ] 1.2 Inventory every source-text assertion on `src/main/lib/trpc/routers/codex.ts`
+- [x] 1.2 Inventory every source-text assertion on `src/main/lib/trpc/routers/codex.ts`
       (`grep -rln "routers/codex" tests/`) and map each asserted substring to the block it
       pins (state Maps, adapter construction, preflight, binding, persistence, MCP zod).
       This inventory drives the per-commit test re-pointing in sections 3–6.
-- [ ] 1.3 Re-verify the anchors this change moves (line numbers are hints, symbols are
+- [x] 1.3 Re-verify the anchors this change moves (line numbers are hints, symbols are
       authoritative): `activeStreams`/`pendingCodexToolApprovals` (`codex.ts:207-236`),
       `buildCodexAppServerAssistantMessage` (`codex.ts:161`), both `db.update(subChats)`
       writes (`codex.ts:956`, `codex.ts:981`), `createCodexAppServerAdapter` call
@@ -17,26 +17,26 @@
 
 ## 2. State extraction (registry + approvals)
 
-- [ ] 2.1 Create `src/main/lib/codex/active-streams.ts` mirroring
+- [x] 2.1 Create `src/main/lib/codex/active-streams.ts` mirroring
       `lib/claude/active-sessions.ts`: `ActiveCodexStream` type, typed accessors
       (get/set/delete-if-run, `hasActiveCodexStreams`, `abortAllCodexStreams`), a
       `...ForTest` reset hook. Preserve `runId`-authoritative semantics exactly.
-- [ ] 2.2 Create `src/main/lib/codex/tool-approvals.ts` mirroring
+- [x] 2.2 Create `src/main/lib/codex/tool-approvals.ts` mirroring
       `lib/claude/tool-approvals.ts`: pending store keyed by `toolUseId`,
       `clearPendingCodexApprovals(reason, subChatId)`, resolve helper, test reset hook.
-- [ ] 2.3 Rewire all `codex.ts` internal uses (subscription registration at `:520-531`,
+- [x] 2.3 Rewire all `codex.ts` internal uses (subscription registration at `:520-531`,
       persistence guard, cancel callback at `:1053-1072`, finalize at `:1244-1272`,
       `cancel` (`:1274`) / `respondToolApproval` (`:1298`) procedures) to the new
       modules; delete the
       module-level Maps and helpers from the router.
-- [ ] 2.4 Rewire `src/main/windows/main.ts` (imports at `:27-31`; call sites `:547`,
+- [x] 2.4 Rewire `src/main/windows/main.ts` (imports at `:27-31`; call sites `:547`,
       `:564`, `:615`, `:619`, `:635`) and `src/main/index.ts` (import at `:36`; call sites
       `:646`, `:659`, `:741`, `:756`) to `lib/codex/active-streams.ts`. Point
       `index.ts:881` at `getAllCodexMcpConfigHandler` from
       `src/main/lib/runtime-mcp-config/codex.ts` directly and delete the router re-export
       (`codex.ts:127`). ACCEPTANCE: `grep -rn "trpc/routers/codex" src/main/` matches only
       the tRPC router registry.
-- [ ] 2.5 Unit tests for both new modules (register/abort/authoritative-run/clear
+- [x] 2.5 Unit tests for both new modules (register/abort/authoritative-run/clear
       semantics), mirroring existing Claude counterpart coverage.
 
 ## 3. Run pipeline stage extraction (one commit per stage, run order)

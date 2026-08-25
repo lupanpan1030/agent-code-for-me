@@ -16,6 +16,10 @@ import {
   abortAllClaudeSessions,
   hasActiveClaudeSessions,
 } from "../lib/claude/active-sessions"
+import {
+  abortAllCodexStreams,
+  hasActiveCodexStreams,
+} from "../lib/codex/active-streams"
 import { shouldOpenDevToolsOnStartup } from "../lib/devtools-startup"
 import { registerGitWatcherIPC } from "../lib/git/watcher"
 import {
@@ -24,10 +28,6 @@ import {
   openExternalUrl,
 } from "../lib/local-only"
 import { createAppRouter } from "../lib/trpc/routers"
-import {
-  abortAllCodexStreams,
-  hasActiveCodexStreams,
-} from "../lib/trpc/routers/codex"
 import { registerThemeScannerIPC } from "../lib/vscode-theme-scanner"
 import { isAllowedMainWindowNavigationUrl } from "./navigation-guard"
 import { installRendererContentSecurityPolicy } from "./renderer-csp"
