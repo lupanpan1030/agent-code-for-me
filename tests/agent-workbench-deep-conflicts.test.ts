@@ -5,6 +5,10 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { computeAgentWorkbenchStatusHash } from "../src/main/lib/agent-workbench/conflicts"
 import {
+  OPERATION_TIMED_OUT,
+  settleWithinRequest,
+} from "../src/main/lib/agent-workbench/deep-conflict-deadline"
+import {
   type ConflictDeepCheckDependencies,
   type ConflictWorkspaceInput,
   checkCrossWorkspaceConflicts,
@@ -768,6 +772,45 @@ describe("agent workbench deep conflicts", () => {
         })
       }
     }
+  })
+
+  test("keeps request-timeout provenance when abort settles the dependency", async () => {
+    let observedSignal: AbortSignal | undefined
+    const result = await settleWithinRequest(
+      ({ signal }) =>
+        new Promise<string>((resolve) => {
+          observedSignal = signal
+          signal.addEventListener("abort", () => resolve("aborted"), {
+            once: true,
+          })
+        }),
+      { deadlineAt: 1, monotonicNow: () => 0 },
+    )
+
+    expect(result).toBe(OPERATION_TIMED_OUT)
+    expect(observedSignal?.aborted).toBe(true)
+  })
+
+  test("latches a preparation timeout despite sub-millisecond clock skew", async () => {
+    const deps = dependencies({
+      heads: { "task-a": "head-a", "task-b": "head-b" },
+      mergeTrialBatchDeadlineMs: 1,
+    })
+    deps.monotonicNow = () => 0
+    deps.probeMergeTreeCapability = () => new Promise(() => {})
+
+    const result = await checkCrossWorkspaceConflicts(
+      [workspace("task-a"), workspace("task-b")],
+      deps,
+    )
+
+    expect(result.pairs[0]?.mergeTrial).toEqual({
+      scope: "committed-changes-only",
+      status: "unavailable",
+      reason: "trial-failed",
+      unavailableDetail: "batch-deadline-exceeded",
+      conflictPaths: [],
+    })
   })
 
   test("aborts an in-flight snapshot dependency when the request deadline expires", async () => {

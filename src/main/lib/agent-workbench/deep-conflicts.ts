@@ -103,6 +103,7 @@ async function getMergeVerdict(
   dependencies: ConflictDeepCheckDependencies,
   batch: {
     deadlineAt: number
+    preparationDeadlineExceeded: boolean
     perTrialTimeoutMs: number
     monotonicNow: () => number
   },
@@ -110,6 +111,7 @@ async function getMergeVerdict(
   if (
     left.snapshotUnavailableDetail === "batch-deadline-exceeded" ||
     right.snapshotUnavailableDetail === "batch-deadline-exceeded" ||
+    batch.preparationDeadlineExceeded ||
     batch.monotonicNow() >= batch.deadlineAt
   ) {
     return {
@@ -330,6 +332,12 @@ export async function checkCrossWorkspaceConflicts(
 
   const batch = {
     deadlineAt: requestBudget.deadlineAt,
+    preparationDeadlineExceeded:
+      capabilityResult === OPERATION_TIMED_OUT ||
+      prepared.some(
+        (workspace) =>
+          workspace.snapshotUnavailableDetail === "batch-deadline-exceeded",
+      ),
     perTrialTimeoutMs: normaliseDuration(
       dependencies.mergeTrialTimeoutMs,
       DEFAULT_MERGE_TREE_TRIAL_TIMEOUT_MS,

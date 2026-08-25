@@ -47,7 +47,8 @@ export async function settleWithinRequest<Result>(
   const remainingMs = budget.deadlineAt - budget.monotonicNow()
   if (remainingMs <= 0) return OPERATION_TIMED_OUT
 
-  const timeoutMs = Math.max(1, Math.floor(remainingMs))
+  // Never schedule the timer before a fractional monotonic deadline.
+  const timeoutMs = Math.max(1, Math.ceil(remainingMs))
   const controller = new AbortController()
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
@@ -57,8 +58,10 @@ export async function settleWithinRequest<Result>(
       ),
       new Promise<typeof OPERATION_TIMED_OUT>((resolve) => {
         timer = setTimeout(() => {
-          controller.abort()
+          // Publish timeout provenance before abort listeners can settle the
+          // operation with a generic fallback value.
           resolve(OPERATION_TIMED_OUT)
+          controller.abort()
         }, timeoutMs)
       }),
     ])
