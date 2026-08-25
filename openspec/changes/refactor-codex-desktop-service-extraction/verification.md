@@ -117,6 +117,29 @@ and the reverse imports from `src/main/index.ts` and `src/main/windows/main.ts`.
 - `bun run check`: architecture and retired-runtime guards passed; TypeScript passed;
   **1,669 tests passed / 0 failed across 285 files**.
 
+### Finalization stage (task 3.4)
+
+- One state owner now holds the database, job id, and three lifecycle flags. The router
+  sets the database immediately after `getDatabase()` and retains its tRPC envelope,
+  finish gate, renderer emission, and fallback error/finish behavior.
+- Job cancellation remains run-id fenced. Finalization order is provider revoke → job
+  completion → approval clear → same-run stream delete → provider-secret release;
+  unsubscribe remains inactive → cancel request (including eager fallback DB evaluation)
+  → abort → revoke → same-run `cancelRequested`.
+- `bun test --isolate tests/codex-desktop-run-finalize.test.ts
+  tests/agent-runtime-preflight.test.ts tests/runtime-stream-event-mapper.test.ts
+  tests/codex-api-key-validation.test.ts tests/agent-runtime-permission-policy.test.ts
+  tests/desktop-runtime-adapter-factory.test.ts tests/provider-credential-storage.test.ts
+  tests/provider-routing-ux.test.ts`: **70 passed / 0 failed / 442 expectations across
+  8 files**.
+- A read-only behavior review against `a974dd47` found no P0/P1/P2 regression. All its P3
+  coverage gaps were closed: registration passthrough + cancel flag, stale/missing stream
+  cleanup fences, aborted/natural-finish flags, unsubscribe ordering/arguments, and state
+  DB precedence.
+- `bun run lint`, `bun run ts:check`, and `git diff --check`: passed.
+- `bun run check`: architecture and retired-runtime guards passed; TypeScript passed;
+  **1,672 tests passed / 0 failed across 285 files**.
+
 ## W7 scope ledger
 
 - Green work is implemented only as named in the approved proposal.

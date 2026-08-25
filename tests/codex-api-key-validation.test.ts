@@ -247,7 +247,7 @@ describe("Codex API key validation", () => {
       "const providerBindingResult = await providerBindingStage.resolve",
     )
     const jobCreationIndex = codexRouterSource.indexOf(
-      "const desktopJob = createAndRegisterDesktopChatAgentJob",
+      "const desktopJob = createAndRegisterCodexDesktopRunJob",
     )
     const adapterCreationIndex = codexRouterSource.indexOf(
       "const codexAdapter = createCodexAppServerAdapter",

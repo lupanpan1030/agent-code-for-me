@@ -63,7 +63,7 @@
       against the pre-change builder output; no `db.update(subChats)` remains in any
       router (`grep -n "subChats" src/main/lib/trpc/routers/` shows reads at most —
       expected: none in `codex.ts` after 3.3).
-- [ ] 3.4 `src/main/lib/codex/desktop-run-finalize.ts`: move the run-flag state
+- [x] 3.4 `src/main/lib/codex/desktop-run-finalize.ts`: move the run-flag state
       (`sawError` / `reachedNaturalFinish` / `adapterFailed`, `codex.ts:534-538`), desktop
       job registration glue (`createAndRegisterDesktopChatAgentJob` call + cancel callback,
       `codex.ts:1053-1073`), the `finally` finalize (`completeDesktopChatAgentJobSafely`,

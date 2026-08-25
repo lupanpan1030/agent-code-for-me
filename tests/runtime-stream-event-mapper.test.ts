@@ -605,6 +605,10 @@ describe("desktop stream event mapper", () => {
       "src/main/lib/codex/desktop-run-persistence.ts",
       "utf8",
     )
+    const finalizeSource = readFileSync(
+      "src/main/lib/codex/desktop-run-finalize.ts",
+      "utf8",
+    )
     const rendererEmitIndex = source.indexOf("const emitRendererChunk")
     const safeEmitIndex = source.indexOf("const safeEmit")
     const redactIndex = source.indexOf(
@@ -673,7 +677,12 @@ describe("desktop stream event mapper", () => {
       "[providerUpstreamToken, providerGatewayToken].filter(",
     )
     expect(source).toContain("secretHints: providerSecretHints(),")
-    expect(source.match(/providerBindingStage\.revoke\(\)/g)).toHaveLength(2)
+    expect(
+      source.match(/revokeProviderBinding: providerBindingStage\.revoke/g),
+    ).toHaveLength(2)
+    expect(finalizeSource.match(/input\.revokeProviderBinding\(\)/g)).toHaveLength(
+      2,
+    )
   })
 
   test("appends mapped run events through the existing job store", () => {
@@ -750,7 +759,7 @@ describe("desktop stream event mapper", () => {
       const jobIndex =
         runtimeName === "Claude"
           ? claudeStartupSource.indexOf("createDesktopRunStartup({")
-          : source.indexOf("createAndRegisterDesktopChatAgentJob(db, {")
+          : source.indexOf("createAndRegisterCodexDesktopRunJob({")
       const mapperCreateIndex =
         runtimeName === "Claude"
           ? claudeStartupSource.indexOf(

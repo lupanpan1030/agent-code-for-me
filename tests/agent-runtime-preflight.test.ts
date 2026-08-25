@@ -290,7 +290,7 @@ describe("desktop runtime preflight", () => {
     const localOnlyIndex = codexProviderBinding.indexOf(
       '"use Codex provider endpoint"',
     )
-    const jobIndex = codex.indexOf("createAndRegisterDesktopChatAgentJob(db, {")
+    const jobIndex = codex.indexOf("createAndRegisterCodexDesktopRunJob({")
     const runRequestIndex = codex.indexOf(
       "const desktopRunRequest = createCodexDesktopRunRequest({",
     )

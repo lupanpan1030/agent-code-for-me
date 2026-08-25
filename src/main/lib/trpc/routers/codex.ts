@@ -50,6 +50,12 @@ import { codexChatInputSchema } from "../../codex/chat-input-schema"
 import { resolveBundledCodexCliPath } from "../../codex/cli-path"
 import { runCodexCli } from "../../codex/cli-runner"
 import {
+  cleanupCodexDesktopRunSubscription,
+  createAndRegisterCodexDesktopRunJob,
+  createCodexDesktopRunState,
+  finalizeCodexDesktopRunAfterLifecycle,
+} from "../../codex/desktop-run-finalize"
+import {
   loadCodexDesktopRunHistory,
   persistCodexDesktopAssistantAfterNaturalFinish,
   persistCodexDesktopRunUserMessage,
@@ -86,11 +92,6 @@ import {
   setCodexPendingToolApproval,
 } from "../../codex/tool-approvals"
 import { getDatabase } from "../../db"
-import {
-  completeDesktopChatAgentJobSafely,
-  createAndRegisterDesktopChatAgentJob,
-  requestCancelDesktopChatAgentJobSafely,
-} from "../../desktop-agent-jobs"
 import { getProviderProfileMetadata } from "../../provider-profiles/storage"
 import {
   addCodexMcpServer,
@@ -437,11 +438,7 @@ export const codexRouter = router({
         })
 
         let isActive = true
-        let desktopJobId: string | null = null
-        let desktopJobSawError = false
-        let desktopJobReachedNaturalFinish = false
-        let desktopJobAdapterFailed = false
-        let desktopJobDb: ReturnType<typeof getDatabase> | null = null
+        const desktopRunState = createCodexDesktopRunState()
         const appServerPersistenceChunks: Record<string, unknown>[] = []
         const providerBindingStage = createCodexDesktopRunProviderBindingStage()
         const providerSecretHints = providerBindingStage.getSecretHints
@@ -452,7 +449,7 @@ export const codexRouter = router({
             const rendererChunk = redactRendererRuntimeChunk({
               runtimeId: "codex",
               runId: input.runId,
-              jobId: desktopJobId,
+              jobId: desktopRunState.getJobId(),
               chunk,
               secretHints: providerSecretHints(),
             })
@@ -471,7 +468,7 @@ export const codexRouter = router({
           const redactedChunk = redactRendererRuntimeChunk({
             runtimeId: "codex",
             runId: input.runId,
-            jobId: desktopJobId,
+            jobId: desktopRunState.getJobId(),
             chunk,
             secretHints: providerSecretHints(),
           }) as Record<string, unknown>
@@ -483,7 +480,7 @@ export const codexRouter = router({
             (redactedChunk?.type === "runtime-status" &&
               redactedChunk?.ok === false)
           ) {
-            desktopJobSawError = true
+            desktopRunState.markSawError()
           }
           appServerFinishGate.emit(redactedChunk)
         }
@@ -503,7 +500,7 @@ export const codexRouter = router({
         ;(async () => {
           try {
             const db = getDatabase()
-            desktopJobDb = db
+            desktopRunState.setDb(db)
             const verifiedRunContext = verifyDesktopRunPreflight(db, {
               chatId: input.chatId,
               subChatId: input.subChatId,
@@ -678,8 +675,9 @@ export const codexRouter = router({
               return
             }
 
-            const desktopJob = createAndRegisterDesktopChatAgentJob(db, {
-              runtime: "codex",
+            const desktopJob = createAndRegisterCodexDesktopRunJob({
+              db,
+              state: desktopRunState,
               mode: input.mode,
               chatId: input.chatId,
               subChatId: input.subChatId,
@@ -687,18 +685,8 @@ export const codexRouter = router({
               prompt: input.prompt,
               runId: input.runId,
               permissionPolicy,
-              cancel: () => {
-                const activeStream = getActiveCodexStream(input.subChatId)
-                if (activeStream?.runId !== input.runId) return
-                activeStream.cancelRequested = true
-                activeStream.controller.abort()
-                clearPendingCodexApprovals(
-                  "Session cancelled.",
-                  input.subChatId,
-                )
-              },
             })
-            desktopJobId = desktopJob.job.id
+            const desktopJobId = desktopJob.job.id
 
             const desktopRunRequest = createCodexDesktopRunRequest({
               runId: input.runId,
@@ -777,9 +765,11 @@ export const codexRouter = router({
             await appServerFinishGate.runWithDeferredFinish(
               () => codexAdapter.run(desktopRunRequest),
               (adapterResult) => {
-                desktopJobAdapterFailed = adapterResult.status === "failed"
-                if (desktopJobAdapterFailed) {
-                  desktopJobSawError = true
+                desktopRunState.setAdapterFailed(
+                  adapterResult.status === "failed",
+                )
+                if (desktopRunState.adapterFailed()) {
+                  desktopRunState.markSawError()
                   const adapterAlreadyEmittedError =
                     appServerPersistenceChunks.some(
                       (chunk) => chunk?.type === "error",
@@ -800,9 +790,11 @@ export const codexRouter = router({
                     safeEmit({ type: "finish" })
                   }
                 }
-                desktopJobReachedNaturalFinish =
-                  adapterResult.status === "succeeded" && !desktopJobSawError
-                if (desktopJobReachedNaturalFinish) {
+                desktopRunState.setReachedNaturalFinish(
+                  adapterResult.status === "succeeded" &&
+                    !desktopRunState.sawError(),
+                )
+                if (desktopRunState.reachedNaturalFinish()) {
                   persistCodexDesktopAssistantAfterNaturalFinish({
                     db,
                     subChatId: input.subChatId,
@@ -820,7 +812,7 @@ export const codexRouter = router({
             const redactedDiagnostics = redactRendererRuntimeChunk({
               runtimeId: "codex",
               runId: input.runId,
-              jobId: desktopJobId,
+              jobId: desktopRunState.getJobId(),
               chunk: {
                 subChatId: input.subChatId.slice(-8),
                 ...getCodexErrorDiagnostics(error),
@@ -838,49 +830,31 @@ export const codexRouter = router({
             safeEmit({ type: "finish" })
             safeComplete()
           } finally {
-            providerBindingStage.revoke()
-            if (desktopJobId) {
-              const jobDb = desktopJobDb ?? getDatabase()
-              completeDesktopChatAgentJobSafely(jobDb, {
-                jobId: desktopJobId,
-                runtime: "codex",
-                aborted:
-                  abortController.signal.aborted && !desktopJobAdapterFailed,
-                reachedNaturalFinish: desktopJobReachedNaturalFinish,
-                sawError: desktopJobSawError || desktopJobAdapterFailed,
-                result: {
-                  runtime: "codex",
-                  subChatId: input.subChatId,
-                  chatId: input.chatId,
-                  runId: input.runId,
-                },
-              })
-            }
-            if (deleteActiveCodexStreamIfRun(input.subChatId, input.runId)) {
-              clearPendingCodexApprovals("Session cancelled.", input.subChatId)
-            }
-            providerBindingStage.release()
+            finalizeCodexDesktopRunAfterLifecycle({
+              state: desktopRunState,
+              abortController,
+              chatId: input.chatId,
+              subChatId: input.subChatId,
+              runId: input.runId,
+              getFallbackDb: getDatabase,
+              revokeProviderBinding: providerBindingStage.revoke,
+              clearProviderSecrets: providerBindingStage.release,
+            })
           }
         })()
 
         return () => {
-          isActive = false
-          requestCancelDesktopChatAgentJobSafely(
-            desktopJobDb ?? getDatabase(),
-            {
-              jobId: desktopJobId,
-              sawError: desktopJobSawError,
-              reachedNaturalFinish: desktopJobReachedNaturalFinish,
-              requestedBy: "desktop-chat",
+          cleanupCodexDesktopRunSubscription({
+            state: desktopRunState,
+            abortController,
+            subChatId: input.subChatId,
+            runId: input.runId,
+            markInactive: () => {
+              isActive = false
             },
-          )
-          abortController.abort()
-          providerBindingStage.revoke()
-
-          const activeStream = getActiveCodexStream(input.subChatId)
-          if (activeStream?.runId === input.runId) {
-            activeStream.cancelRequested = true
-          }
+            getFallbackDb: getDatabase,
+            revokeProviderBinding: providerBindingStage.revoke,
+          })
         }
       })
     }),
