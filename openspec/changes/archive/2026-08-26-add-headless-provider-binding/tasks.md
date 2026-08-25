@@ -49,7 +49,7 @@
 - [x] 7.1 Manual smoke with a real test profile (local Ollama or mock upstream): `locus run --runtime codex --provider-profile <id>` end to end; record in `verification.md`
 - [x] 7.2 Ajv-validate the extended envelopes against the updated schema
 - [x] 7.3 Cross-check `resolvedProvider` echo against actual upstream hit (gateway logs) for one profile run and one native run
-- [ ] 7.4 Commit the final integrated source, record its exact source SHA, and run `bun run check:full` against that unchanged SHA
-- [ ] 7.5 Obtain fresh Codex `IMPLEMENTATION_VERIFIED` and Claude Code `REVIEW_APPROVED` verdicts for the same exact source SHA with no unresolved blocking finding
-- [ ] 7.6 Merge the approved source locally into `main`, record the local merge SHA, and run the post-merge `bun run check:full` gate
-- [ ] 7.7 Obtain Owner product/risk `ACCEPTED` for the integrated result, then archive this change locally with remote actions recorded as not authorized/not performed
+- [x] 7.4 Commit the final integrated source, record its exact source SHA, and run `bun run check:full` against that unchanged SHA
+- [x] 7.5 Obtain fresh Codex `IMPLEMENTATION_VERIFIED` and Claude Code `REVIEW_APPROVED` verdicts for the same exact source SHA with no unresolved blocking finding
+- [x] 7.6 Merge the approved source locally into `main`, record the local merge SHA, and run the post-merge `bun run check:full` gate
+- [x] 7.7 Obtain Owner product/risk `ACCEPTED` for the integrated result, then archive this change locally with remote actions recorded as not authorized/not performed

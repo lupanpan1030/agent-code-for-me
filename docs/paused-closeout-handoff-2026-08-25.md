@@ -1,5 +1,15 @@
 # Locus closeout pause handoff — 2026-08-25
 
+> **COMPLETED 2026-08-26.** The Owner resumed this closeout and expanded step 8 from two changes
+> to all four Verification/Acceptance changes. Source
+> `bdd2e2e57143a69f86f34ed96f84aa9a5e076fd4` received both technical verdicts; local `main`
+> fast-forwarded to evidence endpoint `2a41522c01e5bb7e55014218c087e814a28be583`; the post-merge
+> full gate passed; the Owner explicitly accepted all four changes; and all four were archived under
+> `openspec/changes/archive/2026-08-26-*`. Current changes/specs validate 52/52, and each of the
+> four new archive entries passes archived-task validation. No push, remote PR mutation, remote
+> merge, release, or other remote operation was authorized or performed. The original pause
+> snapshot below is preserved unchanged as historical recovery evidence.
+
 ## Pause decision
 
 Work paused at the Owner's request because the current AI token allowance is

@@ -31,6 +31,8 @@ trusting any doc as "current state," check which bucket it is in.
 | --- | --- |
 | [locus-workbench-focus.md](locus-workbench-focus.md) ([zh](locus-workbench-focus.zh-CN.md)) | **Superseded for product direction 2026-08-25.** Historical execution-slice record; do not use as the current scope lock. |
 | [locus-local-agent-platform.md](locus-local-agent-platform.md) ([zh](locus-local-agent-platform.zh-CN.md)) | Implementation snapshot with current Local Job API links; its old product direction is explicitly superseded by the ratified Harness strategy. |
+| [locus-architecture-strategy-handoff.zh-CN.md](locus-architecture-strategy-handoff.zh-CN.md) | **Historical fact base from 2026-08-20.** Useful for provenance, but superseded as a direction entry point by the ratified Harness strategy and interoperability contract. |
+| [locus-adapt-open-source-direction.zh-CN.md](locus-adapt-open-source-direction.zh-CN.md) | **Historical research from 2026-08-15.** Its product-center thesis was rejected; retain only its reusable research, not its roadmap. |
 
 ## Live — external contract
 

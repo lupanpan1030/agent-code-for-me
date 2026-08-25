@@ -8,6 +8,7 @@ diff/review, and GitHub workflows, and annotates overlapping file changes across
 can prioritize potential conflicts without changing the underlying task status.
 
 ## Requirements
+
 ### Requirement: Local Agent Workbench Overview
 The system SHALL provide a local Agent Workbench that summarizes coding-agent tasks from local projects, project-backed chats, worktrees, and sub-chats.
 
@@ -76,6 +77,12 @@ The system SHALL expose safe actions that reuse existing local chat, diff, and G
 - **WHEN** the user chooses Create PR on a task without a pull request
 - **THEN** the app uses the existing GitHub workflow preparation and confirmation flow
 - **AND** no public GitHub write occurs without explicit confirmation
+
+#### Scenario: User inspects a cross-workspace conflict
+- **WHEN** the user activates a conflict annotation on a task card
+- **THEN** the app opens the existing diff/review surface for that task filtered to the overlapping
+  paths
+- **AND** no new review surface is introduced and the task's classified status is unchanged
 
 ### Requirement: Local-Only Boundary
 The Agent Workbench SHALL preserve Locus local-first boundaries.
@@ -363,4 +370,3 @@ available without sending raw provider payloads to the renderer.
 - **WHEN** the trace usage row renders cache efficiency
 - **THEN** it SHALL show only derived token counts and the derived ratio
 - **AND** it SHALL NOT expose raw provider usage payloads, tokens, or secrets
-

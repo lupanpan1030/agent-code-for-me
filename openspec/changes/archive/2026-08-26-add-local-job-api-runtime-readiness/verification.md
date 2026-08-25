@@ -159,3 +159,41 @@ Open questions / assumptions:
 - I did not re-run the full `bun run check:full` suite or the Electron/Xvfb-based smoke scripts (heavy, requires build + display server); verification.md's aggregate pass counts were taken as reported and spot-checked via the targeted readiness/schema/dispatcher test files instead.
 
 This is a technical verdict for source SHA bdd2e2e57143a69f86f34ed96f84aa9a5e076fd4 only; it does not constitute product/Owner acceptance and does not authorize push, remote PR mutation, remote merge, release, or repository-rules changes.
+
+## 2026-08-26 — Local integration, post-merge gate, and Owner acceptance
+
+- Reviewed implementation source: `bdd2e2e57143a69f86f34ed96f84aa9a5e076fd4`.
+- Evidence-only commits: Codex verification `f9a16c70c724767980a20587006845216f0f6d6f` and
+  Claude review `2a41522c01e5bb7e55014218c087e814a28be583`.
+- Local integration: `main` was fast-forwarded from
+  `df72d425ea9c7e404a568a4c93c26f3792074ad0` to
+  `2a41522c01e5bb7e55014218c087e814a28be583`, with no conflict and no merge commit.
+  The range from the reviewed source to the local integration endpoint changes only the four
+  change-owned `verification.md` files; it contains no product-code change.
+- Post-merge gate: `bun run check:full` passed at the unchanged local-main SHA
+  `2a41522c01e5bb7e55014218c087e814a28be583`: architecture and retired-runtime guards passed;
+  TypeScript passed; 1,642 tests passed with 0 failures and 7,921 assertions across 278 files;
+  OpenSpec strict validation passed 54/54; the production Electron/Vite build and diff check
+  passed. Only the already-recorded non-failing Vite/Browserslist warnings remained.
+- Owner decision received verbatim on 2026-08-26:
+  **`ACCEPTED add-local-job-api-runtime-readiness`**.
+- Final change verdict: **`IMPLEMENTATION_VERIFIED` + `REVIEW_APPROVED` + `ACCEPTED`**.
+  The independent review found zero P0/P1/P2 findings; its two non-blocking P3 notes remain
+  recorded above for later triage.
+- Archive state at this checkpoint: pending local archive and post-archive strict validation.
+- Push, remote PR mutation, remote merge, release, and every other remote operation:
+  **not authorized and not performed**.
+
+## 2026-08-26 — Archive receipt
+
+- `bun x openspec archive add-local-job-api-runtime-readiness --yes` exited 0 and moved this change
+  to `openspec/changes/archive/2026-08-26-add-local-job-api-runtime-readiness/`.
+- The archive added the accepted runtime-readiness and discovery-feature requirements to the
+  canonical `local-job-api` spec after the provider-binding requirements.
+- `bun x openspec validate --all --strict --no-interactive` passed 52/52 after all four archives.
+- The output of `bun x openspec validate --archived --strict --no-interactive` marks this entry
+  `✓`. The command exits nonzero at an archive-wide aggregate of 102/108 because six older archived
+  entries contain pre-existing incomplete task checkboxes; none is one of the four entries archived
+  in this batch.
+- Final archive state: **Owner `ACCEPTED`; locally archived and validated**.
+- No push, remote PR mutation, remote merge, release, or other remote operation was performed.

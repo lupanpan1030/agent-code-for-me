@@ -161,9 +161,9 @@ remediation. The post-remediation acceptance reruns are tracked separately below
       explanations, including dirty-diff mutation, in both English and Simplified Chinese.
 - [x] 9.7 Run the 15-file targeted regression set plus typecheck, architecture guards, diff check,
       and the real-Codex-home contamination assertion; record the receipt in `verification.md`.
-- [ ] 9.8 Commit the integrated source, run `bun run check:full` on the exact source SHA, and record
+- [x] 9.8 Commit the integrated source, run `bun run check:full` on the exact source SHA, and record
       Codex implementation verification plus fresh-context Claude Code review for that same SHA.
-- [ ] 9.9 Fast-forward the reviewed source locally into `main`, run the post-merge gate on the local
+- [x] 9.9 Fast-forward the reviewed source locally into `main`, run the post-merge gate on the local
       merge SHA, record Owner acceptance plus `remote not authorized / not performed`, archive the
       change, and verify the archive.
 - [x] 9.10 Close the follow-up reviewer findings without widening the public surface: decode
