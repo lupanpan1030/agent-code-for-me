@@ -1,6 +1,5 @@
 import { spawn } from "node:child_process"
 import { observable } from "@trpc/server/observable"
-import { eq } from "drizzle-orm"
 import { z } from "zod"
 import {
   getChatImageAttachmentCapability,
@@ -11,7 +10,6 @@ import {
   buildCodexRuntimeStatusChunk,
   createCodexRuntimeBlocker,
 } from "../../../../shared/codex-runtime-status"
-import { normalizeCodexStreamChunk } from "../../../../shared/codex-tool-normalizer"
 import { MAX_HEADER_SAFE_CREDENTIAL_LENGTH } from "../../../../shared/secret-redaction-policy"
 import {
   formatScopeValidationError,
@@ -47,19 +45,15 @@ import {
 import { createCodexAppServerAdapter } from "../../codex/app-server-adapter"
 import { createCodexAppServerFinishGate } from "../../codex/app-server-finish-gate"
 import { resolveCodexAppServerPluginConfigOverrides } from "../../codex/app-server-plugin-allowlist"
-import {
-  buildCodexUserParts,
-  codexImageAttachmentSignatureFromInput,
-  codexImageAttachmentSignatureFromParts,
-  codexLongTextAttachmentSignatureFromInput,
-  codexLongTextAttachmentSignatureFromParts,
-  extractCodexPromptFromStoredMessage,
-  getLastCodexSessionId,
-  parseCodexStoredMessages,
-} from "../../codex/chat-history"
+import { getLastCodexSessionId } from "../../codex/chat-history"
 import { codexChatInputSchema } from "../../codex/chat-input-schema"
 import { resolveBundledCodexCliPath } from "../../codex/cli-path"
 import { runCodexCli } from "../../codex/cli-runner"
+import {
+  loadCodexDesktopRunHistory,
+  persistCodexDesktopAssistantAfterNaturalFinish,
+  persistCodexDesktopRunUserMessage,
+} from "../../codex/desktop-run-persistence"
 import { createCodexDesktopRunPreflightStage } from "../../codex/desktop-run-preflight"
 import { createCodexDesktopRunProviderBindingStage } from "../../codex/desktop-run-provider-binding"
 import { createCodexDesktopRunRequest } from "../../codex/desktop-run-request"
@@ -91,7 +85,7 @@ import {
   resolveCodexPendingToolApproval,
   setCodexPendingToolApproval,
 } from "../../codex/tool-approvals"
-import { getDatabase, subChats } from "../../db"
+import { getDatabase } from "../../db"
 import {
   completeDesktopChatAgentJobSafely,
   createAndRegisterDesktopChatAgentJob,
@@ -142,50 +136,6 @@ const mcpUrlInputSchema = z.string().superRefine((value, ctx) => {
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: zodMessage(error) })
   }
 })
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value)
-}
-
-function buildCodexAppServerAssistantMessage(input: {
-  chunks: Record<string, unknown>[]
-  model: string
-  generateMessageId: () => string
-}): unknown | null {
-  const text = input.chunks
-    .filter((chunk) => chunk?.type === "text-delta")
-    .map((chunk) => (typeof chunk.delta === "string" ? chunk.delta : ""))
-    .join("")
-  const metadataChunks = input.chunks.flatMap((chunk) =>
-    chunk.type === "message-metadata" && isRecord(chunk.messageMetadata)
-      ? [chunk.messageMetadata]
-      : [],
-  )
-  const finishMetadata = [...input.chunks]
-    .reverse()
-    .flatMap((chunk) =>
-      chunk.type === "finish" && isRecord(chunk.messageMetadata)
-        ? [chunk.messageMetadata]
-        : [],
-    )
-    .at(0)
-  const metadata = {
-    ...metadataChunks.at(-1),
-    ...(finishMetadata || {}),
-    model: input.model,
-    provider: "codex",
-  }
-
-  if (!text.trim()) return null
-
-  return normalizeCodexStreamChunk({
-    id: input.generateMessageId(),
-    role: "assistant",
-    createdAt: new Date().toISOString(),
-    parts: [{ type: "text", text }],
-    metadata,
-  })
-}
 
 function getCodexApiKeyStatusResponse() {
   const status = getStoredCodexApiKeyStatus()
@@ -493,8 +443,7 @@ export const codexRouter = router({
         let desktopJobAdapterFailed = false
         let desktopJobDb: ReturnType<typeof getDatabase> | null = null
         const appServerPersistenceChunks: Record<string, unknown>[] = []
-        const providerBindingStage =
-          createCodexDesktopRunProviderBindingStage()
+        const providerBindingStage = createCodexDesktopRunProviderBindingStage()
         const providerSecretHints = providerBindingStage.getSecretHints
 
         const emitRendererChunk = (chunk: Record<string, unknown>) => {
@@ -609,19 +558,10 @@ export const codexRouter = router({
               return
             }
 
-            const existingSubChat = db
-              .select()
-              .from(subChats)
-              .where(eq(subChats.id, input.subChatId))
-              .get()
-
-            if (!existingSubChat) {
-              throw new Error("Sub-chat not found")
-            }
-
-            const existingMessages = parseCodexStoredMessages(
-              existingSubChat.messages,
-            )
+            const existingMessages = loadCodexDesktopRunHistory({
+              db,
+              subChatId: input.subChatId,
+            })
             const codexProviderProfileMetadata = input.providerProfileId
               ? getProviderProfileMetadata(input.providerProfileId)
               : null
@@ -665,62 +605,15 @@ export const codexRouter = router({
               metadataModel,
             } = providerBindingResult
 
-            const lastMessage = existingMessages[existingMessages.length - 1]
-            const isDuplicatePrompt =
-              lastMessage?.role === "user" &&
-              extractCodexPromptFromStoredMessage(lastMessage) ===
-                input.prompt &&
-              codexLongTextAttachmentSignatureFromParts(lastMessage?.parts) ===
-                codexLongTextAttachmentSignatureFromInput(
-                  input.longTextAttachments,
-                ) &&
-              codexImageAttachmentSignatureFromParts(lastMessage?.parts) ===
-                codexImageAttachmentSignatureFromInput(input.images)
-
-            let messagesForStream = existingMessages
-            const isAuthoritativeRun = () => {
-              const currentStream = getActiveCodexStream(input.subChatId)
-              return !currentStream || currentStream.runId === input.runId
-            }
-
-            const persistSubChatMessages = (messages: unknown[]) => {
-              if (!isAuthoritativeRun()) {
-                return false
-              }
-
-              db.update(subChats)
-                .set({
-                  messages: JSON.stringify(messages),
-                  updatedAt: new Date(),
-                })
-                .where(eq(subChats.id, input.subChatId))
-                .run()
-              return true
-            }
-
-            if (!isDuplicatePrompt) {
-              const userMessage = {
-                id: crypto.randomUUID(),
-                role: "user",
-                createdAt: new Date().toISOString(),
-                parts: buildCodexUserParts(
-                  input.prompt,
-                  input.images,
-                  input.longTextAttachments,
-                ),
-                metadata: { model: metadataModel, provider: "codex" },
-              }
-
-              messagesForStream = [...existingMessages, userMessage]
-
-              db.update(subChats)
-                .set({
-                  messages: JSON.stringify(messagesForStream),
-                  updatedAt: new Date(),
-                })
-                .where(eq(subChats.id, input.subChatId))
-                .run()
-            }
+            const { messagesForStream } = persistCodexDesktopRunUserMessage({
+              db,
+              subChatId: input.subChatId,
+              existingMessages,
+              prompt: input.prompt,
+              images: input.images,
+              longTextAttachments: input.longTextAttachments,
+              metadataModel,
+            })
 
             let mcpSnapshot: CodexMcpSnapshot = createEmptyCodexMcpSnapshot({
               toolsResolved: false,
@@ -910,18 +803,14 @@ export const codexRouter = router({
                 desktopJobReachedNaturalFinish =
                   adapterResult.status === "succeeded" && !desktopJobSawError
                 if (desktopJobReachedNaturalFinish) {
-                  const appServerAssistantMessage =
-                    buildCodexAppServerAssistantMessage({
-                      chunks: appServerPersistenceChunks,
-                      model: metadataModel,
-                      generateMessageId: () => crypto.randomUUID(),
-                    })
-                  if (appServerAssistantMessage) {
-                    persistSubChatMessages([
-                      ...messagesForStream,
-                      appServerAssistantMessage,
-                    ])
-                  }
+                  persistCodexDesktopAssistantAfterNaturalFinish({
+                    db,
+                    subChatId: input.subChatId,
+                    runId: input.runId,
+                    messagesForStream,
+                    chunks: appServerPersistenceChunks,
+                    model: metadataModel,
+                  })
                 }
               },
             )

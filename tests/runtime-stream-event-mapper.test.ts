@@ -601,6 +601,10 @@ describe("desktop stream event mapper", () => {
       "src/main/lib/codex/desktop-run-provider-binding.ts",
       "utf8",
     )
+    const persistenceSource = readFileSync(
+      "src/main/lib/codex/desktop-run-persistence.ts",
+      "utf8",
+    )
     const rendererEmitIndex = source.indexOf("const emitRendererChunk")
     const safeEmitIndex = source.indexOf("const safeEmit")
     const redactIndex = source.indexOf(
@@ -615,12 +619,15 @@ describe("desktop stream event mapper", () => {
       "appServerPersistenceChunks.push(redactedChunk)",
       safeEmitIndex,
     )
-    const assistantMessageIndex = source.indexOf(
-      "buildCodexAppServerAssistantMessage({",
+    const assistantPersistenceIndex = source.indexOf(
+      "persistCodexDesktopAssistantAfterNaturalFinish({",
       persistenceIndex,
     )
-    const messagePersistenceIndex = source.indexOf(
-      "persistSubChatMessages([",
+    const assistantMessageIndex = persistenceSource.indexOf(
+      "buildCodexAppServerAssistantMessage({",
+    )
+    const messagePersistenceIndex = persistenceSource.indexOf(
+      ".update(subChats)",
       assistantMessageIndex,
     )
     const secretHintIndex = source.indexOf(
@@ -649,9 +656,12 @@ describe("desktop stream event mapper", () => {
       "Codex redacted chunk persistence",
     ).toBeGreaterThan(safeRedactIndex)
     expect(
-      assistantMessageIndex,
-      "Codex redacted assistant build",
+      assistantPersistenceIndex,
+      "Codex redacted assistant persistence call",
     ).toBeGreaterThan(persistenceIndex)
+    expect(assistantMessageIndex, "Codex assistant build owner").toBeGreaterThan(
+      0,
+    )
     expect(
       messagePersistenceIndex,
       "Codex assistant persistence",

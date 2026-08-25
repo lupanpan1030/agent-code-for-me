@@ -93,6 +93,30 @@ and the reverse imports from `src/main/index.ts` and `src/main/windows/main.ts`.
   expectations across 6 files**.
 - `bun run lint`, `bun run ts:check`, and `git diff --check`: passed.
 
+### Persistence stage (task 3.3)
+
+- History is still read from the database after runtime readiness and before image/provider
+  work. The provider result still precedes the unguarded initial user-message write, and
+  resume selection still consumes the original `existingMessages` snapshot.
+- Exact JSON-shape coverage locks distinct `createdAt` / `updatedAt` calls, metadata
+  precedence, normalization, prompt + long-text + image signature comparison, and the
+  assistant guard that permits no active stream or the same authoritative run.
+- The baseline image-signature asymmetry (an identical image-bearing retry is currently
+  non-duplicate) is preserved rather than repaired in this behavior-neutral refactor; it
+  will be recorded as a follow-up, not implemented here.
+- `rg -n "db\\.update\\(|subChats" src/main/lib/trpc/routers/codex.ts`: no matches.
+- `bun test --isolate tests/codex-desktop-run-persistence.test.ts
+  tests/runtime-stream-event-mapper.test.ts tests/desktop-runtime-adapter-factory.test.ts
+  tests/rich-chat-attachments-pipeline.test.ts tests/long-text-send-pipeline.test.ts
+  tests/agent-runtime-preflight.test.ts tests/provider-routing-ux.test.ts`: **55 passed /
+  0 failed / 343 expectations across 7 files**.
+- A read-only behavior review against `a974dd47` found no P0/P1/P2 regression. Its three
+  P3 coverage gaps (image-bearing signature semantics, no-stream DB/timestamp evidence,
+  and route ordering/resume snapshot evidence) were all closed before this stage commit.
+- `bun run lint`, `bun run ts:check`, and `git diff --check`: passed.
+- `bun run check`: architecture and retired-runtime guards passed; TypeScript passed;
+  **1,669 tests passed / 0 failed across 285 files**.
+
 ## W7 scope ledger
 
 - Green work is implemented only as named in the approved proposal.

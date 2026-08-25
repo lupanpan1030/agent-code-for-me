@@ -53,7 +53,7 @@
       ACCEPTANCE: revoke fires exactly once across finally + unsubscribe paths, covered by
       a unit test; `tests/provider-credential-storage.test.ts` /
       `tests/provider-routing-ux.test.ts` re-pointed.
-- [ ] 3.3 `src/main/lib/codex/desktop-run-persistence.ts`: move history load
+- [x] 3.3 `src/main/lib/codex/desktop-run-persistence.ts`: move history load
       (`parseCodexStoredMessages` call), duplicate-prompt detection (prompt + long-text +
       image signatures, `codex.ts:934-944`), user-message build/persist, the
       authoritative-run guard, both `db.update(subChats)` writes, and

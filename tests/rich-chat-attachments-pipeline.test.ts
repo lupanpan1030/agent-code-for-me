@@ -109,6 +109,10 @@ describe("rich chat attachment send pipeline", () => {
       "src/main/lib/codex/chat-history.ts",
       "utf8",
     )
+    const codexPersistence = readFileSync(
+      "src/main/lib/codex/desktop-run-persistence.ts",
+      "utf8",
+    )
     const ipc = readFileSync(
       "src/renderer/features/agents/lib/ipc-chat-transport.ts",
       "utf8",
@@ -133,7 +137,8 @@ describe("rich chat attachment send pipeline", () => {
     expect(claudeChatHistory).toContain("buildClaudeChatImageAttachmentParts(")
     expect(codex).toContain("prepareChatImageAttachmentsForDesktopRun")
     expect(codex).not.toContain("resolveChatImageAttachments(input.images)")
-    expect(codex).toContain("buildCodexUserParts(")
+    expect(codex).not.toContain("buildCodexUserParts(")
+    expect(codexPersistence).toContain("buildCodexUserParts(")
     expect(codexChatHistory).toContain("buildCodexUserParts(")
     expect(ipc).toContain("normalizeChatImageAttachmentPart(part)")
     expect(acp).toContain("normalizeChatImageAttachmentPart(part)")
