@@ -239,16 +239,29 @@ or UI helper.
 
 ## Codex Desktop Chat Runtime
 
-- Canonical owner: `src/main/lib/trpc/routers/codex.ts` until service
-  extraction is completed by an approved OpenSpec change
-- Current adapter surface: `src/main/lib/codex/app-server-adapter.ts`
-- Current adapter selection owner:
-  `src/main/lib/codex/desktop-adapter-selection.ts`
-- Rule: `codex.ts` may keep the tRPC stream envelope during service
-  extraction, but app-server transport, approval, provider binding,
-  attachment, plugin, and controlled-edit behavior belongs under
-  `src/main/lib/codex/app-server-*`. `codex exec` remains headless/batch
-  fallback and must not become a second desktop chat implementation.
+- Canonical run-stage owners:
+  - active stream registry: `src/main/lib/codex/active-streams.ts`
+  - pending tool approvals: `src/main/lib/codex/tool-approvals.ts`
+  - runtime-status preflight: `src/main/lib/codex/desktop-run-preflight.ts`
+  - provider selection and scoped gateway lifecycle:
+    `src/main/lib/codex/desktop-run-provider-binding.ts`
+  - sub-chat history and user/assistant persistence:
+    `src/main/lib/codex/desktop-run-persistence.ts`
+  - desktop job state, finalization, and subscription cancellation:
+    `src/main/lib/codex/desktop-run-finalize.ts`
+  - adapter construction and factory dispatch:
+    `src/main/lib/codex/app-server-adapter-runner.ts`
+- App-server transport and behavior owners remain under
+  `src/main/lib/codex/app-server-*`; adapter selection remains owned by
+  `src/main/lib/codex/desktop-adapter-selection.ts`.
+- Route boundary: `src/main/lib/trpc/routers/codex.ts` owns tRPC input/schema
+  validation, the observable stream envelope, renderer redaction/finish-gate
+  wiring, and ordered orchestration of the lib owners. It must not own durable
+  desktop-run state, persistence, provider-token lifecycle, or adapter
+  construction.
+- Rule: `codex exec` remains the headless/batch fallback and must not become a
+  second desktop chat implementation. App-shell and runtime-core code consume
+  the lib owners directly and never reverse-import the router.
 
 ## Headless Agent Runtime
 

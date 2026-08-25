@@ -103,14 +103,14 @@
 
 ## 6. Docs and manifest evidence
 
-- [ ] 6.1 `docs/OWNERSHIP_MAP.md`: rewrite the "Codex Desktop Chat Runtime" section
+- [x] 6.1 `docs/OWNERSHIP_MAP.md`: rewrite the "Codex Desktop Chat Runtime" section
       (`:240-251`) — canonical owners are the new `lib/codex` modules; the router retains
       input validation + tRPC stream envelope only; drop the "temporary owner until
       service extraction" clause. Leave the `claude.ts` clause (`:232-238`) untouched.
-- [ ] 6.2 Update `src/shared/agent-runtime-capabilities.ts` `references` arrays only where
+- [x] 6.2 Update `src/shared/agent-runtime-capabilities.ts` `references` arrays only where
       the named evidence moved out of `codex.ts` (e.g. `providerProfiles`,
       `usageMetadata`); keep `routers/codex.ts` where envelope-level evidence remains.
-- [ ] 6.3 Log the Yellow follow-ups as tickets/backlog notes (no implementation):
+- [x] 6.3 Log the Yellow follow-ups as tickets/backlog notes (no implementation):
       `startLogin` spawn state machine → `lib/codex/login-session.ts`;
       `claude-settings.ts` persistent-state extraction (reverse imports at
       `lib/runtime-mcp-config/claude.ts:48`, `lib/agent-builder/claude-native-agents.ts:9`,
@@ -119,14 +119,14 @@
 
 ## 7. Regression pinning
 
-- [ ] 7.1 Add negative source-text assertions (`.not.toContain`, precedent:
+- [x] 7.1 Add negative source-text assertions (`.not.toContain`, precedent:
       `tests/agent-runtime-registry.test.ts`) pinning the post-extraction router:
       `routers/codex.ts` MUST NOT contain `new Map<`, `db.update(`,
       `createCodexAppServerAdapter`, `buildCodexAppServerAssistantMessage`,
       `LOCUS_CODEX_APP_SERVER`, `revokeProviderGatewayToken`, or `getProviderGatewayEndpoint`;
       `src/main/index.ts` and `src/main/windows/main.ts` MUST NOT contain
       `trpc/routers/codex`. These land after the moves (they would fail before).
-- [ ] 7.2 Sweep the section 1.2 inventory: every re-pointed assertion suite passes and no
+- [x] 7.2 Sweep the section 1.2 inventory: every re-pointed assertion suite passes and no
       suite still asserts moved text against the router file.
 
 ## 8. Verification

@@ -179,10 +179,37 @@ and the reverse imports from `src/main/index.ts` and `src/main/windows/main.ts`.
   across 2 files**.
 - `bun run lint`, `bun run ts:check`, and `git diff --check`: passed.
 
+### Ownership, capability evidence, and Yellow ledger (tasks 6.1–6.3)
+
+- `docs/OWNERSHIP_MAP.md` now names the shipped stream, approval, preflight, provider,
+  persistence, finalization, and adapter-runner modules as the Codex desktop canonical
+  owners. The Claude temporary-owner clause is unchanged.
+- Capability evidence now points provider binding at
+  `desktop-run-provider-binding.ts` and assistant usage-metadata aggregation/persistence at
+  `desktop-run-persistence.ts`, while retaining the router where its envelope/redaction
+  behavior remains evidence.
+- W7 Yellow items are documentation only: tickets 109–111 record the approved login,
+  Claude-settings, and Claude-router residuals; ticket 112 records the preserved
+  image-signature asymmetry discovered during persistence extraction; ticket 113 records
+  the generic router module-state guard candidate. None is implemented or implicitly
+  authorized by this change.
+- A read-only governance review found no P0/P1. Its P2 stale/non-moved usage-evidence
+  reference and both P3 ledger completeness findings were corrected before commit.
+
+### Final architecture boundary (task 7.1)
+
+- `tests/codex-desktop-service-boundary.test.ts` rejects every approved old-path marker in
+  the router and both app-shell reverse imports. Positive assertions also require the
+  router to orchestrate the shipped stage owners so deleting an old path cannot be
+  satisfied by silently dropping the behavior.
+- The complete task 1.2 source-assertion inventory, adapter-runner suite, and new boundary
+  suite passed: `bun test --isolate` over the 17 named files produced **117 passed / 0
+  failed / 804 expectations**. No assertion still pins moved behavior to the router.
+
 ## W7 scope ledger
 
 - Green work is implemented only as named in the approved proposal.
-- Yellow follow-ups: pending task 6.3 ledger entry; no Yellow item is implemented here.
+- Yellow follow-ups: recorded in tickets 109–113; no Yellow item is implemented here.
 - Red changes: none observed or performed.
 
 ## Exact-source verdict

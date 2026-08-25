@@ -613,6 +613,7 @@ const CODEX_RUNTIME_MANIFEST = manifest({
         kind: "runtime-code",
         references: [
           "src/main/lib/provider-profiles",
+          "src/main/lib/codex/desktop-run-provider-binding.ts",
           "src/main/lib/trpc/routers/codex.ts",
         ],
       },
@@ -642,7 +643,10 @@ const CODEX_RUNTIME_MANIFEST = manifest({
       hint: "Missing Codex usage fields are omitted rather than reported as zero.",
       support: {
         kind: "runtime-code",
-        references: ["src/main/lib/trpc/routers/codex.ts"],
+        references: [
+          "src/main/lib/codex/desktop-run-persistence.ts",
+          "src/main/lib/trpc/routers/codex.ts",
+        ],
       },
     }),
     capability({

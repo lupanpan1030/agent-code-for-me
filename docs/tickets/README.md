@@ -68,3 +68,17 @@ Phase 2（渲染层 markdown/webview 隔离）与 Phase 3（capability 中间件
 - sub-chat mode 收敛到单一真相源（SQLite 主导）
 - 提取三个 runtime adapter 的共享流式管道基类
 - 补 `projects` / `app-agents` / `plugins` router 单元测试（可后续单独立工单）
+
+## 第四批 — Foundation 路由抽取后的 Yellow 后续（2026-08-26）
+
+来源：approved OpenSpec `refactor-codex-desktop-service-extraction` 的 W7 autonomy
+envelope。以下事项在 1a 中**仅登记，不授权实施**；每项都需要重新设计、批准和独立变更，不能
+借 1a 收尾顺手处理。
+
+| 工单 | 标题 | 级别 | 状态 |
+|------|------|------|------|
+| [TICKET-109](TICKET-109-codex-login-session-extraction.md) | Codex 登录进程状态机移出路由 | 🟡 Yellow（架构） | 待设计 / 未授权实施 |
+| [TICKET-110](TICKET-110-claude-settings-state-extraction.md) | Claude settings 持久状态与反向依赖收敛 | 🟡 Yellow（架构） | 待设计 / 未授权实施 |
+| [TICKET-111](TICKET-111-claude-desktop-router-residuals.md) | Claude desktop router 剩余内联职责盘点与抽取 | 🟡 Yellow（架构） | 待设计 / 未授权实施 |
+| [TICKET-112](TICKET-112-codex-image-duplicate-signature.md) | Codex 图片提示词重复签名语义统一 | 🟡 Yellow（行为） | 待产品决策 / 未授权实施 |
+| [TICKET-113](TICKET-113-router-module-state-guard.md) | Router module-level state 通用架构守卫 | 🟡 Yellow（治理） | 待盘点 / 未授权实施 |
