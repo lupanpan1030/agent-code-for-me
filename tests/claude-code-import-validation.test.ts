@@ -166,6 +166,39 @@ describe("Claude Code local credential validation", () => {
     expect(db.select().from(claudeCodeCredentials).all()).toEqual([])
   })
 
+  test("reports policy-invalid persisted credentials as disconnected and unusable", async () => {
+    const encrypted = encryptStringForStorage(
+      JSON.stringify({
+        version: 1,
+        kind: "claude_code_oauth",
+        accessToken: "short",
+        source: "manual",
+        importedAt: "2026-08-26T00:00:00.000Z",
+        updatedAt: "2026-08-26T00:00:00.000Z",
+      }),
+    )
+    db.insert(anthropicAccounts)
+      .values({
+        id: "invalid-account",
+        displayName: "Invalid persisted credential",
+        oauthToken: encrypted,
+      })
+      .run()
+    db.insert(anthropicSettings)
+      .values({ id: "singleton", activeAccountId: "invalid-account" })
+      .run()
+
+    const result = await getValidClaudeCodeCredential({ db: credentialDb() })
+
+    expect(result.accessToken).toBeNull()
+    expect(result.metadata).toMatchObject({
+      accountId: "invalid-account",
+      isConnected: false,
+      credentialUsable: false,
+      refreshable: false,
+    })
+  })
+
   test("clears an active Locus credential when runtime refresh is revoked", async () => {
     const envelope = createClaudeCodeCredentialEnvelope(
       {

@@ -38,6 +38,8 @@ import {
   COMMIT_MESSAGE_PROVIDER_TIMEOUT_MS,
   getLocalChatCompletionProviderConfig,
   logProviderRequestFailure,
+  redactUtilityProviderErrorMessage,
+  redactUtilityProviderText,
 } from "../../utility-chat-completion"
 import { publicProcedure, router } from "../index"
 import {
@@ -355,14 +357,22 @@ export async function generateChatNameWithConfiguredProvider(
     })
 
     if (!response.ok) {
-      await logProviderRequestFailure("ChatTitle", response)
+      await logProviderRequestFailure("ChatTitle", response, config)
       return null
     }
 
     const data = await response.json()
-    return cleanGeneratedChatName(data?.choices?.[0]?.message?.content)
+    const content = data?.choices?.[0]?.message?.content
+    return cleanGeneratedChatName(
+      typeof content === "string"
+        ? redactUtilityProviderText(content, config)
+        : content,
+    )
   } catch (error) {
-    console.error("[ChatTitle] Provider request error:", error)
+    console.error(
+      "[ChatTitle] Provider request error:",
+      redactUtilityProviderErrorMessage(error, config),
+    )
     return null
   }
 }
@@ -422,17 +432,25 @@ export async function generateCommitMessageWithConfiguredProvider(
     })
 
     if (!response.ok) {
-      await logProviderRequestFailure("CommitMessage", response)
+      await logProviderRequestFailure("CommitMessage", response, config)
       return null
     }
 
     const data = await response.json()
-    return cleanGeneratedCommitMessage(data?.choices?.[0]?.message?.content)
+    const content = data?.choices?.[0]?.message?.content
+    return cleanGeneratedCommitMessage(
+      typeof content === "string"
+        ? redactUtilityProviderText(content, config)
+        : content,
+    )
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
       console.error("[CommitMessage] Provider request timed out")
     } else {
-      console.error("[CommitMessage] Provider request error:", error)
+      console.error(
+        "[CommitMessage] Provider request error:",
+        redactUtilityProviderErrorMessage(error, config),
+      )
     }
     return null
   } finally {

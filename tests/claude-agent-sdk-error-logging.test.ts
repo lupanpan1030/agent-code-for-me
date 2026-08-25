@@ -4,6 +4,7 @@ import {
   logClaudeAgentSdkEmbeddedError,
   logClaudeAgentSdkErrorDetails,
 } from "../src/main/lib/claude/agent-sdk-error-logging"
+import { EXACT_SECRET_REDACTION_MARKER } from "../src/shared/secret-redaction-policy"
 
 const originalConsoleError = console.error
 
@@ -99,6 +100,6 @@ describe("Claude Agent SDK error logging", () => {
 
     const serializedCalls = JSON.stringify(flattenedCalls(console.error))
     expect(serializedCalls).not.toContain(gatewayToken)
-    expect(serializedCalls).toContain("<redacted>")
+    expect(serializedCalls).toContain(EXACT_SECRET_REDACTION_MARKER)
   })
 })

@@ -16,6 +16,7 @@ import type {
   CodexAppServerPermissionMapping,
   ObservedToolPolicy,
 } from "../agent-runtime/permission-policy"
+import { redactRuntimePayload } from "../agent-runtime/redaction"
 import {
   type CodexToolPermissionRequest,
   decideCodexToolPermission,
@@ -64,7 +65,7 @@ export const CODEX_CONTROLLED_EDIT_TOOL_NAMESPACE = "locus_edit"
 export const CODEX_CONTROLLED_EDIT_TOOL_NAME = "propose_file_edit"
 
 const MAX_CONTROLLED_EDIT_CONTENT_BYTES = 256 * 1024
-const MAX_CONTROLLED_EDIT_DIFF_CHARS = 16000
+export const CODEX_CONTROLLED_EDIT_DIFF_CHAR_LIMIT = 16000
 const MAX_DIFF_LINES = 120
 
 function isRecord(value: unknown): value is JsonObject {
@@ -84,7 +85,10 @@ function parseArguments(value: unknown): JsonObject | null {
 
 function isInsideRealRoot(root: string, candidate: string): boolean {
   const rel = relative(root, candidate)
-  return rel === "" || (!rel.startsWith(`..${sep}`) && rel !== ".." && !isAbsolute(rel))
+  return (
+    rel === "" ||
+    (!rel.startsWith(`..${sep}`) && rel !== ".." && !isAbsolute(rel))
+  )
 }
 
 function nearestExistingAncestor(pathname: string): string | null {
@@ -97,7 +101,10 @@ function nearestExistingAncestor(pathname: string): string | null {
   }
 }
 
-function assertWriteTargetInsideCwd(cwd: string, absolutePath: string): string | null {
+function assertWriteTargetInsideCwd(
+  cwd: string,
+  absolutePath: string,
+): string | null {
   try {
     const realRoot = realpathSync(cwd)
     if (existsSync(absolutePath)) {
@@ -108,7 +115,8 @@ function assertWriteTargetInsideCwd(cwd: string, absolutePath: string): string |
     }
 
     const ancestor = nearestExistingAncestor(dirname(absolutePath))
-    if (!ancestor) return "Controlled edit target has no existing workspace ancestor."
+    if (!ancestor)
+      return "Controlled edit target has no existing workspace ancestor."
     const ancestorReal = realpathSync(ancestor)
     return isInsideRealRoot(realRoot, ancestorReal)
       ? null
@@ -128,24 +136,49 @@ function prefixedLines(value: string, prefix: string): string[] {
   return value.split("\n").map((line) => `${prefix}${line}`)
 }
 
-function boundedDiff(input: {
+function buildDiff(input: {
   operation: "create" | "replace"
   relativePath: string
   previousContent: string
   content: string
 }): string {
-  const lines = [
+  return [
     `--- ${input.operation === "create" ? "/dev/null" : input.relativePath}`,
     `+++ ${input.relativePath}`,
     "@@",
     ...prefixedLines(input.previousContent, "-"),
     ...prefixedLines(input.content, "+"),
-  ]
+  ].join("\n")
+}
+
+/**
+ * Canonical controlled-edit renderer formatting: redact the complete diff,
+ * then apply display bounds. Keeping both operations together prevents a
+ * credential crossing the character boundary from leaving a visible prefix.
+ */
+export function formatCodexControlledEditDiffForDisplay(
+  value: string,
+  secretHints: readonly string[] = [],
+): string {
+  const redacted = redactRuntimePayload(value, {
+    runtimeId: "codex",
+    runId: "codex-app-server-controlled-edit",
+    source: "desktop-adapter",
+    secretHints,
+  }).payload
+  const safeValue = typeof redacted === "string" ? redacted : ""
+  const lines = safeValue.split("\n")
   const clippedLines =
     lines.length > MAX_DIFF_LINES
-      ? [...lines.slice(0, MAX_DIFF_LINES), `[truncated ${lines.length - MAX_DIFF_LINES} diff lines]`]
+      ? [
+          ...lines.slice(0, MAX_DIFF_LINES),
+          `[truncated ${lines.length - MAX_DIFF_LINES} diff lines]`,
+        ]
       : lines
-  return truncateText(clippedLines.join("\n"), MAX_CONTROLLED_EDIT_DIFF_CHARS)
+  return truncateText(
+    clippedLines.join("\n"),
+    CODEX_CONTROLLED_EDIT_DIFF_CHAR_LIMIT,
+  )
 }
 
 function readExistingContent(pathname: string): string {
@@ -169,7 +202,8 @@ export function buildCodexControlledEditDynamicToolSpec(): CodexAppServerDynamic
         operation: {
           type: "string",
           enum: ["create", "replace"],
-          description: "Use create for a new file and replace for an existing file.",
+          description:
+            "Use create for a new file and replace for an existing file.",
         },
         content: {
           type: "string",
@@ -223,14 +257,24 @@ export function prepareCodexControlledEdit(input: {
   }) => void
 }): CodexControlledEditPrepareResult {
   if (!input.guardedContract) {
-    return { ok: false, message: "Controlled edit requires an approved guarded scope contract." }
+    return {
+      ok: false,
+      message: "Controlled edit requires an approved guarded scope contract.",
+    }
   }
   if (input.permission.controlLevel !== "guarded") {
-    return { ok: false, message: "Controlled edit is only enabled for guarded Codex runs." }
+    return {
+      ok: false,
+      message: "Controlled edit is only enabled for guarded Codex runs.",
+    }
   }
 
   const args = parseArguments(input.params.arguments)
-  if (!args) return { ok: false, message: "Controlled edit arguments must be a JSON object." }
+  if (!args)
+    return {
+      ok: false,
+      message: "Controlled edit arguments must be a JSON object.",
+    }
 
   const rawOperation = args.operation
   if (rawOperation !== "create" && rawOperation !== "replace") {
@@ -257,7 +301,10 @@ export function prepareCodexControlledEdit(input: {
     rawPath,
   )
   if (!relativePath) {
-    return { ok: false, message: "Controlled edit path escapes the guarded workspace." }
+    return {
+      ok: false,
+      message: "Controlled edit path escapes the guarded workspace.",
+    }
   }
 
   const tool: CodexToolPermissionRequest = {
@@ -275,7 +322,8 @@ export function prepareCodexControlledEdit(input: {
     tool,
     mode: "agent",
     controlLevel: input.permission.controlLevel,
-    observedToolPolicy: input.permission.observedToolPolicy as ObservedToolPolicy,
+    observedToolPolicy: input.permission
+      .observedToolPolicy as ObservedToolPolicy,
     contract: input.guardedContract,
   })
   if (decision.guardEvent) input.onGuardEvent?.(decision.guardEvent)
@@ -284,7 +332,8 @@ export function prepareCodexControlledEdit(input: {
     return {
       ok: false,
       message:
-        decision.message || "Controlled edit was denied by guarded scope policy.",
+        decision.message ||
+        "Controlled edit was denied by guarded scope policy.",
     }
   }
 
@@ -297,13 +346,22 @@ export function prepareCodexControlledEdit(input: {
 
   const exists = existsSync(absolutePath)
   if (rawOperation === "create" && exists) {
-    return { ok: false, message: "Controlled edit create target already exists." }
+    return {
+      ok: false,
+      message: "Controlled edit create target already exists.",
+    }
   }
   if (rawOperation === "replace" && !exists) {
-    return { ok: false, message: "Controlled edit replace target does not exist." }
+    return {
+      ok: false,
+      message: "Controlled edit replace target does not exist.",
+    }
   }
   if (exists && !statSync(absolutePath).isFile()) {
-    return { ok: false, message: "Controlled edit target is not a regular file." }
+    return {
+      ok: false,
+      message: "Controlled edit target is not a regular file.",
+    }
   }
 
   const previousContent = exists ? readExistingContent(absolutePath) : ""
@@ -311,7 +369,10 @@ export function prepareCodexControlledEdit(input: {
     typeof args.expected_previous_content === "string" &&
     args.expected_previous_content !== previousContent
   ) {
-    return { ok: false, message: "Controlled edit target changed before approval." }
+    return {
+      ok: false,
+      message: "Controlled edit target changed before approval.",
+    }
   }
 
   return {
@@ -324,7 +385,7 @@ export function prepareCodexControlledEdit(input: {
       absolutePath,
       content,
       previousContent,
-      diff: boundedDiff({
+      diff: buildDiff({
         operation: rawOperation,
         relativePath,
         previousContent,

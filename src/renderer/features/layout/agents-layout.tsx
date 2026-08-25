@@ -230,8 +230,8 @@ export function AgentsLayout() {
     subChatTitleProviderData !== undefined &&
     commitMessageProviderData !== undefined
   const helperApisFullyConfigured = Boolean(
-    subChatTitleProviderData?.config?.hasToken &&
-      commitMessageProviderData?.config?.hasToken,
+    subChatTitleProviderData?.config?.credentialUsable &&
+      commitMessageProviderData?.config?.credentialUsable,
   )
 
   useEffect(() => {

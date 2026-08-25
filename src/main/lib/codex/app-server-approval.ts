@@ -14,6 +14,7 @@ import {
   type CodexAppServerDynamicToolCallParams,
   type CodexAppServerDynamicToolCallResponse,
   dynamicToolResponse,
+  formatCodexControlledEditDiffForDisplay,
   isCodexControlledEditToolCall,
   prepareCodexControlledEdit,
 } from "./app-server-controlled-edit"
@@ -106,6 +107,8 @@ export type CodexAppServerApprovalBridgeInput = {
     message?: string
   }) => void
   timeoutMs?: number
+  /** Main-process-only exact values used before renderer-facing bounds. */
+  secretHints?: readonly string[]
 }
 
 type AppServerApprovalDecision =
@@ -129,11 +132,15 @@ function cleanString(value: unknown): string {
   return typeof value === "string" ? value.trim() : ""
 }
 
-function redactedText(value: string): string {
+function redactedText(
+  value: string,
+  secretHints: readonly string[] = [],
+): string {
   const result = redactRuntimePayload(value, {
     runtimeId: "codex",
     runId: "codex-app-server-approval",
     source: "desktop-adapter",
+    secretHints,
   })
   return typeof result.payload === "string" ? result.payload : value
 }
@@ -164,12 +171,15 @@ function legacyResponseForRejectedApproval(
   return "denied"
 }
 
-function isDenyApprovalSelection(approval: CodexAskUserQuestionApproval): boolean {
+function isDenyApprovalSelection(
+  approval: CodexAskUserQuestionApproval,
+): boolean {
   const answers =
     typeof approval.updatedInput === "object" &&
     approval.updatedInput !== null &&
     "answers" in approval.updatedInput &&
-    typeof (approval.updatedInput as { answers?: unknown }).answers === "object" &&
+    typeof (approval.updatedInput as { answers?: unknown }).answers ===
+      "object" &&
     (approval.updatedInput as { answers?: unknown }).answers !== null
       ? (approval.updatedInput as { answers: Record<string, unknown> }).answers
       : {}
@@ -300,7 +310,8 @@ function policyDecisionForTool(input: {
     tool: input.tool,
     mode: input.permission.controlLevel === "plan" ? "plan" : "agent",
     controlLevel: input.permission.controlLevel,
-    observedToolPolicy: input.permission.observedToolPolicy as ObservedToolPolicy,
+    observedToolPolicy: input.permission
+      .observedToolPolicy as ObservedToolPolicy,
     contract: input.guardedContract ?? null,
   })
 
@@ -311,7 +322,8 @@ function policyDecisionForTool(input: {
     return {
       allowedByPolicy: false,
       tool: input.tool,
-      message: decision.message || "Codex app-server approval denied by policy.",
+      message:
+        decision.message || "Codex app-server approval denied by policy.",
     }
   }
 
@@ -369,7 +381,8 @@ export function resolveCodexAppServerPermissionsApprovalDecision(input: {
     return {
       allowedByPolicy: false,
       tool,
-      message: "Codex app-server runs do not grant network permission expansions.",
+      message:
+        "Codex app-server runs do not grant network permission expansions.",
     }
   }
 
@@ -466,17 +479,20 @@ async function waitForApproval(input: {
   })
 }
 
-function approvalQuestion(input: {
-  header: string
-  body: string
-  policyMessage?: string
-}) {
+function approvalQuestion(
+  input: {
+    header: string
+    body: string
+    policyMessage?: string
+  },
+  secretHints: readonly string[] = [],
+) {
   const detail = input.policyMessage
     ? `${input.body}\n\nPolicy: ${input.policyMessage}`
     : input.body
   return {
     header: input.header,
-    question: redactedText(detail),
+    question: redactedText(detail, secretHints),
     options: [
       { label: APPROVE_OPTION_LABEL, description: "Allow this action once." },
       { label: DENY_OPTION_LABEL, description: "Decline this action." },
@@ -496,10 +512,14 @@ export function createCodexAppServerApprovalBridge({
   onGuardEvent,
   onObservedToolDecision,
   timeoutMs = DEFAULT_TIMEOUT_MS,
+  secretHints = [],
 }: CodexAppServerApprovalBridgeInput) {
   const canAskUser = Boolean(
     emit && registerPendingQuestion && unregisterPendingQuestion,
   )
+  const createApprovalQuestion = (
+    input: Parameters<typeof approvalQuestion>[0],
+  ) => approvalQuestion(input, secretHints)
 
   async function askUser(input: {
     requestId: CodexAppServerMessageId
@@ -507,7 +527,12 @@ export function createCodexAppServerApprovalBridge({
     tool: CodexToolPermissionRequest
     question: ReturnType<typeof approvalQuestion>
   }): Promise<CodexAskUserQuestionApproval> {
-    if (!canAskUser || !emit || !registerPendingQuestion || !unregisterPendingQuestion) {
+    if (
+      !canAskUser ||
+      !emit ||
+      !registerPendingQuestion ||
+      !unregisterPendingQuestion
+    ) {
       return {
         approved: false,
         message: "Codex app-server approval bridge is not installed.",
@@ -558,7 +583,7 @@ export function createCodexAppServerApprovalBridge({
         requestId: input.requestId,
         prefix: "command-approval",
         tool,
-        question: approvalQuestion({
+        question: createApprovalQuestion({
           header: "Run command",
           body: cleanString(input.params.command) || "Run command",
           policyMessage: decision.message,
@@ -589,7 +614,7 @@ export function createCodexAppServerApprovalBridge({
         requestId: input.requestId,
         prefix: "file-approval",
         tool,
-        question: approvalQuestion({
+        question: createApprovalQuestion({
           header: "Allow file change",
           body:
             cleanString(input.params.grantRoot) ||
@@ -624,7 +649,7 @@ export function createCodexAppServerApprovalBridge({
         requestId: input.requestId,
         prefix: "permissions-approval",
         tool: decision.tool,
-        question: approvalQuestion({
+        question: createApprovalQuestion({
           header: "Grant runtime permission",
           body:
             cleanString(input.params.reason) ||
@@ -658,7 +683,7 @@ export function createCodexAppServerApprovalBridge({
         requestId: input.requestId,
         prefix: "legacy-command-approval",
         tool,
-        question: approvalQuestion({
+        question: createApprovalQuestion({
           header: "Run command",
           body: input.params.command.join(" "),
           policyMessage: decision.message,
@@ -688,9 +713,10 @@ export function createCodexAppServerApprovalBridge({
         requestId: input.requestId,
         prefix: "legacy-patch-approval",
         tool,
-        question: approvalQuestion({
+        question: createApprovalQuestion({
           header: "Apply patch",
-          body: Object.keys(input.params.fileChanges).join(", ") || "Apply patch",
+          body:
+            Object.keys(input.params.fileChanges).join(", ") || "Apply patch",
           policyMessage: decision.message,
         }),
       })
@@ -706,12 +732,23 @@ export function createCodexAppServerApprovalBridge({
       params: CodexAppServerDynamicToolCallParams
     }): Promise<CodexAppServerDynamicToolCallResponse> {
       if (!isCodexControlledEditToolCall(input.params)) {
-        return dynamicToolResponse(false, "Unsupported Codex app-server dynamic tool.")
+        return dynamicToolResponse(
+          false,
+          "Unsupported Codex app-server dynamic tool.",
+        )
       }
       if (!controlledEditEnabled) {
-        return dynamicToolResponse(false, "Controlled edit executor is not enabled.")
+        return dynamicToolResponse(
+          false,
+          "Controlled edit executor is not enabled.",
+        )
       }
-      if (!canAskUser || !emit || !registerPendingQuestion || !unregisterPendingQuestion) {
+      if (
+        !canAskUser ||
+        !emit ||
+        !registerPendingQuestion ||
+        !unregisterPendingQuestion
+      ) {
         return dynamicToolResponse(
           false,
           "Controlled edit requires an installed approval UI.",
@@ -726,21 +763,25 @@ export function createCodexAppServerApprovalBridge({
         onObservedToolDecision,
       })
       if (!prepared.ok) return dynamicToolResponse(false, prepared.message)
+      const displayDiff = formatCodexControlledEditDiffForDisplay(
+        prepared.edit.diff,
+        secretHints,
+      )
 
       emit({
         type: "file-change-diff",
         path: prepared.edit.relativePath,
         operation: prepared.edit.operation,
-        diff: redactedText(prepared.edit.diff),
+        diff: displayDiff,
         source: "codex-app-server-controlled-edit",
       })
       const approval = await askUser({
         requestId: input.requestId,
         prefix: "controlled-edit-approval",
         tool: prepared.edit.tool,
-        question: approvalQuestion({
+        question: createApprovalQuestion({
           header: "Apply edit",
-          body: `Apply ${prepared.edit.operation} to ${prepared.edit.relativePath}\n\n${prepared.edit.diff}`,
+          body: `Apply ${prepared.edit.operation} to ${prepared.edit.relativePath}\n\n${displayDiff}`,
           policyMessage: prepared.edit.policyMessage,
         }),
       })

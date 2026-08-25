@@ -6,6 +6,7 @@ import { join } from "node:path"
 import { eq } from "drizzle-orm"
 import {
   type ChatBaseCommitDatabase,
+  type ChatBaseCommitOperationOptions,
   ensureChatBaseCommit,
 } from "../src/main/lib/chat-base-commit"
 import { chats } from "../src/main/lib/db/schema"
@@ -75,12 +76,14 @@ describe("ensureChatBaseCommit", () => {
     const first = await ensureChatBaseCommit(
       db as unknown as ChatBaseCommitDatabase,
       "chat-backfill",
+      {},
       { getMergeBase, refExistsLocally: async () => false },
     )
     const changesAfterFirst = totalChanges(db)
     const second = await ensureChatBaseCommit(
       db as unknown as ChatBaseCommitDatabase,
       "chat-backfill",
+      {},
       { getMergeBase, refExistsLocally: async () => false },
     )
 
@@ -128,11 +131,13 @@ describe("ensureChatBaseCommit", () => {
       ensureChatBaseCommit(
         db as unknown as ChatBaseCommitDatabase,
         "chat-concurrent-backfill",
+        {},
         dependencies,
       ),
       ensureChatBaseCommit(
         db as unknown as ChatBaseCommitDatabase,
         "chat-concurrent-backfill",
+        {},
         dependencies,
       ),
     ])
@@ -338,6 +343,7 @@ describe("ensureChatBaseCommit", () => {
     const result = await ensureChatBaseCommit(
       db as unknown as ChatBaseCommitDatabase,
       "chat-ambiguous-base",
+      {},
       {
         refExistsLocally: async () => true,
         getMergeBase: async (_worktreePath, baseRef) =>
@@ -364,6 +370,7 @@ describe("ensureChatBaseCommit", () => {
     const result = await ensureChatBaseCommit(
       db as unknown as ChatBaseCommitDatabase,
       "chat-no-worktree",
+      {},
       {
         getMergeBase: async () => {
           gitCalls += 1
@@ -387,6 +394,7 @@ describe("ensureChatBaseCommit", () => {
     const result = await ensureChatBaseCommit(
       db as unknown as ChatBaseCommitDatabase,
       "chat-no-base-branch",
+      {},
       {
         getMergeBase: async () => {
           gitCalls += 1
@@ -411,6 +419,7 @@ describe("ensureChatBaseCommit", () => {
       ensureChatBaseCommit(
         db as unknown as ChatBaseCommitDatabase,
         "chat-merge-base-failure",
+        {},
         {
           refExistsLocally: async () => false,
           getMergeBase: async () => {
@@ -424,6 +433,123 @@ describe("ensureChatBaseCommit", () => {
         .select({ baseCommit: chats.baseCommit })
         .from(chats)
         .where(eq(chats.id, "chat-merge-base-failure"))
+        .get()?.baseCommit,
+    ).toBeNull()
+  })
+
+  test("forwards one request cancellation budget to every backfill Git operation", async () => {
+    const db = createAgentJobTestDb()
+    seedChat(db, {
+      id: "chat-forward-budget",
+      worktreePath: "/tmp/project-worktree",
+      baseBranch: "main",
+    })
+    const controller = new AbortController()
+    const options: ChatBaseCommitOperationOptions = {
+      signal: controller.signal,
+      timeoutMs: 321,
+    }
+    const observed: Array<{
+      operation: string
+      options: ChatBaseCommitOperationOptions | undefined
+    }> = []
+
+    const result = await ensureChatBaseCommit(
+      db as unknown as ChatBaseCommitDatabase,
+      "chat-forward-budget",
+      options,
+      {
+        getMergeBase: async (_worktreePath, baseRef, operationOptions) => {
+          observed.push({
+            operation: `merge-base:${baseRef}`,
+            options: operationOptions,
+          })
+          return baseRef === "main" ? "local-candidate" : "remote-candidate"
+        },
+        refExistsLocally: async (
+          _worktreePath,
+          remoteRef,
+          operationOptions,
+        ) => {
+          observed.push({
+            operation: `ref-exists:${remoteRef}`,
+            options: operationOptions,
+          })
+          return true
+        },
+        getCommitDistance: async (
+          _worktreePath,
+          candidate,
+          operationOptions,
+        ) => {
+          observed.push({
+            operation: `distance:${candidate}`,
+            options: operationOptions,
+          })
+          return candidate === "local-candidate" ? 1 : 2
+        },
+      },
+    )
+
+    expect(result).toBe("local-candidate")
+    expect(observed.map(({ operation }) => operation)).toEqual([
+      "merge-base:main",
+      "ref-exists:origin/main",
+      "merge-base:origin/main",
+      "distance:local-candidate",
+      "distance:remote-candidate",
+    ])
+    for (const observation of observed) {
+      expect(observation.options).toBe(options)
+      expect(observation.options?.signal).toBe(controller.signal)
+      expect(observation.options?.timeoutMs).toBe(321)
+    }
+  })
+
+  test("does not persist a late backfill result after request cancellation", async () => {
+    const db = createAgentJobTestDb()
+    seedChat(db, {
+      id: "chat-aborted-backfill",
+      worktreePath: "/tmp/project-worktree",
+      baseBranch: "main",
+    })
+    const controller = new AbortController()
+    let resolveMergeBase!: (value: string) => void
+    let markMergeBaseStarted!: () => void
+    const mergeBaseStarted = new Promise<void>((resolve) => {
+      markMergeBaseStarted = resolve
+    })
+    const lateMergeBase = new Promise<string>((resolve) => {
+      resolveMergeBase = resolve
+    })
+    const changesBefore = totalChanges(db)
+
+    const resultPromise = ensureChatBaseCommit(
+      db as unknown as ChatBaseCommitDatabase,
+      "chat-aborted-backfill",
+      { signal: controller.signal, timeoutMs: 25 },
+      {
+        getMergeBase: async () => {
+          markMergeBaseStarted()
+          // Deliberately ignore the AbortSignal to model an injected or legacy
+          // dependency that resolves after the request deadline.
+          return lateMergeBase
+        },
+        refExistsLocally: async () => false,
+      },
+    )
+
+    await mergeBaseStarted
+    controller.abort()
+    resolveMergeBase("late-fork-commit")
+
+    await expect(resultPromise).resolves.toBeNull()
+    expect(totalChanges(db)).toBe(changesBefore)
+    expect(
+      db
+        .select({ baseCommit: chats.baseCommit })
+        .from(chats)
+        .where(eq(chats.id, "chat-aborted-backfill"))
         .get()?.baseCommit,
     ).toBeNull()
   })

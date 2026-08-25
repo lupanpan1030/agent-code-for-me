@@ -7,8 +7,12 @@ import {
   recordClaudeAgentSdkConnectionMethod,
   resolveClaudeAgentSdkProviderStartup,
 } from "../src/main/lib/claude/agent-sdk-provider-startup"
+import { EXACT_SECRET_REDACTION_MARKER } from "../src/shared/secret-redaction-policy"
 
 const credentialMetadata = {
+  accountId: "test-account",
+  isConnected: true,
+  credentialUsable: true,
   source: "test",
   storageFormat: "envelope",
   refreshable: false,
@@ -105,13 +109,15 @@ describe("Claude Agent SDK provider startup", () => {
     })
   })
 
-  test("owns exact gateway-token hints and revokes the scoped token idempotently", async () => {
+  test("owns exact upstream and gateway-token hints while exposing only the gateway binding", async () => {
+    const upstreamToken = randomBytes(32).toString("hex")
     const gatewayToken = randomBytes(32).toString("hex")
     const revoked: string[] = []
     const result = await resolveClaudeAgentSdkProviderStartup({
       modelSource: "provider-profile:profile-1",
       dependencies: dependencies({
-        getProviderProfileRuntimeConfig: (id) => providerProfile({ id }),
+        getProviderProfileRuntimeConfig: (id) =>
+          providerProfile({ id, token: upstreamToken }),
         getProviderGatewayEndpoint: async (providerId) => ({
           baseUrl: `http://127.0.0.1:45100/profile/${providerId}/anthropic/v1`,
           token: gatewayToken,
@@ -126,10 +132,36 @@ describe("Claude Agent SDK provider startup", () => {
 
     expect(result.ok).toBe(true)
     if (!result.ok) throw new Error("expected startup success")
+    expect(result.startup.secretHints).toContain(upstreamToken)
     expect(result.startup.secretHints).toContain(gatewayToken)
+    expect(JSON.stringify(result.startup.finalCustomConfig)).not.toContain(
+      upstreamToken,
+    )
     result.startup.cleanupRuntimeSecrets()
     result.startup.cleanupRuntimeSecrets()
     expect(revoked).toEqual([gatewayToken])
+  })
+
+  test("redacts an upstream profile token echoed while the gateway is prepared", async () => {
+    const upstreamToken = randomBytes(32).toString("hex")
+    const result = await resolveClaudeAgentSdkProviderStartup({
+      modelSource: "provider-profile:profile-1",
+      dependencies: dependencies({
+        getProviderProfileRuntimeConfig: (id) =>
+          providerProfile({ id, token: upstreamToken }),
+        getProviderGatewayEndpoint: async () => {
+          throw new Error(`gateway rejected ${upstreamToken}`)
+        },
+      }),
+    })
+
+    expect(result).toMatchObject({
+      ok: false,
+      blocker: {
+        message: `Provider startup failed: gateway rejected ${EXACT_SECRET_REDACTION_MARKER}`,
+      },
+    })
+    expect(JSON.stringify(result)).not.toContain(upstreamToken)
   })
 
   test("fails closed when raw legacy custom-provider reaches startup", async () => {
@@ -229,18 +261,59 @@ describe("Claude Agent SDK provider startup", () => {
     })
   })
 
+  test("fails desktop startup closed for policy-invalid stored credentials", async () => {
+    let offlineChecked = false
+    for (const credentialResult of [
+      {
+        accessToken: "short",
+        metadata: credentialMetadata,
+      },
+      {
+        accessToken: null,
+        metadata: {
+          ...credentialMetadata,
+          isConnected: false,
+          credentialUsable: false,
+        },
+      },
+    ]) {
+      const result = await resolveClaudeAgentSdkProviderStartup({
+        dependencies: dependencies({
+          getValidClaudeCodeCredential: async () => credentialResult,
+          checkOfflineFallback: async () => {
+            offlineChecked = true
+            return { config: undefined, isUsingOllama: false }
+          },
+        }),
+      })
+
+      expect(result).toMatchObject({
+        ok: false,
+        blocker: {
+          status: "needs-auth",
+          message: "Claude Code credential is unavailable or invalid.",
+        },
+      })
+    }
+    expect(offlineChecked).toBe(false)
+  })
+
   test("keeps local-only endpoint blocking inside provider profile startup", async () => {
     const revoked: string[] = []
+    let gatewayCreated = false
     const result = await resolveClaudeAgentSdkProviderStartup({
       modelSource: "provider-profile:profile-1",
       dependencies: dependencies({
         getProviderProfileRuntimeConfig: (id) =>
           providerProfile({ id, defaultModel: "claude" }),
-        getProviderGatewayEndpoint: async (providerId, kind) => ({
-          baseUrl: "https://api.anthropic.com/v1",
-          token: `gateway-token-${providerId}-${kind}`,
-          providerId,
-        }),
+        getProviderGatewayEndpoint: async (providerId, kind) => {
+          gatewayCreated = true
+          return {
+            baseUrl: "https://api.anthropic.com/v1",
+            token: `gateway-token-${providerId}-${kind}`,
+            providerId,
+          }
+        },
         assertOfficialCloudAllowed: () => {
           throw new Error(
             "Official cloud endpoints are blocked in local-only mode.",
@@ -261,7 +334,8 @@ describe("Claude Agent SDK provider startup", () => {
         message: "Official cloud endpoints are blocked in local-only mode.",
       },
     })
-    expect(revoked).toEqual(["gateway-token-profile-1-anthropic"])
+    expect(gatewayCreated).toBe(false)
+    expect(revoked).toEqual([])
   })
 
   test("maps provider startup state to analytics connection methods", () => {

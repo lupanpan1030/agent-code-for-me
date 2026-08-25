@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 import { execSync } from "node:child_process"
+import { lstatSync, readFileSync } from "node:fs"
+
 // Residue gate for the removed `kun` / `qwen-code` runtimes.
 //
 // The naive `grep -r kun` gate is impossible to satisfy honestly: legitimate
@@ -10,22 +12,67 @@ import { execSync } from "node:child_process"
 // joining split fragments — all so a grep would print zero. This script replaces
 // that gate with an explicit allowlist, so "zero" means something.
 //
-// The pattern deliberately does NOT match a bare `qwen`: that is an Ollama MODEL
-// name (qwen2.5-coder, qwen3-coder) used across many surviving tests. The retired
-// runtime id is `qwen-code`.
-import { readFileSync } from "node:fs"
+// The matchers deliberately do NOT match a bare `qwen`, `qwen-coder`, or
+// `qwen2.5-coder`: those are surviving Ollama model names. They do cover the
+// retired runtime id, its camel-case spelling, and its former manifest symbol.
+const RETIRED_RUNTIME_PATTERNS = [
+  /\bkun\b/i,
+  /\bkun-[a-z0-9_-]+\b/i,
+  /\bkun[A-Z][A-Za-z0-9_]*\b/,
+  /\bKun[A-Z][A-Za-z0-9_]*\b/,
+  /\bkun_(?:[a-z0-9]+_?)+\b/i,
+  /\bqwen-code\b/i,
+  /\bqwenCode\b/i,
+  /\b(?:qwenCode|QwenCode)[A-Z][A-Za-z0-9_]*\b/,
+  /\bqwen_code(?:_[a-z0-9]+)*\b/i,
+]
 
-const PATTERN = /\bkun\b|kun-|kun[A-Z]|\bKun\b|Kun[A-Z]|KUN_|qwen-code|QwenC/
+function containsRetiredRuntime(subject) {
+  return RETIRED_RUNTIME_PATTERNS.some((pattern) => pattern.test(subject))
+}
+
+function assertPatternContract() {
+  const cases = [
+    ["kun", true],
+    ["src/main/lib/kun/adapter.ts", true],
+    ["kun-runtime", true],
+    ["KunRuntime", true],
+    ["KUN_RUNTIME_MANIFEST", true],
+    ["kun_runtime_manifest", true],
+    ["qwen-code", true],
+    ["Qwen-Code", true],
+    ["qwenCode", true],
+    ["qwenCodeRuntime", true],
+    ["QWEN_CODE_RUNTIME_MANIFEST", true],
+    ["qwen-coder", false],
+    ["qwen2.5-coder", false],
+    ["QwenCoder", false],
+    ["src/main/lib/ollama/qwen-coder.ts", false],
+    ["skunkworks", false],
+  ]
+
+  const failures = cases.filter(
+    ([subject, expected]) => containsRetiredRuntime(subject) !== expected,
+  )
+  if (failures.length > 0) {
+    throw new Error(
+      `Retired-runtime matcher self-test failed: ${failures
+        .map(
+          ([subject, expected]) =>
+            `${JSON.stringify(subject)} expected ${expected}`,
+        )
+        .join(", ")}`,
+    )
+  }
+}
+
+assertPatternContract()
 
 // Files that MUST mention a retired id, with the reason. Anything else is residue.
 const ALLOWED = new Map([
   [
     "src/main/lib/retired-runtime-state-cleanup.ts",
     "deletes the retired runtimes' leftover userData paths; must name them",
-  ],
-  [
-    "src/main/lib/ollama/detector.ts",
-    "Ollama MODEL names (qwen-coder / qwen2.5-coder); unrelated to the runtime",
   ],
   [
     "tests/retired-runtime-state-cleanup.test.ts",
@@ -55,46 +102,122 @@ const ALLOWED = new Map([
     "tests/local-job-api-schema.test.ts",
     "asserts the published schema rejects retired runtime ids",
   ],
+  [
+    "docs/locus-adapt-open-source-direction.zh-CN.md",
+    "forward-looking external harness/adaptation research; does not define a live runtime implementation",
+  ],
+  [
+    "docs/locus-architecture-strategy-handoff.zh-CN.md",
+    "historical removal record and external harness research; does not define a live runtime path",
+  ],
 ])
 
-const SCAN = ["src", "tests", "scripts", "openspec/specs", "docs"]
-const SKIP_EXT = /\.(svg|png|ico|icns|jpg|jpeg|gif|woff2?|ttf)$/i
+const ARCHIVED_CHANGE_PREFIX = "openspec/changes/archive/"
+const SKIP_CONTENT_EXT = /\.(svg|png|ico|icns|jpg|jpeg|gif|woff2?|ttf|lockb)$/i
+
+function isScanTarget(file) {
+  // The delivery surface is not limited to src/: resources/, packages/,
+  // build/, migrations, and future roots can all ship live code or metadata.
+  // Scan every tracked or untracked-nonignored path by default. Only immutable
+  // OpenSpec history is excluded from the live-residue contract.
+  return !file.startsWith(ARCHIVED_CHANGE_PREFIX)
+}
+
+function readRepositoryTextFile(file) {
+  try {
+    // Never follow a tracked or untracked repository symlink while running a
+    // source-residue gate. A path hit is still reported separately, but its
+    // target may live outside the repository and is not part of this scan.
+    if (!lstatSync(file).isFile()) return ""
+    return readFileSync(file, "utf8")
+  } catch {
+    return ""
+  }
+}
+
+function assertScanScopeContract() {
+  const cases = [
+    ["package.json", true],
+    ["electron-builder.yml", true],
+    [".github/workflows/ci.yml", true],
+    ["src/main/lib/kun/adapter.ts", true],
+    ["resources/cli/kun-adapter.ts", true],
+    ["packages/kun-runtime/index.ts", true],
+    ["build/kun-runtime.json", true],
+    ["drizzle/9999_kun_runtime.sql", true],
+    ["openspec/specs/runtime/spec.md", true],
+    ["openspec/changes/add-runtime/specs/runtime/spec.md", true],
+    [
+      "openspec/changes/archive/2026-08-25-add-runtime/specs/runtime/spec.md",
+      false,
+    ],
+    // Ignored files such as node_modules are removed by git ls-files
+    // --exclude-standard; if explicitly tracked, they are part of the product
+    // surface and must be scanned too.
+    ["node_modules/example/package.json", true],
+  ]
+  const failures = cases.filter(
+    ([file, expected]) => isScanTarget(file) !== expected,
+  )
+  if (failures.length > 0) {
+    throw new Error(
+      `Retired-runtime scan-scope self-test failed: ${failures
+        .map(
+          ([file, expected]) => `${JSON.stringify(file)} expected ${expected}`,
+        )
+        .join(", ")}`,
+    )
+  }
+}
+
+assertScanScopeContract()
+
+if (process.argv.includes("--self-test")) {
+  console.log(
+    "Retired-runtime self-test passed (matchers, paths, live roots, and archive exclusion).",
+  )
+  process.exit(0)
+}
 
 const tracked = execSync(
   // --others --exclude-standard so NEW, not-yet-added files are scanned too.
   // Without it a brand-new file is invisible to this gate — which is exactly how
   // the untracked startup-cleanup module first slipped past it.
-  `git ls-files --cached --others --exclude-standard ${SCAN.join(" ")} CLAUDE.md PROJECT-MAP.md`,
+  "git ls-files --cached --others --exclude-standard",
   { encoding: "utf8" },
 )
   .split("\n")
   .filter(Boolean)
-  .filter((f) => !SKIP_EXT.test(f))
+  .filter(isScanTarget)
 
 const residue = []
 for (const file of tracked) {
-  let text
-  try {
-    text = readFileSync(file, "utf8")
-  } catch {
-    continue
+  const pathHit = containsRetiredRuntime(file)
+  let text = ""
+  if (!SKIP_CONTENT_EXT.test(file)) {
+    text = readRepositoryTextFile(file)
   }
   const hits = text
     .split("\n")
     .map((line, i) => ({ line: i + 1, text: line }))
-    .filter((l) => PATTERN.test(l.text))
-  if (hits.length === 0) continue
+    .filter((line) => containsRetiredRuntime(line.text))
+  if (!pathHit && hits.length === 0) continue
   if (ALLOWED.has(file)) continue
-  residue.push({ file, hits })
+  residue.push({ file, pathHit, hits })
 }
 
 const unusedAllowances = [...ALLOWED.keys()].filter(
-  (f) => !tracked.includes(f) || !PATTERN.test(readFileSync(f, "utf8")),
+  (file) =>
+    !tracked.includes(file) ||
+    (!containsRetiredRuntime(file) &&
+      !containsRetiredRuntime(readRepositoryTextFile(file))),
 )
 
 if (residue.length > 0) {
   console.error("Retired-runtime residue found:\n")
-  for (const { file, hits } of residue) {
+  for (const { file, pathHit, hits } of residue) {
+    if (pathHit)
+      console.error(`  ${file}: path contains a retired runtime identifier`)
     for (const h of hits) {
       console.error(`  ${file}:${h.line}: ${h.text.trim().slice(0, 120)}`)
     }

@@ -13,8 +13,8 @@ import type { DesktopRunRequest } from "../src/main/lib/agent-runtime/desktop-ru
 import { createRunEvent } from "../src/main/lib/agent-runtime/runtime-events"
 import { projects } from "../src/main/lib/db/schema"
 import { createCodexAppServerHeadlessTaskRunner } from "../src/main/lib/headless/adapters/codex-app-server"
-import { createAgentJobTestDb } from "./helpers/agent-job-test-db"
 import { LOCAL_JOB_API_VERSION } from "../src/shared/local-job-api"
+import { createAgentJobTestDb } from "./helpers/agent-job-test-db"
 
 const appServerRuns: DesktopRunRequest[] = []
 
@@ -105,7 +105,10 @@ const fakeAppServerRunner = createCodexAppServerHeadlessTaskRunner({
   }),
 })
 
-function seedProject(db: ReturnType<typeof createAgentJobTestDb>, path: string) {
+function seedProject(
+  db: ReturnType<typeof createAgentJobTestDb>,
+  path: string,
+) {
   db.insert(projects)
     .values({
       id: "project-1",
@@ -119,7 +122,9 @@ describe("Local Job API Codex app-server profile", () => {
   test("runs only when policy-grant profile is explicit and persists replay artifacts", async () => {
     appServerRuns.length = 0
     const db = createAgentJobTestDb()
-    const projectRoot = realpathSync(mkdtempSync(join(tmpdir(), "locus-app-server-")))
+    const projectRoot = realpathSync(
+      mkdtempSync(join(tmpdir(), "locus-app-server-")),
+    )
     try {
       const packageDir = join(projectRoot, "package")
       mkdirSync(packageDir)
@@ -216,12 +221,14 @@ describe("Local Job API Codex app-server profile", () => {
         outputTokens: 7,
       })
       expect(prepared.runDir).toBeTruthy()
-      expect(existsSync(join(prepared.runDir!, "request.json"))).toBe(true)
-      expect(existsSync(join(prepared.runDir!, "events.jsonl"))).toBe(true)
-      expect(existsSync(join(prepared.runDir!, "result.json"))).toBe(true)
-      expect(
-        readFileSync(join(prepared.runDir!, "result.json"), "utf-8"),
-      ).toContain("codex-app-server")
+      const runDir = prepared.runDir
+      if (!runDir) throw new Error("Expected an artifact run directory")
+      expect(existsSync(join(runDir.path, "request.json"))).toBe(true)
+      expect(existsSync(join(runDir.path, "events.jsonl"))).toBe(true)
+      expect(existsSync(join(runDir.path, "result.json"))).toBe(true)
+      expect(readFileSync(join(runDir.path, "result.json"), "utf-8")).toContain(
+        "codex-app-server",
+      )
     } finally {
       rmSync(projectRoot, { recursive: true, force: true })
     }

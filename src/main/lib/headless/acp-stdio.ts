@@ -1,25 +1,19 @@
-import type { Readable } from "stream"
+import type { Readable } from "node:stream"
 import { z } from "zod"
 import {
   AGENT_JOB_MODES,
   type AgentJobContractRuntime,
 } from "../../../shared/agent-jobs"
 import { CONTRACT_RUNTIME_IDS } from "../../../shared/agent-runtime-capabilities"
+import type { AgentTaskRunner } from "./agent-runtime-contract"
+import { serializeAgentJob, serializeAgentJobEvent } from "./cli-output"
+import { HEADLESS_EXIT_CODES, runPersistedAgentJob } from "./job-runner"
 import {
+  type AgentJobDatabase,
   createAgentJob,
   listAgentJobEvents,
   requestCancelAgentJob,
-  type AgentJobDatabase,
 } from "./job-store"
-import {
-  serializeAgentJob,
-  serializeAgentJobEvent,
-} from "./cli-output"
-import {
-  HEADLESS_EXIT_CODES,
-  runPersistedAgentJob,
-} from "./job-runner"
-import type { AgentTaskRunner } from "./agent-runtime-contract"
 import { findRegisteredProjectForCwdWithCanonicalPath } from "./schedules"
 
 type Writer = {
@@ -31,6 +25,7 @@ type JsonRpcId = string | number | null
 type ActiveProtocolJob = {
   jobId: string
   abortController: AbortController
+  streamAbortController: AbortController
   streamPromise: Promise<void>
 }
 
@@ -99,12 +94,13 @@ function notification(method: string, params: unknown): unknown {
 function delay(ms: number, signal?: AbortSignal): Promise<void> {
   if (signal?.aborted) return Promise.resolve()
   return new Promise((resolve) => {
-    const timer = setTimeout(resolve, ms)
-    const onAbort = () => {
+    const finish = () => {
       clearTimeout(timer)
+      signal?.removeEventListener("abort", finish)
       resolve()
     }
-    signal?.addEventListener("abort", onAbort, { once: true })
+    const timer = setTimeout(finish, ms)
+    signal?.addEventListener("abort", finish, { once: true })
   })
 }
 
@@ -211,7 +207,7 @@ async function streamJobEvents(
         }),
       )
     }
-    if (finished && events.length === 0) break
+    if ((finished || signal?.aborted) && events.length === 0) break
     await delay(finished ? 0 : 100, signal)
   }
 
@@ -273,6 +269,7 @@ function handleJobRun(
     projectId: project.id,
   })
   const abortController = new AbortController()
+  const streamAbortController = new AbortController()
   const runPromise = runPersistedAgentJob({
     db: options.db,
     jobId: job.id,
@@ -286,13 +283,14 @@ function handleJobRun(
     options,
     job.id,
     runPromise,
-    abortController.signal,
+    streamAbortController.signal,
   ).finally(() => {
     activeJobs.delete(job.id)
   })
   activeJobs.set(job.id, {
     jobId: job.id,
     abortController,
+    streamAbortController,
     streamPromise,
   })
   writeJsonLine(options.stdout, response(id, { job: serializeAgentJob(job) }))
@@ -340,9 +338,19 @@ async function drainActiveProtocolJobs(
 ): Promise<void> {
   if (activeJobs.size === 0) return
   await Promise.race([
-    Promise.allSettled(Array.from(activeJobs.values(), (job) => job.streamPromise)),
+    Promise.allSettled(
+      Array.from(activeJobs.values(), (job) => job.streamPromise),
+    ),
     delay(timeoutMs),
   ])
+}
+
+async function stopActiveProtocolStreams(
+  activeJobs: Map<string, ActiveProtocolJob>,
+): Promise<void> {
+  const remaining = Array.from(activeJobs.values())
+  for (const job of remaining) job.streamAbortController.abort()
+  await Promise.allSettled(remaining.map((job) => job.streamPromise))
 }
 
 function handleRequest(
@@ -409,6 +417,7 @@ export async function runAcpStdioServer(
     await drainActiveProtocolJobs(activeJobs, 250)
     cancelActiveProtocolJobs(options, activeJobs)
     await drainActiveProtocolJobs(activeJobs, 250)
+    await stopActiveProtocolStreams(activeJobs)
     return HEADLESS_EXIT_CODES.success
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
@@ -416,6 +425,7 @@ export async function runAcpStdioServer(
     writeJsonLine(options.stdout, errorResponse(null, -32600, message))
     cancelActiveProtocolJobs(options, activeJobs)
     await drainActiveProtocolJobs(activeJobs, 250)
+    await stopActiveProtocolStreams(activeJobs)
     return HEADLESS_EXIT_CODES.invalidArguments
   }
 }

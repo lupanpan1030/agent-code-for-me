@@ -113,7 +113,10 @@ export type ProviderProfileMetadata = {
   baseUrl: string
   defaultModel: string
   authMode: ProviderProfileAuthMode
+  /** Ciphertext exists; used only to preserve an edit-form placeholder. */
   hasToken: boolean
+  /** Main successfully decrypted and normalized the credential required by authMode. */
+  credentialUsable: boolean
   headers: Record<string, string>
   targetRuntimes: ProviderProfileTarget[]
   capabilities: ProviderProfileCapabilities

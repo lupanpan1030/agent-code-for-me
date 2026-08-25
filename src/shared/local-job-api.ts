@@ -390,7 +390,7 @@ function normalizeProviderSelection(
   value: unknown,
   errors: string[],
 ): NormalizedLocalJobApiProviderSelection {
-  if (value === undefined || value === null) {
+  if (value === undefined) {
     return { profileId: null, model: null }
   }
   if (!isRecord(value)) {
@@ -406,7 +406,8 @@ function normalizeProviderSelection(
   }
 
   let profileId: string | null = null
-  if (value.profileId !== undefined && value.profileId !== null) {
+  const hasProfileId = Object.hasOwn(value, "profileId")
+  if (hasProfileId) {
     if (typeof value.profileId !== "string") {
       errors.push("provider.profileId must be a string")
     } else {
@@ -422,7 +423,8 @@ function normalizeProviderSelection(
   }
 
   let model: string | null = null
-  if (value.model !== undefined && value.model !== null) {
+  const hasModel = Object.hasOwn(value, "model")
+  if (hasModel) {
     if (typeof value.model !== "string") {
       errors.push("provider.model must be a string")
     } else {
@@ -435,6 +437,10 @@ function normalizeProviderSelection(
         model = normalized
       }
     }
+  }
+
+  if (!profileId && !model) {
+    errors.push("provider must include a non-empty profileId or model")
   }
 
   return { profileId, model }

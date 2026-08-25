@@ -1,4 +1,5 @@
 import { parseProviderProfileSource } from "../../../shared/provider-profile-types"
+import { normalizeHeaderSafeCredential } from "../../../shared/secret-redaction-policy"
 import type { DesktopRunPreflightBlocker } from "../agent-runtime/preflight"
 import { redactExactSecretHints } from "../agent-runtime/redaction"
 import { setConnectionMethod as recordAnalyticsConnectionMethod } from "../analytics"
@@ -141,6 +142,7 @@ export async function resolveClaudeAgentSdkProviderStartup(input: {
 }): Promise<ClaudeAgentSdkProviderStartupResult> {
   const dependencies = withDefaultDependencies(input.dependencies)
   let providerConfig: ClaudeProviderRuntimeConfig | undefined
+  let providerProfileToken: string | null = null
   let providerGatewayToken: string | null = null
   let providerGatewayTokenRevoked = false
   const cleanupRuntimeSecrets = () => {
@@ -168,10 +170,47 @@ export async function resolveClaudeAgentSdkProviderStartup(input: {
       }
     }
 
-    const gateway = await dependencies.getProviderGatewayEndpoint(
-      profile.id,
-      "anthropic",
-    )
+    providerProfileToken = profile.token || null
+    try {
+      await dependencies.assertOfficialCloudAllowed(
+        "use Claude provider endpoint",
+        profile.baseUrl,
+      )
+    } catch (providerError) {
+      return {
+        ok: false,
+        blocker: {
+          id: "local-only",
+          status: "blocked",
+          message: redactExactSecretHints(
+            providerError instanceof Error
+              ? providerError.message
+              : String(providerError),
+            providerProfileToken ? [providerProfileToken] : [],
+          ).value,
+        },
+      }
+    }
+    let gateway: ProviderGatewayEndpoint
+    try {
+      gateway = await dependencies.getProviderGatewayEndpoint(
+        profile.id,
+        "anthropic",
+      )
+    } catch (error) {
+      const message = redactExactSecretHints(
+        error instanceof Error ? error.message : String(error),
+        providerProfileToken ? [providerProfileToken] : [],
+      ).value
+      return {
+        ok: false,
+        blocker: {
+          id: "provider-profile",
+          status: "blocked",
+          message: `Provider startup failed: ${message}`,
+        },
+      }
+    }
     providerGatewayToken = gateway.token
     providerConfig = {
       model: profile.defaultModel,
@@ -197,8 +236,30 @@ export async function resolveClaudeAgentSdkProviderStartup(input: {
   if (!providerConfig) {
     try {
       const credentialResult = await dependencies.getValidClaudeCodeCredential()
-      claudeCodeToken = credentialResult.accessToken
       claudeCredentialMetadata = credentialResult.metadata
+      const normalizedToken = credentialResult.accessToken
+        ? normalizeHeaderSafeCredential(credentialResult.accessToken)
+        : null
+      const hasStoredCredential = Boolean(
+        claudeCredentialMetadata.accountId ||
+          claudeCredentialMetadata.isConnected,
+      )
+      if (
+        (credentialResult.accessToken && !normalizedToken) ||
+        (hasStoredCredential &&
+          (!claudeCredentialMetadata.credentialUsable || !normalizedToken))
+      ) {
+        return {
+          ok: false,
+          blocker: {
+            id: "provider-profile",
+            status: "needs-auth",
+            message: "Claude Code credential is unavailable or invalid.",
+            hint: "Reconnect Claude Code auth or choose a provider profile.",
+          },
+        }
+      }
+      claudeCodeToken = normalizedToken
     } catch (credentialError) {
       return {
         ok: false,
@@ -215,9 +276,11 @@ export async function resolveClaudeAgentSdkProviderStartup(input: {
     }
   }
 
-  const secretHints = [providerGatewayToken, claudeCodeToken].filter(
-    (secret): secret is string => Boolean(secret),
-  )
+  const secretHints = [
+    providerProfileToken,
+    providerGatewayToken,
+    claudeCodeToken,
+  ].filter((secret): secret is string => Boolean(secret))
 
   let offlineResult: ClaudeOfflineFallbackResult
   try {

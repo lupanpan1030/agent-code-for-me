@@ -175,3 +175,9 @@ remediation. The post-remediation acceptance reruns are tracked separately below
       null-to-SHA capture, oversized multibyte diffs with an independent committed-tree trial,
       dependency abort signaling, and post-parse deadline exhaustion; record the pre-commit receipt
       in `verification.md`.
+- [x] 9.12 Close the base-commit cancellation follow-up: forward the snapshot operation options
+      from the production router into the canonical backfill owner; run merge-base, remote-ref
+      probes, and commit-distance reads through canonical `createGit` with the request signal,
+      remaining timeout, and absolute timeout; and forbid a compare-and-set write after cancellation
+      even when an injected dependency ignores abort and returns late. Add options-forwarding,
+      no-post-deadline-write, and production-wiring regressions and record the working-tree receipt.

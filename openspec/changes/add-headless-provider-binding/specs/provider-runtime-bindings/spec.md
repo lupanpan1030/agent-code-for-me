@@ -28,3 +28,30 @@ Headless job execution SHALL build provider bindings in the main process from st
 - **WHEN** a headless codex run is bound to a provider profile through CLI configuration overrides
 - **THEN** the overrides reference the gateway token by environment variable name only
 - **AND** persisted job records and events contain no token values
+
+### Requirement: Run-Scoped Exact Provider Secret Redaction
+
+The system SHALL keep both the selected upstream provider credential and the per-run scoped gateway token as main-process-only exact secret hints from provider resolution until terminal output is materialized. Renderer chunks, durable events, assistant messages, diagnostics, structured results, and public API envelopes SHALL pass through the canonical run-scoped redaction path before exposure or persistence. Exact hints themselves MUST NOT enter output, metadata, logs, or durable state.
+
+#### Scenario: Successful runtime output echoes either provider secret
+
+- **WHEN** a profile-bound runtime or tool successfully returns text containing the upstream credential or scoped gateway token
+- **THEN** every renderer, durable, diagnostic, structured-result, and Local Job API projection contains only a redacted placeholder
+- **AND** public provider-binding receipts contain references and applied model metadata, never secret hints or secret values
+
+#### Scenario: Runtime splits a secret across adjacent stream chunks
+
+- **WHEN** adjacent chunks in one runtime output channel concatenate to the upstream credential or scoped gateway token
+- **THEN** the stateful run-scoped redaction path withholds the possible secret prefix until it can decide safely
+- **AND** no individual renderer chunk, durable event, or reconstructed message exposes the exact secret
+
+#### Scenario: Provider startup fails before binding completes
+
+- **WHEN** provider or gateway startup fails with an error that contains the selected upstream credential or scoped gateway token
+- **THEN** the failure detail is redacted before diagnostics, events, messages, job storage, or public output receive it
+
+#### Scenario: Run reaches a terminal path
+
+- **WHEN** a profile-bound run succeeds, fails, is canceled, or is unsubscribed
+- **THEN** pending sanitized output is finalized before the exact hints are discarded
+- **AND** the scoped gateway token is revoked without persisting either secret

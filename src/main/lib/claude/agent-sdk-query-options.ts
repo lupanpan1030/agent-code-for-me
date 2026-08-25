@@ -10,6 +10,10 @@ import {
   type CreateClaudeAgentSdkToolPermissionHandlerInput,
   createClaudeAgentSdkPermissionControls,
 } from "./agent-sdk-tool-permission"
+import {
+  CLAUDE_CREDENTIAL_BOUND_DIAGNOSTIC_OMITTED,
+  shouldOmitClaudeCredentialBoundDiagnostic,
+} from "./credential-bound-diagnostics"
 import { getBundledClaudeBinaryPath } from "./env"
 
 export type ClaudeAgentSdkPrompt = string | AsyncIterable<SDKUserMessage>
@@ -144,13 +148,20 @@ export function createClaudeAgentSdkStderrHandler({
   ClaudeAgentSdkOptions["stderr"]
 > {
   return (data: string) => {
-    stderrLines.push(data)
+    if (shouldOmitClaudeCredentialBoundDiagnostic(secretHints)) {
+      stderrLines.push(CLAUDE_CREDENTIAL_BOUND_DIAGNOSTIC_OMITTED)
+      error(
+        isUsingOllama ? "[Ollama stderr]" : "[claude stderr]",
+        CLAUDE_CREDENTIAL_BOUND_DIAGNOSTIC_OMITTED,
+      )
+      return
+    }
     const redactedData = redactRuntimePayload(data, {
       runtimeId: "claude-code",
       runId: runId ?? "claude-stderr",
       source: "runtime-diagnostic",
-      secretHints,
     }).payload
+    stderrLines.push(String(redactedData))
     if (isUsingOllama) {
       error("[Ollama stderr]", redactedData)
     } else {

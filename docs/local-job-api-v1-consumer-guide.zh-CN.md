@@ -230,6 +230,10 @@ Provider 选择：
   `provider.profileId`，它使用 runtime-managed credentials，并绕过 headless
   defaults。
 
+一旦传入 `provider`，至少必须包含一个非空的 `profileId` 或 `model`。空对象或
+值为 `null` 的 provider block 都是无效输入；只有完全省略整个属性才会选择默认
+profile 路径。
+
 consumer 只能传 provider 引用，不能在 `provider`、`input` 或 artifacts 中传
 provider token、headers 或 environment variables。
 
@@ -619,7 +623,9 @@ headless 默认 profile 不可用，job 会以结构化 diagnostic 失败，例�
 Locus 不会静默回落到 runtime native credentials。
 `provider_profile_required`、`provider_profile_not_found` 和
 `provider_profile_runtime_mismatch` 属于 invalid request，exit `2`；
-`provider_profile_unavailable` 属于 credential availability，exit `4`。
+`provider_profile_unavailable` 属于 credential availability，exit `4`；
+`local_only_guard_blocked` 表示所配置的 profile 指向 local-only 模式禁用的
+Locus 托管服务或远程 sandbox 服务，exit `6`。
 
 ## Cancel
 

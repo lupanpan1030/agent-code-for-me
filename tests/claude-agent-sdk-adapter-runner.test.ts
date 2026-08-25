@@ -20,6 +20,7 @@ import {
 } from "../src/main/lib/claude/agent-sdk-policy-retry"
 import { createClaudeAgentSdkStreamConsumerMutableState } from "../src/main/lib/claude/agent-sdk-stream-consumer"
 import type { UIMessageChunk } from "../src/main/lib/claude/types"
+import { EXACT_SECRET_REDACTION_MARKER } from "../src/shared/secret-redaction-policy"
 
 function createRequest(): DesktopRunRequest {
   return {
@@ -415,6 +416,8 @@ describe("Claude Agent SDK adapter runner", () => {
       "[CLAUDE] ✗ Failed to create SDK query:",
     )
     expect(JSON.stringify(error.mock.calls)).not.toContain(gatewayToken)
-    expect(JSON.stringify(error.mock.calls)).toContain("<redacted>")
+    expect(JSON.stringify(error.mock.calls)).toContain(
+      EXACT_SECRET_REDACTION_MARKER,
+    )
   })
 })

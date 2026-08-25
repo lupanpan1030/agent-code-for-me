@@ -245,6 +245,10 @@ Provider selection:
   `provider.profileId`, it selects runtime-managed credentials and bypasses
   headless defaults.
 
+If `provider` is present, it must contain at least one non-empty `profileId` or
+`model`. Empty or nullable provider blocks are invalid; only omission of the
+entire property selects the default-profile path.
+
 Consumers must pass only provider references. Never send provider tokens,
 headers, or environment variables in `provider`, `input`, or artifacts.
 
@@ -641,7 +645,9 @@ structured diagnostic such as `provider_profile_not_found`,
 runtime credentials in those cases.
 `provider_profile_required`, `provider_profile_not_found`, and
 `provider_profile_runtime_mismatch` are invalid request errors and exit `2`;
-`provider_profile_unavailable` is a credential availability error and exits `4`.
+`provider_profile_unavailable` is a credential availability error and exits `4`;
+`local_only_guard_blocked` means the configured profile targets a hosted Locus
+or remote-sandbox service disabled by local-only mode and exits `6`.
 
 ## Cancel
 

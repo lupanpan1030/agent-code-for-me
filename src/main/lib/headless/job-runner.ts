@@ -1,10 +1,16 @@
 import type {
   AgentJobContractRuntime,
+  AgentJobEventType,
   AgentJobMode,
   AgentJobSource,
   AgentJobStatus,
 } from "../../../shared/agent-jobs"
+import { isTerminalAgentJobStatus } from "../../../shared/agent-jobs"
 import type { LocalJobApiResolvedProvider } from "../../../shared/local-job-api"
+import {
+  createExactSecretStreamChannelRedactor,
+  type ExactSecretStreamFragment,
+} from "../agent-runtime/redaction"
 import type { AgentJob, AgentJobEvent } from "../db/schema"
 import type {
   AgentRuntimeObserver,
@@ -12,7 +18,10 @@ import type {
   AgentRuntimeRunResult,
   AgentTaskRunner,
 } from "./agent-runtime-contract"
-import { createAgentRuntimeRunRequest } from "./agent-runtime-contract"
+import {
+  AGENT_RUNTIME_SECURITY_CLEANUP_ERROR_CODE,
+  createAgentRuntimeRunRequest,
+} from "./agent-runtime-contract"
 import {
   type AgentJobDatabase,
   appendAgentJobEvent,
@@ -29,6 +38,7 @@ import {
   HeadlessProviderBindingError,
   type HeadlessProviderBindingResolution,
   isInvalidHeadlessProviderBindingRequestCode,
+  isLocalOnlyHeadlessProviderBindingCode,
   isUnavailableHeadlessProviderBindingCode,
   resolveHeadlessProviderBinding,
 } from "./provider-binding"
@@ -110,18 +120,130 @@ export function normalizeHeadlessExitCode(input: {
   if (isUnavailableHeadlessProviderBindingCode(input.errorCode)) {
     return HEADLESS_EXIT_CODES.missingCredentials
   }
-  if (input.errorCode === "local_only_guard_blocked") {
+  if (isLocalOnlyHeadlessProviderBindingCode(input.errorCode)) {
     return HEADLESS_EXIT_CODES.localOnlyBlocked
   }
   if (input.errorCode === "invalid_cwd") return HEADLESS_EXIT_CODES.invalidCwd
   if (
     input.errorCode === "spawn_failed" ||
     input.errorCode === "heartbeat_failed" ||
-    input.errorCode === "internal_error"
+    input.errorCode === "internal_error" ||
+    input.errorCode === "runtime_result_invalid"
   ) {
     return HEADLESS_EXIT_CODES.internalFailure
   }
   return HEADLESS_EXIT_CODES.runtimeFailed
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value)
+}
+
+type HeadlessStreamEvent = {
+  eventType: AgentJobEventType
+  payload: unknown
+}
+
+type HeadlessStreamTextDescriptor =
+  ExactSecretStreamFragment<HeadlessStreamEvent>
+
+function headlessStreamTextDescriptor(
+  type: AgentJobEventType,
+  payload: unknown,
+): HeadlessStreamTextDescriptor | null {
+  if (!isRecord(payload)) return null
+  const id =
+    type === "tool_delta"
+      ? typeof payload.toolCallId === "string"
+        ? payload.toolCallId
+        : typeof payload.id === "string"
+          ? payload.id
+          : "default"
+      : typeof payload.id === "string"
+        ? payload.id
+        : "default"
+  if (
+    type === "assistant_delta" ||
+    type === "reasoning_delta" ||
+    type === "tool_delta"
+  ) {
+    const field =
+      typeof payload.delta === "string"
+        ? "delta"
+        : typeof payload.text === "string"
+          ? "text"
+          : null
+    if (!field) return null
+    const family =
+      type === "assistant_delta"
+        ? "assistant"
+        : type === "reasoning_delta"
+          ? "reasoning"
+          : "tool"
+    return {
+      channel: `${family}:${id}`,
+      value: payload[field] as string,
+      withValue: (value) => ({
+        eventType: type,
+        payload: { ...payload, [field]: value },
+      }),
+    }
+  }
+  if (type === "command_output" && typeof payload.text === "string") {
+    const stream =
+      typeof payload.stream === "string" ? payload.stream : "default"
+    return {
+      channel: `command-output:${stream}`,
+      value: payload.text,
+      withValue: (value) => ({
+        eventType: type,
+        payload: { ...payload, text: value },
+      }),
+    }
+  }
+  if (
+    type === "status" &&
+    payload.chunkType === "file-change-delta" &&
+    isRecord(payload.data) &&
+    typeof payload.data.delta === "string"
+  ) {
+    const dataDelta = payload.data.delta
+    const data = payload.data
+    const fileChangeId = typeof data.id === "string" ? data.id : "default"
+    return {
+      channel: `file-change:${fileChangeId}`,
+      value: dataDelta,
+      withValue: (value) => ({
+        eventType: type,
+        payload: {
+          ...payload,
+          data: { ...data, delta: value },
+        },
+      }),
+    }
+  }
+  return null
+}
+
+function headlessStreamBoundary(
+  type: AgentJobEventType,
+  payload: unknown,
+): "all" | string[] | null {
+  if (type === "completed" || type === "command_finished") return "all"
+  if (type !== "tool_finished") return null
+
+  const toolCallId =
+    isRecord(payload) && typeof payload.toolCallId === "string"
+      ? payload.toolCallId
+      : isRecord(payload) && typeof payload.id === "string"
+        ? payload.id
+        : "default"
+  return [`tool:${toolCallId}`]
+}
+
+type HeadlessObserverController = {
+  observer: AgentRuntimeObserver
+  flush: () => void
 }
 
 function createObserver(
@@ -130,17 +252,49 @@ function createObserver(
   workerId: string,
   abortController: AbortController,
   getSecretHints: () => readonly string[],
-): AgentRuntimeObserver {
-  return {
+  registerSecretHints: (hints: readonly string[]) => void,
+): HeadlessObserverController {
+  const streamSecretRedactor =
+    createExactSecretStreamChannelRedactor<HeadlessStreamEvent>()
+
+  const appendDirect = (type: AgentJobEventType, payload: unknown) =>
+    appendAgentJobEvent(db, {
+      jobId,
+      type,
+      payload,
+      secretHints: getSecretHints(),
+    })
+
+  const flush = () => {
+    const secretHints = getSecretHints()
+    for (const redacted of streamSecretRedactor.flush(secretHints)) {
+      appendDirect(redacted.value.eventType, redacted.value.payload)
+    }
+  }
+
+  const flushChannels = (channels: readonly string[]) => {
+    const secretHints = getSecretHints()
+    for (const redacted of streamSecretRedactor.flushChannels(
+      channels,
+      secretHints,
+    )) {
+      appendDirect(redacted.value.eventType, redacted.value.payload)
+    }
+  }
+
+  const observer: AgentRuntimeObserver = {
     appendEvent(type, payload) {
       const current = getAgentJob(db, jobId)
       if (current?.cancelRequestedAt) abortController.abort()
-      return appendAgentJobEvent(db, {
-        jobId,
-        type,
-        payload,
-        secretHints: getSecretHints(),
-      })
+      const boundary = headlessStreamBoundary(type, payload)
+      if (boundary === "all") flush()
+      else if (boundary) flushChannels(boundary)
+
+      const descriptor = headlessStreamTextDescriptor(type, payload)
+      if (!descriptor) return appendDirect(type, payload)
+
+      const redacted = streamSecretRedactor.push(descriptor, getSecretHints())
+      return appendDirect(redacted.value.eventType, redacted.value.payload)
     },
     heartbeat() {
       const job = heartbeatAgentJob(db, jobId, workerId)
@@ -153,14 +307,45 @@ function createObserver(
       if (requested) abortController.abort()
       return requested
     },
+    registerSecretHints(hints) {
+      registerSecretHints(hints)
+    },
   }
+  return { observer, flush }
+}
+
+class InvalidAgentRuntimeRunResultError extends Error {
+  constructor() {
+    super("Agent runtime returned no valid terminal status.")
+    this.name = "InvalidAgentRuntimeRunResultError"
+  }
+}
+
+function assertAgentRuntimeRunResult(
+  result: unknown,
+): asserts result is AgentRuntimeRunResult {
+  if (
+    !isRecord(result) ||
+    typeof result.status !== "string" ||
+    !isTerminalAgentJobStatus(result.status as AgentJobStatus)
+  ) {
+    throw new InvalidAgentRuntimeRunResultError()
+  }
+}
+
+function isRuntimeSecurityCleanupFailure(value: unknown): boolean {
+  return (
+    (isRecord(value) &&
+      value.errorCode === AGENT_RUNTIME_SECURITY_CLEANUP_ERROR_CODE) ||
+    (value instanceof Error &&
+      value.name === "CodexAppServerShellSnapshotScrubError")
+  )
 }
 
 function providerSecretHints(
   resolution: HeadlessProviderBindingResolution | null,
 ): readonly string[] {
-  const gatewayToken = resolution?.providerBinding?.gatewayToken
-  return gatewayToken ? [gatewayToken] : []
+  return resolution?.getSecretHints() ?? []
 }
 
 async function resolveRunner(
@@ -181,19 +366,6 @@ function canceledRunResult(): AgentRuntimeRunResult {
   }
 }
 
-function waitForAbort(signal: AbortSignal): Promise<AgentRuntimeRunResult> {
-  if (signal.aborted) return Promise.resolve(canceledRunResult())
-  return new Promise((resolve) => {
-    signal.addEventListener(
-      "abort",
-      () => {
-        resolve(canceledRunResult())
-      },
-      { once: true },
-    )
-  })
-}
-
 function localJobApiRuntimeOptions(
   job: AgentJob,
 ): Pick<
@@ -211,10 +383,6 @@ function localJobApiRuntimeOptions(
   } catch {
     return {}
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === "object" && !Array.isArray(value)
 }
 
 function resultWithResolvedProvider(
@@ -298,13 +466,26 @@ export async function runPersistedAgentJob(
     })
   }
   let providerResolution: HeadlessProviderBindingResolution | null = null
-  const observer = createObserver(
+  const dynamicSecretHints = new Set<string>()
+  const runSecretHints = () => [
+    ...new Set([
+      ...providerSecretHints(providerResolution),
+      ...dynamicSecretHints,
+    ]),
+  ]
+  const observerController = createObserver(
     options.db,
     job.id,
     workerId,
     abortController,
-    () => providerSecretHints(providerResolution),
+    runSecretHints,
+    (hints) => {
+      for (const hint of hints) {
+        if (hint) dynamicSecretHints.add(hint)
+      }
+    },
   )
+  const observer = observerController.observer
   const runtimeOptions = localJobApiRuntimeOptions(job)
 
   try {
@@ -323,38 +504,35 @@ export async function runPersistedAgentJob(
     })
     const result = abortController.signal.aborted
       ? canceledRunResult()
-      : await (() => {
-          const runnerPromise = runner(
-            createAgentRuntimeRunRequest({
-              jobId: job.id,
-              runtime: job.runtime as AgentJobContractRuntime,
-              cwd: job.cwd,
-              mode: job.mode as AgentJobMode,
-              source: job.source as AgentJobSource,
-              prompt,
-              signal: abortController.signal,
-              attempt: job.attempt,
-              ...runtimeOptions,
-              projectId: job.projectId,
-              chatId: job.chatId,
-              subChatId: job.subChatId,
-              apiConsumerId: job.apiConsumerId,
-              apiConsumerRunId: job.apiConsumerRunId,
-              artifactBaseDir: job.artifactBaseDir,
-              artifactManifestPath: job.artifactManifestPath,
-              providerBinding: providerResolution.providerBinding,
-            }),
-            observer,
-          )
-          void runnerPromise.catch(() => {})
-          return Promise.race([
-            runnerPromise,
-            waitForAbort(abortController.signal),
-          ])
-        })()
+      : await runner(
+          createAgentRuntimeRunRequest({
+            jobId: job.id,
+            runtime: job.runtime as AgentJobContractRuntime,
+            cwd: job.cwd,
+            mode: job.mode as AgentJobMode,
+            source: job.source as AgentJobSource,
+            prompt,
+            signal: abortController.signal,
+            attempt: job.attempt,
+            ...runtimeOptions,
+            projectId: job.projectId,
+            chatId: job.chatId,
+            subChatId: job.subChatId,
+            apiConsumerId: job.apiConsumerId,
+            apiConsumerRunId: job.apiConsumerRunId,
+            artifactBaseDir: job.artifactBaseDir,
+            artifactManifestPath: job.artifactManifestPath,
+            providerBinding: providerResolution.providerBinding,
+          }),
+          observer,
+        )
+    assertAgentRuntimeRunResult(result)
+    observerController.flush()
+    const securityCleanupFailed = isRuntimeSecurityCleanupFailure(result)
     const canceled =
-      observer.isCancelRequested() || abortController.signal.aborted
-    const status = canceled ? "canceled" : (result.status ?? "succeeded")
+      !securityCleanupFailed &&
+      (observer.isCancelRequested() || abortController.signal.aborted)
+    const status = canceled ? "canceled" : result.status
     const errorCode = canceled ? "job_canceled" : (result.errorCode ?? null)
     const exitCode = normalizeHeadlessExitCode({ status, errorCode })
     const completed = completeAgentJob(options.db, {
@@ -369,7 +547,7 @@ export async function runPersistedAgentJob(
         result.result,
         providerResolution.resolvedProvider,
       ),
-      secretHints: providerSecretHints(providerResolution),
+      secretHints: runSecretHints(),
     })
     return {
       job: completed,
@@ -377,27 +555,38 @@ export async function runPersistedAgentJob(
       exitCode,
     }
   } catch (error) {
+    observerController.flush()
     const message = error instanceof Error ? error.message : String(error)
-    const status = abortController.signal.aborted ? "canceled" : "failed"
-    const errorCode = abortController.signal.aborted
-      ? "job_canceled"
-      : error instanceof HeadlessProviderBindingError
-        ? error.code
-        : "runtime_error"
+    const forcedFailure =
+      error instanceof InvalidAgentRuntimeRunResultError ||
+      isRuntimeSecurityCleanupFailure(error)
+    const status =
+      abortController.signal.aborted && !forcedFailure ? "canceled" : "failed"
+    const errorCode =
+      error instanceof InvalidAgentRuntimeRunResultError
+        ? "runtime_result_invalid"
+        : isRuntimeSecurityCleanupFailure(error)
+          ? AGENT_RUNTIME_SECURITY_CLEANUP_ERROR_CODE
+          : abortController.signal.aborted
+            ? "job_canceled"
+            : error instanceof HeadlessProviderBindingError
+              ? error.code
+              : "runtime_error"
     const exitCode = normalizeHeadlessExitCode({ status, errorCode })
     const completed = completeAgentJob(options.db, {
       jobId: job.id,
       status,
       exitCode,
       errorCode,
-      errorMessage: abortController.signal.aborted
-        ? "Job was canceled."
-        : message,
+      errorMessage:
+        abortController.signal.aborted && !forcedFailure
+          ? "Job was canceled."
+          : message,
       result: resultWithResolvedProvider(
         null,
         resolvedProviderForError(error, job, providerResolution),
       ),
-      secretHints: providerSecretHints(providerResolution),
+      secretHints: runSecretHints(),
     })
     return {
       job: completed,
@@ -410,6 +599,7 @@ export async function runPersistedAgentJob(
     } catch {
       // Terminal job state has already been recorded; cleanup must not mask it.
     }
+    dynamicSecretHints.clear()
     options.signal?.removeEventListener("abort", abortFromExternalSignal)
   }
 }

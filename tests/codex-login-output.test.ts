@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import {
   appendCodexLoginOutput,
+  CODEX_LOGIN_OUTPUT_OMITTED,
   extractFirstNonLocalhostUrl,
   isLocalhostHostname,
   redactCodexLoginOutput,
@@ -27,9 +28,9 @@ describe("Codex login output helpers", () => {
         "https://auth.example.com/device?code=secret#frag.",
       ),
     ).toBe("https://auth.example.com/device?[redacted]#[redacted].")
-    expect(redactCodexLoginUrlForDisplay("http://localhost:3000/callback?code=x")).toBe(
-      "http://localhost:3000/callback?code=x",
-    )
+    expect(
+      redactCodexLoginUrlForDisplay("http://localhost:3000/callback?code=x"),
+    ).toBe("http://localhost:3000/callback?code=x")
     expect(
       redactCodexLoginOutput(
         'key sk-1234567890abcdef token code=secret {"access_token":"abc"}',
@@ -39,7 +40,7 @@ describe("Codex login output helpers", () => {
     )
   })
 
-  test("appends cleaned output and stores the first remote login URL", () => {
+  test("omits credential-bound stream output and stores the first remote login URL", () => {
     const session = { rawOutput: "", output: "", url: null as string | null }
 
     appendCodexLoginOutput(
@@ -48,11 +49,25 @@ describe("Codex login output helpers", () => {
     )
     appendCodexLoginOutput(session, " and sk-1234567890abcdef")
 
-    expect(session.rawOutput).toContain(
-      "https://auth.example.com/device?code=secret",
-    )
-    expect(session.output).toContain("https://auth.example.com/device?[redacted]")
-    expect(session.output).toContain("sk-[redacted]")
+    expect(session.rawOutput).toBe("")
+    expect(session.output).toBe(CODEX_LOGIN_OUTPUT_OMITTED)
     expect(session.url).toBe("https://auth.example.com/device?code=secret")
+  })
+
+  test("never exposes split login URLs or API keys between callbacks", () => {
+    const session = { rawOutput: "", output: "", url: null as string | null }
+    const apiKey = "sk-1234567890abcdef"
+
+    appendCodexLoginOutput(
+      session,
+      `Open https://auth.example.com/device?state=secret-${apiKey.slice(0, 8)}`,
+    )
+    expect(session.output).toBe(CODEX_LOGIN_OUTPUT_OMITTED)
+    expect(session.output).not.toContain(apiKey.slice(0, 8))
+
+    appendCodexLoginOutput(session, `${apiKey.slice(8)}\n`)
+    expect(session.output).toBe(CODEX_LOGIN_OUTPUT_OMITTED)
+    expect(session.output).not.toContain(apiKey)
+    expect(session.url).toContain("https://auth.example.com/device?")
   })
 })

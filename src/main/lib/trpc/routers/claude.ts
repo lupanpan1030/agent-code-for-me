@@ -26,6 +26,7 @@ import { prepareClaudeAgentSdkDesktopRunInputs } from "../../claude/agent-sdk-de
 import { runClaudeAgentSdkDesktopRuntimeWithMcpReadiness } from "../../claude/agent-sdk-desktop-run-runtime"
 import { prepareClaudeAgentSdkDesktopRunStartup } from "../../claude/agent-sdk-desktop-run-startup"
 import { superviseClaudeAgentSdkDesktopRun } from "../../claude/agent-sdk-desktop-run-supervision"
+import { createClaudeAgentSdkRuntimeSecretLifecycle } from "../../claude/agent-sdk-runtime-secrets"
 import { claudeChatInputSchema } from "../../claude/chat-input-schema"
 import { resolveClaudePendingToolApproval } from "../../claude/tool-approvals"
 import { getDatabase } from "../../db"
@@ -100,17 +101,7 @@ export const claudeRouter = router({
     .subscription(({ input }) => {
       return observable<UIMessageChunk>((emit) => {
         const db = getDatabase()
-        let runtimeSecretHints: readonly string[] = []
-        let runtimeSecretsCleanup: (() => void) | null = null
-        const cleanupRuntimeSecrets = () => {
-          const cleanup = runtimeSecretsCleanup
-          runtimeSecretsCleanup = null
-          try {
-            cleanup?.()
-          } finally {
-            runtimeSecretHints = []
-          }
-        }
+        const runtimeSecrets = createClaudeAgentSdkRuntimeSecretLifecycle()
         const resolvedInitialCwd = resolveDesktopRunCwdFromDb(db, {
           chatId: input.chatId,
           subChatId: input.subChatId,
@@ -139,7 +130,7 @@ export const claudeRouter = router({
           emitComplete: () => {
             emit.complete()
           },
-          getSecretHints: () => runtimeSecretHints,
+          getSecretHints: runtimeSecrets.getSecretHints,
         })
 
         let guardedContract: ValidatedAgentScopeContract | null = null
@@ -158,7 +149,7 @@ export const claudeRouter = router({
           emitError,
           emit: safeEmit,
           complete: safeComplete,
-          cleanupRuntimeSecrets,
+          cleanupRuntimeSecrets: runtimeSecrets.release,
           run: async () => {
             desktopRunState.setDb(db)
             const runControls = await prepareClaudeAgentSdkDesktopRunControls({
@@ -246,10 +237,9 @@ export const claudeRouter = router({
               existingSessionId,
               emitPreflightBlocker,
               onRuntimeSecretsResolved: ({ secretHints, cleanup }) => {
-                runtimeSecretHints = secretHints
-                runtimeSecretsCleanup = cleanup
+                runtimeSecrets.register({ secretHints, cleanup })
                 if (abortController.signal.aborted) {
-                  cleanupRuntimeSecrets()
+                  runtimeSecrets.revoke()
                 }
               },
               desktopRunState,
@@ -312,7 +302,7 @@ export const claudeRouter = router({
                 historyEnabled,
                 db,
                 messagesToSave,
-                secretHints: runtimeSecretHints,
+                secretHints: runtimeSecrets.getSecretHints(),
                 guardedContract,
                 guardedPreRunStatus,
                 subId,
@@ -337,7 +327,7 @@ export const claudeRouter = router({
             guardedContract,
             getDb: getDatabase,
             desktopRunState,
-            cleanupRuntimeSecrets,
+            cleanupRuntimeSecrets: runtimeSecrets.revoke,
           })
         }
       })

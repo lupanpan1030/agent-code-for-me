@@ -30,7 +30,15 @@ export function assertOfficialCloudAllowed(
 ): void {
   if (!isLocalOnlyMode()) return
   if (!url || isOfficialCloudUrl(url)) {
-    throw new LocalOnlyBlockedError(operation, url)
+    let diagnosticUrl = url
+    if (url) {
+      try {
+        diagnosticUrl = new URL(url).origin
+      } catch {
+        diagnosticUrl = null
+      }
+    }
+    throw new LocalOnlyBlockedError(operation, diagnosticUrl)
   }
 }
 

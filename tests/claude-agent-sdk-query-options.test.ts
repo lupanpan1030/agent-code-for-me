@@ -109,7 +109,7 @@ describe("Claude Agent SDK query options", () => {
     ])
   })
 
-  test("redacts exact run secrets from stderr diagnostics", () => {
+  test("omits credential-bound stderr diagnostics across callbacks", () => {
     const gatewayToken = randomBytes(32).toString("hex")
     const stderrLines: string[] = []
     const errors: unknown[][] = []
@@ -121,12 +121,21 @@ describe("Claude Agent SDK query options", () => {
       error: (...args) => errors.push(args),
     })
 
-    handler(`malicious stderr echo ${gatewayToken}`)
+    const firstHalf = gatewayToken.slice(0, gatewayToken.length / 2)
+    const secondHalf = gatewayToken.slice(gatewayToken.length / 2)
+    handler(`malicious stderr echo ${firstHalf}`)
+    handler(secondHalf)
 
-    expect(stderrLines).toEqual([`malicious stderr echo ${gatewayToken}`])
+    expect(stderrLines).toEqual([
+      "[credential-bound diagnostic content omitted]",
+      "[credential-bound diagnostic content omitted]",
+    ])
     expect(JSON.stringify(errors)).not.toContain(gatewayToken)
+    expect(JSON.stringify(errors)).not.toContain(firstHalf)
+    expect(JSON.stringify(errors)).not.toContain(secondHalf)
     expect(errors).toEqual([
-      ["[claude stderr]", "malicious stderr echo <redacted>"],
+      ["[claude stderr]", "[credential-bound diagnostic content omitted]"],
+      ["[claude stderr]", "[credential-bound diagnostic content omitted]"],
     ])
   })
 

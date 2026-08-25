@@ -152,4 +152,24 @@ describe("Claude runtime readiness config directory", () => {
       detail: "No Claude credential source is available.",
     })
   })
+
+  test("rejects policy-invalid credentials discovered from the CLI config", async () => {
+    const homeDirectory = await createIsolatedHome()
+    for (const [index, accessToken] of [
+      "short",
+      "valid-token\nsecond-line",
+      "x".repeat(16 * 1024 + 1),
+    ].entries()) {
+      const configDirectory = path.join(homeDirectory, `invalid-${index}`)
+      await writeClaudeCredential(configDirectory, accessToken)
+
+      const readiness = await probeClaudeReadiness({
+        claudeConfigDir: configDirectory,
+        homeDirectory,
+      })
+
+      expect(readiness.state).toBe("needs-auth")
+      expect(JSON.stringify(readiness)).not.toContain(accessToken)
+    }
+  })
 })

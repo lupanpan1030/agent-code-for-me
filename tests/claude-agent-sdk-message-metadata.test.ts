@@ -4,6 +4,7 @@ import {
   type ClaudeAgentSdkMessageMetadataState,
   trackClaudeAgentSdkMessageMetadata,
 } from "../src/main/lib/claude/agent-sdk-message-metadata"
+import { EXACT_SECRET_REDACTION_MARKER } from "../src/shared/secret-redaction-policy"
 
 const originalConsoleLog = console.log
 
@@ -120,6 +121,6 @@ describe("Claude Agent SDK message metadata tracker", () => {
     const calls = (console.log as unknown as { mock: { calls: unknown[][] } })
       .mock.calls
     expect(JSON.stringify(calls)).not.toContain(gatewayToken)
-    expect(JSON.stringify(calls)).toContain("<redacted>")
+    expect(JSON.stringify(calls)).toContain(EXACT_SECRET_REDACTION_MARKER)
   })
 })

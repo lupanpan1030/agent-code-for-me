@@ -1,5 +1,10 @@
 import { redactExactSecretHints } from "../agent-runtime/redaction"
-import type { MCPServer, MCPServerStatus, MessageMetadata, UIMessageChunk } from "./types";
+import type {
+  MCPServer,
+  MCPServerStatus,
+  MessageMetadata,
+  UIMessageChunk,
+} from "./types"
 
 export function createTransformer(options?: {
   isUsingOllama?: boolean
@@ -51,12 +56,16 @@ export function createTransformer(options?: {
   } | null = null
 
   // Helper to create composite toolCallId: "parentId:childId" or just "childId"
-  const makeCompositeId = (originalId: string, parentId: string | null): string => {
+  const makeCompositeId = (
+    originalId: string,
+    parentId: string | null,
+  ): string => {
     if (parentId) return `${parentId}:${originalId}`
     return originalId
   }
 
-  const genId = () => `text-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+  const genId = () =>
+    `text-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
 
   // Helper to end current text block
   function* endTextBlock(): Generator<UIMessageChunk> {
@@ -84,12 +93,13 @@ export function createTransformer(options?: {
           // resulting in incomplete JSON like '{"prompt":"write co'
           console.error(
             "[transform] Failed to parse tool input JSON:",
-            redactExactSecretHints((e as Error).message, options?.secretHints).value,
+            redactExactSecretHints((e as Error).message, options?.secretHints)
+              .value,
             "partial:",
             redactExactSecretHints(
-              accumulatedToolInput.slice(0, 120),
+              accumulatedToolInput,
               options?.secretHints,
-            ).value,
+            ).value.slice(0, 120),
           )
           parsedInput = { _raw: accumulatedToolInput, _parseError: true }
         }
@@ -110,7 +120,6 @@ export function createTransformer(options?: {
   }
 
   return function* transform(msg: any): Generator<UIMessageChunk> {
-
     // Track parent_tool_use_id for nested tools
     // Only update when explicitly present (don't reset on messages without it)
     if (msg.parent_tool_use_id !== undefined) {
@@ -138,7 +147,10 @@ export function createTransformer(options?: {
       if (!event) return
 
       // Text block start
-      if (event.type === "content_block_start" && event.content_block?.type === "text") {
+      if (
+        event.type === "content_block_start" &&
+        event.content_block?.type === "text"
+      ) {
         yield* endTextBlock()
         yield* endToolInput()
         textId = genId()
@@ -147,7 +159,10 @@ export function createTransformer(options?: {
       }
 
       // Text delta
-      if (event.type === "content_block_delta" && event.delta?.type === "text_delta") {
+      if (
+        event.type === "content_block_delta" &&
+        event.delta?.type === "text_delta"
+      ) {
         if (!textStarted) {
           yield* endToolInput()
           textId = genId()
@@ -168,7 +183,10 @@ export function createTransformer(options?: {
       }
 
       // Tool use start (streaming)
-      if (event.type === "content_block_start" && event.content_block?.type === "tool_use") {
+      if (
+        event.type === "content_block_start" &&
+        event.content_block?.type === "tool_use"
+      ) {
         yield* endTextBlock()
         yield* endToolInput()
 
@@ -182,10 +200,10 @@ export function createTransformer(options?: {
 
         // Emit tool-input-start for progressive UI
         yield {
-	        type: "tool-input-start",
-	        toolCallId: currentToolCallId,
-	        toolName: currentToolName ?? "unknown",
-	      }
+          type: "tool-input-start",
+          toolCallId: currentToolCallId,
+          toolName: currentToolName ?? "unknown",
+        }
       }
 
       // Tool input delta
@@ -202,7 +220,10 @@ export function createTransformer(options?: {
       }
 
       // Thinking content block start (Extended Thinking)
-      if (event.type === "content_block_start" && event.content_block?.type === "thinking") {
+      if (
+        event.type === "content_block_start" &&
+        event.content_block?.type === "thinking"
+      ) {
         currentThinkingId = `thinking-${Date.now()}`
         accumulatedThinking = ""
         inThinkingBlock = true
@@ -215,7 +236,11 @@ export function createTransformer(options?: {
       }
 
       // Thinking/reasoning streaming - emit as tool-like chunks for UI
-      if (event.delta?.type === "thinking_delta" && currentThinkingId && inThinkingBlock) {
+      if (
+        event.delta?.type === "thinking_delta" &&
+        currentThinkingId &&
+        inThinkingBlock
+      ) {
         const thinkingText = String(event.delta.thinking || "")
         accumulatedThinking += thinkingText
 
@@ -232,9 +257,13 @@ export function createTransformer(options?: {
           inputTextDelta: prefix + escaped,
         }
       }
-      
+
       // Thinking complete (content_block_stop while in thinking block)
-      if (event.type === "content_block_stop" && inThinkingBlock && currentThinkingId) {
+      if (
+        event.type === "content_block_stop" &&
+        inThinkingBlock &&
+        currentThinkingId
+      ) {
         yield {
           type: "tool-input-available",
           toolCallId: currentThinkingId,
@@ -257,11 +286,16 @@ export function createTransformer(options?: {
 
     // Track per-turn usage from main assistant messages only.
     // Sidechain/subagent assistant messages have parent_tool_use_id set.
-    if (msg.type === "assistant" && msg.message?.usage && msg.parent_tool_use_id == null) {
+    if (
+      msg.type === "assistant" &&
+      msg.message?.usage &&
+      msg.parent_tool_use_id == null
+    ) {
       lastMainAssistantUsage = {
         input_tokens: msg.message.usage.input_tokens ?? 0,
         cache_read_input_tokens: msg.message.usage.cache_read_input_tokens ?? 0,
-        cache_creation_input_tokens: msg.message.usage.cache_creation_input_tokens ?? 0,
+        cache_creation_input_tokens:
+          msg.message.usage.cache_creation_input_tokens ?? 0,
         output_tokens: msg.message.usage.output_tokens ?? 0,
       }
     }
@@ -340,11 +374,16 @@ export function createTransformer(options?: {
     }
 
     // ===== USER MESSAGE (tool results) =====
-    if (msg.type === "user" && msg.message?.content && Array.isArray(msg.message.content)) {
+    if (
+      msg.type === "user" &&
+      msg.message?.content &&
+      Array.isArray(msg.message.content)
+    ) {
       for (const block of msg.message.content) {
         if (block.type === "tool_result") {
           // Lookup composite ID from mapping, fallback to original
-          const compositeId = toolIdMapping.get(block.tool_use_id) || block.tool_use_id
+          const compositeId =
+            toolIdMapping.get(block.tool_use_id) || block.tool_use_id
 
           if (block.is_error) {
             yield {
@@ -355,11 +394,11 @@ export function createTransformer(options?: {
           } else {
             // Try to parse structured data from block.content if it's JSON
             let output = msg.tool_use_result
-            if (!output && typeof block.content === 'string') {
+            if (!output && typeof block.content === "string") {
               try {
                 // Some tool results may have JSON embedded in the string
                 const parsed = JSON.parse(block.content)
-                if (parsed && typeof parsed === 'object') {
+                if (parsed && typeof parsed === "object") {
                   output = parsed
                 }
               } catch {
@@ -384,7 +423,21 @@ export function createTransformer(options?: {
       if (msg.subtype === "init") {
         // Map MCP servers with validated status type and additional info
         const mcpServers: MCPServer[] = (msg.mcp_servers || []).map(
-          (s: { name: string; status: string; serverInfo?: { name: string; version: string; icons?: { src: string; mimeType?: string; sizes?: string[]; theme?: "light" | "dark" }[] }; error?: string }) => ({
+          (s: {
+            name: string
+            status: string
+            serverInfo?: {
+              name: string
+              version: string
+              icons?: {
+                src: string
+                mimeType?: string
+                sizes?: string[]
+                theme?: "light" | "dark"
+              }[]
+            }
+            error?: string
+          }) => ({
             name: s.name,
             status: (["connected", "failed", "pending", "needs-auth"].includes(
               s.status,
@@ -448,7 +501,8 @@ export function createTransformer(options?: {
       const fallbackUsage = {
         input_tokens: msg.usage?.input_tokens ?? 0,
         cache_read_input_tokens: msg.usage?.cache_read_input_tokens ?? 0,
-        cache_creation_input_tokens: msg.usage?.cache_creation_input_tokens ?? 0,
+        cache_creation_input_tokens:
+          msg.usage?.cache_creation_input_tokens ?? 0,
         output_tokens: resultOutputTokens ?? 0,
       }
 

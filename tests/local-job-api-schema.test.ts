@@ -150,6 +150,7 @@ describe("Local Job API v1 JSON Schema", () => {
     const promptText = prompt.text as SchemaObject
     const artifacts = properties.artifacts as SchemaObject
     const provider = properties.provider as SchemaObject
+    const providerSelection = def(schema, "providerSelection")
     const artifactObject = (artifacts.oneOf as SchemaObject[])[0]
     const artifactProperties = artifactObject.properties as Record<
       string,
@@ -181,6 +182,10 @@ describe("Local Job API v1 JSON Schema", () => {
       default: "agent",
     })
     expect(provider).toEqual({ $ref: "#/$defs/providerSelection" })
+    expect(providerSelection.anyOf).toEqual([
+      { required: ["profileId"] },
+      { required: ["model"] },
+    ])
     expect(artifactProperties.writePolicy.default).toBe("metadata-only")
     expect(agentCreateRequest.description).toContain("secret-like")
     expect(agentCreateRequest.description).toContain("1 MiB")
@@ -202,6 +207,31 @@ describe("Local Job API v1 JSON Schema", () => {
       $ref: "#/$defs/explicitProviderSelection",
     })
     expect(completionProperties.responseFormat).toBeDefined()
+  })
+
+  test("rejects empty or nullable provider selections while allowing omission", () => {
+    const schema = loadSchema()
+    const validate = schemaValidator(schema, "#/$defs/agentCreateRequest")
+    const baseRequest = {
+      apiVersion: LOCAL_JOB_API_VERSION,
+      consumer: { id: "schema-test" },
+      project: { cwd: "/tmp/locus-schema-project" },
+      runtime: { id: "codex" },
+      mode: "agent",
+      prompt: { text: "Keep provider routing explicit." },
+    }
+
+    expect(validate(baseRequest), JSON.stringify(validate.errors, null, 2)).toBe(
+      true,
+    )
+    for (const provider of [
+      {},
+      { profileId: null },
+      { model: null },
+      { profileId: null, model: null },
+    ]) {
+      expect(validate({ ...baseRequest, provider })).toBe(false)
+    }
   })
 
   test("keeps output envelopes tied to stable v1 envelope definitions", () => {

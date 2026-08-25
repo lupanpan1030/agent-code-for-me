@@ -1,6 +1,18 @@
 import { describe, expect, mock, test } from "bun:test"
-import { readFileSync } from "node:fs"
-import type { CreateAgentRuntimeRunRequestInput } from "../src/main/lib/headless/agent-runtime-contract"
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import type {
+  AgentRuntimeObserver,
+  CreateAgentRuntimeRunRequestInput,
+} from "../src/main/lib/headless/agent-runtime-contract"
 
 mock.module("electron", () => ({
   app: {
@@ -169,6 +181,24 @@ describe("headless runtime adapters", () => {
     }
   })
 
+  test("Claude registers its native OAuth token before runtime output", async () => {
+    const registeredHints: Array<readonly string[]> = []
+    const observer: Pick<AgentRuntimeObserver, "registerSecretHints"> = {
+      registerSecretHints: (hints) => registeredHints.push(hints),
+    }
+
+    __testClaudeCodeHeadless.registerClaudeHeadlessRuntimeSecrets(observer, {
+      CLAUDE_CODE_OAUTH_TOKEN: "native-oauth-token",
+    })
+
+    expect(registeredHints).toEqual([["native-oauth-token"]])
+    expect(() =>
+      __testClaudeCodeHeadless.registerClaudeHeadlessRuntimeSecrets(observer, {
+        CLAUDE_CODE_OAUTH_TOKEN: "short",
+      }),
+    ).toThrow("OAuth credential is invalid")
+  })
+
   test("Claude provider profile runs use gateway auth without app token injection", async () => {
     let queriedAppAccount = false
     const providerRequest = request({
@@ -281,6 +311,49 @@ describe("headless runtime adapters", () => {
     ])
   })
 
+  test("Claude headless env never injects an OAuth token below the exact-redaction floor", async () => {
+    const warnings: string[] = []
+    const env = await __testClaudeCodeHeadless.buildClaudeRuntimeEnv({
+      jobId: "job_123",
+      dependencies: {
+        buildEnv: () => ({ PATH: "/usr/bin" }),
+        hasAnyAccount: () => true,
+        getValidCredential: async () => ({ accessToken: "short" }),
+        getClaudeConfigDir: () => "/tmp/locus-test-home/.claude",
+        warn: (message) => warnings.push(message),
+      },
+    })
+
+    expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined()
+    expect(warnings).toEqual([
+      expect.stringContaining("falling back to Claude CLI login"),
+    ])
+  })
+
+  test("Claude headless env rejects oversized and control-bearing app credentials", async () => {
+    for (const accessToken of [
+      "x".repeat(16 * 1024 + 1),
+      "valid-token\nsecond-line",
+    ]) {
+      const warnings: string[] = []
+      const env = await __testClaudeCodeHeadless.buildClaudeRuntimeEnv({
+        jobId: "job_123",
+        dependencies: {
+          buildEnv: () => ({ PATH: "/usr/bin" }),
+          hasAnyAccount: () => true,
+          getValidCredential: async () => ({ accessToken }),
+          getClaudeConfigDir: () => "/tmp/locus-test-home/.claude",
+          warn: (message) => warnings.push(message),
+        },
+      })
+
+      expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined()
+      expect(warnings).toEqual([
+        expect.stringContaining("falling back to Claude CLI login"),
+      ])
+    }
+  })
+
   test("Claude headless env defaults to the CLI config directory", async () => {
     const env = await __testClaudeCodeHeadless.buildClaudeRuntimeEnv({
       jobId: "job_123",
@@ -338,7 +411,7 @@ describe("headless runtime adapters", () => {
 
     expect(args[0]).toBe("exec")
     expect(source).toContain('label: "Codex headless/batch"')
-    expect(source).not.toContain("app-server")
+    expect(source).not.toContain("createCodexAppServerAdapter")
     expect(source).not.toContain("desktop chat")
   })
 
@@ -417,5 +490,146 @@ describe("headless runtime adapters", () => {
     expect(env.LOCUS_CODEX_PROVIDER_GATEWAY_TOKEN).toBe("gateway-token")
     expect(env.CODEX_API_KEY).toBeUndefined()
     expect(env.LOCUS_HEADLESS_JOB_ID).toBe("job_123")
+  })
+
+  test("Codex exec scrubs provider gateway secrets from shell snapshots before and after the process", async () => {
+    const tempRoot = mkdtempSync(join(tmpdir(), "locus-codex-exec-snapshot-"))
+    const codexHome = join(tempRoot, "codex-home")
+    const snapshotDir = join(codexHome, "shell_snapshots")
+    const staleSnapshot = join(snapshotDir, "stale.sh")
+    const runtimeSnapshot = join(snapshotDir, "runtime.sh")
+    const gatewayToken = "gateway-token-selected-for-headless-exec"
+    mkdirSync(snapshotDir, { recursive: true })
+    writeFileSync(
+      staleSnapshot,
+      `export LOCUS_CODEX_PROVIDER_GATEWAY_TOKEN=${gatewayToken}\n`,
+      "utf8",
+    )
+
+    try {
+      const providerRequest = request({
+        runtime: "codex",
+        providerBinding: {
+          model: "gpt-5.3-codex",
+          modelSource: "provider-profile:codex-main",
+          providerProfileId: "codex-main",
+          providerProfileName: "Codex Main",
+          gatewayEndpoint:
+            "http://127.0.0.1:1234/profile/codex-main/responses/v1",
+          gatewayToken,
+          authMode: "provider-profile",
+        },
+      })
+      const runner = __testCodexHeadless.createCodexHeadlessTaskRunner({
+        buildRuntimeEnv: () => ({
+          PATH: "/usr/bin",
+          CODEX_HOME: codexHome,
+          LOCUS_CODEX_PROVIDER_GATEWAY_TOKEN: gatewayToken,
+          LOCUS_HEADLESS_JOB_ID: "job_123",
+        }),
+        resolveExecutable: () => "/tmp/codex",
+        runProcess: async (input) => {
+          expect(readFileSync(staleSnapshot, "utf8")).not.toContain(
+            gatewayToken,
+          )
+          expect(input.env?.LOCUS_CODEX_PROVIDER_GATEWAY_TOKEN).toBe(
+            gatewayToken,
+          )
+          writeFileSync(
+            runtimeSnapshot,
+            [
+              `export LOCUS_CODEX_PROVIDER_GATEWAY_TOKEN=${gatewayToken}`,
+              `printf '${gatewayToken}'`,
+              "export SAFE_FLAG=ok",
+            ].join("\n"),
+            "utf8",
+          )
+          return {
+            status: "succeeded",
+            exitCode: 0,
+            result: { finalMessage: "done" },
+          }
+        },
+      })
+      const observer = {
+        appendEvent: () => ({}),
+        heartbeat: () => ({}),
+        isCancelRequested: () => false,
+      } as unknown as AgentRuntimeObserver
+
+      const result = await runner(providerRequest, observer)
+
+      expect(result.status).toBe("succeeded")
+      expect(readFileSync(staleSnapshot, "utf8")).not.toContain(gatewayToken)
+      expect(readFileSync(runtimeSnapshot, "utf8")).not.toContain(gatewayToken)
+      expect(readFileSync(runtimeSnapshot, "utf8")).toContain("SAFE_FLAG=ok")
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true })
+    }
+  })
+
+  test("Codex exec keeps post-run snapshot security failure authoritative over cancellation", async () => {
+    const tempRoot = mkdtempSync(join(tmpdir(), "locus-codex-exec-cleanup-"))
+    const codexHome = join(tempRoot, "codex-home")
+    const snapshotDir = join(codexHome, "shell_snapshots")
+    const outsideSnapshot = join(tempRoot, "outside.sh")
+    const controller = new AbortController()
+    mkdirSync(snapshotDir, { recursive: true })
+    writeFileSync(outsideSnapshot, "export SAFE_FLAG=unchanged\n", "utf8")
+
+    try {
+      const events: Array<{ type: string; payload: unknown }> = []
+      const runner = __testCodexHeadless.createCodexHeadlessTaskRunner({
+        buildRuntimeEnv: () => ({
+          PATH: "/usr/bin",
+          CODEX_HOME: codexHome,
+          CODEX_API_KEY: "codex-cleanup-test-secret",
+          LOCUS_HEADLESS_JOB_ID: "job_123",
+        }),
+        resolveExecutable: () => "/tmp/codex",
+        runProcess: async () => {
+          symlinkSync(outsideSnapshot, join(snapshotDir, "unverified.sh"))
+          controller.abort()
+          return {
+            status: "canceled",
+            exitCode: 5,
+            errorCode: "job_canceled",
+            errorMessage: "Job was canceled.",
+          }
+        },
+      })
+      const observer = {
+        appendEvent: (type: string, payload: unknown) => {
+          events.push({ type, payload })
+          return {}
+        },
+        heartbeat: () => ({}),
+        isCancelRequested: () => controller.signal.aborted,
+        registerSecretHints: () => {},
+      } as unknown as AgentRuntimeObserver
+
+      const result = await runner(
+        request({ runtime: "codex", signal: controller.signal }),
+        observer,
+      )
+
+      expect(result).toMatchObject({
+        status: "failed",
+        exitCode: 1,
+        errorCode: "runtime_security_cleanup_failed",
+      })
+      expect(events).toContainEqual({
+        type: "error",
+        payload: expect.objectContaining({
+          errorCode: "runtime_security_cleanup_failed",
+          phase: "post-run",
+        }),
+      })
+      expect(readFileSync(outsideSnapshot, "utf8")).toBe(
+        "export SAFE_FLAG=unchanged\n",
+      )
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true })
+    }
   })
 })

@@ -151,6 +151,40 @@ describe("Local Job API v1 shared contract", () => {
     }
   })
 
+  test("distinguishes an omitted provider from an invalid empty provider block", () => {
+    const baseRequest = {
+      apiVersion: LOCAL_JOB_API_VERSION,
+      consumer: { id: "docs-workbench" },
+      project: { cwd: process.cwd() },
+      runtime: { id: "codex" },
+      mode: "agent",
+      prompt: { text: "Keep provider routing explicit." },
+    }
+
+    expect(validateLocalJobApiCreateRequest(baseRequest)).toMatchObject({
+      ok: true,
+      request: { provider: { profileId: null, model: null } },
+    })
+
+    for (const provider of [
+      {},
+      { profileId: null },
+      { model: null },
+      { profileId: null, model: null },
+    ]) {
+      const result = validateLocalJobApiCreateRequest({
+        ...baseRequest,
+        provider,
+      })
+      expect(result.ok).toBe(false)
+      if (!result.ok) {
+        expect(result.errors).toContain(
+          "provider must include a non-empty profileId or model",
+        )
+      }
+    }
+  })
+
   test("requires bounded policy scopes for policy-grant execution", () => {
     const request = validateLocalJobApiCreateRequest({
       apiVersion: LOCAL_JOB_API_VERSION,

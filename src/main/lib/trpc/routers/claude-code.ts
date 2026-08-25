@@ -1,5 +1,6 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto"
 import { z } from "zod"
+import { MAX_HEADER_SAFE_CREDENTIAL_LENGTH } from "../../../../shared/secret-redaction-policy"
 import { getRegisteredAgentRuntimeManifest } from "../../agent-runtime/runtime-registry"
 import {
   getBundledClaudeBinaryPath,
@@ -15,7 +16,7 @@ import {
 } from "../../claude-credentials"
 import {
   CLAUDE_CODE_OAUTH_CLIENT_ID,
-  CLAUDE_CODE_TOKEN_URL,
+  exchangeClaudeCodeAuthCode,
   getExistingClaudeCredentials,
 } from "../../claude-token"
 import { getRuntimeExecutableStatus } from "../../runtime-executable"
@@ -56,13 +57,6 @@ const CLAUDE_OAUTH_SCOPES = [
   "user:sessions:claude_code",
   "user:mcp_servers",
 ]
-
-type ClaudeCodeTokenResponse = {
-  access_token?: string
-  refresh_token?: string
-  expires_in?: number
-  scope?: string
-}
 
 function redactClaudeLoginOutput(output: string): string {
   return output
@@ -155,56 +149,6 @@ function parseManualClaudeAuthCode(input: string): {
   return { authorizationCode, state }
 }
 
-async function exchangeClaudeCodeAuthCode({
-  authorizationCode,
-  state,
-  codeVerifier,
-}: {
-  authorizationCode: string
-  state: string
-  codeVerifier: string
-}) {
-  const response = await fetch(CLAUDE_CODE_TOKEN_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      grant_type: "authorization_code",
-      code: authorizationCode,
-      redirect_uri: CLAUDE_MANUAL_REDIRECT_URL,
-      client_id: CLAUDE_CODE_OAUTH_CLIENT_ID,
-      code_verifier: codeVerifier,
-      state,
-    }),
-  })
-
-  if (!response.ok) {
-    const body = await response.text().catch(() => "")
-    throw new Error(
-      response.status === 401
-        ? "Authentication failed: invalid or expired Claude Code authentication code."
-        : `Claude Code token exchange failed (${response.status}): ${body || response.statusText}`,
-    )
-  }
-
-  const tokenResponse = (await response.json()) as ClaudeCodeTokenResponse
-  if (!tokenResponse.access_token) {
-    throw new Error(
-      "Claude Code token exchange succeeded, but no access token was returned.",
-    )
-  }
-
-  return {
-    accessToken: tokenResponse.access_token,
-    refreshToken: tokenResponse.refresh_token,
-    expiresAt: tokenResponse.expires_in
-      ? Date.now() + tokenResponse.expires_in * 1000
-      : undefined,
-    scopes: tokenResponse.scope?.split(" ").filter(Boolean),
-  }
-}
-
 /**
  * Claude Code OAuth router for desktop
  * Uses first-party Claude Code OAuth and stores tokens locally.
@@ -244,7 +188,6 @@ export const claudeCodeRouter = router({
       hasApiKey: !!(
         shellEnv.ANTHROPIC_API_KEY || shellEnv.ANTHROPIC_AUTH_TOKEN
       ),
-      baseUrl: shellEnv.ANTHROPIC_BASE_URL || null,
     }
   }),
 
@@ -362,6 +305,7 @@ export const claudeCodeRouter = router({
           authorizationCode,
           state,
           codeVerifier: session.codeVerifier,
+          redirectUri: CLAUDE_MANUAL_REDIRECT_URL,
         })
         const result = storeClaudeCodeOAuthCredential(credential, {
           source: "manual",
@@ -420,13 +364,11 @@ export const claudeCodeRouter = router({
   importToken: publicProcedure
     .input(
       z.object({
-        token: z.string().min(1),
+        token: z.string().min(1).max(MAX_HEADER_SAFE_CREDENTIAL_LENGTH),
       }),
     )
     .mutation(async ({ input }) => {
-      const oauthToken = input.token.trim()
-
-      storeClaudeCodeOAuthToken(oauthToken, {
+      storeClaudeCodeOAuthToken(input.token, {
         source: "manual",
         displayName: "Claude Code Manual Token",
       })

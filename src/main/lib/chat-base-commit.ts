@@ -1,36 +1,56 @@
 import { and, eq, isNull } from "drizzle-orm"
-import simpleGit from "simple-git"
 import type { getDatabase } from "./db"
 import { chats } from "./db/schema"
+import { createGit } from "./git/git-factory"
 import { refExistsLocally } from "./git/worktree"
 
 export type ChatBaseCommitDatabase = ReturnType<typeof getDatabase>
 
+export type ChatBaseCommitOperationOptions = {
+  signal?: AbortSignal
+  timeoutMs?: number
+}
+
 export type EnsureChatBaseCommitDependencies = {
-  getMergeBase?: (worktreePath: string, baseBranch: string) => Promise<string>
+  getMergeBase?: (
+    worktreePath: string,
+    baseBranch: string,
+    options?: ChatBaseCommitOperationOptions,
+  ) => Promise<string>
   getCommitDistance?: (
     worktreePath: string,
     baseCommit: string,
+    options?: ChatBaseCommitOperationOptions,
   ) => Promise<number>
-  refExistsLocally?: (worktreePath: string, ref: string) => Promise<boolean>
+  refExistsLocally?: (
+    worktreePath: string,
+    ref: string,
+    options?: ChatBaseCommitOperationOptions,
+  ) => Promise<boolean>
 }
 
 async function getMergeBase(
   worktreePath: string,
   baseBranch: string,
+  options?: ChatBaseCommitOperationOptions,
 ): Promise<string> {
-  return simpleGit(worktreePath).raw(["merge-base", "HEAD", baseBranch])
+  return createGit(worktreePath, {
+    signal: options?.signal,
+    timeoutMs: options?.timeoutMs,
+    absoluteTimeout: true,
+  }).raw(["merge-base", "HEAD", baseBranch])
 }
 
 async function getCommitDistance(
   worktreePath: string,
   baseCommit: string,
+  options?: ChatBaseCommitOperationOptions,
 ): Promise<number> {
-  const output = await simpleGit(worktreePath).raw([
-    "rev-list",
-    "--count",
-    `${baseCommit}..HEAD`,
-  ])
+  const output = await createGit(worktreePath, {
+    signal: options?.signal,
+    timeoutMs: options?.timeoutMs,
+    absoluteTimeout: true,
+  }).raw(["rev-list", "--count", `${baseCommit}..HEAD`])
   const distance = Number.parseInt(output.trim(), 10)
   if (!Number.isFinite(distance)) {
     throw new Error("Could not determine the fork-commit distance")
@@ -41,32 +61,38 @@ async function getCommitDistance(
 async function resolveBackfillBaseCommit(
   worktreePath: string,
   baseBranch: string,
+  options: ChatBaseCommitOperationOptions,
   dependencies: EnsureChatBaseCommitDependencies,
 ): Promise<string | null> {
   const readMergeBase = dependencies.getMergeBase ?? getMergeBase
   const candidates: string[] = []
 
+  if (options.signal?.aborted) return null
   try {
     const localMergeBase = (
-      await readMergeBase(worktreePath, baseBranch)
+      await readMergeBase(worktreePath, baseBranch, options)
     ).trim()
     if (localMergeBase) candidates.push(localMergeBase)
   } catch {}
+  if (options.signal?.aborted) return null
 
   const remoteBaseRef = `origin/${baseBranch}`
   if (
     await (dependencies.refExistsLocally ?? refExistsLocally)(
       worktreePath,
       remoteBaseRef,
+      options,
     )
   ) {
+    if (options.signal?.aborted) return null
     try {
       const remoteMergeBase = (
-        await readMergeBase(worktreePath, remoteBaseRef)
+        await readMergeBase(worktreePath, remoteBaseRef, options)
       ).trim()
       if (remoteMergeBase) candidates.push(remoteMergeBase)
     } catch {}
   }
+  if (options.signal?.aborted) return null
 
   const uniqueCandidates = Array.from(new Set(candidates))
   if (uniqueCandidates.length === 0) return null
@@ -76,9 +102,10 @@ async function resolveBackfillBaseCommit(
   const rankedCandidates = await Promise.all(
     uniqueCandidates.map(async (candidate) => ({
       candidate,
-      distance: await readDistance(worktreePath, candidate),
+      distance: await readDistance(worktreePath, candidate, options),
     })),
   )
+  if (options.signal?.aborted) return null
   rankedCandidates.sort((left, right) => left.distance - right.distance)
   if (rankedCandidates[0]?.distance === rankedCandidates[1]?.distance) {
     return null
@@ -89,8 +116,11 @@ async function resolveBackfillBaseCommit(
 export async function ensureChatBaseCommit(
   db: ChatBaseCommitDatabase,
   chatId: string,
+  options: ChatBaseCommitOperationOptions = {},
   dependencies: EnsureChatBaseCommitDependencies = {},
 ): Promise<string | null> {
+  if (options.signal?.aborted) return null
+
   const chat = db
     .select({
       baseCommit: chats.baseCommit,
@@ -110,6 +140,7 @@ export async function ensureChatBaseCommit(
     baseCommit = await resolveBackfillBaseCommit(
       chat.worktreePath,
       chat.baseBranch,
+      options,
       dependencies,
     )
   } catch {
@@ -117,6 +148,10 @@ export async function ensureChatBaseCommit(
   }
 
   if (!baseCommit) return null
+  // The request-level timeout may already have won its promise race while an
+  // injected dependency ignored cancellation and returned late. Never turn
+  // that stale result into a durable write after the signal is aborted.
+  if (options.signal?.aborted) return null
 
   // Force-push drift is accepted per Decision 4: backfill once and retain the
   // first stored fork commit. The compare-and-set prevents concurrent callers

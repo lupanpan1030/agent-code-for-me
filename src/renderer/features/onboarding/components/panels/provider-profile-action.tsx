@@ -57,13 +57,14 @@ export function ProviderProfileAction() {
         (profile) =>
           profile.protocol === "anthropic" &&
           profile.targetRuntimes.includes("claude") &&
+          profile.credentialUsable &&
           profile.lastTestStatus?.ok !== false,
       ),
     [providerProfiles.data?.profiles],
   )
   const alreadyConnected =
     Boolean(anthropicProfile) ||
-    Boolean(secureProviderConfig.data?.config?.hasToken)
+    Boolean(secureProviderConfig.data?.config?.credentialUsable)
 
   const submitApiKey = () => {
     const key = apiKey

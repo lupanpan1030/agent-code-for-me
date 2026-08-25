@@ -64,7 +64,7 @@ export function useSetupStatus(): SetupStatus {
     const hasClaudeApiProfile =
       Boolean(
         getUsableClaudeProviderProfile(providerProfiles.data?.profiles ?? []),
-      ) || Boolean(secureProviderConfig.data?.config?.hasToken)
+      ) || Boolean(secureProviderConfig.data?.config?.credentialUsable)
 
     // Trust the persisted selection while the list loads to avoid flashing the
     // repo step on relaunch (mirrors App.tsx's validatedProject logic).

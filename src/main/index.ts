@@ -244,12 +244,10 @@ const authCallbackServer = createServer((req, res) => {
       // Handle MCP OAuth callback
       const code = url.searchParams.get("code")
       const state = url.searchParams.get("state")
-      console.log(
-        "[Auth Server] Received MCP OAuth callback with code:",
-        code?.slice(0, 8) + "...",
-        "state:",
-        state?.slice(0, 8) + "...",
-      )
+      console.log("[Auth Server] Received MCP OAuth callback", {
+        hasCode: Boolean(code),
+        hasState: Boolean(state),
+      })
 
       if (code && state) {
         // Handle the MCP OAuth callback

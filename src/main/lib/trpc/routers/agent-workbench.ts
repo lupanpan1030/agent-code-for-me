@@ -369,7 +369,8 @@ export const agentWorkbenchRouter = router({
       }))
 
       return checkCrossWorkspaceConflicts(workspaces, {
-        ensureBaseCommit: (taskId) => ensureChatBaseCommit(db, taskId),
+        ensureBaseCommit: (taskId, options) =>
+          ensureChatBaseCommit(db, taskId, options),
         getHeadSha: getGitHeadSha,
         getWorkspaceSummary: (worktreePath, options) =>
           getAgentWorkbenchDiffSummary(worktreePath, options),

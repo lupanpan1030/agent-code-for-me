@@ -57,6 +57,7 @@ import {
   retryAgentJob,
 } from "./job-store"
 import {
+  closeLocalJobApiArtifactRunDir,
   createLocalJobApiJob,
   getLocalJobApiEvents,
   getLocalJobApiJobOrThrow,
@@ -74,6 +75,7 @@ import {
   type HeadlessProviderBindingDependencies,
   HeadlessProviderBindingError,
   isInvalidHeadlessProviderBindingRequestCode,
+  isLocalOnlyHeadlessProviderBindingCode,
   isUnavailableHeadlessProviderBindingCode,
 } from "./provider-binding"
 import {
@@ -452,49 +454,53 @@ async function runPreparedLocalJobApiJob(
   prepared: ReturnType<typeof createLocalJobApiJob>,
   options: RunHeadlessCliCommandOptions,
 ): Promise<RunPersistedAgentJobResult> {
-  const initialArtifacts = writeLocalJobApiInitialArtifacts({
-    runDir: prepared.runDir,
-    request: prepared.request,
-    job: prepared.job,
-    events: listAgentJobEvents(options.db, prepared.job.id),
-  })
-  if (initialArtifacts.length > 0) {
-    appendAgentJobEvent(options.db, {
-      jobId: prepared.job.id,
-      type: "artifact_created",
-      payload: {
-        artifacts: initialArtifacts,
-      },
+  try {
+    const initialArtifacts = writeLocalJobApiInitialArtifacts({
+      runDir: prepared.runDir,
+      request: prepared.request,
+      job: prepared.job,
+      events: listAgentJobEvents(options.db, prepared.job.id),
     })
-  }
+    if (initialArtifacts.length > 0) {
+      appendAgentJobEvent(options.db, {
+        jobId: prepared.job.id,
+        type: "artifact_created",
+        payload: {
+          artifacts: initialArtifacts,
+        },
+      })
+    }
 
-  const result =
-    prepared.request.kind === "completion"
-      ? await runPersistedCompletionJob({
-          db: options.db,
-          jobId: prepared.job.id,
-          fetchImpl: options.completionFetch,
-          providerBindingDependencies: options.providerBindingDependencies,
-        })
-      : await runPersistedAgentJob({
-          db: options.db,
-          jobId: prepared.job.id,
-          runner: options.runner,
-          env: options.env,
-          providerBindingDependencies: options.providerBindingDependencies,
-        })
-  const finalEvents = listAgentJobEvents(options.db, result.job.id)
-  const artifacts = writeLocalJobApiFinalArtifacts({
-    runDir: prepared.runDir,
-    job: result.job,
-    events: finalEvents,
-  })
-  writeJson(options.stdout, {
-    apiVersion: LOCAL_JOB_API_VERSION,
-    job: toLocalJobApiJobEnvelope(result.job).job,
-    result: toLocalJobApiResultEnvelope(result.job, artifacts, finalEvents),
-  })
-  return result
+    const result =
+      prepared.request.kind === "completion"
+        ? await runPersistedCompletionJob({
+            db: options.db,
+            jobId: prepared.job.id,
+            fetchImpl: options.completionFetch,
+            providerBindingDependencies: options.providerBindingDependencies,
+          })
+        : await runPersistedAgentJob({
+            db: options.db,
+            jobId: prepared.job.id,
+            runner: options.runner,
+            env: options.env,
+            providerBindingDependencies: options.providerBindingDependencies,
+          })
+    const finalEvents = listAgentJobEvents(options.db, result.job.id)
+    const artifacts = writeLocalJobApiFinalArtifacts({
+      runDir: prepared.runDir,
+      job: result.job,
+      events: finalEvents,
+    })
+    writeJson(options.stdout, {
+      apiVersion: LOCAL_JOB_API_VERSION,
+      job: toLocalJobApiJobEnvelope(result.job).job,
+      result: toLocalJobApiResultEnvelope(result.job, artifacts, finalEvents),
+    })
+    return result
+  } finally {
+    closeLocalJobApiArtifactRunDir(prepared.runDir)
+  }
 }
 
 async function apiRunsCreateCommand(
@@ -749,6 +755,9 @@ function toLocalJobApiProviderErrorEnvelope(
 function localJobApiCreateErrorCode(error: unknown): number {
   if (isProjectRegistrationError(error)) return HEADLESS_EXIT_CODES.invalidCwd
   if (error instanceof HeadlessProviderBindingError) {
+    if (isLocalOnlyHeadlessProviderBindingCode(error.code)) {
+      return HEADLESS_EXIT_CODES.localOnlyBlocked
+    }
     if (isInvalidHeadlessProviderBindingRequestCode(error.code)) {
       return HEADLESS_EXIT_CODES.invalidArguments
     }

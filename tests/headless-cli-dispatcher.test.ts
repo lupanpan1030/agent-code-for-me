@@ -28,6 +28,7 @@ import {
 import { clearRuntimeReadinessCacheForTest } from "../src/main/lib/headless/runtime-readiness"
 import type { ProviderProfileRuntimeConfig } from "../src/main/lib/provider-profiles/storage"
 import { LOCAL_JOB_API_PROJECT_NOT_REGISTERED } from "../src/shared/local-job-api"
+import { EXACT_SECRET_REDACTION_MARKER } from "../src/shared/secret-redaction-policy"
 import { createAgentJobTestDb } from "./helpers/agent-job-test-db"
 
 function writer() {
@@ -444,9 +445,9 @@ describe("headless CLI dispatcher", () => {
     expect(events.map((event) => event.type)).not.toContain("tool_started")
   })
 
-  test("redacts a bare upstream profile token from structured completion results", async () => {
+  test("redacts the minimum-length upstream token from successful structured completion results", async () => {
     const db = createAgentJobTestDb()
-    const upstreamToken = randomBytes(32).toString("hex")
+    const upstreamToken = "token123"
     seedProviderProfile(db, { id: "completion-main", targets: ["codex"] })
     const stdout = writer()
     let authorization: string | null = null
@@ -510,7 +511,7 @@ describe("headless CLI dispatcher", () => {
     expect(code).toBe(0)
     expect(authorization).toBe(`Bearer ${upstreamToken}`)
     expect(created.result.result.content).toEqual({
-      echo: "<redacted>",
+      echo: EXACT_SECRET_REDACTION_MARKER,
     })
     expect(output).not.toContain(upstreamToken)
     expect(persisted).not.toContain(upstreamToken)
@@ -562,7 +563,9 @@ describe("headless CLI dispatcher", () => {
     })
     expect(code).toBe(1)
     expect(persistedJob?.errorCode).toBe("provider_request_failed")
-    expect(persistedJob?.errorMessage).toContain("upstream echoed <redacted>")
+    expect(persistedJob?.errorMessage).toContain(
+      `upstream echoed ${EXACT_SECRET_REDACTION_MARKER}`,
+    )
     expect(output).not.toContain(upstreamToken)
     expect(persisted).not.toContain(upstreamToken)
   })
@@ -890,11 +893,17 @@ describe("headless CLI dispatcher", () => {
 
     expect(code).toBe(6)
     expect(called).toBe(false)
-    expect(JSON.parse(stdout.value()).job).toMatchObject({
-      kind: "completion",
-      status: "failed",
-      errorCode: "local_only_guard_blocked",
+    const parsed = JSON.parse(stdout.value())
+    expect(parsed).toMatchObject({
+      apiVersion: "locus.local-job.v1",
+      error: {
+        code: "local_only_guard_blocked",
+        source: "request-profile",
+        profileId: "completion-main",
+      },
     })
+    expect(parsed).not.toHaveProperty("job")
+    expect(listAgentJobs(db, { source: "api" })).toHaveLength(0)
   })
 
   test("fails Local Job API completion when returned JSON misses caller schema", async () => {
@@ -2611,7 +2620,7 @@ describe("headless CLI dispatcher", () => {
     expect(jobs[0].status).toBe("succeeded")
   })
 
-  test("ACP shutdown cancels active protocol jobs without waiting forever", async () => {
+  test("ACP shutdown detaches a non-cooperative runner without fabricating a terminal job", async () => {
     const db = createAgentJobTestDb()
     seedCurrentProject(db)
     const stdout = writer()
@@ -2667,16 +2676,25 @@ describe("headless CLI dispatcher", () => {
       .filter((line) => line.method === "job/event")
       .map((line) => line.params.event)
       .find((event) => event.type === "completed")
-    expect(completedEvent?.payload).toMatchObject({
-      status: "canceled",
-      errorCode: "job_canceled",
-    })
+    expect(completedEvent).toBeUndefined()
+    expect(
+      lines
+        .filter((line) => line.method === "job/event")
+        .map((line) => line.params.event)
+        .some(
+          (event) =>
+            event.type === "status" &&
+            event.payload?.status === "cancel_requested",
+        ),
+    ).toBe(true)
     const jobs = listAgentJobs(db, { source: "protocol" })
     expect(jobs).toHaveLength(1)
     expect(getAgentJob(db, jobs[0].id)).toMatchObject({
-      status: "canceled",
-      errorCode: "job_canceled",
+      status: "running",
+      errorCode: null,
+      cancelRequestedBy: "protocol",
     })
+    expect(getAgentJob(db, jobs[0].id)?.cancelRequestedAt).toBeInstanceOf(Date)
   })
 
   test("ACP cancel is limited to jobs created by the current stdio session", async () => {

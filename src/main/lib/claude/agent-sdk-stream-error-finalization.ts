@@ -83,34 +83,35 @@ export async function finalizeClaudeAgentSdkStreamError({
   deleteContract,
   log = console.log,
 }: FinalizeClaudeAgentSdkStreamErrorInput): Promise<FinalizeClaudeAgentSdkStreamErrorResult> {
-  const err = streamError as Error
-  const stderrOutput = stderrLines.join("\n")
+  const rawError =
+    streamError instanceof Error ? streamError : new Error(String(streamError))
+  const redactedDiagnostic = redactRuntimePayload(
+    {
+      message: rawError.message,
+      stack: rawError.stack ?? null,
+      stderrOutput: stderrLines.join("\n"),
+    } as JsonValue,
+    {
+      runtimeId: "claude-code",
+      runId: `claude-stream-error:${subChatId}`,
+      source: "runtime-diagnostic",
+      secretHints,
+    },
+  ).payload as {
+    message: string
+    stack: string | null
+    stderrOutput: string
+  }
+  const err = new Error(redactedDiagnostic.message)
+  err.name = rawError.name
+  err.stack = redactedDiagnostic.stack ?? undefined
+  const stderrOutput = redactedDiagnostic.stderrOutput
 
   if (isUsingOllama) {
-    const redactedDiagnostic = redactRuntimePayload(
-      {
-        message: err.message,
-        stack: err.stack ?? null,
-        stderrOutput,
-      } as JsonValue,
-      {
-        runtimeId: "claude-code",
-        runId: `claude-stream-error:${subChatId}`,
-        source: "runtime-diagnostic",
-        secretHints,
-      },
-    ).payload as {
-      message: string
-      stack: string | null
-      stderrOutput: string
-    }
-    const diagnosticError = new Error(redactedDiagnostic.message)
-    diagnosticError.name = err.name
-    diagnosticError.stack = redactedDiagnostic.stack ?? undefined
     logClaudeOllamaStreamError({
-      error: diagnosticError,
+      error: err,
       messageCount,
-      stderrOutput: redactedDiagnostic.stderrOutput,
+      stderrOutput,
     })
   }
 

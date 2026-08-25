@@ -562,8 +562,8 @@ export class CraftOAuth {
     });
 
     if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`Failed to register OAuth client: ${error}`);
+      await response.body?.cancel().catch(() => undefined);
+      throw new Error(`Failed to register OAuth client (${response.status})`);
     }
 
     return response.json() as Promise<{
@@ -627,8 +627,8 @@ export class CraftOAuth {
     });
 
     if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`Failed to exchange code for tokens: ${error}`);
+      await response.body?.cancel().catch(() => undefined);
+      throw new Error(`Failed to exchange code for tokens (${response.status})`);
     }
 
     const data = await response.json() as {
@@ -746,7 +746,7 @@ export class CraftOAuth {
     authUrl.searchParams.set('state', state);
     authUrl.searchParams.set('code_challenge', pkce.challenge);
     authUrl.searchParams.set('code_challenge_method', 'S256');
-    assertOfficialCloudAllowed('open MCP OAuth authorization URL', authUrl.toString());
+    assertOfficialCloudAllowed('open MCP OAuth authorization URL', authUrl.origin);
     assertOfficialCloudAllowed('exchange MCP OAuth token', metadata.token_endpoint);
 
     // Start local server to receive callback
@@ -819,7 +819,7 @@ export class CraftOAuth {
     authUrl.searchParams.set('state', state);
     authUrl.searchParams.set('code_challenge', pkce.challenge);
     authUrl.searchParams.set('code_challenge_method', 'S256');
-    assertOfficialCloudAllowed('open MCP OAuth authorization URL', authUrl.toString());
+    assertOfficialCloudAllowed('open MCP OAuth authorization URL', authUrl.origin);
     assertOfficialCloudAllowed('exchange MCP OAuth token', metadata.token_endpoint);
 
     return {
@@ -868,11 +868,11 @@ export class CraftOAuth {
               title: 'Authorization Failed',
               message: 'You can close this window.',
               isSuccess: false,
-              errorDetail: error,
+              errorDetail: 'The authorization server returned an OAuth error.',
             }));
             clearTimeout(timeout);
             this.stopServer();
-            reject(new Error(`OAuth error: ${error}`));
+            reject(new Error('OAuth authorization failed'));
             return;
           }
 

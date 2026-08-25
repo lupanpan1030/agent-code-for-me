@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test"
+import type { spawn } from "node:child_process"
+import { EventEmitter } from "node:events"
+import { PassThrough } from "node:stream"
 import type {
   AgentRuntimeObserver,
   AgentRuntimeRunRequest,
@@ -7,12 +10,18 @@ import { createAgentRuntimeRunRequest } from "../src/main/lib/headless/agent-run
 import { runProcessAgentTask } from "../src/main/lib/headless/process-runner"
 import type { AgentJobEventType } from "../src/shared/agent-jobs"
 
-function createObserver(options: { cancelAfterHeartbeat?: boolean } = {}) {
+function createObserver(
+  options: {
+    cancelAfterHeartbeat?: boolean
+    onEvent?: (type: AgentJobEventType, payload: unknown) => void
+  } = {},
+) {
   const events: Array<{ type: AgentJobEventType; payload: unknown }> = []
   let heartbeatCount = 0
   const observer: AgentRuntimeObserver = {
     appendEvent(type, payload) {
       events.push({ type, payload })
+      options.onEvent?.(type, payload)
       return {
         id: `event_${events.length}`,
         jobId: "job_123",
@@ -57,8 +66,90 @@ function createObserver(options: { cancelAfterHeartbeat?: boolean } = {}) {
     isCancelRequested() {
       return options.cancelAfterHeartbeat && heartbeatCount > 0
     },
+    registerSecretHints() {},
   }
   return { observer, events }
+}
+
+class AbortDuringSpawnChild extends EventEmitter {
+  stdin = new PassThrough()
+  stdout = new PassThrough()
+  stderr = new PassThrough()
+  exitCode: number | null = null
+  signalCode: NodeJS.Signals | null = null
+  killed = false
+  killSignals: NodeJS.Signals[] = []
+
+  kill(signal: NodeJS.Signals = "SIGTERM") {
+    this.killed = true
+    this.killSignals.push(signal)
+    queueMicrotask(() => {
+      this.signalCode = signal
+      this.emit("close", null, signal)
+    })
+    return true
+  }
+}
+
+class FakeWritableStdin extends EventEmitter {
+  constructor(private readonly behavior: "ok" | "throw" | "error" = "ok") {
+    super()
+  }
+
+  end(_input?: string) {
+    if (this.behavior === "throw") throw new Error("synthetic stdin throw")
+    if (this.behavior === "error") {
+      queueMicrotask(() => this.emit("error", new Error("synthetic EPIPE")))
+    }
+  }
+}
+
+class FakeProcessChild extends EventEmitter {
+  stdin: FakeWritableStdin
+  stdout = new PassThrough()
+  stderr = new PassThrough()
+  exitCode: number | null = null
+  signalCode: NodeJS.Signals | null = null
+  killed = false
+  killSignals: NodeJS.Signals[] = []
+
+  constructor(
+    stdinBehavior: "ok" | "throw" | "error" = "ok",
+    private readonly ignoreSigterm = false,
+  ) {
+    super()
+    this.stdin = new FakeWritableStdin(stdinBehavior)
+  }
+
+  kill(signal: NodeJS.Signals = "SIGTERM") {
+    this.killed = true
+    this.killSignals.push(signal)
+    if (signal === "SIGTERM" && this.ignoreSigterm) return true
+    queueMicrotask(() => {
+      this.signalCode = signal
+      this.emit("close", null, signal)
+    })
+    return true
+  }
+
+  closeSuccessfully() {
+    this.exitCode = 0
+    this.emit("close", 0, null)
+  }
+}
+
+function spawnFakeChild(child: FakeProcessChild): typeof spawn {
+  return (() => child) as unknown as typeof spawn
+}
+
+function abortDuringSpawn(
+  child: AbortDuringSpawnChild,
+  controller: AbortController,
+): typeof spawn {
+  return (() => {
+    controller.abort()
+    return child
+  }) as unknown as typeof spawn
 }
 
 function request(signal: AbortSignal): AgentRuntimeRunRequest {
@@ -140,6 +231,62 @@ describe("headless process runner", () => {
     expect(result.errorCode).toBe("job_canceled")
   })
 
+  test("force-kills a child that ignores SIGTERM after the bounded grace period", async () => {
+    const controller = new AbortController()
+    let markReady: (() => void) | null = null
+    const ready = new Promise<void>((resolve) => {
+      markReady = resolve
+    })
+    const { observer } = createObserver({
+      onEvent(type, payload) {
+        if (
+          type === "assistant_delta" &&
+          typeof (payload as { text?: unknown })?.text === "string" &&
+          (payload as { text: string }).text.includes("ready")
+        ) {
+          markReady?.()
+        }
+      },
+    })
+    const promise = runProcessAgentTask({
+      request: request(controller.signal),
+      observer,
+      executable: process.execPath,
+      args: [
+        "-e",
+        "process.on('SIGTERM', () => {}); console.log('ready'); setInterval(() => {}, 1000)",
+      ],
+      label: "non-cooperative node",
+      terminationGraceMs: 25,
+    })
+
+    await ready
+    controller.abort()
+    const result = await promise
+
+    expect(result.status).toBe("canceled")
+    expect(result.result).toMatchObject({ signal: "SIGKILL" })
+  })
+
+  test("closes the abort race when the signal fires inside spawn", async () => {
+    const controller = new AbortController()
+    const child = new AbortDuringSpawnChild()
+    const { observer } = createObserver()
+
+    const result = await runProcessAgentTask({
+      request: request(controller.signal),
+      observer,
+      executable: "/tmp/fake-node",
+      args: [],
+      label: "spawn-race",
+      terminationGraceMs: 25,
+      spawnProcess: abortDuringSpawn(child, controller),
+    })
+
+    expect(result.status).toBe("canceled")
+    expect(child.killSignals).toEqual(["SIGTERM"])
+  })
+
   test("does not spawn a process when the signal is already aborted", async () => {
     const controller = new AbortController()
     controller.abort()
@@ -218,5 +365,199 @@ describe("headless process runner", () => {
 
     expect(result.status).toBe("succeeded")
     expect(JSON.stringify(events)).not.toContain(secret)
+  })
+
+  test.each([
+    "throw",
+    "error",
+  ] as const)("fails once, terminates, and waits for close when stdin %s occurs", async (stdinBehavior) => {
+    const controller = new AbortController()
+    const child = new FakeProcessChild(stdinBehavior)
+    const { observer, events } = createObserver()
+
+    const result = await runProcessAgentTask({
+      request: request(controller.signal),
+      observer,
+      executable: "/tmp/fake-node",
+      args: [],
+      stdin: "prompt",
+      label: "stdin-child",
+      terminationGraceMs: 25,
+      spawnProcess: spawnFakeChild(child),
+    })
+
+    expect(result).toMatchObject({
+      status: "failed",
+      errorCode: "internal_error",
+      errorMessage: "stdin-child failed while writing process input.",
+      result: { signal: "SIGTERM" },
+    })
+    expect(child.killSignals).toEqual(["SIGTERM"])
+    expect(
+      events.filter((event) => event.type === "command_finished"),
+    ).toHaveLength(1)
+  })
+
+  test("contains observer throws from stdout callbacks as one failed terminal", async () => {
+    const controller = new AbortController()
+    const child = new FakeProcessChild("ok", true)
+    const { observer, events } = createObserver({
+      onEvent(type) {
+        if (type === "assistant_delta") {
+          throw new Error("synthetic observer failure")
+        }
+      },
+    })
+
+    const promise = runProcessAgentTask({
+      request: request(controller.signal),
+      observer,
+      executable: "/tmp/fake-node",
+      args: [],
+      label: "observer-child",
+      terminationGraceMs: 25,
+      spawnProcess: spawnFakeChild(child),
+    })
+    child.stdout.write("partial output")
+
+    const result = await promise
+    expect(result).toMatchObject({
+      status: "failed",
+      errorCode: "internal_error",
+      errorMessage: "observer-child failed while recording process output.",
+      result: { signal: "SIGKILL" },
+    })
+    expect(child.killSignals).toEqual(["SIGTERM", "SIGKILL"])
+    expect(
+      events.filter((event) => event.type === "command_finished"),
+    ).toHaveLength(1)
+  })
+
+  test("contains stderr filter throws as one failed terminal", async () => {
+    const controller = new AbortController()
+    const child = new FakeProcessChild()
+    const { observer, events } = createObserver()
+
+    const promise = runProcessAgentTask({
+      request: request(controller.signal),
+      observer,
+      executable: "/tmp/fake-node",
+      args: [],
+      stderrFilter() {
+        throw new Error("synthetic filter failure")
+      },
+      label: "filter-child",
+      terminationGraceMs: 25,
+      spawnProcess: spawnFakeChild(child),
+    })
+    child.stderr.write("diagnostic")
+
+    const result = await promise
+    expect(result).toMatchObject({
+      status: "failed",
+      errorCode: "internal_error",
+      errorMessage: "filter-child failed while recording process diagnostics.",
+      result: { signal: "SIGTERM" },
+    })
+    expect(child.killSignals).toEqual(["SIGTERM"])
+    expect(
+      events.filter((event) => event.type === "command_finished"),
+    ).toHaveLength(1)
+  })
+
+  test("contains output stream errors as one failed terminal", async () => {
+    const controller = new AbortController()
+    const child = new FakeProcessChild()
+    const { observer, events } = createObserver()
+
+    const promise = runProcessAgentTask({
+      request: request(controller.signal),
+      observer,
+      executable: "/tmp/fake-node",
+      args: [],
+      label: "stream-child",
+      terminationGraceMs: 25,
+      spawnProcess: spawnFakeChild(child),
+    })
+    child.stdout.emit("error", new Error("synthetic stdout error"))
+
+    const result = await promise
+    expect(result).toMatchObject({
+      status: "failed",
+      errorCode: "internal_error",
+      errorMessage: "stream-child failed while reading process output.",
+      result: { signal: "SIGTERM" },
+    })
+    expect(child.killSignals).toEqual(["SIGTERM"])
+    expect(
+      events.filter((event) => event.type === "command_finished"),
+    ).toHaveLength(1)
+  })
+
+  test("contains cancellation observer throws from close callbacks", async () => {
+    const controller = new AbortController()
+    const child = new FakeProcessChild()
+    const { observer: baseObserver, events } = createObserver()
+    const observer: AgentRuntimeObserver = {
+      ...baseObserver,
+      isCancelRequested() {
+        throw new Error("synthetic cancellation read failure")
+      },
+    }
+
+    const promise = runProcessAgentTask({
+      request: request(controller.signal),
+      observer,
+      executable: "/tmp/fake-node",
+      args: [],
+      label: "close-child",
+      spawnProcess: spawnFakeChild(child),
+    })
+    child.closeSuccessfully()
+
+    const result = await promise
+    expect(result).toMatchObject({
+      status: "failed",
+      errorCode: "internal_error",
+      errorMessage:
+        "close-child failed while reading process cancellation state.",
+    })
+    expect(child.killSignals).toEqual([])
+    expect(
+      events.filter((event) => event.type === "command_finished"),
+    ).toHaveLength(1)
+  })
+
+  test("contains completion observer throws without retrying the terminal event", async () => {
+    const controller = new AbortController()
+    const child = new FakeProcessChild()
+    const { observer, events } = createObserver({
+      onEvent(type) {
+        if (type === "command_finished") {
+          throw new Error("synthetic completion persistence failure")
+        }
+      },
+    })
+
+    const promise = runProcessAgentTask({
+      request: request(controller.signal),
+      observer,
+      executable: "/tmp/fake-node",
+      args: [],
+      label: "completion-child",
+      spawnProcess: spawnFakeChild(child),
+    })
+    child.closeSuccessfully()
+
+    const result = await promise
+    expect(result).toMatchObject({
+      status: "failed",
+      errorCode: "internal_error",
+      errorMessage:
+        "completion-child failed while recording process completion.",
+    })
+    expect(
+      events.filter((event) => event.type === "command_finished"),
+    ).toHaveLength(1)
   })
 })

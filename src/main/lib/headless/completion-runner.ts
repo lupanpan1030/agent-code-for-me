@@ -7,15 +7,12 @@ import type {
 } from "../../../shared/local-job-api"
 import type { ProviderProfileProtocol } from "../../../shared/provider-profile-types"
 import type { AgentJob, AgentJobEvent } from "../db/schema"
-import {
-  assertOfficialCloudAllowed,
-  LocalOnlyBlockedError,
-} from "../local-only"
 import type { ProviderProfileRuntimeConfig } from "../provider-profiles/storage"
 import {
   buildChatCompletionUrl,
   buildUtilityChatCompletionBody,
   buildUtilityProviderHeaders,
+  redactAndTruncateUtilityProviderText,
 } from "../utility-chat-completion"
 import { HEADLESS_EXIT_CODES, normalizeHeadlessExitCode } from "./job-runner"
 import {
@@ -382,7 +379,6 @@ async function performCompletion(input: {
   signal?: AbortSignal
 }): Promise<CompletionProviderResult> {
   const request = buildProviderRequest(input)
-  assertOfficialCloudAllowed("run Local Job API completion", request.url)
   const response = await input.fetchImpl(request.url, {
     method: "POST",
     headers: providerHeaders(input.profile, request.url, input.model),
@@ -398,7 +394,19 @@ async function performCompletion(input: {
     }
     throw new Error(
       `Provider request failed with status ${response.status}${
-        detail ? `: ${detail.slice(0, 500)}` : ""
+        detail
+          ? `: ${redactAndTruncateUtilityProviderText(
+              detail,
+              {
+                apiKey: input.profile.token,
+                apiUrl: request.url,
+                model: input.model,
+                authMode: input.profile.authMode,
+                headers: input.profile.headers,
+              },
+              500,
+            )}`
+          : ""
       }`,
     )
   }
@@ -420,7 +428,6 @@ async function performCompletion(input: {
 
 function errorCodeForCompletion(error: unknown): string {
   if (error instanceof HeadlessProviderBindingError) return error.code
-  if (error instanceof LocalOnlyBlockedError) return "local_only_guard_blocked"
   if (error instanceof Error) {
     if (
       /responseFormat\.schema|valid JSON|structured output/i.test(error.message)

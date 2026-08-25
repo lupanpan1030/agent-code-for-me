@@ -8,7 +8,12 @@ import {
   type ProviderProfileTarget,
   providerProfileSource,
 } from "../../../shared/provider-profile-types"
+import { redactExactSecretHints } from "../agent-runtime/redaction"
 import type { AgentRuntimeProviderDiagnostic } from "../agent-runtime/run-contract"
+import {
+  assertOfficialCloudAllowed,
+  LocalOnlyBlockedError,
+} from "../local-only"
 import {
   getProviderGatewayEndpoint,
   revokeProviderGatewayToken,
@@ -30,6 +35,7 @@ export const HEADLESS_PROVIDER_BINDING_ERROR_CODES = [
   "provider_profile_not_found",
   "provider_profile_runtime_mismatch",
   "provider_profile_unavailable",
+  "local_only_guard_blocked",
 ] as const
 
 export type HeadlessProviderBindingErrorCode =
@@ -49,6 +55,12 @@ export function isUnavailableHeadlessProviderBindingCode(
   code: string | null | undefined,
 ): boolean {
   return code === "provider_profile_unavailable"
+}
+
+export function isLocalOnlyHeadlessProviderBindingCode(
+  code: string | null | undefined,
+): boolean {
+  return code === "local_only_guard_blocked"
 }
 
 type GatewayEndpointKind = "anthropic" | "responses"
@@ -98,6 +110,8 @@ export type ResolveHeadlessProviderBindingInput = {
 export type HeadlessProviderBindingResolution = {
   providerBinding: HeadlessAgentRuntimeProviderReference | null
   resolvedProvider: LocalJobApiResolvedProvider
+  /** Main-process-only; functions are intentionally excluded from JSON DTOs. */
+  getSecretHints: () => readonly string[]
   cleanup: () => void
 }
 
@@ -174,6 +188,26 @@ function assertProfileTargetsRuntime(input: {
     source: input.source,
     profileId: input.profileId,
   })
+}
+
+function assertProfileCloudAllowed(input: {
+  profile: ProviderProfileRuntimeConfig
+  source: LocalJobApiResolvedProviderSource
+}): void {
+  try {
+    assertOfficialCloudAllowed(
+      "run a headless job with the configured provider",
+      input.profile.baseUrl,
+    )
+  } catch (error) {
+    if (!(error instanceof LocalOnlyBlockedError)) throw error
+    throw new HeadlessProviderBindingError({
+      code: "local_only_guard_blocked",
+      message: error.message,
+      source: input.source,
+      profileId: input.profile.id,
+    })
+  }
 }
 
 function defaultDependencies(
@@ -334,6 +368,8 @@ export function resolveExplicitHeadlessProviderProfile(input: {
     }
   }
 
+  assertProfileCloudAllowed({ profile, source: "request-profile" })
+
   const model =
     normalizeOptionalText(input.modelOverride) ?? profile.defaultModel
   return {
@@ -360,6 +396,10 @@ async function profileProviderBinding(input: {
     runtimeBinding: input.runtimeBinding,
     source: input.source,
   })
+  assertProfileCloudAllowed({
+    profile: input.profile,
+    source: input.source,
+  })
 
   let endpoint: ProviderGatewayEndpoint
   try {
@@ -369,12 +409,15 @@ async function profileProviderBinding(input: {
       { ttlMs: input.gatewayTtlMs },
     )
   } catch (error) {
+    const message = redactExactSecretHints(
+      error instanceof Error
+        ? error.message
+        : `Provider profile ${input.profile.id} is unavailable.`,
+      input.profile.token ? [input.profile.token] : [],
+    ).value
     throw new HeadlessProviderBindingError({
       code: "provider_profile_unavailable",
-      message:
-        error instanceof Error
-          ? error.message
-          : `Provider profile ${input.profile.id} is unavailable.`,
+      message,
       source: input.source,
       profileId: input.profile.id,
     })
@@ -388,6 +431,13 @@ async function profileProviderBinding(input: {
       message:
         "Resolved provider profile through a scoped local gateway token.",
     },
+  ]
+  let secretHints = [
+    ...new Set(
+      [input.profile.token, endpoint.token].filter((secret): secret is string =>
+        Boolean(secret),
+      ),
+    ),
   ]
 
   return {
@@ -406,8 +456,15 @@ async function profileProviderBinding(input: {
       profileId: input.profile.id,
       model,
     },
+    getSecretHints() {
+      return secretHints
+    },
     cleanup() {
-      input.dependencies.revokeGatewayToken(endpoint.token)
+      try {
+        input.dependencies.revokeGatewayToken(endpoint.token)
+      } finally {
+        secretHints = []
+      }
     },
   }
 }
@@ -438,6 +495,9 @@ function nativeProviderBinding(
       profileId: null,
       model,
     },
+    getSecretHints() {
+      return []
+    },
     cleanup() {},
   }
 }
@@ -464,6 +524,7 @@ export function inspectHeadlessDefaultProviderBinding(input: {
       runtimeBinding,
       source: "default-profile",
     })
+    assertProfileCloudAllowed({ profile, source: "default-profile" })
     return {
       state: "ready",
       profileId: profile.id,

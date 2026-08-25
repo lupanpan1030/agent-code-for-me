@@ -16,12 +16,31 @@ describe("provider profile onboarding", () => {
     expect(source).toContain("trpc.providerProfiles.saveProfile.useMutation")
     expect(source).toContain("providerProfileSource(profile.id)")
     expect(source).toContain("onboarding.apiKey.alreadyConnected")
+    expect(source).toContain("config?.credentialUsable")
+    expect(source).toContain("profile.credentialUsable")
+    expect(source).not.toContain("config?.hasToken")
     expect(source).toContain("disabled={!canSubmit}")
     expect(source).not.toContain("setTimeout(")
     expect(source).not.toContain("claudeProviderConfig.save")
     expect(source).not.toContain(
       'setLastSelectedClaudeModelSource("custom-provider")',
     )
+  })
+
+  test("setup and helper readiness use authoritative credential usability", () => {
+    const setupStatus = read(
+      "src/renderer/features/onboarding/lib/use-setup-status.ts",
+    )
+    const agentsLayout = read("src/renderer/features/layout/agents-layout.tsx")
+
+    expect(setupStatus).toContain(
+      "secureProviderConfig.data?.config?.credentialUsable",
+    )
+    expect(setupStatus).not.toContain(
+      "secureProviderConfig.data?.config?.hasToken",
+    )
+    expect(agentsLayout).toContain("config?.credentialUsable")
+    expect(agentsLayout).not.toContain("config?.hasToken")
   })
 
   test("custom provider onboarding reuses the shared Provider Profile editor", () => {

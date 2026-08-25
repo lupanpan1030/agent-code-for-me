@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto"
 import type { DesktopRunPreflightBlocker } from "../src/main/lib/agent-runtime/preflight"
 import { createClaudeAgentSdkRuntimeErrorHandlers } from "../src/main/lib/claude/agent-sdk-runtime-errors"
 import type { UIMessageChunk } from "../src/main/lib/claude/types"
+import { EXACT_SECRET_REDACTION_MARKER } from "../src/shared/secret-redaction-policy"
 
 describe("Claude Agent SDK runtime error handlers", () => {
   test("emits renderer error chunks with development diagnostics", () => {
@@ -83,7 +84,7 @@ describe("Claude Agent SDK runtime error handlers", () => {
     expect(JSON.stringify(logged)).not.toContain(gatewayToken)
     expect(JSON.stringify(emitted)).not.toContain(gatewayToken)
     expect(emitted[0]).toMatchObject({
-      errorText: "Runtime failed: malicious runtime error echoed <redacted>",
+      errorText: `Runtime failed: malicious runtime error echoed ${EXACT_SECRET_REDACTION_MARKER}`,
     })
   })
 

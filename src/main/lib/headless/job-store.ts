@@ -208,12 +208,11 @@ function fromJson<T>(value: string | null | undefined, fallback: T): T {
 }
 
 function promptPreview(prompt: string): string {
-  const compact = prompt.replace(/\s+/g, " ").trim()
-  const truncated =
-    compact.length > MAX_PROMPT_PREVIEW_LENGTH
-      ? `${compact.slice(0, MAX_PROMPT_PREVIEW_LENGTH - 1)}...`
-      : compact
-  return redactSecretText(truncated)
+  const redacted = redactSecretText(prompt)
+  const compact = redacted.replace(/\s+/g, " ").trim()
+  return compact.length > MAX_PROMPT_PREVIEW_LENGTH
+    ? `${compact.slice(0, MAX_PROMPT_PREVIEW_LENGTH - 1)}...`
+    : compact
 }
 
 function assertNonTerminal(job: AgentJob): void {

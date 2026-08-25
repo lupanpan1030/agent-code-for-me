@@ -29,6 +29,7 @@ import {
   encryptProviderToken,
   normalizeProviderBaseUrl,
   normalizeProviderToken,
+  requireReusableEncryptedProviderToken,
 } from "../provider-token"
 
 // Re-exported for existing consumers (e.g. provider-profiles/gateway.ts).
@@ -132,6 +133,12 @@ const storedProviderHeadersSchema = z.record(z.string(), z.string())
 const storedProviderTargetsSchema = z.array(providerProfileTargetSchema).min(1)
 const storedProviderCapabilitiesSchema =
   providerProfileCapabilitiesSchema.strict()
+const storedProviderRequiredTextSchema = z.string().trim().min(1)
+
+function normalizeStoredProviderRequiredText(value: string): string | null {
+  const result = storedProviderRequiredTextSchema.safeParse(value)
+  return result.success ? result.data : null
+}
 
 function parseJson<T>(value: string | null | undefined, fallback: T): T {
   if (!value) return fallback
@@ -249,18 +256,36 @@ function parseTestStatus(
   return parsed.success ? parsed.data : null
 }
 
+function isProviderProfileCredentialUsable(
+  row: typeof agentProviderProfiles.$inferSelect,
+): boolean {
+  const authMode = providerProfileAuthModeSchema.parse(row.authMode)
+  if (authMode === "none") return true
+  if (!row.encryptedToken) return false
+  try {
+    const token = decryptProviderToken(row.encryptedToken)
+    return Boolean(token && normalizeProviderToken(token))
+  } catch {
+    return false
+  }
+}
+
 function rowToMetadata(
   row: typeof agentProviderProfiles.$inferSelect,
 ): ProviderProfileMetadata {
+  const name = normalizeStoredProviderRequiredText(row.name)
+  const defaultModel = normalizeStoredProviderRequiredText(row.defaultModel)
   return {
     id: row.id,
-    name: row.name,
+    name: name ?? row.name.trim(),
     presetId: row.presetId,
     protocol: providerProfileProtocolSchema.parse(row.protocol),
-    baseUrl: row.baseUrl,
-    defaultModel: row.defaultModel,
+    baseUrl: normalizeProviderBaseUrl(row.baseUrl),
+    defaultModel: defaultModel ?? row.defaultModel.trim(),
     authMode: providerProfileAuthModeSchema.parse(row.authMode),
     hasToken: Boolean(row.encryptedToken),
+    credentialUsable:
+      Boolean(name && defaultModel) && isProviderProfileCredentialUsable(row),
     headers: headersForRenderer(parseJson(row.headersJson, {})),
     targetRuntimes: parseJson(row.targetRuntimesJson, []).filter(
       (target) => providerProfileTargetSchema.safeParse(target).success,
@@ -340,18 +365,22 @@ export function getProviderProfileRuntimeConfigFromDatabase(
     value: row.protocol,
     schema: providerProfileProtocolSchema,
   })
-  const name = parseStoredProfileScalar({
-    profileId: row.id,
-    field: "name",
-    value: row.name,
-    schema: z.string().trim().min(1),
-  })
-  const defaultModel = parseStoredProfileScalar({
-    profileId: row.id,
-    field: "default model",
-    value: row.defaultModel,
-    schema: z.string().trim().min(1),
-  })
+  const name = normalizeStoredProviderRequiredText(row.name)
+  if (!name) {
+    throw new ProviderProfileStorageReadError({
+      reason: "invalid-profile",
+      profileId: row.id,
+      message: `Provider profile ${row.id} has invalid name.`,
+    })
+  }
+  const defaultModel = normalizeStoredProviderRequiredText(row.defaultModel)
+  if (!defaultModel) {
+    throw new ProviderProfileStorageReadError({
+      reason: "invalid-profile",
+      profileId: row.id,
+      message: `Provider profile ${row.id} has invalid default model.`,
+    })
+  }
 
   let baseUrl: string
   try {
@@ -483,7 +512,10 @@ export function getProviderProfileTokenRequirement(input: {
 }): "none" | "missing" | "destination_changed" {
   const authMode = providerProfileAuthModeSchema.parse(input.authMode)
   if (authMode === "none") return "none"
-  if (input.token?.trim()) return "none"
+  if (input.token?.trim()) {
+    normalizeProviderToken(input.token)
+    return "none"
+  }
 
   const protocol = providerProfileProtocolSchema.parse(input.protocol)
   const baseUrl = normalizeProviderBaseUrl(input.baseUrl)
@@ -496,6 +528,7 @@ export function getProviderProfileTokenRequirement(input: {
 
   if (destinationChanged) return "destination_changed"
   if (!input.existingEncryptedToken) return "missing"
+  requireReusableEncryptedProviderToken(input.existingEncryptedToken)
   return "none"
 }
 
@@ -515,6 +548,10 @@ export function saveProviderProfile(input: {
 }): ProviderProfileMetadata {
   const db = getDatabase()
   const id = input.id?.trim() || createId()
+  const name = input.name.trim()
+  const defaultModel = input.defaultModel.trim()
+  if (!name) throw new Error("Provider profile name is required")
+  if (!defaultModel) throw new Error("Provider default model is required")
   const existing = id
     ? db
         .select()
@@ -561,11 +598,11 @@ export function saveProviderProfile(input: {
 
   const values = {
     id,
-    name: input.name.trim(),
+    name,
     presetId: input.presetId || null,
     protocol,
     baseUrl,
-    defaultModel: input.defaultModel.trim(),
+    defaultModel,
     authMode,
     encryptedToken,
     headersJson: providerHeadersJsonForSave(
@@ -702,7 +739,7 @@ function insertLegacyProfile(input: {
       baseUrl: normalizeProviderBaseUrl(input.baseUrl),
       defaultModel: input.model,
       authMode: input.authMode,
-      encryptedToken: encryptProviderToken(input.token),
+      encryptedToken: encryptProviderToken(normalizeProviderToken(input.token)),
       headersJson: "{}",
       targetRuntimesJson: JSON.stringify(input.targets),
       capabilitiesJson: JSON.stringify({

@@ -4,7 +4,10 @@ import {
   type AgentJobDatabase,
   appendAgentJobEvent,
 } from "../headless/job-store"
-import { redactRuntimePayload } from "./redaction"
+import {
+  createExactSecretStreamChannelRedactor,
+  redactRuntimePayload,
+} from "./redaction"
 import { createRunEvent, type JsonValue, type RunEvent } from "./runtime-events"
 
 export type DesktopStreamChunk = Record<string, unknown> & { type?: string }
@@ -21,10 +24,24 @@ export type MapDesktopStreamChunkInput = DesktopStreamEventMapperContext & {
   chunk: unknown
   sequence: number
   createdAt?: string
+  preAppliedRules?: readonly string[]
 }
 
 export type DesktopStreamEventMapper = {
-  map(chunk: unknown): RunEvent[]
+  map(chunk: unknown, preAppliedRules?: readonly string[]): RunEvent[]
+}
+
+export type RuntimeStreamSecretRedactedChunk = {
+  chunk: unknown
+  appliedRules: string[]
+}
+
+export type RuntimeStreamChunkSecretRedactor = {
+  push(
+    chunk: unknown,
+    secretHints?: readonly string[],
+  ): RuntimeStreamSecretRedactedChunk[]
+  flush(secretHints?: readonly string[]): RuntimeStreamSecretRedactedChunk[]
 }
 
 export type RedactRendererDiagnosticChunkInput =
@@ -59,6 +76,128 @@ const RENDERER_DIAGNOSTIC_CHUNK_TYPES = new Set([
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+type RuntimeStreamTextDescriptor = {
+  channel: string
+  value: string
+  withValue: (value: string) => DesktopStreamChunk
+}
+
+function runtimeStreamTextDescriptor(
+  chunk: unknown,
+): RuntimeStreamTextDescriptor | null {
+  if (!isObject(chunk) || typeof chunk.type !== "string") return null
+
+  const id =
+    typeof chunk.id === "string"
+      ? chunk.id
+      : typeof chunk.toolCallId === "string"
+        ? chunk.toolCallId
+        : "default"
+  let channelFamily: string
+  let field: string
+  switch (chunk.type) {
+    case "text-delta":
+      channelFamily = "assistant"
+      field = "delta"
+      break
+    case "reasoning":
+    case "reasoning-delta":
+      channelFamily = "reasoning"
+      field = typeof chunk.delta === "string" ? "delta" : "text"
+      break
+    case "tool-input-delta":
+      channelFamily = "tool-input"
+      field = "inputTextDelta"
+      break
+    case "file-change-delta":
+      channelFamily = "file-change"
+      field = "delta"
+      break
+    default:
+      return null
+  }
+
+  const value = chunk[field]
+  if (typeof value !== "string") return null
+  return {
+    channel: `${channelFamily}:${id}`,
+    value,
+    withValue: (nextValue) => ({ ...chunk, [field]: nextValue }),
+  }
+}
+
+function runtimeStreamBoundary(chunk: unknown): "all" | string[] | null {
+  if (!isObject(chunk) || typeof chunk.type !== "string") return null
+  const id =
+    typeof chunk.id === "string"
+      ? chunk.id
+      : typeof chunk.toolCallId === "string"
+        ? chunk.toolCallId
+        : "default"
+  switch (chunk.type) {
+    case "finish":
+    case "finish-step":
+      return "all"
+    case "text-end":
+      return [`assistant:${id}`]
+    case "tool-input-available":
+      return [`tool-input:${id}`]
+    default:
+      return null
+  }
+}
+
+/**
+ * Applies the canonical stateful exact-secret redactor to adjacent chunks in
+ * each logical desktop stream channel. Original chunks remain in their input
+ * order; only a possible secret-prefix suffix is delayed until more text or
+ * the channel boundary arrives.
+ */
+export function createRuntimeStreamChunkSecretRedactor(): RuntimeStreamChunkSecretRedactor {
+  const exactRedactor =
+    createExactSecretStreamChannelRedactor<DesktopStreamChunk>()
+
+  const flushChannels = (
+    channels: readonly string[],
+    secretHints?: readonly string[],
+  ): RuntimeStreamSecretRedactedChunk[] =>
+    exactRedactor.flushChannels(channels, secretHints).map((redacted) => ({
+      chunk: redacted.value,
+      appliedRules: redacted.applied ? ["secret-hint"] : [],
+    }))
+
+  const flush = (secretHints?: readonly string[]) =>
+    exactRedactor.flush(secretHints).map((redacted) => ({
+      chunk: redacted.value,
+      appliedRules: redacted.applied ? ["secret-hint"] : [],
+    }))
+
+  return {
+    push(chunk, secretHints) {
+      const descriptor = runtimeStreamTextDescriptor(chunk)
+      const output: RuntimeStreamSecretRedactedChunk[] = []
+      const boundary = runtimeStreamBoundary(chunk)
+      if (boundary === "all") {
+        output.push(...flush(secretHints))
+      } else if (boundary) {
+        output.push(...flushChannels(boundary, secretHints))
+      }
+      if (!descriptor) {
+        output.push({ chunk, appliedRules: [] })
+        return output
+      }
+
+      const redacted = exactRedactor.push(descriptor, secretHints)
+      output.push({
+        chunk: redacted.value,
+        appliedRules: redacted.applied ? ["secret-hint"] : [],
+      })
+      return output
+    },
+    flush,
+  }
 }
 
 function toJsonValue(value: unknown, seen = new WeakSet<object>()): JsonValue {
@@ -296,6 +435,9 @@ export function mapDesktopStreamChunkToRunEvents(
     source: input.source ?? "desktop-adapter",
     secretHints: input.secretHints,
   })
+  const appliedRules = [
+    ...new Set([...(input.preAppliedRules ?? []), ...redacted.appliedRules]),
+  ].sort()
 
   return [
     createRunEvent({
@@ -307,8 +449,8 @@ export function mapDesktopStreamChunkToRunEvents(
       payload: redacted.payload,
       createdAt: input.createdAt,
       redaction: {
-        status: redacted.appliedRules.length > 0 ? "redacted" : "not-required",
-        appliedRules: redacted.appliedRules,
+        status: appliedRules.length > 0 ? "redacted" : "not-required",
+        appliedRules,
       },
     }),
   ]
@@ -319,12 +461,13 @@ export function createDesktopStreamEventMapper(
 ): DesktopStreamEventMapper {
   let sequence = 0
   return {
-    map(chunk: unknown) {
+    map(chunk: unknown, preAppliedRules?: readonly string[]) {
       sequence += 1
       return mapDesktopStreamChunkToRunEvents({
         ...context,
         chunk,
         sequence,
+        preAppliedRules,
       })
     },
   }
@@ -393,42 +536,52 @@ export function createRuntimeRendererChunkEmitter({
   warn = console.warn,
   warningLabel = "[runtime]",
 }: RuntimeRendererChunkEmitterInput): (chunk: unknown) => boolean {
+  const streamSecretRedactor = createRuntimeStreamChunkSecretRedactor()
   return (chunk: unknown) => {
-    if (isDesktopRuntimeFailureChunk(chunk)) {
-      markFailed()
-    }
+    let emittedAll = true
+    const secretHints = getSecretHints?.()
+    for (const streamChunk of streamSecretRedactor.push(chunk, secretHints)) {
+      if (isDesktopRuntimeFailureChunk(streamChunk.chunk)) {
+        markFailed()
+      }
 
-    const mapper = getMapper()
-    const db = getDb()
-    const chunkType = isObject(chunk) ? chunk.type : undefined
-    if (db && mapper && chunkType !== "finish") {
+      const mapper = getMapper()
+      const db = getDb()
+      const chunkType = isObject(streamChunk.chunk)
+        ? streamChunk.chunk.type
+        : undefined
+      if (db && mapper && chunkType !== "finish") {
+        try {
+          const events = mapper.map(streamChunk.chunk, streamChunk.appliedRules)
+          appendRunEventsToAgentJob(db, events)
+        } catch (eventError) {
+          warn(
+            `${warningLabel} Failed to persist desktop run events:`,
+            eventError,
+          )
+        }
+      }
+
+      if (!isActive()) {
+        emittedAll = false
+        continue
+      }
       try {
-        const events = mapper.map(chunk)
-        appendRunEventsToAgentJob(db, events)
-      } catch (eventError) {
-        warn(
-          `${warningLabel} Failed to persist desktop run events:`,
-          eventError,
+        emitNext(
+          redactRendererRuntimeChunk({
+            runtimeId,
+            runId,
+            jobId: getJobId(),
+            chunk: streamChunk.chunk,
+            secretHints,
+          }),
         )
+      } catch {
+        markInactive()
+        emittedAll = false
       }
     }
-
-    if (!isActive()) return false
-    try {
-      emitNext(
-        redactRendererRuntimeChunk({
-          runtimeId,
-          runId,
-          jobId: getJobId(),
-          chunk,
-          secretHints: getSecretHints?.(),
-        }),
-      )
-      return true
-    } catch {
-      markInactive()
-      return false
-    }
+    return emittedAll
   }
 }
 

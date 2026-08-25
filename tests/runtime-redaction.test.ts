@@ -1,8 +1,91 @@
 import { describe, expect, test } from "bun:test"
-import { redactRuntimePayload } from "../src/main/lib/agent-runtime/redaction"
+import {
+  createExactSecretStreamRedactor,
+  redactExactSecretHints,
+  redactRuntimePayload,
+} from "../src/main/lib/agent-runtime/redaction"
 import { redactRendererRuntimeChunk } from "../src/main/lib/agent-runtime/stream-event-mapper"
+import { EXACT_SECRET_REDACTION_MARKER } from "../src/shared/secret-redaction-policy"
 
 describe("runtime trace redaction", () => {
+  test("redacts exact secrets split across stream fragments without losing normal suffixes", () => {
+    const secret = "upstream-token-0123456789"
+    const redactor = createExactSecretStreamRedactor()
+    const output = [
+      redactor.push(`normal ${secret.slice(0, 13)}`, [secret]).value,
+      redactor.push(`${secret.slice(13)} tail`, [secret]).value,
+      redactor.flush([secret]).value,
+    ].join("")
+
+    expect(output).toBe(`normal ${EXACT_SECRET_REDACTION_MARKER} tail`)
+    expect(output).not.toContain(secret)
+
+    const normalRedactor = createExactSecretStreamRedactor()
+    const normalOutput = [
+      normalRedactor.push("kept upstream", [secret]).value,
+      normalRedactor.flush([secret]).value,
+    ].join("")
+    expect(normalOutput).toBe("kept upstream")
+  })
+
+  test("uses an exact-secret marker that cannot contain a valid credential", () => {
+    const collisionCandidate = "redacted"
+    const result = redactExactSecretHints(
+      `before ${collisionCandidate} after`,
+      [collisionCandidate],
+    )
+
+    expect(result.applied).toBe(true)
+    expect(result.redactionCount).toBe(1)
+    expect(result.value).toBe(`before ${EXACT_SECRET_REDACTION_MARKER} after`)
+    expect(result.value).not.toContain(collisionCandidate)
+    expect(EXACT_SECRET_REDACTION_MARKER.length).toBeLessThan(
+      collisionCandidate.length,
+    )
+  })
+
+  test("redacts overlapping exact hints longest-first", () => {
+    const shortSecret = "abcdefgh"
+    const longSecret = `${shortSecret}XYZ`
+    const result = redactExactSecretHints(
+      `token=${longSecret} short=${shortSecret}`,
+      [shortSecret, longSecret],
+    )
+
+    expect(result.value).toBe(
+      `token=${EXACT_SECRET_REDACTION_MARKER} short=${EXACT_SECRET_REDACTION_MARKER}`,
+    )
+    expect(result.value).not.toContain("XYZ")
+    expect(result.redactionCount).toBe(2)
+  })
+
+  test("redacts a protected hint created by marker and surrounding text", () => {
+    const sourceSecret = "abcdefgh"
+    const generatedSecret = `${EXACT_SECRET_REDACTION_MARKER}XYZ`
+    const result = redactExactSecretHints(`${sourceSecret}XYZ`, [
+      sourceSecret,
+      generatedSecret,
+    ])
+
+    expect(result.value).toBe(EXACT_SECRET_REDACTION_MARKER)
+    expect(result.value).not.toContain(generatedSecret)
+    expect(result.redactionCount).toBe(2)
+  })
+
+  test("redacts overlapping exact hints longest-first across stream fragments", () => {
+    const shortSecret = "abcdefgh"
+    const longSecret = `${shortSecret}XYZ`
+    const redactor = createExactSecretStreamRedactor()
+    const output = [
+      redactor.push("token=abc", [shortSecret, longSecret]).value,
+      redactor.push("defghXYZ", [shortSecret, longSecret]).value,
+      redactor.flush([shortSecret, longSecret]).value,
+    ].join("")
+
+    expect(output).toBe(`token=${EXACT_SECRET_REDACTION_MARKER}`)
+    expect(output).not.toContain("XYZ")
+  })
+
   test("redacts secret-bearing keys recursively", () => {
     const result = redactRuntimePayload(
       {
@@ -69,9 +152,9 @@ describe("runtime trace redaction", () => {
 
     expect(JSON.stringify(result.payload)).not.toContain(runtimeToken)
     expect(result.payload).toEqual({
-      message: "Codex stderr echoed token <redacted>",
+      message: `Codex stderr echoed token ${EXACT_SECRET_REDACTION_MARKER}`,
       nested: {
-        header: "Authorization: Bearer <redacted>",
+        header: `Authorization: Bearer ${EXACT_SECRET_REDACTION_MARKER}`,
       },
     })
     expect(result.appliedRules).toEqual(["secret-hint"])
@@ -114,7 +197,7 @@ describe("runtime trace redaction", () => {
     expect(chunk).toMatchObject({
       type: "runtime-status",
       blocker: {
-        message: "profile gateway rejected <redacted>",
+        message: `profile gateway rejected ${EXACT_SECRET_REDACTION_MARKER}`,
       },
     })
   })

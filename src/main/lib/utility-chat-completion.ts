@@ -1,3 +1,4 @@
+import { redactExactSecretHints } from "./agent-runtime/redaction"
 import {
   getActiveLocalApiProviderConfig,
   type LocalApiProviderPurpose,
@@ -106,9 +107,41 @@ export function buildUtilityChatCompletionBody(
   }
 }
 
+function utilityProviderSecretHints(
+  config: LocalChatCompletionProviderConfig,
+): readonly string[] {
+  return config.apiKey ? [config.apiKey] : []
+}
+
+export function redactUtilityProviderText(
+  value: string,
+  config: LocalChatCompletionProviderConfig,
+): string {
+  return redactExactSecretHints(value, utilityProviderSecretHints(config)).value
+}
+
+export function redactUtilityProviderErrorMessage(
+  error: unknown,
+  config: LocalChatCompletionProviderConfig,
+): string {
+  return redactUtilityProviderText(
+    error instanceof Error ? error.message : String(error),
+    config,
+  )
+}
+
+export function redactAndTruncateUtilityProviderText(
+  value: string,
+  config: LocalChatCompletionProviderConfig,
+  maxLength: number,
+): string {
+  return redactUtilityProviderText(value, config).slice(0, maxLength)
+}
+
 export async function logProviderRequestFailure(
   label: string,
   response: Response,
+  config: LocalChatCompletionProviderConfig,
 ): Promise<void> {
   let detail = ""
   try {
@@ -120,6 +153,10 @@ export async function logProviderRequestFailure(
   console.error(
     `[${label}] Provider request failed:`,
     response.status,
-    detail.slice(0, PROVIDER_ERROR_DETAIL_MAX_LENGTH),
+    redactAndTruncateUtilityProviderText(
+      detail,
+      config,
+      PROVIDER_ERROR_DETAIL_MAX_LENGTH,
+    ),
   )
 }

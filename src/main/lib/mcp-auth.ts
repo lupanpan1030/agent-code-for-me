@@ -2,6 +2,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { BrowserWindow } from 'electron';
+import { redactExactSecretValues } from '../../shared/secret-redaction-policy';
 import { getClaudeShellEnvironment } from './claude/env';
 import {
   GLOBAL_MCP_PATH,
@@ -68,7 +69,10 @@ export async function fetchMcpTools(
     console.log(`[MCP] Fetched ${tools.length} tools via SDK`);
     return tools.map(t => ({ name: t.name, description: t.description }));
   } catch (error) {
-    console.error('[MCP] Failed to fetch tools:', error);
+    console.error(
+      '[MCP] Failed to fetch tools:',
+      sanitizeMcpOAuthError(error, Object.values(headers ?? {})),
+    );
     return [];
   } finally {
     // Clean up the connection
@@ -97,6 +101,18 @@ const BLOCKED_ENV_VARS = [
 ];
 
 const STDIO_MCP_FETCH_TIMEOUT_MS = 40_000;
+const MCP_OAUTH_ERROR_MAX_LENGTH = 500;
+
+function sanitizeMcpOAuthError(
+  error: unknown,
+  secretHints: readonly string[] = [],
+): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return redactExactSecretValues(message, secretHints).value.slice(
+    0,
+    MCP_OAUTH_ERROR_MAX_LENGTH,
+  );
+}
 
 /**
  * Fetch tools from a stdio-based MCP server
@@ -157,7 +173,10 @@ export async function fetchMcpToolsStdio(config: {
     console.log(`[MCP] Fetched ${tools.length} tools via stdio`);
     return tools.map(t => ({ name: t.name, description: t.description }));
   } catch (error) {
-    console.error('[MCP] Failed to fetch tools via stdio:', error);
+    console.error(
+      '[MCP] Failed to fetch tools via stdio:',
+      sanitizeMcpOAuthError(error, Object.values(config.env ?? {})),
+    );
     return [];
   } finally {
     if (timeout) {
@@ -357,7 +376,7 @@ export async function startMcpOAuth(
   try {
     authFlowResult = await oauth.startAuthFlow();
   } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error);
+    const msg = sanitizeMcpOAuthError(error);
     console.error(`[MCP OAuth] Failed to start auth flow: ${msg}`);
     return { success: false, error: msg };
   }
@@ -388,7 +407,11 @@ export async function startMcpOAuth(
       pendingOAuthFlows.delete(state);
       resolve({
         success: false,
-        error: error instanceof Error ? error.message : String(error),
+        error: sanitizeMcpOAuthError(error, [
+          state,
+          codeVerifier,
+          clientSecret ?? '',
+        ]),
       });
     });
   });
@@ -400,7 +423,7 @@ export async function startMcpOAuth(
 export async function handleMcpOAuthCallback(code: string, state: string): Promise<void> {
   const pending = pendingOAuthFlows.get(state);
   if (!pending) {
-    console.warn(`[MCP OAuth] No pending flow for state: ${state.slice(0, 8)}...`);
+    console.warn('[MCP OAuth] No pending flow for callback state.');
     return;
   }
 
@@ -449,7 +472,12 @@ export async function handleMcpOAuthCallback(code: string, state: string): Promi
 
     pending.resolve({ success: true });
   } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error);
+    const msg = sanitizeMcpOAuthError(error, [
+      code,
+      state,
+      pending.codeVerifier,
+      pending.clientSecret ?? '',
+    ]);
     pending.resolve({ success: false, error: msg });
   }
 }
@@ -520,8 +548,8 @@ export async function refreshMcpToken(
 
     console.log(`[MCP Refresh] Successfully refreshed token for ${serverName}`);
     return tokens.accessToken;
-  } catch (error) {
-    console.error(`[MCP Refresh] Failed to refresh token for ${serverName}:`, error);
+  } catch {
+    console.error(`[MCP Refresh] Failed to refresh token for ${serverName}.`);
     return null;
   }
 }

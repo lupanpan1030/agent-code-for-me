@@ -1,8 +1,6 @@
-type HeaderValue = string | string[] | undefined
+import { redactExactSecretValues } from "./secret-redaction-policy"
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-}
+type HeaderValue = string | string[] | undefined
 
 export function hasProviderGatewayAuthHeader(
   headers: Record<string, HeaderValue>,
@@ -25,14 +23,10 @@ export function redactProviderSecrets(
   exactSecrets: Array<string | null | undefined> = [],
 ): string {
   const text = value instanceof Error ? value.message : String(value)
-  const exactRedacted = exactSecrets
-    .map((secret) => secret?.trim())
-    .filter((secret): secret is string => Boolean(secret && secret.length >= 4))
-    .reduce(
-      (current, secret) =>
-        current.replace(new RegExp(escapeRegExp(secret), "g"), "***"),
-      text,
-    )
+  const exactRedacted = redactExactSecretValues(text, exactSecrets, {
+    minimumLength: 4,
+    marker: "***",
+  }).value
 
   return exactRedacted
     .replace(/sk-[A-Za-z0-9_*-]+/g, "sk-***")

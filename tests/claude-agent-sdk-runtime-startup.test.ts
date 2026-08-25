@@ -6,6 +6,7 @@ import {
   prepareClaudeAgentSdkRuntimeStartupDiagnostics,
   prepareClaudeAgentSdkRuntimeStartupForDesktopRun,
 } from "../src/main/lib/claude/agent-sdk-runtime-startup"
+import { EXACT_SECRET_REDACTION_MARKER } from "../src/shared/secret-redaction-policy"
 
 describe("Claude Agent SDK runtime startup", () => {
   test("prepares isolated config and runtime environment through one owner helper", () => {
@@ -164,7 +165,9 @@ describe("Claude Agent SDK runtime startup", () => {
     })
 
     expect(JSON.stringify(error.mock.calls)).not.toContain(gatewayToken)
-    expect(JSON.stringify(error.mock.calls)).toContain("<redacted>")
+    expect(JSON.stringify(error.mock.calls)).toContain(
+      EXACT_SECRET_REDACTION_MARKER,
+    )
   })
 
   test("maps runtime startup context into Ollama diagnostics", async () => {

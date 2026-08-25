@@ -3,6 +3,10 @@ import { join } from "node:path"
 import * as electron from "electron"
 import { redactRuntimePayload } from "../agent-runtime/redaction"
 import type { JsonValue } from "../agent-runtime/runtime-events"
+import {
+  CLAUDE_CREDENTIAL_BOUND_DIAGNOSTIC_OMITTED,
+  shouldOmitClaudeCredentialBoundDiagnostic,
+} from "./credential-bound-diagnostics"
 
 // Dev-only diagnostic switch. Payloads are redacted before disk, but raw SDK
 // traces can still reveal sensitive workflow context.
@@ -145,12 +149,17 @@ export async function logRawClaudeMessage(
       }
     }
 
-    const redaction = redactRuntimePayload(toRedactableJsonValue(msg), {
-      runtimeId: "claude-code",
-      runId: sessionId,
-      source: "runtime-diagnostic",
-      secretHints,
-    })
+    const omitContent = shouldOmitClaudeCredentialBoundDiagnostic(secretHints)
+    const redaction = omitContent
+      ? {
+          payload: CLAUDE_CREDENTIAL_BOUND_DIAGNOSTIC_OMITTED,
+          appliedRules: ["credential-bound-diagnostic-omitted"],
+        }
+      : redactRuntimePayload(toRedactableJsonValue(msg), {
+          runtimeId: "claude-code",
+          runId: sessionId,
+          source: "runtime-diagnostic",
+        })
 
     const entry = {
       timestamp: new Date().toISOString(),

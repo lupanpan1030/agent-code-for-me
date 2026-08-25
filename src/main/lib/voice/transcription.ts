@@ -1,3 +1,4 @@
+import { redactExactSecretHints } from "../agent-runtime/redaction"
 import { assertOfficialCloudAllowed } from "../local-only"
 
 export const MAX_VOICE_AUDIO_SIZE_BYTES = 25 * 1024 * 1024
@@ -117,12 +118,19 @@ export async function transcribeWithProviderConfig(
     }
 
     const text = await response.text()
-    return cleanTranscribedText(text)
+    return cleanTranscribedText(
+      redactExactSecretHints(text, [providerConfig.token]).value,
+    )
   } catch (err) {
     if (err instanceof Error && err.name === "AbortError") {
       throw new Error("Transcription timed out. Please try again.")
     }
-    throw err
+    throw new Error(
+      redactExactSecretHints(
+        err instanceof Error ? err.message : String(err),
+        [providerConfig.token],
+      ).value,
+    )
   } finally {
     clearTimeout(timeoutId)
   }

@@ -230,6 +230,22 @@ describe("agent job store", () => {
     }
   })
 
+  test("redacts a prompt secret before the preview truncation boundary", () => {
+    const db = createAgentJobTestDb()
+    const secret = "sk-abcdefghijklmnopqrstuvwxyz123456"
+    const exposedPrefix = secret.slice(0, 12)
+    const job = createAgentJob(db, {
+      source: "cli",
+      runtime: "codex",
+      mode: "agent",
+      cwd: "/tmp/project",
+      prompt: `${"p".repeat(230)}${secret}`,
+    })
+
+    expect(job.promptPreview).not.toContain(secret)
+    expect(job.promptPreview).not.toContain(exposedPrefix)
+  })
+
   test("redacts common non-sk secret formats from job storage", () => {
     const db = createAgentJobTestDb()
     const prompt = [

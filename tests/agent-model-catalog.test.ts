@@ -84,6 +84,7 @@ describe("agent model catalog", () => {
           {
             id: LEGACY_CLAUDE_PROVIDER_PROFILE_ID,
             targetRuntimes: ["claude"],
+            credentialUsable: true,
             lastTestStatus: null,
           },
         ],

@@ -5,6 +5,7 @@ import type {
   CodexAppServerClientNotificationMethod,
   CodexAppServerClientRequestMethod,
   CodexAppServerTransport,
+  CodexAppServerTransportExit,
   CodexAppServerTransportNotification,
   CodexAppServerTransportServerRequest,
 } from "../src/main/lib/codex/app-server-transport"
@@ -64,6 +65,7 @@ function observer() {
     isCancelRequested() {
       return false
     },
+    registerSecretHints() {},
   }
   return { observer: runtimeObserver, events }
 }
@@ -82,6 +84,7 @@ class FakeCodexAppServerTransport implements CodexAppServerTransport {
         request: CodexAppServerTransportServerRequest,
       ) => unknown | Promise<unknown>)
     | null = null
+  exitHandler: ((exit: CodexAppServerTransportExit) => void) | null = null
   onTurnStart?: () => void | Promise<void>
 
   async request(
@@ -159,6 +162,13 @@ class FakeCodexAppServerTransport implements CodexAppServerTransport {
     this.serverRequestHandler = handler
     return () => {
       this.serverRequestHandler = null
+    }
+  }
+
+  onExit(handler: (exit: CodexAppServerTransportExit) => void): () => void {
+    this.exitHandler = handler
+    return () => {
+      this.exitHandler = null
     }
   }
 

@@ -29,7 +29,13 @@ export type AgentRuntimeObserver = AgentRuntimePersistedObserver<
   AgentJobEventType,
   AgentJobEvent,
   AgentJob
->
+> & {
+  /** Registers main-process-only exact secrets for this run's persistence boundary. */
+  registerSecretHints(hints: readonly string[]): void
+}
+
+export const AGENT_RUNTIME_SECURITY_CLEANUP_ERROR_CODE =
+  "runtime_security_cleanup_failed" as const
 
 export type AgentRuntimeRunIdentity = AgentRuntimeRunIdentityBase & {
   jobId: string
@@ -64,10 +70,13 @@ export type AgentRuntimeRunRequest = AgentRuntimeRunRequestBase<
   HeadlessAgentRuntimeProviderReference | null
 >
 
-export type AgentRuntimeRunResult = AgentRuntimeRunResultBase<
-  Exclude<AgentJobStatus, "queued" | "running">
+type AgentRuntimeTerminalStatus = Exclude<AgentJobStatus, "queued" | "running">
+
+export type AgentRuntimeRunResult = Omit<
+  AgentRuntimeRunResultBase<AgentRuntimeTerminalStatus>,
+  "status"
 > & {
-  status?: Exclude<AgentJobStatus, "queued" | "running">
+  status: AgentRuntimeTerminalStatus
   exitCode?: number | null
   errorCode?: string | null
   errorMessage?: string | null

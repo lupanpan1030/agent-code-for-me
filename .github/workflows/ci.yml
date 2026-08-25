@@ -45,6 +45,9 @@ jobs:
       - name: Architecture guards
         run: bun run architecture:check
 
+      - name: Retired runtime residue
+        run: bun run retired-runtime:check
+
       - name: Validate OpenSpec
         run: bun run spec:validate
 

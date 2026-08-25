@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto"
 import { eq } from "drizzle-orm"
 import { finalizeClaudeAgentSdkStreamError } from "../src/main/lib/claude/agent-sdk-stream-error-finalization"
 import { chats, projects, subChats } from "../src/main/lib/db/schema"
+import { EXACT_SECRET_REDACTION_MARKER } from "../src/shared/secret-redaction-policy"
 import { createAgentJobTestDb } from "./helpers/agent-job-test-db"
 
 function seedChat(db: ReturnType<typeof createAgentJobTestDb>) {
@@ -158,6 +159,8 @@ describe("Claude Agent SDK stream error finalization", () => {
     const gatewayToken = randomBytes(32).toString("hex")
     const input = {
       ...baseInput(db),
+      streamError: new Error(`process failed with ${gatewayToken}`),
+      stderrLines: [`stderr echoed ${gatewayToken}`],
       currentText: `partial assistant echoed ${gatewayToken}`,
       metadata: {
         sessionId: "session-1",
@@ -174,6 +177,10 @@ describe("Claude Agent SDK stream error finalization", () => {
       .where(eq(subChats.id, "sub-1"))
       .get()?.messages
     expect(persisted).not.toContain(gatewayToken)
-    expect(persisted).toContain("<redacted>")
+    expect(persisted).toContain(EXACT_SECRET_REDACTION_MARKER)
+    expect(JSON.stringify(input.emit.mock.calls)).not.toContain(gatewayToken)
+    expect(JSON.stringify(input.emit.mock.calls)).toContain(
+      EXACT_SECRET_REDACTION_MARKER,
+    )
   })
 })

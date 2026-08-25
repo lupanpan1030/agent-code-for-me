@@ -1,25 +1,27 @@
-import { execSync, spawn } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
-import { getBundledClaudeBinaryPath } from "./claude/env";
-import { buildExtendedPath, isWindows } from "./platform";
+import { execSync, spawn } from "node:child_process"
+import { existsSync, readFileSync } from "node:fs"
+import { homedir } from "node:os"
+import { join } from "node:path"
+import { normalizeHeaderSafeCredential } from "../../shared/secret-redaction-policy"
+import { redactExactSecretHints } from "./agent-runtime/redaction"
+import { getBundledClaudeBinaryPath } from "./claude/env"
+import { buildExtendedPath, isWindows } from "./platform"
 
 interface ClaudeCredentials {
   claudeAiOauth?: {
-    accessToken: string;
-    refreshToken?: string;
-    expiresAt?: number;
-    scopes?: string[];
-  };
+    accessToken: string
+    refreshToken?: string
+    expiresAt?: number
+    scopes?: string[]
+  }
 }
 
 export interface ClaudeOAuthCredential {
-  accessToken: string;
-  refreshToken?: string;
-  expiresAt?: number;
-  scopes?: string[];
-  source?: ClaudeOAuthCredentialSource;
+  accessToken: string
+  refreshToken?: string
+  expiresAt?: number
+  scopes?: string[]
+  source?: ClaudeOAuthCredentialSource
 }
 
 export type ClaudeOAuthCredentialSource =
@@ -27,10 +29,123 @@ export type ClaudeOAuthCredentialSource =
   | "windows_credentials_file"
   | "linux_secret_service"
   | "linux_pass"
-  | "credentials_file";
+  | "credentials_file"
 
-export const CLAUDE_CODE_OAUTH_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
-export const CLAUDE_CODE_TOKEN_URL = "https://platform.claude.com/v1/oauth/token";
+export const CLAUDE_CODE_OAUTH_CLIENT_ID =
+  "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+export const CLAUDE_CODE_TOKEN_URL =
+  "https://platform.claude.com/v1/oauth/token"
+const CLAUDE_CREDENTIAL_ERROR_DETAIL_MAX_LENGTH = 500
+
+type ClaudeCodeTokenResponse = {
+  access_token?: string
+  refresh_token?: string
+  expires_in?: number
+  scope?: string
+}
+
+function normalizeClaudeOAuthCredential(
+  credential: ClaudeOAuthCredential | null,
+): ClaudeOAuthCredential | null {
+  if (!credential) return null
+
+  const accessToken = normalizeHeaderSafeCredential(credential.accessToken)
+  const refreshToken =
+    credential.refreshToken === undefined
+      ? undefined
+      : normalizeHeaderSafeCredential(credential.refreshToken)
+  if (
+    !accessToken ||
+    (credential.refreshToken !== undefined && !refreshToken)
+  ) {
+    return null
+  }
+
+  return {
+    accessToken,
+    ...(refreshToken && { refreshToken }),
+    ...(credential.expiresAt !== undefined && {
+      expiresAt: credential.expiresAt,
+    }),
+    ...(credential.scopes !== undefined && { scopes: credential.scopes }),
+    ...(credential.source !== undefined && { source: credential.source }),
+  }
+}
+
+export function redactAndTruncateClaudeCredentialErrorDetail(
+  value: string,
+  secretHints: readonly string[],
+): string {
+  return redactExactSecretHints(value, secretHints).value.slice(
+    0,
+    CLAUDE_CREDENTIAL_ERROR_DETAIL_MAX_LENGTH,
+  )
+}
+
+export async function exchangeClaudeCodeAuthCode(input: {
+  authorizationCode: string
+  state: string
+  codeVerifier: string
+  redirectUri: string
+}): Promise<{
+  accessToken: string
+  refreshToken?: string
+  expiresAt?: number
+  scopes?: string[]
+}> {
+  let response: Response
+  try {
+    response = await fetch(CLAUDE_CODE_TOKEN_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        grant_type: "authorization_code",
+        code: input.authorizationCode,
+        redirect_uri: input.redirectUri,
+        client_id: CLAUDE_CODE_OAUTH_CLIENT_ID,
+        code_verifier: input.codeVerifier,
+        state: input.state,
+      }),
+    })
+  } catch {
+    throw new Error("Claude Code token exchange failed.")
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      `Claude Code token exchange failed (HTTP ${response.status}).`,
+    )
+  }
+
+  let tokenResponse: ClaudeCodeTokenResponse
+  try {
+    tokenResponse = (await response.json()) as ClaudeCodeTokenResponse
+  } catch {
+    throw new Error("Claude Code token exchange returned an invalid response.")
+  }
+  const accessToken = normalizeHeaderSafeCredential(tokenResponse.access_token)
+  const refreshToken =
+    tokenResponse.refresh_token === undefined
+      ? undefined
+      : normalizeHeaderSafeCredential(tokenResponse.refresh_token)
+  if (
+    !accessToken ||
+    (tokenResponse.refresh_token !== undefined && !refreshToken)
+  ) {
+    throw new Error(
+      "Claude Code token exchange returned an invalid credential.",
+    )
+  }
+
+  return {
+    accessToken,
+    ...(refreshToken && { refreshToken }),
+    expiresAt: tokenResponse.expires_in
+      ? Date.now() + tokenResponse.expires_in * 1000
+      : undefined,
+    scopes: tokenResponse.scope?.split(" ").filter(Boolean),
+  }
+}
 
 /**
  * Read Claude OAuth credentials from system credential store
@@ -39,14 +154,14 @@ export const CLAUDE_CODE_TOKEN_URL = "https://platform.claude.com/v1/oauth/token
 function readFromKeychain(
   credentialsDirectory: string,
 ): ClaudeOAuthCredential | null {
-  if (process.platform === 'darwin') {
-    return readFromMacOSKeychain();
-  } else if (process.platform === 'win32') {
-    return readFromWindowsCredentialManager(credentialsDirectory);
-  } else if (process.platform === 'linux') {
-    return readFromLinuxSecretService();
+  if (process.platform === "darwin") {
+    return readFromMacOSKeychain()
+  } else if (process.platform === "win32") {
+    return readFromWindowsCredentialManager(credentialsDirectory)
+  } else if (process.platform === "linux") {
+    return readFromLinuxSecretService()
   }
-  return null;
+  return null
 }
 
 /**
@@ -56,11 +171,11 @@ function readFromMacOSKeychain(): ClaudeOAuthCredential | null {
   try {
     const result = execSync(
       'security find-generic-password -s "Claude Code-credentials" -w',
-      { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
-    ).trim();
+      { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] },
+    ).trim()
 
     if (result) {
-      const credentials: ClaudeCredentials = JSON.parse(result);
+      const credentials: ClaudeCredentials = JSON.parse(result)
       if (credentials.claudeAiOauth) {
         return {
           accessToken: credentials.claudeAiOauth.accessToken,
@@ -68,13 +183,13 @@ function readFromMacOSKeychain(): ClaudeOAuthCredential | null {
           expiresAt: credentials.claudeAiOauth.expiresAt,
           scopes: credentials.claudeAiOauth.scopes,
           source: "macos_keychain",
-        };
+        }
       }
     }
   } catch {
     // Keychain entry not found or parse error
   }
-  return null;
+  return null
 }
 
 /**
@@ -86,10 +201,10 @@ function readFromWindowsCredentialManager(
 ): ClaudeOAuthCredential | null {
   try {
     // Read from the credentials file location that Claude Code uses on Windows
-    const credentialsPath = join(credentialsDirectory, '.credentials.json');
+    const credentialsPath = join(credentialsDirectory, ".credentials.json")
     if (existsSync(credentialsPath)) {
-      const content = readFileSync(credentialsPath, 'utf-8');
-      const credentials: ClaudeCredentials = JSON.parse(content);
+      const content = readFileSync(credentialsPath, "utf-8")
+      const credentials: ClaudeCredentials = JSON.parse(content)
       if (credentials.claudeAiOauth) {
         return {
           accessToken: credentials.claudeAiOauth.accessToken,
@@ -97,13 +212,13 @@ function readFromWindowsCredentialManager(
           expiresAt: credentials.claudeAiOauth.expiresAt,
           scopes: credentials.claudeAiOauth.scopes,
           source: "windows_credentials_file",
-        };
+        }
       }
     }
   } catch {
     // Credential Manager read failed
   }
-  return null;
+  return null
 }
 
 /**
@@ -115,11 +230,11 @@ function readFromLinuxSecretService(): ClaudeOAuthCredential | null {
     // Try secret-tool (works with GNOME Keyring, KDE Wallet via libsecret)
     const result = execSync(
       'secret-tool lookup service "Claude Code" account "credentials" 2>/dev/null',
-      { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
-    ).trim();
+      { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] },
+    ).trim()
 
     if (result) {
-      const credentials: ClaudeCredentials = JSON.parse(result);
+      const credentials: ClaudeCredentials = JSON.parse(result)
       if (credentials.claudeAiOauth) {
         return {
           accessToken: credentials.claudeAiOauth.accessToken,
@@ -127,7 +242,7 @@ function readFromLinuxSecretService(): ClaudeOAuthCredential | null {
           expiresAt: credentials.claudeAiOauth.expiresAt,
           scopes: credentials.claudeAiOauth.scopes,
           source: "linux_secret_service",
-        };
+        }
       }
     }
   } catch {
@@ -136,13 +251,13 @@ function readFromLinuxSecretService(): ClaudeOAuthCredential | null {
 
   // Fallback: try pass (password-store)
   try {
-    const result = execSync(
-      'pass show claude-code/credentials 2>/dev/null',
-      { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
-    ).trim();
+    const result = execSync("pass show claude-code/credentials 2>/dev/null", {
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+    }).trim()
 
     if (result) {
-      const credentials: ClaudeCredentials = JSON.parse(result);
+      const credentials: ClaudeCredentials = JSON.parse(result)
       if (credentials.claudeAiOauth) {
         return {
           accessToken: credentials.claudeAiOauth.accessToken,
@@ -150,14 +265,14 @@ function readFromLinuxSecretService(): ClaudeOAuthCredential | null {
           expiresAt: credentials.claudeAiOauth.expiresAt,
           scopes: credentials.claudeAiOauth.scopes,
           source: "linux_pass",
-        };
+        }
       }
     }
   } catch {
     // pass not available or entry not found
   }
 
-  return null;
+  return null
 }
 
 /**
@@ -166,12 +281,12 @@ function readFromLinuxSecretService(): ClaudeOAuthCredential | null {
 function readFromCredentialsFile(
   credentialsDirectory: string,
 ): ClaudeOAuthCredential | null {
-  const credentialsPath = join(credentialsDirectory, '.credentials.json');
+  const credentialsPath = join(credentialsDirectory, ".credentials.json")
 
   try {
     if (existsSync(credentialsPath)) {
-      const content = readFileSync(credentialsPath, 'utf-8');
-      const credentials: ClaudeCredentials = JSON.parse(content);
+      const content = readFileSync(credentialsPath, "utf-8")
+      const credentials: ClaudeCredentials = JSON.parse(content)
       if (credentials.claudeAiOauth) {
         return {
           accessToken: credentials.claudeAiOauth.accessToken,
@@ -179,13 +294,13 @@ function readFromCredentialsFile(
           expiresAt: credentials.claudeAiOauth.expiresAt,
           scopes: credentials.claudeAiOauth.scopes,
           source: "credentials_file",
-        };
+        }
       }
     }
   } catch {
     // File not found or parse error
   }
-  return null;
+  return null
 }
 
 /**
@@ -198,35 +313,30 @@ export function getClaudeCredentialConfigDir(
   environment: NodeJS.ProcessEnv = process.env,
   homeDirectory = homedir(),
 ): string {
-  const configuredDirectory = environment.CLAUDE_CONFIG_DIR;
+  const configuredDirectory = environment.CLAUDE_CONFIG_DIR
   return configuredDirectory?.trim()
     ? configuredDirectory
-    : join(homeDirectory, '.claude');
+    : join(homeDirectory, ".claude")
 }
 
 /**
  * Get existing Claude OAuth credentials from keychain or credentials file
  */
 export function getExistingClaudeCredentials(): ClaudeOAuthCredential | null {
-  const credentialsDirectory = getClaudeCredentialConfigDir();
+  const credentialsDirectory = getClaudeCredentialConfigDir()
 
   // Try keychain first (macOS, Windows, Linux)
-  const keychainCreds = readFromKeychain(credentialsDirectory);
+  const keychainCreds = normalizeClaudeOAuthCredential(
+    readFromKeychain(credentialsDirectory),
+  )
   if (keychainCreds) {
-    return keychainCreds;
+    return keychainCreds
   }
 
   // Fall back to the file inside the runtime-selected configuration directory.
-  return readFromCredentialsFile(credentialsDirectory);
-}
-
-/**
- * Get existing Claude OAuth token from keychain or credentials file
- * @deprecated Use getExistingClaudeCredentials() to get full credentials with refresh token
- */
-export function getExistingClaudeToken(): string | null {
-  const creds = getExistingClaudeCredentials();
-  return creds?.accessToken || null;
+  return normalizeClaudeOAuthCredential(
+    readFromCredentialsFile(credentialsDirectory),
+  )
 }
 
 /**
@@ -234,37 +344,60 @@ export function getExistingClaudeToken(): string | null {
  * Uses the same first-party Claude Code OAuth client as the local login flow.
  */
 export async function refreshClaudeToken(refreshToken: string): Promise<{
-  accessToken: string;
-  refreshToken?: string;
-  expiresAt?: number;
+  accessToken: string
+  refreshToken?: string
+  expiresAt?: number
 }> {
-  const response = await fetch(CLAUDE_CODE_TOKEN_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      grant_type: 'refresh_token',
-      refresh_token: refreshToken,
-      client_id: CLAUDE_CODE_OAUTH_CLIENT_ID,
-    }),
-  });
-
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Failed to refresh Claude token: ${error}`);
+  const normalizedRefreshToken = normalizeHeaderSafeCredential(refreshToken)
+  if (!normalizedRefreshToken) {
+    throw new Error(
+      "Failed to refresh Claude token: invalid refresh credential.",
+    )
   }
 
-  const data = await response.json() as {
-    access_token: string;
-    refresh_token?: string;
-    expires_in?: number;
-    token_type?: string;
-  };
+  let response: Response
+  try {
+    response = await fetch(CLAUDE_CODE_TOKEN_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        grant_type: "refresh_token",
+        refresh_token: normalizedRefreshToken,
+        client_id: CLAUDE_CODE_OAUTH_CLIENT_ID,
+      }),
+    })
+  } catch {
+    throw new Error("Failed to refresh Claude token.")
+  }
+
+  if (!response.ok) {
+    throw new Error(`Failed to refresh Claude token (HTTP ${response.status}).`)
+  }
+
+  let data: ClaudeCodeTokenResponse
+  try {
+    data = (await response.json()) as ClaudeCodeTokenResponse
+  } catch {
+    throw new Error("Failed to refresh Claude token: invalid response.")
+  }
+  const accessToken = normalizeHeaderSafeCredential(data.access_token)
+  const replacementRefreshToken =
+    data.refresh_token === undefined
+      ? normalizedRefreshToken
+      : normalizeHeaderSafeCredential(data.refresh_token)
+  if (!accessToken || !replacementRefreshToken) {
+    throw new Error(
+      "Failed to refresh Claude token: invalid credential response.",
+    )
+  }
 
   return {
-    accessToken: data.access_token,
-    refreshToken: data.refresh_token || refreshToken,
-    expiresAt: data.expires_in ? Date.now() + data.expires_in * 1000 : undefined,
-  };
+    accessToken,
+    refreshToken: replacementRefreshToken,
+    expiresAt: data.expires_in
+      ? Date.now() + data.expires_in * 1000
+      : undefined,
+  }
 }
 
 /**
@@ -273,11 +406,11 @@ export async function refreshClaudeToken(refreshToken: string): Promise<{
 export function isTokenExpired(expiresAt?: number): boolean {
   if (!expiresAt) {
     // If no expiry, assume token is still valid
-    return false;
+    return false
   }
   // Consider expired if less than 5 minutes remaining
-  const bufferMs = 5 * 60 * 1000;
-  return Date.now() + bufferMs >= expiresAt;
+  const bufferMs = 5 * 60 * 1000
+  return Date.now() + bufferMs >= expiresAt
 }
 
 /**
@@ -289,7 +422,7 @@ export function isTokenExpired(expiresAt?: number): boolean {
  * Delegates to platform provider for cross-platform support.
  */
 function getExtendedPath(): string {
-  return buildExtendedPath(process.env.PATH);
+  return buildExtendedPath(process.env.PATH)
 }
 
 /**
@@ -299,17 +432,17 @@ function getExtendedPath(): string {
 export function isClaudeCliInstalled(): boolean {
   try {
     // Use 'where' on Windows, 'which' on Unix-like systems
-    const command = isWindows() ? 'where claude' : 'which claude';
-    const fullPath = getExtendedPath();
+    const command = isWindows() ? "where claude" : "which claude"
+    const fullPath = getExtendedPath()
 
     execSync(command, {
-      encoding: 'utf-8',
-      stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env, PATH: fullPath }
-    });
-    return true;
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+      env: { ...process.env, PATH: fullPath },
+    })
+    return true
   } catch {
-    return false;
+    return false
   }
 }
 
@@ -321,72 +454,67 @@ export function isClaudeCliInstalled(): boolean {
  * environments (like Electron apps launched from Finder/Dock)
  */
 export function runClaudeSetupToken(
-  onStatus: (message: string) => void
-): Promise<{ success: boolean; token?: string; error?: string }> {
+  onStatus: (message: string) => void,
+): Promise<{ success: boolean; error?: string }> {
   return new Promise((resolve) => {
-    onStatus('Starting Claude setup-token...');
+    onStatus("Starting Claude setup-token...")
 
-    const claudeBinaryPath = getBundledClaudeBinaryPath();
-    const child = spawn(claudeBinaryPath, ['setup-token'], {
+    const claudeBinaryPath = getBundledClaudeBinaryPath()
+    const child = spawn(claudeBinaryPath, ["setup-token"], {
       // Don't use 'inherit' - it causes hang in non-TTY environments
       // Use 'ignore' for stdin and 'pipe' for stdout/stderr
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: ["ignore", "pipe", "pipe"],
       shell: false,
-    });
+    })
 
-    let stdout = '';
-    let stderr = '';
-
-    child.stdout?.on('data', (data: Buffer) => {
-      const text = data.toString();
-      stdout += text;
-      onStatus(text.trim());
-    });
-
-    child.stderr?.on('data', (data: Buffer) => {
-      stderr += data.toString();
-    });
+    // Drain both pipes without forwarding their content. setup-token output is
+    // credential-bound and may contain a token split across callbacks before
+    // Locus can discover and register it as an exact-redaction hint.
+    child.stdout?.on("data", () => {})
+    child.stderr?.on("data", () => {})
 
     // Timeout after 2 minutes to prevent indefinite hang
     const timeout = setTimeout(() => {
-      child.kill();
+      child.kill()
       resolve({
         success: false,
-        error: 'Authentication timed out after 2 minutes. Please try again.',
-      });
-    }, 120000);
+        error: "Authentication timed out after 2 minutes. Please try again.",
+      })
+    }, 120000)
 
-    child.on('error', (err) => {
-      clearTimeout(timeout);
+    child.on("error", () => {
+      clearTimeout(timeout)
       resolve({
         success: false,
-        error: `Failed to start claude setup-token: ${err.message}`,
-      });
-    });
+        error: "Failed to start claude setup-token.",
+      })
+    })
 
-    child.on('close', (code) => {
-      clearTimeout(timeout);
+    child.on("close", (code) => {
+      clearTimeout(timeout)
 
       if (code === 0) {
         // Wait a moment for the token to be written to keychain
         setTimeout(() => {
-          const token = getExistingClaudeToken();
-          if (token) {
-            resolve({ success: true, token });
+          if (getExistingClaudeCredentials()?.accessToken) {
+            resolve({ success: true })
           } else {
             resolve({
               success: false,
-              error: 'Token not found after setup. The authentication may have failed.',
-            });
+              error:
+                "Token not found after setup. The authentication may have failed.",
+            })
           }
-        }, 500);
+        }, 500)
       } else {
-        const errorDetail = stderr.trim() || `Process exited with code ${code}`;
         resolve({
           success: false,
-          error: errorDetail,
-        });
+          error:
+            typeof code === "number"
+              ? `Claude setup-token exited with code ${code}.`
+              : "Claude setup-token was terminated.",
+        })
       }
-    });
-  });
+    })
+  })
 }

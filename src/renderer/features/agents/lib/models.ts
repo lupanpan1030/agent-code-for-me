@@ -99,7 +99,7 @@ export const LEGACY_CLAUDE_PROVIDER_PROFILE_ID = "legacy-claude-provider"
 
 export type ClaudeSourceProviderProfile = Pick<
   ProviderProfileMetadata,
-  "id" | "targetRuntimes" | "lastTestStatus"
+  "id" | "targetRuntimes" | "lastTestStatus" | "credentialUsable"
 >
 
 export type ClaudeModelSourceNormalizationResult =
@@ -129,6 +129,7 @@ export function getLegacyClaudeProviderProfile(
     (profile) =>
       profile.id === LEGACY_CLAUDE_PROVIDER_PROFILE_ID &&
       profile.targetRuntimes.includes("claude") &&
+      profile.credentialUsable &&
       profile.lastTestStatus?.ok !== false,
   )
 }
@@ -142,6 +143,7 @@ export function getUsableClaudeProviderProfile(
     profiles.find(
       (profile) =>
         profile.targetRuntimes.includes("claude") &&
+        profile.credentialUsable &&
         profile.lastTestStatus?.ok !== false,
     )
   )

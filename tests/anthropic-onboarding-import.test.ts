@@ -70,6 +70,20 @@ describe("Anthropic onboarding Claude Code auth", () => {
     expect(submitPreflightIndex).toBeLessThan(exchangeIndex)
   })
 
+  test("does not expose inherited Claude endpoint text to the renderer", () => {
+    const source = claudeCodeRouterSource()
+    const start = source.indexOf(
+      "hasExistingCliConfig: publicProcedure.query(() => {",
+    )
+    const end = source.indexOf("getIntegration: publicProcedure.query", start)
+    const procedure = source.slice(start, end)
+
+    expect(start).toBeGreaterThanOrEqual(0)
+    expect(end).toBeGreaterThan(start)
+    expect(procedure).toContain("shellEnv.ANTHROPIC_BASE_URL")
+    expect(procedure).not.toContain("baseUrl:")
+  })
+
   test("localizes secure storage failures in onboarding", () => {
     const source = onboardingSource()
     const dictionaries = dictionarySource()

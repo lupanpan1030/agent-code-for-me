@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { MAX_HEADER_SAFE_CREDENTIAL_LENGTH } from "../../../../shared/secret-redaction-policy"
 import {
   type ClaudeProviderAuthMode,
   type ClaudeProviderRuntimeConfig,
@@ -30,7 +31,7 @@ const saveInputSchema = z.object({
       }
     }),
   authMode: claudeProviderAuthModeSchema,
-  token: z.string().optional(),
+  token: z.string().max(MAX_HEADER_SAFE_CREDENTIAL_LENGTH).optional(),
 })
 
 export const claudeProviderConfigRouter = router({
@@ -43,6 +44,10 @@ export const claudeProviderConfigRouter = router({
   clear: publicProcedure.mutation(() => clearClaudeProviderConfig()),
 
   importLegacy: publicProcedure
-    .input(saveInputSchema.extend({ token: z.string().min(1) }))
+    .input(
+      saveInputSchema.extend({
+        token: z.string().min(1).max(MAX_HEADER_SAFE_CREDENTIAL_LENGTH),
+      }),
+    )
     .mutation(({ input }) => importLegacyClaudeProviderConfig(input)),
 })

@@ -1,4 +1,4 @@
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process"
+import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process"
 import { createInterface } from "node:readline"
 import { redactRuntimePayload } from "../agent-runtime/redaction"
 import { resolveBundledCodexCliPath } from "./cli-path"
@@ -47,15 +47,18 @@ export type CodexAppServerTransportServerRequest = {
   params?: unknown
 }
 
+export type CodexAppServerTransportExit = {
+  code: number | null
+  signal: NodeJS.Signals | null
+  error: Error
+}
+
 export type CodexAppServerTransport = {
   request(
     method: CodexAppServerClientRequestMethod,
     params: unknown,
   ): Promise<unknown>
-  notify(
-    method: CodexAppServerClientNotificationMethod,
-    params?: unknown,
-  ): void
+  notify(method: CodexAppServerClientNotificationMethod, params?: unknown): void
   onNotification(
     handler: (notification: CodexAppServerTransportNotification) => void,
   ): () => void
@@ -64,6 +67,7 @@ export type CodexAppServerTransport = {
       request: CodexAppServerTransportServerRequest,
     ) => unknown | Promise<unknown>,
   ): () => void
+  onExit(handler: (exit: CodexAppServerTransportExit) => void): () => void
   close(): Promise<void>
 }
 
@@ -72,6 +76,9 @@ export type CreateCodexAppServerStdioTransportInput = {
   env?: NodeJS.ProcessEnv
   cwd?: string
   spawnProcess?: typeof spawn
+  closeGraceMs?: number
+  /** Main-process-only exact values used to scrub transport diagnostics. */
+  secretHints?: readonly string[]
 }
 
 type PendingRequest = {
@@ -83,28 +90,44 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null
 }
 
-function protocolErrorMessage(message: CodexAppServerProtocolResponse): string {
-  return message.error?.message || "Codex app-server request failed."
-}
-
 function writeJsonLine(
   child: ChildProcessWithoutNullStreams,
   message:
     | CodexAppServerProtocolRequest
     | CodexAppServerProtocolNotification
     | CodexAppServerProtocolResponse,
+  onError: (error: Error) => void,
 ): void {
-  child.stdin.write(`${JSON.stringify(message)}\n`)
+  try {
+    child.stdin.write(`${JSON.stringify(message)}\n`, (error) => {
+      if (error) onError(error)
+    })
+  } catch (error) {
+    onError(error instanceof Error ? error : new Error(String(error)))
+  }
 }
 
-function redactedProcessErrorMessage(stderr: string, fallback: string): string {
-  const rawMessage = stderr.trim() || fallback
+function redactedTransportText(
+  value: string,
+  fallback: string,
+  secretHints: readonly string[],
+): string {
+  const rawMessage = value.trim() || fallback
   const redacted = redactRuntimePayload(rawMessage, {
     runtimeId: "codex",
     runId: "codex-app-server-transport",
     source: "runtime-diagnostic",
+    secretHints,
   }).payload
-  const message = typeof redacted === "string" ? redacted : fallback
+  return typeof redacted === "string" ? redacted : fallback
+}
+
+function redactedProcessErrorMessage(
+  stderr: string,
+  fallback: string,
+  secretHints: readonly string[],
+): string {
+  const message = redactedTransportText(stderr, fallback, secretHints)
   return message.length > 1000 ? `${message.slice(0, 1000)}...` : message
 }
 
@@ -113,12 +136,18 @@ export function createCodexAppServerStdioTransport({
   env,
   cwd,
   spawnProcess = spawn,
+  closeGraceMs = 5000,
+  secretHints = [],
 }: CreateCodexAppServerStdioTransportInput = {}): CodexAppServerTransport {
-  const child = spawnProcess(executable, ["app-server", "--listen", "stdio://"], {
-    cwd,
-    env,
-    stdio: "pipe",
-  }) as ChildProcessWithoutNullStreams
+  const child = spawnProcess(
+    executable,
+    ["app-server", "--listen", "stdio://"],
+    {
+      cwd,
+      env,
+      stdio: "pipe",
+    },
+  ) as ChildProcessWithoutNullStreams
   let nextId = 1
   let stderr = ""
   const pending = new Map<CodexAppServerMessageId, PendingRequest>()
@@ -126,8 +155,83 @@ export function createCodexAppServerStdioTransport({
     (notification: CodexAppServerTransportNotification) => void
   >()
   const serverRequestHandlers = new Set<
-    (request: CodexAppServerTransportServerRequest) => unknown | Promise<unknown>
+    (
+      request: CodexAppServerTransportServerRequest,
+    ) => unknown | Promise<unknown>
   >()
+  const exitHandlers = new Set<(exit: CodexAppServerTransportExit) => void>()
+  let lifecycleExit: CodexAppServerTransportExit | null = null
+  let processEnded = false
+  let resolveProcessEnded: (() => void) | null = null
+  let closePromise: Promise<void> | null = null
+  const processEndedPromise = new Promise<void>((resolve) => {
+    resolveProcessEnded = resolve
+  })
+
+  const rejectPending = (error: Error) => {
+    for (const waiter of pending.values()) waiter.reject(error)
+    pending.clear()
+  }
+
+  const invokeExitHandler = (
+    handler: (exit: CodexAppServerTransportExit) => void,
+    exit: CodexAppServerTransportExit,
+  ): void => {
+    try {
+      handler(exit)
+    } catch {
+      // Lifecycle observers are isolated from transport settlement. One
+      // observer must not prevent pending rejection or the remaining observers.
+    }
+  }
+
+  const markUnavailable = (exit: CodexAppServerTransportExit): boolean => {
+    if (lifecycleExit) return false
+    lifecycleExit = exit
+    rejectPending(exit.error)
+    for (const handler of [...exitHandlers]) invokeExitHandler(handler, exit)
+    return true
+  }
+
+  const failTransport = (error: Error): void => {
+    const becameUnavailable = markUnavailable({
+      code: child.exitCode,
+      signal: child.signalCode,
+      error,
+    })
+    if (becameUnavailable) void closeTransport().catch(() => {})
+  }
+
+  const markProcessEnded = (input: {
+    code: number | null
+    signal: NodeJS.Signals | null
+    fallback: string
+  }) => {
+    if (!processEnded) {
+      processEnded = true
+      resolveProcessEnded?.()
+      resolveProcessEnded = null
+    }
+    markUnavailable({
+      code: input.code,
+      signal: input.signal,
+      error: new Error(
+        redactedProcessErrorMessage(stderr, input.fallback, secretHints),
+      ),
+    })
+  }
+
+  const handleWriteError = (error: Error) => {
+    failTransport(
+      new Error(
+        redactedProcessErrorMessage(
+          stderr,
+          `Codex app-server stdin failed: ${error.message}`,
+          secretHints,
+        ),
+      ),
+    )
+  }
 
   child.stderr.on("data", (chunk) => {
     stderr += String(chunk)
@@ -135,14 +239,23 @@ export function createCodexAppServerStdioTransport({
 
   const rl = createInterface({ input: child.stdout })
   rl.on("line", (line) => {
+    if (lifecycleExit) return
     if (!line.trim()) return
     let parsed: unknown
     try {
       parsed = JSON.parse(line)
     } catch {
+      failTransport(
+        new Error("Codex app-server emitted malformed JSON over stdio."),
+      )
       return
     }
-    if (!isRecord(parsed)) return
+    if (!isRecord(parsed)) {
+      failTransport(
+        new Error("Codex app-server emitted a malformed protocol message."),
+      )
+      return
+    }
 
     if ("id" in parsed && ("result" in parsed || "error" in parsed)) {
       const id = parsed.id as CodexAppServerMessageId
@@ -151,14 +264,27 @@ export function createCodexAppServerStdioTransport({
       pending.delete(id)
       const response = parsed as CodexAppServerProtocolResponse
       if (response.error) {
-        waiter.reject(new Error(protocolErrorMessage(response)))
+        waiter.reject(
+          new Error(
+            redactedTransportText(
+              response.error.message || "Codex app-server request failed.",
+              "Codex app-server request failed.",
+              secretHints,
+            ),
+          ),
+        )
       } else {
         waiter.resolve(response.result)
       }
       return
     }
 
-    if (typeof parsed.method !== "string") return
+    if (typeof parsed.method !== "string") {
+      failTransport(
+        new Error("Codex app-server emitted a malformed protocol message."),
+      )
+      return
+    }
     if ("id" in parsed) {
       const request = {
         id: parsed.id as CodexAppServerMessageId,
@@ -176,64 +302,167 @@ export function createCodexAppServerStdioTransport({
           return handler(request)
         })
         .then((result) => {
-          writeJsonLine(child, {
-            id: request.id,
-            result,
-          })
+          writeJsonLine(
+            child,
+            {
+              id: request.id,
+              result,
+            },
+            handleWriteError,
+          )
         })
         .catch((error) => {
-          writeJsonLine(child, {
-            id: request.id,
-            error: {
-              code: -32000,
-              message: error instanceof Error ? error.message : String(error),
+          writeJsonLine(
+            child,
+            {
+              id: request.id,
+              error: {
+                code: -32000,
+                message: redactedTransportText(
+                  error instanceof Error ? error.message : String(error),
+                  "Codex app-server request handler failed.",
+                  secretHints,
+                ),
+              },
             },
-          })
+            handleWriteError,
+          )
         })
       return
     }
 
-    for (const handler of notificationHandlers) {
-      handler({ method: parsed.method, params: parsed.params })
+    for (const handler of [...notificationHandlers]) {
+      try {
+        handler({ method: parsed.method, params: parsed.params })
+      } catch (error) {
+        failTransport(
+          new Error(
+            redactedProcessErrorMessage(
+              "",
+              `Codex app-server notification handler failed: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+              secretHints,
+            ),
+          ),
+        )
+        return
+      }
     }
+  })
+
+  child.stdin.on("error", (error) => {
+    handleWriteError(error instanceof Error ? error : new Error(String(error)))
   })
 
   child.once("error", (error) => {
-    for (const waiter of pending.values()) {
-      waiter.reject(error instanceof Error ? error : new Error(String(error)))
+    const nextError = error instanceof Error ? error : new Error(String(error))
+    // A failed spawn has no live process and therefore no later exit to await.
+    if (child.pid === undefined) {
+      processEnded = true
+      resolveProcessEnded?.()
+      resolveProcessEnded = null
     }
-    pending.clear()
+    failTransport(
+      new Error(
+        redactedProcessErrorMessage(stderr, nextError.message, secretHints),
+      ),
+    )
   })
 
   child.once("exit", (code, signal) => {
-    const message = redactedProcessErrorMessage(
-      stderr,
-      `Codex app-server exited before completing requests (code=${code}, signal=${signal}).`,
-    )
-    for (const waiter of pending.values()) {
-      waiter.reject(new Error(message))
-    }
-    pending.clear()
+    markProcessEnded({
+      code,
+      signal,
+      fallback: `Codex app-server exited before completing requests (code=${code}, signal=${signal}).`,
+    })
   })
+
+  child.once("close", (code, signal) => {
+    markProcessEnded({
+      code,
+      signal,
+      fallback: `Codex app-server closed before completing requests (code=${code}, signal=${signal}).`,
+    })
+  })
+
+  const waitForProcessEnd = async (timeoutMs: number): Promise<boolean> => {
+    if (processEnded) return true
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const timedOut = new Promise<false>((resolve) => {
+      timer = setTimeout(() => resolve(false), Math.max(1, timeoutMs))
+    })
+    const ended = await Promise.race([
+      processEndedPromise.then(() => true as const),
+      timedOut,
+    ])
+    if (timer) clearTimeout(timer)
+    return ended
+  }
+
+  function closeTransport(): Promise<void> {
+    if (closePromise) return closePromise
+    let resolveClose!: () => void
+    let rejectClose!: (error: unknown) => void
+    closePromise = new Promise<void>((resolve, reject) => {
+      resolveClose = resolve
+      rejectClose = reject
+    })
+    void (async () => {
+      try {
+        rl.close()
+        if (!processEnded) {
+          try {
+            child.kill("SIGTERM")
+          } catch {}
+          if (!(await waitForProcessEnd(closeGraceMs))) {
+            try {
+              child.kill("SIGKILL")
+            } catch {}
+            if (!(await waitForProcessEnd(closeGraceMs))) {
+              throw new Error(
+                "Codex app-server did not exit after SIGTERM and SIGKILL.",
+              )
+            }
+          }
+        }
+        await processEndedPromise
+        resolveClose()
+      } catch (error) {
+        rejectClose(error)
+      }
+    })()
+    return closePromise
+  }
 
   return {
     request(method, params) {
+      if (lifecycleExit) return Promise.reject(lifecycleExit.error)
       const id = nextId++
       return new Promise((resolve, reject) => {
         pending.set(id, { resolve, reject })
-        writeJsonLine(child, {
-          id,
-          method,
-          params,
-        })
+        writeJsonLine(
+          child,
+          {
+            id,
+            method,
+            params,
+          },
+          handleWriteError,
+        )
       })
     },
 
     notify(method, params) {
-      writeJsonLine(child, {
-        method,
-        ...(params === undefined ? {} : { params }),
-      })
+      if (lifecycleExit) return
+      writeJsonLine(
+        child,
+        {
+          method,
+          ...(params === undefined ? {} : { params }),
+        },
+        handleWriteError,
+      )
     },
 
     onNotification(handler) {
@@ -246,12 +475,14 @@ export function createCodexAppServerStdioTransport({
       return () => serverRequestHandlers.delete(handler)
     },
 
+    onExit(handler) {
+      exitHandlers.add(handler)
+      if (lifecycleExit) invokeExitHandler(handler, lifecycleExit)
+      return () => exitHandlers.delete(handler)
+    },
+
     close() {
-      rl.close()
-      if (!child.killed) {
-        child.kill()
-      }
-      return Promise.resolve()
+      return closeTransport()
     },
   }
 }

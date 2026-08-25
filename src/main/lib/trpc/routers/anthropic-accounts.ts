@@ -1,5 +1,6 @@
 import { eq, sql } from "drizzle-orm"
 import { z } from "zod"
+import { MAX_HEADER_SAFE_CREDENTIAL_LENGTH } from "../../../../shared/secret-redaction-policy"
 import {
   createClaudeCodeCredentialEnvelope,
   decryptClaudeCodeCredential,
@@ -22,7 +23,10 @@ const LOCAL_CLAUDE_CODE_DISPLAY_NAME = "Local Claude Code"
 function encryptToken(token: string): string {
   return encryptStringForStorage(
     JSON.stringify(
-      createClaudeCodeCredentialEnvelope({ accessToken: token }, "hosted_oauth"),
+      createClaudeCodeCredentialEnvelope(
+        { accessToken: token },
+        "hosted_oauth",
+      ),
     ),
   )
 }
@@ -34,14 +38,11 @@ function accountTimestamp(account: {
   return account.lastUsedAt?.getTime() ?? account.connectedAt?.getTime() ?? 0
 }
 
-function compactDuplicateLocalClaudeCodeAccounts(
-  db = getDatabase(),
-): void {
+function compactDuplicateLocalClaudeCodeAccounts(db = getDatabase()): void {
   const accounts = db.select().from(anthropicAccounts).all()
   const duplicates = accounts.filter(
     (account) =>
-      account.displayName === LOCAL_CLAUDE_CODE_DISPLAY_NAME &&
-      !account.email,
+      account.displayName === LOCAL_CLAUDE_CODE_DISPLAY_NAME && !account.email,
   )
 
   if (duplicates.length <= 1) return
@@ -55,9 +56,9 @@ function compactDuplicateLocalClaudeCodeAccounts(
   const activeDuplicate = duplicates.find(
     (account) => account.id === settings?.activeAccountId,
   )
-  const keep = activeDuplicate ?? [...duplicates].sort(
-    (a, b) => accountTimestamp(b) - accountTimestamp(a),
-  )[0]
+  const keep =
+    activeDuplicate ??
+    [...duplicates].sort((a, b) => accountTimestamp(b) - accountTimestamp(a))[0]
   if (!keep) return
 
   const deleteIds = duplicates
@@ -65,12 +66,13 @@ function compactDuplicateLocalClaudeCodeAccounts(
     .map((account) => account.id)
 
   for (const id of deleteIds) {
-    db.delete(anthropicAccounts)
-      .where(eq(anthropicAccounts.id, id))
-      .run()
+    db.delete(anthropicAccounts).where(eq(anthropicAccounts.id, id)).run()
   }
 
-  if (settings?.activeAccountId && deleteIds.includes(settings.activeAccountId)) {
+  if (
+    settings?.activeAccountId &&
+    deleteIds.includes(settings.activeAccountId)
+  ) {
     db.update(anthropicSettings)
       .set({
         activeAccountId: keep.id,
@@ -229,10 +231,10 @@ export const anthropicAccountsRouter = router({
   add: publicProcedure
     .input(
       z.object({
-        oauthToken: z.string().min(1),
+        oauthToken: z.string().min(1).max(MAX_HEADER_SAFE_CREDENTIAL_LENGTH),
         email: z.string().optional(),
         displayName: z.string().optional(),
-      })
+      }),
     )
     .mutation(({ input }) => {
       const db = getDatabase()
@@ -290,7 +292,7 @@ export const anthropicAccountsRouter = router({
       z.object({
         accountId: z.string(),
         displayName: z.string().min(1),
-      })
+      }),
     )
     .mutation(({ input }) => {
       const db = getDatabase()
@@ -305,7 +307,9 @@ export const anthropicAccountsRouter = router({
         throw new Error("Account not found")
       }
 
-      console.log(`[AnthropicAccounts] Renamed account ${input.accountId} to "${input.displayName}"`)
+      console.log(
+        `[AnthropicAccounts] Renamed account ${input.accountId} to "${input.displayName}"`,
+      )
       return { success: true }
     }),
 

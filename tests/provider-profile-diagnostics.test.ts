@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
 import { mkdtemp, rm } from "node:fs/promises"
+import {
+  createServer,
+  type IncomingMessage,
+  type ServerResponse,
+} from "node:http"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -45,11 +49,13 @@ async function readBody(req: IncomingMessage): Promise<string> {
   return Buffer.concat(chunks).toString("utf8")
 }
 
-async function createProviderServer(handler: (params: {
-  req: IncomingMessage
-  res: ServerResponse
-  body: string
-}) => void | Promise<void>) {
+async function createProviderServer(
+  handler: (params: {
+    req: IncomingMessage
+    res: ServerResponse
+    body: string
+  }) => void | Promise<void>,
+) {
   const server = createServer((req, res) => {
     void readBody(req)
       .then((body) => handler({ req, res, body }))
@@ -119,7 +125,11 @@ describe("provider diagnostics", () => {
   test("redacts exact provider, gateway, and custom header secrets", () => {
     const redacted = securityModule.redactProviderSecrets(
       "bad provider-token-123 Bearer gateway-token-456 custom-header-secret",
-      ["provider-token-123", "Bearer gateway-token-456", "custom-header-secret"],
+      [
+        "provider-token-123",
+        "Bearer gateway-token-456",
+        "custom-header-secret",
+      ],
     )
 
     expect(redacted).not.toContain("provider-token-123")
@@ -128,10 +138,34 @@ describe("provider diagnostics", () => {
     expect(redacted).toContain("***")
   })
 
+  test("redacts overlapping exact provider secrets longest-first", () => {
+    const shortSecret = "abcd"
+    const longSecret = `${shortSecret}XYZ`
+    const redacted = securityModule.redactProviderSecrets(
+      `provider rejected ${longSecret}`,
+      [shortSecret, longSecret],
+    )
+
+    expect(redacted).toBe("provider rejected ***")
+    expect(redacted).not.toContain("XYZ")
+  })
+
+  test("redacts provider hints created by the exact replacement marker", () => {
+    const redacted = securityModule.redactProviderSecrets("abcdXYZ", [
+      "abcd",
+      "***XYZ",
+    ])
+
+    expect(redacted).toBe("***")
+    expect(redacted).not.toContain("***XYZ")
+  })
+
   test("stores structured success diagnostics without exposing metadata headers", async () => {
     const provider = await createProviderServer(({ req, res, body }) => {
       expect(req.headers.authorization).toBe("Bearer provider-token-123")
-      expect(req.headers["http-referer"]).toBe("https://locus.local/diagnostics")
+      expect(req.headers["http-referer"]).toBe(
+        "https://locus.local/diagnostics",
+      )
       const parsed = JSON.parse(body || "{}") as { stream?: boolean }
       if (parsed.stream) {
         res.writeHead(200, { "content-type": "text/event-stream" })
@@ -162,7 +196,8 @@ describe("provider diagnostics", () => {
         capabilities: { codex: true, helpers: true, streaming: true },
       } as const
 
-      const status = await gatewayModule.runProviderProfileDiagnostics(runtimeProfile)
+      const status =
+        await gatewayModule.runProviderProfileDiagnostics(runtimeProfile)
       expect(status).toMatchObject({
         ok: true,
         diagnosticVersion: 1,
@@ -180,7 +215,9 @@ describe("provider diagnostics", () => {
         "runtime",
         "codex_app_server",
       ])
-      expect(status.checks?.find((check) => check.id === "streaming")).toMatchObject({
+      expect(
+        status.checks?.find((check) => check.id === "streaming"),
+      ).toMatchObject({
         status: "ok",
       })
       expect(
@@ -189,15 +226,15 @@ describe("provider diagnostics", () => {
         status: "ok",
         message: expect.stringContaining("app-server adapter is selected"),
       })
-      expect(status.checks?.map((check) => check.id)).not.toContain(
-        "codex_sdk",
-      )
+      expect(status.checks?.map((check) => check.id)).not.toContain("codex_sdk")
 
       expect(storageModule.headersForRenderer(runtimeProfile.headers)).toEqual({
         "HTTP-Referer": "<redacted>",
       })
       expect(JSON.stringify(status)).not.toContain("provider-token-123")
-      expect(JSON.stringify(status)).not.toContain("https://locus.local/diagnostics")
+      expect(JSON.stringify(status)).not.toContain(
+        "https://locus.local/diagnostics",
+      )
     } finally {
       await provider.close()
     }
@@ -227,9 +264,9 @@ describe("provider diagnostics", () => {
     expect(
       storageModule.providerHeadersJsonForSave(undefined, dangerousHeadersJson),
     ).toBe("{}")
-    expect(storageModule.providerHeadersJsonForSave({}, existingHeadersJson)).toBe(
-      "{}",
-    )
+    expect(
+      storageModule.providerHeadersJsonForSave({}, existingHeadersJson),
+    ).toBe("{}")
     expect(
       storageModule.headersForRenderer(JSON.parse(existingHeadersJson)),
     ).toEqual({
@@ -271,16 +308,67 @@ describe("provider diagnostics", () => {
         capabilities: { codex: true },
       } as const
 
-      const status = await gatewayModule.runProviderProfileDiagnostics(runtimeProfile)
+      const status =
+        await gatewayModule.runProviderProfileDiagnostics(runtimeProfile)
       expect(status).toMatchObject({
         ok: false,
         diagnosticVersion: 1,
         category: "auth_failed",
       })
       expect(JSON.stringify(status)).not.toContain("provider-token-abc")
-      expect(JSON.stringify(status)).not.toContain("https://locus.local/rejected")
+      expect(JSON.stringify(status)).not.toContain(
+        "https://locus.local/rejected",
+      )
     } finally {
       await provider.close()
+    }
+  })
+
+  test("blocks local-only hosted diagnostics before any upstream fetch", async () => {
+    const localOnlyKeys = [
+      "LOCUS_LOCAL_ONLY",
+      "AGENT_CODE_FOR_ME_LOCAL_ONLY",
+      "ONECODE_LOCAL_ONLY",
+      "MAIN_VITE_LOCAL_ONLY",
+    ] as const
+    const previousEnv = Object.fromEntries(
+      localOnlyKeys.map((key) => [key, process.env[key]]),
+    )
+    for (const key of localOnlyKeys) delete process.env[key]
+    const originalFetch = globalThis.fetch
+    let fetchCount = 0
+    globalThis.fetch = (async () => {
+      fetchCount += 1
+      throw new Error("fetch must not be called")
+    }) as typeof fetch
+
+    try {
+      const status = await gatewayModule.runProviderProfileDiagnostics({
+        id: "profile_local_only_blocked",
+        name: "Blocked hosted provider",
+        presetId: null,
+        protocol: "openai-responses",
+        baseUrl: "https://api.1code.dev/v1",
+        defaultModel: "blocked-model",
+        authMode: "bearer",
+        token: "provider-token-local-only",
+        headers: {},
+        targetRuntimes: ["codex"],
+        capabilities: { codex: true },
+      })
+
+      expect(fetchCount).toBe(0)
+      expect(status).toMatchObject({ ok: false })
+      expect(status.message).toContain(
+        "Local-only mode blocks hosted upstream services",
+      )
+    } finally {
+      globalThis.fetch = originalFetch
+      for (const key of localOnlyKeys) {
+        const value = previousEnv[key]
+        if (value === undefined) delete process.env[key]
+        else process.env[key] = value
+      }
     }
   })
 })

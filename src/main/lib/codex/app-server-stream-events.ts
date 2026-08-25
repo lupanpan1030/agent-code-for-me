@@ -128,15 +128,29 @@ export type CodexAppServerRuntimeEventMapper = {
   buildInterruptRequest(): CodexAppServerTurnInterruptRequest | null
 }
 
-function statusFromTurn(turn: AppServerTurn): AgentJobStatus {
+function statusFromTurn(
+  turn: AppServerTurn,
+): Exclude<AgentJobStatus, "queued" | "running"> {
   if (turn.status === "completed") return "succeeded"
   if (turn.status === "interrupted") return "interrupted"
   if (turn.status === "failed") return "failed"
-  return "running"
+  // turn/completed carrying inProgress (or a future unknown value at runtime)
+  // is a protocol violation, not evidence of success.
+  return "failed"
 }
 
 function messageFromTurn(turn: AppServerTurn): string | null {
-  return turn.error?.message ?? turn.error?.code ?? null
+  return (
+    turn.error?.message ??
+    turn.error?.code ??
+    (turn.status === "inProgress"
+      ? "Codex app-server returned non-terminal status inProgress for turn/completed."
+      : turn.status !== "completed" &&
+          turn.status !== "interrupted" &&
+          turn.status !== "failed"
+        ? `Codex app-server returned unknown terminal status ${String(turn.status)}.`
+        : null)
+  )
 }
 
 function messageMetadata(input: {

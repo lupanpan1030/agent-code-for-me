@@ -12,6 +12,7 @@ import {
   createCodexRuntimeBlocker,
 } from "../../../../shared/codex-runtime-status"
 import { normalizeCodexStreamChunk } from "../../../../shared/codex-tool-normalizer"
+import { MAX_HEADER_SAFE_CREDENTIAL_LENGTH } from "../../../../shared/secret-redaction-policy"
 import {
   formatScopeValidationError,
   type ValidatedAgentScopeContract,
@@ -269,7 +270,11 @@ export const codexRouter = router({
   ),
 
   saveCodexApiKey: publicProcedure
-    .input(z.object({ apiKey: z.string().min(1) }))
+    .input(
+      z.object({
+        apiKey: z.string().min(1).max(MAX_HEADER_SAFE_CREDENTIAL_LENGTH),
+      }),
+    )
     .mutation(async ({ input }) => {
       const validation = await validateCodexApiKey(input.apiKey)
       // Only refuse to store a key we know is bad. Transient/network/rate-limit
@@ -536,12 +541,15 @@ export const codexRouter = router({
         let desktopJobReachedNaturalFinish = false
         let desktopJobAdapterFailed = false
         let desktopJobDb: ReturnType<typeof getDatabase> | null = null
+        let codexProviderUpstreamToken: string | null = null
         let codexProviderGatewayToken: string | null = null
         let codexProviderGatewayTokenRevoked = false
         const appServerPersistenceChunks: Record<string, unknown>[] = []
 
         const providerSecretHints = (): readonly string[] =>
-          codexProviderGatewayToken ? [codexProviderGatewayToken] : []
+          [codexProviderUpstreamToken, codexProviderGatewayToken].filter(
+            (secret): secret is string => Boolean(secret),
+          )
         const revokeCodexProviderGatewayToken = () => {
           if (!codexProviderGatewayToken || codexProviderGatewayTokenRevoked) {
             return
@@ -809,6 +817,7 @@ export const codexRouter = router({
               ) {
                 return
               }
+              codexProviderUpstreamToken = profile.token || null
               const gateway = await getProviderGatewayEndpoint(
                 profile.id,
                 "responses",
@@ -1137,6 +1146,7 @@ export const codexRouter = router({
                     }
                   : undefined,
               providerGatewayToken: codexProviderProfile?.token ?? null,
+              secretHints: providerSecretHints(),
               appManagedApiKey: codexProviderProfile
                 ? null
                 : appManagedCodexApiKey,
@@ -1246,6 +1256,8 @@ export const codexRouter = router({
               clearPendingCodexApprovals("Session cancelled.", input.subChatId)
               activeStreams.delete(input.subChatId)
             }
+            codexProviderUpstreamToken = null
+            codexProviderGatewayToken = null
           }
         })()
 

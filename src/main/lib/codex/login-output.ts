@@ -1,6 +1,10 @@
 import { stripCodexAnsi } from "./ansi-cleanup"
 
 const URL_CANDIDATE_REGEX = /https?:\/\/[^\s]+/g
+const MAX_CODEX_LOGIN_URL_DISCOVERY_BUFFER_LENGTH = 64 * 1024
+
+export const CODEX_LOGIN_OUTPUT_OMITTED =
+  "[Codex login diagnostic output omitted]"
 
 export type CodexLoginOutputSession = {
   rawOutput: string
@@ -19,11 +23,21 @@ export function isLocalhostHostname(hostname: string): boolean {
   )
 }
 
-export function extractFirstNonLocalhostUrl(output: string): string | null {
-  const matches = stripCodexAnsi(output).match(URL_CANDIDATE_REGEX)
-  if (!matches) return null
-
-  for (const match of matches) {
+function extractNonLocalhostUrl(
+  output: string,
+  requireTerminatedCandidate: boolean,
+): string | null {
+  const cleanOutput = stripCodexAnsi(output)
+  for (const candidate of cleanOutput.matchAll(URL_CANDIDATE_REGEX)) {
+    const match = candidate[0]
+    const matchEnd = (candidate.index ?? 0) + match.length
+    if (
+      requireTerminatedCandidate &&
+      matchEnd === cleanOutput.length &&
+      !/[),.;!?]$/.test(match)
+    ) {
+      continue
+    }
     try {
       const parsedUrl = new URL(match.trim().replace(/[),.;!?]+$/, ""))
       if (!isLocalhostHostname(parsedUrl.hostname)) {
@@ -35,6 +49,10 @@ export function extractFirstNonLocalhostUrl(output: string): string | null {
   }
 
   return null
+}
+
+export function extractFirstNonLocalhostUrl(output: string): string | null {
+  return extractNonLocalhostUrl(output, false)
 }
 
 export function redactCodexLoginUrlForDisplay(match: string): string {
@@ -85,10 +103,16 @@ export function appendCodexLoginOutput(
   const cleanChunk = stripCodexAnsi(chunk)
   if (!cleanChunk) return
 
-  session.rawOutput += cleanChunk
-  session.output += redactCodexLoginOutput(cleanChunk)
-
   if (!session.url) {
-    session.url = extractFirstNonLocalhostUrl(session.rawOutput)
+    const discoveryBuffer = `${session.rawOutput}${cleanChunk}`
+    session.url = extractNonLocalhostUrl(discoveryBuffer, true)
+    session.rawOutput = session.url
+      ? ""
+      : discoveryBuffer.slice(-MAX_CODEX_LOGIN_URL_DISCOVERY_BUFFER_LENGTH)
   }
+  // Login stdout/stderr is credential-bound and arrives on arbitrary stream
+  // boundaries. A partial URL, state, code, or API key cannot be safely
+  // classified until a future chunk arrives, so none of it is exposed to the
+  // renderer. The separately extracted authorization URL remains available.
+  session.output = CODEX_LOGIN_OUTPUT_OMITTED
 }

@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { MAX_HEADER_SAFE_CREDENTIAL_LENGTH } from "../../../../shared/secret-redaction-policy"
 import { testProviderProfile } from "../../provider-profiles/gateway"
 import { PROVIDER_PROFILE_PRESETS } from "../../provider-profiles/presets"
 import {
@@ -36,13 +37,13 @@ const providerBaseUrlInputSchema = z
 
 const saveInputSchema = z.object({
   id: z.string().optional(),
-  name: z.string().min(1),
+  name: z.string().trim().min(1),
   presetId: z.string().nullable().optional(),
   protocol: providerProfileProtocolSchema,
   baseUrl: providerBaseUrlInputSchema,
-  defaultModel: z.string().min(1),
+  defaultModel: z.string().trim().min(1),
   authMode: providerProfileAuthModeSchema,
-  token: z.string().optional(),
+  token: z.string().max(MAX_HEADER_SAFE_CREDENTIAL_LENGTH).optional(),
   headers: headersSchema.optional(),
   targetRuntimes: z.array(providerProfileTargetSchema).min(1),
   capabilities: providerProfileCapabilitiesSchema.optional(),

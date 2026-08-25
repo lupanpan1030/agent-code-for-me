@@ -16,6 +16,25 @@ afterEach(() => {
 })
 
 describe("main-process external URL opening", () => {
+  test("does not expose sensitive query values when local-only blocks a URL", async () => {
+    const secretState = "oauth-state-secret-value"
+    const secretCode = "oauth-code-secret-value"
+
+    try {
+      await openExternalUrl(
+        "test hosted OAuth URL",
+        `https://api.1code.dev/oauth?state=${secretState}&code=${secretCode}`,
+      )
+      throw new Error("expected local-only block")
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      expect(message).toContain("https://api.1code.dev")
+      expect(message).not.toContain(secretState)
+      expect(message).not.toContain(secretCode)
+    }
+    expect(openExternal).not.toHaveBeenCalled()
+  })
+
   test.each([
     "https://example.com/docs",
     "http://localhost:3000/callback",

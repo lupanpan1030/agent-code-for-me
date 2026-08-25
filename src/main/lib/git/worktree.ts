@@ -892,8 +892,13 @@ export async function checkoutBranch(
 export async function refExistsLocally(
   repoPath: string,
   ref: string,
+  options?: { signal?: AbortSignal; timeoutMs?: number },
 ): Promise<boolean> {
-  const git = simpleGit(repoPath)
+  const git = createGit(repoPath, {
+    signal: options?.signal,
+    timeoutMs: options?.timeoutMs,
+    absoluteTimeout: true,
+  })
   try {
     // Append ^{commit} to ensure the ref resolves to a commit-ish.
     const resolvedRef = await git.raw([

@@ -7,6 +7,7 @@ import {
   shouldCreateClaudeAgentSdkRollbackStash,
 } from "../src/main/lib/claude/agent-sdk-message-persistence"
 import { chats, projects, subChats } from "../src/main/lib/db/schema"
+import { EXACT_SECRET_REDACTION_MARKER } from "../src/shared/secret-redaction-policy"
 import { createAgentJobTestDb } from "./helpers/agent-job-test-db"
 
 function seedChat(db: ReturnType<typeof createAgentJobTestDb>) {
@@ -178,9 +179,10 @@ describe("Claude Agent SDK message persistence", () => {
     ).toEqual(new Date("2026-06-01T00:00:00.000Z"))
   })
 
-  test("redacts exact run secrets recursively before assistant messages reach the database", async () => {
+  test("redacts upstream and gateway hints recursively before assistant messages reach the database", async () => {
     const db = createAgentJobTestDb()
     seedChat(db)
+    const upstreamToken = randomBytes(32).toString("hex")
     const gatewayToken = randomBytes(32).toString("hex")
 
     const result = await persistClaudeAgentSdkAssistantResponse({
@@ -191,17 +193,20 @@ describe("Claude Agent SDK message persistence", () => {
         {
           id: "user-1",
           role: "user",
-          parts: [{ type: "text", text: `prior echo ${gatewayToken}` }],
+          parts: [{ type: "text", text: `prior echo ${upstreamToken}` }],
         },
       ],
       parts: [
-        { type: "text", text: `malicious assistant echo ${gatewayToken}` },
+        {
+          type: "text",
+          text: `successful assistant echo ${upstreamToken} ${gatewayToken}`,
+        },
       ],
       metadata: {
         sessionId: "session-1",
-        note: `metadata echo ${gatewayToken}`,
+        note: `metadata echo ${upstreamToken}`,
       },
-      secretHints: [gatewayToken],
+      secretHints: [upstreamToken, gatewayToken],
       historyEnabled: false,
       cwd: "/repo",
       createId: () => "assistant-secret",
@@ -213,13 +218,20 @@ describe("Claude Agent SDK message persistence", () => {
       .from(subChats)
       .where(eq(subChats.id, "sub-1"))
       .get()
+    expect(subChat?.messages).not.toContain(upstreamToken)
     expect(subChat?.messages).not.toContain(gatewayToken)
-    expect(subChat?.messages).toContain("<redacted>")
+    expect(subChat?.messages).toContain(EXACT_SECRET_REDACTION_MARKER)
     expect(JSON.stringify(result)).not.toContain(gatewayToken)
+    expect(JSON.stringify(result)).not.toContain(upstreamToken)
     expect(result.persistence.assistantMessage).toMatchObject({
-      parts: [{ type: "text", text: "malicious assistant echo <redacted>" }],
+      parts: [
+        {
+          type: "text",
+          text: `successful assistant echo ${EXACT_SECRET_REDACTION_MARKER} ${EXACT_SECRET_REDACTION_MARKER}`,
+        },
+      ],
       metadata: {
-        note: "metadata echo <redacted>",
+        note: `metadata echo ${EXACT_SECRET_REDACTION_MARKER}`,
       },
     })
   })

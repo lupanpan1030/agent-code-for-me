@@ -142,7 +142,7 @@ describe("Claude raw logger", () => {
     )
   })
 
-  test("redacts an exact bare run secret before writing SDK diagnostics", async () => {
+  test("omits credential-bound SDK diagnostic content before writing to disk", async () => {
     process.env.CLAUDE_RAW_LOG = "1"
     const gatewayToken = randomBytes(32).toString("hex")
 
@@ -156,10 +156,35 @@ describe("Claude raw logger", () => {
     const files = await readdir(logsDir)
     const raw = await readFile(join(logsDir, files[0]), "utf8")
     expect(raw).not.toContain(gatewayToken)
-    expect(raw).toContain("<redacted>")
+    expect(raw).toContain("credential-bound diagnostic content omitted")
     expect(JSON.parse(raw.trim()).redaction.appliedRules).toContain(
-      "secret-hint",
+      "credential-bound-diagnostic-omitted",
     )
+  })
+
+  test("does not persist either half of a credential split across SDK messages", async () => {
+    process.env.CLAUDE_RAW_LOG = "1"
+    const gatewayToken = randomBytes(32).toString("hex")
+    const firstHalf = gatewayToken.slice(0, gatewayToken.length / 2)
+    const secondHalf = gatewayToken.slice(gatewayToken.length / 2)
+
+    await rawLogger.logRawClaudeMessage(
+      "session-split-secret",
+      { type: "assistant", text: firstHalf },
+      [gatewayToken],
+    )
+    await rawLogger.logRawClaudeMessage(
+      "session-split-secret",
+      { type: "assistant", text: secondHalf },
+      [gatewayToken],
+    )
+
+    const logsDir = join(userDataDir, "logs", "claude")
+    const files = await readdir(logsDir)
+    const raw = await readFile(join(logsDir, files[0]), "utf8")
+    expect(raw).not.toContain(firstHalf)
+    expect(raw).not.toContain(secondHalf)
+    expect(raw).not.toContain(gatewayToken)
   })
 
   test("cleans up stale logs when a new raw log session starts", async () => {

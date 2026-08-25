@@ -5,6 +5,7 @@ import {
   appendRunEventsToAgentJob,
   createDesktopStreamEventMapper,
   createRuntimeRendererChunkEmitter,
+  createRuntimeStreamChunkSecretRedactor,
   mapDesktopStreamChunkToRunEvents,
   redactRendererDiagnosticChunk,
 } from "../src/main/lib/agent-runtime/stream-event-mapper"
@@ -13,6 +14,7 @@ import {
   listAgentJobEvents,
   startAgentJob,
 } from "../src/main/lib/headless/job-store"
+import { EXACT_SECRET_REDACTION_MARKER } from "../src/shared/secret-redaction-policy"
 import { createAgentJobTestDb } from "./helpers/agent-job-test-db"
 
 describe("desktop stream event mapper", () => {
@@ -451,7 +453,7 @@ describe("desktop stream event mapper", () => {
     expect(JSON.stringify(emitted[1])).not.toContain(gatewayToken)
     expect(emitted[1]).toMatchObject({
       type: "text-delta",
-      delta: "malicious child echoed <redacted>",
+      delta: `malicious child echoed ${EXACT_SECRET_REDACTION_MARKER}`,
     })
 
     const persisted = listAgentJobEvents(db, job.id)
@@ -480,13 +482,94 @@ describe("desktop stream event mapper", () => {
     expect(JSON.stringify(persisted)).not.toContain(gatewayToken)
     expect(JSON.parse(persisted[3].payloadJson)).toMatchObject({
       payload: {
-        delta: "malicious child echoed <redacted>",
+        delta: `malicious child echoed ${EXACT_SECRET_REDACTION_MARKER}`,
       },
       redaction: {
         status: "redacted",
         appliedRules: ["secret-hint"],
       },
     })
+  })
+
+  test("runtime renderer chunk emitter flushes a normal pending suffix before finish", () => {
+    const secretHint = "ordinary-prefix-secret"
+    const emitted: Array<Record<string, unknown>> = []
+    const safeEmit = createRuntimeRendererChunkEmitter({
+      runtimeId: "claude-code",
+      runId: "run-finish-flush",
+      getJobId: () => null,
+      getDb: () => null,
+      getMapper: () => null,
+      getSecretHints: () => [secretHint],
+      isActive: () => true,
+      markInactive: () => {},
+      markFailed: () => {},
+      emitNext: (chunk) => emitted.push(chunk as Record<string, unknown>),
+    })
+
+    expect(
+      safeEmit({
+        type: "text-delta",
+        id: "normal-tail",
+        delta: "keep ordinary",
+      }),
+    ).toBe(true)
+    expect(safeEmit({ type: "finish", status: "succeeded" })).toBe(true)
+
+    expect(emitted.map((chunk) => chunk.type)).toEqual([
+      "text-delta",
+      "text-delta",
+      "finish",
+    ])
+    expect(
+      emitted
+        .filter((chunk) => chunk.type === "text-delta")
+        .map((chunk) => chunk.delta)
+        .join(""),
+    ).toBe("keep ordinary")
+  })
+
+  test("stream exact redaction preserves interleaved chunk order", () => {
+    const secretHint = "interleaved-secret-value"
+    const splitAt = 12
+    const redactor = createRuntimeStreamChunkSecretRedactor()
+    const output = [
+      ...redactor.push(
+        {
+          type: "text-delta",
+          id: "assistant-1",
+          delta: `before ${secretHint.slice(0, splitAt)}`,
+        },
+        [secretHint],
+      ),
+      ...redactor.push(
+        { type: "message-metadata", messageMetadata: { inputTokens: 1 } },
+        [secretHint],
+      ),
+      ...redactor.push(
+        {
+          type: "text-delta",
+          id: "assistant-1",
+          delta: `${secretHint.slice(splitAt)} after`,
+        },
+        [secretHint],
+      ),
+      ...redactor.push({ type: "finish", status: "succeeded" }, [secretHint]),
+    ].map((entry) => entry.chunk as Record<string, unknown>)
+
+    expect(output.map((chunk) => chunk.type)).toEqual([
+      "text-delta",
+      "message-metadata",
+      "text-delta",
+      "finish",
+    ])
+    expect(
+      output
+        .filter((chunk) => chunk.type === "text-delta")
+        .map((chunk) => chunk.delta)
+        .join(""),
+    ).toBe(`before ${EXACT_SECRET_REDACTION_MARKER} after`)
+    expect(JSON.stringify(output)).not.toContain(secretHint)
   })
 
   test("Claude route delegates renderer diagnostics to the runtime emitter", () => {
@@ -569,6 +652,13 @@ describe("desktop stream event mapper", () => {
       messagePersistenceIndex,
       "Codex assistant persistence",
     ).toBeGreaterThan(assistantMessageIndex)
+    expect(source).toContain(
+      "codexProviderUpstreamToken = profile.token || null",
+    )
+    expect(source).toContain(
+      "[codexProviderUpstreamToken, codexProviderGatewayToken].filter(",
+    )
+    expect(source).toContain("secretHints: providerSecretHints(),")
     expect(source).toContain("revokeCodexProviderGatewayToken()")
   })
 

@@ -46,6 +46,7 @@ function codexStatus(
 function claudeMetadata(
   overrides: Partial<{
     isConnected: boolean
+    credentialUsable: boolean
     isExpired: boolean
     isExpiringSoon: boolean
     refreshable: boolean
@@ -53,6 +54,7 @@ function claudeMetadata(
 ) {
   return {
     isConnected: true,
+    credentialUsable: true,
     isExpired: false,
     isExpiringSoon: false,
     refreshable: false,
@@ -102,6 +104,23 @@ describe("Local Job API runtime readiness", () => {
       state: "needs-auth",
       detail: "No Claude credential source is available.",
     })
+  })
+
+  test("does not report invalid stored Claude app credentials as ready", async () => {
+    const readiness = await resolveLocalJobApiRuntimeReadiness({
+      runtimeId: "claude-code",
+      dependencies: {
+        hasAnyClaudeCodeAccount: () => true,
+        getClaudeCodeCredentialMetadata: () =>
+          claudeMetadata({
+            isConnected: false,
+            credentialUsable: false,
+          }),
+        getExistingClaudeCredentials: () => null,
+      },
+    })
+
+    expect(readiness.state).toBe("needs-auth")
   })
 
   test("does not report expiring unrefreshable Claude app credentials as ready", async () => {
@@ -198,6 +217,29 @@ describe("Local Job API runtime readiness", () => {
       detail: "No Claude credential source is available.",
     })
     expect(JSON.stringify(readiness)).not.toContain("external-access-token")
+  })
+
+  test("does not report policy-invalid Claude CLI credentials as ready", async () => {
+    for (const credential of [
+      { accessToken: "short" },
+      { accessToken: "valid-access-token\nsecond-line" },
+      { accessToken: "x".repeat(16 * 1024 + 1) },
+      {
+        accessToken: "valid-access-token",
+        refreshToken: "short",
+      },
+    ]) {
+      clearRuntimeReadinessCacheForTest()
+      const readiness = await resolveLocalJobApiRuntimeReadiness({
+        runtimeId: "claude-code",
+        dependencies: {
+          hasAnyClaudeCodeAccount: () => false,
+          getExistingClaudeCredentials: () => credential,
+        },
+      })
+      expect(readiness.state).toBe("needs-auth")
+      expect(JSON.stringify(readiness)).not.toContain(credential.accessToken)
+    }
   })
 
   test("does not report expiring unrefreshable Claude CLI credentials as ready", async () => {

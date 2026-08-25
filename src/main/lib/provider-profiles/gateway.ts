@@ -24,6 +24,7 @@ import type {
   ProviderProfileCapabilities,
   ProviderProfileTestStatus,
 } from "../../../shared/provider-profile-types"
+import { assertOfficialCloudAllowed } from "../local-only"
 import {
   getProviderProfileRuntimeConfig,
   normalizeProviderBaseUrl,
@@ -378,6 +379,10 @@ function hasScopedGatewayAuth(params: {
 
 function appendPath(baseUrl: string, path: string): string {
   const normalizedBase = normalizeProviderBaseUrl(baseUrl)
+  assertOfficialCloudAllowed(
+    "contact the configured provider through the local gateway",
+    normalizedBase,
+  )
   const normalizedPath = path.startsWith("/") ? path : `/${path}`
   return `${normalizedBase}${normalizedPath}`
 }

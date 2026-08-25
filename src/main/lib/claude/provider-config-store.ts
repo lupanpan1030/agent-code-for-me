@@ -1,13 +1,14 @@
 import { eq } from "drizzle-orm"
 import { z } from "zod"
 import { claudeProviderConfig, getDatabase } from "../db"
-import { isSecureStorageAvailable } from "../secure-storage"
 import {
   decryptProviderToken,
   encryptProviderToken,
   normalizeProviderBaseUrl,
   normalizeProviderToken,
+  requireReusableEncryptedProviderToken,
 } from "../provider-token"
+import { isSecureStorageAvailable } from "../secure-storage"
 import type {
   ClaudeProviderAuthMode,
   ClaudeProviderRuntimeConfig,
@@ -24,8 +25,18 @@ export type ClaudeProviderMetadata = {
   baseUrl: string
   authMode: ClaudeProviderAuthMode
   hasToken: boolean
+  credentialUsable: boolean
   createdAt: string | null
   updatedAt: string | null
+}
+
+function isStoredCredentialUsable(encryptedToken: string): boolean {
+  try {
+    const token = decryptProviderToken(encryptedToken)
+    return Boolean(token && normalizeProviderToken(token))
+  } catch {
+    return false
+  }
 }
 
 export type ClaudeProviderConfigResponse = {
@@ -49,14 +60,15 @@ export type ImportLegacyClaudeProviderConfigResult = {
 function rowToMetadata(
   row: typeof claudeProviderConfig.$inferSelect,
 ): ClaudeProviderMetadata {
+  const model = row.model.trim()
   return {
     id: row.id,
-    model: row.model,
-    baseUrl: row.baseUrl,
-    authMode: claudeProviderAuthModeSchema
-      .catch("auth_token")
-      .parse(row.authMode),
+    model,
+    baseUrl: normalizeProviderBaseUrl(row.baseUrl),
+    authMode: claudeProviderAuthModeSchema.parse(row.authMode),
     hasToken: Boolean(row.encryptedToken),
+    credentialUsable:
+      Boolean(model) && isStoredCredentialUsable(row.encryptedToken),
     createdAt: row.createdAt?.toISOString() ?? null,
     updatedAt: row.updatedAt?.toISOString() ?? null,
   }
@@ -84,7 +96,9 @@ export function getActiveClaudeProviderConfig():
   | ClaudeProviderRuntimeConfig
   | undefined {
   const row = getStoredProviderRow()
-  if (!row?.encryptedToken || !row.model || !row.baseUrl) {
+  if (!row) return undefined
+  const model = row.model.trim()
+  if (!model || !row.encryptedToken || !row.baseUrl) {
     return undefined
   }
 
@@ -92,11 +106,9 @@ export function getActiveClaudeProviderConfig():
   if (!token) return undefined
 
   return {
-    model: row.model,
-    baseUrl: row.baseUrl,
-    authMode: claudeProviderAuthModeSchema
-      .catch("auth_token")
-      .parse(row.authMode),
+    model,
+    baseUrl: normalizeProviderBaseUrl(row.baseUrl),
+    authMode: claudeProviderAuthModeSchema.parse(row.authMode),
     token: normalizeProviderToken(token),
   }
 }
@@ -106,6 +118,7 @@ export function saveClaudeProviderConfig(
 ): ClaudeProviderConfigResponse {
   const model = input.model.trim()
   const baseUrl = normalizeProviderBaseUrl(input.baseUrl)
+  const authMode = claudeProviderAuthModeSchema.parse(input.authMode)
   const token = input.token ? normalizeProviderToken(input.token) : undefined
   const existing = getStoredProviderRow()
 
@@ -117,11 +130,25 @@ export function saveClaudeProviderConfig(
     throw new Error("Token is required for a new provider config")
   }
 
-  const encryptedToken = token ? encryptProviderToken(token) : existing?.encryptedToken
-
-  if (!encryptedToken) {
-    throw new Error("Token is required for a new provider config")
+  if (!token && existing?.encryptedToken) {
+    const existingBaseUrl = normalizeProviderBaseUrl(existing.baseUrl)
+    const existingAuthMode = claudeProviderAuthModeSchema.safeParse(
+      existing.authMode,
+    )
+    if (
+      existingBaseUrl !== baseUrl ||
+      !existingAuthMode.success ||
+      existingAuthMode.data !== authMode
+    ) {
+      throw new Error(
+        "Token is required when changing provider endpoint or auth mode",
+      )
+    }
   }
+
+  const encryptedToken = token
+    ? encryptProviderToken(token)
+    : requireReusableEncryptedProviderToken(existing?.encryptedToken)
 
   const db = getDatabase()
   db.insert(claudeProviderConfig)
@@ -129,7 +156,7 @@ export function saveClaudeProviderConfig(
       id: CONFIG_ID,
       model,
       baseUrl,
-      authMode: input.authMode,
+      authMode,
       encryptedToken,
       createdAt: existing?.createdAt ?? new Date(),
       updatedAt: new Date(),
@@ -139,7 +166,7 @@ export function saveClaudeProviderConfig(
       set: {
         model,
         baseUrl,
-        authMode: input.authMode,
+        authMode,
         encryptedToken,
         updatedAt: new Date(),
       },
@@ -167,14 +194,21 @@ export function importLegacyClaudeProviderConfig(
 ): ImportLegacyClaudeProviderConfigResult {
   const existing = getStoredProviderRow()
   if (!existing) {
+    const model = input.model.trim()
+    if (!model) {
+      throw new Error("Model and base URL are required")
+    }
+    const authMode = claudeProviderAuthModeSchema.parse(input.authMode)
     const db = getDatabase()
     db.insert(claudeProviderConfig)
       .values({
         id: CONFIG_ID,
-        model: input.model.trim(),
+        model,
         baseUrl: normalizeProviderBaseUrl(input.baseUrl),
-        authMode: input.authMode,
-        encryptedToken: encryptProviderToken(normalizeProviderToken(input.token)),
+        authMode,
+        encryptedToken: encryptProviderToken(
+          normalizeProviderToken(input.token),
+        ),
         createdAt: new Date(),
         updatedAt: new Date(),
       })

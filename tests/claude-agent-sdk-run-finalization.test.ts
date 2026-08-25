@@ -10,6 +10,7 @@ import {
 import { createClaudeAgentSdkStreamConsumerMutableState } from "../src/main/lib/claude/agent-sdk-stream-consumer"
 import type { UIMessageChunk } from "../src/main/lib/claude/types"
 import { chats, projects, subChats } from "../src/main/lib/db/schema"
+import { EXACT_SECRET_REDACTION_MARKER } from "../src/shared/secret-redaction-policy"
 import { createAgentJobTestDb } from "./helpers/agent-job-test-db"
 
 function seedChat(db: ReturnType<typeof createAgentJobTestDb>) {
@@ -224,7 +225,7 @@ describe("Claude Agent SDK run finalization", () => {
       .where(eq(subChats.id, "sub-1"))
       .get()?.messages
     expect(persisted).not.toContain(gatewayToken)
-    expect(persisted).toContain("<redacted>")
+    expect(persisted).toContain(EXACT_SECRET_REDACTION_MARKER)
   })
 
   test("finalizes using stream consumer state and writes finalized values back", async () => {

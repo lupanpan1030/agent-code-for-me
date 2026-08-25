@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm"
 import { z } from "zod"
+import { MAX_HEADER_SAFE_CREDENTIAL_LENGTH } from "../../../../shared/secret-redaction-policy"
 import { getDatabase, localApiProviderConfigs } from "../../db"
 import {
   getLocalApiProviderTokenRequirement,
@@ -34,7 +35,7 @@ const saveInputSchema = providerPurposeInputSchema.extend({
         })
       }
     }),
-  token: z.string().optional(),
+  token: z.string().max(MAX_HEADER_SAFE_CREDENTIAL_LENGTH).optional(),
 })
 
 export const localApiProviderConfigRouter = router({

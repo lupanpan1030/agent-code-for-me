@@ -1,4 +1,4 @@
-import { describe, expect, mock, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 
 mock.module("electron", () => ({
   app: {
@@ -26,8 +26,30 @@ const { getLocalApiProviderTokenRequirement, localApiProviderPurposeSchema } =
 const { normalizeProviderBaseUrl } = await import(
   "../src/main/lib/provider-token"
 )
+const secureStorageModule = await import("../src/main/lib/secure-storage")
+
+function storedEncryptedToken(token: string): string {
+  return Buffer.from(`encrypted:${token}`, "utf-8").toString("base64")
+}
 
 describe("local API provider config security", () => {
+  beforeEach(() => {
+    secureStorageModule.setElectronSafeStorageForTest({
+      isEncryptionAvailable: () => true,
+      encryptString: (value) => Buffer.from(`encrypted:${value}`, "utf-8"),
+      decryptString(value) {
+        const raw = value.toString("utf-8")
+        return raw.startsWith("encrypted:")
+          ? raw.slice("encrypted:".length)
+          : ""
+      },
+    })
+  })
+
+  afterEach(() => {
+    secureStorageModule.setElectronSafeStorageForTest(null)
+  })
+
   test("accepts voice transcription as a helper provider purpose", () => {
     expect(localApiProviderPurposeSchema.parse("voice_transcription")).toBe(
       "voice_transcription",
@@ -39,7 +61,7 @@ describe("local API provider config security", () => {
       getLocalApiProviderTokenRequirement({
         baseUrl: "https://api.example.com/v1",
         existingBaseUrl: "https://api.example.com/v1",
-        existingEncryptedToken: "encrypted-token",
+        existingEncryptedToken: storedEncryptedToken("token123"),
       }),
     ).toBe("none")
 
@@ -59,6 +81,15 @@ describe("local API provider config security", () => {
         existingEncryptedToken: "encrypted-token",
       }),
     ).toBe("none")
+
+    expect(() =>
+      getLocalApiProviderTokenRequirement({
+        baseUrl: "https://api.example.com/v1",
+        token: "1234567",
+        existingBaseUrl: "https://api.example.com/v1",
+        existingEncryptedToken: "encrypted-token",
+      }),
+    ).toThrow("8-16384")
 
     expect(
       getLocalApiProviderTokenRequirement({

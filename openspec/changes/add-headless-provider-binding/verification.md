@@ -93,3 +93,37 @@ Result: 113 passed, 0 failed, 480 assertions.
   abort-driven cancellation. The route clears its dynamic hint and cleanup
   references after cleanup; static mapper hints remain main-process-only for
   already-created RunEvent teardown.
+
+## Task 6.10 working-tree remediation receipt — not exact source
+
+Date: 2026-08-25 (Pacific/Auckland)
+
+Source state: checkout `HEAD = 1d4be1a1955fb23928a12b3479f1d77238bf84d0` plus an
+uncommitted integrated working-tree diff. This receipt proves the targeted cases
+on that transient working tree only. It is **not** an exact source-SHA receipt,
+does not satisfy task 7.4 or either task 7.5 review verdict, and is invalidated
+by any later implementation edit.
+
+Command:
+
+```text
+bun test tests/provider-token.test.ts tests/provider-profile-storage-security.test.ts tests/legacy-provider-config-storage-security.test.ts tests/local-api-provider-config-security.test.ts tests/headless-provider-binding.test.ts tests/headless-cli-dispatcher.test.ts tests/headless-runtime-adapters.test.ts tests/runtime-redaction.test.ts tests/runtime-stream-event-mapper.test.ts tests/codex-app-server-adapter.test.ts tests/claude-agent-sdk-provider-startup.test.ts tests/claude-agent-sdk-message-persistence.test.ts tests/claude-agent-sdk-desktop-run-envelope.test.ts
+```
+
+Observed result: 175 passed, 0 failed, 753 assertions across 13 files.
+
+The passing cases include:
+
+- URL-userinfo and short-token rejection plus authoritative stored-credential
+  reuse/read validation;
+- upstream and scoped gateway exact hints across headless, Desktop Claude, and
+  Desktop Codex output;
+- a secret split across adjacent stream fragments without leaking a prefix;
+- success, tool, startup-error, durable event/message/result, and Local Job API
+  projections;
+- scoped-token terminal cleanup and Codex shell-snapshot scrubbing.
+
+Outstanding closeout remains explicit in tasks 7.4–7.7: commit the final source,
+run exact-SHA `check:full`, obtain fresh Codex and Claude Code verdicts for that
+same SHA, locally merge and re-run the post-merge gate, then record Owner
+acceptance before archive.

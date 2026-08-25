@@ -5,6 +5,7 @@ import {
   decryptProviderToken,
   normalizeProviderBaseUrl,
   normalizeProviderToken,
+  requireReusableEncryptedProviderToken,
 } from "./provider-token"
 
 export const localApiProviderPurposeSchema = z.enum([
@@ -28,8 +29,18 @@ type LocalApiProviderMetadata = {
   model: string
   baseUrl: string
   hasToken: boolean
+  credentialUsable: boolean
   createdAt: string | null
   updatedAt: string | null
+}
+
+function isStoredCredentialUsable(encryptedToken: string): boolean {
+  try {
+    const token = decryptProviderToken(encryptedToken)
+    return Boolean(token && normalizeProviderToken(token))
+  } catch {
+    return false
+  }
 }
 
 export function getLocalApiProviderTokenRequirement(input: {
@@ -38,7 +49,10 @@ export function getLocalApiProviderTokenRequirement(input: {
   existingEncryptedToken?: string | null
   existingBaseUrl?: string | null
 }): "none" | "missing" | "destination_changed" {
-  if (input.token?.trim()) return "none"
+  if (input.token?.trim()) {
+    normalizeProviderToken(input.token)
+    return "none"
+  }
 
   const baseUrl = normalizeProviderBaseUrl(input.baseUrl)
   const destinationChanged = Boolean(
@@ -47,6 +61,7 @@ export function getLocalApiProviderTokenRequirement(input: {
 
   if (destinationChanged) return "destination_changed"
   if (!input.existingEncryptedToken) return "missing"
+  requireReusableEncryptedProviderToken(input.existingEncryptedToken)
   return "none"
 }
 
@@ -62,11 +77,14 @@ export function getStoredProviderRow(purpose: LocalApiProviderPurpose) {
 export function rowToMetadata(
   row: typeof localApiProviderConfigs.$inferSelect,
 ): LocalApiProviderMetadata {
+  const model = row.model.trim()
   return {
     purpose: localApiProviderPurposeSchema.parse(row.id),
-    model: row.model,
-    baseUrl: row.baseUrl,
+    model,
+    baseUrl: normalizeProviderBaseUrl(row.baseUrl),
     hasToken: Boolean(row.encryptedToken),
+    credentialUsable:
+      Boolean(model) && isStoredCredentialUsable(row.encryptedToken),
     createdAt: row.createdAt?.toISOString() ?? null,
     updatedAt: row.updatedAt?.toISOString() ?? null,
   }
@@ -76,7 +94,9 @@ export function getActiveLocalApiProviderConfig(
   purpose: LocalApiProviderPurpose,
 ): LocalApiProviderRuntimeConfig | undefined {
   const row = getStoredProviderRow(purpose)
-  if (!row?.encryptedToken || !row.model || !row.baseUrl) {
+  if (!row) return undefined
+  const model = row.model.trim()
+  if (!model || !row.encryptedToken || !row.baseUrl) {
     return undefined
   }
 
@@ -85,8 +105,8 @@ export function getActiveLocalApiProviderConfig(
 
   return {
     purpose,
-    model: row.model,
-    baseUrl: row.baseUrl,
+    model,
+    baseUrl: normalizeProviderBaseUrl(row.baseUrl),
     token: normalizeProviderToken(token),
   }
 }

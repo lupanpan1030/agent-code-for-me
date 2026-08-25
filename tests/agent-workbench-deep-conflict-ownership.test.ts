@@ -55,6 +55,28 @@ describe("Agent Workbench deep-conflict ownership", () => {
     expect(routerSource).not.toContain("agent-workbench/merge-tree")
   })
 
+  test("keeps the request budget wired through the production base-commit owner", () => {
+    const routerSource = source("src/main/lib/trpc/routers/agent-workbench.ts")
+    const baseCommitSource = source("src/main/lib/chat-base-commit.ts")
+    const worktreeSource = source("src/main/lib/git/worktree.ts")
+
+    expect(routerSource).toMatch(
+      /ensureBaseCommit: \(taskId, options\) =>\s*ensureChatBaseCommit\(db, taskId, options\)/,
+    )
+    expect(baseCommitSource).toContain('from "./git/git-factory"')
+    expect(baseCommitSource).not.toContain('from "simple-git"')
+    expect(baseCommitSource.match(/absoluteTimeout: true/g)).toHaveLength(2)
+    expect(baseCommitSource).toContain(
+      "await readMergeBase(worktreePath, baseBranch, options)",
+    )
+    expect(baseCommitSource).toContain(
+      "distance: await readDistance(worktreePath, candidate, options)",
+    )
+    expect(worktreeSource).toMatch(
+      /export async function refExistsLocally[\s\S]*?createGit\(repoPath, \{[\s\S]*?signal: options\?\.signal,[\s\S]*?timeoutMs: options\?\.timeoutMs,[\s\S]*?absoluteTimeout: true,[\s\S]*?\}\)/,
+    )
+  })
+
   test("guards against rebuilding a single giant deep-conflict file", () => {
     expect(lineCount(FACADE)).toBeLessThan(450)
     expect(lineCount(SNAPSHOT)).toBeLessThan(320)

@@ -12,6 +12,7 @@ import {
   getCodexAppServerPermissionMapping,
 } from "../agent-runtime/permission-policy"
 import {
+  createRuntimeStreamChunkSecretRedactor,
   mapDesktopStreamChunkToRunEvents,
   redactRendererRuntimeChunk,
 } from "../agent-runtime/stream-event-mapper"
@@ -85,9 +86,13 @@ export type CreateCodexAppServerAdapterInput = {
   createTransport?: (input: {
     request: DesktopRunRequest
     providerBinding: CodexAppServerProviderBinding
+    /** Main-process-only exact values for transport diagnostic redaction. */
+    secretHints: readonly string[]
   }) => CodexAppServerTransport
   providerGatewayToken?: string | null
   appManagedApiKey?: string | null
+  /** Main-process-only exact values for canonical runtime redaction. */
+  secretHints?: readonly string[]
   controlledEditEnabled?: boolean
   processEnv?: NodeJS.ProcessEnv
   shellEnv?: NodeJS.ProcessEnv
@@ -336,6 +341,7 @@ export function createCodexAppServerAdapter({
   createTransport,
   providerGatewayToken = null,
   appManagedApiKey = null,
+  secretHints = [],
   controlledEditEnabled = false,
   processEnv = process.env,
   shellEnv,
@@ -414,19 +420,25 @@ export function createCodexAppServerAdapter({
         }),
         "pre-start",
       )
+      const runtimeSecretHints = [
+        ...new Set(
+          [providerGatewayToken, appManagedApiKey, ...secretHints].filter(
+            (secret): secret is string => Boolean(secret),
+          ),
+        ),
+      ]
       const transport =
         createTransport?.({
           request,
           providerBinding: appServerProviderBinding,
+          secretHints: runtimeSecretHints,
         }) ??
         createCodexAppServerStdioTransport({
           cwd: request.context.cwd,
           env: appServerProviderBinding.runtimeEnv,
+          secretHints: runtimeSecretHints,
         })
-      const runtimeSecretHints = [
-        providerGatewayToken,
-        appManagedApiKey,
-      ].filter((secret): secret is string => Boolean(secret))
+      const streamSecretRedactor = createRuntimeStreamChunkSecretRedactor()
       const redactRuntimeChunk = (
         chunk: Record<string, unknown>,
       ): Record<string, unknown> =>
@@ -477,6 +489,7 @@ export function createCodexAppServerAdapter({
         registerPendingQuestion,
         unregisterPendingQuestion,
         timeoutMs: userInputTimeoutMs,
+        secretHints: runtimeSecretHints,
         onGuardEvent: (event) => {
           emitRuntimeChunk({ type: "guard-event", event })
         },
@@ -486,15 +499,18 @@ export function createCodexAppServerAdapter({
       })
       let sequence = 0
       let lastError: DesktopRunResult["error"] | null = null
-      let finishRun: ((result: DesktopRunResult) => void) | null = null
+      let pendingTerminalChunk: Record<string, unknown> | null = null
       const emittedSessionInitThreadIds = new Set<string>()
 
-      const emitChunk = (chunk: Record<string, unknown>) => {
+      const emitMappedChunk = (
+        chunk: Record<string, unknown>,
+        preAppliedRules: readonly string[] = [],
+      ): Record<string, unknown> | null => {
         if (chunk.type === "session-init") {
           const threadId =
             typeof chunk.threadId === "string" ? chunk.threadId : null
           if (threadId && emittedSessionInitThreadIds.has(threadId)) {
-            return
+            return null
           }
           if (threadId) {
             emittedSessionInitThreadIds.add(threadId)
@@ -508,22 +524,96 @@ export function createCodexAppServerAdapter({
           sequence: ++sequence,
           chunk,
           secretHints: runtimeSecretHints,
+          preAppliedRules,
         })
         for (const event of events) {
           request.trace.emit(event)
         }
         return redactedChunk
       }
-
-      const terminal = new Promise<DesktopRunResult>((resolve) => {
-        let settled = false
-        const removeNotification = transport.onNotification((notification) => {
-          const chunks = runtimeMapper.map(
-            notification as CodexAppServerNotification,
+      const emitChunk = (
+        chunk: Record<string, unknown>,
+      ): Record<string, unknown>[] => {
+        const emittedChunks: Record<string, unknown>[] = []
+        for (const streamChunk of streamSecretRedactor.push(
+          chunk,
+          runtimeSecretHints,
+        )) {
+          const emitted = emitMappedChunk(
+            streamChunk.chunk as Record<string, unknown>,
+            streamChunk.appliedRules,
           )
-          for (const chunk of chunks) {
-            const redactedChunk = emitChunk(chunk)
-            if (!redactedChunk) continue
+          if (emitted) emittedChunks.push(emitted)
+        }
+        return emittedChunks
+      }
+
+      let resolveTerminal: (result: DesktopRunResult) => void = () => {}
+      const terminal = new Promise<DesktopRunResult>((resolve) => {
+        resolveTerminal = resolve
+      })
+      let terminalSettled = false
+      let removeTerminalNotification = () => {}
+      let removeTransportExit = () => {}
+      let transportExitError: Error | null = null
+      const pendingTransportExitRejectors = new Set<(error: Error) => void>()
+      const settleTerminal = (result: DesktopRunResult) => {
+        if (terminalSettled) return
+        terminalSettled = true
+        removeTerminalNotification()
+        removeTransportExit()
+        resolveTerminal(result)
+      }
+
+      removeTerminalNotification = transport.onNotification((notification) => {
+        const chunks = runtimeMapper.map(
+          notification as CodexAppServerNotification,
+        )
+        for (const chunk of chunks) {
+          if (chunk.type === "finish") {
+            // A runtime finish is only provisional until post-run credential
+            // cleanup succeeds. Hold both the renderer chunk and durable
+            // completed RunEvent so downstream consumers see one
+            // authoritative terminal state.
+            const redactedChunk = redactRuntimeChunk(chunk)
+            pendingTerminalChunk = redactedChunk
+            const metadata = redactedChunk.messageMetadata as
+              | {
+                  sessionId?: string | null
+                  inputTokens?: number
+                  outputTokens?: number
+                  totalTokens?: number
+                }
+              | undefined
+            const status =
+              redactedChunk.status === "failed" ||
+              redactedChunk.status === "canceled" ||
+              redactedChunk.status === "interrupted" ||
+              redactedChunk.status === "succeeded"
+                ? redactedChunk.status
+                : "failed"
+            const terminalMessage =
+              typeof redactedChunk.message === "string" &&
+              redactedChunk.message.trim()
+                ? redactedChunk.message
+                : "Codex app-server returned an invalid terminal status."
+            const terminalError =
+              lastError ??
+              (status === "failed" ? { message: terminalMessage } : null)
+            settleTerminal({
+              status,
+              sessionId:
+                runtimeMapper.getSessionId() ?? metadata?.sessionId ?? null,
+              usage: {
+                inputTokens: metadata?.inputTokens,
+                outputTokens: metadata?.outputTokens,
+                totalTokens: metadata?.totalTokens,
+              },
+              ...(terminalError ? { error: terminalError } : {}),
+            })
+            continue
+          }
+          for (const redactedChunk of emitChunk(chunk)) {
             if (redactedChunk.type === "error") {
               lastError = {
                 message:
@@ -532,42 +622,22 @@ export function createCodexAppServerAdapter({
                     : "Codex app-server error",
               }
             }
-            if (redactedChunk.type === "finish") {
-              const metadata = redactedChunk.messageMetadata as
-                | {
-                    sessionId?: string | null
-                    inputTokens?: number
-                    outputTokens?: number
-                    totalTokens?: number
-                  }
-                | undefined
-              finishRun?.({
-                status:
-                  redactedChunk.status === "failed" ||
-                  redactedChunk.status === "canceled" ||
-                  redactedChunk.status === "interrupted" ||
-                  redactedChunk.status === "succeeded"
-                    ? redactedChunk.status
-                    : "succeeded",
-                sessionId:
-                  runtimeMapper.getSessionId() ?? metadata?.sessionId ?? null,
-                usage: {
-                  inputTokens: metadata?.inputTokens,
-                  outputTokens: metadata?.outputTokens,
-                  totalTokens: metadata?.totalTokens,
-                },
-                ...(lastError ? { error: lastError } : {}),
-              })
-            }
           }
-        })
-        finishRun = (result) => {
-          if (settled) return
-          settled = true
-          removeNotification()
-          resolve(result)
         }
       })
+      removeTransportExit = transport.onExit((exit) => {
+        transportExitError = exit.error
+        for (const rejectPendingRequest of [...pendingTransportExitRejectors]) {
+          rejectPendingRequest(exit.error)
+        }
+        const message = redactRuntimeErrorMessage(exit.error.message)
+        settleTerminal({
+          status: request.signal.aborted ? "canceled" : "failed",
+          sessionId: runtimeMapper.getSessionId(),
+          ...(request.signal.aborted ? {} : { error: { message } }),
+        })
+      })
+      if (terminalSettled) removeTransportExit()
 
       const removeServerRequest = transport.onServerRequest((serverRequest) => {
         let response: unknown
@@ -659,19 +729,66 @@ export function createCodexAppServerAdapter({
         }).then(() => response)
       })
 
+      let abortHandled = false
       const abortHandler = () => {
+        if (abortHandled) return
+        abortHandled = true
         const interrupt = runtimeMapper.buildInterruptRequest()
         if (interrupt) {
           void transport
             .request(interrupt.method, interrupt.params)
             .catch(() => {})
         }
-        finishRun?.({
+        settleTerminal({
           status: "canceled",
           sessionId: runtimeMapper.getSessionId(),
         })
       }
       request.signal.addEventListener("abort", abortHandler, { once: true })
+      if (request.signal.aborted) {
+        abortHandler()
+      }
+
+      const requestWithCancellation = (
+        method: Parameters<CodexAppServerTransport["request"]>[0],
+        params: unknown,
+      ): Promise<unknown> => {
+        if (request.signal.aborted) {
+          return Promise.reject(new Error("Codex app-server run canceled."))
+        }
+        if (transportExitError) return Promise.reject(transportExitError)
+        return new Promise((resolve, reject) => {
+          let settled = false
+          const settle = (callback: () => void) => {
+            if (settled) return
+            settled = true
+            request.signal.removeEventListener("abort", onAbort)
+            pendingTransportExitRejectors.delete(onTransportExit)
+            callback()
+          }
+          const onAbort = () => {
+            settle(() => reject(new Error("Codex app-server run canceled.")))
+          }
+          const onTransportExit = (error: Error) => {
+            settle(() => reject(error))
+          }
+          request.signal.addEventListener("abort", onAbort, { once: true })
+          pendingTransportExitRejectors.add(onTransportExit)
+          let pendingRequest: Promise<unknown>
+          try {
+            pendingRequest = transport.request(method, params)
+          } catch (error) {
+            settle(() => reject(error))
+            return
+          }
+          void pendingRequest.then(
+            (value) => settle(() => resolve(value)),
+            (error) => settle(() => reject(error)),
+          )
+          if (request.signal.aborted) onAbort()
+          else if (transportExitError) onTransportExit(transportExitError)
+        })
+      }
 
       let runResult: DesktopRunResult = {
         status: "failed",
@@ -701,7 +818,7 @@ export function createCodexAppServerAdapter({
           allowPreparedLongTextRefs: true,
         })
 
-        await transport.request("initialize", {
+        await requestWithCancellation("initialize", {
           clientInfo: {
             name: "locus",
             title: "Locus",
@@ -721,7 +838,7 @@ export function createCodexAppServerAdapter({
 
         const resumeThreadId = request.session.resumeSessionId ?? null
         const threadStart = resumeThreadId
-          ? await transport.request(
+          ? await requestWithCancellation(
               "thread/resume",
               buildThreadResumeParams({
                 request,
@@ -732,7 +849,7 @@ export function createCodexAppServerAdapter({
                 threadId: resumeThreadId,
               }),
             )
-          : await transport.request(
+          : await requestWithCancellation(
               "thread/start",
               buildThreadStartParams({
                 request,
@@ -770,10 +887,13 @@ export function createCodexAppServerAdapter({
         }
 
         try {
-          const mcpStatus = await transport.request("mcpServerStatus/list", {
-            detail: "toolsAndAuthOnly",
-          })
-          emitRuntimeChunk({
+          const mcpStatus = await requestWithCancellation(
+            "mcpServerStatus/list",
+            {
+              detail: "toolsAndAuthOnly",
+            },
+          )
+          emitChunk({
             type: "runtime-status",
             ok: true,
             blocker: {
@@ -807,7 +927,7 @@ export function createCodexAppServerAdapter({
           })
         }
 
-        const turnStart = await transport.request("turn/start", {
+        const turnStart = await requestWithCancellation("turn/start", {
           threadId,
           input,
           cwd: request.context.cwd,
@@ -820,13 +940,6 @@ export function createCodexAppServerAdapter({
           stringAt(turnStart, ["turn", "id"]) ?? runtimeMapper.getTurnId()
         if (!turnId) {
           throw new Error("Codex app-server did not return a turn id.")
-        }
-
-        if (request.signal.aborted) {
-          const interrupt = runtimeMapper.buildInterruptRequest()
-          if (interrupt) {
-            await transport.request(interrupt.method, interrupt.params)
-          }
         }
 
         runResult = await terminal
@@ -844,7 +957,30 @@ export function createCodexAppServerAdapter({
       } finally {
         request.signal.removeEventListener("abort", abortHandler)
         removeServerRequest()
-        await transport.close()
+        try {
+          await transport.close()
+        } catch (closeError) {
+          const message = redactRuntimeErrorMessage(
+            closeError instanceof Error
+              ? closeError.message
+              : String(closeError),
+          )
+          runResult = {
+            status: "failed",
+            sessionId: runtimeMapper.getSessionId(),
+            error: { message },
+          }
+        }
+        removeTerminalNotification()
+        removeTransportExit()
+        for (const streamChunk of streamSecretRedactor.flush(
+          runtimeSecretHints,
+        )) {
+          emitMappedChunk(
+            streamChunk.chunk as Record<string, unknown>,
+            streamChunk.appliedRules,
+          )
+        }
         try {
           assertCodexAppServerShellSnapshotsScrubbed(
             scrubCodexAppServerShellSnapshots({
@@ -857,7 +993,7 @@ export function createCodexAppServerAdapter({
             scrubError instanceof Error
               ? redactRuntimeErrorMessage(scrubError.message)
               : redactRuntimeErrorMessage(String(scrubError))
-          emitRuntimeChunk({
+          emitChunk({
             type: "runtime-status",
             ok: false,
             blocker: {
@@ -873,6 +1009,15 @@ export function createCodexAppServerAdapter({
             error: { message },
           }
         }
+
+        emitChunk({
+          ...(pendingTerminalChunk ?? { type: "finish" }),
+          type: "finish",
+          status: runResult.status,
+          ...(runResult.error?.message
+            ? { message: runResult.error.message }
+            : {}),
+        })
       }
       return runResult
     },

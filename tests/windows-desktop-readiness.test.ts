@@ -28,7 +28,9 @@ describe("Windows desktop readiness source guards", () => {
 
     expect(source).toContain("getBundledClaudeBinaryPath")
     expect(source).toContain("const claudeBinaryPath = getBundledClaudeBinaryPath()")
-    expect(source).toContain("spawn(claudeBinaryPath, ['setup-token']")
+    expect(source).toMatch(
+      /spawn\(claudeBinaryPath,\s*\[["']setup-token["']\]/,
+    )
     expect(source).toContain("shell: false")
     expect(source).not.toContain("spawn('claude'")
     expect(source).not.toContain("spawn(\"claude\"")

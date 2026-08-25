@@ -89,6 +89,27 @@ describe("headless schedules", () => {
     })
   })
 
+  test("redacts a prompt secret before the schedule preview boundary", () => {
+    withTempProject(({ projectPath, cwd }) => {
+      const db = createAgentJobTestDb()
+      seedProject(db, projectPath)
+      const secret = "sk-abcdefghijklmnopqrstuvwxyz123456"
+      const exposedPrefix = secret.slice(0, 12)
+
+      const schedule = createAgentSchedule(db, {
+        name: "Boundary redaction",
+        runtime: "codex",
+        mode: "agent",
+        cwd,
+        prompt: `${"p".repeat(230)}${secret}`,
+        intervalSeconds: 60,
+      })
+
+      expect(schedule.promptPreview).not.toContain(secret)
+      expect(schedule.promptPreview).not.toContain(exposedPrefix)
+    })
+  })
+
   test("rejects unregistered cwd and symlink escapes", () => {
     withTempProject(({ root, projectPath }) => {
       const db = createAgentJobTestDb()

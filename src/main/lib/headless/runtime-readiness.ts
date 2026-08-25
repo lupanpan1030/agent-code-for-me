@@ -3,6 +3,7 @@ import {
   type LocalJobApiRuntimeReadiness,
   normalizeLocalJobApiRuntimeReadiness,
 } from "../../../shared/local-job-api"
+import { normalizeHeaderSafeCredential } from "../../../shared/secret-redaction-policy"
 import {
   getClaudeCodeCredentialMetadata,
   hasAnyClaudeCodeAccount,
@@ -39,7 +40,11 @@ type ClaudeCliCredentialForReadiness = {
 export type RuntimeReadinessResolverDependencies = {
   getClaudeCodeCredentialMetadata?: () => Pick<
     ReturnType<typeof getClaudeCodeCredentialMetadata>,
-    "isConnected" | "isExpired" | "isExpiringSoon" | "refreshable"
+    | "isConnected"
+    | "credentialUsable"
+    | "isExpired"
+    | "isExpiringSoon"
+    | "refreshable"
   >
   getCodexExecutableStatus?: () => RuntimeExecutableStatus
   getCodexRuntimeStatus?: () => Promise<CodexRuntimeStatusLike>
@@ -102,11 +107,16 @@ function defaultCodexExecutableStatus(): RuntimeExecutableStatus {
 function isClaudeAppCredentialUsable(
   metadata: Pick<
     ReturnType<typeof getClaudeCodeCredentialMetadata>,
-    "isConnected" | "isExpired" | "isExpiringSoon" | "refreshable"
+    | "isConnected"
+    | "credentialUsable"
+    | "isExpired"
+    | "isExpiringSoon"
+    | "refreshable"
   >,
 ): boolean {
   return (
     metadata.isConnected &&
+    metadata.credentialUsable &&
     (!metadata.isExpired || metadata.refreshable) &&
     (!metadata.isExpiringSoon || metadata.refreshable)
   )
@@ -118,9 +128,17 @@ function isClaudeCliCredentialUsable(
   if (!credential?.accessToken) {
     return false
   }
+
+  const accessToken = normalizeHeaderSafeCredential(credential.accessToken)
+  const refreshToken =
+    credential.refreshToken == null
+      ? null
+      : normalizeHeaderSafeCredential(credential.refreshToken)
+  if (!accessToken || (credential.refreshToken != null && !refreshToken)) {
+    return false
+  }
   return (
-    !isTokenExpired(credential.expiresAt ?? undefined) ||
-    Boolean(credential.refreshToken)
+    !isTokenExpired(credential.expiresAt ?? undefined) || Boolean(refreshToken)
   )
 }
 

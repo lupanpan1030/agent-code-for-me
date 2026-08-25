@@ -2,7 +2,7 @@
 
 ### Requirement: Headless Provider Selection
 
-Headless one-shot runs and schedules SHALL support selecting a stored provider profile and/or model by reference, resolved per run in the order: explicit selection, then configured provider defaults, then the runtime's native credentials. An explicit or defaults-sourced profile that cannot be used SHALL fail the run with a structured error rather than silently falling back.
+Headless one-shot runs and schedules SHALL support selecting a stored provider profile and/or model by reference. An explicit profile SHALL use that profile; a model-only provider selection SHALL use native credentials; only omission of the entire provider selection SHALL consult configured provider defaults before native credentials. An explicit or defaults-sourced profile that cannot be used SHALL fail the run with a structured error rather than silently falling back.
 
 #### Scenario: CLI run selects a profile and model
 
@@ -12,7 +12,7 @@ Headless one-shot runs and schedules SHALL support selecting a stored provider p
 
 #### Scenario: No selection falls back to defaults, then native
 
-- **WHEN** a headless run starts with no explicit provider selection
+- **WHEN** a headless run starts with the entire provider selection omitted
 - **THEN** the configured provider default for the runtime's purpose applies when present, including its model override
 - **AND** the runtime's native credentials apply when no default is configured
 

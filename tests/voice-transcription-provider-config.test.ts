@@ -2,10 +2,12 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
 import { join } from "node:path"
+import { EXACT_SECRET_REDACTION_MARKER } from "../src/shared/secret-redaction-policy"
 
 const originalConsoleLog = console.log
 const originalConsoleError = console.error
 const originalOpenAIApiKey = process.env.OPENAI_API_KEY
+const originalFetch = globalThis.fetch
 
 mock.module("electron", () => ({
   app: {
@@ -89,6 +91,7 @@ describe("voice transcription provider config", () => {
   afterEach(() => {
     console.log = originalConsoleLog
     console.error = originalConsoleError
+    globalThis.fetch = originalFetch
     if (originalOpenAIApiKey === undefined) {
       delete process.env.OPENAI_API_KEY
     } else {
@@ -152,6 +155,59 @@ describe("voice transcription provider config", () => {
     } finally {
       await server.close()
     }
+  })
+
+  test("redacts a configured token echoed in successful transcript output", async () => {
+    const token = "sk-stored-voice-token"
+    const server = await createTranscriptionServer(({ res }) => {
+      res.writeHead(200, { "content-type": "text/plain" })
+      res.end(`provider echoed ${token}`)
+    })
+
+    try {
+      const text = await transcribeWithProviderConfig(
+        Buffer.from("sample audio"),
+        "webm",
+        {
+          purpose: "voice_transcription",
+          model: "whisper-compatible-model",
+          baseUrl: server.baseUrl,
+          token,
+          source: "stored",
+        },
+      )
+
+      expect(text).not.toContain(token)
+    } finally {
+      await server.close()
+    }
+  })
+
+  test("redacts a configured token echoed by a transport error", async () => {
+    const token = "sk-stored-voice-token"
+    globalThis.fetch = mock(async () => {
+      throw new Error(`transport echoed ${token}`)
+    }) as typeof fetch
+
+    let message = ""
+    try {
+      await transcribeWithProviderConfig(
+        Buffer.from("sample audio"),
+        "webm",
+        {
+          purpose: "voice_transcription",
+          model: "whisper-compatible-model",
+          baseUrl: "https://voice.example.com/v1",
+          token,
+          source: "stored",
+        },
+      )
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error)
+    }
+
+    expect(message).not.toContain(token)
+    expect(message).toContain(EXACT_SECRET_REDACTION_MARKER)
   })
 
   test("does not contain the legacy environment or shell fallback", () => {

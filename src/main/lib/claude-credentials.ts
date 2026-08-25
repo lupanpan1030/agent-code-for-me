@@ -31,6 +31,7 @@ export { createClaudeCodeCredentialEnvelope, parseClaudeCodeCredentialPayload }
 
 export type ClaudeCodeCredentialMetadata = {
   isConnected: boolean
+  credentialUsable: boolean
   accountId: string | null
   displayName: string | null
   connectedAt: string | null
@@ -359,6 +360,7 @@ function credentialMetadataFromStored(
 
   return {
     isConnected: Boolean(envelope?.accessToken),
+    credentialUsable: Boolean(envelope?.accessToken),
     accountId: account?.id ?? null,
     displayName: account?.displayName ?? null,
     connectedAt: toIsoString(account?.connectedAt),

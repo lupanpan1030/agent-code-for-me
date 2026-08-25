@@ -36,6 +36,7 @@ const inputs = (over: Partial<SetupStatusInputs>): SetupStatusInputs => ({
 const failedProviderProfile: ClaudeSourceProviderProfile = {
   id: "failed",
   targetRuntimes: ["claude"],
+  credentialUsable: true,
   lastTestStatus: {
     ok: false,
     checkedAt: "2026-06-23T00:00:00.000Z",
@@ -47,6 +48,19 @@ describe("deriveSetupStatus completion gate", () => {
   test("failed Claude Provider Profiles are not usable profile candidates", () => {
     expect(
       getUsableClaudeProviderProfile([failedProviderProfile]),
+    ).toBeUndefined()
+  })
+
+  test("ciphertext-only Claude Provider Profiles are not usable candidates", () => {
+    expect(
+      getUsableClaudeProviderProfile([
+        {
+          id: "unreadable-credential",
+          targetRuntimes: ["claude"],
+          credentialUsable: false,
+          lastTestStatus: null,
+        },
+      ]),
     ).toBeUndefined()
   })
 
@@ -218,7 +232,12 @@ describe("Claude model source never silently runs an unavailable OAuth path", ()
       source: "claude-oauth",
       canUseClaudeOAuth: false,
       providerProfiles: [
-        { id: "abc", targetRuntimes: ["claude"], lastTestStatus: null },
+        {
+          id: "abc",
+          targetRuntimes: ["claude"],
+          credentialUsable: true,
+          lastTestStatus: null,
+        },
       ],
     })
     expect(result).toMatchObject({
@@ -234,7 +253,12 @@ describe("Claude model source never silently runs an unavailable OAuth path", ()
         source: "claude-oauth",
         canUseClaudeOAuth: true,
         providerProfiles: [
-          { id: "abc", targetRuntimes: ["claude"], lastTestStatus: null },
+          {
+            id: "abc",
+            targetRuntimes: ["claude"],
+            credentialUsable: true,
+            lastTestStatus: null,
+          },
         ],
       }),
     ).toMatchObject({ ok: true, source: "claude-oauth", changed: false })

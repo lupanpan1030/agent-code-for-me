@@ -418,3 +418,58 @@ The deadline regression observes the injected dependency signal transition to ab
 HEAD/status/diff wiring uses simple-git's abort plugin plus a non-resetting absolute timeout. This
 is still a working-tree receipt. Task 9.8 remains open for the exact committed SHA, aggregate
 `check:full`, and fresh-context review; task 9.9 remains open for Owner acceptance and archive.
+
+## 2026-08-25 — Base-commit cancellation follow-up
+
+A subsequent independent review found that the earlier deadline statement was incomplete: the
+router forwarded the request budget to HEAD/status/raw-diff operations, but its `ensureBaseCommit`
+adapter discarded the callback's second options argument. Lazy fork-commit discovery could
+therefore continue below the request race and later persist a result after the response had already
+degraded to `batch-deadline-exceeded`.
+
+The remediation keeps one canonical backfill path:
+
+- the production router now passes `signal` and the remaining `timeoutMs` into
+  `ensureChatBaseCommit`;
+- local/remote merge-base reads and commit-distance ranking use canonical `createGit` with that
+  signal, timeout, and a non-resetting absolute timeout;
+- the canonical local-ref probe accepts and applies the same options through `createGit`;
+- the backfill owner checks cancellation after awaited discovery/ranking and immediately before
+  its compare-and-set, so a dependency that deliberately ignores abort cannot cause a late durable
+  write.
+
+Focused working-tree receipt:
+
+```text
+bun test --isolate tests/chat-base-commit.test.ts \
+  tests/agent-workbench-deep-conflict-ownership.test.ts \
+  tests/agent-workbench-deep-conflicts.test.ts \
+  tests/agent-workbench-list-tasks.test.ts
+57 pass
+0 fail
+245 expect() calls
+
+bun run ts:check
+exit 0
+
+bun run architecture:check
+Architecture guard passed.
+
+DIFF_BASE_SHA=df72d425ea9c7e404a568a4c93c26f3792074ad0 bun run lint:changed
+Biome reported diagnostics only outside changed lines; ignoring legacy file diagnostics.
+
+bun run diff:check
+exit 0; no output
+
+bun x openspec validate add-cross-workspace-conflicts --strict --no-interactive
+Change 'add-cross-workspace-conflicts' is valid
+
+bun x openspec validate --changes --strict --no-interactive
+5 passed, 0 failed
+
+bun x openspec validate --specs --strict --no-interactive
+49 passed, 0 failed
+```
+
+This is still a working-tree receipt. Task 9.8 remains the exact-source full gate and fresh-review
+gate; any later code change invalidates technical verdicts until they are rerun on one source SHA.

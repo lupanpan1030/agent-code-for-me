@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import { mapDesktopStreamChunkToRunEvents } from "../src/main/lib/agent-runtime/stream-event-mapper"
 import {
-  createCodexAppServerRuntimeEventMapper,
   type CodexAppServerNotification,
+  createCodexAppServerRuntimeEventMapper,
 } from "../src/main/lib/codex/app-server-stream-events"
 import { getWorkbenchTraceRow } from "../src/renderer/features/agents/workbench/workbench-trace-presenter"
 
@@ -220,6 +220,41 @@ describe("Codex app-server stream event mapper", () => {
     expect(mapChunksToRunEvents(failed)[0].payload).toMatchObject({
       status: "failed",
       message: "model failed",
+    })
+  })
+
+  test("fails closed when turn/completed carries a non-terminal or unknown status", () => {
+    const mapper = createCodexAppServerRuntimeEventMapper()
+    const inProgress = mapper.map({
+      method: "turn/completed",
+      params: {
+        threadId: "thread-1",
+        turn: {
+          id: "turn-in-progress",
+          status: "inProgress",
+          error: null,
+        },
+      },
+    })
+    const unknown = mapper.map({
+      method: "turn/completed",
+      params: {
+        threadId: "thread-1",
+        turn: {
+          id: "turn-unknown",
+          status: "future-status",
+          error: null,
+        },
+      },
+    } as unknown as CodexAppServerNotification)
+
+    expect(mapChunksToRunEvents(inProgress)[0].payload).toMatchObject({
+      status: "failed",
+      message: expect.stringContaining("non-terminal status inProgress"),
+    })
+    expect(mapChunksToRunEvents(unknown)[0].payload).toMatchObject({
+      status: "failed",
+      message: expect.stringContaining("unknown terminal status future-status"),
     })
   })
 

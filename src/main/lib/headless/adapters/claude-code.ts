@@ -1,3 +1,4 @@
+import { normalizeHeaderSafeCredential } from "../../../../shared/secret-redaction-policy"
 import {
   buildClaudeEnv,
   createClaudeAgentSdkRuntimeEnv,
@@ -129,6 +130,8 @@ async function buildClaudeRuntimeEnv(input: {
     if (hasAnyAccount()) {
       const credential = await getValidCredential()
       claudeCodeToken = credential.accessToken
+        ? normalizeHeaderSafeCredential(credential.accessToken)
+        : null
       if (!claudeCodeToken) {
         warn(APP_CREDENTIAL_FALLBACK_WARNING)
       }
@@ -155,16 +158,31 @@ async function buildClaudeRuntimeEnv(input: {
   }
 }
 
+function registerClaudeHeadlessRuntimeSecrets(
+  observer: Pick<AgentRuntimeObserver, "registerSecretHints">,
+  env: Record<string, string>,
+): void {
+  const oauthToken = env.CLAUDE_CODE_OAUTH_TOKEN
+  if (!oauthToken) return
+  const normalizedToken = normalizeHeaderSafeCredential(oauthToken)
+  if (!normalizedToken) {
+    throw new Error("Claude Code OAuth credential is invalid.")
+  }
+  observer.registerSecretHints([normalizedToken])
+}
+
 export async function runClaudeCodeHeadlessTask(
   request: AgentRuntimeRunRequest,
   observer: AgentRuntimeObserver,
 ): Promise<AgentRuntimeRunResult> {
+  const env = await buildClaudeRuntimeEnv({ request })
+  registerClaudeHeadlessRuntimeSecrets(observer, env)
   return runProcessAgentTask({
     request,
     observer,
     executable: getBundledClaudeBinaryPath(),
     args: buildClaudeArgs(request),
-    env: await buildClaudeRuntimeEnv({ request }),
+    env,
     label: "Claude Code",
   })
 }
@@ -173,4 +191,5 @@ export const __testClaudeCodeHeadless = {
   buildClaudeArgs,
   buildClaudeRuntimeEnv,
   getDefaultClaudeConfigDir,
+  registerClaudeHeadlessRuntimeSecrets,
 }

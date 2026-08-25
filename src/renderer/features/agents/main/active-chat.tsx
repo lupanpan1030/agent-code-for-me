@@ -4365,7 +4365,9 @@ export function ChatView({
   const setSelectedProject = useSetAtom(selectedProjectAtom)
   const { data: providerConfigData } =
     trpc.claudeProviderConfig.get.useQuery()
-  const hasCustomClaudeConfig = Boolean(providerConfigData?.config?.hasToken)
+  const hasCustomClaudeConfig = Boolean(
+    providerConfigData?.config?.credentialUsable,
+  )
   const setLoadingSubChats = useSetAtom(loadingSubChatsAtom)
   const unseenChanges = useAtomValue(agentsUnseenChangesAtom)
   const setUnseenChanges = useSetAtom(agentsUnseenChangesAtom)
@@ -5774,8 +5776,11 @@ Make sure to preserve all functionality from both branches when resolving confli
         const overrideProvider = subChatProviderOverrides[subChatId]
         if (!overrideProvider) return existing
 
+        const existingTransport = (
+          existing as unknown as { transport?: unknown }
+        ).transport
         const existingProvider: AgentChatProvider =
-          (existing as any)?.transport instanceof ACPChatTransport
+          existingTransport instanceof ACPChatTransport
             ? "codex"
             : "claude-code"
         if (existingProvider === overrideProvider) return existing

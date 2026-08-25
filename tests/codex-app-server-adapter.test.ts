@@ -6,6 +6,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs"
 import { tmpdir } from "node:os"
@@ -17,14 +18,23 @@ import {
   resolveDesktopPermissionPolicy,
 } from "../src/main/lib/agent-runtime/permission-policy"
 import type { RunEvent } from "../src/main/lib/agent-runtime/runtime-events"
+import { appendRunEventsToAgentJob } from "../src/main/lib/agent-runtime/stream-event-mapper"
 import { createCodexAppServerAdapter } from "../src/main/lib/codex/app-server-adapter"
+import { CODEX_CONTROLLED_EDIT_DIFF_CHAR_LIMIT } from "../src/main/lib/codex/app-server-controlled-edit"
 import type {
   CodexAppServerClientNotificationMethod,
   CodexAppServerClientRequestMethod,
   CodexAppServerTransport,
+  CodexAppServerTransportExit,
   CodexAppServerTransportNotification,
   CodexAppServerTransportServerRequest,
 } from "../src/main/lib/codex/app-server-transport"
+import {
+  createAgentJob,
+  listAgentJobEvents,
+} from "../src/main/lib/headless/job-store"
+import { EXACT_SECRET_REDACTION_MARKER } from "../src/shared/secret-redaction-policy"
+import { createAgentJobTestDb } from "./helpers/agent-job-test-db"
 
 function createRequest(
   permissionPolicy = resolveDesktopPermissionPolicy({
@@ -73,16 +83,24 @@ class FakeCodexAppServerTransport implements CodexAppServerTransport {
         request: CodexAppServerTransportServerRequest,
       ) => unknown | Promise<unknown>)
     | null = null
+  exitHandler: ((exit: CodexAppServerTransportExit) => void) | null = null
   onTurnStart?: () => void | Promise<void>
   assistantDelta = "hello from app-server"
+  assistantDeltas: string[] | null = null
   currentThreadId = "thread-1"
   currentSessionId = "session-1"
+  blockedRequestMethod: CodexAppServerClientRequestMethod | null = null
+  completedTurnStatus: "completed" | "interrupted" | "failed" | "inProgress" =
+    "completed"
 
   async request(
     method: CodexAppServerClientRequestMethod,
     params: unknown,
   ): Promise<unknown> {
     this.requests.push({ method, params })
+    if (method === this.blockedRequestMethod) {
+      return new Promise(() => {})
+    }
     if (method === "initialize") {
       return {
         userAgent: "codex-test",
@@ -144,15 +162,17 @@ class FakeCodexAppServerTransport implements CodexAppServerTransport {
         },
       })
       await this.onTurnStart?.()
-      this.emitNotification({
-        method: "item/agentMessage/delta",
-        params: {
-          threadId: this.currentThreadId,
-          turnId: "turn-1",
-          itemId: "item-1",
-          delta: this.assistantDelta,
-        },
-      })
+      for (const delta of this.assistantDeltas ?? [this.assistantDelta]) {
+        this.emitNotification({
+          method: "item/agentMessage/delta",
+          params: {
+            threadId: this.currentThreadId,
+            turnId: "turn-1",
+            itemId: "item-1",
+            delta,
+          },
+        })
+      }
       this.emitNotification({
         method: "thread/tokenUsage/updated",
         params: {
@@ -181,7 +201,11 @@ class FakeCodexAppServerTransport implements CodexAppServerTransport {
         method: "turn/completed",
         params: {
           threadId: this.currentThreadId,
-          turn: { id: "turn-1", status: "completed", error: null },
+          turn: {
+            id: "turn-1",
+            status: this.completedTurnStatus,
+            error: null,
+          },
         },
       })
       return { turn: { id: "turn-1" } }
@@ -217,6 +241,17 @@ class FakeCodexAppServerTransport implements CodexAppServerTransport {
     return () => {
       this.serverRequestHandler = null
     }
+  }
+
+  onExit(handler: (exit: CodexAppServerTransportExit) => void): () => void {
+    this.exitHandler = handler
+    return () => {
+      this.exitHandler = null
+    }
+  }
+
+  emitExit(error = new Error("Codex app-server exited unexpectedly")) {
+    this.exitHandler?.({ code: 1, signal: null, error })
   }
 
   emitNotification(notification: CodexAppServerTransportNotification) {
@@ -374,25 +409,188 @@ describe("Codex app-server adapter", () => {
     ])
     expect(transport.notifications).toEqual([{ method: "initialized" }])
     expect(transport.closed).toBe(true)
-    expect(events.map((event: any) => event.type)).toContain("assistant_delta")
-    expect(events.map((event: any) => event.type)).toContain("usage_update")
-    expect(events.map((event: any) => event.type)).toContain("completed")
+    expect(events.map((event) => event.type)).toContain("assistant_delta")
+    expect(events.map((event) => event.type)).toContain("usage_update")
+    expect(events.map((event) => event.type)).toContain("completed")
   })
 
-  test("redacts a bare gateway token before adapter emission and trace persistence", async () => {
-    const gatewayToken = randomBytes(32).toString("hex")
+  test("returns canceled and closes transport when already aborted before listener registration", async () => {
+    const controller = new AbortController()
+    controller.abort()
     const transport = new FakeCodexAppServerTransport()
-    transport.assistantDelta = `malicious child echoed ${gatewayToken}`
     const chunks: Record<string, unknown>[] = []
-    const events: unknown[] = []
 
     const result = await createCodexAppServerAdapter({
       enabled: true,
-      providerGatewayToken: gatewayToken,
       createTransport: () => transport,
       emit: (chunk) => chunks.push(chunk),
     }).run(
       createRequest(appServerPolicy(), {
+        signal: controller.signal,
+      }),
+    )
+
+    expect(result.status).toBe("canceled")
+    expect(transport.requests).toEqual([])
+    expect(transport.closed).toBe(true)
+    expect(chunks.filter((chunk) => chunk.type === "finish")).toEqual([
+      expect.objectContaining({ type: "finish", status: "canceled" }),
+    ])
+  })
+
+  test("cancellation escapes a non-cooperative transport request and closes it", async () => {
+    const controller = new AbortController()
+    const transport = new FakeCodexAppServerTransport()
+    transport.blockedRequestMethod = "initialize"
+
+    const run = createCodexAppServerAdapter({
+      enabled: true,
+      createTransport: () => transport,
+    }).run(
+      createRequest(appServerPolicy(), {
+        signal: controller.signal,
+      }),
+    )
+    await sleep(10)
+    controller.abort()
+
+    const result = await Promise.race([
+      run,
+      sleep(500).then(() => {
+        throw new Error("adapter cancellation timed out")
+      }),
+    ])
+    expect(result.status).toBe("canceled")
+    expect(transport.requests.map((request) => request.method)).toEqual([
+      "initialize",
+    ])
+    expect(transport.closed).toBe(true)
+  })
+
+  test("transport exit escapes a non-cooperative request and fails closed", async () => {
+    const transport = new FakeCodexAppServerTransport()
+    transport.blockedRequestMethod = "initialize"
+
+    const run = createCodexAppServerAdapter({
+      enabled: true,
+      createTransport: () => transport,
+    }).run(createRequest(appServerPolicy()))
+    await sleep(10)
+    transport.emitExit(new Error("app-server exited during initialize"))
+
+    const result = await Promise.race([
+      run,
+      sleep(500).then(() => {
+        throw new Error("adapter transport-exit settlement timed out")
+      }),
+    ])
+    expect(result).toMatchObject({
+      status: "failed",
+      error: { message: "app-server exited during initialize" },
+    })
+    expect(transport.closed).toBe(true)
+  })
+
+  test("fails closed when turn/completed reports a non-terminal status", async () => {
+    const transport = new FakeCodexAppServerTransport()
+    transport.completedTurnStatus = "inProgress"
+    const chunks: Record<string, unknown>[] = []
+    const events: RunEvent[] = []
+
+    const result = await createCodexAppServerAdapter({
+      enabled: true,
+      createTransport: () => transport,
+      emit: (chunk) => chunks.push(chunk),
+    }).run(
+      createRequest(appServerPolicy(), {
+        trace: { emit: (event) => events.push(event) },
+      }),
+    )
+
+    expect(result).toMatchObject({
+      status: "failed",
+      error: {
+        message: expect.stringContaining("non-terminal status inProgress"),
+      },
+    })
+    expect(chunks.filter((chunk) => chunk.type === "finish")).toEqual([
+      expect.objectContaining({ type: "finish", status: "failed" }),
+    ])
+    expect(events.filter((event) => event.type === "completed")).toEqual([
+      expect.objectContaining({
+        payload: expect.objectContaining({ status: "failed" }),
+      }),
+    ])
+  })
+
+  test("settles failed when app-server exits after turn start", async () => {
+    const transport = new FakeCodexAppServerTransport()
+    transport.onTurnStart = () => {
+      transport.emitExit(new Error("app-server exited during turn"))
+    }
+
+    const result = await createCodexAppServerAdapter({
+      enabled: true,
+      createTransport: () => transport,
+    }).run(createRequest(appServerPolicy()))
+
+    expect(result).toMatchObject({
+      status: "failed",
+      error: { message: "app-server exited during turn" },
+    })
+    expect(transport.closed).toBe(true)
+  })
+
+  test("redacts upstream and gateway echoes from successful response, tool output, and trace persistence", async () => {
+    const upstreamToken = randomBytes(32).toString("hex")
+    const gatewayToken = randomBytes(32).toString("hex")
+    const transport = new FakeCodexAppServerTransport()
+    const upstreamSplit = 17
+    const gatewaySplit = 19
+    transport.assistantDeltas = [
+      `successful child echoed ${upstreamToken.slice(0, upstreamSplit)}`,
+      `${upstreamToken.slice(upstreamSplit)} and ${gatewayToken.slice(0, gatewaySplit)}`,
+      gatewayToken.slice(gatewaySplit),
+    ]
+    transport.onTurnStart = () => {
+      for (const delta of [
+        `tool output echoed ${upstreamToken.slice(0, upstreamSplit)}`,
+        upstreamToken.slice(upstreamSplit),
+      ]) {
+        transport.emitNotification({
+          method: "item/fileChange/outputDelta",
+          params: {
+            threadId: transport.currentThreadId,
+            turnId: "turn-1",
+            itemId: "tool-canary",
+            delta,
+          },
+        })
+      }
+    }
+    const chunks: Record<string, unknown>[] = []
+    const events: RunEvent[] = []
+    const db = createAgentJobTestDb()
+    const job = createAgentJob(db, {
+      source: "desktop",
+      runtime: "codex",
+      mode: "plan",
+      cwd: "/repo",
+      prompt: "echo canary",
+    })
+
+    const result = await createCodexAppServerAdapter({
+      enabled: true,
+      providerGatewayToken: gatewayToken,
+      secretHints: [upstreamToken],
+      createTransport: () => transport,
+      emit: (chunk) => chunks.push(chunk),
+    }).run(
+      createRequest(appServerPolicy(), {
+        identity: {
+          runId: "run-app-server-upstream-canary",
+          jobId: job.id,
+        },
         providerBinding: {
           authMode: "provider-profile",
           providerProfileId: "profile-1",
@@ -400,29 +598,46 @@ describe("Codex app-server adapter", () => {
             "http://127.0.0.1:4321/profile/profile-1/responses/v1",
           model: "gpt-test",
         },
-        trace: { emit: (event) => events.push(event) },
+        trace: {
+          emit: (event) => {
+            events.push(event)
+            appendRunEventsToAgentJob(db, [event])
+          },
+        },
       }),
     )
 
-    const adapterOutput = JSON.stringify({ result, chunks, events })
-    const assistantChunk = chunks.find((chunk) => chunk.type === "text-delta")
-    const assistantEvent = events.find(
+    const adapterOutput = JSON.stringify({
+      result,
+      chunks,
+      events,
+      persistedEvents: listAgentJobEvents(db, job.id),
+    })
+    const assistantChunks = chunks.filter(
+      (chunk) => chunk.type === "text-delta",
+    )
+    const assistantEvents = events.filter(
       (event) => event.type === "assistant_delta",
+    )
+    const toolChunks = chunks.filter(
+      (chunk) => chunk.type === "file-change-delta",
     )
 
     expect(result.status).toBe("succeeded")
-    expect(assistantChunk).toMatchObject({
-      delta: "malicious child echoed <redacted>",
-    })
-    expect(assistantEvent).toMatchObject({
-      payload: {
-        delta: "malicious child echoed <redacted>",
-      },
-      redaction: {
-        status: "redacted",
-        appliedRules: ["secret-hint"],
-      },
-    })
+    expect(assistantChunks.map((chunk) => chunk.delta).join("")).toBe(
+      `successful child echoed ${EXACT_SECRET_REDACTION_MARKER} and ${EXACT_SECRET_REDACTION_MARKER}`,
+    )
+    expect(toolChunks.map((chunk) => chunk.delta).join("")).toBe(
+      `tool output echoed ${EXACT_SECRET_REDACTION_MARKER}`,
+    )
+    expect(
+      assistantEvents.some(
+        (event) =>
+          event.redaction.status === "redacted" &&
+          event.redaction.appliedRules.includes("secret-hint"),
+      ),
+    ).toBe(true)
+    expect(adapterOutput).not.toContain(upstreamToken)
     expect(adapterOutput).not.toContain(gatewayToken)
   })
 
@@ -882,6 +1097,68 @@ describe("Codex app-server adapter", () => {
     }
   })
 
+  test("publishes one failed terminal only after post-run snapshot verification fails", async () => {
+    const codexHome = mkdtempSync(
+      join(tmpdir(), "locus-app-server-terminal-gate-"),
+    )
+    try {
+      const snapshotDir = join(codexHome, "shell_snapshots")
+      mkdirSync(snapshotDir, { recursive: true })
+      const outsideSnapshot = join(codexHome, "outside.sh")
+      writeFileSync(outsideSnapshot, "export SAFE=value\n")
+      const transport = new FakeCodexAppServerTransport()
+      transport.onTurnStart = () => {
+        symlinkSync(outsideSnapshot, join(snapshotDir, "unverified.sh"))
+      }
+      const chunks: Record<string, unknown>[] = []
+      const events: RunEvent[] = []
+
+      const result = await createCodexAppServerAdapter({
+        enabled: true,
+        appManagedApiKey: "sk-app-managed-selected",
+        processEnv: {
+          CODEX_HOME: codexHome,
+          HOME: "/Users/example",
+          PATH: "/usr/bin",
+        },
+        createTransport: () => transport,
+        emit: (chunk) => chunks.push(chunk),
+      }).run(
+        createRequest(appServerPolicy(), {
+          trace: { emit: (event) => events.push(event) },
+          providerBinding: {
+            authMode: "app-managed",
+            model: "gpt-5-codex",
+          },
+        }),
+      )
+
+      expect(result.status).toBe("failed")
+      expect(chunks.at(-1)).toMatchObject({
+        type: "finish",
+        status: "failed",
+      })
+      expect(chunks.filter((chunk) => chunk.type === "finish")).toHaveLength(1)
+      expect(
+        chunks.some(
+          (chunk) =>
+            chunk.type === "runtime-status" &&
+            chunk.ok === false &&
+            (chunk.blocker as { component?: unknown } | undefined)
+              ?.component === "security",
+        ),
+      ).toBe(true)
+      const completedEvents = events.filter(
+        (event) => event.type === "completed",
+      )
+      expect(completedEvents).toHaveLength(1)
+      expect(completedEvents[0]?.payload).toMatchObject({ status: "failed" })
+      expect(events.at(-1)?.type).toBe("completed")
+    } finally {
+      rmSync(codexHome, { recursive: true, force: true })
+    }
+  })
+
   test("applies app-server experimental API and config overrides only when explicitly enabled", async () => {
     const transport = new FakeCodexAppServerTransport()
 
@@ -1274,6 +1551,67 @@ describe("Codex app-server adapter", () => {
         "file-change-delta",
       )
       expect(harness.chunks.map((chunk) => chunk.type)).toContain("guard-event")
+    } finally {
+      rmSync(cwd, { recursive: true, force: true })
+    }
+  })
+
+  test("redacts an exact controlled-edit credential before bounding renderer diff text", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "locus-controlled-edit-boundary-"))
+    const transport = new FakeCodexAppServerTransport()
+    const harness = createPendingHarness()
+    const secret = "ZQTX-controlled-edit-boundary-secret"
+    const relativePath = "src/generated.txt"
+    const diffPrefix = `--- /dev/null\n+++ ${relativePath}\n@@\n+`
+    const secretStart =
+      CODEX_CONTROLLED_EDIT_DIFF_CHAR_LIMIT -
+      EXACT_SECRET_REDACTION_MARKER.length
+    const content = `${"x".repeat(secretStart - diffPrefix.length)}${secret}`
+
+    try {
+      transport.onTurnStart = async () => {
+        const responsePromise = transport.serverRequestHandler?.({
+          id: "dynamic-tool-boundary",
+          method: "item/tool/call",
+          params: {
+            threadId: "thread-1",
+            turnId: "turn-1",
+            callId: "controlled-edit-boundary",
+            namespace: "locus_edit",
+            tool: "propose_file_edit",
+            arguments: {
+              operation: "create",
+              path: relativePath,
+              content,
+            },
+          },
+        })
+        const diffChunk = harness.chunks.find(
+          (chunk) => chunk.type === "file-change-diff",
+        )
+        const askChunk = harness.approveLatest()
+        const rendererText = JSON.stringify({ diffChunk, askChunk })
+        expect(rendererText).toContain(EXACT_SECRET_REDACTION_MARKER)
+        expect(rendererText).not.toContain(secret)
+        expect(rendererText).not.toContain(secret.slice(0, 6))
+        await expect(responsePromise).resolves.toMatchObject({ success: true })
+      }
+
+      await createCodexAppServerAdapter({
+        enabled: true,
+        experimentalApi: true,
+        controlledEditEnabled: true,
+        createTransport: () => transport,
+        guardedContract: guardedContract(cwd),
+        secretHints: [secret],
+        ...harness.adapterInput,
+      }).run(
+        createRequest(appServerPolicy("agent", true), {
+          context: { ...agentContext(), cwd },
+        }),
+      )
+
+      expect(readFileSync(join(cwd, relativePath), "utf8")).toBe(content)
     } finally {
       rmSync(cwd, { recursive: true, force: true })
     }

@@ -21,6 +21,12 @@ The Local Job API SHALL accept an optional provider selection on create requests
 - **WHEN** a create request's provider block contains any key other than the documented reference fields, or secret-like values
 - **THEN** the request is rejected with a sanitized validation error
 
+#### Scenario: Present provider block is empty
+
+- **WHEN** a create request includes a provider block without a non-empty `profileId` or `model`, including nullable fields
+- **THEN** the request is rejected as invalid
+- **AND** only omission of the entire provider property can select the configured-default path
+
 #### Scenario: Consumer detects provider-binding support
 
 - **WHEN** a consumer reads the discovery envelope
