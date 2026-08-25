@@ -8,6 +8,10 @@ Updated: 2026-08-26 (Pacific/Auckland)
 
 | Change | State | Concrete next gate |
 | --- | --- | --- |
+| `refactor-codex-desktop-service-extraction` | Draft (Foundation 1a) | Owner records `APPROVED`; then Codex implements on its own branch per W1. First of the four sequenced Foundation Stabilization changes. |
+| `add-chat-session-binding` | Draft (Foundation 1b) | Owner records `APPROVED`; implementation sequenced after 1a. |
+| `add-architecture-guard-ratchet` | Draft (Foundation 1c) | Owner records `APPROVED`; implementation sequenced after 1a/1b so baselines capture the post-extraction tree. |
+| `refactor-engine-vocabulary-residue` | Draft (Foundation 1d) | Owner records `APPROVED`; implementation sequenced after 1b (anchors re-verified against the post-1b tree). |
 | `update-trpc-capability-boundary` | Blocked pending rebaseline | Separate already-shipped Phase 1/CSP/Mermaid/MCP guarantees from unfinished renderer/browser and capability/audit work; validate and archive only implemented truth, then create bounded follow-ups. |
 
 Parked proposals are indexed in [`deferred/README.md`](deferred/README.md) and
