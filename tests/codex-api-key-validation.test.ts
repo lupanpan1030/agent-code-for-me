@@ -220,6 +220,13 @@ describe("Codex API key validation", () => {
       join(process.cwd(), "src/main/lib/trpc/routers/codex.ts"),
       "utf-8",
     )
+    const providerBindingSource = readFileSync(
+      join(
+        process.cwd(),
+        "src/main/lib/codex/desktop-run-provider-binding.ts",
+      ),
+      "utf-8",
+    )
 
     expect(codexRouterSource).toContain("../../codex/api-key-validation")
     expect(codexRouterSource).toContain(
@@ -229,8 +236,15 @@ describe("Codex API key validation", () => {
     // network/rate-limit failure is allowed to store as unverified.
     expect(codexRouterSource).toContain('validation.category === "auth_failed"')
 
-    const validationIndex = codexRouterSource.indexOf(
-      "const apiKeyValidation = await validateCodexApiKey",
+    const validationIndex = providerBindingSource.indexOf(
+      "const apiKeyValidation = await dependencies.validateCodexApiKey",
+    )
+    const bindingReturnIndex = providerBindingSource.indexOf(
+      "providerBinding: {",
+      validationIndex,
+    )
+    const bindingResolutionIndex = codexRouterSource.indexOf(
+      "const providerBindingResult = await providerBindingStage.resolve",
     )
     const jobCreationIndex = codexRouterSource.indexOf(
       "const desktopJob = createAndRegisterDesktopChatAgentJob",
@@ -240,10 +254,14 @@ describe("Codex API key validation", () => {
     )
 
     expect(validationIndex).toBeGreaterThan(0)
-    expect(jobCreationIndex).toBeGreaterThan(validationIndex)
-    expect(adapterCreationIndex).toBeGreaterThan(validationIndex)
-    expect(codexRouterSource).toContain("buildCodexRuntimeStatusChunk(blocker)")
-    expect(codexRouterSource).toContain(
+    expect(bindingReturnIndex).toBeGreaterThan(validationIndex)
+    expect(bindingResolutionIndex).toBeGreaterThan(0)
+    expect(jobCreationIndex).toBeGreaterThan(bindingResolutionIndex)
+    expect(adapterCreationIndex).toBeGreaterThan(bindingResolutionIndex)
+    expect(providerBindingSource).toContain(
+      "buildCodexRuntimeStatusChunk(blocker)",
+    )
+    expect(providerBindingSource).toContain(
       "buildCodexCapabilityErrorChunk(blocker)",
     )
   })

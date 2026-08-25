@@ -597,6 +597,10 @@ describe("desktop stream event mapper", () => {
 
   test("Codex route redacts renderer runtime chunks before emission", () => {
     const source = readFileSync("src/main/lib/trpc/routers/codex.ts", "utf8")
+    const providerBindingSource = readFileSync(
+      "src/main/lib/codex/desktop-run-provider-binding.ts",
+      "utf8",
+    )
     const rendererEmitIndex = source.indexOf("const emitRendererChunk")
     const safeEmitIndex = source.indexOf("const safeEmit")
     const redactIndex = source.indexOf(
@@ -652,14 +656,14 @@ describe("desktop stream event mapper", () => {
       messagePersistenceIndex,
       "Codex assistant persistence",
     ).toBeGreaterThan(assistantMessageIndex)
-    expect(source).toContain(
-      "codexProviderUpstreamToken = profile.token || null",
+    expect(providerBindingSource).toContain(
+      "providerUpstreamToken = profile.token || null",
     )
-    expect(source).toContain(
-      "[codexProviderUpstreamToken, codexProviderGatewayToken].filter(",
+    expect(providerBindingSource).toContain(
+      "[providerUpstreamToken, providerGatewayToken].filter(",
     )
     expect(source).toContain("secretHints: providerSecretHints(),")
-    expect(source).toContain("revokeCodexProviderGatewayToken()")
+    expect(source.match(/providerBindingStage\.revoke\(\)/g)).toHaveLength(2)
   })
 
   test("appends mapped run events through the existing job store", () => {

@@ -248,6 +248,10 @@ describe("desktop runtime preflight", () => {
       "src/main/lib/codex/desktop-run-preflight.ts",
       "utf8",
     )
+    const codexProviderBinding = readFileSync(
+      "src/main/lib/codex/desktop-run-provider-binding.ts",
+      "utf8",
+    )
     const blockerIndex = codexPreflight.indexOf(
       "new DesktopRunPreflightError(blocker)",
     )
@@ -269,21 +273,22 @@ describe("desktop runtime preflight", () => {
       "getProviderProfileMetadata(input.providerProfileId)",
       runtimeStatusGateIndex,
     )
-    const providerProfileRuntimeConfigIndex = codex.indexOf(
-      "getProviderProfileRuntimeConfig(",
+    const providerBindingIndex = codex.indexOf(
+      "const providerBindingResult = await providerBindingStage.resolve",
       attachmentIndex,
     )
-    const providerGatewayIndex = codex.indexOf(
+    const providerProfileRuntimeConfigIndex = codexProviderBinding.indexOf(
+      "getProviderProfileRuntimeConfig(",
+    )
+    const providerGatewayIndex = codexProviderBinding.indexOf(
       "getProviderGatewayEndpoint(",
-      attachmentIndex,
     )
     const mcpIndex = codex.indexOf(
       "mcpSnapshot = await resolveCodexMcpSnapshotForDesktopRun({",
       attachmentIndex,
     )
-    const localOnlyIndex = codex.indexOf(
+    const localOnlyIndex = codexProviderBinding.indexOf(
       '"use Codex provider endpoint"',
-      attachmentIndex,
     )
     const jobIndex = codex.indexOf("createAndRegisterDesktopChatAgentJob(db, {")
     const runRequestIndex = codex.indexOf(
@@ -304,11 +309,12 @@ describe("desktop runtime preflight", () => {
     expect(providerProfileMetadataIndex).toBeGreaterThan(runtimeStatusGateIndex)
     expect(providerProfileMetadataIndex).toBeLessThan(attachmentIndex)
     expect(attachmentIndex).toBeGreaterThan(runtimeStatusGateIndex)
-    expect(providerProfileRuntimeConfigIndex).toBeGreaterThan(attachmentIndex)
-    expect(providerGatewayIndex).toBeGreaterThan(attachmentIndex)
-    expect(localOnlyIndex).toBeGreaterThan(attachmentIndex)
-    expect(mcpIndex).toBeGreaterThan(attachmentIndex)
-    expect(jobIndex).toBeGreaterThan(localOnlyIndex)
+    expect(providerBindingIndex).toBeGreaterThan(attachmentIndex)
+    expect(providerProfileRuntimeConfigIndex).toBeGreaterThan(0)
+    expect(localOnlyIndex).toBeGreaterThan(providerProfileRuntimeConfigIndex)
+    expect(providerGatewayIndex).toBeGreaterThan(localOnlyIndex)
+    expect(mcpIndex).toBeGreaterThan(providerBindingIndex)
+    expect(jobIndex).toBeGreaterThan(providerBindingIndex)
     expect(jobIndex).toBeGreaterThan(mcpIndex)
     expect(runRequestIndex).toBeGreaterThan(jobIndex)
     expect(adapterIndex).toBeGreaterThan(runRequestIndex)

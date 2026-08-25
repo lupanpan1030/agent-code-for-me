@@ -45,7 +45,7 @@
       `emitLocalOnlyPreflightBlocker`, and the runtime-status gate (`codex.ts:652-725`)
       into stage functions taking injected emit/complete callbacks. Re-point
       `tests/agent-runtime-preflight.test.ts` assertions that pin moved text.
-- [ ] 3.2 `src/main/lib/codex/desktop-run-provider-binding.ts`: move the three-way binding
+- [x] 3.2 `src/main/lib/codex/desktop-run-provider-binding.ts`: move the three-way binding
       selection (provider profile / app-managed API key / ChatGPT login,
       `codex.ts:764-931`) and the scoped gateway token issue/revoke lifecycle
       (`codex.ts:539-551`) beside `provider-runtime-binding.ts`. Return a binding result

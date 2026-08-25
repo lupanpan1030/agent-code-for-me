@@ -33,10 +33,8 @@ import {
 import {
   getStoredCodexApiKeyModelIds,
   getCodexApiKeyStatus as getStoredCodexApiKeyStatus,
-  readCodexApiKey,
   removeCodexApiKey as removeStoredCodexApiKey,
   saveCodexApiKey as saveStoredCodexApiKey,
-  updateStoredCodexApiKeyModelIds,
 } from "../../codex/api-key-store"
 import {
   CodexApiKeyValidationError,
@@ -63,6 +61,7 @@ import { codexChatInputSchema } from "../../codex/chat-input-schema"
 import { resolveBundledCodexCliPath } from "../../codex/cli-path"
 import { runCodexCli } from "../../codex/cli-runner"
 import { createCodexDesktopRunPreflightStage } from "../../codex/desktop-run-preflight"
+import { createCodexDesktopRunProviderBindingStage } from "../../codex/desktop-run-provider-binding"
 import { createCodexDesktopRunRequest } from "../../codex/desktop-run-request"
 import {
   extractCodexError as extractCodexErrorWithProviderRedaction,
@@ -85,11 +84,6 @@ import {
   getCodexLoginSession,
   toCodexLoginSessionResponse,
 } from "../../codex/login-session"
-import {
-  normalizeCodexAppServerModelId,
-  resolveCodexSelectedModelId,
-} from "../../codex/model-selection"
-import type { CodexProviderProfileBinding } from "../../codex/provider-runtime-binding"
 import { getCodexRuntimeStatus } from "../../codex/runtime-status"
 import {
   clearPendingCodexApprovals,
@@ -103,14 +97,7 @@ import {
   createAndRegisterDesktopChatAgentJob,
   requestCancelDesktopChatAgentJobSafely,
 } from "../../desktop-agent-jobs"
-import {
-  getProviderGatewayEndpoint,
-  revokeProviderGatewayToken,
-} from "../../provider-profiles/gateway"
-import {
-  getProviderProfileMetadata,
-  getProviderProfileRuntimeConfig,
-} from "../../provider-profiles/storage"
+import { getProviderProfileMetadata } from "../../provider-profiles/storage"
 import {
   addCodexMcpServer,
   type CodexMcpSnapshot,
@@ -505,22 +492,10 @@ export const codexRouter = router({
         let desktopJobReachedNaturalFinish = false
         let desktopJobAdapterFailed = false
         let desktopJobDb: ReturnType<typeof getDatabase> | null = null
-        let codexProviderUpstreamToken: string | null = null
-        let codexProviderGatewayToken: string | null = null
-        let codexProviderGatewayTokenRevoked = false
         const appServerPersistenceChunks: Record<string, unknown>[] = []
-
-        const providerSecretHints = (): readonly string[] =>
-          [codexProviderUpstreamToken, codexProviderGatewayToken].filter(
-            (secret): secret is string => Boolean(secret),
-          )
-        const revokeCodexProviderGatewayToken = () => {
-          if (!codexProviderGatewayToken || codexProviderGatewayTokenRevoked) {
-            return
-          }
-          revokeProviderGatewayToken(codexProviderGatewayToken)
-          codexProviderGatewayTokenRevoked = true
-        }
+        const providerBindingStage =
+          createCodexDesktopRunProviderBindingStage()
+        const providerSecretHints = providerBindingStage.getSecretHints
 
         const emitRendererChunk = (chunk: Record<string, unknown>) => {
           if (!isActive) return
@@ -671,175 +646,24 @@ export const codexRouter = router({
               return
             }
             const resolvedImages = imageAttachments.attachments
-            let codexProviderProfile:
-              | {
-                  id: string
-                  name: string
-                  baseUrl: string
-                  token: string
-                  defaultModel: string
-                }
-              | undefined
-            let appManagedCodexApiKey: string | null = null
-            const wantsAppManagedCodexApiKey =
-              input.codexAuthMethod === "api_key" && !input.providerProfileId
-
-            if (input.providerProfileId) {
-              const profile = getProviderProfileRuntimeConfig(
-                input.providerProfileId,
-              )
-              if (!profile || !profile.targetRuntimes.includes("codex")) {
-                const blocker = createCodexRuntimeBlocker({
-                  id: "provider-profile",
-                  label: "Codex provider profile",
-                  status: "unavailable",
-                  ok: false,
-                  message: "Provider profile is not available for Codex.",
-                  hint: "Choose a provider profile that targets Codex.",
-                })
-                emitPreflightBlocker(
-                  {
-                    id: "provider-profile",
-                    status: "blocked",
-                    message: blocker.message,
-                    hint: blocker.hint,
-                  },
-                  [
-                    buildCodexRuntimeStatusChunk(blocker),
-                    buildCodexCapabilityErrorChunk(blocker),
-                  ],
-                )
-                return
-              }
-              if (
-                emitLocalOnlyPreflightBlocker(
-                  "use Codex provider endpoint",
-                  profile.baseUrl,
-                )
-              ) {
-                return
-              }
-              codexProviderUpstreamToken = profile.token || null
-              const gateway = await getProviderGatewayEndpoint(
-                profile.id,
-                "responses",
-              )
-              codexProviderGatewayToken = gateway.token
-              codexProviderProfile = {
-                id: profile.id,
-                name: profile.name,
-                baseUrl: gateway.baseUrl,
-                token: gateway.token,
-                defaultModel: profile.defaultModel,
-              }
-            } else if (wantsAppManagedCodexApiKey) {
-              appManagedCodexApiKey = readCodexApiKey()
-              if (!appManagedCodexApiKey) {
-                const blocker = createCodexRuntimeBlocker({
-                  id: "login",
-                  label: "Codex API key",
-                  status: "needs-auth",
-                  ok: false,
-                  message: "Saved Codex API key is required.",
-                  hint: "Save a Codex API key again from onboarding or Settings > Models.",
-                })
-                emitPreflightBlocker(
-                  {
-                    id: "provider-profile",
-                    status: "needs-auth",
-                    message: blocker.message,
-                    hint: blocker.hint,
-                  },
-                  [
-                    buildCodexRuntimeStatusChunk(blocker),
-                    buildCodexCapabilityErrorChunk(blocker),
-                  ],
-                )
-                return
-              }
-
-              const apiKeyValidation = await validateCodexApiKey(
-                appManagedCodexApiKey,
-                { signal: abortController.signal },
-              )
-              if (!apiKeyValidation.ok) {
-                if (
-                  apiKeyValidation.category === "cancelled" &&
-                  abortController.signal.aborted
-                ) {
-                  safeEmit({ type: "finish", finishReason: "stop" })
-                  safeComplete()
-                  return
-                }
-
-                const blocker = createCodexRuntimeBlocker({
-                  id: "login",
-                  label: "Codex API key",
-                  status: apiKeyValidation.status,
-                  ok: false,
-                  message: apiKeyValidation.message,
-                  hint: apiKeyValidation.hint,
-                })
-                emitPreflightBlocker(
-                  {
-                    id: "provider-profile",
-                    status:
-                      apiKeyValidation.status === "needs-auth"
-                        ? "needs-auth"
-                        : "blocked",
-                    message: blocker.message,
-                    hint: blocker.hint,
-                  },
-                  [
-                    buildCodexRuntimeStatusChunk(blocker),
-                    buildCodexCapabilityErrorChunk(blocker),
-                  ],
-                )
-                return
-              }
-              try {
-                updateStoredCodexApiKeyModelIds(getCachedCodexApiKeyModelIds())
-              } catch (error) {
-                console.warn(
-                  "[codex] Failed to persist the validated API-key model list; continuing with the in-memory snapshot.",
-                  error instanceof Error ? error.message : String(error),
-                )
-              }
-            } else {
-              const integration = await getCodexIntegrationStatus()
-              if (!integration.isConnected) {
-                const blocker = createCodexRuntimeBlocker({
-                  id: "login",
-                  label: "Codex login",
-                  status: "needs-auth",
-                  ok: false,
-                  message: "Codex login or API key is required.",
-                  hint: "Connect Codex with ChatGPT login or choose a Codex API key/provider profile.",
-                })
-                emitPreflightBlocker(
-                  {
-                    id: "provider-profile",
-                    status: "needs-auth",
-                    message: blocker.message,
-                    hint: blocker.hint,
-                  },
-                  [
-                    buildCodexRuntimeStatusChunk(blocker),
-                    buildCodexCapabilityErrorChunk(blocker),
-                  ],
-                )
-                return
-              }
-            }
-            const selectedModelId = resolveCodexSelectedModelId({
+            const providerBindingResult = await providerBindingStage.resolve({
+              providerProfileId: input.providerProfileId,
+              codexAuthMethod: input.codexAuthMethod,
               requestedModel: input.model,
-              hasAppManagedApiKey: Boolean(appManagedCodexApiKey),
+              signal: abortController.signal,
+              emit: safeEmit,
+              complete: safeComplete,
+              emitPreflightBlocker,
+              emitLocalOnlyPreflightBlocker,
             })
-            const appServerSelectedModelId = !codexProviderProfile
-              ? normalizeCodexAppServerModelId(selectedModelId)
-              : selectedModelId
-            const metadataModel =
-              codexProviderProfile?.defaultModel ?? appServerSelectedModelId
+            if (!providerBindingResult.ok) {
+              return
+            }
+            const {
+              providerProfile: codexProviderProfile,
+              appManagedApiKey: appManagedCodexApiKey,
+              metadataModel,
+            } = providerBindingResult
 
             const lastMessage = existingMessages[existingMessages.length - 1]
             const isDuplicatePrompt =
@@ -990,17 +814,7 @@ export const codexRouter = router({
               preflight: verifiedRunContext,
               prompt: input.prompt,
               permissionPolicy,
-              providerBinding: {
-                model: metadataModel,
-                modelSource: input.model ? "request" : "default",
-                providerProfileId: codexProviderProfile?.id ?? null,
-                gatewayEndpoint: codexProviderProfile?.baseUrl ?? null,
-                authMode: codexProviderProfile
-                  ? "provider-profile"
-                  : appManagedCodexApiKey
-                    ? "app-managed"
-                    : "runtime-managed",
-              },
+              providerBinding: providerBindingResult.providerBinding,
               mcpServers: mcpSnapshot.mcpServersForSession,
               images: input.images,
               longTextAttachments: input.longTextAttachments,
@@ -1135,7 +949,7 @@ export const codexRouter = router({
             safeEmit({ type: "finish" })
             safeComplete()
           } finally {
-            revokeCodexProviderGatewayToken()
+            providerBindingStage.revoke()
             if (desktopJobId) {
               const jobDb = desktopJobDb ?? getDatabase()
               completeDesktopChatAgentJobSafely(jobDb, {
@@ -1156,8 +970,7 @@ export const codexRouter = router({
             if (deleteActiveCodexStreamIfRun(input.subChatId, input.runId)) {
               clearPendingCodexApprovals("Session cancelled.", input.subChatId)
             }
-            codexProviderUpstreamToken = null
-            codexProviderGatewayToken = null
+            providerBindingStage.release()
           }
         })()
 
@@ -1173,7 +986,7 @@ export const codexRouter = router({
             },
           )
           abortController.abort()
-          revokeCodexProviderGatewayToken()
+          providerBindingStage.revoke()
 
           const activeStream = getActiveCodexStream(input.subChatId)
           if (activeStream?.runId === input.runId) {

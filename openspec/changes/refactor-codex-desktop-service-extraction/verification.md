@@ -79,6 +79,20 @@ and the reverse imports from `src/main/index.ts` and `src/main/windows/main.ts`.
   separately tested scaffolding; aggregate result was 1,656 passed / 0 failed. The final
   exact-SHA `check:full` remains authoritative.
 
+### Provider-binding stage (task 3.2)
+
+- The stage preserves provider-profile > app-managed API key > ChatGPT login selection,
+  places the upstream credential in redaction hints before awaiting gateway issuance, and
+  keeps the app-managed key outside renderer-chunk secret hints as before.
+- Its shared `revoke()` is idempotent across unsubscribe and `finally`; coverage also
+  proves a thrown revoke can be retried instead of being incorrectly marked complete.
+- `bun test --isolate tests/codex-desktop-run-provider-binding.test.ts
+  tests/provider-credential-storage.test.ts tests/provider-routing-ux.test.ts
+  tests/codex-api-key-validation.test.ts tests/agent-runtime-preflight.test.ts
+  tests/runtime-stream-event-mapper.test.ts`: **54 passed / 0 failed / 290
+  expectations across 6 files**.
+- `bun run lint`, `bun run ts:check`, and `git diff --check`: passed.
+
 ## W7 scope ledger
 
 - Green work is implemented only as named in the approved proposal.

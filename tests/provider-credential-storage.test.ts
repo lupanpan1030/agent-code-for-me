@@ -127,6 +127,13 @@ describe("provider credential storage hardening", () => {
       join(process.cwd(), "src/main/lib/codex/provider-runtime-binding.ts"),
       "utf-8",
     )
+    const codexDesktopProviderBindingSource = readFileSync(
+      join(
+        process.cwd(),
+        "src/main/lib/codex/desktop-run-provider-binding.ts",
+      ),
+      "utf-8",
+    )
     const codexAppServerAdapterSource = readFileSync(
       join(process.cwd(), "src/main/lib/codex/app-server-adapter.ts"),
       "utf-8",
@@ -137,7 +144,8 @@ describe("provider credential storage hardening", () => {
     expect(transportSource).not.toContain("authConfig")
     expect(transportSource).not.toContain("apiKey:")
     expect(codexRouterSource).not.toContain("authConfig")
-    expect(codexRouterSource).toContain("codexAuthMethod")
+    expect(codexDesktopProviderBindingSource).not.toContain("authConfig")
+    expect(codexDesktopProviderBindingSource).toContain("codexAuthMethod")
     expect(codexRouterSource).toContain("createCodexAppServerAdapter")
     const removedTemporaryFactory = [
       "createCodex",
