@@ -1,11 +1,12 @@
 import { describe, expect, test } from "bun:test"
+import { randomBytes } from "node:crypto"
 import { eq } from "drizzle-orm"
-import { chats, projects, subChats } from "../src/main/lib/db/schema"
 import {
   persistClaudeAgentSdkAssistantResponse,
   prepareClaudeAgentSdkAssistantPersistence,
   shouldCreateClaudeAgentSdkRollbackStash,
 } from "../src/main/lib/claude/agent-sdk-message-persistence"
+import { chats, projects, subChats } from "../src/main/lib/db/schema"
 import { createAgentJobTestDb } from "./helpers/agent-job-test-db"
 
 function seedChat(db: ReturnType<typeof createAgentJobTestDb>) {
@@ -175,6 +176,52 @@ describe("Claude Agent SDK message persistence", () => {
     expect(
       db.select().from(chats).where(eq(chats.id, "chat-1")).get()?.updatedAt,
     ).toEqual(new Date("2026-06-01T00:00:00.000Z"))
+  })
+
+  test("redacts exact run secrets recursively before assistant messages reach the database", async () => {
+    const db = createAgentJobTestDb()
+    seedChat(db)
+    const gatewayToken = randomBytes(32).toString("hex")
+
+    const result = await persistClaudeAgentSdkAssistantResponse({
+      db,
+      chatId: "chat-1",
+      subChatId: "sub-1",
+      messagesToSave: [
+        {
+          id: "user-1",
+          role: "user",
+          parts: [{ type: "text", text: `prior echo ${gatewayToken}` }],
+        },
+      ],
+      parts: [
+        { type: "text", text: `malicious assistant echo ${gatewayToken}` },
+      ],
+      metadata: {
+        sessionId: "session-1",
+        note: `metadata echo ${gatewayToken}`,
+      },
+      secretHints: [gatewayToken],
+      historyEnabled: false,
+      cwd: "/repo",
+      createId: () => "assistant-secret",
+      now: () => new Date("2026-06-01T00:00:00.000Z"),
+    })
+
+    const subChat = db
+      .select()
+      .from(subChats)
+      .where(eq(subChats.id, "sub-1"))
+      .get()
+    expect(subChat?.messages).not.toContain(gatewayToken)
+    expect(subChat?.messages).toContain("<redacted>")
+    expect(JSON.stringify(result)).not.toContain(gatewayToken)
+    expect(result.persistence.assistantMessage).toMatchObject({
+      parts: [{ type: "text", text: "malicious assistant echo <redacted>" }],
+      metadata: {
+        note: "metadata echo <redacted>",
+      },
+    })
   })
 
   test("clears final empty response streams but preserves stream state for empty error saves", async () => {

@@ -1,25 +1,27 @@
-import { eq } from "drizzle-orm"
 import type { AgentRuntimeContractId } from "../../../shared/agent-runtime-capabilities"
 import type {
   LocalJobApiResolvedProvider,
   LocalJobApiResolvedProviderSource,
 } from "../../../shared/local-job-api"
 import {
-  type ProviderProfileAuthMode,
-  type ProviderProfileCapabilities,
   type ProviderProfileDefaultPurpose,
-  type ProviderProfileProtocol,
   type ProviderProfileTarget,
   providerProfileSource,
 } from "../../../shared/provider-profile-types"
 import type { AgentRuntimeProviderDiagnostic } from "../agent-runtime/run-contract"
-import { agentProviderDefaults, agentProviderProfiles } from "../db/schema"
 import {
   getProviderGatewayEndpoint,
   revokeProviderGatewayToken,
 } from "../provider-profiles/gateway"
-import type { ProviderProfileRuntimeConfig } from "../provider-profiles/storage"
-import { decryptProviderToken, normalizeProviderToken } from "../provider-token"
+import {
+  getProviderDefaultRuntimeConfigFromDatabase,
+  getProviderProfileRuntimeConfigFromDatabase,
+  getProviderProfileRuntimeMetadataFromDatabase,
+  type ProviderDefaultRuntimeConfig,
+  type ProviderProfileRuntimeConfig,
+  type ProviderProfileRuntimeMetadata,
+  ProviderProfileStorageReadError,
+} from "../provider-profiles/storage"
 import type { HeadlessAgentRuntimeProviderReference } from "./agent-runtime-contract"
 import type { AgentJobDatabase } from "./job-store"
 
@@ -63,15 +65,11 @@ type ProviderGatewayEndpoint = {
   providerId: string
 }
 
-type ProviderDefaultRuntimeConfig = ProviderProfileRuntimeConfig & {
-  modelOverride: string | null
-}
-
 export type HeadlessProviderBindingDependencies = {
   getProviderProfileMetadata?: (
     db: AgentJobDatabase,
     profileId: string,
-  ) => HeadlessProviderProfileMetadata | null
+  ) => ProviderProfileRuntimeMetadata | null
   getProviderProfileRuntimeConfig?: (
     db: AgentJobDatabase,
     profileId: string,
@@ -103,10 +101,18 @@ export type HeadlessProviderBindingResolution = {
   cleanup: () => void
 }
 
-export type HeadlessProviderProfileMetadata = {
-  id: string
-  targetRuntimes: ProviderProfileTarget[]
-}
+export type HeadlessDefaultProviderBindingInspection =
+  | { state: "not-configured" }
+  | {
+      state: "ready"
+      profileId: string
+      model: string
+    }
+  | {
+      state: "unavailable"
+      code: HeadlessProviderBindingErrorCode
+      profileId: string | null
+    }
 
 export class HeadlessProviderBindingError extends Error {
   readonly code: HeadlessProviderBindingErrorCode
@@ -140,139 +146,6 @@ const HEADLESS_PROVIDER_RUNTIME_BINDINGS: Partial<
     defaultPurpose: "codex-main",
     gatewayKind: "responses",
   },
-}
-
-function parseJson<T>(value: string | null | undefined, fallback: T): T {
-  if (!value) return fallback
-  try {
-    return JSON.parse(value) as T
-  } catch {
-    return fallback
-  }
-}
-
-function parseTargets(
-  value: string | null | undefined,
-): ProviderProfileTarget[] {
-  const parsed = parseJson<unknown>(value, [])
-  if (!Array.isArray(parsed)) return []
-  return parsed.filter(
-    (target): target is ProviderProfileTarget =>
-      target === "claude" ||
-      target === "codex" ||
-      target === "helpers" ||
-      target === "local",
-  )
-}
-
-function parseAuthMode(value: string): ProviderProfileAuthMode {
-  return value === "bearer" || value === "x-api-key" || value === "none"
-    ? value
-    : "bearer"
-}
-
-function parseProtocol(value: string): ProviderProfileProtocol {
-  return value === "anthropic" ||
-    value === "openai-chat" ||
-    value === "openai-responses"
-    ? value
-    : "openai-responses"
-}
-
-export function getProviderProfileMetadataFromDb(
-  db: AgentJobDatabase,
-  profileId: string,
-): HeadlessProviderProfileMetadata | null {
-  const row =
-    db
-      .select()
-      .from(agentProviderProfiles)
-      .where(eq(agentProviderProfiles.id, profileId))
-      .get() ?? null
-  if (!row) return null
-  return {
-    id: row.id,
-    targetRuntimes: parseTargets(row.targetRuntimesJson),
-  }
-}
-
-export function getProviderProfileRuntimeConfigFromDb(
-  db: AgentJobDatabase,
-  profileId: string,
-): ProviderProfileRuntimeConfig | null {
-  const row =
-    db
-      .select()
-      .from(agentProviderProfiles)
-      .where(eq(agentProviderProfiles.id, profileId))
-      .get() ?? null
-  if (!row) return null
-
-  const authMode = parseAuthMode(row.authMode)
-  const decryptedToken = row.encryptedToken
-    ? decryptProviderToken(row.encryptedToken)
-    : null
-  const token = decryptedToken ? normalizeProviderToken(decryptedToken) : null
-  if (authMode !== "none" && !token) {
-    throw new Error("Provider profile token is missing")
-  }
-
-  return {
-    id: row.id,
-    name: row.name,
-    presetId: row.presetId,
-    protocol: parseProtocol(row.protocol),
-    baseUrl: row.baseUrl,
-    defaultModel: row.defaultModel,
-    authMode,
-    token,
-    headers: parseJson(row.headersJson, {}),
-    targetRuntimes: parseTargets(row.targetRuntimesJson),
-    capabilities: parseJson<ProviderProfileCapabilities>(
-      row.capabilitiesJson,
-      {},
-    ),
-  }
-}
-
-function getProviderDefaultRuntimeConfigFromDb(
-  db: AgentJobDatabase,
-  purpose: ProviderProfileDefaultPurpose,
-): ProviderDefaultRuntimeConfig | null {
-  const row =
-    db
-      .select()
-      .from(agentProviderDefaults)
-      .where(eq(agentProviderDefaults.purpose, purpose))
-      .get() ?? null
-  if (!row?.profileId) return null
-  let profile: ProviderProfileRuntimeConfig | null
-  try {
-    profile = getProviderProfileRuntimeConfigFromDb(db, row.profileId)
-  } catch (error) {
-    if (error instanceof HeadlessProviderBindingError) throw error
-    throw new HeadlessProviderBindingError({
-      code: "provider_profile_unavailable",
-      message:
-        error instanceof Error
-          ? error.message
-          : `Default provider profile ${row.profileId} is unavailable.`,
-      source: "default-profile",
-      profileId: row.profileId,
-    })
-  }
-  if (!profile) {
-    throw new HeadlessProviderBindingError({
-      code: "provider_profile_not_found",
-      message: `Default provider profile ${row.profileId} was not found.`,
-      source: "default-profile",
-      profileId: row.profileId,
-    })
-  }
-  return {
-    ...profile,
-    modelOverride: row.modelOverride,
-  }
 }
 
 function normalizeOptionalText(
@@ -309,17 +182,58 @@ function defaultDependencies(
   return {
     getProviderProfileMetadata:
       dependencies?.getProviderProfileMetadata ??
-      getProviderProfileMetadataFromDb,
+      getProviderProfileRuntimeMetadataFromDatabase,
     getProviderProfileRuntimeConfig:
       dependencies?.getProviderProfileRuntimeConfig ??
-      getProviderProfileRuntimeConfigFromDb,
+      getProviderProfileRuntimeConfigFromDatabase,
     getProviderDefaultRuntimeConfig:
       dependencies?.getProviderDefaultRuntimeConfig ??
-      getProviderDefaultRuntimeConfigFromDb,
+      getProviderDefaultRuntimeConfigFromDatabase,
     createGatewayEndpoint:
       dependencies?.createGatewayEndpoint ?? getProviderGatewayEndpoint,
     revokeGatewayToken:
       dependencies?.revokeGatewayToken ?? revokeProviderGatewayToken,
+  }
+}
+
+function toDefaultProviderBindingError(
+  error: unknown,
+  purpose: ProviderProfileDefaultPurpose,
+): HeadlessProviderBindingError {
+  if (error instanceof HeadlessProviderBindingError) return error
+  if (error instanceof ProviderProfileStorageReadError) {
+    return new HeadlessProviderBindingError({
+      code:
+        error.reason === "default-profile-not-found"
+          ? "provider_profile_not_found"
+          : "provider_profile_unavailable",
+      message: error.message,
+      source: "default-profile",
+      profileId: error.profileId,
+    })
+  }
+  return new HeadlessProviderBindingError({
+    code: "provider_profile_unavailable",
+    message:
+      error instanceof Error
+        ? error.message
+        : `Default provider profile for ${purpose} is unavailable.`,
+    source: "default-profile",
+  })
+}
+
+function readDefaultProviderProfile(input: {
+  db: AgentJobDatabase
+  purpose: ProviderProfileDefaultPurpose
+  dependencies: Required<HeadlessProviderBindingDependencies>
+}): ProviderDefaultRuntimeConfig | null {
+  try {
+    return input.dependencies.getProviderDefaultRuntimeConfig(
+      input.db,
+      input.purpose,
+    )
+  } catch (error) {
+    throw toDefaultProviderBindingError(error, input.purpose)
   }
 }
 
@@ -334,7 +248,20 @@ export function assertHeadlessProviderSelectionUsableAtCreate(input: {
   const runtimeBinding = requireRuntimeBinding(input.runtime)
   if (!runtimeBinding) return
   const dependencies = defaultDependencies(input.dependencies)
-  const metadata = dependencies.getProviderProfileMetadata(input.db, profileId)
+  let metadata: ProviderProfileRuntimeMetadata | null
+  try {
+    metadata = dependencies.getProviderProfileMetadata(input.db, profileId)
+  } catch (error) {
+    throw new HeadlessProviderBindingError({
+      code: "provider_profile_unavailable",
+      message:
+        error instanceof Error
+          ? error.message
+          : `Provider profile ${profileId} is unavailable.`,
+      source: "request-profile",
+      profileId,
+    })
+  }
   if (!metadata) {
     throw new HeadlessProviderBindingError({
       code: "provider_profile_not_found",
@@ -515,6 +442,47 @@ function nativeProviderBinding(
   }
 }
 
+export function inspectHeadlessDefaultProviderBinding(input: {
+  db: AgentJobDatabase
+  runtime: AgentRuntimeContractId
+  dependencies?: HeadlessProviderBindingDependencies
+}): HeadlessDefaultProviderBindingInspection {
+  const runtimeBinding = requireRuntimeBinding(input.runtime)
+  if (!runtimeBinding) return { state: "not-configured" }
+  const dependencies = defaultDependencies(input.dependencies)
+
+  try {
+    const profile = readDefaultProviderProfile({
+      db: input.db,
+      purpose: runtimeBinding.defaultPurpose,
+      dependencies,
+    })
+    if (!profile) return { state: "not-configured" }
+    assertProfileTargetsRuntime({
+      profileId: profile.id,
+      targetRuntimes: profile.targetRuntimes,
+      runtimeBinding,
+      source: "default-profile",
+    })
+    return {
+      state: "ready",
+      profileId: profile.id,
+      model:
+        normalizeOptionalText(profile.modelOverride) ?? profile.defaultModel,
+    }
+  } catch (error) {
+    const providerError =
+      error instanceof HeadlessProviderBindingError
+        ? error
+        : toDefaultProviderBindingError(error, runtimeBinding.defaultPurpose)
+    return {
+      state: "unavailable",
+      code: providerError.code,
+      profileId: providerError.profileId,
+    }
+  }
+}
+
 export async function resolveHeadlessProviderBinding(
   input: ResolveHeadlessProviderBindingInput,
 ): Promise<HeadlessProviderBindingResolution> {
@@ -564,23 +532,11 @@ export async function resolveHeadlessProviderBinding(
     return nativeProviderBinding(modelOverride)
   }
 
-  let defaultProfile: ProviderDefaultRuntimeConfig | null
-  try {
-    defaultProfile = dependencies.getProviderDefaultRuntimeConfig(
-      input.db,
-      runtimeBinding.defaultPurpose,
-    )
-  } catch (error) {
-    if (error instanceof HeadlessProviderBindingError) throw error
-    throw new HeadlessProviderBindingError({
-      code: "provider_profile_unavailable",
-      message:
-        error instanceof Error
-          ? error.message
-          : `Default provider profile for ${runtimeBinding.defaultPurpose} is unavailable.`,
-      source: "default-profile",
-    })
-  }
+  const defaultProfile = readDefaultProviderProfile({
+    db: input.db,
+    purpose: runtimeBinding.defaultPurpose,
+    dependencies,
+  })
   if (!defaultProfile) return nativeProviderBinding(null)
 
   return profileProviderBinding({

@@ -1,3 +1,4 @@
+import { redactExactSecretHints } from "../agent-runtime/redaction"
 import type { MessageMetadata, UIMessageChunk } from "./types"
 
 export type ClaudeAgentSdkChunkProcessorState = {
@@ -35,13 +36,14 @@ export function processClaudeAgentSdkUiChunk(input: {
   subId: string
   subChatId: string
   chunkCount: number
+  secretHints?: readonly string[]
   emit: (chunk: UIMessageChunk) => boolean
   notifyFileChanged: (event: ClaudeAgentSdkFileChangeNotification) => void
 }): ClaudeAgentSdkChunkProcessorResult {
   const { chunk, state, parts } = input
   let metadata = state.metadata
   let currentText = state.currentText
-  let pendingFinishChunk = state.pendingFinishChunk
+  const pendingFinishChunk = state.pendingFinishChunk
   let exitPlanModeToolCallId = state.exitPlanModeToolCallId
 
   if (chunk.type === "message-metadata" && metadata.sdkMessageUuid) {
@@ -62,8 +64,12 @@ export function processClaudeAgentSdkUiChunk(input: {
   }
 
   if (!input.emit(chunk)) {
+    const safeChunkType = redactExactSecretHints(
+      chunk.type,
+      input.secretHints,
+    ).value
     console.log(
-      `[SD] M:EMIT_CLOSED sub=${input.subId} type=${chunk.type} n=${input.chunkCount}`,
+      `[SD] M:EMIT_CLOSED sub=${input.subId} type=${safeChunkType} n=${input.chunkCount}`,
     )
     return {
       metadata,
@@ -84,14 +90,22 @@ export function processClaudeAgentSdkUiChunk(input: {
         parts,
       })
       break
-    case "tool-input-available":
+    case "tool-input-available": {
+      const safeToolName = redactExactSecretHints(
+        chunk.toolName,
+        input.secretHints,
+      ).value
+      const safeToolCallId = redactExactSecretHints(
+        chunk.toolCallId,
+        input.secretHints,
+      ).value
       console.log(
-        `[SD] M:TOOL_CALL sub=${input.subId} toolName="${chunk.toolName}" mode=${input.mode} callId=${chunk.toolCallId}`,
+        `[SD] M:TOOL_CALL sub=${input.subId} toolName="${safeToolName}" mode=${input.mode} callId=${safeToolCallId}`,
       )
 
       if (input.mode === "plan" && chunk.toolName === "ExitPlanMode") {
         console.log(
-          `[SD] M:PLAN_TOOL_DETECTED sub=${input.subId} callId=${chunk.toolCallId}`,
+          `[SD] M:PLAN_TOOL_DETECTED sub=${input.subId} callId=${safeToolCallId}`,
         )
         exitPlanModeToolCallId = chunk.toolCallId
       }
@@ -105,6 +119,7 @@ export function processClaudeAgentSdkUiChunk(input: {
         startedAt: Date.now(),
       })
       break
+    }
     case "tool-output-available": {
       const toolPart = parts.find(
         (part) =>

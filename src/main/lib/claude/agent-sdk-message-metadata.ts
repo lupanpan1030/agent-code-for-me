@@ -1,3 +1,5 @@
+import { redactRuntimePayload } from "../agent-runtime/redaction"
+import type { JsonValue } from "../agent-runtime/runtime-events"
 import type { MessageMetadata } from "./types"
 
 export type ClaudeAgentSdkMessageMetadataState = {
@@ -11,6 +13,7 @@ export function trackClaudeAgentSdkMessageMetadata(input: {
   state: ClaudeAgentSdkMessageMetadataState
   historyEnabled: boolean
   aborted: boolean
+  secretHints?: readonly string[]
 }): ClaudeAgentSdkMessageMetadataState {
   const msgAny = input.message as any
   let metadata = input.state.metadata
@@ -42,19 +45,27 @@ export function trackClaudeAgentSdkMessageMetadata(input: {
   }
 
   if (msgAny.type === "system") {
-    console.log(
-      `[SD] SYSTEM message: subtype=${msgAny.subtype}`,
-      JSON.stringify(
-        {
+    const diagnostic = redactRuntimePayload(
+      {
+        subtype: String(msgAny.subtype ?? ""),
+        details: {
           cwd: msgAny.cwd,
           mcp_servers: msgAny.mcp_servers,
           tools: msgAny.tools,
           plugins: msgAny.plugins,
           permissionMode: msgAny.permissionMode,
         },
-        null,
-        2,
-      ),
+      } as JsonValue,
+      {
+        runtimeId: "claude-code",
+        runId: msgAny.session_id ?? "claude-system-message",
+        source: "runtime-diagnostic",
+        secretHints: input.secretHints,
+      },
+    ).payload as { subtype: string; details: JsonValue }
+    console.log(
+      `[SD] SYSTEM message: subtype=${diagnostic.subtype}`,
+      JSON.stringify(diagnostic.details, null, 2),
     )
   }
 

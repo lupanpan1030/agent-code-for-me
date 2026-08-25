@@ -1,21 +1,21 @@
 import type { AgentJobMode } from "../../../shared/agent-jobs"
-import type { DesktopPermissionPolicy } from "../agent-runtime/permission-policy"
 import type { DesktopRunRequest } from "../agent-runtime/desktop-run-request"
+import type { DesktopPermissionPolicy } from "../agent-runtime/permission-policy"
 import type { DesktopRunPreflightResult } from "../agent-runtime/preflight"
 import type { AgentJobDatabase } from "../headless/job-store"
 import {
-  prepareClaudeAgentSdkProviderStartupForDesktopRun,
-  type ClaudeAgentSdkProviderStartup,
-  type ClaudeAgentSdkConnectionMethod,
-} from "./agent-sdk-provider-startup"
-import {
-  createClaudeAgentSdkDesktopRunStartup,
   type ClaudeAgentSdkDesktopRunStartup,
+  createClaudeAgentSdkDesktopRunStartup,
 } from "./agent-sdk-desktop-job"
 import type { ClaudeAgentSdkDesktopRunState } from "./agent-sdk-desktop-run-state"
 import {
-  prepareClaudeAgentSdkRuntimeStartupForDesktopRun,
+  type ClaudeAgentSdkConnectionMethod,
+  type ClaudeAgentSdkProviderStartup,
+  prepareClaudeAgentSdkProviderStartupForDesktopRun,
+} from "./agent-sdk-provider-startup"
+import {
   type PreparedClaudeAgentSdkRuntimeStartupContext,
+  prepareClaudeAgentSdkRuntimeStartupForDesktopRun,
 } from "./agent-sdk-runtime-startup"
 import type { ImageAttachment, LongTextAttachment } from "./chat-input-schema"
 
@@ -49,6 +49,10 @@ export type PrepareClaudeAgentSdkDesktopRunStartupInput = {
   emitPreflightBlocker: Parameters<
     typeof prepareClaudeAgentSdkProviderStartupForDesktopRun
   >[0]["emitPreflightBlocker"]
+  onRuntimeSecretsResolved?: (input: {
+    secretHints: readonly string[]
+    cleanup: () => void
+  }) => void
   desktopRunState: Pick<ClaudeAgentSdkDesktopRunState, "setDesktopJob">
   dependencies?: Partial<PrepareClaudeAgentSdkDesktopRunStartupDependencies>
 }
@@ -105,54 +109,66 @@ export async function prepareClaudeAgentSdkDesktopRunStartup(
     claudeCodeToken,
     finalCustomConfig,
     isUsingOllama,
+    secretHints,
+    cleanupRuntimeSecrets,
   } = providerStartup.startup
-  const desktopRunStartup: ClaudeAgentSdkDesktopRunStartup =
-    dependencies.createDesktopRunStartup({
-      db: input.db,
-      mode: input.mode,
+  try {
+    input.onRuntimeSecretsResolved?.({
+      secretHints,
+      cleanup: cleanupRuntimeSecrets,
+    })
+    const desktopRunStartup: ClaudeAgentSdkDesktopRunStartup =
+      dependencies.createDesktopRunStartup({
+        db: input.db,
+        mode: input.mode,
+        chatId: input.chatId,
+        subChatId: input.subChatId,
+        cwd: input.cwd,
+        prompt: input.prompt,
+        runId: input.runId,
+        cancel: input.cancel,
+        streamId: input.streamId,
+        preflight: input.preflight,
+        permissionPolicy: input.permissionPolicy,
+        customConfig: finalCustomConfig,
+        requestedModel: input.requestedModel,
+        modelSource: input.modelSource,
+        selectedProviderProfileId,
+        images: input.images,
+        longTextAttachments: input.longTextAttachments,
+        signal: input.signal,
+        requestedSessionId: input.requestedSessionId,
+        existingSessionId: input.existingSessionId,
+        secretHints,
+      })
+    input.desktopRunState.setDesktopJob({
+      jobId: desktopRunStartup.desktopJob.jobId,
+      streamEventMapper: desktopRunStartup.desktopJob.streamEventMapper,
+    })
+
+    const runtimeStartup = await dependencies.prepareRuntimeStartup({
+      projectId: input.preflight.project?.id ?? null,
       chatId: input.chatId,
       subChatId: input.subChatId,
-      cwd: input.cwd,
-      prompt: input.prompt,
-      runId: input.runId,
-      cancel: input.cancel,
-      streamId: input.streamId,
-      preflight: input.preflight,
-      permissionPolicy: input.permissionPolicy,
+      isUsingOllama,
       customConfig: finalCustomConfig,
       requestedModel: input.requestedModel,
-      modelSource: input.modelSource,
-      selectedProviderProfileId,
-      images: input.images,
-      longTextAttachments: input.longTextAttachments,
-      signal: input.signal,
-      requestedSessionId: input.requestedSessionId,
-      existingSessionId: input.existingSessionId,
+      enableTasks: input.enableTasks ?? true,
+      claudeCodeToken,
+      logPrefix: `[${input.subChatId}] `,
     })
-  input.desktopRunState.setDesktopJob({
-    jobId: desktopRunStartup.desktopJob.jobId,
-    streamEventMapper: desktopRunStartup.desktopJob.streamEventMapper,
-  })
 
-  const runtimeStartup = await dependencies.prepareRuntimeStartup({
-    projectId: input.preflight.project?.id ?? null,
-    chatId: input.chatId,
-    subChatId: input.subChatId,
-    isUsingOllama,
-    customConfig: finalCustomConfig,
-    requestedModel: input.requestedModel,
-    enableTasks: input.enableTasks ?? true,
-    claudeCodeToken,
-    logPrefix: `[${input.subChatId}] `,
-  })
-
-  return {
-    ok: true,
-    desktopRunRequest: desktopRunStartup.desktopRunRequest,
-    resumeSessionId: desktopRunStartup.resumeSessionId,
-    providerStartup: providerStartup.startup,
-    connectionMethod: providerStartup.connectionMethod,
-    runtimeStartup: runtimeStartup.runtimeStartup,
-    isolatedConfigReady: runtimeStartup.isolatedConfigReady,
+    return {
+      ok: true,
+      desktopRunRequest: desktopRunStartup.desktopRunRequest,
+      resumeSessionId: desktopRunStartup.resumeSessionId,
+      providerStartup: providerStartup.startup,
+      connectionMethod: providerStartup.connectionMethod,
+      runtimeStartup: runtimeStartup.runtimeStartup,
+      isolatedConfigReady: runtimeStartup.isolatedConfigReady,
+    }
+  } catch (error) {
+    cleanupRuntimeSecrets()
+    throw error
   }
 }

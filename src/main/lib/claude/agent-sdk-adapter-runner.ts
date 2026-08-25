@@ -1,34 +1,36 @@
 import {
-  withDesktopRunAttempt,
   type DesktopRunRequest,
   type DesktopRunResult,
+  withDesktopRunAttempt,
 } from "../agent-runtime/desktop-run-request"
 import {
-  DesktopRuntimeAdapterFactory,
   type DesktopRuntimeAdapter,
+  DesktopRuntimeAdapterFactory,
 } from "../agent-runtime/desktop-runner"
+import { redactRuntimePayload } from "../agent-runtime/redaction"
+import type { JsonValue } from "../agent-runtime/runtime-events"
 import {
   ClaudeAgentSdkLoadError,
   ClaudeAgentSdkQueryStartError,
-  createClaudeAgentSdkAdapter,
   type ClaudeAgentSdkStreamConsumer,
+  createClaudeAgentSdkAdapter,
 } from "./agent-sdk-adapter"
-import type { ClaudeAgentSdkQuery } from "./agent-sdk-query-loader"
-import type { ClaudeAgentSdkQueryParams } from "./agent-sdk-query-options"
 import {
+  type ClaudeAgentSdkPolicyRetryState,
   createClaudeAgentSdkPolicyRetryState,
   resetClaudeAgentSdkPolicyRetryAttempt,
   waitForClaudeAgentSdkPolicyRetry,
-  type ClaudeAgentSdkPolicyRetryState,
 } from "./agent-sdk-policy-retry"
+import type { ClaudeAgentSdkQuery } from "./agent-sdk-query-loader"
+import type { ClaudeAgentSdkQueryParams } from "./agent-sdk-query-options"
+import type { PrepareClaudeAgentSdkDesktopRuntimeQueryResult } from "./agent-sdk-runtime-query"
 import {
+  type ClaudeAgentSdkStreamConsumerMutableState,
+  type CreateClaudeAgentSdkStreamConsumerInput,
   createClaudeAgentSdkStreamConsumer,
   createClaudeAgentSdkStreamConsumerStateAccess,
   resetClaudeAgentSdkStreamConsumerAttemptState,
-  type ClaudeAgentSdkStreamConsumerMutableState,
-  type CreateClaudeAgentSdkStreamConsumerInput,
 } from "./agent-sdk-stream-consumer"
-import type { PrepareClaudeAgentSdkDesktopRuntimeQueryResult } from "./agent-sdk-runtime-query"
 import type { UIMessageChunk } from "./types"
 
 export type RunClaudeAgentSdkAdapterWithPolicyRetryInput = {
@@ -41,6 +43,7 @@ export type RunClaudeAgentSdkAdapterWithPolicyRetryInput = {
   emitError: (error: unknown, context: string) => void
   emit: (chunk: UIMessageChunk) => void
   complete: () => void
+  secretHints?: readonly string[]
   sleep?: (delayMs: number) => Promise<unknown>
   log?: (...args: any[]) => void
   error?: (...args: any[]) => void
@@ -192,8 +195,7 @@ export async function runClaudeAgentSdkDesktopAdapterWithPreparedRuntimeQuery({
     ...input,
     queryOptions: runtimeQuery.queryOptions,
     mcpServers: runtimeQuery.mcpServers as Record<string, unknown> | undefined,
-    mcpRegistryVerificationTargets:
-      runtimeQuery.mcpRegistryVerificationTargets,
+    mcpRegistryVerificationTargets: runtimeQuery.mcpRegistryVerificationTargets,
   })
 }
 
@@ -205,6 +207,7 @@ export async function runClaudeAgentSdkDesktopAdapterWithStreamConsumer({
   const policyRetry = createClaudeAgentSdkPolicyRetryState()
   return runClaudeAgentSdkDesktopAdapter({
     ...input,
+    secretHints: streamConsumer.secretHints,
     policyRetry,
     consumeStream: createClaudeAgentSdkStreamConsumer({
       ...streamConsumer,
@@ -228,6 +231,7 @@ export async function runClaudeAgentSdkAdapterWithPolicyRetry({
   emitError,
   emit,
   complete,
+  secretHints,
   sleep,
   log = console.log,
   error = console.error,
@@ -248,11 +252,10 @@ export async function runClaudeAgentSdkAdapterWithPolicyRetry({
       }
     } catch (adapterError) {
       if (adapterError instanceof ClaudeAgentSdkLoadError) {
-        emitError(
-          adapterError.originalError,
-          "Failed to load Claude Agent SDK",
+        emitError(adapterError.originalError, "Failed to load Claude Agent SDK")
+        log(
+          `[SD] M:END sub=${subId} reason=sdk_load_error n=${getChunkCount()}`,
         )
-        log(`[SD] M:END sub=${subId} reason=sdk_load_error n=${getChunkCount()}`)
         emit({ type: "finish" })
         complete()
         return { status: "failed", error: { message: "SDK load error" } }
@@ -262,7 +265,23 @@ export async function runClaudeAgentSdkAdapterWithPolicyRetry({
         adapterError instanceof ClaudeAgentSdkQueryStartError
           ? adapterError.originalError
           : adapterError
-      error("[CLAUDE] ✗ Failed to create SDK query:", queryError)
+      const redactedQueryError = redactRuntimePayload(
+        queryError instanceof Error
+          ? ({
+              name: queryError.name,
+              message: queryError.message,
+              stack: queryError.stack ?? null,
+            } as JsonValue)
+          : String(queryError),
+        {
+          runtimeId: "claude-code",
+          runId: request.identity.runId,
+          jobId: request.identity.jobId,
+          source: "runtime-diagnostic",
+          secretHints,
+        },
+      ).payload
+      error("[CLAUDE] ✗ Failed to create SDK query:", redactedQueryError)
       emitError(queryError, "Failed to start Claude query")
       log(`[SD] M:END sub=${subId} reason=query_error n=${getChunkCount()}`)
       emit({ type: "finish" })

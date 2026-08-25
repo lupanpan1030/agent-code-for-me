@@ -1,6 +1,11 @@
+import { redactExactSecretHints } from "../agent-runtime/redaction"
 import type { MCPServer, MCPServerStatus, MessageMetadata, UIMessageChunk } from "./types";
 
-export function createTransformer(options?: { isUsingOllama?: boolean; emitSdkMessageUuid?: boolean }) {
+export function createTransformer(options?: {
+  isUsingOllama?: boolean
+  emitSdkMessageUuid?: boolean
+  secretHints?: readonly string[]
+}) {
   const isUsingOllama = options?.isUsingOllama === true
   let textId: string | null = null
   let textStarted = false
@@ -77,7 +82,15 @@ export function createTransformer(options?: { isUsingOllama?: boolean; emitSdkMe
         } catch (e) {
           // Stream may have been interrupted mid-JSON (e.g. network error, abort)
           // resulting in incomplete JSON like '{"prompt":"write co'
-          console.error("[transform] Failed to parse tool input JSON:", (e as Error).message, "partial:", accumulatedToolInput.slice(0, 120))
+          console.error(
+            "[transform] Failed to parse tool input JSON:",
+            redactExactSecretHints((e as Error).message, options?.secretHints).value,
+            "partial:",
+            redactExactSecretHints(
+              accumulatedToolInput.slice(0, 120),
+              options?.secretHints,
+            ).value,
+          )
           parsedInput = { _raw: accumulatedToolInput, _parseError: true }
         }
       }

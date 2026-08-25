@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { randomBytes } from "node:crypto"
 import { eq } from "drizzle-orm"
 import {
   agentProviderDefaults,
@@ -292,6 +293,92 @@ describe("headless provider binding", () => {
     expect(events).toEqual([
       "create:codex-default:responses",
       "revoke:token-for-codex-default",
+    ])
+  })
+
+  test("redacts a bare scoped gateway token from events, terminal storage, and API results", async () => {
+    const db = createAgentJobTestDb()
+    const gatewayToken = randomBytes(32).toString("hex")
+    const gatewayLifecycle: string[] = []
+    seedProviderProfile(db, {
+      id: "codex-default",
+      targets: ["codex"],
+      model: "gpt-default",
+    })
+    seedDefault(db, "codex-default")
+    const job = createAgentJob(db, {
+      source: "api",
+      runtime: "codex",
+      mode: "agent",
+      cwd: process.cwd(),
+      prompt: "Try to echo the scoped gateway token",
+    })
+
+    const result = await runPersistedAgentJob({
+      db,
+      jobId: job.id,
+      providerBindingDependencies: {
+        async createGatewayEndpoint(profileId, kind) {
+          gatewayLifecycle.push(`create:${profileId}:${kind}`)
+          return {
+            providerId: profileId,
+            baseUrl: `http://127.0.0.1:1234/profile/${profileId}/${kind}/v1`,
+            token: gatewayToken,
+          }
+        },
+        revokeGatewayToken(token) {
+          expect(token).toBe(gatewayToken)
+          gatewayLifecycle.push("revoke")
+          return true
+        },
+      },
+      runner: async (request, observer) => {
+        expect(request.providerBinding?.gatewayToken).toBe(gatewayToken)
+        observer.appendEvent("assistant_delta", {
+          text: `adapter emitted ${gatewayToken} without a secret label`,
+        })
+        observer.appendEvent("command_output", {
+          stream: "stderr",
+          text: `child stderr contained ${gatewayToken}`,
+        })
+        return {
+          status: "failed",
+          exitCode: 1,
+          errorCode: `runtime_failed_${gatewayToken}`,
+          errorMessage: `runtime failed after echoing ${gatewayToken}`,
+          result: {
+            finalMessage: `final output repeated ${gatewayToken}`,
+            nested: [`bare value: ${gatewayToken}`],
+          },
+        }
+      },
+    })
+
+    const apiEnvelope = toLocalJobApiResultEnvelope(
+      result.job,
+      [],
+      result.events,
+    )
+    const persistedAndPublic = JSON.stringify({
+      errorMessage: result.job.errorMessage,
+      resultJson: result.job.resultJson,
+      events: result.events,
+      apiEnvelope,
+    })
+
+    expect(result.job.errorMessage).toBe(
+      "runtime failed after echoing <redacted>",
+    )
+    expect(result.job.errorCode).toBe("runtime_failed_<redacted>")
+    expect(JSON.parse(result.job.resultJson ?? "{}")).toMatchObject({
+      finalMessage: "final output repeated <redacted>",
+      nested: ["bare value: <redacted>"],
+    })
+    expect(persistedAndPublic).not.toContain(gatewayToken)
+    expect(persistedAndPublic).toContain("<redacted>")
+    expect(gatewayLifecycle).toEqual([
+      "create:codex-default:responses",
+      "revoke",
     ])
   })
 

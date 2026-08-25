@@ -31,6 +31,7 @@ export function createAgentJobTestDb() {
       archived_at integer,
       branch text,
       base_branch text,
+      base_commit text,
       pr_url text,
       pr_number integer,
       FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE cascade

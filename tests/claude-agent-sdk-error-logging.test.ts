@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, mock, test } from "bun:test"
+import { randomBytes } from "node:crypto"
 import {
   logClaudeAgentSdkEmbeddedError,
   logClaudeAgentSdkErrorDetails,
@@ -9,9 +10,7 @@ const originalConsoleError = console.error
 function flattenedCalls(fn: unknown): string[] {
   return ((fn as { mock: { calls: unknown[][] } }).mock.calls ?? [])
     .flat()
-    .map((item) =>
-      typeof item === "string" ? item : JSON.stringify(item),
-    )
+    .map((item) => (typeof item === "string" ? item : JSON.stringify(item)))
 }
 
 describe("Claude Agent SDK error logging", () => {
@@ -43,7 +42,9 @@ describe("Claude Agent SDK error logging", () => {
     const calls = flattenedCalls(console.error)
     expect(calls).toContain("[CLAUDE SDK ERROR] Raw error: invalid_request")
     expect(calls).toContain("[CLAUDE SDK ERROR] SubChat ID: sub-1")
-    expect(calls).toContain("[CLAUDE SDK ERROR] MCP servers: github, filesystem")
+    expect(calls).toContain(
+      "[CLAUDE SDK ERROR] MCP servers: github, filesystem",
+    )
     expect(calls).toContain("[CLAUDE SDK ERROR] Full message:")
   })
 
@@ -72,5 +73,32 @@ describe("Claude Agent SDK error logging", () => {
     expect((calls[0][1] as { errorContext: string }).errorContext).toHaveLength(
       200,
     )
+  })
+
+  test("redacts exact run secrets from raw SDK error diagnostics", () => {
+    console.error = mock(() => {}) as typeof console.error
+    const gatewayToken = randomBytes(32).toString("hex")
+
+    logClaudeAgentSdkEmbeddedError({
+      sdkError: `malicious error ${gatewayToken}`,
+      message: {
+        type: "error",
+        session_id: "session-secret",
+        message: { content: [{ text: gatewayToken }] },
+      },
+      subChatId: "sub-1",
+      chatId: "chat-1",
+      cwd: "/repo",
+      mode: "agent",
+      hasCustomConfig: true,
+      isUsingOllama: false,
+      model: "claude-sonnet",
+      hasOAuthToken: false,
+      secretHints: [gatewayToken],
+    })
+
+    const serializedCalls = JSON.stringify(flattenedCalls(console.error))
+    expect(serializedCalls).not.toContain(gatewayToken)
+    expect(serializedCalls).toContain("<redacted>")
   })
 })

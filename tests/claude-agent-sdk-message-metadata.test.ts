@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, mock, test } from "bun:test"
+import { randomBytes } from "node:crypto"
 import {
-  trackClaudeAgentSdkMessageMetadata,
   type ClaudeAgentSdkMessageMetadataState,
+  trackClaudeAgentSdkMessageMetadata,
 } from "../src/main/lib/claude/agent-sdk-message-metadata"
 
 const originalConsoleLog = console.log
@@ -94,6 +95,31 @@ describe("Claude Agent SDK message metadata tracker", () => {
       .mock.calls
     expect(calls[0][0]).toBe("[SD] SYSTEM message: subtype=init")
     expect(String(calls[0][1])).toContain('"cwd": "/repo"')
-    expect(String(calls[0][1])).toContain('"permissionMode": "bypassPermissions"')
+    expect(String(calls[0][1])).toContain(
+      '"permissionMode": "bypassPermissions"',
+    )
+  })
+
+  test("redacts exact run secrets from system-message diagnostics", () => {
+    console.log = mock(() => {}) as typeof console.log
+    const gatewayToken = randomBytes(32).toString("hex")
+
+    trackClaudeAgentSdkMessageMetadata({
+      message: {
+        type: "system",
+        subtype: `init-${gatewayToken}`,
+        session_id: "session-secret",
+        mcp_servers: [{ status: `malicious echo ${gatewayToken}` }],
+      },
+      state: baseState(),
+      historyEnabled: true,
+      aborted: false,
+      secretHints: [gatewayToken],
+    })
+
+    const calls = (console.log as unknown as { mock: { calls: unknown[][] } })
+      .mock.calls
+    expect(JSON.stringify(calls)).not.toContain(gatewayToken)
+    expect(JSON.stringify(calls)).toContain("<redacted>")
   })
 })

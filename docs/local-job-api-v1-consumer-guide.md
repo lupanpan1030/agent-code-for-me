@@ -198,6 +198,16 @@ readiness probe fails; that runtime reports `unknown` and diagnostics go to
 stderr. Use `locus api runtimes list --json --no-probe` to skip subprocess
 status probes; skipped probed states report `unknown` rather than `ready`.
 
+For a provider-omitted agent run, readiness follows the real execution order:
+the runtime's headless default profile first, then native credentials only when
+no default is configured. A usable, target-compatible default reports `ready`.
+A configured default that is missing, malformed, undecryptable, or targets a
+different runtime reports `unavailable` and does not advertise native auth as a
+fallback, because the actual run would fail closed. `--no-probe` skips native
+subprocess probes; it still performs this cheap default-profile check. This is
+runtime-default readiness, not a diagnostic for an arbitrary profile supplied
+on a future create request.
+
 Use `runtime.requiredCapabilities` in the create request when the downstream
 workflow depends on a capability. Locus rejects unsupported or degraded required
 capabilities before provider work starts.

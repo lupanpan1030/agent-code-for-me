@@ -1,7 +1,7 @@
 import { flushClaudeAgentSdkTextAccumulator } from "./agent-sdk-chunk-processor"
 import {
-  finalizeClaudeAgentSdkGuardMetadata,
   type FinalizeClaudeAgentSdkGuardMetadataInput,
+  finalizeClaudeAgentSdkGuardMetadata,
 } from "./agent-sdk-guard-metadata"
 import { persistClaudeAgentSdkAssistantResponse } from "./agent-sdk-message-persistence"
 import type { ClaudeAgentSdkStreamConsumerMutableState } from "./agent-sdk-stream-consumer"
@@ -14,6 +14,7 @@ export type CompleteClaudeAgentSdkRunAfterAdapterInput = {
   messagesToSave: any[]
   parts: Array<Record<string, any>>
   metadata: any
+  secretHints?: readonly string[]
   currentText: string
   historyEnabled: boolean
   cwd: string
@@ -113,6 +114,7 @@ export async function completeClaudeAgentSdkRunAfterAdapter({
   messagesToSave,
   parts,
   metadata,
+  secretHints,
   currentText,
   historyEnabled,
   cwd,
@@ -137,10 +139,7 @@ export async function completeClaudeAgentSdkRunAfterAdapter({
   nowMs = Date.now,
 }: CompleteClaudeAgentSdkRunAfterAdapterInput): Promise<CompleteClaudeAgentSdkRunAfterAdapterResult> {
   if (messageCount === 0 && !aborted) {
-    emitError(
-      new Error("No response received from Claude"),
-      "Empty response",
-    )
+    emitError(new Error("No response received from Claude"), "Empty response")
     log(`[SD] M:END sub=${subId} reason=no_response n=${chunkCount}`)
     emit({ type: "finish" })
     complete()
@@ -181,6 +180,7 @@ export async function completeClaudeAgentSdkRunAfterAdapter({
     messagesToSave,
     parts,
     metadata: finalizedMetadata,
+    secretHints,
     historyEnabled,
     cwd,
   })

@@ -15,6 +15,8 @@ Headless runs cannot choose a provider or model: the Local Job API create reques
 
 ## Impact
 
+Owner-approved public contract decision: [consumer-impact.md](consumer-impact.md)
+
 - Affected specs: `local-job-api` (provider selection by reference), `headless-agent-jobs` (CLI/schedule selection + resolution order), `provider-runtime-bindings` (headless binding + token lifecycle), `agent-provider-profiles` (headless default consumption)
 - Affected code: `src/shared/local-job-api.ts`, `src/main/lib/headless/{local-job-api,cli-args,cli-dispatcher,agent-runtime-contract,job-runner,schedules}.ts`, `src/main/lib/headless/adapters/{claude-code,codex,codex-app-server}.ts`, `src/main/lib/db/schema/index.ts` (+ drizzle migration), `src/main/lib/provider-profiles/{storage,gateway}.ts` (read-only reuse), docs schema + consumer guides (EN/zh)
 - Depends on: RT-3 (`add-local-job-api-runtime-readiness`) for the `features` advertisement mechanism

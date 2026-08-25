@@ -5,11 +5,12 @@ import type {
 import type { AgentGuardEvent } from "../../../shared/agent-scope-contracts"
 import type { DesktopRunRequest } from "../agent-runtime/desktop-run-request"
 import type { ClaudePermissionMapping } from "../agent-runtime/permission-policy"
-import { getBundledClaudeBinaryPath } from "./env"
+import { redactRuntimePayload } from "../agent-runtime/redaction"
 import {
-  createClaudeAgentSdkPermissionControls,
   type CreateClaudeAgentSdkToolPermissionHandlerInput,
+  createClaudeAgentSdkPermissionControls,
 } from "./agent-sdk-tool-permission"
+import { getBundledClaudeBinaryPath } from "./env"
 
 export type ClaudeAgentSdkPrompt = string | AsyncIterable<SDKUserMessage>
 
@@ -40,6 +41,8 @@ export type CreateClaudeAgentSdkQueryOptionsInput = {
 export type CreateClaudeAgentSdkStderrHandlerInput = {
   stderrLines: string[]
   isUsingOllama: boolean
+  runId?: string
+  secretHints?: readonly string[]
   error?: (...args: any[]) => void
 }
 
@@ -56,6 +59,7 @@ export type CreateClaudeAgentSdkRuntimeQueryOptionsInput = Omit<
     "isUsingOllama"
   >
   stderrLines: string[]
+  secretHints?: readonly string[]
   shouldForkResume: boolean
   forkResumeAtUuid?: string | null
   resumeAtUuid?: string | null
@@ -133,16 +137,24 @@ function createAbortControllerFromSignal(signal: AbortSignal): AbortController {
 export function createClaudeAgentSdkStderrHandler({
   stderrLines,
   isUsingOllama,
+  runId,
+  secretHints,
   error = console.error,
 }: CreateClaudeAgentSdkStderrHandlerInput): NonNullable<
   ClaudeAgentSdkOptions["stderr"]
 > {
   return (data: string) => {
     stderrLines.push(data)
+    const redactedData = redactRuntimePayload(data, {
+      runtimeId: "claude-code",
+      runId: runId ?? "claude-stderr",
+      source: "runtime-diagnostic",
+      secretHints,
+    }).payload
     if (isUsingOllama) {
-      error("[Ollama stderr]", data)
+      error("[Ollama stderr]", redactedData)
     } else {
-      error("[claude stderr]", data)
+      error("[claude stderr]", redactedData)
     }
   }
 }
@@ -150,6 +162,7 @@ export function createClaudeAgentSdkStderrHandler({
 export function createClaudeAgentSdkRuntimeQueryOptions({
   permissionHandler,
   stderrLines,
+  secretHints,
   shouldForkResume,
   forkResumeAtUuid,
   resumeAtUuid,
@@ -174,6 +187,8 @@ export function createClaudeAgentSdkRuntimeQueryOptions({
     stderr: createClaudeAgentSdkStderrHandler({
       stderrLines,
       isUsingOllama: input.isUsingOllama,
+      runId: input.request.identity.runId,
+      secretHints,
     }),
     pathToClaudeCodeExecutable: getClaudeBinaryPath(),
     ...resolveClaudeAgentSdkResumeOptions({
@@ -252,7 +267,9 @@ export function createClaudeAgentSdkQueryOptions({
   maxThinkingTokens,
 }: CreateClaudeAgentSdkQueryOptionsInput): ClaudeAgentSdkQueryParams {
   const resumeSessionId = request.session.resumeSessionId || null
-  const hasMcpServers = Boolean(mcpServers && Object.keys(mcpServers).length > 0)
+  const hasMcpServers = Boolean(
+    mcpServers && Object.keys(mcpServers).length > 0,
+  )
 
   return {
     prompt,

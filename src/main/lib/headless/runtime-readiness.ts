@@ -17,6 +17,7 @@ import {
   getRuntimeExecutableStatus,
   type RuntimeExecutableStatus,
 } from "../runtime-executable"
+import type { HeadlessDefaultProviderBindingInspection } from "./provider-binding"
 
 type RuntimeStatusComponent = {
   id: string
@@ -43,6 +44,9 @@ export type RuntimeReadinessResolverDependencies = {
   getCodexExecutableStatus?: () => RuntimeExecutableStatus
   getCodexRuntimeStatus?: () => Promise<CodexRuntimeStatusLike>
   getExistingClaudeCredentials?: () => ClaudeCliCredentialForReadiness | null
+  inspectDefaultProviderBinding?: (
+    runtimeId: AgentRuntimeContractId,
+  ) => HeadlessDefaultProviderBindingInspection
   hasAnyClaudeCodeAccount?: () => boolean
   now?: () => number
 }
@@ -154,6 +158,25 @@ function resolveClaudeReadiness(
     state: "needs-auth",
     detail: "No Claude credential source is available.",
     hint: "Sign in through Locus desktop or log in with the claude CLI.",
+  })
+}
+
+function resolveDefaultProviderReadiness(
+  runtimeId: AgentRuntimeContractId,
+  dependencies: RuntimeReadinessResolverDependencies,
+): LocalJobApiRuntimeReadiness | null {
+  const inspection = dependencies.inspectDefaultProviderBinding?.(runtimeId)
+  if (!inspection || inspection.state === "not-configured") return null
+  if (inspection.state === "ready") {
+    return readiness({
+      state: "ready",
+      detail: "Configured default provider profile is available.",
+    })
+  }
+  return readiness({
+    state: "unavailable",
+    detail: "Configured default provider profile is unavailable.",
+    hint: "Fix or clear the runtime's default provider profile, then retry.",
   })
 }
 
@@ -270,6 +293,11 @@ export async function resolveLocalJobApiRuntimeReadiness(
   input: ResolveRuntimeReadinessOptions,
 ): Promise<LocalJobApiRuntimeReadiness> {
   try {
+    const defaultProviderReadiness = resolveDefaultProviderReadiness(
+      input.runtimeId,
+      input.dependencies ?? {},
+    )
+    if (defaultProviderReadiness) return defaultProviderReadiness
     if (input.runtimeId === "claude-code") {
       return resolveClaudeReadiness(input.dependencies ?? {})
     }

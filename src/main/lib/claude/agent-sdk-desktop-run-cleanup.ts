@@ -3,30 +3,27 @@ import {
   deleteActiveGuardedContract,
   type ValidatedAgentScopeContract,
 } from "../agent-guard"
+import { subChats } from "../db"
+import type { AgentJobDatabase } from "../headless/job-store"
 import {
   deleteActiveClaudeSession,
   deleteActiveClaudeSessionIfController,
   getActiveClaudeSession,
 } from "./active-sessions"
-import { clearClaudePendingToolApprovals } from "./tool-approvals"
 import {
   completeClaudeAgentSdkDesktopJobAfterRun,
   requestCancelClaudeAgentSdkDesktopJob,
 } from "./agent-sdk-desktop-job"
 import type { ClaudeAgentSdkDesktopRunState } from "./agent-sdk-desktop-run-state"
-import { subChats } from "../db"
-import type { AgentJobDatabase } from "../headless/job-store"
+import { clearClaudePendingToolApprovals } from "./tool-approvals"
 
 export type CleanupClaudeAgentSdkDesktopRunSubscriptionDependencies = {
-  deleteActiveClaudeSessionIfController:
-    typeof deleteActiveClaudeSessionIfController
+  deleteActiveClaudeSessionIfController: typeof deleteActiveClaudeSessionIfController
   deleteActiveClaudeSession: typeof deleteActiveClaudeSession
   getActiveClaudeSession: typeof getActiveClaudeSession
   clearClaudePendingToolApprovals: typeof clearClaudePendingToolApprovals
-  completeClaudeAgentSdkDesktopJobAfterRun:
-    typeof completeClaudeAgentSdkDesktopJobAfterRun
-  requestCancelClaudeAgentSdkDesktopJob:
-    typeof requestCancelClaudeAgentSdkDesktopJob
+  completeClaudeAgentSdkDesktopJobAfterRun: typeof completeClaudeAgentSdkDesktopJobAfterRun
+  requestCancelClaudeAgentSdkDesktopJob: typeof requestCancelClaudeAgentSdkDesktopJob
   deleteGuardedContract: (contractId: string) => void
   log: (...args: any[]) => void
 }
@@ -42,6 +39,7 @@ export type CleanupClaudeAgentSdkDesktopRunSubscriptionInput = {
     ClaudeAgentSdkDesktopRunState,
     "getJobId" | "markInactive" | "reachedNaturalFinish" | "sawError"
   >
+  cleanupRuntimeSecrets?: () => void
   dependencies?: Partial<CleanupClaudeAgentSdkDesktopRunSubscriptionDependencies>
 }
 
@@ -110,6 +108,7 @@ export function cleanupClaudeAgentSdkDesktopRunSubscription(
   )
   input.desktopRunState.markInactive()
   input.abortController.abort()
+  input.cleanupRuntimeSecrets?.()
 
   const ownsActiveSession = dependencies.deleteActiveClaudeSessionIfController(
     input.subChatId,

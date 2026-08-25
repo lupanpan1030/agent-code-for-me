@@ -1,7 +1,8 @@
 import { describe, expect, mock, test } from "bun:test"
-import { resolveDesktopPermissionPolicy } from "../src/main/lib/agent-runtime/permission-policy"
+import { randomBytes } from "node:crypto"
 import type { DesktopRunRequest } from "../src/main/lib/agent-runtime/desktop-run-request"
 import type { DesktopRuntimeAdapter } from "../src/main/lib/agent-runtime/desktop-runner"
+import { resolveDesktopPermissionPolicy } from "../src/main/lib/agent-runtime/permission-policy"
 import {
   ClaudeAgentSdkLoadError,
   ClaudeAgentSdkQueryStartError,
@@ -17,9 +18,7 @@ import {
   createClaudeAgentSdkPolicyRetryState,
   recordClaudeAgentSdkPolicyRetry,
 } from "../src/main/lib/claude/agent-sdk-policy-retry"
-import {
-  createClaudeAgentSdkStreamConsumerMutableState,
-} from "../src/main/lib/claude/agent-sdk-stream-consumer"
+import { createClaudeAgentSdkStreamConsumerMutableState } from "../src/main/lib/claude/agent-sdk-stream-consumer"
 import type { UIMessageChunk } from "../src/main/lib/claude/types"
 
 function createRequest(): DesktopRunRequest {
@@ -50,7 +49,9 @@ function createRequest(): DesktopRunRequest {
   }
 }
 
-function createAdapter(run: DesktopRuntimeAdapter["run"]): DesktopRuntimeAdapter {
+function createAdapter(
+  run: DesktopRuntimeAdapter["run"],
+): DesktopRuntimeAdapter {
   return {
     metadata: {
       runtimeId: "claude-code",
@@ -85,9 +86,9 @@ describe("Claude Agent SDK adapter runner", () => {
     const request = createRequest()
     const adapter = createAdapter(async () => ({ status: "succeeded" }))
 
-    expect(
-      resolveClaudeAgentSdkDesktopAdapter({ adapter, request }),
-    ).toBe(adapter)
+    expect(resolveClaudeAgentSdkDesktopAdapter({ adapter, request })).toBe(
+      adapter,
+    )
 
     expect(() =>
       resolveClaudeAgentSdkDesktopAdapter({
@@ -97,9 +98,7 @@ describe("Claude Agent SDK adapter runner", () => {
           context: { ...request.context, runtimeId: "codex" },
         },
       }),
-    ).toThrow(
-      "Desktop runtime adapter not registered: codex:claude-agent-sdk",
-    )
+    ).toThrow("Desktop runtime adapter not registered: codex:claude-agent-sdk")
   })
 
   test("creates the current Claude Agent SDK adapter before the policy retry loop", async () => {
@@ -374,6 +373,7 @@ describe("Claude Agent SDK adapter runner", () => {
   })
 
   test("handles SDK query startup failures at the route boundary", async () => {
+    const gatewayToken = randomBytes(32).toString("hex")
     const policyRetry = createClaudeAgentSdkPolicyRetryState()
     const emitted: unknown[] = []
     const completed: string[] = []
@@ -381,7 +381,9 @@ describe("Claude Agent SDK adapter runner", () => {
     const log = mock(() => {})
     const error = mock(() => {})
     const adapter = createAdapter(async () => {
-      throw new ClaudeAgentSdkQueryStartError(new Error("query failed"))
+      throw new ClaudeAgentSdkQueryStartError(
+        new Error(`query failed ${gatewayToken}`),
+      )
     })
 
     await expect(
@@ -396,6 +398,7 @@ describe("Claude Agent SDK adapter runner", () => {
           errors.push({ error: emittedError, context }),
         emit: (chunk) => emitted.push(chunk),
         complete: () => completed.push("complete"),
+        secretHints: [gatewayToken],
         log,
         error,
       }),
@@ -411,5 +414,7 @@ describe("Claude Agent SDK adapter runner", () => {
     expect(flattenedCalls(error)).toContain(
       "[CLAUDE] ✗ Failed to create SDK query:",
     )
+    expect(JSON.stringify(error.mock.calls)).not.toContain(gatewayToken)
+    expect(JSON.stringify(error.mock.calls)).toContain("<redacted>")
   })
 })

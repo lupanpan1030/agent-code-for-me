@@ -1,4 +1,6 @@
 import * as electron from "electron"
+import { redactRuntimePayload } from "../agent-runtime/redaction"
+import type { JsonValue } from "../agent-runtime/runtime-events"
 import type { RuntimeNativePluginActivationScopeContext } from "../plugins/update-review-state"
 import {
   type ClaudeAgentSdkIsolatedConfig,
@@ -101,7 +103,29 @@ export async function prepareClaudeAgentSdkRuntimeStartupForDesktopRun({
       isolatedConfigReady: true,
     }
   } catch (startupErr) {
-    error(`[claude] Failed to setup isolated config dir:`, startupErr)
+    const secretHints = [
+      input.customConfig?.token,
+      input.claudeCodeToken,
+    ].filter((secret): secret is string => Boolean(secret))
+    const diagnosticError =
+      secretHints.length === 0
+        ? startupErr
+        : redactRuntimePayload(
+            startupErr instanceof Error
+              ? ({
+                  name: startupErr.name,
+                  message: startupErr.message,
+                  stack: startupErr.stack ?? null,
+                } as JsonValue)
+              : String(startupErr),
+            {
+              runtimeId: "claude-code",
+              runId: `claude-runtime-startup:${input.subChatId}`,
+              source: "runtime-diagnostic",
+              secretHints,
+            },
+          ).payload
+    error(`[claude] Failed to setup isolated config dir:`, diagnosticError)
     return {
       runtimeStartup,
       isolatedConfigReady: false,

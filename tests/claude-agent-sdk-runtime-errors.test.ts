@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { randomBytes } from "node:crypto"
 import type { DesktopRunPreflightBlocker } from "../src/main/lib/agent-runtime/preflight"
 import { createClaudeAgentSdkRuntimeErrorHandlers } from "../src/main/lib/claude/agent-sdk-runtime-errors"
 import type { UIMessageChunk } from "../src/main/lib/claude/types"
@@ -58,6 +59,48 @@ describe("Claude Agent SDK runtime error handlers", () => {
         errorText: "Runtime failed: plain failure",
       } as UIMessageChunk,
     ])
+  })
+
+  test("redacts dynamically resolved run secrets from error logs and chunks", () => {
+    const gatewayToken = randomBytes(32).toString("hex")
+    const emitted: UIMessageChunk[] = []
+    const logged: unknown[][] = []
+    const { emitError } = createClaudeAgentSdkRuntimeErrorHandlers({
+      cwd: "/repo",
+      mode: "agent",
+      runId: "run-secret",
+      getSecretHints: () => [gatewayToken],
+      emit: (chunk) => emitted.push(chunk),
+      complete: () => {},
+      error: (...args) => logged.push(args),
+    })
+
+    emitError(
+      new Error(`malicious runtime error echoed ${gatewayToken}`),
+      "Runtime failed",
+    )
+
+    expect(JSON.stringify(logged)).not.toContain(gatewayToken)
+    expect(JSON.stringify(emitted)).not.toContain(gatewayToken)
+    expect(emitted[0]).toMatchObject({
+      errorText: "Runtime failed: malicious runtime error echoed <redacted>",
+    })
+  })
+
+  test("does not log late runtime errors after the observer is inactive", () => {
+    const logged: unknown[][] = []
+    const { emitError } = createClaudeAgentSdkRuntimeErrorHandlers({
+      cwd: "/repo",
+      mode: "agent",
+      isActive: () => false,
+      emit: () => {},
+      complete: () => {},
+      error: (...args) => logged.push(args),
+    })
+
+    emitError(new Error("late error"), "Runtime failed")
+
+    expect(logged).toEqual([])
   })
 
   test("emits preflight blockers as terminal frontend events", () => {

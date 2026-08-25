@@ -49,6 +49,7 @@ describe("Claude Agent SDK desktop run cleanup", () => {
     const clearedApprovals: any[] = []
     const canceledJobs: any[] = []
     const logs: any[] = []
+    let runtimeSecretCleanupCalls = 0
 
     const result = cleanupClaudeAgentSdkDesktopRunSubscription({
       subId: "sub-tail",
@@ -58,6 +59,9 @@ describe("Claude Agent SDK desktop run cleanup", () => {
       guardedContract: { id: "contract-1" } as any,
       getDb: () => db,
       desktopRunState,
+      cleanupRuntimeSecrets: () => {
+        runtimeSecretCleanupCalls += 1
+      },
       dependencies: {
         deleteActiveClaudeSessionIfController: (subChatId, abortController) => {
           deletedSessions.push({ subChatId, abortController })
@@ -81,9 +85,8 @@ describe("Claude Agent SDK desktop run cleanup", () => {
     expect(result).toEqual({ ownsActiveSession: true })
     expect(desktopRunState.isObservableActive()).toBe(false)
     expect(controller.signal.aborted).toBe(true)
-    expect(logs).toEqual([
-      ["[SD] M:CLEANUP sub=sub-tail sessionId=session-1"],
-    ])
+    expect(runtimeSecretCleanupCalls).toBe(1)
+    expect(logs).toEqual([["[SD] M:CLEANUP sub=sub-tail sessionId=session-1"]])
     expect(deletedSessions).toEqual([
       { subChatId: "sub-1", abortController: controller },
     ])

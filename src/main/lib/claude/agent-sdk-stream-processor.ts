@@ -1,11 +1,11 @@
 import {
-  trackClaudeAgentSdkMessageMetadata,
   type ClaudeAgentSdkMessageMetadataState,
+  trackClaudeAgentSdkMessageMetadata,
 } from "./agent-sdk-message-metadata"
 import {
-  processClaudeAgentSdkTransformedChunks,
-  type ClaudeAgentSdkTransformer,
   type ClaudeAgentSdkTransformedChunkState,
+  type ClaudeAgentSdkTransformer,
+  processClaudeAgentSdkTransformedChunks,
 } from "./agent-sdk-transformed-chunks"
 
 export type ClaudeAgentSdkStreamProcessingState =
@@ -44,6 +44,7 @@ export function processClaudeAgentSdkStreamMessage(input: {
   parts: Array<Record<string, any>>
   historyEnabled: boolean
   aborted: boolean
+  secretHints?: readonly string[]
   mode: string
   subId: string
   subChatId: string
@@ -58,6 +59,7 @@ export function processClaudeAgentSdkStreamMessage(input: {
     },
     historyEnabled: input.historyEnabled,
     aborted: input.aborted,
+    secretHints: input.secretHints,
   })
 
   const chunkState = processClaudeAgentSdkTransformedChunks({
@@ -75,6 +77,7 @@ export function processClaudeAgentSdkStreamMessage(input: {
     mode: input.mode,
     subId: input.subId,
     subChatId: input.subChatId,
+    secretHints: input.secretHints,
     emit: input.emit,
   })
 

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
+import { randomBytes } from "node:crypto"
 import type { DesktopRunPreflightBlocker } from "../src/main/lib/agent-runtime/preflight"
 import {
   clearClaudeActiveSessionsForTest,
@@ -91,6 +92,36 @@ describe("Claude Agent SDK desktop run envelope", () => {
     })
     expect(emitted[1]).toEqual({ type: "finish" } as UIMessageChunk)
     expect(completed).toEqual(["complete"])
+  })
+
+  test("redacts a dynamically resolved bare run secret from normal renderer chunks", () => {
+    const gatewayToken = randomBytes(32).toString("hex")
+    const emitted: UIMessageChunk[] = []
+    let secretHints: readonly string[] = []
+    const envelope = createClaudeAgentSdkDesktopRunEnvelope({
+      subChatId: "sub-chat-secret",
+      cwd: "/repo",
+      mode: "agent",
+      createId: () => "stream-secret",
+      log: () => {},
+      getSecretHints: () => secretHints,
+      emitNext: (chunk) => emitted.push(chunk),
+      emitComplete: () => {},
+    })
+
+    secretHints = [gatewayToken]
+    envelope.emit({
+      type: "text-delta",
+      id: "text-secret",
+      delta: `malicious SDK output ${gatewayToken}`,
+    } as UIMessageChunk)
+
+    expect(JSON.stringify(emitted)).not.toContain(gatewayToken)
+    expect(JSON.stringify(emitted)).not.toContain("secretHints")
+    expect(emitted[0]).toMatchObject({
+      type: "text-delta",
+      delta: "malicious SDK output <redacted>",
+    })
   })
 
   test("safe complete ignores already-closed transports", () => {

@@ -1,10 +1,11 @@
 import { describe, expect, test } from "bun:test"
+import { randomBytes } from "node:crypto"
 import {
+  type ClaudeAgentSdkProviderStartupDependencies,
   getClaudeAgentSdkConnectionMethod,
   prepareClaudeAgentSdkProviderStartupForDesktopRun,
   recordClaudeAgentSdkConnectionMethod,
   resolveClaudeAgentSdkProviderStartup,
-  type ClaudeAgentSdkProviderStartupDependencies,
 } from "../src/main/lib/claude/agent-sdk-provider-startup"
 
 const credentialMetadata = {
@@ -44,6 +45,7 @@ function dependencies(
       token: `gateway-token-${providerId}`,
       providerId,
     }),
+    revokeProviderGatewayToken: () => true,
     getValidClaudeCodeCredential: async () => ({
       accessToken: "oauth-token",
       metadata: credentialMetadata,
@@ -103,6 +105,33 @@ describe("Claude Agent SDK provider startup", () => {
     })
   })
 
+  test("owns exact gateway-token hints and revokes the scoped token idempotently", async () => {
+    const gatewayToken = randomBytes(32).toString("hex")
+    const revoked: string[] = []
+    const result = await resolveClaudeAgentSdkProviderStartup({
+      modelSource: "provider-profile:profile-1",
+      dependencies: dependencies({
+        getProviderProfileRuntimeConfig: (id) => providerProfile({ id }),
+        getProviderGatewayEndpoint: async (providerId) => ({
+          baseUrl: `http://127.0.0.1:45100/profile/${providerId}/anthropic/v1`,
+          token: gatewayToken,
+          providerId,
+        }),
+        revokeProviderGatewayToken: (token) => {
+          revoked.push(token)
+          return true
+        },
+      }),
+    })
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error("expected startup success")
+    expect(result.startup.secretHints).toContain(gatewayToken)
+    result.startup.cleanupRuntimeSecrets()
+    result.startup.cleanupRuntimeSecrets()
+    expect(revoked).toEqual([gatewayToken])
+  })
+
   test("fails closed when raw legacy custom-provider reaches startup", async () => {
     let credentialCalled = false
     const result = await resolveClaudeAgentSdkProviderStartup({
@@ -152,6 +181,7 @@ describe("Claude Agent SDK provider startup", () => {
     expect(result.ok).toBe(true)
     if (!result.ok) throw new Error("expected startup success")
     expect(result.startup.claudeCodeToken).toBe("oauth-token")
+    expect(result.startup.secretHints).toContain("oauth-token")
     expect(result.startup.claudeCredentialMetadata).toBe(credentialMetadata)
     expect(result.startup.isUsingOllama).toBe(true)
     expect(result.startup.finalCustomConfig).toMatchObject({
@@ -200,6 +230,7 @@ describe("Claude Agent SDK provider startup", () => {
   })
 
   test("keeps local-only endpoint blocking inside provider profile startup", async () => {
+    const revoked: string[] = []
     const result = await resolveClaudeAgentSdkProviderStartup({
       modelSource: "provider-profile:profile-1",
       dependencies: dependencies({
@@ -215,6 +246,10 @@ describe("Claude Agent SDK provider startup", () => {
             "Official cloud endpoints are blocked in local-only mode.",
           )
         },
+        revokeProviderGatewayToken: (token) => {
+          revoked.push(token)
+          return true
+        },
       }),
     })
 
@@ -226,6 +261,7 @@ describe("Claude Agent SDK provider startup", () => {
         message: "Official cloud endpoints are blocked in local-only mode.",
       },
     })
+    expect(revoked).toEqual(["gateway-token-profile-1-anthropic"])
   })
 
   test("maps provider startup state to analytics connection methods", () => {
@@ -339,5 +375,32 @@ describe("Claude Agent SDK provider startup", () => {
     })
     expect(blockers).toEqual([result.blocker])
     expect(recorded).toEqual([])
+  })
+
+  test("revokes scoped provider secrets when connection analytics fails", async () => {
+    const gatewayToken = randomBytes(32).toString("hex")
+    const revoked: string[] = []
+
+    await expect(
+      prepareClaudeAgentSdkProviderStartupForDesktopRun({
+        modelSource: "provider-profile:profile-1",
+        dependencies: dependencies({
+          getProviderProfileRuntimeConfig: (id) => providerProfile({ id }),
+          getProviderGatewayEndpoint: async (providerId) => ({
+            baseUrl: "http://127.0.0.1:45100/v1",
+            token: gatewayToken,
+            providerId,
+          }),
+          revokeProviderGatewayToken: (token) => {
+            revoked.push(token)
+            return true
+          },
+        }),
+        setConnectionMethod: () => {
+          throw new Error("analytics failed")
+        },
+      }),
+    ).rejects.toThrow("analytics failed")
+    expect(revoked).toEqual([gatewayToken])
   })
 })

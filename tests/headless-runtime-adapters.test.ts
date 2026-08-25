@@ -296,6 +296,21 @@ describe("headless runtime adapters", () => {
     )
   })
 
+  test("Claude headless env treats a blank config override as unset", async () => {
+    const env = await __testClaudeCodeHeadless.buildClaudeRuntimeEnv({
+      jobId: "job_123",
+      dependencies: {
+        buildEnv: () => ({ PATH: "/usr/bin", CLAUDE_CONFIG_DIR: "   " }),
+        hasAnyAccount: () => false,
+        warn: () => {},
+      },
+    })
+
+    expect(env.CLAUDE_CONFIG_DIR).toBe(
+      __testClaudeCodeHeadless.getDefaultClaudeConfigDir(),
+    )
+  })
+
   test("Codex adapter maps plan to read-only and agent to workspace-write", () => {
     const planArgs = __testCodexHeadless.buildCodexArgs(
       request({ runtime: "codex", mode: "plan" }),

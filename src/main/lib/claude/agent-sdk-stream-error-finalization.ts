@@ -1,10 +1,12 @@
 import { eq } from "drizzle-orm"
+import { redactRuntimePayload } from "../agent-runtime/redaction"
+import type { JsonValue } from "../agent-runtime/runtime-events"
 import { subChats } from "../db/schema"
 import { flushClaudeAgentSdkTextAccumulator } from "./agent-sdk-chunk-processor"
 import { classifyClaudeAgentSdkStreamError } from "./agent-sdk-errors"
 import {
-  finalizeClaudeAgentSdkGuardMetadata,
   type FinalizeClaudeAgentSdkGuardMetadataInput,
+  finalizeClaudeAgentSdkGuardMetadata,
 } from "./agent-sdk-guard-metadata"
 import { persistClaudeAgentSdkAssistantResponse } from "./agent-sdk-message-persistence"
 import { logClaudeOllamaStreamError } from "./agent-sdk-ollama-diagnostics"
@@ -21,6 +23,7 @@ export type FinalizeClaudeAgentSdkStreamErrorInput = {
   messagesToSave: any[]
   parts: Array<Record<string, any>>
   metadata: any
+  secretHints?: readonly string[]
   currentText: string
   historyEnabled: boolean
   cwd: string
@@ -61,6 +64,7 @@ export async function finalizeClaudeAgentSdkStreamError({
   messagesToSave,
   parts,
   metadata,
+  secretHints,
   currentText,
   historyEnabled,
   cwd,
@@ -83,10 +87,30 @@ export async function finalizeClaudeAgentSdkStreamError({
   const stderrOutput = stderrLines.join("\n")
 
   if (isUsingOllama) {
+    const redactedDiagnostic = redactRuntimePayload(
+      {
+        message: err.message,
+        stack: err.stack ?? null,
+        stderrOutput,
+      } as JsonValue,
+      {
+        runtimeId: "claude-code",
+        runId: `claude-stream-error:${subChatId}`,
+        source: "runtime-diagnostic",
+        secretHints,
+      },
+    ).payload as {
+      message: string
+      stack: string | null
+      stderrOutput: string
+    }
+    const diagnosticError = new Error(redactedDiagnostic.message)
+    diagnosticError.name = err.name
+    diagnosticError.stack = redactedDiagnostic.stack ?? undefined
     logClaudeOllamaStreamError({
-      error: err,
+      error: diagnosticError,
       messageCount,
-      stderrOutput,
+      stderrOutput: redactedDiagnostic.stderrOutput,
     })
   }
 
@@ -148,6 +172,7 @@ export async function finalizeClaudeAgentSdkStreamError({
     messagesToSave,
     parts,
     metadata: finalizedMetadata,
+    secretHints,
     historyEnabled,
     cwd,
     clearStreamWhenEmpty: false,

@@ -1,6 +1,6 @@
 import { describe, expect, mock, test } from "bun:test"
+import { randomBytes } from "node:crypto"
 import { eq } from "drizzle-orm"
-import { chats, projects, subChats } from "../src/main/lib/db/schema"
 import {
   completeClaudeAgentSdkRunAfterAdapter,
   completeClaudeAgentSdkRunAfterAdapterWithStreamState,
@@ -9,6 +9,7 @@ import {
 } from "../src/main/lib/claude/agent-sdk-run-finalization"
 import { createClaudeAgentSdkStreamConsumerMutableState } from "../src/main/lib/claude/agent-sdk-stream-consumer"
 import type { UIMessageChunk } from "../src/main/lib/claude/types"
+import { chats, projects, subChats } from "../src/main/lib/db/schema"
 import { createAgentJobTestDb } from "./helpers/agent-job-test-db"
 
 function seedChat(db: ReturnType<typeof createAgentJobTestDb>) {
@@ -199,6 +200,31 @@ describe("Claude Agent SDK run finalization", () => {
     expect(input.log).toHaveBeenCalledWith(
       "[SD] M:END sub=sub-1 reason=ok n=2 last=text-end t=2.5s",
     )
+  })
+
+  test("passes exact run secret hints through successful assistant persistence", async () => {
+    const db = createAgentJobTestDb()
+    seedChat(db)
+    const gatewayToken = randomBytes(32).toString("hex")
+    const input = {
+      ...baseInput(db),
+      currentText: `final assistant echoed ${gatewayToken}`,
+      metadata: {
+        sessionId: "session-1",
+        note: `metadata echoed ${gatewayToken}`,
+      },
+      secretHints: [gatewayToken],
+    }
+
+    await completeClaudeAgentSdkRunAfterAdapter(input)
+
+    const persisted = db
+      .select()
+      .from(subChats)
+      .where(eq(subChats.id, "sub-1"))
+      .get()?.messages
+    expect(persisted).not.toContain(gatewayToken)
+    expect(persisted).toContain("<redacted>")
   })
 
   test("finalizes using stream consumer state and writes finalized values back", async () => {

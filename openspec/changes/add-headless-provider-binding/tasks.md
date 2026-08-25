@@ -6,6 +6,7 @@
 - [x] 1.2 Create-time semantic validation in `src/main/lib/headless/local-job-api.ts`: unknown profile → `provider_profile_not_found`; `targetRuntimes` mismatch (claude-code→`claude`, codex→`codex`) → `provider_profile_runtime_mismatch`; both reject before a job record is created
 - [x] 1.3 Advertise `"provider-binding"` in the discovery `features` array; echo `resolvedProvider { source, profileId?, model? }` in the run result envelope
 - [x] 1.4 Update `docs/local-job-api-v1.schema.json` + consumer guides (EN/zh)
+- [x] 1.5 Record the Owner-approved `DIRECT_NEW_STANDARD` decision, known Career Kit/Amadeus impact, feature-detection rule, release order, and no-facade boundary in `consumer-impact.md`
 
 ## 2. Persistence
 
@@ -17,6 +18,7 @@
 - [x] 3.1 Main-process resolution helper: request `provider` → `agent_provider_defaults` (`claude-main`/`codex-main` incl. `modelOverride`) → native; model precedence explicit > default-override > profile `defaultModel`; builds `AgentRuntimeProviderReference` via `getProviderProfileRuntimeConfig` + `getProviderGatewayEndpoint`
 - [x] 3.2 `createAgentRuntimeRunRequest` accepts the resolved binding (drop the hardcoded `providerBinding: null` at `agent-runtime-contract.ts:161`)
 - [x] 3.3 Scoped gateway token lifecycle in `job-runner.ts`: synthesize at start, revoke on every terminal path (success/failure/cancel); daemon-safe
+- [x] 3.4 Remove the duplicate provider-row JSON/auth/protocol/decrypt/default parser from `headless/provider-binding.ts`; expose strict DB-injected reads from canonical `provider-profiles/storage.ts`, fail closed on malformed persisted values, and guard the ownership boundary with a source-level test
 
 ## 4. Adapter wiring
 
@@ -36,9 +38,13 @@
 - [x] 6.3 Adapters: claude env carries gateway baseUrl+token and `--model` (ANTHROPIC_* strip still holds for non-profile runs); codex argv contains `-c` overrides with `env_key` name but NEVER token values; app-server receives secrets
 - [x] 6.4 Lifecycle: gateway token revoked on success, failure, and cancel; schedule job copies reference; retry with deleted profile fails closed
 - [x] 6.5 Redaction: job events and structured output never contain gateway or upstream tokens
+- [x] 6.6 Exact scoped-token regression: a random bare 64-hex gateway token emitted by a malicious child/adapter is removed from headless events, terminal error/result storage, and Local Job API result envelopes
+- [x] 6.7 Desktop same-class remediation: Codex app-server exact secret hints redact adapter emissions and durable trace events before renderer/message persistence; the per-run gateway token is revoked on finish, failure, and cancel
+- [x] 6.8 Completion same-class remediation: the selected upstream profile token is an exact per-job secret hint and is removed from successful structured results, failure details, events, and Local Job API output
+- [x] 6.9 Desktop Claude same-class remediation: per-Run provider gateway/native OAuth hints redact every renderer chunk, durable RunEvent, success/error assistant persistence, and runtime diagnostic sink; scoped gateway tokens are revoked idempotently on startup failure, success/failure finalization, cancel, and unsubscribe
 
 ## 7. Verification
 
-- [ ] 7.1 Manual smoke with a real test profile (local Ollama or mock upstream): `locus run --runtime codex --provider-profile <id>` end to end; record in `verification.md`
+- [x] 7.1 Manual smoke with a real test profile (local Ollama or mock upstream): `locus run --runtime codex --provider-profile <id>` end to end; record in `verification.md`
 - [x] 7.2 Ajv-validate the extended envelopes against the updated schema
-- [ ] 7.3 Cross-check `resolvedProvider` echo against actual upstream hit (gateway logs) for one profile run and one native run
+- [x] 7.3 Cross-check `resolvedProvider` echo against actual upstream hit (gateway logs) for one profile run and one native run

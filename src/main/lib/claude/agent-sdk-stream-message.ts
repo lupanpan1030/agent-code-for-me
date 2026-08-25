@@ -1,15 +1,20 @@
-import { logRawClaudeMessage } from "./raw-logger"
 import {
-  recordClaudeAgentSdkStreamMessage,
   type ClaudeAgentSdkStreamIterationState,
+  recordClaudeAgentSdkStreamMessage,
 } from "./agent-sdk-stream-lifecycle"
+import { logRawClaudeMessage } from "./raw-logger"
 
 export type RecordClaudeAgentSdkIncomingMessageInput = {
   chatId: string
   message: any
   state: ClaudeAgentSdkStreamIterationState
   isUsingOllama: boolean
-  logRawMessage?: (chatId: string, message: unknown) => unknown
+  secretHints?: readonly string[]
+  logRawMessage?: (
+    chatId: string,
+    message: unknown,
+    secretHints?: readonly string[],
+  ) => unknown
   now?: () => number
   warn?: (...args: any[]) => void
 }
@@ -19,6 +24,7 @@ export function recordClaudeAgentSdkIncomingMessage({
   message,
   state,
   isUsingOllama,
+  secretHints,
   logRawMessage = logRawClaudeMessage,
   now,
   warn,
@@ -33,6 +39,6 @@ export function recordClaudeAgentSdkIncomingMessage({
     now,
     warn,
   })
-  void logRawMessage(chatId, message)
+  void logRawMessage(chatId, message, secretHints)
   return result
 }

@@ -1,5 +1,3 @@
-import os from "node:os"
-import path from "node:path"
 import {
   buildClaudeEnv,
   createClaudeAgentSdkRuntimeEnv,
@@ -10,6 +8,7 @@ import {
   getValidClaudeCodeCredential,
   hasAnyClaudeCodeAccount,
 } from "../../claude-credentials"
+import { getClaudeCredentialConfigDir } from "../../claude-token"
 import type {
   AgentRuntimeObserver,
   AgentRuntimeRunRequest,
@@ -53,7 +52,16 @@ function buildClaudeArgs(request: AgentRuntimeRunRequest): string[] {
 }
 
 function getDefaultClaudeConfigDir(): string {
-  return path.join(os.homedir(), ".claude")
+  return getClaudeCredentialConfigDir({})
+}
+
+function resolveClaudeConfigDir(
+  claudeEnv: Record<string, string>,
+  configuredDirectory?: string,
+): string {
+  return configuredDirectory?.trim()
+    ? configuredDirectory
+    : getClaudeCredentialConfigDir(claudeEnv)
 }
 
 function stripInheritedClaudeOAuthToken(env: Record<string, string>): {
@@ -99,10 +107,10 @@ async function buildClaudeRuntimeEnv(input: {
     const runtimeEnv = createClaudeAgentSdkRuntimeEnv({
       claudeEnv: stripped.env,
       claudeCodeToken: null,
-      isolatedConfigDir:
-        dependencies.getClaudeConfigDir?.() ??
-        stripped.env.CLAUDE_CONFIG_DIR ??
-        getDefaultClaudeConfigDir(),
+      isolatedConfigDir: resolveClaudeConfigDir(
+        stripped.env,
+        dependencies.getClaudeConfigDir?.(),
+      ),
     })
 
     return {
@@ -135,10 +143,10 @@ async function buildClaudeRuntimeEnv(input: {
   const runtimeEnv = createClaudeAgentSdkRuntimeEnv({
     claudeEnv,
     claudeCodeToken,
-    isolatedConfigDir:
-      dependencies.getClaudeConfigDir?.() ??
-      claudeEnv.CLAUDE_CONFIG_DIR ??
-      getDefaultClaudeConfigDir(),
+    isolatedConfigDir: resolveClaudeConfigDir(
+      claudeEnv,
+      dependencies.getClaudeConfigDir?.(),
+    ),
   })
 
   return {

@@ -1,30 +1,28 @@
 import type { AgentJobMode } from "../../../shared/agent-jobs"
+import type { DesktopRunRequest } from "../agent-runtime/desktop-run-request"
 import type { DesktopPermissionPolicy } from "../agent-runtime/permission-policy"
+import type { RunEvent } from "../agent-runtime/runtime-events"
 import {
   appendRunEventsToAgentJob,
   createDesktopStreamEventMapper,
   type DesktopStreamEventMapper,
 } from "../agent-runtime/stream-event-mapper"
-import type { DesktopRunRequest } from "../agent-runtime/desktop-run-request"
-import type { RunEvent } from "../agent-runtime/runtime-events"
 import {
-  createAndRegisterDesktopChatAgentJob,
   completeDesktopChatAgentJobSafely,
-  requestCancelDesktopChatAgentJobSafely,
+  createAndRegisterDesktopChatAgentJob,
   type DesktopAgentJobHandle,
+  requestCancelDesktopChatAgentJobSafely,
 } from "../desktop-agent-jobs"
 import type { AgentJobDatabase } from "../headless/job-store"
 import {
-  createClaudeDesktopRunRequestFromRuntimeStartup,
   type CreateClaudeDesktopRunRequestFromRuntimeStartupInput,
+  createClaudeDesktopRunRequestFromRuntimeStartup,
 } from "./desktop-run-request"
 
 export type CreateClaudeAgentSdkDesktopJobDependencies = {
-  createAndRegisterDesktopChatAgentJob:
-    typeof createAndRegisterDesktopChatAgentJob
+  createAndRegisterDesktopChatAgentJob: typeof createAndRegisterDesktopChatAgentJob
   completeDesktopChatAgentJobSafely: typeof completeDesktopChatAgentJobSafely
-  requestCancelDesktopChatAgentJobSafely:
-    typeof requestCancelDesktopChatAgentJobSafely
+  requestCancelDesktopChatAgentJobSafely: typeof requestCancelDesktopChatAgentJobSafely
   createDesktopStreamEventMapper: typeof createDesktopStreamEventMapper
   appendRunEventsToAgentJob: typeof appendRunEventsToAgentJob
 }
@@ -39,6 +37,7 @@ export type CreateClaudeAgentSdkDesktopJobInput = {
   runId: string
   cancel: () => void
   permissionPolicy?: DesktopPermissionPolicy | null
+  secretHints?: readonly string[]
   dependencies?: Partial<CreateClaudeAgentSdkDesktopJobDependencies>
 }
 
@@ -92,9 +91,7 @@ const defaultDependencies: CreateClaudeAgentSdkDesktopJobDependencies = {
 }
 
 function withDefaultDependencies(
-  dependencies:
-    | Partial<CreateClaudeAgentSdkDesktopJobDependencies>
-    | undefined,
+  dependencies: Partial<CreateClaudeAgentSdkDesktopJobDependencies> | undefined,
 ): CreateClaudeAgentSdkDesktopJobDependencies {
   return { ...defaultDependencies, ...dependencies }
 }
@@ -129,6 +126,7 @@ export function createClaudeAgentSdkDesktopJob(
       runtimeId: "claude-code",
       runId: input.runId,
       jobId,
+      secretHints: input.secretHints,
     }),
   }
 }

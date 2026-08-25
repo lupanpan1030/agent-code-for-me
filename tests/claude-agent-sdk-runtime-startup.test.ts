@@ -1,9 +1,10 @@
 import { describe, expect, mock, test } from "bun:test"
+import { randomBytes } from "node:crypto"
 import { join } from "node:path"
 import {
-  prepareClaudeAgentSdkRuntimeStartupForDesktopRun,
   prepareClaudeAgentSdkRuntimeStartupContext,
   prepareClaudeAgentSdkRuntimeStartupDiagnostics,
+  prepareClaudeAgentSdkRuntimeStartupForDesktopRun,
 } from "../src/main/lib/claude/agent-sdk-runtime-startup"
 
 describe("Claude Agent SDK runtime startup", () => {
@@ -27,10 +28,16 @@ describe("Claude Agent SDK runtime startup", () => {
     })
 
     expect(startup.isolatedConfig).toEqual({
-      isolatedConfigDir: join("/tmp/locus-user-data", "claude-sessions", "sub-1"),
+      isolatedConfigDir: join(
+        "/tmp/locus-user-data",
+        "claude-sessions",
+        "sub-1",
+      ),
       cacheKey: "sub-1",
     })
-    expect(startup.isolatedConfigDir).toBe(startup.isolatedConfig.isolatedConfigDir)
+    expect(startup.isolatedConfigDir).toBe(
+      startup.isolatedConfig.isolatedConfigDir,
+    )
     expect(startup.nativePluginConfigs).toEqual([])
     expect(startup.resolvedModel).toBe("provider-model")
     expect(startup.finalEnv).toMatchObject({
@@ -53,7 +60,11 @@ describe("Claude Agent SDK runtime startup", () => {
     })
 
     expect(startup.isolatedConfig).toEqual({
-      isolatedConfigDir: join("/tmp/locus-user-data", "claude-sessions", "chat-1"),
+      isolatedConfigDir: join(
+        "/tmp/locus-user-data",
+        "claude-sessions",
+        "chat-1",
+      ),
       cacheKey: "chat-1",
     })
     expect(startup.resolvedModel).toBe("requested-model")
@@ -127,6 +138,33 @@ describe("Claude Agent SDK runtime startup", () => {
       "[claude] Failed to setup isolated config dir:",
       setupError,
     )
+  })
+
+  test("redacts exact provider secrets from isolated-config failure diagnostics", async () => {
+    const gatewayToken = randomBytes(32).toString("hex")
+    const error = mock(() => {})
+
+    await prepareClaudeAgentSdkRuntimeStartupForDesktopRun({
+      chatId: "chat-1",
+      subChatId: "sub-secret",
+      isUsingOllama: false,
+      getUserDataDir: () => "/tmp/locus-user-data",
+      customConfig: {
+        model: "provider-model",
+        baseUrl: "https://gateway.example",
+        token: gatewayToken,
+        authMode: "auth_token",
+      },
+      nodeEnv: "production",
+      buildEnv: () => ({}),
+      ensureIsolatedConfigDir: async () => {
+        throw new Error(`config failure echoed ${gatewayToken}`)
+      },
+      error,
+    })
+
+    expect(JSON.stringify(error.mock.calls)).not.toContain(gatewayToken)
+    expect(JSON.stringify(error.mock.calls)).toContain("<redacted>")
   })
 
   test("maps runtime startup context into Ollama diagnostics", async () => {

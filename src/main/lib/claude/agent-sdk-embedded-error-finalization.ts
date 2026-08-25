@@ -1,15 +1,15 @@
 import {
-  classifyClaudeAgentSdkEmbeddedError,
-  extractClaudeAgentSdkEmbeddedErrorText,
-} from "./agent-sdk-errors"
-import {
   logClaudeAgentSdkEmbeddedError,
   logClaudeAgentSdkErrorDetails,
 } from "./agent-sdk-error-logging"
 import {
+  classifyClaudeAgentSdkEmbeddedError,
+  extractClaudeAgentSdkEmbeddedErrorText,
+} from "./agent-sdk-errors"
+import {
   CLAUDE_AGENT_SDK_POLICY_RETRY_LIMIT,
-  recordClaudeAgentSdkPolicyRetry,
   type ClaudeAgentSdkPolicyRetryState,
+  recordClaudeAgentSdkPolicyRetry,
 } from "./agent-sdk-policy-retry"
 import type { UIMessageChunk } from "./types"
 
@@ -27,6 +27,7 @@ export type FinalizeClaudeAgentSdkEmbeddedErrorInput = {
   model?: string | null
   hasOAuthToken: boolean
   mcpServerNames: string[]
+  secretHints?: readonly string[]
   subId: string
   chunkCount: number
   emit: (chunk: UIMessageChunk) => void
@@ -113,6 +114,7 @@ export function finalizeClaudeAgentSdkEmbeddedError({
   model,
   hasOAuthToken,
   mcpServerNames,
+  secretHints,
   subId,
   chunkCount,
   emit,
@@ -134,6 +136,7 @@ export function finalizeClaudeAgentSdkEmbeddedError({
     model,
     hasOAuthToken,
     mcpServerNames,
+    secretHints,
   })
 
   const errorDiagnostic = classifyClaudeAgentSdkEmbeddedError({
@@ -182,6 +185,7 @@ export function finalizeClaudeAgentSdkEmbeddedError({
     errorContext,
     rawErrorCode,
     message: msgAny,
+    secretHints,
   })
   emit({ type: "finish" })
   complete()

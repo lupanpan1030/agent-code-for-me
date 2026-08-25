@@ -188,6 +188,14 @@ manifest list；该 runtime 报 `unknown`，诊断写 stderr。用
 `locus api runtimes list --json --no-probe` 可以跳过 subprocess status
 probe；被跳过的 probe 状态报 `unknown`，不会误报 `ready`。
 
+对省略 provider 的 agent run，readiness 遵循真实执行顺序：先检查该 runtime 的
+headless 默认 profile；只有完全没有配置 default 时，才检查 native credentials。可严格
+读取且 target 匹配的 default 报 `ready`。已经配置但缺失、损坏、无法解密或 target
+不匹配的 default 报 `unavailable`，不会把 native auth 宣传成 fallback，因为真实 run
+也会 fail closed。`--no-probe` 只跳过 native subprocess probe，仍会执行这个低成本的
+default-profile 检查。这里描述的是 runtime default readiness，不是对未来 create request
+中任意显式 profile 的诊断。
+
 如果下游 workflow 依赖某个能力，就在 create request 的 `runtime.requiredCapabilities`
 里声明。Locus 会在 provider work 开始前拒绝 unsupported 或 degraded 的必需能力。
 

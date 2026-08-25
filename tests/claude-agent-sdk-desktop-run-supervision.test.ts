@@ -1,7 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import {
-  superviseClaudeAgentSdkDesktopRun,
-} from "../src/main/lib/claude/agent-sdk-desktop-run-supervision"
+import { superviseClaudeAgentSdkDesktopRun } from "../src/main/lib/claude/agent-sdk-desktop-run-supervision"
 import type { UIMessageChunk } from "../src/main/lib/claude/types"
 
 function createBaseInput() {
@@ -60,6 +58,9 @@ describe("Claude Agent SDK desktop run supervision", () => {
     await superviseClaudeAgentSdkDesktopRun({
       ...base.input,
       getGuardedContract: () => guardedContract,
+      cleanupRuntimeSecrets: () => {
+        events.push("secrets")
+      },
       run: async () => {
         events.push("run")
         guardedContract = { id: "contract-1" }
@@ -76,7 +77,7 @@ describe("Claude Agent SDK desktop run supervision", () => {
       },
     })
 
-    expect(events).toEqual(["run", "after"])
+    expect(events).toEqual(["run", "after", "secrets"])
     expect(finalizedUnexpectedErrors).toEqual([])
     expect(finalizedLifecycleRuns).toHaveLength(1)
     expect(finalizedLifecycleRuns[0]).toEqual({
@@ -100,6 +101,9 @@ describe("Claude Agent SDK desktop run supervision", () => {
     await superviseClaudeAgentSdkDesktopRun({
       ...base.input,
       getGuardedContract: () => guardedContract,
+      cleanupRuntimeSecrets: () => {
+        events.push("secrets")
+      },
       run: async () => {
         events.push("run")
         throw error
@@ -116,7 +120,7 @@ describe("Claude Agent SDK desktop run supervision", () => {
       },
     })
 
-    expect(events).toEqual(["run", "unexpected", "after"])
+    expect(events).toEqual(["run", "unexpected", "after", "secrets"])
     expect(finalizedUnexpectedErrors).toEqual([
       {
         error,
@@ -138,5 +142,30 @@ describe("Claude Agent SDK desktop run supervision", () => {
         desktopRunState: base.desktopRunState,
       },
     ])
+  })
+
+  test("still cleans runtime secrets when lifecycle finalization throws", async () => {
+    const base = createBaseInput()
+    const events: string[] = []
+
+    await expect(
+      superviseClaudeAgentSdkDesktopRun({
+        ...base.input,
+        getGuardedContract: () => null,
+        run: async () => {
+          events.push("run")
+        },
+        cleanupRuntimeSecrets: () => {
+          events.push("secrets")
+        },
+        dependencies: {
+          finalizeAfterLifecycle: () => {
+            events.push("after")
+            throw new Error("finalization failed")
+          },
+        },
+      }),
+    ).rejects.toThrow("finalization failed")
+    expect(events).toEqual(["run", "after", "secrets"])
   })
 })

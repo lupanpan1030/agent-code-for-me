@@ -1,12 +1,12 @@
-import { createTransformer } from "./transform"
 import {
-  createClaudeAgentSdkInitialGuardMetadata,
   type ClaudeAgentSdkGuardedContract,
+  createClaudeAgentSdkInitialGuardMetadata,
 } from "./agent-sdk-guard-metadata"
 import {
-  createClaudeAgentSdkStreamConsumerMutableState,
   type ClaudeAgentSdkStreamConsumerMutableState,
+  createClaudeAgentSdkStreamConsumerMutableState,
 } from "./agent-sdk-stream-consumer"
+import { createTransformer } from "./transform"
 
 export type ClaudeAgentSdkRuntimeStreamSetup = {
   transform: ReturnType<typeof createTransformer>
@@ -23,11 +23,13 @@ export function createClaudeAgentSdkRuntimeStreamSetup(input: {
   historyEnabled: boolean
   isUsingOllama: boolean
   guardedContract: ClaudeAgentSdkGuardedContract | null
+  secretHints?: readonly string[]
 }): ClaudeAgentSdkRuntimeStreamSetup {
   return {
     transform: createTransformer({
       emitSdkMessageUuid: input.historyEnabled,
       isUsingOllama: input.isUsingOllama,
+      secretHints: input.secretHints,
     }),
     parts: [],
     stderrLines: [],

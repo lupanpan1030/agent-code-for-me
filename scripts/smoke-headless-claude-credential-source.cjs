@@ -2,6 +2,7 @@
 
 const assert = require("node:assert/strict")
 const { spawn } = require("node:child_process")
+const crypto = require("node:crypto")
 const fs = require("node:fs")
 const fsp = require("node:fs/promises")
 const os = require("node:os")
@@ -22,9 +23,13 @@ const careerKitAppPath = path.resolve(
   "career-application-kit",
   "app",
 )
-const nodeBinDir =
-  "/Users/ethan/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin"
 const betterSqlitePath = require.resolve("better-sqlite3")
+
+if (process.platform === "win32") {
+  throw new Error(
+    "This deterministic fixture currently requires a POSIX shell for its fake bundled Claude executable.",
+  )
+}
 
 function readArg(name, fallback) {
   const prefix = `--${name}=`
@@ -53,9 +58,9 @@ function futureExpiry() {
 }
 
 function basePath() {
-  return [nodeBinDir, "/opt/homebrew/bin", "/usr/local/bin", process.env.PATH]
+  return ["/opt/homebrew/bin", "/usr/local/bin", process.env.PATH]
     .filter(Boolean)
-    .join(":")
+    .join(path.delimiter)
 }
 
 function buildBaseEnv(ctx, extra = {}) {
@@ -103,7 +108,10 @@ function seedAppCredential() {
   app.setPath("userData", userDataDir)
   app.whenReady().then(() => {
     if (!safeStorage.isEncryptionAvailable()) {
-      throw new Error("safeStorage encryption is unavailable")
+      const backend = safeStorage.getSelectedStorageBackend?.() ?? "unknown"
+      throw new Error(
+        "safeStorage encryption is unavailable (backend=" + backend + ")",
+      )
     }
     const timestamp = new Date().toISOString()
     const encrypted = safeStorage.encryptString(JSON.stringify({
@@ -392,6 +400,29 @@ async function runMatrixCase(appRoot, rootDir, definition) {
     await seedCliCredential(ctx.claudeConfigDir, definition.name)
   }
 
+  const readinessResult = await runLocus(
+    appRoot,
+    ["api", "runtimes", "list", "--json"],
+    env,
+  )
+  assert.equal(
+    readinessResult.code,
+    0,
+    `readiness failed for ${definition.name}\nstdout=${readinessResult.stdout}\nstderr=${readinessResult.stderr}`,
+  )
+  const readinessPayload = parseJsonOutput(
+    readinessResult,
+    `${definition.name} readiness`,
+  )
+  const claudeReadiness = readinessPayload.runtimes?.find(
+    (runtime) => runtime.runtimeId === "claude-code",
+  )?.readiness
+  assert.equal(
+    claudeReadiness?.state,
+    definition.expectedReadinessState,
+    `readiness/run credential-source disagreement for ${definition.name}`,
+  )
+
   console.log(`[rt2-smoke] run: ${definition.name}`)
   const result = await runLocus(
     appRoot,
@@ -420,6 +451,7 @@ async function runMatrixCase(appRoot, rootDir, definition) {
       processStderr: result.stderr.trim(),
       job,
       probe,
+      claudeReadiness,
     },
     null,
     2,
@@ -447,6 +479,7 @@ async function runMatrixCase(appRoot, rootDir, definition) {
     jobStatus: job.status,
     jobExitCode: job.exitCode,
     errorCode: job.errorCode ?? null,
+    readinessState: claudeReadiness.state,
     source: probe.source,
     hasEnvToken: probe.hasEnvToken === "1",
     hasCliCredential: probe.hasCliCredential === "1",
@@ -468,6 +501,21 @@ function writeLauncherWrapper(filePath, appRoot, env, extra = {}) {
     "unset CLAUDE_CODE_OAUTH_TOKEN",
     "unset ELECTRON_RUN_AS_NODE",
   ]
+  for (const key of [
+    "DBUS_SESSION_BUS_ADDRESS",
+    "DESKTOP_SESSION",
+    "DISPLAY",
+    "GNOME_DESKTOP_SESSION_ID",
+    "GNOME_KEYRING_CONTROL",
+    "LD_LIBRARY_PATH",
+    "NO_AT_BRIDGE",
+    "XDG_CURRENT_DESKTOP",
+    "XDG_DATA_HOME",
+  ]) {
+    if (wrapperEnv[key]) {
+      lines.push(`export ${key}=${shQuote(wrapperEnv[key])}`)
+    }
+  }
   lines.push(
     `export CLAUDE_CONFIG_DIR=${shQuote(wrapperEnv.CLAUDE_CONFIG_DIR)}`,
   )
@@ -514,7 +562,12 @@ async function runCareerKitSmoke(appRoot, rootDir) {
 
   const domain = require(domainPath)
   const previousCliPath = process.env.CAREER_KIT_LOCUS_CLI_PATH
+  const previousCliSha256 = process.env.CAREER_KIT_LOCUS_CLI_SHA256
   process.env.CAREER_KIT_LOCUS_CLI_PATH = launcherPath
+  process.env.CAREER_KIT_LOCUS_CLI_SHA256 = crypto
+    .createHash("sha256")
+    .update(fs.readFileSync(launcherPath))
+    .digest("hex")
   try {
     console.log("[rt2-smoke] career-kit: extract profile import")
     const response = await domain.invokeDomainCommand(
@@ -529,9 +582,12 @@ async function runCareerKitSmoke(appRoot, rootDir) {
           "RT-2 smoke candidate. Built a Locus Local Job API integration and validated app-login-only Claude credentials.",
       },
     )
+    assert.equal(
+      response.status,
+      "succeeded",
+      `Career Kit Locus response: ${JSON.stringify(response)}`,
+    )
     const probe = await readProbe(ctx.probeFile)
-
-    assert.equal(response.status, "succeeded", "Career Kit Locus response")
     assert.equal(probe.source, "app", "Career Kit credential source")
     assert.equal(probe.hasEnvToken, "1", "Career Kit env token")
     assert.equal(probe.hasCliCredential, "0", "Career Kit CLI credential")
@@ -555,6 +611,11 @@ async function runCareerKitSmoke(appRoot, rootDir) {
       delete process.env.CAREER_KIT_LOCUS_CLI_PATH
     } else {
       process.env.CAREER_KIT_LOCUS_CLI_PATH = previousCliPath
+    }
+    if (previousCliSha256 === undefined) {
+      delete process.env.CAREER_KIT_LOCUS_CLI_SHA256
+    } else {
+      process.env.CAREER_KIT_LOCUS_CLI_SHA256 = previousCliSha256
     }
   }
 }
@@ -581,6 +642,7 @@ async function main() {
         expectedJobStatus: "succeeded",
         expectedErrorCode: null,
         expectedSource: "app",
+        expectedReadinessState: "ready",
         expectedEnvToken: true,
         expectedCliCredential: false,
       },
@@ -593,6 +655,7 @@ async function main() {
         expectedJobStatus: "succeeded",
         expectedErrorCode: null,
         expectedSource: "cli",
+        expectedReadinessState: "ready",
         expectedEnvToken: false,
         expectedCliCredential: true,
       },
@@ -605,6 +668,7 @@ async function main() {
         expectedJobStatus: "succeeded",
         expectedErrorCode: null,
         expectedSource: "app",
+        expectedReadinessState: "ready",
         expectedEnvToken: true,
         expectedCliCredential: true,
       },
@@ -617,6 +681,7 @@ async function main() {
         expectedJobStatus: "failed",
         expectedErrorCode: "runtime_auth_required",
         expectedSource: "none",
+        expectedReadinessState: "needs-auth",
         expectedEnvToken: false,
         expectedCliCredential: false,
       },
@@ -624,7 +689,7 @@ async function main() {
       const summary = await runMatrixCase(appRoot, rootDir, definition)
       matrix.push(summary)
       console.log(
-        `[rt2-smoke] ${summary.name}: exit=${summary.processExitCode} job=${summary.jobStatus}/${summary.jobExitCode} source=${summary.source} envToken=${summary.hasEnvToken} cli=${summary.hasCliCredential} error=${summary.errorCode ?? "none"}`,
+        `[rt2-smoke] ${summary.name}: readiness=${summary.readinessState} exit=${summary.processExitCode} job=${summary.jobStatus}/${summary.jobExitCode} source=${summary.source} envToken=${summary.hasEnvToken} cli=${summary.hasCliCredential} error=${summary.errorCode ?? "none"}`,
       )
     }
 

@@ -36,3 +36,33 @@ Notes:
 ## Proposal Validation
 
 - `PATH="/Users/ethan/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:/opt/homebrew/bin:$PATH" /Users/ethan/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin/pnpm dlx @fission-ai/openspec validate add-local-job-api-runtime-readiness --strict --no-interactive` - passed.
+
+## 2026-08-25 RT-2 outcome agreement
+
+The current built Electron main was exercised through
+`scripts/smoke-headless-claude-credential-source.cjs` with isolated temporary
+user-data/config directories, a temporary Linux Secret Service, synthetic
+credentials, and a fake bundled Claude executable. No real account, external
+model, or billable request was used.
+
+| Credential row | Readiness | Run outcome | Runtime source |
+| --- | --- | --- | --- |
+| Locus app only | `ready` | `succeeded`, exit 0 | app token |
+| Claude CLI only | `ready` | `succeeded`, exit 0 | CLI credential |
+| Both | `ready` | `succeeded`, exit 0 | app token (documented precedence) |
+| Neither | `needs-auth` | `failed`, exit 4, `runtime_auth_required` | none |
+
+The first integrated attempt exposed a real disagreement: runtime execution
+honored `CLAUDE_CONFIG_DIR`, while readiness looked only in `~/.claude`. The
+credential discovery owner and headless adapter now share the same explicit
+config-directory selection, and isolated-directory regression tests prove it
+does not fall back across that boundary.
+
+The same run also invoked Career Kit's existing
+`extract_career_profile_import_draft_via_locus` consumer path through its
+SHA-256-pinned launcher contract. It succeeded with the app-only credential,
+returned one draft entry, and observed app-token precedence with no CLI
+credential.
+
+Task 3.2 is therefore complete. Exact-source full-suite and independent-review
+receipts are recorded at change-set closeout before archive.

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { randomBytes } from "node:crypto"
 import { join } from "node:path"
 import type { CanUseTool } from "@anthropic-ai/claude-agent-sdk"
 import { validateAgentScopeContract } from "../src/main/lib/agent-guard"
@@ -105,6 +106,27 @@ describe("Claude Agent SDK query options", () => {
     expect(errors).toEqual([
       ["[Ollama stderr]", "ollama warning"],
       ["[claude stderr]", "claude warning"],
+    ])
+  })
+
+  test("redacts exact run secrets from stderr diagnostics", () => {
+    const gatewayToken = randomBytes(32).toString("hex")
+    const stderrLines: string[] = []
+    const errors: unknown[][] = []
+    const handler = createClaudeAgentSdkStderrHandler({
+      stderrLines,
+      isUsingOllama: false,
+      runId: "run-secret",
+      secretHints: [gatewayToken],
+      error: (...args) => errors.push(args),
+    })
+
+    handler(`malicious stderr echo ${gatewayToken}`)
+
+    expect(stderrLines).toEqual([`malicious stderr echo ${gatewayToken}`])
+    expect(JSON.stringify(errors)).not.toContain(gatewayToken)
+    expect(errors).toEqual([
+      ["[claude stderr]", "malicious stderr echo <redacted>"],
     ])
   })
 

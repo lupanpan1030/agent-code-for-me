@@ -50,6 +50,8 @@ import {
 } from "./job-store"
 import {
   assertHeadlessProviderSelectionUsableAtCreate,
+  type HeadlessProviderBindingDependencies,
+  inspectHeadlessDefaultProviderBinding,
   resolveExplicitHeadlessProviderProfile,
 } from "./provider-binding"
 import {
@@ -70,8 +72,10 @@ export type LocalJobApiJobEnvelope = {
 }
 
 export type LocalJobApiRuntimeManifestEnvelopeOptions = {
+  db: AgentJobDatabase
   onDiagnostic?: (message: string) => void
   probe?: boolean
+  providerBindingDependencies?: HeadlessProviderBindingDependencies
   readinessDependencies?: RuntimeReadinessResolverDependencies
 }
 
@@ -301,14 +305,25 @@ export function toLocalJobApiJobEnvelope(
 }
 
 export async function toLocalJobApiRuntimeManifestEnvelope(
-  options: LocalJobApiRuntimeManifestEnvelopeOptions = {},
+  options: LocalJobApiRuntimeManifestEnvelopeOptions,
 ): Promise<LocalJobApiRuntimeManifestEnvelope> {
+  const readinessDependencies: RuntimeReadinessResolverDependencies = {
+    ...options.readinessDependencies,
+  }
+  if (!readinessDependencies.inspectDefaultProviderBinding) {
+    readinessDependencies.inspectDefaultProviderBinding = (runtime) =>
+      inspectHeadlessDefaultProviderBinding({
+        db: options.db,
+        runtime,
+        dependencies: options.providerBindingDependencies,
+      })
+  }
   const runtimes = await Promise.all(
     listRegisteredAgentRuntimeManifests({ scope: "contract" }).map(
       async (runtime) => {
         const runtimeId = runtime.runtimeId as AgentRuntimeContractId
         const readiness = await resolveLocalJobApiRuntimeReadiness({
-          dependencies: options.readinessDependencies,
+          dependencies: readinessDependencies,
           onDiagnostic: options.onDiagnostic,
           probe: options.probe,
           runtimeId,

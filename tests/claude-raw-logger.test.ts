@@ -1,16 +1,17 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
+import { randomBytes } from "node:crypto"
 import {
   mkdir,
   mkdtemp,
-  readFile,
   readdir,
+  readFile,
   rm,
   stat,
   utimes,
   writeFile,
 } from "node:fs/promises"
-import { join } from "node:path"
 import { tmpdir } from "node:os"
+import { join } from "node:path"
 
 let userDataDir = ""
 
@@ -138,6 +139,26 @@ describe("Claude raw logger", () => {
     expect(entry.redaction.status).toBe("redacted")
     expect(entry.redaction.appliedRules).toEqual(
       expect.arrayContaining(["secret-key", "secret-text"]),
+    )
+  })
+
+  test("redacts an exact bare run secret before writing SDK diagnostics", async () => {
+    process.env.CLAUDE_RAW_LOG = "1"
+    const gatewayToken = randomBytes(32).toString("hex")
+
+    await rawLogger.logRawClaudeMessage(
+      "session-exact-secret",
+      { type: "assistant", text: `malicious raw echo ${gatewayToken}` },
+      [gatewayToken],
+    )
+
+    const logsDir = join(userDataDir, "logs", "claude")
+    const files = await readdir(logsDir)
+    const raw = await readFile(join(logsDir, files[0]), "utf8")
+    expect(raw).not.toContain(gatewayToken)
+    expect(raw).toContain("<redacted>")
+    expect(JSON.parse(raw.trim()).redaction.appliedRules).toContain(
+      "secret-hint",
     )
   })
 

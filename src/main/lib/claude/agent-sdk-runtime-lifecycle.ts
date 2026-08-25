@@ -1,34 +1,34 @@
-import type { DesktopRunResult } from "../agent-runtime/desktop-run-request"
 import type { AgentGuardEvent } from "../../../shared/agent-scope-contracts"
 import {
   deleteActiveGuardedContract,
   getActiveGuardedContract,
 } from "../agent-guard"
+import type { DesktopRunResult } from "../agent-runtime/desktop-run-request"
 import {
-  runClaudeAgentSdkDesktopAdapterWithPreparedRuntimeQuery,
   type RunClaudeAgentSdkDesktopAdapterWithPreparedRuntimeQueryInput,
+  runClaudeAgentSdkDesktopAdapterWithPreparedRuntimeQuery,
 } from "./agent-sdk-adapter-runner"
+import {
+  type PrepareClaudeAgentSdkRuntimePromptForDesktopRunInput,
+  prepareClaudeAgentSdkRuntimePromptForDesktopRun,
+} from "./agent-sdk-prompt"
 import { completeClaudeAgentSdkRunAfterAdapterWithStreamState } from "./agent-sdk-run-finalization"
 import {
-  prepareClaudeAgentSdkDesktopRuntimeQuery,
+  type ClaudeAgentSdkCredentialMetadataForLog,
+  logClaudeAgentSdkStartupDiagnostics,
+} from "./agent-sdk-runtime-diagnostics"
+import {
   type PrepareClaudeAgentSdkDesktopRuntimeQueryInput,
+  prepareClaudeAgentSdkDesktopRuntimeQuery,
 } from "./agent-sdk-runtime-query"
 import {
-  createClaudeAgentSdkRuntimeStreamSetup,
-  type ClaudeAgentSdkRuntimeStreamSetup,
-} from "./agent-sdk-runtime-state"
-import {
-  prepareClaudeAgentSdkRuntimePromptForDesktopRun,
-  type PrepareClaudeAgentSdkRuntimePromptForDesktopRunInput,
-} from "./agent-sdk-prompt"
-import {
-  prepareClaudeAgentSdkRuntimeStartupDiagnostics,
   type PrepareClaudeAgentSdkRuntimeStartupDiagnosticsInput,
+  prepareClaudeAgentSdkRuntimeStartupDiagnostics,
 } from "./agent-sdk-runtime-startup"
 import {
-  logClaudeAgentSdkStartupDiagnostics,
-  type ClaudeAgentSdkCredentialMetadataForLog,
-} from "./agent-sdk-runtime-diagnostics"
+  type ClaudeAgentSdkRuntimeStreamSetup,
+  createClaudeAgentSdkRuntimeStreamSetup,
+} from "./agent-sdk-runtime-state"
 
 export type RunClaudeAgentSdkDesktopRuntimeLifecyclePromptInput = Omit<
   PrepareClaudeAgentSdkRuntimePromptForDesktopRunInput,
@@ -72,47 +72,40 @@ export type RunClaudeAgentSdkDesktopRuntimeLifecycleQueryInput = Omit<
     >
   >
 
-export type RunClaudeAgentSdkDesktopRuntimeLifecycleInput =
-  Omit<
-    RunClaudeAgentSdkDesktopAdapterWithPreparedRuntimeQueryInput,
-    | "runtimeQuery"
-    | "getContract"
-    | "deleteContract"
-    | "guardEvents"
-    | "guardedRunStartedAt"
-    | "transform"
-    | "parts"
-    | "stderrLines"
-    | "model"
-    | "baseUrl"
-    | "prompt"
-    | "cwd"
-    | "abortSignal"
-    | "hasExistingApiConfig"
-    | "chatId"
-    | "subChatId"
-    | "mode"
-    | "resolvedModel"
-  > & {
-    runtimeQuery: RunClaudeAgentSdkDesktopRuntimeLifecycleQueryInput
-    getContract?: RunClaudeAgentSdkDesktopAdapterWithPreparedRuntimeQueryInput[
-      "getContract"
-    ]
-    deleteContract?: RunClaudeAgentSdkDesktopAdapterWithPreparedRuntimeQueryInput[
-      "deleteContract"
-    ]
-    guardEvents?: AgentGuardEvent[]
-    guardedRunStartedAt?: string
-    runtimeStreamSetup?: ClaudeAgentSdkRuntimeStreamSetup
-    runtimePrompt?: RunClaudeAgentSdkDesktopRuntimeLifecyclePromptInput
-    runtimeStartupDiagnostics?: RunClaudeAgentSdkDesktopRuntimeLifecycleStartupDiagnosticsInput
-    hasExistingApiConfig?: RunClaudeAgentSdkDesktopAdapterWithPreparedRuntimeQueryInput[
-      "hasExistingApiConfig"
-    ]
-    desktopJobSawError: boolean
-    streamStart: number
-    nowMs?: () => number
-  }
+export type RunClaudeAgentSdkDesktopRuntimeLifecycleInput = Omit<
+  RunClaudeAgentSdkDesktopAdapterWithPreparedRuntimeQueryInput,
+  | "runtimeQuery"
+  | "getContract"
+  | "deleteContract"
+  | "guardEvents"
+  | "guardedRunStartedAt"
+  | "transform"
+  | "parts"
+  | "stderrLines"
+  | "model"
+  | "baseUrl"
+  | "prompt"
+  | "cwd"
+  | "abortSignal"
+  | "hasExistingApiConfig"
+  | "chatId"
+  | "subChatId"
+  | "mode"
+  | "resolvedModel"
+> & {
+  runtimeQuery: RunClaudeAgentSdkDesktopRuntimeLifecycleQueryInput
+  getContract?: RunClaudeAgentSdkDesktopAdapterWithPreparedRuntimeQueryInput["getContract"]
+  deleteContract?: RunClaudeAgentSdkDesktopAdapterWithPreparedRuntimeQueryInput["deleteContract"]
+  guardEvents?: AgentGuardEvent[]
+  guardedRunStartedAt?: string
+  runtimeStreamSetup?: ClaudeAgentSdkRuntimeStreamSetup
+  runtimePrompt?: RunClaudeAgentSdkDesktopRuntimeLifecyclePromptInput
+  runtimeStartupDiagnostics?: RunClaudeAgentSdkDesktopRuntimeLifecycleStartupDiagnosticsInput
+  hasExistingApiConfig?: RunClaudeAgentSdkDesktopAdapterWithPreparedRuntimeQueryInput["hasExistingApiConfig"]
+  desktopJobSawError: boolean
+  streamStart: number
+  nowMs?: () => number
+}
 
 export type RunClaudeAgentSdkDesktopRuntimeLifecycleResult =
   | {
@@ -149,6 +142,7 @@ export async function runClaudeAgentSdkDesktopRuntimeLifecycle(
       historyEnabled: input.historyEnabled,
       isUsingOllama: input.isUsingOllama,
       guardedContract: input.guardedContract,
+      secretHints: input.secretHints,
     })
   input.streamState.metadata = streamSetup.metadata
   const parts = runtimeQueryInput.parts ?? streamSetup.parts
@@ -170,8 +164,7 @@ export async function runClaudeAgentSdkDesktopRuntimeLifecycle(
       credentialMetadata,
       existingSessionId,
       logStartupDiagnostics = logClaudeAgentSdkStartupDiagnostics,
-      prepareRuntimeStartupDiagnostics =
-        prepareClaudeAgentSdkRuntimeStartupDiagnostics,
+      prepareRuntimeStartupDiagnostics = prepareClaudeAgentSdkRuntimeStartupDiagnostics,
       ...diagnosticsInput
     } = input.runtimeStartupDiagnostics
     const { runtimeStartup, resumeSessionId } = diagnosticsInput
@@ -234,22 +227,21 @@ export async function runClaudeAgentSdkDesktopRuntimeLifecycle(
     prompt = promptResult.prompt
   }
 
-  const runtimeQuery =
-    await prepareClaudeAgentSdkDesktopRuntimeQuery({
-      ...runtimeQueryInput,
-      request,
-      prompt,
-      env: runtimeQueryEnv,
-      isUsingOllama: runtimeQueryInput.isUsingOllama ?? input.isUsingOllama,
-      guardedContract:
-        runtimeQueryInput.guardedContract ?? input.guardedContract,
-      emit: runtimeQueryInput.emit ?? input.emit,
-      resolvedModel: runtimeResolvedModel,
-      plugins: runtimeNativePluginConfigs,
-      guardEvents: runtimeQueryInput.guardEvents ?? guardEvents,
-      parts,
-      stderrLines,
-    })
+  const runtimeQuery = await prepareClaudeAgentSdkDesktopRuntimeQuery({
+    ...runtimeQueryInput,
+    request,
+    prompt,
+    env: runtimeQueryEnv,
+    isUsingOllama: runtimeQueryInput.isUsingOllama ?? input.isUsingOllama,
+    guardedContract: runtimeQueryInput.guardedContract ?? input.guardedContract,
+    emit: runtimeQueryInput.emit ?? input.emit,
+    resolvedModel: runtimeResolvedModel,
+    plugins: runtimeNativePluginConfigs,
+    secretHints: input.secretHints,
+    guardEvents: runtimeQueryInput.guardEvents ?? guardEvents,
+    parts,
+    stderrLines,
+  })
   const adapterResult =
     await runClaudeAgentSdkDesktopAdapterWithPreparedRuntimeQuery({
       ...adapterInput,
@@ -280,6 +272,7 @@ export async function runClaudeAgentSdkDesktopRuntimeLifecycle(
       chatId: requestContext.chatId,
       subChatId: requestContext.subChatId,
       messagesToSave: input.messagesToSave,
+      secretHints: input.secretHints,
       parts,
       state: input.streamState,
       historyEnabled: input.historyEnabled,

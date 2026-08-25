@@ -4,9 +4,9 @@ import {
   getChatImageAttachmentCapability,
   resolveChatImageModelVision,
 } from "../../../../shared/chat-attachment-capabilities"
-import {
-  type GuardedGitStatusSnapshot,
-  type ValidatedAgentScopeContract,
+import type {
+  GuardedGitStatusSnapshot,
+  ValidatedAgentScopeContract,
 } from "../../agent-guard"
 import { resolveDesktopRunCwdFromDb } from "../../agent-runtime/preflight"
 import {
@@ -100,6 +100,17 @@ export const claudeRouter = router({
     .subscription(({ input }) => {
       return observable<UIMessageChunk>((emit) => {
         const db = getDatabase()
+        let runtimeSecretHints: readonly string[] = []
+        let runtimeSecretsCleanup: (() => void) | null = null
+        const cleanupRuntimeSecrets = () => {
+          const cleanup = runtimeSecretsCleanup
+          runtimeSecretsCleanup = null
+          try {
+            cleanup?.()
+          } finally {
+            runtimeSecretHints = []
+          }
+        }
         const resolvedInitialCwd = resolveDesktopRunCwdFromDb(db, {
           chatId: input.chatId,
           subChatId: input.subChatId,
@@ -128,6 +139,7 @@ export const claudeRouter = router({
           emitComplete: () => {
             emit.complete()
           },
+          getSecretHints: () => runtimeSecretHints,
         })
 
         let guardedContract: ValidatedAgentScopeContract | null = null
@@ -146,6 +158,7 @@ export const claudeRouter = router({
           emitError,
           emit: safeEmit,
           complete: safeComplete,
+          cleanupRuntimeSecrets,
           run: async () => {
             desktopRunState.setDb(db)
             const runControls = await prepareClaudeAgentSdkDesktopRunControls({
@@ -232,6 +245,13 @@ export const claudeRouter = router({
               requestedSessionId: input.sessionId,
               existingSessionId,
               emitPreflightBlocker,
+              onRuntimeSecretsResolved: ({ secretHints, cleanup }) => {
+                runtimeSecretHints = secretHints
+                runtimeSecretsCleanup = cleanup
+                if (abortController.signal.aborted) {
+                  cleanupRuntimeSecrets()
+                }
+              },
               desktopRunState,
             })
             if (!runStartup.ok) {
@@ -292,6 +312,7 @@ export const claudeRouter = router({
                 historyEnabled,
                 db,
                 messagesToSave,
+                secretHints: runtimeSecretHints,
                 guardedContract,
                 guardedPreRunStatus,
                 subId,
@@ -316,6 +337,7 @@ export const claudeRouter = router({
             guardedContract,
             getDb: getDatabase,
             desktopRunState,
+            cleanupRuntimeSecrets,
           })
         }
       })

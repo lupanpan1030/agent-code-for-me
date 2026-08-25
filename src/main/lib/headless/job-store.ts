@@ -1,5 +1,5 @@
 import { and, asc, desc, eq, isNotNull, isNull, lt, or, sql } from "drizzle-orm"
-import { drizzle } from "drizzle-orm/better-sqlite3"
+import type { drizzle } from "drizzle-orm/better-sqlite3"
 import {
   AGENT_JOB_EVENT_TYPES,
   AGENT_JOB_KINDS,
@@ -19,6 +19,7 @@ import {
   CONTRACT_RUNTIME_IDS,
 } from "../../../shared/agent-runtime-capabilities"
 import { createAgentJobRunEvent } from "../agent-runtime/job-event-bridge"
+import { redactExactSecretHints } from "../agent-runtime/redaction"
 import type * as schema from "../db/schema"
 import {
   type AgentJob,
@@ -62,6 +63,7 @@ export type AppendAgentJobEventInput = {
   jobId: string
   type: AgentJobEventType
   payload?: unknown
+  secretHints?: readonly string[]
   now?: Date
 }
 
@@ -72,6 +74,7 @@ export type CompleteAgentJobInput = {
   errorCode?: string | null
   errorMessage?: string | null
   result?: unknown
+  secretHints?: readonly string[]
   now?: Date
 }
 
@@ -118,9 +121,12 @@ function assertCreateAgentJobRuntime(input: CreateAgentJobInput): void {
   assertOneOf(values, input.runtime, "job runtime")
 }
 
-function redactSecretText(value: string): string {
-  return value
-    .replace(
+function redactSecretText(
+  value: string,
+  secretHints?: readonly string[],
+): string {
+  return redactExactSecretHints(value, secretHints)
+    .value.replace(
       /-----BEGIN [A-Z0-9 ]+-----[\s\S]*?-----END [A-Z0-9 ]+-----/g,
       "[redacted-pem]",
     )
@@ -161,9 +167,14 @@ function isSensitiveStorageKey(key: string, value: unknown): boolean {
   return /token|authorization|api[-_]?key|secret|password/i.test(key)
 }
 
-function sanitizeForStorage(value: unknown): unknown {
-  if (typeof value === "string") return redactSecretText(value)
-  if (Array.isArray(value)) return value.map(sanitizeForStorage)
+function sanitizeForStorage(
+  value: unknown,
+  secretHints?: readonly string[],
+): unknown {
+  if (typeof value === "string") return redactSecretText(value, secretHints)
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeForStorage(item, secretHints))
+  }
   if (value && typeof value === "object") {
     return Object.fromEntries(
       Object.entries(value).map(([key, item]) => {
@@ -174,15 +185,17 @@ function sanitizeForStorage(value: unknown): unknown {
         ) {
           return [key, "[redacted]"]
         }
-        return [key, sanitizeForStorage(item)]
+        return [key, sanitizeForStorage(item, secretHints)]
       }),
     )
   }
   return value
 }
 
-function toJson(value: unknown): string {
-  return JSON.stringify(sanitizeForStorage(value === undefined ? {} : value))
+function toJson(value: unknown, secretHints?: readonly string[]): string {
+  return JSON.stringify(
+    sanitizeForStorage(value === undefined ? {} : value, secretHints),
+  )
 }
 
 function fromJson<T>(value: string | null | undefined, fallback: T): T {
@@ -262,6 +275,7 @@ function insertAgentJobEventRecord(
     sequence,
     type: input.type,
     payload: input.payload,
+    secretHints: input.secretHints,
     createdAt: now,
   })
 
@@ -271,7 +285,7 @@ function insertAgentJobEventRecord(
       jobId: input.jobId,
       sequence,
       type: input.type,
-      payloadJson: toJson(bridged.persistedPayload),
+      payloadJson: toJson(bridged.persistedPayload, input.secretHints),
       createdAt: now,
     })
     .run()
@@ -577,11 +591,16 @@ export function completeAgentJob(
           status: input.status,
           finishedAt: now,
           exitCode: input.exitCode ?? null,
-          errorCode: input.errorCode ?? null,
-          errorMessage: input.errorMessage
-            ? redactSecretText(input.errorMessage)
+          errorCode: input.errorCode
+            ? redactSecretText(input.errorCode, input.secretHints)
             : null,
-          resultJson: input.result === undefined ? null : toJson(input.result),
+          errorMessage: input.errorMessage
+            ? redactSecretText(input.errorMessage, input.secretHints)
+            : null,
+          resultJson:
+            input.result === undefined
+              ? null
+              : toJson(input.result, input.secretHints),
           heartbeatAt: now,
         })
         .where(eq(agentJobs.id, input.jobId))
@@ -599,6 +618,7 @@ export function completeAgentJob(
             errorMessage: input.errorMessage ?? null,
             result: input.result ?? null,
           },
+          secretHints: input.secretHints,
           now,
         },
         now,

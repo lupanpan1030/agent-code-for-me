@@ -56,6 +56,27 @@ Local SQLite databases, run artifacts, logs, `.locus` files, `CODEX_HOME`,
 Claude/Codex runtime config, and generated transcripts may contain sensitive
 metadata. Do not attach them to public issues without review and redaction.
 
+## Runtime Distribution Trust
+
+The current desktop release downloads and packages exact Claude Code and Codex
+artifacts declared by the repository's package scripts and packaging workflows.
+Changing an SDK range, executable version, download source, archive layout, or
+integrity check is security-sensitive even when the Runtime protocol appears
+compatible. Keep those declarations synchronized and never silently fall back to
+an unverified system `latest` binary.
+
+The ratified direction is certified side-by-side Runtime delivery, but it is not
+implemented merely by documenting it. A future implementing change must define
+trusted catalog provenance, checksums/signatures, atomic install and activation,
+rollback/quarantine, immutable installation binding for admitted Runs, and
+credential isolation. Until that change ships, current bundled delivery remains
+the product truth.
+
+Claude thin-worker boundaries and the Codex app-server adapter must keep secrets
+and native Runtime configuration out of renderer payloads. A local transport is
+not automatically trusted: authenticate and scope any future long-lived Host or
+consumer API before treating loopback access as authorization.
+
 ## Security-Sensitive Changes
 
 New capabilities, breaking changes, architecture shifts, provider/auth changes,

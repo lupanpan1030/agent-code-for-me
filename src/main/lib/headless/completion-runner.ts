@@ -469,6 +469,7 @@ export async function runPersistedCompletionJob(
     workerId,
     workerPid,
   })
+  let secretHints: readonly string[] = []
 
   try {
     const provider = resolveExplicitHeadlessProviderProfile({
@@ -478,6 +479,7 @@ export async function runPersistedCompletionJob(
       modelOverride: request.provider.model,
       dependencies: options.providerBindingDependencies,
     })
+    secretHints = provider.profile.token ? [provider.profile.token] : []
     const model =
       provider.resolvedProvider.model ?? provider.profile.defaultModel
     const result = await performCompletion({
@@ -497,6 +499,7 @@ export async function runPersistedCompletionJob(
         usage: result.usage,
         resolvedProvider: provider.resolvedProvider,
       },
+      secretHints,
     })
     const completed = completeAgentJob(options.db, {
       jobId: job.id,
@@ -507,6 +510,7 @@ export async function runPersistedCompletionJob(
         usage: result.usage,
         resolvedProvider: provider.resolvedProvider,
       }),
+      secretHints,
     })
     return {
       job: completed,
@@ -525,6 +529,7 @@ export async function runPersistedCompletionJob(
       errorMessage:
         errorCode === "job_canceled" ? "Job was canceled." : message,
       result: null,
+      secretHints,
     })
     return {
       job: completed,

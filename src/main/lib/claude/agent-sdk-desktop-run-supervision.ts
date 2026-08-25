@@ -1,18 +1,13 @@
 import type { ValidatedAgentScopeContract } from "../agent-guard"
 import type { AgentJobDatabase } from "../headless/job-store"
-import type { UIMessageChunk } from "./types"
-import type { ClaudeAgentSdkStreamConsumerMutableState } from "./agent-sdk-stream-consumer"
+import { finalizeClaudeAgentSdkDesktopRunAfterLifecycle } from "./agent-sdk-desktop-run-cleanup"
 import type { ClaudeAgentSdkDesktopRunState } from "./agent-sdk-desktop-run-state"
-import {
-  finalizeClaudeAgentSdkUnexpectedErrorWithStreamState,
-} from "./agent-sdk-run-finalization"
-import {
-  finalizeClaudeAgentSdkDesktopRunAfterLifecycle,
-} from "./agent-sdk-desktop-run-cleanup"
+import { finalizeClaudeAgentSdkUnexpectedErrorWithStreamState } from "./agent-sdk-run-finalization"
+import type { ClaudeAgentSdkStreamConsumerMutableState } from "./agent-sdk-stream-consumer"
+import type { UIMessageChunk } from "./types"
 
 export type SuperviseClaudeAgentSdkDesktopRunDependencies = {
-  finalizeUnexpectedErrorWithStreamState:
-    typeof finalizeClaudeAgentSdkUnexpectedErrorWithStreamState
+  finalizeUnexpectedErrorWithStreamState: typeof finalizeClaudeAgentSdkUnexpectedErrorWithStreamState
   finalizeAfterLifecycle: typeof finalizeClaudeAgentSdkDesktopRunAfterLifecycle
 }
 
@@ -33,6 +28,7 @@ export type SuperviseClaudeAgentSdkDesktopRunInput = {
   emitError: (error: unknown, context: string) => void
   emit: (chunk: UIMessageChunk) => unknown
   complete: () => void
+  cleanupRuntimeSecrets?: () => void
   dependencies?: Partial<SuperviseClaudeAgentSdkDesktopRunDependencies>
 }
 
@@ -68,13 +64,17 @@ export async function superviseClaudeAgentSdkDesktopRun(
       complete: input.complete,
     })
   } finally {
-    dependencies.finalizeAfterLifecycle({
-      chatId: input.chatId,
-      subChatId: input.subChatId,
-      abortController: input.abortController,
-      guardedContract: input.getGuardedContract(),
-      getDb: input.getDb,
-      desktopRunState: input.desktopRunState,
-    })
+    try {
+      dependencies.finalizeAfterLifecycle({
+        chatId: input.chatId,
+        subChatId: input.subChatId,
+        abortController: input.abortController,
+        guardedContract: input.getGuardedContract(),
+        getDb: input.getDb,
+        desktopRunState: input.desktopRunState,
+      })
+    } finally {
+      input.cleanupRuntimeSecrets?.()
+    }
   }
 }

@@ -248,6 +248,89 @@ describe("Local Job API runtime readiness", () => {
     expect(readiness.hint).toContain("claude CLI")
   })
 
+  test("reports ready from a usable default provider before native credentials", async () => {
+    const readiness = await resolveLocalJobApiRuntimeReadiness({
+      runtimeId: "claude-code",
+      dependencies: {
+        inspectDefaultProviderBinding: () => ({
+          state: "ready",
+          profileId: "claude-default",
+          model: "claude-provider-model",
+        }),
+        hasAnyClaudeCodeAccount: () => {
+          throw new Error("native account lookup must not run")
+        },
+        getExistingClaudeCredentials: () => {
+          throw new Error("native CLI lookup must not run")
+        },
+      },
+    })
+
+    expect(readiness).toMatchObject({
+      state: "ready",
+      detail: "Configured default provider profile is available.",
+    })
+    expect(JSON.stringify(readiness)).not.toContain("claude-default")
+  })
+
+  test("reports a broken default provider as unavailable without native fallback", async () => {
+    const readiness = await resolveLocalJobApiRuntimeReadiness({
+      runtimeId: "codex",
+      dependencies: {
+        inspectDefaultProviderBinding: () => ({
+          state: "unavailable",
+          code: "provider_profile_runtime_mismatch",
+          profileId: "claude-only-default",
+        }),
+        getCodexExecutableStatus: () => {
+          throw new Error("native executable lookup must not run")
+        },
+        getCodexRuntimeStatus: async () => {
+          throw new Error("native login probe must not run")
+        },
+      },
+    })
+
+    expect(readiness).toMatchObject({
+      state: "unavailable",
+      detail: "Configured default provider profile is unavailable.",
+    })
+    expect(readiness.hint).toContain("Fix or clear")
+    expect(JSON.stringify(readiness)).not.toContain("claude-only-default")
+  })
+
+  test("falls through to native readiness only when no default is configured", async () => {
+    const readiness = await resolveLocalJobApiRuntimeReadiness({
+      runtimeId: "claude-code",
+      dependencies: {
+        inspectDefaultProviderBinding: () => ({ state: "not-configured" }),
+        hasAnyClaudeCodeAccount: () => false,
+        getExistingClaudeCredentials: () => null,
+      },
+    })
+
+    expect(readiness).toMatchObject({ state: "needs-auth" })
+  })
+
+  test("no-probe still reports a usable default provider as ready", async () => {
+    const readiness = await resolveLocalJobApiRuntimeReadiness({
+      runtimeId: "codex",
+      probe: false,
+      dependencies: {
+        inspectDefaultProviderBinding: () => ({
+          state: "ready",
+          profileId: "codex-default",
+          model: "provider-model",
+        }),
+        getCodexExecutableStatus: () => {
+          throw new Error("native executable lookup must not run")
+        },
+      },
+    })
+
+    expect(readiness).toMatchObject({ state: "ready" })
+  })
+
   test("maps Codex CLI and login readiness states", async () => {
     await expect(
       resolveLocalJobApiRuntimeReadiness({

@@ -1,20 +1,14 @@
-import type { UIMessageChunk } from "./types"
-import type { ClaudeAgentSdkStreamConsumerMutableState } from "./agent-sdk-stream-consumer"
+import type { DesktopRunPreflightBlocker } from "../agent-runtime/preflight"
+import { createRuntimeRendererChunkEmitter } from "../agent-runtime/stream-event-mapper"
+import { startActiveClaudeSessionForDesktopRun } from "./active-sessions"
 import {
-  startActiveClaudeSessionForDesktopRun,
-} from "./active-sessions"
-import {
-  createClaudeAgentSdkDesktopRunState,
   type ClaudeAgentSdkDesktopRunState,
+  createClaudeAgentSdkDesktopRunState,
 } from "./agent-sdk-desktop-run-state"
 import { createClaudeAgentSdkRuntimeErrorHandlers } from "./agent-sdk-runtime-errors"
-import {
-  createClaudeAgentSdkRuntimeStreamState,
-} from "./agent-sdk-runtime-state"
-import {
-  createRuntimeRendererChunkEmitter,
-} from "../agent-runtime/stream-event-mapper"
-import type { DesktopRunPreflightBlocker } from "../agent-runtime/preflight"
+import { createClaudeAgentSdkRuntimeStreamState } from "./agent-sdk-runtime-state"
+import type { ClaudeAgentSdkStreamConsumerMutableState } from "./agent-sdk-stream-consumer"
+import type { UIMessageChunk } from "./types"
 
 export type ClaudeAgentSdkDesktopRunEnvelope = {
   abortController: AbortController
@@ -37,6 +31,7 @@ export function createClaudeAgentSdkDesktopRunEnvelope(input: {
   mode: "plan" | "agent"
   emitNext: (chunk: UIMessageChunk) => void
   emitComplete: () => void
+  getSecretHints?: () => readonly string[]
   createId?: () => string
   nowMs?: () => number
   log?: (...args: any[]) => void
@@ -61,6 +56,7 @@ export function createClaudeAgentSdkDesktopRunEnvelope(input: {
     getJobId: desktopRunState.getJobId,
     getDb: desktopRunState.getDb,
     getMapper: desktopRunState.getStreamEventMapper,
+    getSecretHints: input.getSecretHints,
     isActive: desktopRunState.isObservableActive,
     markInactive: desktopRunState.markInactive,
     markFailed: desktopRunState.markFailed,
@@ -82,6 +78,9 @@ export function createClaudeAgentSdkDesktopRunEnvelope(input: {
     createClaudeAgentSdkRuntimeErrorHandlers({
       cwd: input.cwd,
       mode: input.mode,
+      runId: activeSessionStartup.runId,
+      getSecretHints: input.getSecretHints,
+      isActive: desktopRunState.isObservableActive,
       emit: (chunk) => emitRuntimeChunk(chunk),
       complete,
     })

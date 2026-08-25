@@ -1,0 +1,95 @@
+# Verification: add-headless-provider-binding
+
+Verified: 2026-08-25 (Pacific/Auckland)
+
+## Built Electron profile/native smoke
+
+Command shape:
+
+```text
+electron scripts/smoke-headless-provider-binding.cjs
+```
+
+The smoke used the current built `out/main/index.js`, an isolated temporary
+Locus database and project, the public `--locus-headless-cli` surface, a fake
+bundled Codex executable, and a request-counting local Responses upstream. It
+did not use a real account, external model, or billable network request.
+
+Result: exit 0.
+
+- Profile run:
+  - job `succeeded`
+  - `resolvedProvider.source = request-profile`
+  - `resolvedProvider.profileId = smoke-provider-binding-codex`
+  - explicit model `smoke-profile-explicit-model` reached the upstream
+  - exactly one `POST /v1/responses` request reached the mock upstream
+  - the configured profile header reached the upstream
+  - the upstream did not receive the Locus-scoped gateway Authorization header
+- Native run:
+  - job `succeeded`
+  - `resolvedProvider.source = native`
+  - upstream request count remained exactly one, proving the native run did not
+    route through the profile gateway
+- Secret checks:
+  - inherited `OPENAI_API_KEY`, `CODEX_API_KEY`, and ambient gateway values were
+    stripped before the Codex child
+  - the scoped gateway token was absent from argv, result/events, and the
+    upstream request
+
+This is deterministic certification of the Locus CLI, provider-resolution,
+scoped-gateway, and adapter wiring. The fake Codex process deliberately avoids
+claiming compatibility certification for a future upstream Codex protocol.
+
+## Repository gates
+
+The exact-source full-suite and independent-review receipts are recorded at
+change-set closeout before archive.
+
+## Exact scoped-token adversarial regression
+
+Targeted command:
+
+```text
+bun test tests/runtime-redaction.test.ts tests/headless-runtime-event-bridge.test.ts tests/headless-provider-binding.test.ts tests/headless-cli-dispatcher.test.ts tests/codex-app-server-adapter.test.ts tests/runtime-stream-event-mapper.test.ts
+```
+
+Result: 112 passed, 0 failed, 489 assertions.
+
+- A random bare 64-hex scoped gateway token was deliberately emitted without a
+  secret-bearing key or prefix from a fake headless child and a fake Codex
+  app-server notification.
+- The exact token was absent from persisted job events, terminal
+  `errorCode`/`errorMessage`/`resultJson`, Local Job API result envelopes,
+  completion success/failure envelopes, Codex adapter emissions, and durable
+  desktop RunEvents.
+- The Codex adapter RunEvent recorded `secret-hint` redaction, while the route
+  stores only the already-redacted chunk used to build the assistant message.
+- Headless and Desktop Codex profile paths revoke their scoped gateway token on
+  terminal/cancel cleanup.
+- `bun run ts:check` passed for the integrated source at this verification
+  point.
+
+## Desktop Claude exact-secret and lifecycle regression
+
+Targeted command:
+
+```text
+bun test tests/runtime-stream-event-mapper.test.ts tests/claude-agent-sdk-desktop-run-envelope.test.ts tests/claude-agent-sdk-desktop-job.test.ts tests/claude-agent-sdk-message-persistence.test.ts tests/claude-agent-sdk-run-finalization.test.ts tests/claude-agent-sdk-stream-error-finalization.test.ts tests/claude-agent-sdk-provider-startup.test.ts tests/claude-agent-sdk-desktop-run-startup.test.ts tests/claude-agent-sdk-desktop-run-supervision.test.ts tests/claude-agent-sdk-desktop-run-cleanup.test.ts tests/claude-agent-sdk-runtime-errors.test.ts tests/claude-agent-sdk-error-logging.test.ts tests/claude-raw-logger.test.ts tests/claude-agent-sdk-query-options.test.ts tests/claude-agent-sdk-adapter-runner.test.ts tests/claude-agent-sdk-runtime-startup.test.ts tests/claude-agent-sdk-message-metadata.test.ts tests/claude-agent-sdk-stream-consumer.test.ts tests/claude-agent-sdk-runtime-lifecycle.test.ts
+```
+
+Result: 113 passed, 0 failed, 480 assertions.
+
+- Random bare 64-hex gateway tokens and native OAuth-style run secrets were
+  treated as main-process-only hints; no hint list was placed in a renderer,
+  RunEvent, database message, or diagnostic payload.
+- Non-diagnostic text chunks, stream errors, success/error assistant messages,
+  metadata, and prior messages were recursively redacted before renderer or DB
+  exposure.
+- Diagnostic bypasses outside the renderer emitter were covered: SDK stderr,
+  embedded/full-message errors, query/startup errors, system messages, the
+  opt-in raw debug log, and malformed tool-input diagnostics.
+- Provider gateway token cleanup is idempotent and covered for provider/startup
+  failures, successful and failed lifecycle supervision, unsubscribe, and
+  abort-driven cancellation. The route clears its dynamic hint and cleanup
+  references after cleanup; static mapper hints remain main-process-only for
+  already-created RunEvent teardown.

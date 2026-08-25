@@ -1,7 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import {
-  prepareClaudeAgentSdkDesktopRunStartup,
-} from "../src/main/lib/claude/agent-sdk-desktop-run-startup"
+import { prepareClaudeAgentSdkDesktopRunStartup } from "../src/main/lib/claude/agent-sdk-desktop-run-startup"
 
 function createBaseInput() {
   const abortController = new AbortController()
@@ -103,7 +101,10 @@ describe("Claude Agent SDK desktop run startup", () => {
 
   test("prepares provider, desktop run request, run state, and runtime startup", async () => {
     const base = createBaseInput()
-    const calls: any[] = []
+    const calls: Array<{
+      type: "provider" | "job" | "runtime"
+      input: unknown
+    }> = []
     const streamEventMapper = { map: () => [] }
     const desktopRunRequest = { id: "desktop-request-1" } as any
     const runtimeStartup = {
@@ -112,9 +113,17 @@ describe("Claude Agent SDK desktop run startup", () => {
       isolatedConfigDir: "/tmp/config",
       isolatedConfig: {} as any,
     } as any
+    const cleanupRuntimeSecrets = () => undefined
+    const resolvedRuntimeSecrets: Array<{
+      secretHints: readonly string[]
+      cleanup: () => void
+    }> = []
 
     const result = await prepareClaudeAgentSdkDesktopRunStartup({
       ...base.input,
+      onRuntimeSecretsResolved: (input) => {
+        resolvedRuntimeSecrets.push(input)
+      },
       dependencies: {
         prepareProviderStartup: async (input) => {
           calls.push({ type: "provider", input })
@@ -132,6 +141,8 @@ describe("Claude Agent SDK desktop run startup", () => {
                 authMode: "auth_token",
               },
               isUsingOllama: false,
+              secretHints: ["provider-token", "claude-token"],
+              cleanupRuntimeSecrets,
             },
           }
         },
@@ -174,6 +185,8 @@ describe("Claude Agent SDK desktop run startup", () => {
           authMode: "auth_token",
         },
         isUsingOllama: false,
+        secretHints: ["provider-token", "claude-token"],
+        cleanupRuntimeSecrets,
       },
     })
     expect(base.desktopJobs).toEqual([
@@ -201,6 +214,7 @@ describe("Claude Agent SDK desktop run startup", () => {
       requestedModel: "claude-sonnet",
       requestedSessionId: "requested-session",
       existingSessionId: "existing-session",
+      secretHints: ["provider-token", "claude-token"],
     })
     expect(calls[2].input).toMatchObject({
       projectId: "project-1",
@@ -212,5 +226,49 @@ describe("Claude Agent SDK desktop run startup", () => {
       claudeCodeToken: "claude-token",
       logPrefix: "[sub-1] ",
     })
+    expect(resolvedRuntimeSecrets).toEqual([
+      {
+        secretHints: ["provider-token", "claude-token"],
+        cleanup: cleanupRuntimeSecrets,
+      },
+    ])
+  })
+
+  test("cleans resolved runtime secrets when later desktop startup fails", async () => {
+    const base = createBaseInput()
+    let cleanupCalls = 0
+    const cleanupRuntimeSecrets = () => {
+      cleanupCalls += 1
+    }
+
+    await expect(
+      prepareClaudeAgentSdkDesktopRunStartup({
+        ...base.input,
+        dependencies: {
+          prepareProviderStartup: async () => ({
+            ok: true,
+            connectionMethod: "custom-model",
+            startup: {
+              selectedProviderProfileId: "provider-1",
+              claudeCodeToken: null,
+              claudeCredentialMetadata: null,
+              finalCustomConfig: {
+                model: "claude-sonnet",
+                baseUrl: "https://gateway.example",
+                token: "provider-token",
+                authMode: "auth_token",
+              },
+              isUsingOllama: false,
+              secretHints: ["provider-token"],
+              cleanupRuntimeSecrets,
+            },
+          }),
+          createDesktopRunStartup: (() => {
+            throw new Error("desktop job failed")
+          }),
+        },
+      }),
+    ).rejects.toThrow("desktop job failed")
+    expect(cleanupCalls).toBe(1)
   })
 })

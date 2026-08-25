@@ -36,11 +36,13 @@ export const CLAUDE_CODE_TOKEN_URL = "https://platform.claude.com/v1/oauth/token
  * Read Claude OAuth credentials from system credential store
  * Dispatches to platform-specific implementation
  */
-function readFromKeychain(): ClaudeOAuthCredential | null {
+function readFromKeychain(
+  credentialsDirectory: string,
+): ClaudeOAuthCredential | null {
   if (process.platform === 'darwin') {
     return readFromMacOSKeychain();
   } else if (process.platform === 'win32') {
-    return readFromWindowsCredentialManager();
+    return readFromWindowsCredentialManager(credentialsDirectory);
   } else if (process.platform === 'linux') {
     return readFromLinuxSecretService();
   }
@@ -79,10 +81,12 @@ function readFromMacOSKeychain(): ClaudeOAuthCredential | null {
  * Read Claude OAuth credentials from Windows Credential Manager
  * Falls back to credentials file which Claude Code uses on Windows
  */
-function readFromWindowsCredentialManager(): ClaudeOAuthCredential | null {
+function readFromWindowsCredentialManager(
+  credentialsDirectory: string,
+): ClaudeOAuthCredential | null {
   try {
     // Read from the credentials file location that Claude Code uses on Windows
-    const credentialsPath = join(homedir(), '.claude', '.credentials.json');
+    const credentialsPath = join(credentialsDirectory, '.credentials.json');
     if (existsSync(credentialsPath)) {
       const content = readFileSync(credentialsPath, 'utf-8');
       const credentials: ClaudeCredentials = JSON.parse(content);
@@ -159,8 +163,10 @@ function readFromLinuxSecretService(): ClaudeOAuthCredential | null {
 /**
  * Read Claude OAuth credentials from credentials file (Linux/fallback)
  */
-function readFromCredentialsFile(): ClaudeOAuthCredential | null {
-  const credentialsPath = join(homedir(), '.claude', '.credentials.json');
+function readFromCredentialsFile(
+  credentialsDirectory: string,
+): ClaudeOAuthCredential | null {
+  const credentialsPath = join(credentialsDirectory, '.credentials.json');
 
   try {
     if (existsSync(credentialsPath)) {
@@ -183,17 +189,35 @@ function readFromCredentialsFile(): ClaudeOAuthCredential | null {
 }
 
 /**
+ * Resolve the same Claude configuration directory passed to the CLI runtime.
+ * An explicitly selected directory is an isolation boundary: file discovery
+ * must not fall back to the default directory when the selected directory is
+ * missing or does not contain credentials.
+ */
+export function getClaudeCredentialConfigDir(
+  environment: NodeJS.ProcessEnv = process.env,
+  homeDirectory = homedir(),
+): string {
+  const configuredDirectory = environment.CLAUDE_CONFIG_DIR;
+  return configuredDirectory?.trim()
+    ? configuredDirectory
+    : join(homeDirectory, '.claude');
+}
+
+/**
  * Get existing Claude OAuth credentials from keychain or credentials file
  */
 export function getExistingClaudeCredentials(): ClaudeOAuthCredential | null {
+  const credentialsDirectory = getClaudeCredentialConfigDir();
+
   // Try keychain first (macOS, Windows, Linux)
-  const keychainCreds = readFromKeychain();
+  const keychainCreds = readFromKeychain(credentialsDirectory);
   if (keychainCreds) {
     return keychainCreds;
   }
 
-  // Fall back to credentials file
-  return readFromCredentialsFile();
+  // Fall back to the file inside the runtime-selected configuration directory.
+  return readFromCredentialsFile(credentialsDirectory);
 }
 
 /**

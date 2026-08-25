@@ -98,6 +98,41 @@ export type ProviderProfileRuntimeConfig = {
   capabilities: ProviderProfileCapabilities
 }
 
+export type ProviderDefaultRuntimeConfig = ProviderProfileRuntimeConfig & {
+  modelOverride: string | null
+}
+
+export type ProviderProfileStorageDatabase = Pick<
+  ReturnType<typeof getDatabase>,
+  "select"
+>
+
+export class ProviderProfileStorageReadError extends Error {
+  readonly reason: "default-profile-not-found" | "invalid-profile"
+  readonly profileId: string
+
+  constructor(input: {
+    reason: "default-profile-not-found" | "invalid-profile"
+    profileId: string
+    message: string
+  }) {
+    super(input.message)
+    this.name = "ProviderProfileStorageReadError"
+    this.reason = input.reason
+    this.profileId = input.profileId
+  }
+}
+
+export type ProviderProfileRuntimeMetadata = {
+  id: string
+  targetRuntimes: ProviderProfileTarget[]
+}
+
+const storedProviderHeadersSchema = z.record(z.string(), z.string())
+const storedProviderTargetsSchema = z.array(providerProfileTargetSchema).min(1)
+const storedProviderCapabilitiesSchema =
+  providerProfileCapabilitiesSchema.strict()
+
 function parseJson<T>(value: string | null | undefined, fallback: T): T {
   if (!value) return fallback
   try {
@@ -105,6 +140,50 @@ function parseJson<T>(value: string | null | undefined, fallback: T): T {
   } catch {
     return fallback
   }
+}
+
+function parseStoredProfileJson<T>(input: {
+  profileId: string
+  field: string
+  value: string | null | undefined
+  schema: z.ZodType<T>
+}): T {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(input.value ?? "")
+  } catch {
+    throw new ProviderProfileStorageReadError({
+      reason: "invalid-profile",
+      profileId: input.profileId,
+      message: `Provider profile ${input.profileId} has invalid ${input.field}.`,
+    })
+  }
+  const result = input.schema.safeParse(parsed)
+  if (!result.success) {
+    throw new ProviderProfileStorageReadError({
+      reason: "invalid-profile",
+      profileId: input.profileId,
+      message: `Provider profile ${input.profileId} has invalid ${input.field}.`,
+    })
+  }
+  return result.data
+}
+
+function parseStoredProfileScalar<T>(input: {
+  profileId: string
+  field: string
+  value: unknown
+  schema: z.ZodType<T>
+}): T {
+  const result = input.schema.safeParse(input.value)
+  if (!result.success) {
+    throw new ProviderProfileStorageReadError({
+      reason: "invalid-profile",
+      profileId: input.profileId,
+      message: `Provider profile ${input.profileId} has invalid ${input.field}.`,
+    })
+  }
+  return result.data
 }
 
 function sanitizeHeaders(
@@ -214,11 +293,34 @@ export function getProviderProfileMetadata(
   return row ? rowToMetadata(row) : null
 }
 
-export function getProviderProfileRuntimeConfig(
+export function getProviderProfileRuntimeMetadataFromDatabase(
+  db: ProviderProfileStorageDatabase,
+  id: string,
+): ProviderProfileRuntimeMetadata | null {
+  const row = db
+    .select({
+      id: agentProviderProfiles.id,
+      targetRuntimesJson: agentProviderProfiles.targetRuntimesJson,
+    })
+    .from(agentProviderProfiles)
+    .where(eq(agentProviderProfiles.id, id))
+    .get()
+  if (!row) return null
+  return {
+    id: row.id,
+    targetRuntimes: parseStoredProfileJson({
+      profileId: row.id,
+      field: "target runtimes",
+      value: row.targetRuntimesJson,
+      schema: storedProviderTargetsSchema,
+    }),
+  }
+}
+
+export function getProviderProfileRuntimeConfigFromDatabase(
+  db: ProviderProfileStorageDatabase,
   id: string,
 ): ProviderProfileRuntimeConfig | null {
-  ensureLegacyProviderProfilesMigrated()
-  const db = getDatabase()
   const row = db
     .select()
     .from(agentProviderProfiles)
@@ -226,33 +328,142 @@ export function getProviderProfileRuntimeConfig(
     .get()
   if (!row) return null
 
-  const authMode = providerProfileAuthModeSchema.parse(row.authMode)
-  const encryptedToken = row.encryptedToken
-  const decryptedToken = encryptedToken
-    ? decryptProviderToken(encryptedToken)
-    : null
-  const token = decryptedToken ? normalizeProviderToken(decryptedToken) : null
-  if (authMode !== "none" && !token) {
-    throw new Error("Provider profile token is missing")
+  const authMode = parseStoredProfileScalar({
+    profileId: row.id,
+    field: "auth mode",
+    value: row.authMode,
+    schema: providerProfileAuthModeSchema,
+  })
+  const protocol = parseStoredProfileScalar({
+    profileId: row.id,
+    field: "protocol",
+    value: row.protocol,
+    schema: providerProfileProtocolSchema,
+  })
+  const name = parseStoredProfileScalar({
+    profileId: row.id,
+    field: "name",
+    value: row.name,
+    schema: z.string().trim().min(1),
+  })
+  const defaultModel = parseStoredProfileScalar({
+    profileId: row.id,
+    field: "default model",
+    value: row.defaultModel,
+    schema: z.string().trim().min(1),
+  })
+
+  let baseUrl: string
+  try {
+    baseUrl = normalizeProviderBaseUrl(row.baseUrl)
+  } catch {
+    throw new ProviderProfileStorageReadError({
+      reason: "invalid-profile",
+      profileId: row.id,
+      message: `Provider profile ${row.id} has an invalid base URL.`,
+    })
   }
+
+  let token: string | null = null
+  try {
+    const decryptedToken = row.encryptedToken
+      ? decryptProviderToken(row.encryptedToken)
+      : null
+    token = decryptedToken ? normalizeProviderToken(decryptedToken) : null
+  } catch {
+    throw new ProviderProfileStorageReadError({
+      reason: "invalid-profile",
+      profileId: row.id,
+      message: `Provider profile ${row.id} credential is unavailable.`,
+    })
+  }
+  if (authMode !== "none" && !token) {
+    throw new ProviderProfileStorageReadError({
+      reason: "invalid-profile",
+      profileId: row.id,
+      message: `Provider profile ${row.id} token is missing.`,
+    })
+  }
+
+  let headers: Record<string, string>
+  try {
+    headers = sanitizeHeaders(
+      parseStoredProfileJson({
+        profileId: row.id,
+        field: "headers",
+        value: row.headersJson,
+        schema: storedProviderHeadersSchema,
+      }),
+      { strict: true },
+    )
+  } catch (error) {
+    if (error instanceof ProviderProfileStorageReadError) throw error
+    throw new ProviderProfileStorageReadError({
+      reason: "invalid-profile",
+      profileId: row.id,
+      message: `Provider profile ${row.id} has invalid headers.`,
+    })
+  }
+  const targetRuntimes = parseStoredProfileJson({
+    profileId: row.id,
+    field: "target runtimes",
+    value: row.targetRuntimesJson,
+    schema: storedProviderTargetsSchema,
+  })
+  const capabilities = parseStoredProfileJson({
+    profileId: row.id,
+    field: "capabilities",
+    value: row.capabilitiesJson,
+    schema: storedProviderCapabilitiesSchema,
+  })
 
   return {
     id: row.id,
-    name: row.name,
+    name,
     presetId: row.presetId,
-    protocol: providerProfileProtocolSchema.parse(row.protocol),
-    baseUrl: row.baseUrl,
-    defaultModel: row.defaultModel,
+    protocol,
+    baseUrl,
+    defaultModel,
     authMode,
     token,
-    headers: parseJson(row.headersJson, {}),
-    targetRuntimes: parseJson(row.targetRuntimesJson, []).filter(
-      (target) => providerProfileTargetSchema.safeParse(target).success,
-    ),
-    capabilities: providerProfileCapabilitiesSchema
-      .catch({})
-      .parse(parseJson(row.capabilitiesJson, {})),
+    headers,
+    targetRuntimes,
+    capabilities,
   }
+}
+
+export function getProviderDefaultRuntimeConfigFromDatabase(
+  db: ProviderProfileStorageDatabase,
+  purpose: ProviderProfileDefaultPurpose,
+): ProviderDefaultRuntimeConfig | null {
+  const row = db
+    .select()
+    .from(agentProviderDefaults)
+    .where(eq(agentProviderDefaults.purpose, purpose))
+    .get()
+  if (!row?.profileId) return null
+
+  const profileId = row.profileId.trim()
+  if (!profileId) return null
+  const profile = getProviderProfileRuntimeConfigFromDatabase(db, profileId)
+  if (!profile) {
+    throw new ProviderProfileStorageReadError({
+      reason: "default-profile-not-found",
+      profileId,
+      message: `Default provider profile ${profileId} was not found.`,
+    })
+  }
+  return {
+    ...profile,
+    modelOverride: row.modelOverride?.trim() || null,
+  }
+}
+
+export function getProviderProfileRuntimeConfig(
+  id: string,
+): ProviderProfileRuntimeConfig | null {
+  ensureLegacyProviderProfilesMigrated()
+  return getProviderProfileRuntimeConfigFromDatabase(getDatabase(), id)
 }
 
 export function getLegacyClaudeProviderProfileId(): string | null {
@@ -458,12 +669,9 @@ export function getProviderDefaults(): Record<
 
 export function getProviderDefaultRuntimeConfig(
   purpose: ProviderProfileDefaultPurpose,
-): (ProviderProfileRuntimeConfig & { modelOverride: string | null }) | null {
-  const defaults = getProviderDefaults()
-  const binding = defaults[purpose]
-  if (!binding.profileId) return null
-  const profile = getProviderProfileRuntimeConfig(binding.profileId)
-  return profile ? { ...profile, modelOverride: binding.modelOverride } : null
+): ProviderDefaultRuntimeConfig | null {
+  ensureLegacyProviderProfilesMigrated()
+  return getProviderDefaultRuntimeConfigFromDatabase(getDatabase(), purpose)
 }
 
 function insertLegacyProfile(input: {

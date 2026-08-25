@@ -14,6 +14,8 @@
 
 ## Impact
 
+Owner-approved public contract decision: [consumer-impact.md](consumer-impact.md)
+
 - Affected specs: `local-job-api` (ADDED: Runtime Readiness Discovery; ADDED: Discovery Feature Advertisement)
 - Affected code: `src/shared/local-job-api.ts` (envelope types), `src/main/lib/headless/local-job-api.ts` (`toLocalJobApiRuntimeManifestEnvelope`), `src/main/lib/headless/cli-args.ts` + `cli-dispatcher.ts` (`--no-probe`, async list command), new `src/main/lib/headless/runtime-readiness.ts` reusing `getClaudeCodeCredentialMetadata`/`hasAnyClaudeCodeAccount` (`src/main/lib/claude-credentials.ts`), `getExistingClaudeCredentials` (`src/main/lib/claude-token.ts`), and `getCodexRuntimeStatus` (`src/main/lib/codex/runtime-status.ts`)
 - Depends on: RT-2 (`update-headless-claude-credential-source`) — Claude readiness must mirror the RT-2 resolution order

@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto"
 import { eq } from "drizzle-orm"
+import { redactRuntimePayload } from "../agent-runtime/redaction"
+import type { JsonValue } from "../agent-runtime/runtime-events"
 import { chats, subChats } from "../db/schema"
 import { createRollbackStash } from "../git/stash"
 
@@ -24,6 +26,7 @@ export type PersistClaudeAgentSdkAssistantResponseInput = {
   messagesToSave: any[]
   parts: any[]
   metadata: any
+  secretHints?: readonly string[]
   historyEnabled: boolean
   cwd?: string | null
   clearStreamWhenEmpty?: boolean
@@ -90,6 +93,7 @@ export async function persistClaudeAgentSdkAssistantResponse({
   messagesToSave,
   parts,
   metadata,
+  secretHints,
   historyEnabled,
   cwd,
   clearStreamWhenEmpty = true,
@@ -98,10 +102,27 @@ export async function persistClaudeAgentSdkAssistantResponse({
   now = () => new Date(),
   createRollbackStashFn = createRollbackStash,
 }: PersistClaudeAgentSdkAssistantResponseInput): Promise<PersistClaudeAgentSdkAssistantResponseResult> {
+  const redactedInput = redactRuntimePayload(
+    {
+      messagesToSave,
+      parts,
+      metadata,
+    } as JsonValue,
+    {
+      runtimeId: "claude-code",
+      runId: `claude-message-persistence:${subChatId}`,
+      source: "desktop-adapter",
+      secretHints,
+    },
+  ).payload as {
+    messagesToSave: typeof messagesToSave
+    parts: typeof parts
+    metadata: typeof metadata
+  }
   const persistence = prepareClaudeAgentSdkAssistantPersistence({
-    messagesToSave,
-    parts,
-    metadata,
+    messagesToSave: redactedInput.messagesToSave,
+    parts: redactedInput.parts,
+    metadata: redactedInput.metadata,
     createId,
     now,
   })
@@ -117,10 +138,7 @@ export async function persistClaudeAgentSdkAssistantResponse({
       })
       .where(eq(subChats.id, subChatId))
       .run()
-    db.update(chats)
-      .set({ updatedAt })
-      .where(eq(chats.id, chatId))
-      .run()
+    db.update(chats).set({ updatedAt }).where(eq(chats.id, chatId)).run()
   } else if (clearStreamWhenEmpty) {
     db.update(subChats)
       .set({
@@ -132,10 +150,7 @@ export async function persistClaudeAgentSdkAssistantResponse({
       .run()
 
     if (touchChatWhenEmpty) {
-      db.update(chats)
-        .set({ updatedAt })
-        .where(eq(chats.id, chatId))
-        .run()
+      db.update(chats).set({ updatedAt }).where(eq(chats.id, chatId)).run()
     }
   }
 
@@ -143,12 +158,12 @@ export async function persistClaudeAgentSdkAssistantResponse({
   if (
     shouldCreateClaudeAgentSdkRollbackStash({
       historyEnabled,
-      metadata,
+      metadata: redactedInput.metadata,
       cwd,
     })
   ) {
     const rollbackCwd = cwd
-    const sdkMessageUuid = metadata.sdkMessageUuid
+    const sdkMessageUuid = redactedInput.metadata.sdkMessageUuid
     if (typeof rollbackCwd === "string" && typeof sdkMessageUuid === "string") {
       await createRollbackStashFn(rollbackCwd, sdkMessageUuid)
       rollbackStashCreated = true

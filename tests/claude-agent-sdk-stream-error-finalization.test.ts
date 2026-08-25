@@ -1,7 +1,8 @@
 import { describe, expect, mock, test } from "bun:test"
+import { randomBytes } from "node:crypto"
 import { eq } from "drizzle-orm"
-import { chats, projects, subChats } from "../src/main/lib/db/schema"
 import { finalizeClaudeAgentSdkStreamError } from "../src/main/lib/claude/agent-sdk-stream-error-finalization"
+import { chats, projects, subChats } from "../src/main/lib/db/schema"
 import { createAgentJobTestDb } from "./helpers/agent-job-test-db"
 
 function seedChat(db: ReturnType<typeof createAgentJobTestDb>) {
@@ -70,7 +71,9 @@ describe("Claude Agent SDK stream error finalization", () => {
     seedChat(db)
     const input = baseInput(db)
 
-    await expect(finalizeClaudeAgentSdkStreamError(input)).resolves.toMatchObject({
+    await expect(
+      finalizeClaudeAgentSdkStreamError(input),
+    ).resolves.toMatchObject({
       status: "failed",
       currentText: "",
       metadata: { sessionId: "session-1" },
@@ -128,7 +131,9 @@ describe("Claude Agent SDK stream error finalization", () => {
       currentText: "",
     }
 
-    await expect(finalizeClaudeAgentSdkStreamError(input)).resolves.toMatchObject({
+    await expect(
+      finalizeClaudeAgentSdkStreamError(input),
+    ).resolves.toMatchObject({
       status: "failed",
       error: {
         message: "Previous session expired. Please try again.",
@@ -145,5 +150,30 @@ describe("Claude Agent SDK stream error finalization", () => {
       sessionId: null,
       streamId: "stream-1",
     })
+  })
+
+  test("passes exact run secret hints through partial error persistence", async () => {
+    const db = createAgentJobTestDb()
+    seedChat(db)
+    const gatewayToken = randomBytes(32).toString("hex")
+    const input = {
+      ...baseInput(db),
+      currentText: `partial assistant echoed ${gatewayToken}`,
+      metadata: {
+        sessionId: "session-1",
+        note: `metadata echoed ${gatewayToken}`,
+      },
+      secretHints: [gatewayToken],
+    }
+
+    await finalizeClaudeAgentSdkStreamError(input)
+
+    const persisted = db
+      .select()
+      .from(subChats)
+      .where(eq(subChats.id, "sub-1"))
+      .get()?.messages
+    expect(persisted).not.toContain(gatewayToken)
+    expect(persisted).toContain("<redacted>")
   })
 })

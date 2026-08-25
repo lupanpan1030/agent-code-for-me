@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, test } from "bun:test"
+import { randomBytes } from "node:crypto"
 import {
   existsSync,
   mkdirSync,
@@ -25,6 +26,7 @@ import {
   startAgentJob,
 } from "../src/main/lib/headless/job-store"
 import { clearRuntimeReadinessCacheForTest } from "../src/main/lib/headless/runtime-readiness"
+import type { ProviderProfileRuntimeConfig } from "../src/main/lib/provider-profiles/storage"
 import { LOCAL_JOB_API_PROJECT_NOT_REGISTERED } from "../src/shared/local-job-api"
 import { createAgentJobTestDb } from "./helpers/agent-job-test-db"
 
@@ -77,6 +79,24 @@ function seedProviderProfile(
       capabilitiesJson: "{}",
     })
     .run()
+}
+
+function runtimeProviderProfileWithToken(
+  token: string,
+): ProviderProfileRuntimeConfig {
+  return {
+    id: "completion-main",
+    name: "completion-main",
+    presetId: null,
+    protocol: "openai-responses",
+    baseUrl: "https://provider.example.com/v1",
+    defaultModel: "provider-default-model",
+    authMode: "bearer",
+    token,
+    headers: {},
+    targetRuntimes: ["codex"],
+    capabilities: {},
+  }
 }
 
 function seedLocalPackageProject(db: ReturnType<typeof createAgentJobTestDb>) {
@@ -422,6 +442,129 @@ describe("headless CLI dispatcher", () => {
     expect(events.map((event) => event.type)).toContain("usage_update")
     expect(events.map((event) => event.type)).not.toContain("artifact_created")
     expect(events.map((event) => event.type)).not.toContain("tool_started")
+  })
+
+  test("redacts a bare upstream profile token from structured completion results", async () => {
+    const db = createAgentJobTestDb()
+    const upstreamToken = randomBytes(32).toString("hex")
+    seedProviderProfile(db, { id: "completion-main", targets: ["codex"] })
+    const stdout = writer()
+    let authorization: string | null = null
+
+    const code = await runHeadlessCliCommand({
+      db,
+      argv: [
+        "Locus",
+        HEADLESS_CLI_MARKER,
+        "api",
+        "runs",
+        "create",
+        "--request",
+        "-",
+        "--json",
+      ],
+      stdin: Readable.from([
+        JSON.stringify({
+          apiVersion: "locus.local-job.v1",
+          kind: "completion",
+          consumer: { id: "generic-tool" },
+          provider: { profileId: "completion-main" },
+          messages: [{ role: "user", content: "Return JSON." }],
+          responseFormat: {
+            type: "json_schema",
+            schema: {
+              type: "object",
+              required: ["echo"],
+              properties: { echo: { type: "string" } },
+            },
+          },
+        }),
+      ]),
+      stdout: stdout.stream,
+      stderr: writer().stream,
+      providerBindingDependencies: {
+        getProviderProfileRuntimeConfig: () =>
+          runtimeProviderProfileWithToken(upstreamToken),
+      },
+      completionFetch: async (_url, init) => {
+        authorization = new Headers(init?.headers).get("authorization")
+        return new Response(
+          JSON.stringify({
+            output_text: JSON.stringify({ echo: upstreamToken }),
+            usage: { input_tokens: 2, output_tokens: 1 },
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        )
+      },
+    })
+
+    const output = stdout.value()
+    const created = JSON.parse(output)
+    const persisted = JSON.stringify({
+      job: getAgentJob(db, created.job.id),
+      events: listAgentJobEvents(db, created.job.id),
+    })
+    expect(code).toBe(0)
+    expect(authorization).toBe(`Bearer ${upstreamToken}`)
+    expect(created.result.result.content).toEqual({
+      echo: "<redacted>",
+    })
+    expect(output).not.toContain(upstreamToken)
+    expect(persisted).not.toContain(upstreamToken)
+  })
+
+  test("redacts a bare upstream profile token from completion failures", async () => {
+    const db = createAgentJobTestDb()
+    const upstreamToken = randomBytes(32).toString("hex")
+    seedProviderProfile(db, { id: "completion-main", targets: ["codex"] })
+    const stdout = writer()
+
+    const code = await runHeadlessCliCommand({
+      db,
+      argv: [
+        "Locus",
+        HEADLESS_CLI_MARKER,
+        "api",
+        "runs",
+        "create",
+        "--request",
+        "-",
+        "--json",
+      ],
+      stdin: Readable.from([
+        JSON.stringify({
+          apiVersion: "locus.local-job.v1",
+          kind: "completion",
+          consumer: { id: "generic-tool" },
+          provider: { profileId: "completion-main" },
+          messages: [{ role: "user", content: "Fail safely." }],
+        }),
+      ]),
+      stdout: stdout.stream,
+      stderr: writer().stream,
+      providerBindingDependencies: {
+        getProviderProfileRuntimeConfig: () =>
+          runtimeProviderProfileWithToken(upstreamToken),
+      },
+      completionFetch: async () =>
+        new Response(`upstream echoed ${upstreamToken}`, { status: 401 }),
+    })
+
+    const output = stdout.value()
+    const created = JSON.parse(output)
+    const persistedJob = getAgentJob(db, created.job.id)
+    const persisted = JSON.stringify({
+      job: persistedJob,
+      events: listAgentJobEvents(db, created.job.id),
+    })
+    expect(code).toBe(1)
+    expect(persistedJob?.errorCode).toBe("provider_request_failed")
+    expect(persistedJob?.errorMessage).toContain("upstream echoed <redacted>")
+    expect(output).not.toContain(upstreamToken)
+    expect(persisted).not.toContain(upstreamToken)
   })
 
   test("runs Local Job API completion with caller-owned JSON schema", async () => {

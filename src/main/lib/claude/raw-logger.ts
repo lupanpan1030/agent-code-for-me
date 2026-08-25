@@ -1,6 +1,6 @@
+import { appendFile, mkdir, readdir, stat, unlink } from "node:fs/promises"
+import { join } from "node:path"
 import * as electron from "electron"
-import { join } from "path"
-import { appendFile, mkdir, stat, readdir, unlink } from "fs/promises"
 import { redactRuntimePayload } from "../agent-runtime/redaction"
 import type { JsonValue } from "../agent-runtime/runtime-events"
 
@@ -116,6 +116,7 @@ export async function cleanupOldLogs(): Promise<void> {
 export async function logRawClaudeMessage(
   sessionId: string,
   msg: unknown,
+  secretHints?: readonly string[],
 ): Promise<void> {
   if (!isEnabled()) return
 
@@ -148,6 +149,7 @@ export async function logRawClaudeMessage(
       runtimeId: "claude-code",
       runId: sessionId,
       source: "runtime-diagnostic",
+      secretHints,
     })
 
     const entry = {
@@ -159,7 +161,8 @@ export async function logRawClaudeMessage(
       },
     }
 
-    await appendFile(currentLogFile!, JSON.stringify(entry) + "\n")
+    if (!currentLogFile) return
+    await appendFile(currentLogFile, `${JSON.stringify(entry)}\n`)
   } catch (err) {
     // Don't let logging errors break the main flow
     console.error("[raw-logger] Failed to log:", err)

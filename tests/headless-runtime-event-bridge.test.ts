@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test"
+import { runPersistedAgentJob } from "../src/main/lib/headless/job-runner"
 import {
   createAgentJob,
   listAgentJobEvents,
 } from "../src/main/lib/headless/job-store"
 import { getLocalJobApiEvents } from "../src/main/lib/headless/local-job-api"
-import { runPersistedAgentJob } from "../src/main/lib/headless/job-runner"
 import { createAgentJobTestDb } from "./helpers/agent-job-test-db"
 
 const SECRET = "sk-abcdefghijklmnopqrstuvwxyz123456"
@@ -62,7 +62,9 @@ describe("headless runtime event bridge", () => {
 
     const events = listAgentJobEvents(db, job.id)
     const payloads = events.map(parsePayload)
-    const persistedJson = payloads.map((payload) => JSON.stringify(payload)).join("\n")
+    const persistedJson = payloads
+      .map((payload) => JSON.stringify(payload))
+      .join("\n")
 
     expect(events.map((event) => event.type)).toEqual([
       "job_created",
@@ -133,7 +135,9 @@ describe("headless runtime event bridge", () => {
     })
 
     const apiEvents = getLocalJobApiEvents(db, job.id)
-    const assistant = apiEvents.find((event) => event.type === "assistant_delta")
+    const assistant = apiEvents.find(
+      (event) => event.type === "assistant_delta",
+    )
     const statusEvents = apiEvents.filter((event) => event.type === "status")
     const commandStarted = statusEvents.find(
       (event) => (event.payload as { label?: string }).label === "node",

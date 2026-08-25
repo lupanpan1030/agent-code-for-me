@@ -11,7 +11,10 @@ import {
   type CodexAppServerPermissionMapping,
   getCodexAppServerPermissionMapping,
 } from "../agent-runtime/permission-policy"
-import { mapDesktopStreamChunkToRunEvents } from "../agent-runtime/stream-event-mapper"
+import {
+  mapDesktopStreamChunkToRunEvents,
+  redactRendererRuntimeChunk,
+} from "../agent-runtime/stream-event-mapper"
 import type { CodexDesktopAdapter } from "./adapter-types"
 import {
   type CodexAppServerApplyPatchApprovalParams,
@@ -420,6 +423,33 @@ export function createCodexAppServerAdapter({
           cwd: request.context.cwd,
           env: appServerProviderBinding.runtimeEnv,
         })
+      const runtimeSecretHints = [
+        providerGatewayToken,
+        appManagedApiKey,
+      ].filter((secret): secret is string => Boolean(secret))
+      const redactRuntimeChunk = (
+        chunk: Record<string, unknown>,
+      ): Record<string, unknown> =>
+        redactRendererRuntimeChunk({
+          runtimeId: "codex",
+          runId: request.identity.runId,
+          jobId: request.identity.jobId,
+          chunk,
+          secretHints: runtimeSecretHints,
+        }) as Record<string, unknown>
+      const emitRuntimeChunk = (
+        chunk: Record<string, unknown>,
+      ): Record<string, unknown> => {
+        const redactedChunk = redactRuntimeChunk(chunk)
+        emit?.(redactedChunk)
+        return redactedChunk
+      }
+      const redactRuntimeErrorMessage = (message: string): string => {
+        const redacted = redactRuntimeChunk({ type: "error", message })
+        return typeof redacted.message === "string"
+          ? redacted.message
+          : "Codex app-server failed."
+      }
       const runtimeMapper = createCodexAppServerRuntimeEventMapper()
       const { threadSandbox, turnSandbox } = sandboxForRequest(request)
       const controlledEditToolEnabled =
@@ -432,7 +462,7 @@ export function createCodexAppServerAdapter({
         emit && registerPendingQuestion && unregisterPendingQuestion
           ? createCodexAppServerUserInteractionBridge({
               subChatId: request.context.subChatId,
-              emit,
+              emit: emitRuntimeChunk,
               registerPending: registerPendingQuestion,
               unregisterPending: unregisterPendingQuestion,
               timeoutMs: userInputTimeoutMs,
@@ -443,15 +473,15 @@ export function createCodexAppServerAdapter({
         permission,
         controlledEditEnabled: controlledEditToolEnabled,
         guardedContract,
-        emit,
+        emit: emit ? emitRuntimeChunk : undefined,
         registerPendingQuestion,
         unregisterPendingQuestion,
         timeoutMs: userInputTimeoutMs,
         onGuardEvent: (event) => {
-          emit?.({ type: "guard-event", event })
+          emitRuntimeChunk({ type: "guard-event", event })
         },
         onObservedToolDecision: (event) => {
-          emit?.({ type: "observed-tool-decision", ...event })
+          emitRuntimeChunk({ type: "observed-tool-decision", ...event })
         },
       })
       let sequence = 0
@@ -470,17 +500,19 @@ export function createCodexAppServerAdapter({
             emittedSessionInitThreadIds.add(threadId)
           }
         }
-        emit?.(chunk)
+        const redactedChunk = emitRuntimeChunk(chunk)
         const events = mapDesktopStreamChunkToRunEvents({
           runtimeId: "codex",
           runId: request.identity.runId,
           jobId: request.identity.jobId,
           sequence: ++sequence,
           chunk,
+          secretHints: runtimeSecretHints,
         })
         for (const event of events) {
           request.trace.emit(event)
         }
+        return redactedChunk
       }
 
       const terminal = new Promise<DesktopRunResult>((resolve) => {
@@ -490,17 +522,18 @@ export function createCodexAppServerAdapter({
             notification as CodexAppServerNotification,
           )
           for (const chunk of chunks) {
-            emitChunk(chunk)
-            if (chunk.type === "error") {
+            const redactedChunk = emitChunk(chunk)
+            if (!redactedChunk) continue
+            if (redactedChunk.type === "error") {
               lastError = {
                 message:
-                  typeof chunk.errorText === "string"
-                    ? chunk.errorText
+                  typeof redactedChunk.errorText === "string"
+                    ? redactedChunk.errorText
                     : "Codex app-server error",
               }
             }
-            if (chunk.type === "finish") {
-              const metadata = chunk.messageMetadata as
+            if (redactedChunk.type === "finish") {
+              const metadata = redactedChunk.messageMetadata as
                 | {
                     sessionId?: string | null
                     inputTokens?: number
@@ -510,11 +543,11 @@ export function createCodexAppServerAdapter({
                 | undefined
               finishRun?.({
                 status:
-                  chunk.status === "failed" ||
-                  chunk.status === "canceled" ||
-                  chunk.status === "interrupted" ||
-                  chunk.status === "succeeded"
-                    ? chunk.status
+                  redactedChunk.status === "failed" ||
+                  redactedChunk.status === "canceled" ||
+                  redactedChunk.status === "interrupted" ||
+                  redactedChunk.status === "succeeded"
+                    ? redactedChunk.status
                     : "succeeded",
                 sessionId:
                   runtimeMapper.getSessionId() ?? metadata?.sessionId ?? null,
@@ -740,7 +773,7 @@ export function createCodexAppServerAdapter({
           const mcpStatus = await transport.request("mcpServerStatus/list", {
             detail: "toolsAndAuthOnly",
           })
-          emit?.({
+          emitRuntimeChunk({
             type: "runtime-status",
             ok: true,
             blocker: {
@@ -752,7 +785,7 @@ export function createCodexAppServerAdapter({
             mcp: appServerMcpStatusSummary(mcpStatus),
           })
         } catch (mcpStatusError) {
-          emit?.({
+          emitRuntimeChunk({
             type: "runtime-status",
             ok: true,
             blocker: {
@@ -798,11 +831,14 @@ export function createCodexAppServerAdapter({
 
         runResult = await terminal
       } catch (error) {
+        const message = redactRuntimeErrorMessage(
+          error instanceof Error ? error.message : String(error),
+        )
         runResult = {
           status: request.signal.aborted ? "canceled" : "failed",
           sessionId: runtimeMapper.getSessionId(),
           error: {
-            message: error instanceof Error ? error.message : String(error),
+            message,
           },
         }
       } finally {
@@ -819,9 +855,9 @@ export function createCodexAppServerAdapter({
         } catch (scrubError) {
           const message =
             scrubError instanceof Error
-              ? scrubError.message
-              : String(scrubError)
-          emit?.({
+              ? redactRuntimeErrorMessage(scrubError.message)
+              : redactRuntimeErrorMessage(String(scrubError))
+          emitRuntimeChunk({
             type: "runtime-status",
             ok: false,
             blocker: {

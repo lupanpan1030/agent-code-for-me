@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { randomBytes } from "node:crypto"
 import {
   existsSync,
   mkdirSync,
@@ -15,6 +16,7 @@ import {
   type DesktopPermissionPolicy,
   resolveDesktopPermissionPolicy,
 } from "../src/main/lib/agent-runtime/permission-policy"
+import type { RunEvent } from "../src/main/lib/agent-runtime/runtime-events"
 import { createCodexAppServerAdapter } from "../src/main/lib/codex/app-server-adapter"
 import type {
   CodexAppServerClientNotificationMethod,
@@ -72,6 +74,7 @@ class FakeCodexAppServerTransport implements CodexAppServerTransport {
       ) => unknown | Promise<unknown>)
     | null = null
   onTurnStart?: () => void | Promise<void>
+  assistantDelta = "hello from app-server"
   currentThreadId = "thread-1"
   currentSessionId = "session-1"
 
@@ -147,7 +150,7 @@ class FakeCodexAppServerTransport implements CodexAppServerTransport {
           threadId: this.currentThreadId,
           turnId: "turn-1",
           itemId: "item-1",
-          delta: "hello from app-server",
+          delta: this.assistantDelta,
         },
       })
       this.emitNotification({
@@ -347,7 +350,7 @@ describe("Codex app-server adapter", () => {
 
   test("accepts only the shared app-server permission mapping before transport startup", async () => {
     const transport = new FakeCodexAppServerTransport()
-    const events: unknown[] = []
+    const events: RunEvent[] = []
 
     const result = await createCodexAppServerAdapter({
       enabled: true,
@@ -374,6 +377,53 @@ describe("Codex app-server adapter", () => {
     expect(events.map((event: any) => event.type)).toContain("assistant_delta")
     expect(events.map((event: any) => event.type)).toContain("usage_update")
     expect(events.map((event: any) => event.type)).toContain("completed")
+  })
+
+  test("redacts a bare gateway token before adapter emission and trace persistence", async () => {
+    const gatewayToken = randomBytes(32).toString("hex")
+    const transport = new FakeCodexAppServerTransport()
+    transport.assistantDelta = `malicious child echoed ${gatewayToken}`
+    const chunks: Record<string, unknown>[] = []
+    const events: unknown[] = []
+
+    const result = await createCodexAppServerAdapter({
+      enabled: true,
+      providerGatewayToken: gatewayToken,
+      createTransport: () => transport,
+      emit: (chunk) => chunks.push(chunk),
+    }).run(
+      createRequest(appServerPolicy(), {
+        providerBinding: {
+          authMode: "provider-profile",
+          providerProfileId: "profile-1",
+          gatewayEndpoint:
+            "http://127.0.0.1:4321/profile/profile-1/responses/v1",
+          model: "gpt-test",
+        },
+        trace: { emit: (event) => events.push(event) },
+      }),
+    )
+
+    const adapterOutput = JSON.stringify({ result, chunks, events })
+    const assistantChunk = chunks.find((chunk) => chunk.type === "text-delta")
+    const assistantEvent = events.find(
+      (event) => event.type === "assistant_delta",
+    )
+
+    expect(result.status).toBe("succeeded")
+    expect(assistantChunk).toMatchObject({
+      delta: "malicious child echoed <redacted>",
+    })
+    expect(assistantEvent).toMatchObject({
+      payload: {
+        delta: "malicious child echoed <redacted>",
+      },
+      redaction: {
+        status: "redacted",
+        appliedRules: ["secret-hint"],
+      },
+    })
+    expect(adapterOutput).not.toContain(gatewayToken)
   })
 
   test("sends prepared Locus Agent prompt context to turn/start", async () => {

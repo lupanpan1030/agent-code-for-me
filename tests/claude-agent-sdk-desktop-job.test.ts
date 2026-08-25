@@ -23,6 +23,7 @@ describe("Claude Agent SDK desktop job setup", () => {
       prompt: "hello",
       runId: "run-1",
       cancel,
+      secretHints: ["run-secret-hint"],
       dependencies: {
         createAndRegisterDesktopChatAgentJob: (dbArg, input) => {
           registrations.push({ db: dbArg, input })
@@ -61,6 +62,7 @@ describe("Claude Agent SDK desktop job setup", () => {
         runtimeId: "claude-code",
         runId: "run-1",
         jobId: "job-1",
+        secretHints: ["run-secret-hint"],
       },
     ])
   })

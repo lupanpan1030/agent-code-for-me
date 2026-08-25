@@ -136,6 +136,7 @@ export type CreateClaudeAgentSdkStreamConsumerInput = {
   stderrLines: string[]
   db: any
   messagesToSave: any[]
+  secretHints?: readonly string[]
   guardedContract: FinalizeClaudeAgentSdkGuardMetadataInput["guardedContract"]
   guardedPreRunStatus: FinalizeClaudeAgentSdkGuardMetadataInput["guardedPreRunStatus"]
   guardEvents: FinalizeClaudeAgentSdkGuardMetadataInput["guardEvents"]
@@ -172,6 +173,7 @@ export function createClaudeAgentSdkStreamConsumer({
   stderrLines,
   db,
   messagesToSave,
+  secretHints,
   guardedContract,
   guardedPreRunStatus,
   guardEvents,
@@ -227,6 +229,7 @@ export function createClaudeAgentSdkStreamConsumer({
             state: streamIteration,
             message: msg,
             isUsingOllama,
+            secretHints,
           }).messageCount,
         )
 
@@ -248,6 +251,7 @@ export function createClaudeAgentSdkStreamConsumer({
           }),
           subId,
           chunkCount: state.getChunkCount(),
+          secretHints,
           emit: emitWithMcpRegistryVerification,
           complete,
         })
@@ -269,6 +273,7 @@ export function createClaudeAgentSdkStreamConsumer({
           parts,
           historyEnabled,
           aborted: abortSignal.aborted,
+          secretHints,
           mode,
           subId,
           subChatId,
@@ -311,6 +316,7 @@ export function createClaudeAgentSdkStreamConsumer({
         chatId,
         subChatId,
         messagesToSave,
+        secretHints,
         parts,
         metadata: state.getMetadata(),
         currentText: state.getCurrentText(),

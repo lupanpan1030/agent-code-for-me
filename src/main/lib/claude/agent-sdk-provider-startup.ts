@@ -1,11 +1,13 @@
+import { parseProviderProfileSource } from "../../../shared/provider-profile-types"
 import type { DesktopRunPreflightBlocker } from "../agent-runtime/preflight"
+import { redactExactSecretHints } from "../agent-runtime/redaction"
 import { setConnectionMethod as recordAnalyticsConnectionMethod } from "../analytics"
 import type { ClaudeCodeCredentialMetadata } from "../claude-credentials"
+import { revokeProviderGatewayToken } from "../provider-profiles/gateway"
 import type { ProviderProfileRuntimeConfig } from "../provider-profiles/storage"
-import { parseProviderProfileSource } from "../../../shared/provider-profile-types"
 import {
-  normalizeClaudeProviderRuntimeConfig,
   type ClaudeProviderRuntimeConfig,
+  normalizeClaudeProviderRuntimeConfig,
 } from "./provider-runtime-config"
 
 type MaybePromise<T> = T | Promise<T>
@@ -32,6 +34,8 @@ export type ClaudeAgentSdkProviderStartup = {
   claudeCredentialMetadata: ClaudeCodeCredentialMetadata | null
   finalCustomConfig?: ClaudeProviderRuntimeConfig
   isUsingOllama: boolean
+  secretHints: readonly string[]
+  cleanupRuntimeSecrets: () => void
 }
 
 export type ClaudeAgentSdkConnectionMethod =
@@ -72,6 +76,7 @@ export type ClaudeAgentSdkProviderStartupDependencies = {
     providerId: string,
     kind: "anthropic",
   ) => Promise<ProviderGatewayEndpoint>
+  revokeProviderGatewayToken: (token: string) => boolean
   getValidClaudeCodeCredential: () => Promise<{
     accessToken: string | null
     metadata: ClaudeCodeCredentialMetadata
@@ -98,6 +103,7 @@ const defaultDependencies: ClaudeAgentSdkProviderStartupDependencies = {
     const gateway = await import("../provider-profiles/gateway")
     return gateway.getProviderGatewayEndpoint(providerId, kind)
   },
+  revokeProviderGatewayToken,
   getValidClaudeCodeCredential: async () => {
     const credentials = await import("../claude-credentials")
     return credentials.getValidClaudeCodeCredential()
@@ -135,6 +141,13 @@ export async function resolveClaudeAgentSdkProviderStartup(input: {
 }): Promise<ClaudeAgentSdkProviderStartupResult> {
   const dependencies = withDefaultDependencies(input.dependencies)
   let providerConfig: ClaudeProviderRuntimeConfig | undefined
+  let providerGatewayToken: string | null = null
+  let providerGatewayTokenRevoked = false
+  const cleanupRuntimeSecrets = () => {
+    if (!providerGatewayToken || providerGatewayTokenRevoked) return
+    providerGatewayTokenRevoked = true
+    dependencies.revokeProviderGatewayToken(providerGatewayToken)
+  }
 
   const selectedProviderProfileId =
     await dependencies.parseProviderProfileSource(input.modelSource)
@@ -159,6 +172,7 @@ export async function resolveClaudeAgentSdkProviderStartup(input: {
       profile.id,
       "anthropic",
     )
+    providerGatewayToken = gateway.token
     providerConfig = {
       model: profile.defaultModel,
       baseUrl: gateway.baseUrl,
@@ -201,27 +215,68 @@ export async function resolveClaudeAgentSdkProviderStartup(input: {
     }
   }
 
-  const offlineResult = await dependencies.checkOfflineFallback(
-    providerConfig,
-    claudeCodeToken,
-    undefined,
-    input.offlineModeEnabled ?? false,
+  const secretHints = [providerGatewayToken, claudeCodeToken].filter(
+    (secret): secret is string => Boolean(secret),
   )
 
-  if (offlineResult.error) {
+  let offlineResult: ClaudeOfflineFallbackResult
+  try {
+    offlineResult = await dependencies.checkOfflineFallback(
+      providerConfig,
+      claudeCodeToken,
+      undefined,
+      input.offlineModeEnabled ?? false,
+    )
+  } catch (error) {
+    cleanupRuntimeSecrets()
+    const message = redactExactSecretHints(
+      error instanceof Error ? error.message : String(error),
+      secretHints,
+    ).value
     return {
       ok: false,
       blocker: {
         id: "provider-profile",
         status: "blocked",
-        message: `Offline mode unavailable: ${offlineResult.error}`,
+        message: `Provider startup failed: ${message}`,
       },
     }
   }
 
-  const finalCustomConfig = offlineResult.config
-    ? normalizeClaudeProviderRuntimeConfig(offlineResult.config)
-    : providerConfig
+  if (offlineResult.error) {
+    cleanupRuntimeSecrets()
+    return {
+      ok: false,
+      blocker: {
+        id: "provider-profile",
+        status: "blocked",
+        message: `Offline mode unavailable: ${
+          redactExactSecretHints(offlineResult.error, secretHints).value
+        }`,
+      },
+    }
+  }
+
+  let finalCustomConfig: ClaudeProviderRuntimeConfig | undefined
+  try {
+    finalCustomConfig = offlineResult.config
+      ? normalizeClaudeProviderRuntimeConfig(offlineResult.config)
+      : providerConfig
+  } catch (error) {
+    cleanupRuntimeSecrets()
+    const message = redactExactSecretHints(
+      error instanceof Error ? error.message : String(error),
+      secretHints,
+    ).value
+    return {
+      ok: false,
+      blocker: {
+        id: "provider-profile",
+        status: "blocked",
+        message: `Provider startup failed: ${message}`,
+      },
+    }
+  }
   const isUsingOllama = offlineResult.isUsingOllama
 
   if (finalCustomConfig?.baseUrl) {
@@ -231,15 +286,18 @@ export async function resolveClaudeAgentSdkProviderStartup(input: {
         finalCustomConfig.baseUrl,
       )
     } catch (providerError) {
+      cleanupRuntimeSecrets()
       return {
         ok: false,
         blocker: {
           id: "local-only",
           status: "blocked",
-          message:
+          message: redactExactSecretHints(
             providerError instanceof Error
               ? providerError.message
               : String(providerError),
+            secretHints,
+          ).value,
         },
       }
     }
@@ -253,6 +311,14 @@ export async function resolveClaudeAgentSdkProviderStartup(input: {
       claudeCredentialMetadata,
       finalCustomConfig,
       isUsingOllama,
+      secretHints: [
+        ...new Set(
+          [...secretHints, finalCustomConfig?.token].filter(
+            (secret): secret is string => Boolean(secret),
+          ),
+        ),
+      ],
+      cleanupRuntimeSecrets,
     },
   }
 }
@@ -305,11 +371,17 @@ export async function prepareClaudeAgentSdkProviderStartupForDesktopRun(input: {
     return providerStartup
   }
 
-  const connectionMethod = recordClaudeAgentSdkConnectionMethod({
-    finalCustomConfig: providerStartup.startup.finalCustomConfig,
-    isUsingOllama: providerStartup.startup.isUsingOllama,
-    setConnectionMethod: input.setConnectionMethod,
-  })
+  let connectionMethod: ClaudeAgentSdkConnectionMethod
+  try {
+    connectionMethod = recordClaudeAgentSdkConnectionMethod({
+      finalCustomConfig: providerStartup.startup.finalCustomConfig,
+      isUsingOllama: providerStartup.startup.isUsingOllama,
+      setConnectionMethod: input.setConnectionMethod,
+    })
+  } catch (error) {
+    providerStartup.startup.cleanupRuntimeSecrets()
+    throw error
+  }
 
   return {
     ok: true,

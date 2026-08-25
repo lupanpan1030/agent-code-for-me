@@ -1,15 +1,11 @@
 import type { AgentRuntimeId } from "../../../shared/agent-runtime-capabilities"
 import type { AgentJobEvent } from "../db/schema"
 import {
-  appendAgentJobEvent,
   type AgentJobDatabase,
+  appendAgentJobEvent,
 } from "../headless/job-store"
 import { redactRuntimePayload } from "./redaction"
-import {
-  createRunEvent,
-  type JsonValue,
-  type RunEvent,
-} from "./runtime-events"
+import { createRunEvent, type JsonValue, type RunEvent } from "./runtime-events"
 
 export type DesktopStreamChunk = Record<string, unknown> & { type?: string }
 
@@ -31,9 +27,10 @@ export type DesktopStreamEventMapper = {
   map(chunk: unknown): RunEvent[]
 }
 
-export type RedactRendererDiagnosticChunkInput = DesktopStreamEventMapperContext & {
-  chunk: unknown
-}
+export type RedactRendererDiagnosticChunkInput =
+  DesktopStreamEventMapperContext & {
+    chunk: unknown
+  }
 
 export type RuntimeRendererChunkEmitterInput = {
   runtimeId: AgentRuntimeId
@@ -41,6 +38,7 @@ export type RuntimeRendererChunkEmitterInput = {
   getJobId: () => string | null | undefined
   getDb: () => AgentJobDatabase | null | undefined
   getMapper: () => DesktopStreamEventMapper | null | undefined
+  getSecretHints?: () => readonly string[]
   isActive: () => boolean
   markInactive: () => void
   markFailed: () => void
@@ -65,10 +63,7 @@ function isObject(value: unknown): value is Record<string, unknown> {
 
 function toJsonValue(value: unknown, seen = new WeakSet<object>()): JsonValue {
   if (value === null) return null
-  if (
-    typeof value === "string" ||
-    typeof value === "boolean"
-  ) {
+  if (typeof value === "string" || typeof value === "boolean") {
     return value
   }
   if (typeof value === "number") {
@@ -90,7 +85,11 @@ function toJsonValue(value: unknown, seen = new WeakSet<object>()): JsonValue {
   seen.add(value)
   const output: Record<string, JsonValue> = {}
   for (const [key, child] of Object.entries(value)) {
-    if (child === undefined || typeof child === "function" || typeof child === "symbol") {
+    if (
+      child === undefined ||
+      typeof child === "function" ||
+      typeof child === "symbol"
+    ) {
       continue
     }
     output[key] = toJsonValue(child, seen)
@@ -99,7 +98,10 @@ function toJsonValue(value: unknown, seen = new WeakSet<object>()): JsonValue {
   return output
 }
 
-function getString(chunk: Record<string, unknown>, key: string): string | undefined {
+function getString(
+  chunk: Record<string, unknown>,
+  key: string,
+): string | undefined {
   const value = chunk[key]
   return typeof value === "string" ? value : undefined
 }
@@ -147,10 +149,7 @@ function eventPayloadForChunk(chunk: Record<string, unknown>): {
         type: "reasoning_delta",
         payload: {
           id: getString(chunk, "id") ?? null,
-          delta:
-            getString(chunk, "delta") ??
-            getString(chunk, "text") ??
-            "",
+          delta: getString(chunk, "delta") ?? getString(chunk, "text") ?? "",
         },
       }
     case "tool-input-start":
@@ -386,6 +385,7 @@ export function createRuntimeRendererChunkEmitter({
   getJobId,
   getDb,
   getMapper,
+  getSecretHints,
   isActive,
   markInactive,
   markFailed,
@@ -406,18 +406,22 @@ export function createRuntimeRendererChunkEmitter({
         const events = mapper.map(chunk)
         appendRunEventsToAgentJob(db, events)
       } catch (eventError) {
-        warn(`${warningLabel} Failed to persist desktop run events:`, eventError)
+        warn(
+          `${warningLabel} Failed to persist desktop run events:`,
+          eventError,
+        )
       }
     }
 
     if (!isActive()) return false
     try {
       emitNext(
-        redactRendererDiagnosticChunk({
+        redactRendererRuntimeChunk({
           runtimeId,
           runId,
           jobId: getJobId(),
           chunk,
+          secretHints: getSecretHints?.(),
         }),
       )
       return true

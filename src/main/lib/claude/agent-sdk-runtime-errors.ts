@@ -1,7 +1,9 @@
 import {
-  DesktopRunPreflightError,
   type DesktopRunPreflightBlocker,
+  DesktopRunPreflightError,
 } from "../agent-runtime/preflight"
+import { redactRuntimePayload } from "../agent-runtime/redaction"
+import type { JsonValue } from "../agent-runtime/runtime-events"
 import type { UIMessageChunk } from "./types"
 
 export type ClaudeAgentSdkRuntimeErrorEmitter = (
@@ -16,6 +18,9 @@ export type ClaudeAgentSdkPreflightBlockerEmitter = (
 export type CreateClaudeAgentSdkRuntimeErrorHandlersInput = {
   cwd: string
   mode: string
+  runId?: string
+  getSecretHints?: () => readonly string[]
+  isActive?: () => boolean
   emit: (chunk: UIMessageChunk) => unknown
   complete: () => void
   env?: {
@@ -33,6 +38,9 @@ export type ClaudeAgentSdkRuntimeErrorHandlers = {
 export function createClaudeAgentSdkRuntimeErrorHandlers({
   cwd,
   mode,
+  runId,
+  getSecretHints,
+  isActive = () => true,
   emit,
   complete,
   env = {
@@ -42,12 +50,25 @@ export function createClaudeAgentSdkRuntimeErrorHandlers({
   error: logError = console.error,
 }: CreateClaudeAgentSdkRuntimeErrorHandlersInput): ClaudeAgentSdkRuntimeErrorHandlers {
   const emitError: ClaudeAgentSdkRuntimeErrorEmitter = (error, context) => {
-    const errorMessage =
-      error instanceof Error ? error.message : String(error)
-    const errorStack = error instanceof Error ? error.stack : undefined
+    const redactedError = redactRuntimePayload(
+      {
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? (error.stack ?? null) : null,
+      } as JsonValue,
+      {
+        runtimeId: "claude-code",
+        runId: runId ?? "claude-runtime-error",
+        source: "runtime-diagnostic",
+        secretHints: getSecretHints?.(),
+      },
+    ).payload as { message: string; stack: string | null }
+    const errorMessage = redactedError.message
+    const errorStack = redactedError.stack ?? undefined
 
-    logError(`[claude] ${context}:`, errorMessage)
-    if (errorStack) logError("[claude] Stack:", errorStack)
+    if (isActive()) {
+      logError(`[claude] ${context}:`, errorMessage)
+      if (errorStack) logError("[claude] Stack:", errorStack)
+    }
 
     emit({
       type: "error",

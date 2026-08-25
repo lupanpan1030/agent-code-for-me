@@ -55,6 +55,7 @@ type McpOAuthCall = {
 
 const GLOBAL_MCP_PATH = "__global__"
 const originalHome = process.env.HOME
+const originalCodexHome = process.env.CODEX_HOME
 
 let claudeConfig: MockClaudeConfig = {}
 let claudeDirConfig: MockClaudeConfig = {}
@@ -362,6 +363,7 @@ beforeEach(() => {
   claudeMcpConfig.refreshClaudeMcpConfig()
   codexMcpConfig.clearCodexMcpConfigCache()
   mockHome = originalHome || realOs.tmpdir()
+  delete process.env.CODEX_HOME
   delete process.env.CODEX_REMOTE_TOKEN
   delete process.env.CODEX_MISSING_ENV
 })
@@ -375,6 +377,11 @@ afterEach(() => {
     process.env.HOME = originalHome
   } else {
     delete process.env.HOME
+  }
+  if (originalCodexHome) {
+    process.env.CODEX_HOME = originalCodexHome
+  } else {
+    delete process.env.CODEX_HOME
   }
   setElectronUserDataPathProviderForTest(null)
   mcpCommandTrust.setMcpCommandTrustDatabaseForTest(null)

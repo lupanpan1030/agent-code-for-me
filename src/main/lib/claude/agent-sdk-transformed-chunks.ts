@@ -1,7 +1,7 @@
 import {
-  processClaudeAgentSdkUiChunk,
   type ClaudeAgentSdkChunkProcessorState,
   type ClaudeAgentSdkFileChangeNotification,
+  processClaudeAgentSdkUiChunk,
 } from "./agent-sdk-chunk-processor"
 import { notifyClaudeAgentSdkFileChanged } from "./agent-sdk-file-change-notification"
 import type { UIMessageChunk } from "./types"
@@ -24,6 +24,7 @@ export type ProcessClaudeAgentSdkTransformedChunksInput = {
   mode: string
   subId: string
   subChatId: string
+  secretHints?: readonly string[]
   emit: (chunk: UIMessageChunk) => boolean
   notifyFileChanged?: (event: ClaudeAgentSdkFileChangeNotification) => void
 }
@@ -41,6 +42,7 @@ export function processClaudeAgentSdkTransformedChunks({
   mode,
   subId,
   subChatId,
+  secretHints,
   emit,
   notifyFileChanged = notifyClaudeAgentSdkFileChanged,
 }: ProcessClaudeAgentSdkTransformedChunksInput): ProcessClaudeAgentSdkTransformedChunksResult {
@@ -68,6 +70,7 @@ export function processClaudeAgentSdkTransformedChunks({
       subId,
       subChatId,
       chunkCount,
+      secretHints,
       emit,
       notifyFileChanged,
     })

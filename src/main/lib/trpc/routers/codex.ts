@@ -99,7 +99,10 @@ import {
   requestCancelDesktopChatAgentJobSafely,
 } from "../../desktop-agent-jobs"
 import { assertOfficialCloudAllowed } from "../../local-only"
-import { getProviderGatewayEndpoint } from "../../provider-profiles/gateway"
+import {
+  getProviderGatewayEndpoint,
+  revokeProviderGatewayToken,
+} from "../../provider-profiles/gateway"
 import {
   getProviderProfileMetadata,
   getProviderProfileRuntimeConfig,
@@ -533,7 +536,19 @@ export const codexRouter = router({
         let desktopJobReachedNaturalFinish = false
         let desktopJobAdapterFailed = false
         let desktopJobDb: ReturnType<typeof getDatabase> | null = null
+        let codexProviderGatewayToken: string | null = null
+        let codexProviderGatewayTokenRevoked = false
         const appServerPersistenceChunks: Record<string, unknown>[] = []
+
+        const providerSecretHints = (): readonly string[] =>
+          codexProviderGatewayToken ? [codexProviderGatewayToken] : []
+        const revokeCodexProviderGatewayToken = () => {
+          if (!codexProviderGatewayToken || codexProviderGatewayTokenRevoked) {
+            return
+          }
+          revokeProviderGatewayToken(codexProviderGatewayToken)
+          codexProviderGatewayTokenRevoked = true
+        }
 
         const emitRendererChunk = (chunk: Record<string, unknown>) => {
           if (!isActive) return
@@ -543,6 +558,7 @@ export const codexRouter = router({
               runId: input.runId,
               jobId: desktopJobId,
               chunk,
+              secretHints: providerSecretHints(),
             })
             emit.next(rendererChunk)
           } catch {
@@ -556,16 +572,24 @@ export const codexRouter = router({
         })
 
         const safeEmit = (chunk: Record<string, unknown>) => {
-          appServerPersistenceChunks.push(chunk)
+          const redactedChunk = redactRendererRuntimeChunk({
+            runtimeId: "codex",
+            runId: input.runId,
+            jobId: desktopJobId,
+            chunk,
+            secretHints: providerSecretHints(),
+          }) as Record<string, unknown>
+          appServerPersistenceChunks.push(redactedChunk)
           if (
-            chunk?.type === "error" ||
-            chunk?.type === "auth-error" ||
-            chunk?.type === "capability-error" ||
-            (chunk?.type === "runtime-status" && chunk?.ok === false)
+            redactedChunk?.type === "error" ||
+            redactedChunk?.type === "auth-error" ||
+            redactedChunk?.type === "capability-error" ||
+            (redactedChunk?.type === "runtime-status" &&
+              redactedChunk?.ok === false)
           ) {
             desktopJobSawError = true
           }
-          appServerFinishGate.emit(chunk)
+          appServerFinishGate.emit(redactedChunk)
         }
 
         const safeComplete = () => {
@@ -789,6 +813,7 @@ export const codexRouter = router({
                 profile.id,
                 "responses",
               )
+              codexProviderGatewayToken = gateway.token
               codexProviderProfile = {
                 id: profile.id,
                 name: profile.name,
@@ -1177,12 +1202,19 @@ export const codexRouter = router({
             safeComplete()
           } catch (error) {
             const normalized = extractCodexError(error)
-
-            console.error("[codex] chat stream error", {
-              subChatId: input.subChatId.slice(-8),
-              ...getCodexErrorDiagnostics(error),
-              message: normalized.message,
+            const redactedDiagnostics = redactRendererRuntimeChunk({
+              runtimeId: "codex",
+              runId: input.runId,
+              jobId: desktopJobId,
+              chunk: {
+                subChatId: input.subChatId.slice(-8),
+                ...getCodexErrorDiagnostics(error),
+                message: normalized.message,
+              },
+              secretHints: providerSecretHints(),
             })
+
+            console.error("[codex] chat stream error", redactedDiagnostics)
             if (isCodexAuthError(normalized)) {
               safeEmit({ type: "auth-error", errorText: normalized.message })
             } else {
@@ -1191,6 +1223,7 @@ export const codexRouter = router({
             safeEmit({ type: "finish" })
             safeComplete()
           } finally {
+            revokeCodexProviderGatewayToken()
             if (desktopJobId) {
               const jobDb = desktopJobDb ?? getDatabase()
               completeDesktopChatAgentJobSafely(jobDb, {
@@ -1228,6 +1261,7 @@ export const codexRouter = router({
             },
           )
           abortController.abort()
+          revokeCodexProviderGatewayToken()
 
           const activeStream = activeStreams.get(input.subChatId)
           if (activeStream?.runId === input.runId) {

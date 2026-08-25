@@ -20,7 +20,9 @@ function isJsonObject(value: JsonValue): value is { [key: string]: JsonValue } {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
-function uniqueSecretHints(secretHints: readonly string[] | undefined): string[] {
+function uniqueSecretHints(
+  secretHints: readonly string[] | undefined,
+): string[] {
   return [
     ...new Set(
       (secretHints ?? [])
@@ -30,16 +32,29 @@ function uniqueSecretHints(secretHints: readonly string[] | undefined): string[]
   ]
 }
 
+export function redactExactSecretHints(
+  value: string,
+  secretHints: readonly string[] | undefined,
+): { value: string; applied: boolean } {
+  let redacted = value
+  let applied = false
+  for (const hint of uniqueSecretHints(secretHints)) {
+    if (!redacted.includes(hint)) continue
+    applied = true
+    redacted = redacted.split(hint).join("<redacted>")
+  }
+  return { value: redacted, applied }
+}
+
 function redactString(
   value: string,
   appliedRules: Set<string>,
   secretHints: readonly string[],
 ): string {
-  let redacted = value
-  for (const hint of secretHints) {
-    if (!redacted.includes(hint)) continue
+  const exactRedaction = redactExactSecretHints(value, secretHints)
+  let redacted = exactRedaction.value
+  if (exactRedaction.applied) {
     appliedRules.add("secret-hint")
-    redacted = redacted.split(hint).join("<redacted>")
   }
   for (const pattern of SECRET_TEXT_PATTERNS) {
     if (pattern.test(redacted)) {

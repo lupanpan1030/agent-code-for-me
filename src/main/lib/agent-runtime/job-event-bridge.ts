@@ -18,6 +18,7 @@ export type CreateAgentJobRunEventInput = {
   sequence: number
   type: AgentJobEventType
   payload?: unknown
+  secretHints?: readonly string[]
   createdAt: Date
 }
 
@@ -29,10 +30,7 @@ export type AgentJobRunEventBridgeResult = {
 function toJsonValue(value: unknown, seen = new WeakSet<object>()): JsonValue {
   if (value === undefined) return null
   if (value === null) return null
-  if (
-    typeof value === "string" ||
-    typeof value === "boolean"
-  ) {
+  if (typeof value === "string" || typeof value === "boolean") {
     return value
   }
   if (typeof value === "number") return Number.isFinite(value) ? value : null
@@ -75,6 +73,7 @@ export function createAgentJobRunEvent(
     runId: input.jobId,
     jobId: input.jobId,
     source: redactionSourceForJobSource(input.source),
+    secretHints: input.secretHints,
   })
   const runEvent = createRunEvent({
     runId: input.jobId,

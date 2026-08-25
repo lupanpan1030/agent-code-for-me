@@ -373,7 +373,8 @@ async function logsCommand(
   do {
     const events = listAgentJobEvents(options.db, command.jobId, afterSequence)
     if (events.length > 0) {
-      afterSequence = events[events.length - 1]!.sequence
+      const lastEvent = events.at(-1)
+      if (lastEvent) afterSequence = lastEvent.sequence
       outputEvents(options.stdout, command.output, events)
     } else if (!command.follow) {
       outputEvents(options.stdout, command.output, [])
@@ -536,8 +537,10 @@ async function apiRuntimesListCommand(
   writeJson(
     options.stdout,
     await toLocalJobApiRuntimeManifestEnvelope({
+      db: options.db,
       onDiagnostic: (message) => writeLine(options.stderr, message),
       probe: !command.noProbe,
+      providerBindingDependencies: options.providerBindingDependencies,
       readinessDependencies: options.runtimeReadinessDependencies,
     }),
   )

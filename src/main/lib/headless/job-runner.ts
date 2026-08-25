@@ -129,12 +129,18 @@ function createObserver(
   jobId: string,
   workerId: string,
   abortController: AbortController,
+  getSecretHints: () => readonly string[],
 ): AgentRuntimeObserver {
   return {
     appendEvent(type, payload) {
       const current = getAgentJob(db, jobId)
       if (current?.cancelRequestedAt) abortController.abort()
-      return appendAgentJobEvent(db, { jobId, type, payload })
+      return appendAgentJobEvent(db, {
+        jobId,
+        type,
+        payload,
+        secretHints: getSecretHints(),
+      })
     },
     heartbeat() {
       const job = heartbeatAgentJob(db, jobId, workerId)
@@ -148,6 +154,13 @@ function createObserver(
       return requested
     },
   }
+}
+
+function providerSecretHints(
+  resolution: HeadlessProviderBindingResolution | null,
+): readonly string[] {
+  const gatewayToken = resolution?.providerBinding?.gatewayToken
+  return gatewayToken ? [gatewayToken] : []
 }
 
 async function resolveRunner(
@@ -244,6 +257,7 @@ function appendResolvedProviderEvent(input: {
   db: AgentJobDatabase
   jobId: string
   resolvedProvider: LocalJobApiResolvedProvider
+  secretHints?: readonly string[]
 }): void {
   if (input.resolvedProvider.source !== "default-profile") return
   appendAgentJobEvent(input.db, {
@@ -254,6 +268,7 @@ function appendResolvedProviderEvent(input: {
         resolvedProvider: input.resolvedProvider,
       },
     },
+    secretHints: input.secretHints,
   })
 }
 
@@ -282,9 +297,15 @@ export async function runPersistedAgentJob(
       once: true,
     })
   }
-  const observer = createObserver(options.db, job.id, workerId, abortController)
-  const runtimeOptions = localJobApiRuntimeOptions(job)
   let providerResolution: HeadlessProviderBindingResolution | null = null
+  const observer = createObserver(
+    options.db,
+    job.id,
+    workerId,
+    abortController,
+    () => providerSecretHints(providerResolution),
+  )
+  const runtimeOptions = localJobApiRuntimeOptions(job)
 
   try {
     providerResolution = await resolveHeadlessProviderBinding({
@@ -298,6 +319,7 @@ export async function runPersistedAgentJob(
       db: options.db,
       jobId: job.id,
       resolvedProvider: providerResolution.resolvedProvider,
+      secretHints: providerSecretHints(providerResolution),
     })
     const result = abortController.signal.aborted
       ? canceledRunResult()
@@ -347,6 +369,7 @@ export async function runPersistedAgentJob(
         result.result,
         providerResolution.resolvedProvider,
       ),
+      secretHints: providerSecretHints(providerResolution),
     })
     return {
       job: completed,
@@ -374,6 +397,7 @@ export async function runPersistedAgentJob(
         null,
         resolvedProviderForError(error, job, providerResolution),
       ),
+      secretHints: providerSecretHints(providerResolution),
     })
     return {
       job: completed,
