@@ -64,6 +64,21 @@ and the reverse imports from `src/main/index.ts` and `src/main/windows/main.ts`.
 - `rg -n "trpc/routers/codex" src/main`: no reverse path imports remain after the
   state/app-shell rewire; the tRPC registry keeps its sibling `./codex` router import.
 
+### Preflight stage (task 3.1)
+
+- The stage receives injected emit/complete callbacks; the tRPC observable remains in the
+  router.
+- Unit coverage locks the existing sequence: supplied status/capability chunks, then
+  `error` or `auth-error`, then `finish`, then completion. Existing error and hint text is
+  unchanged.
+- `bun test --isolate tests/codex-desktop-run-preflight.test.ts
+  tests/agent-runtime-preflight.test.ts tests/agent-guard-runtime-pipeline.test.ts`:
+  19 passed / 0 failed / 170 expectations.
+- `bun run lint`, `bun run ts:check`, and `git diff --check`: passed.
+- `bun run check`: passed while the next persistence stage existed only as uncommitted,
+  separately tested scaffolding; aggregate result was 1,656 passed / 0 failed. The final
+  exact-SHA `check:full` remains authoritative.
+
 ## W7 scope ledger
 
 - Green work is implemented only as named in the approved proposal.

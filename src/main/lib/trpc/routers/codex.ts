@@ -19,11 +19,7 @@ import {
   validateAgentScopeContract,
 } from "../../agent-guard"
 import { resolveDesktopPermissionPolicy } from "../../agent-runtime/permission-policy"
-import {
-  type DesktopRunPreflightBlocker,
-  DesktopRunPreflightError,
-  verifyDesktopRunPreflight,
-} from "../../agent-runtime/preflight"
+import { verifyDesktopRunPreflight } from "../../agent-runtime/preflight"
 import {
   appendRunEventsToAgentJob,
   redactRendererRuntimeChunk,
@@ -66,6 +62,7 @@ import {
 import { codexChatInputSchema } from "../../codex/chat-input-schema"
 import { resolveBundledCodexCliPath } from "../../codex/cli-path"
 import { runCodexCli } from "../../codex/cli-runner"
+import { createCodexDesktopRunPreflightStage } from "../../codex/desktop-run-preflight"
 import { createCodexDesktopRunRequest } from "../../codex/desktop-run-request"
 import {
   extractCodexError as extractCodexErrorWithProviderRedaction,
@@ -106,7 +103,6 @@ import {
   createAndRegisterDesktopChatAgentJob,
   requestCancelDesktopChatAgentJobSafely,
 } from "../../desktop-agent-jobs"
-import { assertOfficialCloudAllowed } from "../../local-only"
 import {
   getProviderGatewayEndpoint,
   revokeProviderGatewayToken,
@@ -625,78 +621,16 @@ export const codexRouter = router({
               codexAdapterSource: "codex-app-server",
             })
 
-            const emitPreflightBlocker = (
-              blocker: DesktopRunPreflightBlocker,
-              chunks: Record<string, unknown>[] = [],
-            ) => {
-              for (const chunk of chunks) safeEmit(chunk)
-              const error = new DesktopRunPreflightError(blocker)
-              safeEmit({
-                type: blocker.status === "needs-auth" ? "auth-error" : "error",
-                errorText: blocker.hint
-                  ? `${error.message} ${blocker.hint}`
-                  : error.message,
-              })
-              safeEmit({ type: "finish" })
-              safeComplete()
-            }
-            const emitLocalOnlyPreflightBlocker = (
-              operation: string,
-              url?: string | null,
-            ) => {
-              try {
-                assertOfficialCloudAllowed(operation, url)
-                return false
-              } catch (localOnlyError) {
-                const message =
-                  localOnlyError instanceof Error
-                    ? localOnlyError.message
-                    : String(localOnlyError)
-                const blocker = createCodexRuntimeBlocker({
-                  id: "local-only",
-                  label: "Local-only policy",
-                  status: "blocked",
-                  ok: false,
-                  message,
-                  hint: "Choose a user-configured provider endpoint that is not an official upstream hosted URL, or explicitly disable local-only mode for hosted/internal testing.",
-                })
-                emitPreflightBlocker(
-                  {
-                    id: "local-only",
-                    status: "blocked",
-                    message: blocker.message,
-                    hint: blocker.hint,
-                  },
-                  [
-                    buildCodexRuntimeStatusChunk(blocker),
-                    buildCodexCapabilityErrorChunk(blocker),
-                  ],
-                )
-                return true
-              }
-            }
+            const {
+              emitPreflightBlocker,
+              emitLocalOnlyPreflightBlocker,
+              verifyRuntimeStatus,
+            } = createCodexDesktopRunPreflightStage({
+              emit: safeEmit,
+              complete: safeComplete,
+            })
 
-            const runtimeStatus = await getCodexRuntimeStatus()
-            if (!runtimeStatus.ok) {
-              const blocker =
-                runtimeStatus.blockers[0] ??
-                createCodexRuntimeBlocker({
-                  id: "login-cli",
-                  label: "Codex runtime",
-                  status: "failed",
-                  ok: false,
-                  message: "Codex runtime is unavailable.",
-                  hint: "Check Codex runtime status and try again.",
-                })
-              emitPreflightBlocker(
-                {
-                  id: "unsupported-capability",
-                  status: "blocked",
-                  message: blocker.message,
-                  hint: blocker.hint,
-                },
-                [buildCodexRuntimeStatusChunk(blocker)],
-              )
+            if (!(await verifyRuntimeStatus())) {
               return
             }
 

@@ -243,6 +243,10 @@ describe("agent guard runtime pipeline", () => {
 
   test("Codex desktop route is wired to normalized runtime status before provider work", () => {
     const codex = readFileSync("src/main/lib/trpc/routers/codex.ts", "utf8")
+    const codexDesktopRunPreflight = readFileSync(
+      "src/main/lib/codex/desktop-run-preflight.ts",
+      "utf8",
+    )
     const codexRuntimeStatus = readFileSync(
       "src/main/lib/codex/runtime-status.ts",
       "utf8",
@@ -256,13 +260,13 @@ describe("agent guard runtime pipeline", () => {
     expect(codexRuntimeStatus).toContain(
       "buildCodexRuntimeAvailabilityFromComponents",
     )
-    expect(codex).toContain("buildCodexRuntimeStatusChunk")
-    expect(codex).toContain("buildCodexCapabilityErrorChunk")
+    expect(codexDesktopRunPreflight).toContain("buildCodexRuntimeStatusChunk")
+    expect(codexDesktopRunPreflight).toContain("buildCodexCapabilityErrorChunk")
     expect(codexRuntimeStatus).toContain(
       'getRegisteredAgentRuntimeManifest("codex")',
     )
-    expect(codex).toContain(
-      "const runtimeStatus = await getCodexRuntimeStatus()",
+    expect(codexDesktopRunPreflight).toContain(
+      "const runtimeStatus = await dependencies.getRuntimeStatus()",
     )
     expect(codexRuntimeStatus).toContain(
       "const integration = await getCodexIntegrationStatus()",
@@ -274,7 +278,8 @@ describe("agent guard runtime pipeline", () => {
     )
     expect(codexRuntimeStatus).not.toContain("TEMPORARY_COMPAT")
     expect(codexRuntimeStatus).toContain("adapter: adapterMetadata")
-    expect(codex).toContain("runtimeStatus.blockers[0]")
+    expect(codexDesktopRunPreflight).toContain("runtimeStatus.blockers[0]")
+    expect(codex).toContain("if (!(await verifyRuntimeStatus()))")
     expect(codexRuntimeStatus).toContain('id: "provider-profile"')
     expect(codexRuntimeStatus).toContain('id: "mcp"')
     expect(codexRuntimeStatus).toContain('id: "local-only"')

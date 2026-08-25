@@ -244,17 +244,30 @@ describe("desktop runtime preflight", () => {
 
   test("Codex route blocks desktop preflight before creating a job", () => {
     const codex = readFileSync("src/main/lib/trpc/routers/codex.ts", "utf8")
-    const blockerIndex = codex.indexOf("new DesktopRunPreflightError(blocker)")
-    const runtimeStatusIndex = codex.indexOf(
-      "const runtimeStatus = await getCodexRuntimeStatus()",
+    const codexPreflight = readFileSync(
+      "src/main/lib/codex/desktop-run-preflight.ts",
+      "utf8",
+    )
+    const blockerIndex = codexPreflight.indexOf(
+      "new DesktopRunPreflightError(blocker)",
+    )
+    const runtimeStatusIndex = codexPreflight.indexOf(
+      "const runtimeStatus = await dependencies.getRuntimeStatus()",
+    )
+    const preflightStageIndex = codex.indexOf(
+      "createCodexDesktopRunPreflightStage({",
+    )
+    const runtimeStatusGateIndex = codex.indexOf(
+      "if (!(await verifyRuntimeStatus()))",
+      preflightStageIndex,
     )
     const attachmentIndex = codex.indexOf(
       "prepareChatImageAttachmentsForDesktopRun({",
-      runtimeStatusIndex,
+      runtimeStatusGateIndex,
     )
     const providerProfileMetadataIndex = codex.indexOf(
       "getProviderProfileMetadata(input.providerProfileId)",
-      runtimeStatusIndex,
+      runtimeStatusGateIndex,
     )
     const providerProfileRuntimeConfigIndex = codex.indexOf(
       "getProviderProfileRuntimeConfig(",
@@ -286,9 +299,11 @@ describe("desktop runtime preflight", () => {
 
     expect(blockerIndex).toBeGreaterThan(0)
     expect(runtimeStatusIndex).toBeGreaterThan(blockerIndex)
-    expect(providerProfileMetadataIndex).toBeGreaterThan(runtimeStatusIndex)
+    expect(preflightStageIndex).toBeGreaterThan(0)
+    expect(runtimeStatusGateIndex).toBeGreaterThan(preflightStageIndex)
+    expect(providerProfileMetadataIndex).toBeGreaterThan(runtimeStatusGateIndex)
     expect(providerProfileMetadataIndex).toBeLessThan(attachmentIndex)
-    expect(attachmentIndex).toBeGreaterThan(runtimeStatusIndex)
+    expect(attachmentIndex).toBeGreaterThan(runtimeStatusGateIndex)
     expect(providerProfileRuntimeConfigIndex).toBeGreaterThan(attachmentIndex)
     expect(providerGatewayIndex).toBeGreaterThan(attachmentIndex)
     expect(localOnlyIndex).toBeGreaterThan(attachmentIndex)
@@ -300,7 +315,7 @@ describe("desktop runtime preflight", () => {
     expect(adapterRunIndex).toBeGreaterThan(adapterIndex)
     expect(codex).toContain("cwd: runtimeCwd")
     expect(codex).toContain("codexAdapter.run(desktopRunRequest)")
-    expect(codex).toContain('id: "local-only"')
+    expect(codexPreflight).toContain('id: "local-only"')
     expect(codex).not.toContain("cwd: input.cwd,\n              mcpServers")
   })
 })

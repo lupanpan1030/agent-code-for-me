@@ -41,7 +41,7 @@
 
 ## 3. Run pipeline stage extraction (one commit per stage, run order)
 
-- [ ] 3.1 `src/main/lib/codex/desktop-run-preflight.ts`: move `emitPreflightBlocker`,
+- [x] 3.1 `src/main/lib/codex/desktop-run-preflight.ts`: move `emitPreflightBlocker`,
       `emitLocalOnlyPreflightBlocker`, and the runtime-status gate (`codex.ts:652-725`)
       into stage functions taking injected emit/complete callbacks. Re-point
       `tests/agent-runtime-preflight.test.ts` assertions that pin moved text.
