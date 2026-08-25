@@ -1,11 +1,9 @@
 # Locus — System Design (MVP-grade, built to scale)
 
-> Written as a senior full-stack engineer would document a startup MVP: a minimal
-> but extensible system, grounded in the **actual** code in this repository, not a
-> throwaway demo. Locus is a local-first desktop AI workbench for running coding
-> agents (Claude Code, Codex, provider-backed agents) against local projects with
-> visible, auditable tool activity, durable jobs, a CLI, a daemon, schedules, and a
-> machine-readable Local Job API.
+> **Current implementation description — reconciled 2026-08-25.** Product direction
+> is governed by the ratified Harness strategy; future Conversation/Run/SessionBinding/
+> Interaction/Handoff semantics are governed by the interoperability contract. This
+> file describes checked-in architecture and does not authorize a target-state change.
 
 ---
 
@@ -16,7 +14,7 @@
 | Goal | Consequence in the design |
 | --- | --- |
 | **Local-first & auditable** | All state lives in a local SQLite DB; every agent run emits an append-only event log. No hosted backend in the default build (`LOCUS_LOCAL_ONLY=true`). |
-| **Runtime-neutral target** | A `RuntimeRegistry` abstracts Claude Code / Codex / ACP behind one adapter contract. Desktop uses this boundary today; full headless selector/event/policy convergence is still tracked under OpenSpec. |
+| **Runtime-neutral common core** | `RuntimeRegistry` exposes capability truth for the closed Engine set: Claude Code and Codex. ACP is a Locus-owned stdio protocol surface over jobs, not a third Engine. |
 | **Durable & recoverable** | Jobs are rows, not in-memory promises. A worker writes heartbeats; a recovery pass re-reconciles orphaned jobs on startup. |
 | **One durable job core, many surfaces** | Desktop UI, headless CLI, daemon queue, schedules, and the Local Job API share the durable job store and capability truth. Runtime execution convergence remains in progress. |
 | **Type-safe boundaries** | tRPC gives end-to-end types from main → renderer; the Local Job API is an explicit, versioned JSON contract for *other* local tools. |
@@ -40,7 +38,7 @@ headless plane that can run with no window at all:
 ┌───────────────┴────────────────────────────────────────────────────────┐
 │ MAIN (Electron main process)                                            │
 │   • tRPC routers (30+)        • auth-manager / secure-storage           │
-│   • RuntimeRegistry + adapters (Claude Code, Codex, ACP)                │
+│   • RuntimeRegistry + adapters (Claude Code, Codex)                      │
 │   • Job store (Drizzle/SQLite)   • git / worktree / terminal services   │
 └───────────────▲───────────────────────────┬────────────────────────────┘
                 │ shared job modules         │ durable store
@@ -51,18 +49,18 @@ headless plane that can run with no window at all:
 └───────────────────────────────┘  └─────────────────────────────────────┘
 ```
 
-The current platform foundation is the shared `job-store`, runtime capability
-truth, and `db` modules. A run started from the UI and a run started by
-`locus run` are durable local jobs observed through the same store. The deeper
-execution boundary - adapter selector, canonical event bridge, and non-desktop
-permission policy - is still being converged under
-`openspec/changes/refactor-runtime-core-execution-boundary/tasks.md`.
+The current platform foundation is the shared `job-store`, Runtime capability
+truth, and `db` modules. Desktop and headless entry points share durable storage,
+while their native execution adapters retain intentionally different capabilities.
+The selector, canonical event bridge, and fail-closed non-desktop permission
+boundary were completed and archived in `refactor-runtime-core-execution-boundary`.
 
-### 1.3 Target agent-run pipeline (runtime-core convergence)
+### 1.3 Shared run pipeline
 
-This diagram describes the intended converged runtime-core shape. Current
-desktop paths cover more of this pipeline than headless batch jobs; remaining
-headless convergence is tracked in the OpenSpec change above.
+This diagram shows the shared admission and persistence shape. It does not imply
+feature parity: native desktop sessions and headless/batch execution can expose
+different Runtime capabilities, and `codex exec` remains a documented temporary
+batch path pending a separately approved convergence change.
 
 ```
 request ──► permission-policy ──► preflight ──► runtime adapter ──► process-runner
@@ -87,7 +85,7 @@ job-store.createAgentJob ──► startAgentJob ──► append events (seq-or
 
 | You want to add… | You touch only… |
 | --- | --- |
-| A new agent runtime | `agent-runtime/runtime-registry.ts` + a new adapter in `headless/adapters/` |
+| A new Engine | An approved product/OpenSpec decision, capability manifest, native adapter, certified delivery evidence, and public Consumer Impact where applicable |
 | A new provider (Anthropic/OpenAI-compatible) | `agent_provider_profiles` rows + `provider-profiles` router; no UI change |
 | A new backend capability | a new tRPC router under `trpc/routers/` wired in `routers/index.ts` |
 | A new automation surface | a new client over `headless/job-store` (CLI verb, schedule, API endpoint) |
@@ -379,19 +377,12 @@ export function appendAgentJobEvent(db: AgentJobDatabase, input: AppendAgentJobE
 }
 ```
 
-### 6.3 Runtime-neutral registry (extension seam) — `agent-runtime/runtime-registry.ts`
+### 6.3 Runtime capability registry — `agent-runtime/runtime-registry.ts`
 
-```typescript
-// Adding a runtime = register one manifest. UI, job store, and Local Job API are
-// untouched because they consume the manifest, not provider-specific code.
-export interface RuntimeManifest {
-  id: "claude-code" | "codex" | "acp"
-  capabilities: { plan: boolean; agent: boolean; resume: boolean; tools: string[] }
-  preflight(req: DesktopRunRequest): Promise<PreflightResult>   // auth/model/redaction
-  spawn(req: DesktopRunRequest): AsyncIterable<RuntimeEvent>    // normalized stream
-}
-export function listRegisteredAgentRuntimeManifests(): RuntimeManifest[] { /* … */ }
-```
+`src/shared/agent-runtime-capabilities.ts` owns the closed contract Runtime IDs
+(`claude-code`, `codex`) and their capability manifests. The main-process registry
+is a lookup boundary over that truth; native adapter execution is owned separately.
+Adding a manifest is therefore not sufficient to claim a supported Engine.
 
 ### 6.4 tRPC router composition — `trpc/routers/index.ts`
 
@@ -430,13 +421,13 @@ export function toLocalJobApiResultEnvelope(job: AgentJob, artifacts: FileArtifa
 
 | Stage | Move |
 | --- | --- |
-| **Now (MVP)** | Single SQLite, single daemon, three runtimes, local-only. |
+| **Now (MVP)** | Single SQLite, single daemon, two Engines, local-first; ACP is an experimental Locus protocol surface. |
 | **Concurrency** | Multiple daemon workers already safe via `UNIQUE(jobId, sequence)` + heartbeat/recovery; add a claim query (`status='queued'` → `running` with `workerId`). |
-| **More runtimes/providers** | Register a manifest + adapter; add provider profile rows. No UI/core change. |
+| **Providers** | Add provider-profile data and diagnostics behind existing Engine capability rules. |
+| **More Engines** | Not a routine extension point; requires an explicit product decision and approved OpenSpec change. |
 | **More surfaces** | New CLI verb / schedule / API endpoint over the same job store. |
 | **Optional hosted** | Reintroduce only behind an OpenSpec proposal with `LOCUS_LOCAL_ONLY=false`; the boundary already exists. |
 
-The system is an MVP you can ship today and a platform you can extend tomorrow -
-because every surface can build on the same durable job foundation while runtime
-execution semantics converge through the active OpenSpec change.
-```
+The current system is usable local infrastructure. The next platform work follows
+the ratified interoperability sequence and must replace canonical internals
+atomically rather than layering a second execution path beside them.

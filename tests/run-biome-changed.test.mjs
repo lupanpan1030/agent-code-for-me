@@ -5,6 +5,7 @@ import {
   collectChangedLinesFromUnifiedDiff,
   diagnosticTouchesChangedLines,
   filterDiagnosticsForChangedLines,
+  isBlockingChangedDiagnostic,
   markAllLinesChanged,
   resolveBiomeExecutable,
 } from "../scripts/run-biome-changed.mjs"
@@ -70,6 +71,12 @@ index 111..222 100644
         changes,
       ),
     ).toBe(true)
+  })
+
+  test("blocks new warnings and errors but not informational diagnostics", () => {
+    expect(isBlockingChangedDiagnostic({ severity: "error" })).toBe(true)
+    expect(isBlockingChangedDiagnostic({ severity: "warning" })).toBe(true)
+    expect(isBlockingChangedDiagnostic({ severity: "info" })).toBe(false)
   })
 
   test("ignores file-level diagnostics for legacy lines in modified files", () => {

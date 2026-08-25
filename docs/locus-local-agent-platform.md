@@ -2,6 +2,12 @@
 
 Languages: English | [Simplified Chinese](locus-local-agent-platform.zh-CN.md)
 
+> **Status: IMPLEMENTATION SNAPSHOT; PRODUCT DIRECTION SUPERSEDED 2026-08-25.**
+> Use the [ratified product and Harness strategy](ideas/locus-product-direction-harness-strategy.zh-CN.md)
+> for future direction and the [interoperability contract](ideas/locus-interoperability-contract-v1.zh-CN.md)
+> for cross-change invariants. The implemented Local Job API links below remain current public-contract
+> references until an approved Consumer Impact decision changes them.
+
 Locus is moving from a coding-only desktop app toward a local-first AI
 workbench for operating on local projects with mature agent CLI workflows and
 selectable model backends. It is a user-facing workspace first. Runtime
@@ -26,11 +32,9 @@ Coding is still the first strong workflow, but it is not the only long-term
 workflow. Other local-first tools can integrate with Locus, but the core product
 is still the desktop workbench where users operate on local projects directly.
 
-For the current scope lock, read
-[Locus Workbench Focus and Scope Lock](locus-workbench-focus.md). The current
-implementation focus is Codex Workbench, provider profile run binding, runtime
-capability display, and structured run trace. Broader workflow engines, new CLI
-integrations, and full ACP parity are later slices.
+This document describes implemented workbench and Local Job API surfaces. It is
+not the current roadmap and does not authorize broader workflow engines, new
+Engine integrations, or full ACP parity.
 
 ## Current Usable Surfaces
 

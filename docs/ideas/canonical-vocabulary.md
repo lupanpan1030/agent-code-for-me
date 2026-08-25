@@ -3,6 +3,9 @@
 > **Status: RATIFIED 2026-06-18.** Forks A/B/C decided (see §3). The canonical
 > terms are: **Project · Workspace · Chat · Quick chat · Agent · Run.** This is now
 > the authoritative naming source for the combined ③+④ rename change.
+> **Cross-contract addendum ratified 2026-08-25:** `Engine` names a selectable
+> Claude Code/Codex Runtime in UI copy, API identity remains `runtimeId`, and
+> `Agent` remains reserved for persona. See §8.
 
 > **Why this exists.** The rigorous review (③+④) found the app uses
 > **Project / Workspace / Chat / Agent / Sub-chat / Quick-chat / Conversation**
@@ -158,3 +161,19 @@ counts below are the reason.
 > `workspaceName`, `WorkspaceStatus`…), so Fork B is partly adopted already — the
 > drift is that the *same* layer is also labeled "chat"/"agent" elsewhere. The job
 > is to make it consistent, not to introduce a brand-new word.
+
+## 8. Harness interoperability mapping — RATIFIED 2026-08-25
+
+This addendum keeps product language clear without forcing premature database or
+public-API renames:
+
+| User/core concept | UI term | Internal/public identifier | Rule |
+| --- | --- | --- | --- |
+| Selectable native coding Harness | **Engine** | `runtimeId` | Claude Code and Codex are Engines. Never call them personas or silently switch them. |
+| Durable conversational identity | **Chat** | future core `Conversation`; current storage may remain `chats`/`sub_chats` until an approved change | Do not create a second durable object merely to rename it. |
+| One execution attempt | **Run** | current Local Job API v1 may project it as `Job`/`jobId` | Retry creates another Run; public-v1 renaming requires Consumer Impact. |
+| Reusable prompt/tool persona | **Agent** | `app_agents` and related persona IDs | Agent never means Engine, Workspace, or Chat. |
+
+Exact public fields, schemas, migration, and compatibility behavior belong to
+the implementing OpenSpec change under C7; this vocabulary addendum is a naming
+constraint, not an implementation authorization.

@@ -2,15 +2,13 @@
 
 语言：[English](README.md) | 简体中文
 
-Locus 是一个本地优先的桌面 AI 工作台，用成熟 agent CLI workflows 和可切换 model
-backends 操作本地项目。它把 Claude Code、Codex、provider-backed agents、MCP tools、
-terminal commands、git workflows、worktrees 和本地 job automation 放在一个可见的桌面
-环境里。
+Locus 是一个本地优先的工作台，也是面向成熟 coding Harness 的可嵌入互操作适配层。
+它为 Claude Code 和 Codex 提供 Locus 自己拥有的统一执行、session、capability、审计与
+handoff 边界，但不替代它们原生的 Agent loop。
 
-Locus 是基于 [1Code](https://github.com/21st-dev/1code) 改造的本地优先 AI 工作台。
-coding 仍然是第一个强场景，但它不只是 coding chat UI。Locus 的目标是让 runtime
-能力、provider 兼容性、MCP 状态、工具调用、文件变化、usage、运行历史和本地 agent
-工作可见、可审计。
+Locus 基于 [1Code](https://github.com/21st-dev/1code) 改造。桌面应用是可见控制面；CLI、
+daemon、schedule 和版本化本地 API 让其他应用消费同一个 Runtime 边界。领域应用继续拥有
+自己的 Goal/Task 模型，Locus 只拥有 Runtime 执行与 provenance。
 
 ![Locus 工作台架构](docs/assets/locus-agent-platform.zh-CN.svg)
 
@@ -26,6 +24,7 @@ queue 里，Locus 就有意义。
 - durable local jobs，支持 status、event logs、取消、重试、heartbeat 和 recovery
 - 面向自动化的 headless CLI、daemon、schedules 和 protocol surfaces
 - 面向下游本地工具的机器可读 Local Job API v1
+- 显式、由用户控制的 Engine 选择；Locus 不会暗中切换 Engine
 - 本地优先的 provider/profile handling，默认移除或隔离上游 hosted surfaces
 
 ## 当前状态
@@ -46,9 +45,9 @@ queue 里，Locus 就有意义。
 | hosted/cloud agents 或 hosted scheduler | 未实现 |
 | Codex 与 Claude Code 完整能力对齐 | 未实现 |
 
-项目定位和当前范围切割见
-[docs/locus-workbench-focus.zh-CN.md](docs/locus-workbench-focus.zh-CN.md)。集成边界见
-[docs/locus-local-agent-platform.zh-CN.md](docs/locus-local-agent-platform.zh-CN.md)。
+已确认的发展方向见 [产品方向与 Harness 战略](docs/ideas/locus-product-direction-harness-strategy.zh-CN.md)
+和 [互操作合同](docs/ideas/locus-interoperability-contract-v1.zh-CN.md)。文档索引明确区分当前事实、
+未来方向与历史快照。
 
 ## 从源码启动
 
@@ -71,8 +70,7 @@ bun run dev
 
 ```bash
 bun run ts:check
-bun run build
-git diff --check
+bun run check:full
 ```
 
 ## 使用 Locus
@@ -148,8 +146,9 @@ worktree-aware controls，不是完整文件系统隔离。
 
 ## 文档
 
-- [工作台定位与范围切割](docs/locus-workbench-focus.zh-CN.md)
-- [工作台和集成边界](docs/locus-local-agent-platform.zh-CN.md)
+- [已确认的产品方向与 Harness 战略](docs/ideas/locus-product-direction-harness-strategy.zh-CN.md)
+- [已确认的互操作合同](docs/ideas/locus-interoperability-contract-v1.zh-CN.md)
+- [AI 协作开发工作流](docs/ideas/locus-ai-collaboration-workflow.zh-CN.md)
 - [Local Job API v1 下游接入手册](docs/local-job-api-v1-consumer-guide.zh-CN.md)
 - [文档索引](docs/README.md)
 - [Security policy](SECURITY.md)

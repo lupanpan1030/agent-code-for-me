@@ -26,8 +26,8 @@ For local Windows packaging:
 
 ```bash
 bun install
-node scripts/download-claude-binary.mjs --version=2.1.156 --platform win32-x64
-node scripts/download-codex-binary.mjs --version=0.134.0 --platform win32-x64
+node scripts/download-claude-binary.mjs --version=2.1.177 --platform win32-x64
+node scripts/download-codex-binary.mjs --version=0.139.0 --platform win32-x64
 bun run build
 bun run package:win -- --x64
 ```
@@ -99,22 +99,34 @@ Hosted analytics and error tracking are not included in the default local-first 
 
 ## Contribution Workflow
 
-1. Keep changes scoped.
-2. Preserve Local-only behavior unless a change explicitly targets hosted/internal mode.
-3. Run `bun run ts:check`, `bun run build`, and `git diff --check` before submitting.
-4. Use OpenSpec for new capabilities, breaking changes, architecture shifts, or security-sensitive changes.
+1. Read `AGENTS.md`, `docs/OWNERSHIP_MAP.md`, and the relevant approved OpenSpec change.
+2. Keep one bounded change per branch/worktree and assign file ownership before parallel work.
+3. Preserve Local-only behavior unless an approved change explicitly targets hosted/internal mode.
+4. Replace internal paths atomically: do not leave old and new business implementations alive together.
+5. For a public/versioned contract, complete `docs/consumer-impact-template.zh-CN.md` and obtain the Owner's compatibility decision before implementation.
+6. Record targeted tests, manual/packaged smoke, known limitations, and verdicts in the change's `verification.md`.
+7. Run `bun run check:full` before completion.
+
+The default AI collaboration is Codex implementation plus fresh-context Claude Code review. Both
+technical verdicts must name the same exact source SHA; any later code change invalidates them.
+Owner product acceptance is still separate and required.
+
+Local commits are allowed. Pushes, remote PR changes, remote merge, releases, and repository-rules
+changes require explicit Owner authorization for that external action.
 
 ## Phase Completion Checklist
 
 Before treating a phase as complete:
 
 ```bash
-bunx openspec validate --all --strict --no-interactive
-bun run test
-bun run ts:check
-bun run build
-git diff --check
+bun run check:full
 ```
+
+`check:full` runs changed-file lint, architecture guards, typechecking, isolated tests, strict
+OpenSpec validation, the production build, and patch whitespace checks. On a feature branch the
+whitespace gate checks both local edits and the merge-base-to-`HEAD` patch; CI and exact-SHA closeout
+set `DIFF_BASE_SHA` explicitly. Add the approved change's
+targeted and manual/packaged smoke; the aggregate command does not replace those product gates.
 
 Also confirm the phase-specific product boundary:
 

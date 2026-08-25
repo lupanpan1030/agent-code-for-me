@@ -25,12 +25,12 @@ trusting any doc as "current state," check which bucket it is in.
 | [run-event-trace-inventory.md](run-event-trace-inventory.md) | What Locus already has for runtime events / trace display. Status, not a rewrite plan. |
 | [locus-system-design.md](locus-system-design.md) | System design grounded in the actual code (architecture overview). |
 
-## Live — positioning & scope lock
+## Transitional — superseded positioning (do not use as current direction)
 
 | Doc | Role |
 | --- | --- |
-| [locus-workbench-focus.md](locus-workbench-focus.md) ([zh](locus-workbench-focus.zh-CN.md)) | **Scope lock.** What Locus is and is *not*. This is the lens that de-scopes the `ideas/` plans. |
-| [locus-local-agent-platform.md](locus-local-agent-platform.md) ([zh](locus-local-agent-platform.zh-CN.md)) | Workbench positioning and integration boundaries. (Overlaps with workbench-focus; candidate to merge.) |
+| [locus-workbench-focus.md](locus-workbench-focus.md) ([zh](locus-workbench-focus.zh-CN.md)) | **Superseded for product direction 2026-08-25.** Historical execution-slice record; do not use as the current scope lock. |
+| [locus-local-agent-platform.md](locus-local-agent-platform.md) ([zh](locus-local-agent-platform.zh-CN.md)) | Implementation snapshot with current Local Job API links; its old product direction is explicitly superseded by the ratified Harness strategy. |
 
 ## Live — external contract
 
@@ -39,6 +39,12 @@ trusting any doc as "current state," check which bucket it is in.
 | [local-job-api-v1-consumer-guide.md](local-job-api-v1-consumer-guide.md) ([zh](local-job-api-v1-consumer-guide.zh-CN.md)) | How downstream local tools submit jobs to Locus (v1). |
 | [local-job-api-v1.schema.json](local-job-api-v1.schema.json) | Machine-readable v1 request/response schema. |
 | [model-catalog.json](model-catalog.json) | ⚠️ **Not documentation — a live runtime manifest.** Fetched at run time from this repo's raw GitHub URL on a 24h TTL by `src/main/lib/model-catalog/fetcher.ts`. Note it is currently unreachable in default builds (local-only mode defaults on and the fetcher blocks on it). |
+
+## Live — development process templates
+
+| Doc | Role |
+| --- | --- |
+| [consumer-impact-template.zh-CN.md](consumer-impact-template.zh-CN.md) | **RATIFIED 2026-08-25.** Required pre-implementation decision record for changes to public/versioned consumer contracts; records exact impact, options, Owner decision, facade deletion conditions, and verification. |
 
 ## `archive/` — superseded / historical snapshots
 
@@ -68,11 +74,15 @@ Check the status line at the top of each file before trusting it.
 
 **Active / authoritative** (trust these):
 
-- [ideas/canonical-vocabulary.md](ideas/canonical-vocabulary.md) — **RATIFIED 2026-06-18**; the authoritative entity-naming source (Project · Workspace · Chat · Quick chat · Agent · Run). ⚠️ Known gap: it defines no term for the ENGINE concept (Claude Code / Codex / …), which the UI already ships as "Engine".
+- [ideas/canonical-vocabulary.md](ideas/canonical-vocabulary.md) — **RATIFIED 2026-06-18; ENGINE ADDENDUM 2026-08-25**; the authoritative entity-naming source (Project · Workspace · Chat · Quick chat · Engine · Agent · Run), including the UI `Engine` → API `runtimeId` mapping.
+- [ideas/locus-product-direction-harness-strategy.zh-CN.md](ideas/locus-product-direction-harness-strategy.zh-CN.md) — **RATIFIED 2026-08-25**; canonical product direction for Locus as an embeddable cross-Harness runtime/session interoperability layer, including consumer boundaries, Runtime delivery policy, roadmap, and Owner decisions. This direction does not itself authorize implementation; each architecture slice still requires an approved OpenSpec change.
+- [ideas/locus-ai-collaboration-workflow.zh-CN.md](ideas/locus-ai-collaboration-workflow.zh-CN.md) — **RATIFIED 2026-08-25**; canonical AI collaboration gates, Definition of Ready/Done, evidence rules, minimum pre-implementation document set, and the Owner-approved W1–W9 decisions.
+- [ideas/locus-interoperability-contract-v1.zh-CN.md](ideas/locus-interoperability-contract-v1.zh-CN.md) — **RATIFIED 2026-08-25; C1–C9 OWNER CONFIRMED**; canonical cross-change interoperability decisions for Conversation, Run, SessionBinding, Interaction, Handoff, API evolution, certified Runtime delivery, consumer-neutral acceptance, and platform support tiers. It records macOS/Windows as Tier-1 stable gates and Linux Electron Desktop as experimental. Ratification is a direction constraint, not implementation authorization.
 
 **Deferred — written, not started** (do not treat as planned work):
 
 - [ideas/cross-engine-delegation.md](ideas/cross-engine-delegation.md) — **DEFERRED 2026-08-12.** Cross-engine delegation (one engine dispatching work to another). Researched and scoped, zero code. Blocked behind the isolation + adjudication line landing first; see its own Status block.
+- [ideas/locus-agent-memory-research.zh-CN.md](ideas/locus-agent-memory-research.zh-CN.md) — **DEFERRED RESEARCH; NOT PLANNED / NOT RATIFIED 2026-08-25.** Source-backed Handoff query is already covered by C6 A+; general Agent Memory/provider/persona choices are deliberately postponed until the Owner reopens them.
 
 **Completed — kept for the record** (not live work):
 

@@ -2,6 +2,12 @@
 
 语言：[English](locus-local-agent-platform.md) | 简体中文
 
+> **状态：实现快照；产品方向已于 2026-08-25 被取代。** 未来方向以
+> [已确认的产品方向与 Harness 战略](ideas/locus-product-direction-harness-strategy.zh-CN.md) 为准，
+> 跨 change 不变量以 [互操作合同](ideas/locus-interoperability-contract-v1.zh-CN.md) 为准。
+> 下文已经实现的 Local Job API 链接仍是真实公共合同入口，除非后续 approved Consumer Impact
+> 决定改变它们。
+
 Locus 正在从单一 coding 桌面应用，演进为一个本地优先的 AI 工作台：用户可以在本地
 项目里使用成熟 agent CLI workflows 和可切换 model backends 操作文件、terminal、git、
 worktree 和工具。它首先是用户直接使用的桌面工作区；runtime adapters、local jobs、
@@ -24,10 +30,8 @@ Locus 应该负责本地工作台体验，以及背后的 runtime 层：
 coding 仍然是第一个强场景，但不是长期唯一场景。其他本地优先工具可以集成 Locus，
 但核心产品仍然是用户直接操作本地项目的桌面工作台。
 
-当前范围切割见 [Locus 工作台定位与范围切割](locus-workbench-focus.zh-CN.md)。当前实现
-重点是 Codex Workbench、provider profile run binding、runtime capability display 和
-structured run trace。更大的 workflow engine、新 CLI 集成和 full ACP parity 都是后续
-切片。
+本文只描述已经实现的工作台与 Local Job API surface，不再作为当前 roadmap，也不授权
+更大的 workflow engine、新 Engine 集成或 full ACP parity。
 
 ## 当前可用入口
 

@@ -137,6 +137,10 @@ export function filterDiagnosticsForChangedLines(diagnostics, changeMap) {
   )
 }
 
+export function isBlockingChangedDiagnostic(diagnostic) {
+  return diagnostic?.severity === "error" || diagnostic?.severity === "warning"
+}
+
 export function resolveBiomeExecutable({
   cwd = process.cwd(),
   platform = process.platform,
@@ -241,8 +245,8 @@ function main() {
     diagnostics,
     changedLineMap,
   )
-  const changedErrors = changedDiagnostics.filter(
-    (diagnostic) => diagnostic.severity === "error",
+  const changedBlockingDiagnostics = changedDiagnostics.filter(
+    isBlockingChangedDiagnostic,
   )
 
   if (changedDiagnostics.length > 0) {
@@ -252,7 +256,7 @@ function main() {
     }
   }
 
-  if (changedErrors.length > 0) {
+  if (changedBlockingDiagnostics.length > 0) {
     process.exit(1)
   }
 

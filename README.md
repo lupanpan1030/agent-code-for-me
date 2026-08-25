@@ -2,17 +2,15 @@
 
 Languages: English | [Simplified Chinese](README.zh-CN.md)
 
-Locus is a local-first desktop AI workbench for operating on local projects with
-mature agent CLI workflows and selectable model backends. It helps users run
-Claude Code, Codex, provider-backed agents, MCP tools, terminal commands, git
-workflows, worktrees, and local job automation from one visible desktop
-environment.
+Locus is a local-first workbench and embeddable interoperability layer for
+operating mature coding Harnesses on local projects. It gives Claude Code and
+Codex a shared Locus-owned execution, session, capability, audit, and handoff
+boundary without replacing their native Agent loops.
 
-Locus is a fork of [1Code](https://github.com/21st-dev/1code) adapted into a
-local-first AI workbench. Coding is still the first strong workflow, but the
-project is not only a coding chat UI. Locus is intended to make runtime
-capabilities, provider compatibility, MCP state, tool activity, file changes,
-usage, run history, and local agent work visible and auditable.
+Locus is a fork of [1Code](https://github.com/21st-dev/1code). Its desktop app is
+the visible control plane; CLI, daemon, schedules, and versioned local APIs let
+other applications consume the same Runtime boundary. Domain applications keep
+their own Goal/Task models, while Locus owns Runtime execution and provenance.
 
 ![Locus workbench architecture](docs/assets/locus-agent-platform.svg)
 
@@ -28,6 +26,7 @@ It provides:
 - durable local jobs with status, event logs, cancellation, retry, heartbeat, and recovery
 - headless CLI, daemon, schedules, and protocol surfaces for automation
 - a machine-readable Local Job API v1 for downstream local tools
+- explicit, user-controlled Engine selection; Locus never silently swaps Engines
 - local-first provider/profile handling and hosted upstream surfaces removed or isolated by default
 
 ## Current Status
@@ -48,9 +47,10 @@ It provides:
 | Hosted/cloud agents or hosted scheduler | Not implemented |
 | Full Codex parity with Claude Code | Not implemented |
 
-For positioning and the current scope lock, read
-[docs/locus-workbench-focus.md](docs/locus-workbench-focus.md). For integration
-boundaries, read [docs/locus-local-agent-platform.md](docs/locus-local-agent-platform.md).
+For the ratified direction, read the
+[product and Harness strategy](docs/ideas/locus-product-direction-harness-strategy.zh-CN.md)
+and [interoperability contract](docs/ideas/locus-interoperability-contract-v1.zh-CN.md).
+The documentation index separates current truth, future direction, and historical snapshots.
 
 ## Get Started From Source
 
@@ -73,8 +73,7 @@ Useful checks:
 
 ```bash
 bun run ts:check
-bun run build
-git diff --check
+bun run check:full
 ```
 
 ## Use Locus
@@ -155,8 +154,9 @@ filesystem isolation.
 
 ## Documentation
 
-- [Workbench focus and scope lock](docs/locus-workbench-focus.md)
-- [Workbench and integration boundaries](docs/locus-local-agent-platform.md)
+- [Ratified product and Harness strategy](docs/ideas/locus-product-direction-harness-strategy.zh-CN.md)
+- [Ratified interoperability contract](docs/ideas/locus-interoperability-contract-v1.zh-CN.md)
+- [AI collaboration workflow](docs/ideas/locus-ai-collaboration-workflow.zh-CN.md)
 - [Local Job API v1 Consumer Guide](docs/local-job-api-v1-consumer-guide.md)
 - [Documentation index](docs/README.md)
 - [Security policy](SECURITY.md)

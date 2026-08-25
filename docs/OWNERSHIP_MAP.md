@@ -102,6 +102,48 @@ or UI helper.
   or submit approval decisions, but must not derive their own trust state or
   start setup command execution directly.
 
+## Unified Git Diff Parsing
+
+- Canonical owner: `src/shared/unified-diff-parser.ts`
+- Consumers: main-process Git/diff routes, Agent Workbench conflict analysis,
+  and renderer diff presentation
+- Rule: unified-diff splitting, quoted Git path decoding, rename validation,
+  hunk extraction, and parsed-file types live in this shared owner. Main or
+  renderer consumers must not keep a second parser or path decoder.
+
+## Agent Workbench Conflict Adjudication
+
+- Canonical owners:
+  - status-visible path overlap and deep-check eligibility:
+    `src/main/lib/agent-workbench/conflicts.ts`
+  - snapshot-safe hunk and committed-tree verdicts (one directory owner):
+    `src/main/lib/agent-workbench/`, split by responsibility into
+    `deep-conflicts.ts` (public facade and overall orchestration),
+    `workspace-conflict-snapshot.ts` (status summary, immutable HEAD and stable
+    dirty snapshot), `hunk-conflicts.ts` (path/hunk evidence), `merge-tree.ts`
+    (Git capability and committed-tree trial), and
+    `deep-conflict-{types,deadline}.ts` (shared contract and request budget)
+  - persisted worktree fork commit capture/backfill:
+    `src/main/lib/chat-base-commit.ts`
+  - renderer conflict entry-point state:
+    `src/renderer/features/agents/lib/diff-open-filter-state.ts` (preserve an
+    explicit conflict-file filter while the existing diff surface mounts),
+    `src/renderer/features/agents/workbench/diff-surface-routing.ts` (choose
+    the existing responsive diff surface), and
+    `src/renderer/features/agents/workbench/conflict-verdict-state.ts`
+    (pending/stale presentation state)
+- Consumers: `src/main/lib/trpc/routers/agent-workbench.ts` and the existing
+  Agent Workbench/diff renderer surfaces
+- Rule: the route resolves registered project/worktree identities and maps the
+  transport envelope, but conflict classification, eligibility, immutable Git
+  snapshot rules, and verdict semantics stay in the owners above. Renderer code
+  only presents verdicts and routes users into the existing diff surface; it
+  must not implement a second detector or review path. External consumers import
+  the deep-check API through `deep-conflicts.ts`; sibling owner modules divide
+  implementation responsibility and must not copy each other's logic. Opening a
+  conflict must retain the caller-supplied overlapping-file filter; the mounted
+  diff provider must not replace it with the first unrelated dirty file.
+
 ## Desktop Runtime Preflight
 
 - Canonical owner: `src/main/lib/agent-runtime/preflight.ts`
@@ -159,6 +201,9 @@ or UI helper.
   events and renderer-visible diagnostics must pass through normalized event
   mapping and redaction first. Raw provider, gateway, MCP, OAuth, header, and
   environment secrets must not be persisted or emitted to renderer state.
+  Run-scoped credentials are passed to the redaction owner only as
+  main-process-only exact secret hints; hints themselves never enter an event,
+  message, result, diagnostic, renderer payload, or durable record.
 
 ## Provider Credentials
 
@@ -175,8 +220,14 @@ or UI helper.
   `src/main/lib/codex/provider-runtime-binding.ts`, and
   `src/main/lib/codex/official-runtime-env.ts`
 - Consumers: runtime startup, status checks, provider profile routes
-- Rule: plaintext provider secrets stay in the main process. Renderer code may
-  receive status, IDs, labels, and redacted metadata only.
+- Rule: `provider-profiles/storage.ts` is the only owner that reads persisted
+  provider-profile/default rows, validates stored JSON/enums/headers, decrypts
+  profile credentials, and joins a default to its runtime config. Headless
+  provider binding may select request/default/native sources, enforce runtime
+  targets, and create a scoped gateway binding, but it must consume the storage
+  owner and must not keep another row parser or decryptor. Invalid persisted
+  values fail closed. Plaintext provider secrets stay in the main process;
+  renderer code may receive status, IDs, labels, and redacted metadata only.
 
 ## Claude Desktop Chat Runtime
 
