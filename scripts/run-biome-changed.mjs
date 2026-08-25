@@ -206,6 +206,12 @@ function getChangedFilesFromMap(changeMap) {
   return [...changeMap.keys()].filter(isBiomeSupportedPath)
 }
 
+export function resolveChangedSince(env = process.env) {
+  return (
+    env.BIOME_CHANGED_SINCE?.trim() || env.DIFF_BASE_SHA?.trim() || undefined
+  )
+}
+
 function runBiome(command, shell, files) {
   return spawnSync(command, ["check", "--reporter=json", ...files], {
     encoding: "utf8",
@@ -222,7 +228,7 @@ function main() {
     process.exit(1)
   }
 
-  const since = process.env.BIOME_CHANGED_SINCE?.trim()
+  const since = resolveChangedSince()
   const changedLineMap = getChangedLineMap(since)
   const files = getChangedFilesFromMap(changedLineMap)
 

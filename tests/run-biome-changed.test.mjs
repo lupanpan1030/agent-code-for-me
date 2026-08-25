@@ -8,6 +8,7 @@ import {
   isBlockingChangedDiagnostic,
   markAllLinesChanged,
   resolveBiomeExecutable,
+  resolveChangedSince,
 } from "../scripts/run-biome-changed.mjs"
 
 describe("run-biome-changed helpers", () => {
@@ -77,6 +78,19 @@ index 111..222 100644
     expect(isBlockingChangedDiagnostic({ severity: "error" })).toBe(true)
     expect(isBlockingChangedDiagnostic({ severity: "warning" })).toBe(true)
     expect(isBlockingChangedDiagnostic({ severity: "info" })).toBe(false)
+  })
+
+  test("uses the exact closeout base when the CI-specific lint base is absent", () => {
+    expect(
+      resolveChangedSince({
+        BIOME_CHANGED_SINCE: " pr-base ",
+        DIFF_BASE_SHA: " closeout-base ",
+      }),
+    ).toBe("pr-base")
+    expect(resolveChangedSince({ DIFF_BASE_SHA: " closeout-base " })).toBe(
+      "closeout-base",
+    )
+    expect(resolveChangedSince({})).toBeUndefined()
   })
 
   test("ignores file-level diagnostics for legacy lines in modified files", () => {

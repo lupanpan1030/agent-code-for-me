@@ -191,10 +191,10 @@ function summarizeGatewayTools(tools: unknown): Array<{
   if (!Array.isArray(tools)) return []
   return tools.map((tool) => {
     const record =
-      tool && typeof tool === "object" ? (tool as Record<string, any>) : {}
+      tool && typeof tool === "object" ? (tool as Record<string, unknown>) : {}
     const fn =
       record.function && typeof record.function === "object"
-        ? (record.function as Record<string, any>)
+        ? (record.function as Record<string, unknown>)
         : null
     const nestedTools = Array.isArray(record.tools)
       ? summarizeGatewayTools(record.tools)
@@ -1312,7 +1312,10 @@ async function handleAnthropicRequest(
     const text =
       json?.output_text ||
       json?.output?.[0]?.content?.find?.(
-        (part: any) => part.type === "output_text",
+        (part: unknown): part is { type: "output_text"; text?: unknown } =>
+          typeof part === "object" &&
+          part !== null &&
+          (part as { type?: unknown }).type === "output_text",
       )?.text ||
       ""
     sendJson(res, 200, {
