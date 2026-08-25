@@ -9,7 +9,6 @@ export async function flushWritableStream(stream: Writable): Promise<void> {
       if (settled) return
       settled = true
       stream.off("error", onError)
-      stream.off("finish", onFinish)
       stream.off("close", onClose)
       if (error) {
         reject(error)
@@ -18,13 +17,11 @@ export async function flushWritableStream(stream: Writable): Promise<void> {
       resolve()
     }
     const onError = (error: Error) => settle(error)
-    const onFinish = () => settle()
     const onClose = () => settle()
     stream.once("error", onError)
-    stream.once("finish", onFinish)
     stream.once("close", onClose)
     try {
-      stream.end(settle)
+      stream.write("", settle)
     } catch (error) {
       settle(error instanceof Error ? error : new Error(String(error)))
     }

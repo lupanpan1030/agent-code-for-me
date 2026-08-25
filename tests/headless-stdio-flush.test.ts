@@ -6,6 +6,7 @@ import type { Readable } from "node:stream"
 
 const repoRoot = join(__dirname, "..")
 const ONE_MIB = 1024 * 1024
+const LATE_STDERR_BYTES = 64 * 1024
 
 async function readStream(stream: Readable | null): Promise<string> {
   if (!stream) return ""
@@ -60,7 +61,7 @@ describe("headless stdio flushing", () => {
         stderr: process.stderr,
       })
       await flushHeadlessStdio(process.stdout, process.stderr)
-      process.exit(exitCode)
+      process.exitCode = exitCode
     `
     const child = spawn(process.execPath, ["--eval", childSource], {
       cwd: repoRoot,
@@ -85,5 +86,43 @@ describe("headless stdio flushing", () => {
     expect(parsed.status).toBe("succeeded")
     expect(typeof parsed.result.finalMessage).toBe("string")
     expect(parsed.result.finalMessage).toHaveLength(ONE_MIB)
+  })
+
+  test("keeps piped stdio writable after the flush barrier for late runtime output", async () => {
+    const lateStdout = "\nlate-stdout-after-barrier\n"
+    const lateStderr = `late-stderr-after-barrier:${"z".repeat(LATE_STDERR_BYTES)}\n`
+    const childSource = `
+      const { flushHeadlessStdio } = await import("./src/main/lib/headless/stdio.ts")
+
+      process.stdout.write("x".repeat(${ONE_MIB}))
+      await flushHeadlessStdio(process.stdout, process.stderr)
+      await new Promise((resolve) => setImmediate(resolve))
+
+      process.stdout.write(${JSON.stringify(lateStdout)})
+      process.stderr.write("late-stderr-after-barrier:" + "z".repeat(${LATE_STDERR_BYTES}) + "\\n")
+      await flushHeadlessStdio(process.stdout, process.stderr)
+      process.exit(0)
+    `
+    const child = spawn("node", ["--eval", childSource], {
+      cwd: repoRoot,
+      env: {
+        ...process.env,
+        NODE_NO_WARNINGS: "1",
+        NO_COLOR: "1",
+        FORCE_COLOR: "0",
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    })
+    const [stdout, stderr, closeArgs] = await Promise.all([
+      readStream(child.stdout),
+      readStream(child.stderr),
+      once(child, "close"),
+    ])
+    const [code, signal] = closeArgs as [number | null, NodeJS.Signals | null]
+
+    expect(signal).toBeNull()
+    expect(code).toBe(0)
+    expect(stdout).toBe(`${"x".repeat(ONE_MIB)}${lateStdout}`)
+    expect(stderr).toBe(lateStderr)
   })
 })
