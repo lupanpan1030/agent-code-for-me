@@ -214,9 +214,40 @@ and the reverse imports from `src/main/index.ts` and `src/main/windows/main.ts`.
 
 ## Exact-source verdict
 
-- Source SHA: pending.
-- `bun run check:full` exact-SHA receipt: pending.
-- Codex verdict: pending.
+- Frozen source SHA: `6bf928bf00051ab1e9513b67162280677134d972`.
+- Verified at: `2026-08-26 06:40:00 NZST (+1200)`.
+- Before and after the exact-source gate, the implementation worktree was clean and `HEAD`
+  still resolved to the frozen SHA. Local `main` remained fixed at
+  `a974dd47667b790a5a7aacdaa194fa453c29a20a`.
+- `bun run check:full` exact-SHA receipt: **exit 0**.
+  - changed-line lint: passed;
+  - architecture guard: passed;
+  - retired-runtime residue: passed (**1,577 files scanned / 10 allowlisted**);
+  - TypeScript: passed;
+  - tests: **1,679 passed / 0 failed / 8,115 expectations across 286 files**;
+  - OpenSpec all/strict: **56 passed / 0 failed**;
+  - Electron/Vite production build: passed;
+  - patch whitespace check: passed.
+- No-spec-delta receipt: `.openspec.yaml` contains `skip_specs: true`, and the exact-source
+  `openspec validate --all --strict --no-interactive` run included this change and passed.
+- Persistence parity receipt: a deterministic in-memory harness replayed the inline
+  `a974dd47` baseline and the extracted owner with the same prior history, IDs, timestamps,
+  image, long-text attachment, metadata chunks, and finish chunks. The raw
+  `subChats.messages` strings were byte-identical: **3 messages / 969 bytes / SHA-256
+  `26202482c6a6e40a7e2f054ffed55174d853cccafdde785f75be4d87f4793587`**; final
+  `updatedAt` was identical (`2026-08-26T02:03:05.000Z`). Shared parts construction,
+  normalizer, and DB schema had no diff from the base. The focused persistence suite also
+  passed: **5 / 0 / 24 expectations**.
+- Desktop smoke limitation: `bun run dev` was attempted on the frozen source and exited 1
+  before app startup. Electron could not load `libnspr4.so`; `ldd` additionally reports
+  missing `libnss3.so`, `libnssutil3.so`, `libsmime3.so`, and `libasound.so.2`. The native
+  module rebuild completed, then the same loader failure recurred for `better-sqlite3` and
+  `node-pty`. No end-to-end GUI scenario is claimed. This environment limitation does not
+  alter the exact-source automated receipt, but task 8.2 remains visibly unchecked for a
+  GUI-capable host/fresh reviewer to assess.
+- Codex verdict: **IMPLEMENTATION_VERIFIED** for the frozen source SHA, with the explicit
+  task 8.2 environment limitation above. No P0/P1/P2 implementation finding remains; all
+  reviewer P3 coverage findings were closed before the source freeze.
 - Claude Code independent verdict: pending.
 - Owner acceptance: pending.
 - Local merge/archive: pending.

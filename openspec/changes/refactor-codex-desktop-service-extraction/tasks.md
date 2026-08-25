@@ -131,7 +131,7 @@
 
 ## 8. Verification
 
-- [ ] 8.1 `bun run check:full` green (lint, architecture guards, typecheck, tests,
+- [x] 8.1 `bun run check:full` green (lint, architecture guards, typecheck, tests,
       `spec:validate`, build, diff check). `spec:validate --all --strict` passes for this
       delta-free change only because the change directory's `.openspec.yaml` carries
       `skip_specs: true` — confirm the marker is present. Account for every test-count delta
@@ -141,17 +141,23 @@
       approval prompt answered; cancel mid-run then re-run; provider-profile run issues
       and revokes a gateway token; app quit with an active Codex stream triggers the
       confirm-and-abort path; error path still emits `error` + `finish` once.
-- [ ] 8.3 Behavior-preservation spot check: diff a pre-change and post-change
+      - 2026-08-26 exact-source attempt stopped before app startup because this Linux host
+        lacks Electron runtime libraries (`libnspr4.so`, plus NSS/audio dependencies).
+        The native check rebuilt successfully, then failed on the same missing system
+        library. No GUI scenario is claimed as run; this item remains unchecked for a
+        GUI-capable host. Exact lifecycle behavior remains covered by the focused owner
+        tests recorded in `verification.md`.
+- [x] 8.3 Behavior-preservation spot check: diff a pre-change and post-change
       `subChats.messages` row for an identical scripted run shape; confirm identical
       structure. Note the receipt in `verification.md`.
-- [ ] 8.4 Confirm no-spec-delta status: repo `openspec validate --strict --no-interactive`
+- [x] 8.4 Confirm no-spec-delta status: repo `openspec validate --strict --no-interactive`
       passes for all changes including this one (via the `.openspec.yaml` `skip_specs: true`
       marker in the change directory); this change is documented in `proposal.md` Impact as a
       pure internal refactor to be archived with `--skip-specs`.
 
 ## 9. Closeout (repo standard)
 
-- [ ] 9.1 Commit the integrated source, run `bun run check:full` on the exact source SHA,
+- [x] 9.1 Commit the integrated source, run `bun run check:full` on the exact source SHA,
       and bind the SHA + receipt into `verification.md`.
 - [ ] 9.2 Record `IMPLEMENTATION_VERIFIED` (Codex) and fresh-context `REVIEW_APPROVED`
       (Claude Code independent review) for that same SHA in `verification.md`.
