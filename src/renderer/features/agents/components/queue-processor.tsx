@@ -2,16 +2,20 @@
 
 import { useEffect, useRef } from "react"
 import { toast } from "sonner"
+import { trackMessageSent } from "../../../lib/analytics"
+import { useI18n } from "../../../lib/i18n"
+import { appStore } from "../../../lib/jotai-store"
+import { clearLoading, loadingSubChatsAtom, setLoading } from "../atoms"
+import {
+  isChatSessionOperationCancelledError,
+  withChatSessionBindingGate,
+} from "../lib/chat-session-binding-gate"
+import { buildAgentMessageParts } from "../lib/message-parts"
+import type { AgentQueueItem } from "../lib/queue-utils"
+import { agentChatStore } from "../stores/agent-chat-store"
 import { useMessageQueueStore } from "../stores/message-queue-store"
 import { useStreamingStatusStore } from "../stores/streaming-status-store"
 import { useAgentSubChatStore } from "../stores/sub-chat-store"
-import { agentChatStore } from "../stores/agent-chat-store"
-import { trackMessageSent } from "../../../lib/analytics"
-import { appStore } from "../../../lib/jotai-store"
-import { loadingSubChatsAtom, setLoading, clearLoading } from "../atoms"
-import type { AgentQueueItem } from "../lib/queue-utils"
-import { useI18n } from "../../../lib/i18n"
-import { buildAgentMessageParts } from "../lib/message-parts"
 
 // Delay between processing queue items (ms)
 const QUEUE_PROCESS_DELAY = 1000
@@ -53,88 +57,101 @@ export function QueueProcessor() {
         return
       }
 
-      // Get the Chat object from agentChatStore
-      const chat = agentChatStore.get(subChatId)
-      if (!chat) {
-        return
-      }
-
       // Mark as processing
       processingRef.current.add(subChatId)
-
-      // Pop the first item from queue (atomic operation)
-      const item = useMessageQueueStore.getState().popItem(subChatId, queue[0].id)
-      if (!item) {
-        processingRef.current.delete(subChatId)
-        return
-      }
+      let item: AgentQueueItem | undefined
 
       try {
-        // Build message parts from queued item. New image attachments stay as
-        // local refs; legacy queued images can still fall back to data-image.
-        const parts = buildAgentMessageParts({
-          text: item.message,
-          images: item.images,
-          files: item.files,
-          textContexts: item.textContexts?.map((context) => ({
-            ...context,
-            preview: context.text.slice(0, 50),
-          })),
-          diffTextContexts: item.diffTextContexts?.map((context) => ({
-            ...context,
-            preview: context.text.slice(0, 50),
-          })),
-          pastedTexts: item.pastedTexts,
+        await withChatSessionBindingGate(subChatId, async () => {
+          // Re-read every send precondition and the Chat inside the gate. A
+          // binding transition may have replaced the transport while this
+          // queue item was waiting to acquire it.
+          const currentStatus = useStreamingStatusStore
+            .getState()
+            .getStatus(subChatId)
+          if (currentStatus !== "ready") return
+
+          const currentQueue =
+            useMessageQueueStore.getState().queues[subChatId] || []
+          if (currentQueue.length === 0) return
+
+          const chat = agentChatStore.get(subChatId)
+          if (!chat) return
+
+          const poppedItem = useMessageQueueStore
+            .getState()
+            .popItem(subChatId, currentQueue[0].id)
+          if (!poppedItem) return
+          item = poppedItem
+
+          // Build message parts from queued item. New image attachments stay as
+          // local refs; legacy queued images can still fall back to data-image.
+          const parts = buildAgentMessageParts({
+            text: poppedItem.message,
+            images: poppedItem.images,
+            files: poppedItem.files,
+            textContexts: poppedItem.textContexts?.map((context) => ({
+              ...context,
+              preview: context.text.slice(0, 50),
+            })),
+            diffTextContexts: poppedItem.diffTextContexts?.map((context) => ({
+              ...context,
+              preview: context.text.slice(0, 50),
+            })),
+            pastedTexts: poppedItem.pastedTexts,
+          })
+
+          const subChatMeta = useAgentSubChatStore
+            .getState()
+            .allSubChats.find((sc) => sc.id === subChatId)
+          const mode = subChatMeta?.mode || "agent"
+
+          trackMessageSent({
+            workspaceId: subChatId,
+            messageLength: poppedItem.message.length,
+            mode,
+          })
+
+          useAgentSubChatStore.getState().updateSubChatTimestamp(subChatId)
+
+          const parentChatId = agentChatStore.getParentChatId(subChatId)
+          if (parentChatId) {
+            setLoading(
+              (fn) =>
+                appStore.set(
+                  loadingSubChatsAtom,
+                  fn(appStore.get(loadingSubChatsAtom)),
+                ),
+              subChatId,
+              parentChatId,
+            )
+          }
+
+          // Signal active-chat to scroll before sendMessage awaits the stream.
+          useMessageQueueStore.getState().triggerQueueSent(subChatId)
+
+          await chat.sendMessage({ role: "user", parts })
         })
-
-        // Get mode from sub-chat store for analytics
-        const subChatMeta = useAgentSubChatStore
-          .getState()
-          .allSubChats.find((sc) => sc.id === subChatId)
-        const mode = subChatMeta?.mode || "agent"
-
-        // Track message sent
-        trackMessageSent({
-          workspaceId: subChatId,
-          messageLength: item.message.length,
-          mode,
-        })
-
-        // Update timestamps
-        useAgentSubChatStore.getState().updateSubChatTimestamp(subChatId)
-
-        // Set loading state for sidebar indicator
-        const parentChatId = agentChatStore.getParentChatId(subChatId)
-        if (parentChatId) {
-          setLoading(
-            (fn) => appStore.set(loadingSubChatsAtom, fn(appStore.get(loadingSubChatsAtom))),
-            subChatId,
-            parentChatId
-          )
-        }
-
-        // Signal active-chat to scroll to bottom BEFORE sending so that
-        // shouldAutoScrollRef is true for the entire streaming duration.
-        // (sendMessage awaits the full stream, so placing this after would
-        // only scroll after the response is complete.)
-        useMessageQueueStore.getState().triggerQueueSent(subChatId)
-
-        // Send message using Chat's sendMessage method
-        await chat.sendMessage({ role: "user", parts })
-
       } catch (error) {
+        if (isChatSessionOperationCancelledError(error)) return
         console.error(`[QueueProcessor] Error processing queue:`, error)
 
         // Requeue the item at the front so it can be retried
-        useMessageQueueStore.getState().prependItem(subChatId, item)
+        if (item) {
+          useMessageQueueStore.getState().prependItem(subChatId, item)
+        }
 
         // Set error status (will be cleared on next successful send or manual retry)
         useStreamingStatusStore.getState().setStatus(subChatId, "error")
 
         // Clear loading state since send failed
         clearLoading(
-          (fn) => appStore.set(loadingSubChatsAtom, fn(appStore.get(loadingSubChatsAtom))),
-          subChatId
+          (fn) =>
+            appStore.set(
+              loadingSubChatsAtom,
+              fn(appStore.get(loadingSubChatsAtom)),
+            ),
+          subChatId,
         )
 
         // Notify user
@@ -174,7 +191,10 @@ export function QueueProcessor() {
         const status = useStreamingStatusStore.getState().getStatus(subChatId)
 
         // Process when ready, or retry on error status
-        if ((status === "ready" || status === "error") && !processingRef.current.has(subChatId)) {
+        if (
+          (status === "ready" || status === "error") &&
+          !processingRef.current.has(subChatId)
+        ) {
           // If error status, clear it before retrying
           if (status === "error") {
             useStreamingStatusStore.getState().setStatus(subChatId, "ready")
@@ -187,13 +207,13 @@ export function QueueProcessor() {
     // Subscribe to queue changes with selector (requires subscribeWithSelector middleware)
     const unsubscribeQueue = useMessageQueueStore.subscribe(
       (state) => state.queues,
-      () => checkAllQueues()
+      () => checkAllQueues(),
     )
 
     // Subscribe to streaming status changes with selector
     const unsubscribeStatus = useStreamingStatusStore.subscribe(
       (state) => state.statuses,
-      () => checkAllQueues()
+      () => checkAllQueues(),
     )
 
     // Initial check

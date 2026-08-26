@@ -54,22 +54,20 @@ import {
 import { flushSync } from "react-dom"
 import { toast } from "sonner"
 import { useShallow } from "zustand/react/shallow"
-import {
-  inferAgentChatProviderFromMessages,
-  type AgentChatProvider,
-} from "../../../../shared/agent-chat-provider"
+import type { AgentChatProvider } from "../../../../shared/agent-chat-provider"
 import type {
   CanonicalChatMessage,
   CanonicalChatMessagePart,
 } from "../../../../shared/chat-message"
 import { normalizeChatImageAttachmentPart } from "../../../../shared/chat-attachments"
 import { normalizePersistedChatMessages } from "../../../../shared/chat-message-normalizer"
+import {
+  normalizeChatSessionBindingWrite,
+  type ChatSessionBinding,
+  type ChatSessionBindingWriteInput,
+} from "../../../../shared/chat-session-binding"
 import type { FileStatus } from "../../../../shared/changes-types"
 import { normalizeLongTextAttachmentPart } from "../../../../shared/long-text-attachments"
-import {
-  isProviderProfileSource,
-  parseProviderProfileSource,
-} from "../../../../shared/provider-profile-types"
 import type { ParsedDiffFile } from "../../../../shared/unified-diff-parser"
 import { getQueryClient } from "../../../contexts/TRPCProvider"
 import { trackMessageSent } from "../../../lib/analytics"
@@ -128,10 +126,10 @@ import {
   isCreatingPrAtom,
   justCreatedIdsAtom,
   loadingSubChatsAtom,
-  MODEL_ID_MAP,
   pendingBuildPlanSubChatIdAtom,
   pendingConflictResolutionMessageAtom,
   pendingLocalBrowserReportAtomFamily,
+  pendingAuthRetryMessageAtom,
   pendingChatHistoryAtom,
   type PendingChatHistory,
   pendingMentionAtom,
@@ -148,11 +146,6 @@ import {
   setLoading,
   subChatFilesAtom,
   agentsSidebarOpenAtom,
-  subChatCodexModelIdAtomFamily,
-  subChatCodexModelSourceAtomFamily,
-  subChatCodexThinkingAtomFamily,
-  subChatClaudeModelSourceAtomFamily,
-  subChatModelIdAtomFamily,
   subChatModeAtomFamily,
   suppressInputFocusAtom,
   undoStackAtom,
@@ -182,15 +175,42 @@ import { useTextContextSelection } from "../hooks/use-text-context-selection"
 import { useToggleFocusOnCmdEsc } from "../hooks/use-toggle-focus-on-cmd-esc"
 import { useWorkspaceDiffFetch } from "../hooks/use-workspace-diff-fetch"
 import { ACPChatTransport } from "../lib/acp-chat-transport"
+import { isCurrentAuthRetryBindingIdentity } from "../lib/auth-retry-binding"
 import {
   getCanonicalMessageParts,
   isDataImageMessagePart,
 } from "../lib/chat-message-ui-adapter"
 import { formatHistoryForContext } from "../lib/export-chat"
 import { clearSubChatDraft, getSubChatDraftFull } from "../lib/drafts"
+import { getNewChatSessionBindingDefaults } from "../lib/chat-session-binding-defaults"
+import {
+  type ChatSessionOperationContext,
+  deferUntilPendingChatSessionOperationsSettle,
+  isChatSessionOperationCancelledError,
+  publishChatSessionBindingReceipt,
+  shouldRetainChatSessionDuringNormalEviction,
+  withPendingChatSessionOperation,
+  withChatSessionBindingGate,
+  withCurrentChatSessionBindingGate,
+} from "../lib/chat-session-binding-gate"
+import { getChatViewInstanceKey } from "../lib/chat-view-instance-key"
+import {
+  claimChatStreamResume,
+  releaseFailedChatStreamResume,
+  resumeClaimedChatStream,
+} from "../lib/chat-stream-resume"
+import {
+  claimChatInitialGeneration,
+  releaseFailedChatInitialGeneration,
+  runClaimedChatInitialGeneration,
+} from "../lib/chat-initial-generation"
 import { IPCChatTransport } from "../lib/ipc-chat-transport"
 import { buildAgentMessageParts } from "../lib/message-parts"
 import { useRuntimeCapabilitySupported } from "../lib/runtime-manifest-store"
+import {
+  clearRuntimeQuestionApprovalIfCurrent,
+  respondToRuntimeQuestionApproval,
+} from "../lib/runtime-event-state"
 import {
   createQueueItem,
   createTextPreview,
@@ -315,9 +335,72 @@ const scrollPositionCache = new Map<
 const mountedChatViewInnerCounts = new Map<string, number>()
 const pendingSubChatCleanupTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
+function getNewSubChatBinding(
+  requestedRuntime?: AgentChatProvider,
+  selection?: ContinueWithProviderSelection,
+): ChatSessionBindingWriteInput {
+  const defaults = requestedRuntime
+    ? getNewChatSessionBindingDefaults(requestedRuntime)
+    : getNewChatSessionBindingDefaults()
+  const runtime = defaults.runtime
+
+  if (runtime === "codex") {
+    return normalizeChatSessionBindingWrite({
+      ...defaults,
+      modelId: selection?.codexModelId ?? defaults.modelId,
+      modelSource: selection?.codexModelSource ?? defaults.modelSource,
+      thinkingLevel: selection?.codexThinking ?? defaults.thinkingLevel,
+    })
+  }
+
+  return normalizeChatSessionBindingWrite({
+    ...defaults,
+    modelId: selection?.claudeModelId ?? defaults.modelId,
+    modelSource:
+      selection?.claudeModelSource === "auto"
+        ? "claude-oauth"
+        : (selection?.claudeModelSource ?? defaults.modelSource),
+    thinkingLevel: null,
+  })
+}
+
+type ChatSessionBindingPatch = Partial<ChatSessionBindingWriteInput>
+
+type OptimisticChatsListRow = {
+  id: string
+  updatedAt: Date | string
+  [key: string]: unknown
+}
+
 function clearRuntimeCachesForSubChat(subChatId: string) {
   clearSubChatRuntimeCaches(subChatId)
   scrollPositionCache.delete(subChatId)
+}
+
+function pruneDetachedChatSessionIfIdle(
+  subChatId: string,
+  parentChatId: string,
+): void {
+  const currentSelectedChatId = appStore.get(selectedAgentChatIdAtom)
+  if (!currentSelectedChatId || currentSelectedChatId === parentChatId) return
+  if (
+    deferUntilPendingChatSessionOperationsSettle(
+      subChatId,
+      () => pruneDetachedChatSessionIfIdle(subChatId, parentChatId),
+    )
+  ) return
+  if (
+    shouldRetainChatSessionDuringNormalEviction({
+      subChatId,
+      isStreaming:
+        useStreamingStatusStore.getState().isStreaming(subChatId),
+      queuedMessageCount:
+        useMessageQueueStore.getState().queues[subChatId]?.length ?? 0,
+    })
+  ) return
+
+  agentChatStore.delete(subChatId)
+  clearRuntimeCachesForSubChat(subChatId)
 }
 
 import { utf8ToBase64, base64ToUtf8 } from "../utils/base64"
@@ -1584,11 +1667,11 @@ const ChatViewInner = memo(function ChatViewInner({
   chat,
   subChatId,
   parentChatId,
-  provider = "claude-code",
+  binding,
   isFirstSubChat,
   onAutoRename,
   onCreateNewSubChat,
-  onProviderChange,
+  onBindingChange,
   refreshDiff,
   repository,
   streamId,
@@ -1611,11 +1694,14 @@ const ChatViewInner = memo(function ChatViewInner({
   chat: Chat<any>
   subChatId: string
   parentChatId: string
-  provider?: AgentChatProvider
+  binding: ChatSessionBinding
   isFirstSubChat: boolean
   onAutoRename: (userMessage: string, subChatId: string) => void
   onCreateNewSubChat?: () => void
-  onProviderChange?: (subChatId: string, provider: AgentChatProvider) => void
+  onBindingChange?: (
+    subChatId: string,
+    binding: ChatSessionBindingPatch,
+  ) => Promise<void>
   refreshDiff?: () => void
   repository?: string
   streamId?: string | null
@@ -1636,8 +1722,8 @@ const ChatViewInner = memo(function ChatViewInner({
   workspaceRepoName?: string | null
 }) {
   const { t } = useI18n()
+  const provider = binding.runtime
   const hasTriggeredRenameRef = useRef(false)
-  const hasTriggeredAutoGenerateRef = useRef(false)
   const isVisiblePane = isActive || isSplitPane
 
   // Keep isActive in ref for use in callbacks (avoid stale closures)
@@ -2054,17 +2140,11 @@ const ChatViewInner = memo(function ChatViewInner({
   const removeFromQueue = useMessageQueueStore((s) => s.removeFromQueue)
   const popItemFromQueue = useMessageQueueStore((s) => s.popItem)
 
-  // Plan approval pending state (for tool approval loading)
-  const [planApprovalPending, setPlanApprovalPending] = useState<
-    Record<string, boolean>
-  >({})
-
   // Track chat changes for rename trigger reset
   const chatRef = useRef<Chat<any> | null>(null)
 
   if (prevSubChatIdRef.current !== subChatId) {
     hasTriggeredRenameRef.current = false // Reset on sub-chat change
-    hasTriggeredAutoGenerateRef.current = false // Reset auto-generate on sub-chat change
     prevSubChatIdRef.current = subChatId
   }
   chatRef.current = chat
@@ -2129,18 +2209,82 @@ const ChatViewInner = memo(function ChatViewInner({
     clearPastedTexts,
   ])
 
-  // Use subChatId as stable key to prevent HMR-induced duplicate resume requests
-  // resume: !!streamId to reconnect to active streams (background streaming support)
-  const { messages, sendMessage, status, stop, regenerate, setMessages } = useChat({
+  // Locus owns resume admission so it shares the same per-chat gate as binding
+  // transitions and sends. The SDK's `resume` effect would bypass that gate.
+  const { messages, status, stop, setMessages } = useChat({
     id: subChatId,
     chat,
-    resume: !!streamId,
-    experimental_throttle: 50,  // Throttle updates to reduce re-renders during streaming
+    resume: false,
+    experimental_throttle: 50, // Throttle updates to reduce re-renders during streaming
   })
 
-  // Refs for useChat functions to keep callbacks stable across renders
-  const sendMessageRef = useRef(sendMessage)
-  sendMessageRef.current = sendMessage
+  const sendMessageWithBindingGate = useCallback(
+    (
+      message: Parameters<
+        NonNullable<ReturnType<typeof agentChatStore.get>>["sendMessage"]
+      >[0],
+      operationContext?: ChatSessionOperationContext,
+    ) =>
+      withCurrentChatSessionBindingGate(
+        subChatId,
+        (currentChat, context) => {
+          context.throwIfCancelled()
+          return currentChat.sendMessage(message)
+        },
+        operationContext,
+      ),
+    [subChatId],
+  )
+  const sendAuthRetryMessageWithBindingGate = useCallback(
+    async (
+      message: Parameters<
+        NonNullable<ReturnType<typeof agentChatStore.get>>["sendMessage"]
+      >[0],
+      expectedBindingIdentity: string,
+    ) =>
+      withCurrentChatSessionBindingGate(subChatId, async (currentChat) => {
+        if (
+          !isCurrentAuthRetryBindingIdentity(
+            subChatId,
+            expectedBindingIdentity,
+          )
+        ) {
+          return false
+        }
+        await currentChat.sendMessage(message)
+        return true
+      }),
+    [subChatId],
+  )
+  const regenerateInitialMessageWithBindingGate = useCallback(
+    (generationKey: string) =>
+      withCurrentChatSessionBindingGate(subChatId, (currentChat) =>
+        runClaimedChatInitialGeneration({
+          generationKey,
+          regenerate: () => currentChat.regenerate(),
+          getStatus: () => currentChat.status,
+        }),
+      ),
+    [subChatId],
+  )
+  useEffect(() => {
+    const resumeKey = claimChatStreamResume(subChatId, streamId)
+    if (!resumeKey) return
+    void withCurrentChatSessionBindingGate(subChatId, (currentChat) =>
+      resumeClaimedChatStream({
+        resumeKey,
+        resume: () => currentChat.resumeStream(),
+        getStatus: () => currentChat.status,
+      }),
+    ).catch((error) => {
+      // The current-Chat lookup can reject before the inner helper runs (for
+      // example, an explicit tab close). Release that exact claim as well.
+      releaseFailedChatStreamResume(resumeKey)
+      if (!isChatSessionOperationCancelledError(error)) {
+        console.error("[active-chat] Failed to resume stream")
+      }
+    })
+  }, [streamId, subChatId])
   const stopRef = useRef(stop)
   stopRef.current = stop
 
@@ -2161,11 +2305,15 @@ const ChatViewInner = memo(function ChatViewInner({
   // Handler to trigger manual context compaction
   const handleCompact = useCallback(() => {
     if (isStreamingRef.current) return // Can't compact while streaming
-    sendMessageRef.current({
+    void sendMessageWithBindingGate({
       role: "user",
       parts: [{ type: "text", text: "/compact" }],
+    }).catch((error) => {
+      if (!isChatSessionOperationCancelledError(error)) {
+        console.error("[active-chat] Failed to compact chat", error)
+      }
     })
-  }, [])
+  }, [sendMessageWithBindingGate])
 
   // Handler to stop streaming - memoized to prevent ChatInputArea re-renders
   const handleStop = useCallback(async () => {
@@ -2275,9 +2423,13 @@ const ChatViewInner = memo(function ChatViewInner({
       })
     } else {
       // Send directly
-      sendMessageRef.current({
+      void sendMessageWithBindingGate({
         role: "user",
         parts: [{ type: "text", text: message }],
+      }).catch((error) => {
+        if (!isChatSessionOperationCancelledError(error)) {
+          console.error("[active-chat] Failed to send quick comment", error)
+        }
       })
       toast.success(t("agent.chat.toast.replySent"))
     }
@@ -2285,7 +2437,7 @@ const ChatViewInner = memo(function ChatViewInner({
     // Clear state and selection
     setQuickCommentState(null)
     window.getSelection()?.removeAllRanges()
-  }, [addToQueue, subChatId, t])
+  }, [addToQueue, sendMessageWithBindingGate, subChatId, t])
 
   // Handler for quick comment cancel
   const handleQuickCommentCancel = useCallback(() => {
@@ -2311,7 +2463,7 @@ const ChatViewInner = memo(function ChatViewInner({
   usePendingAgentMessages({
     subChatId,
     isStreaming,
-    sendMessage,
+    sendMessage: sendMessageWithBindingGate,
     setIsCreatingPr,
   })
 
@@ -2321,16 +2473,12 @@ const ChatViewInner = memo(function ChatViewInner({
   )
 
   // Pending user questions from AskUserQuestion tool
-  const [pendingQuestionsMap, setPendingQuestionsMap] = useAtom(
-    pendingUserQuestionsAtom,
-  )
+  const pendingQuestionsMap = useAtomValue(pendingUserQuestionsAtom)
   // Get pending questions for this specific subChat
   const pendingQuestions = pendingQuestionsMap.get(subChatId) ?? null
 
   // Expired user questions (timed out but still answerable as normal messages)
-  const [expiredQuestionsMap, setExpiredQuestionsMap] = useAtom(
-    expiredUserQuestionsAtom,
-  )
+  const expiredQuestionsMap = useAtomValue(expiredUserQuestionsAtom)
   const expiredQuestions = expiredQuestionsMap.get(subChatId) ?? null
 
   // Unified display questions: prefer pending (live), fall back to expired
@@ -2435,15 +2583,12 @@ const ChatViewInner = memo(function ChatViewInner({
       // Streaming just stopped - if there's a pending question for this chat,
       // clear it after a brief delay (backend already handled the abort)
       if (pendingQuestions) {
+        const stoppedQuestion = pendingQuestions
         const timeout = setTimeout(() => {
-          // Re-check if still showing the same question (might have been cleared by other means)
-          setPendingQuestionsMap((current) => {
-            if (current.has(subChatId)) {
-              const newMap = new Map(current)
-              newMap.delete(subChatId)
-              return newMap
-            }
-            return current
+          clearRuntimeQuestionApprovalIfCurrent({
+            subChatId: stoppedQuestion.subChatId,
+            approvalId: stoppedQuestion.approvalId,
+            toolUseId: stoppedQuestion.toolUseId,
           })
         }, 150) // Small delay to allow for race conditions with transport chunks
         return () => {
@@ -2453,7 +2598,7 @@ const ChatViewInner = memo(function ChatViewInner({
       }
       return () => clearTimeout(flagTimeout)
     }
-  }, [isStreaming, subChatId, pendingQuestions, setPendingQuestionsMap])
+  }, [isStreaming, subChatId, pendingQuestions])
 
   // Sync pending questions with messages state
   // This handles: 1) restoring on chat switch, 2) clearing when question is answered/timed out
@@ -2466,13 +2611,11 @@ const ChatViewInner = memo(function ChatViewInner({
 
     // Helper to clear pending question for this subChat
     const clearPendingQuestion = () => {
-      setPendingQuestionsMap((current) => {
-        if (current.has(subChatId)) {
-          const newMap = new Map(current)
-          newMap.delete(subChatId)
-          return newMap
-        }
-        return current
+      if (!pendingQuestions) return
+      clearRuntimeQuestionApprovalIfCurrent({
+        subChatId: pendingQuestions.subChatId,
+        approvalId: pendingQuestions.approvalId,
+        toolUseId: pendingQuestions.toolUseId,
       })
     }
 
@@ -2511,27 +2654,18 @@ const ChatViewInner = memo(function ChatViewInner({
         clearPendingQuestion()
       }
     }
-  }, [subChatId, lastAssistantMessage, isStreaming, pendingQuestions, setPendingQuestionsMap])
+  }, [subChatId, lastAssistantMessage, isStreaming, pendingQuestions])
 
   // Helper to clear pending and expired questions for this subChat (used in callbacks)
-  const clearPendingQuestionCallback = useCallback(() => {
-    setPendingQuestionsMap((current) => {
-      if (current.has(subChatId)) {
-        const newMap = new Map(current)
-        newMap.delete(subChatId)
-        return newMap
-      }
-      return current
-    })
-    setExpiredQuestionsMap((current) => {
-      if (current.has(subChatId)) {
-        const newMap = new Map(current)
-        newMap.delete(subChatId)
-        return newMap
-      }
-      return current
-    })
-  }, [subChatId, setPendingQuestionsMap, setExpiredQuestionsMap])
+  const clearPendingQuestionCallback = useCallback(
+    (question: NonNullable<typeof displayQuestions>) =>
+      clearRuntimeQuestionApprovalIfCurrent({
+        subChatId: question.subChatId,
+        approvalId: question.approvalId,
+        toolUseId: question.toolUseId,
+      }),
+    [],
+  )
 
   // Shared helpers for question answer handlers
   const formatAnswersAsText = useCallback(
@@ -2549,86 +2683,125 @@ const ChatViewInner = memo(function ChatViewInner({
     }
   }, [parentChatId, subChatId])
 
-  const sendUserMessage = useCallback(async (text: string) => {
-    shouldAutoScrollRef.current = true
-    await sendMessageRef.current({
-      role: "user",
-      parts: [{ type: "text", text }],
-    })
-  }, [])
+  const sendUserMessage = useCallback(
+    async (text: string, operationContext?: ChatSessionOperationContext) => {
+      shouldAutoScrollRef.current = true
+      await sendMessageWithBindingGate(
+        {
+          role: "user",
+          parts: [{ type: "text", text }],
+        },
+        operationContext,
+      )
+    },
+    [sendMessageWithBindingGate],
+  )
 
   const respondUserQuestionApproval = useCallback(
     async (input: {
-      toolUseId: string
+      approvalId: string
       approved: boolean
       message?: string
       updatedInput?: Record<string, unknown>
     }) => {
       if (provider === "codex") {
-        await trpcClient.codex.respondToolApproval.mutate(input)
-        return
+        return trpcClient.codex.respondToolApproval.mutate(input)
       }
-      await trpcClient.claude.respondToolApproval.mutate(input)
+      return trpcClient.claude.respondToolApproval.mutate(input)
     },
     [provider],
+  )
+
+  const respondToLiveUserQuestion = useCallback(
+    async (
+      question: NonNullable<typeof displayQuestions>,
+      input: {
+        approvalId: string
+        approved: boolean
+        message?: string
+        updatedInput?: Record<string, unknown>
+      },
+    ): Promise<{
+      transportCompleted: boolean
+      cleared: boolean
+      superseded: boolean
+    }> => {
+      try {
+        const { cleared, superseded } =
+          await respondToRuntimeQuestionApproval({
+            identity: {
+              subChatId: question.subChatId,
+              approvalId: question.approvalId,
+              toolUseId: question.toolUseId,
+            },
+            respond: () => respondUserQuestionApproval(input),
+          })
+        return { transportCompleted: true, cleared, superseded }
+      } catch (error) {
+        console.error("[active-chat] Failed to respond to user question", error)
+        toast.error(t("agent.askUser.error"), {
+          description: error instanceof Error ? error.message : undefined,
+        })
+        return {
+          transportCompleted: false,
+          cleared: false,
+          superseded: false,
+        }
+      }
+    },
+    [respondUserQuestionApproval, t],
   )
 
   // Handle answering questions
   const handleQuestionsAnswer = useCallback(
     async (answers: Record<string, string>) => {
-      if (!displayQuestions) return
+      if (!displayQuestions) return false
 
       if (isQuestionExpired) {
         // Question timed out - send answers as a normal user message
-        clearPendingQuestionCallback()
+        clearPendingQuestionCallback(displayQuestions)
         await sendUserMessage(formatAnswersAsText(answers))
+        return true
       } else {
         // Question is still live - use tool approval path
-        await respondUserQuestionApproval({
-          toolUseId: displayQuestions.toolUseId,
+        const response = await respondToLiveUserQuestion(displayQuestions, {
+          approvalId: displayQuestions.approvalId,
           approved: true,
           updatedInput: { questions: displayQuestions.questions, answers },
         })
-        clearPendingQuestionCallback()
+        return response.transportCompleted
       }
     },
-    [displayQuestions, isQuestionExpired, clearPendingQuestionCallback, sendUserMessage, formatAnswersAsText, respondUserQuestionApproval],
+    [displayQuestions, isQuestionExpired, clearPendingQuestionCallback, sendUserMessage, formatAnswersAsText, respondToLiveUserQuestion],
   )
 
   // Handle skipping questions
   const handleQuestionsSkip = useCallback(async () => {
-    if (!displayQuestions) return
+    if (!displayQuestions) return false
 
     if (isQuestionExpired) {
       // Expired question - just clear the UI, no backend call needed
-      clearPendingQuestionCallback()
-      return
+      clearPendingQuestionCallback(displayQuestions)
+      return true
     }
 
-    const toolUseId = displayQuestions.toolUseId
-
-    // Clear UI immediately - don't wait for backend
-    // This ensures dialog closes even if stream was already aborted
-    clearPendingQuestionCallback()
-
-    // Try to notify backend (may fail if already aborted - that's ok)
-    try {
-      await respondUserQuestionApproval({
-        toolUseId,
-        approved: false,
-        message: QUESTIONS_SKIPPED_MESSAGE,
-      })
-    } catch {
-      // Stream likely already aborted - ignore
-    }
-  }, [displayQuestions, isQuestionExpired, clearPendingQuestionCallback, respondUserQuestionApproval])
+    const response = await respondToLiveUserQuestion(displayQuestions, {
+      approvalId: displayQuestions.approvalId,
+      approved: false,
+      message: QUESTIONS_SKIPPED_MESSAGE,
+    })
+    return response.transportCompleted
+  }, [displayQuestions, isQuestionExpired, clearPendingQuestionCallback, respondToLiveUserQuestion])
 
   // Ref to prevent double submit of question answer
   const isSubmittingQuestionAnswerRef = useRef(false)
 
   // Handle answering questions with custom text from input (called on Enter in input)
   const handleSubmitWithQuestionAnswer = useCallback(
-    async () => {
+    async (
+      waitForBindingUpdate?: () => Promise<boolean>,
+      operationContext?: ChatSessionOperationContext,
+    ) => {
       if (!displayQuestions) return
       if (isSubmittingQuestionAnswerRef.current) return
       isSubmittingQuestionAnswerRef.current = true
@@ -2640,6 +2813,7 @@ const ChatViewInner = memo(function ChatViewInner({
           isSubmittingQuestionAnswerRef.current = false
           return
         }
+        clearInputAndDraft()
 
         // 2. Get already selected answers from question component
         const selectedAnswers = questionRef.current?.getAnswers() || {}
@@ -2652,7 +2826,8 @@ const ChatViewInner = memo(function ChatViewInner({
           const existingAnswer = formattedAnswers[lastQuestion.question]
           if (existingAnswer) {
             // Append to existing answer
-            formattedAnswers[lastQuestion.question] = `${existingAnswer}, Other: ${customText}`
+            formattedAnswers[lastQuestion.question] =
+              `${existingAnswer}, Other: ${customText}`
           } else {
             formattedAnswers[lastQuestion.question] = `Other: ${customText}`
           }
@@ -2660,37 +2835,68 @@ const ChatViewInner = memo(function ChatViewInner({
 
         if (isQuestionExpired) {
           // Expired: send user's custom text as-is (don't format)
-          clearPendingQuestionCallback()
-          clearInputAndDraft()
+          if (waitForBindingUpdate) {
+            const bindingUpdated = await waitForBindingUpdate()
+            operationContext?.throwIfCancelled()
+            if (!bindingUpdated) {
+              editorRef.current?.setValue(customText)
+              return
+            }
+          }
+          operationContext?.throwIfCancelled()
+          clearPendingQuestionCallback(displayQuestions)
           // await sendUserMessage(formatAnswersAsText(formattedAnswers))
-          await sendUserMessage(customText)
+          await sendUserMessage(customText, operationContext)
         } else {
           // Live: use existing tool approval flow
-          await respondUserQuestionApproval({
-            toolUseId: displayQuestions.toolUseId,
+          const response = await respondToLiveUserQuestion(displayQuestions, {
+            approvalId: displayQuestions.approvalId,
             approved: true,
             updatedInput: {
               questions: displayQuestions.questions,
               answers: formattedAnswers,
             },
           })
-          clearPendingQuestionCallback()
+          operationContext?.throwIfCancelled()
+          if (!response.transportCompleted || response.superseded) {
+            editorRef.current?.setValue(customText)
+            return
+          }
 
           // Stop stream if currently streaming
           if (isStreamingRef.current) {
             agentChatStore.setManuallyAborted(subChatId, true)
             await stopRef.current()
             await new Promise((resolve) => setTimeout(resolve, 100))
+            operationContext?.throwIfCancelled()
           }
 
-          clearInputAndDraft()
-          await sendUserMessage(customText)
+          if (waitForBindingUpdate) {
+            const bindingUpdated = await waitForBindingUpdate()
+            operationContext?.throwIfCancelled()
+            if (!bindingUpdated) {
+              editorRef.current?.setValue(customText)
+              return
+            }
+          }
+          operationContext?.throwIfCancelled()
+
+          await sendUserMessage(customText, operationContext)
         }
       } finally {
         isSubmittingQuestionAnswerRef.current = false
       }
     },
-    [displayQuestions, isQuestionExpired, clearPendingQuestionCallback, clearInputAndDraft, sendUserMessage, formatAnswersAsText, subChatId, respondUserQuestionApproval],
+    [
+      displayQuestions,
+      isQuestionExpired,
+      clearPendingQuestionCallback,
+      clearInputAndDraft,
+      sendUserMessage,
+      formatAnswersAsText,
+      subChatId,
+      respondToLiveUserQuestion,
+    ],
   )
 
   // Memoize the callback to prevent ChatInputArea re-renders
@@ -2706,32 +2912,10 @@ const ChatViewInner = memo(function ChatViewInner({
   useAuthRetry({
     subChatId,
     provider,
+    binding,
     isStreaming,
-    sendMessage,
+    sendMessage: sendAuthRetryMessageWithBindingGate,
   })
-
-  const handlePlanApproval = useCallback(
-    async (toolUseId: string, approved: boolean) => {
-      if (!toolUseId) return
-      setPlanApprovalPending((prev) => ({ ...prev, [toolUseId]: true }))
-      try {
-        await trpcClient.claude.respondToolApproval.mutate({
-          toolUseId,
-          approved,
-        })
-      } catch (error) {
-        console.error("[plan-approval] Failed to respond:", error)
-        toast.error(t("agent.chat.toast.failedPlanApproval"))
-      } finally {
-        setPlanApprovalPending((prev) => {
-          const next = { ...prev }
-          delete next[toolUseId]
-          return next
-        })
-      }
-    },
-    [],
-  )
 
   // Handle plan approval - sends "Build plan" message and switches to agent mode
   const handleApprovePlan = useCallback(() => {
@@ -2751,11 +2935,21 @@ const ChatViewInner = memo(function ChatViewInner({
     scrollToBottom()
 
     // Send "Build plan" message (now in agent mode)
-    sendMessageRef.current({
+    void sendMessageWithBindingGate({
       role: "user",
       parts: [{ type: "text", text: "Implement plan" }],
+    }).catch((error) => {
+      if (!isChatSessionOperationCancelledError(error)) {
+        console.error("[active-chat] Failed to send plan approval", error)
+      }
     })
-  }, [subChatId, setSubChatMode, scrollToBottom, updateSubChatModeMutation])
+  }, [
+    subChatId,
+    setSubChatMode,
+    scrollToBottom,
+    updateSubChatModeMutation,
+    sendMessageWithBindingGate,
+  ])
 
   // Handle pending "Build plan" from sidebar
   useEffect(() => {
@@ -3154,27 +3348,6 @@ const ChatViewInner = memo(function ChatViewInner({
 
         // Set mode atom for the new sub-chat
         appStore.set(subChatModeAtomFamily(newSubChat.id), newMode)
-        // Inherit model preferences from source sub-chat for deterministic behavior.
-        appStore.set(
-          subChatModelIdAtomFamily(newSubChat.id),
-          appStore.get(subChatModelIdAtomFamily(subChatId)),
-        )
-        appStore.set(
-          subChatClaudeModelSourceAtomFamily(newSubChat.id),
-          appStore.get(subChatClaudeModelSourceAtomFamily(subChatId)),
-        )
-        appStore.set(
-          subChatCodexModelIdAtomFamily(newSubChat.id),
-          appStore.get(subChatCodexModelIdAtomFamily(subChatId)),
-        )
-        appStore.set(
-          subChatCodexModelSourceAtomFamily(newSubChat.id),
-          appStore.get(subChatCodexModelSourceAtomFamily(subChatId)),
-        )
-        appStore.set(
-          subChatCodexThinkingAtomFamily(newSubChat.id),
-          appStore.get(subChatCodexThinkingAtomFamily(subChatId)),
-        )
 
         // Open the forked sub-chat tab and switch to it
         store.addToOpenSubChats(newSubChat.id)
@@ -3285,16 +3458,16 @@ const ChatViewInner = memo(function ChatViewInner({
   // Also trigger auto-rename for initial sub-chat with pre-populated message
   // IMPORTANT: Skip if there's an active streamId (prevents double-generation on resume)
   useEffect(() => {
-    if (
-      messages.length === 1 &&
-      status === "ready" &&
-      !streamId &&
-      !hasTriggeredAutoGenerateRef.current
-    ) {
-      hasTriggeredAutoGenerateRef.current = true
+    if (messages.length === 1 && status === "ready" && !streamId) {
+      const firstMsg = messages[0]
+      const generationKey = claimChatInitialGeneration(
+        subChatId,
+        typeof firstMsg?.id === "string" ? firstMsg.id : null,
+      )
+      if (!generationKey) return
+
       // Trigger rename for pre-populated initial message (from createAgentChat)
       if (!hasTriggeredRenameRef.current && isFirstSubChat) {
-        const firstMsg = messages[0]
         if (firstMsg?.role === "user") {
           const textPart = firstMsg.parts?.find((p: any) => p.type === "text")
           if (textPart && "text" in textPart) {
@@ -3303,12 +3476,21 @@ const ChatViewInner = memo(function ChatViewInner({
           }
         }
       }
-      regenerate()
+      void regenerateInitialMessageWithBindingGate(generationKey).catch(
+        (error) => {
+          // The outer current-Chat gate can reject before the generation
+          // helper receives control. Keep retries exact and non-sticky.
+          releaseFailedChatInitialGeneration(generationKey)
+          if (!isChatSessionOperationCancelledError(error)) {
+            console.error("[active-chat] Failed initial generation")
+          }
+        },
+      )
     }
   }, [
     status,
     messages,
-    regenerate,
+    regenerateInitialMessageWithBindingGate,
     isFirstSubChat,
     onAutoRename,
     streamId,
@@ -3475,306 +3657,393 @@ const ChatViewInner = memo(function ChatViewInner({
   const filesRef = useRef(files)
   filesRef.current = files
 
-  const handleSend = useCallback(async () => {
-    // Block sending while sandbox is still being set up
-    if (sandboxSetupStatus !== "ready") {
-      return
-    }
-
-    // Clear any expired questions when user sends a new message
-    setExpiredQuestionsMap((current) => {
-      if (current.has(subChatId)) {
-        const newMap = new Map(current)
-        newMap.delete(subChatId)
-        return newMap
+  const handleSend = useCallback(
+    async (
+      waitForBindingUpdate?: () => Promise<boolean>,
+      operationContext?: ChatSessionOperationContext,
+    ) => {
+      // Block sending while sandbox is still being set up
+      if (sandboxSetupStatus !== "ready") {
+        return
       }
-      return current
-    })
 
-    // Get value from uncontrolled editor
-    const inputValue = editorRef.current?.getValue() || ""
-    const hasText = inputValue.trim().length > 0
-    const currentImages = imagesRef.current
-    const currentFiles = filesRef.current
-    const currentTextContexts = textContextsRef.current
-    const currentDiffTextContexts = diffTextContextsRef.current
-    const currentPastedTexts = pastedTextsRef.current
-    const hasImages =
-      currentImages.filter((img) => !img.isLoading && (img.localRef || img.url))
-        .length > 0
-    const hasTextContexts = currentTextContexts.length > 0
-    const hasDiffTextContexts = currentDiffTextContexts.length > 0
-    const hasPastedTexts = currentPastedTexts.length > 0
+      // Capture the uncontrolled input and attachment payload before awaiting a
+      // binding update. The update can synchronously remount this same-id chat
+      // and detach every ref owned by this component instance.
+      const inputValue = editorRef.current?.getValue() || ""
+      const hasText = inputValue.trim().length > 0
+      const currentImages = imagesRef.current
+      const currentFiles = filesRef.current
+      const currentTextContexts = textContextsRef.current
+      const currentDiffTextContexts = diffTextContextsRef.current
+      const currentPastedTexts = pastedTextsRef.current
+      const currentFileContents = Array.from(fileContentsRef.current.entries())
+      const hasImages =
+        currentImages.filter(
+          (img) => !img.isLoading && (img.localRef || img.url),
+        ).length > 0
+      const hasTextContexts = currentTextContexts.length > 0
+      const hasDiffTextContexts = currentDiffTextContexts.length > 0
+      const hasPastedTexts = currentPastedTexts.length > 0
 
-    if (!hasText && !hasImages && !hasTextContexts && !hasDiffTextContexts && !hasPastedTexts) return
-
-    // If streaming, add to queue instead of sending directly
-    if (isStreamingRef.current) {
-      const queuedImages = currentImages
-        .filter((img) => !img.isLoading && (img.localRef || img.url))
-        .map(toQueuedImage)
-      const queuedFiles = currentFiles
-        .filter((f) => !f.isLoading && f.url)
-        .map(toQueuedFile)
-      const queuedTextContexts = currentTextContexts.map(toQueuedTextContext)
-      const queuedDiffTextContexts = currentDiffTextContexts.map(toQueuedDiffTextContext)
-      const queuedPastedTexts = currentPastedTexts.map(toQueuedPastedText)
-
-      const queuedText = await expandCustomSlashCommand(
-        inputValue.trim(),
-        projectPath,
+      if (
+        !hasText &&
+        !hasImages &&
+        !hasTextContexts &&
+        !hasDiffTextContexts &&
+        !hasPastedTexts
       )
-      const item = createQueueItem(
-        generateQueueId(),
-        queuedText,
-        queuedImages.length > 0 ? queuedImages : undefined,
-        queuedFiles.length > 0 ? queuedFiles : undefined,
-        queuedTextContexts.length > 0 ? queuedTextContexts : undefined,
-        queuedDiffTextContexts.length > 0 ? queuedDiffTextContexts : undefined,
-        queuedPastedTexts.length > 0 ? queuedPastedTexts : undefined,
-      )
-      addToQueue(subChatId, item)
-
-      // Clear input and attachments
+        return
       editorRef.current?.clear()
       if (parentChatId) {
         clearSubChatDraft(parentChatId, subChatId)
       }
-      clearAll()
-      clearTextContexts()
-      clearDiffTextContexts()
-      clearPastedTexts()
-      return
-    }
+      if (waitForBindingUpdate) {
+        const bindingUpdated = await waitForBindingUpdate()
+        operationContext?.throwIfCancelled()
+        if (!bindingUpdated) {
+          editorRef.current?.setValue(inputValue)
+          return
+        }
+      }
+      operationContext?.throwIfCancelled()
 
-    // Auto-restore archived workspace when sending a message
-    if (isArchived && onRestoreWorkspace) {
-      onRestoreWorkspace()
-    }
-
-    const text = inputValue.trim()
-
-    const finalText = await expandCustomSlashCommand(text, projectPath)
-
-    // Clear editor and draft from localStorage
-    editorRef.current?.clear()
-    if (parentChatId) {
-      clearSubChatDraft(parentChatId, subChatId)
-    }
-
-    // Track message sent
-    trackMessageSent({
-      workspaceId: subChatId,
-      messageLength: finalText.length,
-      mode: subChatModeRef.current,
-    })
-
-    // Trigger auto-rename on first message in a new sub-chat
-    if (messagesLengthRef.current === 0 && !hasTriggeredRenameRef.current) {
-      hasTriggeredRenameRef.current = true
-      onAutoRename(finalText || "Image message", subChatId)
-    }
-
-    const parts = buildAgentMessageParts({
-      text: finalText,
-      images: currentImages,
-      files: currentFiles,
-      textContexts: currentTextContexts,
-      diffTextContexts: currentDiffTextContexts,
-      pastedTexts: currentPastedTexts,
-      fileContents: fileContentsRef.current.entries(),
-    })
-
-    clearAll()
-    clearTextContexts()
-    clearDiffTextContexts()
-    clearPastedTexts()
-    clearFileContents()
-
-    // Desktop app: Optimistic update for chats.list to update sidebar immediately
-    const queryClient = getQueryClient()
-    if (queryClient) {
-      const now = new Date()
-      const queries = queryClient.getQueryCache().getAll()
-      const chatsListQuery = queries.find(q =>
-        Array.isArray(q.queryKey) &&
-        Array.isArray(q.queryKey[0]) &&
-        q.queryKey[0][0] === 'chats' &&
-        q.queryKey[0][1] === 'list'
-      )
-      if (chatsListQuery) {
-        queryClient.setQueryData(chatsListQuery.queryKey, (old: any[] | undefined) => {
-          if (!old) return old
-          // Update the timestamp and sort by updatedAt descending
-          const updated = old.map((c: any) =>
-            c.id === parentChatId ? { ...c, updatedAt: now } : c,
-          )
-          return updated.sort(
-            (a: any, b: any) =>
-              new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
-          )
+      // The binding wait above can overlap a newer question. Retire only the
+      // exact expired approval this send observed, never a replacement.
+      if (expiredQuestions) {
+        clearRuntimeQuestionApprovalIfCurrent({
+          subChatId: expiredQuestions.subChatId,
+          approvalId: expiredQuestions.approvalId,
+          toolUseId: expiredQuestions.toolUseId,
         })
       }
-    }
 
-    // Optimistically update sub-chat timestamp to move it to top
-    useAgentSubChatStore.getState().updateSubChatTimestamp(subChatId)
-
-    // Enable auto-scroll and immediately scroll to bottom
-    shouldAutoScrollRef.current = true
-    scrollToBottom()
-
-    await sendMessageRef.current({ role: "user", parts })
-  }, [
-    sandboxSetupStatus,
-    isArchived,
-    onRestoreWorkspace,
-    parentChatId,
-    projectPath,
-    subChatId,
-    onAutoRename,
-    clearAll,
-    clearTextContexts,
-    clearPastedTexts,
-    addToQueue,
-    setExpiredQuestionsMap,
-  ])
-
-  // Queue handlers for sending queued messages
-  const handleSendFromQueue = useCallback(async (itemId: string) => {
-    const item = popItemFromQueue(subChatId, itemId)
-    if (!item) return
-
-    try {
-      // Stop current stream if streaming and wait for status to become ready.
-      // The server-side save block preserves sessionId on abort, so the next
-      // message can resume the session with full conversation context.
+      // If streaming, add to queue instead of sending directly
       if (isStreamingRef.current) {
-        await handleStop()
-        await waitForStreamingReady(subChatId)
+        const queuedImages = currentImages
+          .filter((img) => !img.isLoading && (img.localRef || img.url))
+          .map(toQueuedImage)
+        const queuedFiles = currentFiles
+          .filter((f) => !f.isLoading && f.url)
+          .map(toQueuedFile)
+        const queuedTextContexts = currentTextContexts.map(toQueuedTextContext)
+        const queuedDiffTextContexts = currentDiffTextContexts.map(
+          toQueuedDiffTextContext,
+        )
+        const queuedPastedTexts = currentPastedTexts.map(toQueuedPastedText)
+
+        const queuedText = await expandCustomSlashCommand(
+          inputValue.trim(),
+          projectPath,
+        )
+        operationContext?.throwIfCancelled()
+        const item = createQueueItem(
+          generateQueueId(),
+          queuedText,
+          queuedImages.length > 0 ? queuedImages : undefined,
+          queuedFiles.length > 0 ? queuedFiles : undefined,
+          queuedTextContexts.length > 0 ? queuedTextContexts : undefined,
+          queuedDiffTextContexts.length > 0
+            ? queuedDiffTextContexts
+            : undefined,
+          queuedPastedTexts.length > 0 ? queuedPastedTexts : undefined,
+        )
+        addToQueue(subChatId, item)
+
+        // Clear attachments; the uncontrolled input and durable draft were
+        // claimed before the binding wait so a remount could not restore them.
+        clearAll()
+        clearTextContexts()
+        clearDiffTextContexts()
+        clearPastedTexts()
+        return
       }
 
-      const parts = buildAgentMessageParts({
-        text: item.message,
-        images: item.images,
-        files: item.files,
-        textContexts: item.textContexts,
-        diffTextContexts: item.diffTextContexts,
-        pastedTexts: item.pastedTexts,
-      })
+      // Auto-restore archived workspace when sending a message
+      if (isArchived && onRestoreWorkspace) {
+        onRestoreWorkspace()
+      }
+
+      const text = inputValue.trim()
+
+      const finalText = await expandCustomSlashCommand(text, projectPath)
+      operationContext?.throwIfCancelled()
 
       // Track message sent
       trackMessageSent({
         workspaceId: subChatId,
-        messageLength: item.message.length,
+        messageLength: finalText.length,
         mode: subChatModeRef.current,
       })
 
-      // Update timestamps
+      // Trigger auto-rename on first message in a new sub-chat
+      if (messagesLengthRef.current === 0 && !hasTriggeredRenameRef.current) {
+        hasTriggeredRenameRef.current = true
+        onAutoRename(finalText || "Image message", subChatId)
+      }
+
+      const parts = buildAgentMessageParts({
+        text: finalText,
+        images: currentImages,
+        files: currentFiles,
+        textContexts: currentTextContexts,
+        diffTextContexts: currentDiffTextContexts,
+        pastedTexts: currentPastedTexts,
+        fileContents: currentFileContents,
+      })
+
+      clearAll()
+      clearTextContexts()
+      clearDiffTextContexts()
+      clearPastedTexts()
+      clearFileContents()
+
+      // Desktop app: Optimistic update for chats.list to update sidebar immediately
+      const queryClient = getQueryClient()
+      if (queryClient) {
+        const now = new Date()
+        const queries = queryClient.getQueryCache().getAll()
+        const chatsListQuery = queries.find(
+          (q) =>
+            Array.isArray(q.queryKey) &&
+            Array.isArray(q.queryKey[0]) &&
+            q.queryKey[0][0] === "chats" &&
+            q.queryKey[0][1] === "list",
+        )
+        if (chatsListQuery) {
+          queryClient.setQueryData(
+            chatsListQuery.queryKey,
+            (old: OptimisticChatsListRow[] | undefined) => {
+              if (!old) return old
+              // Update the timestamp and sort by updatedAt descending
+              const updated = old.map((c) =>
+                c.id === parentChatId ? { ...c, updatedAt: now } : c,
+              )
+              return updated.sort(
+                (a, b) =>
+                  new Date(b.updatedAt).getTime() -
+                  new Date(a.updatedAt).getTime(),
+              )
+            },
+          )
+        }
+      }
+
+      // Optimistically update sub-chat timestamp to move it to top
       useAgentSubChatStore.getState().updateSubChatTimestamp(subChatId)
 
       // Enable auto-scroll and immediately scroll to bottom
       shouldAutoScrollRef.current = true
       scrollToBottom()
 
-      await sendMessageRef.current({ role: "user", parts })
+      await sendMessageWithBindingGate(
+        { role: "user", parts },
+        operationContext,
+      )
+    },
+    [
+      sandboxSetupStatus,
+      isArchived,
+      onRestoreWorkspace,
+      parentChatId,
+      projectPath,
+      subChatId,
+      onAutoRename,
+      clearAll,
+      clearTextContexts,
+      clearDiffTextContexts,
+      clearPastedTexts,
+      clearFileContents,
+      addToQueue,
+      expiredQuestions,
+      sendMessageWithBindingGate,
+      scrollToBottom,
+      textContextsRef,
+      diffTextContextsRef,
+      pastedTextsRef,
+    ],
+  )
+
+  // Queue handlers for sending queued messages
+  const handleSendFromQueue = useCallback(async (
+    itemId: string,
+    inheritedContext?: ChatSessionOperationContext,
+  ) => {
+    let item: ReturnType<typeof popItemFromQueue> = null
+
+    try {
+      await withPendingChatSessionOperation(subChatId, async (context) => {
+        const poppedItem = popItemFromQueue(subChatId, itemId)
+        if (!poppedItem) return
+        item = poppedItem
+
+        // Stop current stream if streaming and wait for status to become ready.
+        // The server-side save block preserves sessionId on abort, so the next
+        // message can resume the session with full conversation context.
+        if (isStreamingRef.current) {
+          await handleStop()
+          await waitForStreamingReady(subChatId)
+        }
+        context.throwIfCancelled()
+
+        const parts = buildAgentMessageParts({
+          text: poppedItem.message,
+          images: poppedItem.images,
+          files: poppedItem.files,
+          textContexts: poppedItem.textContexts,
+          diffTextContexts: poppedItem.diffTextContexts,
+          pastedTexts: poppedItem.pastedTexts,
+        })
+
+        // Track message sent
+        trackMessageSent({
+          workspaceId: subChatId,
+          messageLength: poppedItem.message.length,
+          mode: subChatModeRef.current,
+        })
+
+        // Update timestamps
+        useAgentSubChatStore.getState().updateSubChatTimestamp(subChatId)
+
+        // Enable auto-scroll and immediately scroll to bottom
+        shouldAutoScrollRef.current = true
+        scrollToBottom()
+
+        await sendMessageWithBindingGate(
+          { role: "user", parts },
+          context,
+        )
+      }, inheritedContext)
     } catch (error) {
+      if (isChatSessionOperationCancelledError(error)) return
       console.error("[handleSendFromQueue] Error sending queued message:", error)
       // Requeue the item at the front so it isn't lost
-      useMessageQueueStore.getState().prependItem(subChatId, item)
+      if (item) {
+        useMessageQueueStore.getState().prependItem(subChatId, item)
+      }
     }
-  }, [subChatId, popItemFromQueue, handleStop])
+  }, [
+    subChatId,
+    popItemFromQueue,
+    handleStop,
+    sendMessageWithBindingGate,
+    scrollToBottom,
+  ])
 
   const handleRemoveFromQueue = useCallback((itemId: string) => {
     removeFromQueue(subChatId, itemId)
   }, [subChatId, removeFromQueue])
 
   // Force send - stop stream and send immediately, bypassing queue (Opt+Enter)
-  const handleForceSend = useCallback(async () => {
-    // Block sending while sandbox is still being set up
-    if (sandboxSetupStatus !== "ready") {
-      return
-    }
+  const handleForceSend = useCallback(
+    async (
+      waitForBindingUpdate?: () => Promise<boolean>,
+      operationContext?: ChatSessionOperationContext,
+    ) => {
+      // Block sending while sandbox is still being set up
+      if (sandboxSetupStatus !== "ready") {
+        return
+      }
 
-    // Get value from uncontrolled editor
-    const inputValue = editorRef.current?.getValue() || ""
-    const hasText = inputValue.trim().length > 0
-    const currentImages = imagesRef.current
-    const currentFiles = filesRef.current
-    const currentPastedTexts = pastedTextsRef.current
-    const hasImages =
-      currentImages.filter((img) => !img.isLoading && (img.localRef || img.url))
-        .length > 0
-    const hasPastedTexts = currentPastedTexts.length > 0
+      // Get value from uncontrolled editor
+      const inputValue = editorRef.current?.getValue() || ""
+      const hasText = inputValue.trim().length > 0
+      const currentImages = imagesRef.current
+      const currentFiles = filesRef.current
+      const currentPastedTexts = pastedTextsRef.current
+      const hasImages =
+        currentImages.filter(
+          (img) => !img.isLoading && (img.localRef || img.url),
+        ).length > 0
+      const hasPastedTexts = currentPastedTexts.length > 0
 
-    if (!hasText && !hasImages && !hasPastedTexts) return
+      if (!hasText && !hasImages && !hasPastedTexts) return
 
-    // Stop current stream if streaming and wait for status to become ready.
-    // The server-side save block sets sessionId=null on abort, so the next
-    // message starts fresh without needing an explicit cancel mutation.
-    if (isStreamingRef.current) {
-      await handleStop()
-      await waitForStreamingReady(subChatId)
-    }
+      editorRef.current?.clear()
+      if (parentChatId) {
+        clearSubChatDraft(parentChatId, subChatId)
+      }
 
-    // Auto-restore archived workspace when sending a message
-    if (isArchived && onRestoreWorkspace) {
-      onRestoreWorkspace()
-    }
+      // Stop current stream if streaming and wait for status to become ready.
+      // The server-side save block sets sessionId=null on abort, so the next
+      // message starts fresh without needing an explicit cancel mutation.
+      if (isStreamingRef.current) {
+        await handleStop()
+        await waitForStreamingReady(subChatId)
+        operationContext?.throwIfCancelled()
+      }
+      if (waitForBindingUpdate) {
+        const bindingUpdated = await waitForBindingUpdate()
+        operationContext?.throwIfCancelled()
+        if (!bindingUpdated) {
+          editorRef.current?.setValue(inputValue)
+          return
+        }
+      }
+      operationContext?.throwIfCancelled()
 
-    const text = inputValue.trim()
+      // Auto-restore archived workspace when sending a message
+      if (isArchived && onRestoreWorkspace) {
+        onRestoreWorkspace()
+      }
 
-    const finalText = await expandCustomSlashCommand(text, projectPath)
+      const text = inputValue.trim()
 
-    // Clear editor and draft from localStorage
-    editorRef.current?.clear()
-    if (parentChatId) {
-      clearSubChatDraft(parentChatId, subChatId)
-    }
+      const finalText = await expandCustomSlashCommand(text, projectPath)
+      operationContext?.throwIfCancelled()
 
-    // Track message sent
-    trackMessageSent({
-      workspaceId: subChatId,
-      messageLength: finalText.length,
-      mode: subChatModeRef.current,
-    })
+      // Track message sent
+      trackMessageSent({
+        workspaceId: subChatId,
+        messageLength: finalText.length,
+        mode: subChatModeRef.current,
+      })
 
-    const parts = buildAgentMessageParts({
-      text: finalText,
-      images: currentImages,
-      files: currentFiles,
-      pastedTexts: currentPastedTexts,
-    })
+      const parts = buildAgentMessageParts({
+        text: finalText,
+        images: currentImages,
+        files: currentFiles,
+        pastedTexts: currentPastedTexts,
+      })
 
-    // Clear attachments
-    clearAll()
-    clearPastedTexts()
+      // Clear attachments
+      clearAll()
+      clearPastedTexts()
 
-    // Update timestamps
-    useAgentSubChatStore.getState().updateSubChatTimestamp(subChatId)
+      // Update timestamps
+      useAgentSubChatStore.getState().updateSubChatTimestamp(subChatId)
 
-    // Force scroll to bottom
-    shouldAutoScrollRef.current = true
-    scrollToBottom()
+      // Force scroll to bottom
+      shouldAutoScrollRef.current = true
+      scrollToBottom()
 
-    try {
-      await sendMessageRef.current({ role: "user", parts })
-    } catch (error) {
-      console.error("[handleForceSend] Error sending message:", error)
-      // Restore editor content so the user can retry
-      editorRef.current?.setValue(finalText)
-    }
-  }, [
-    sandboxSetupStatus,
-    isArchived,
-    onRestoreWorkspace,
-    parentChatId,
-    projectPath,
-    subChatId,
-    handleStop,
-    clearAll,
-    clearPastedTexts,
-  ])
+      try {
+        await sendMessageWithBindingGate(
+          { role: "user", parts },
+          operationContext,
+        )
+      } catch (error) {
+        if (isChatSessionOperationCancelledError(error)) return
+        console.error("[handleForceSend] Error sending message:", error)
+        // Restore editor content so the user can retry
+        editorRef.current?.setValue(finalText)
+      }
+    },
+    [
+      sandboxSetupStatus,
+      isArchived,
+      onRestoreWorkspace,
+      parentChatId,
+      projectPath,
+      subChatId,
+      handleStop,
+      clearAll,
+      clearPastedTexts,
+      sendMessageWithBindingGate,
+      scrollToBottom,
+      pastedTextsRef,
+    ],
+  )
 
   // NOTE: Auto-processing of queue is now handled globally by QueueProcessor
   // component in agents-layout.tsx. This ensures queues continue processing
@@ -3985,11 +4254,10 @@ const ChatViewInner = memo(function ChatViewInner({
     isStreaming || isCompacting || changedFilesForSubChat.length > 0
   const shouldShowStackedCards =
     !displayQuestions && (queue.length > 0 || shouldShowStatusCard)
-  const handleInputProviderChange = useCallback(
-    (nextProvider: AgentChatProvider) => {
-      onProviderChange?.(subChatId, nextProvider)
-    },
-    [onProviderChange, subChatId],
+  const handleInputBindingChange = useCallback(
+    (nextBinding: ChatSessionBindingPatch) =>
+      onBindingChange?.(subChatId, nextBinding) ?? Promise.resolve(),
+    [onBindingChange, subChatId],
   )
 
   // Continue conversation with a different provider - creates new sub-chat with history attachment
@@ -4015,44 +4283,26 @@ const ChatViewInner = memo(function ChatViewInner({
         })
 
         // 3. Create new sub-chat
+        const newSubChatBinding = getNewSubChatBinding(
+          targetProvider,
+          selection,
+        )
         const newSubChat = await trpcClient.chats.createSubChat.mutate({
           chatId: parentChatId,
           name: t("chat.defaultTitle"),
           mode: subChatMode,
+          binding: newSubChatBinding,
         })
 
         const newId = newSubChat.id
 
-        // Inherit model preferences from source sub-chat for deterministic behavior.
-        appStore.set(
-          subChatModelIdAtomFamily(newId),
-          selection?.claudeModelId ?? appStore.get(subChatModelIdAtomFamily(subChatId)),
-        )
-        appStore.set(
-          subChatClaudeModelSourceAtomFamily(newId),
-          selection?.claudeModelSource ??
-            appStore.get(subChatClaudeModelSourceAtomFamily(subChatId)),
-        )
-        appStore.set(
-          subChatCodexModelIdAtomFamily(newId),
-          selection?.codexModelId ??
-            appStore.get(subChatCodexModelIdAtomFamily(subChatId)),
-        )
-        const inheritedCodexModelSource = appStore.get(
-          subChatCodexModelSourceAtomFamily(subChatId),
-        )
-        appStore.set(
-          subChatCodexModelSourceAtomFamily(newId),
-          selection?.codexModelSource ??
-            (targetProvider === "codex" &&
-            isProviderProfileSource(inheritedCodexModelSource)
-              ? "chatgpt"
-              : inheritedCodexModelSource),
-        )
-        appStore.set(
-          subChatCodexThinkingAtomFamily(newId),
-          selection?.codexThinking ??
-            appStore.get(subChatCodexThinkingAtomFamily(subChatId)),
+        utils.agents.getAgentChat.setData({ chatId: parentChatId }, (old) =>
+          old
+            ? {
+                ...old,
+                subChats: [...(old.subChats ?? []), newSubChat],
+              }
+            : old,
         )
 
         // 4. Store pending chat history for the new sub-chat to consume on mount
@@ -4063,11 +4313,16 @@ const ChatViewInner = memo(function ChatViewInner({
           filename: result.filename,
           byteLength: result.byteLength,
           size: result.byteLength,
-          preview: subChatNameRef.current?.trim() || t("agent.pastedText.previousChat"),
+          preview:
+            subChatNameRef.current?.trim() ||
+            t("agent.pastedText.previousChat"),
           createdAt: new Date(),
           kind: "chatHistory",
         }
-        appStore.set(pendingChatHistoryAtom, { subChatId: newId, file: historyFile })
+        appStore.set(pendingChatHistoryAtom, {
+          subChatId: newId,
+          file: historyFile,
+        })
 
         // 5. Update Zustand store and switch to new tab
         const store = useAgentSubChatStore.getState()
@@ -4080,11 +4335,6 @@ const ChatViewInner = memo(function ChatViewInner({
         appStore.set(subChatModeAtomFamily(newId), subChatMode)
         store.addToOpenSubChats(newId)
         store.setActiveSubChat(newId)
-
-        // 6. Set provider override AFTER tab switch so the outer component picks it up
-        // We call onProviderChange which sets subChatProviderOverrides in the outer scope
-        // The new sub-chat has 0 messages so the guard in handleProviderChange will pass
-        onProviderChange?.(newId, targetProvider)
       } catch (error) {
         console.error("[handleContinueWithProvider] Error:", error)
         toast.error(t("agent.chat.toast.failedContinueProvider"))
@@ -4092,7 +4342,7 @@ const ChatViewInner = memo(function ChatViewInner({
         isContinuingRef.current = false
       }
     },
-    [isStreaming, messages, subChatId, parentChatId, subChatMode, onProviderChange, t],
+    [isStreaming, messages, subChatId, parentChatId, subChatMode, t, utils],
   )
   const stableHandleContinueWithProvider = useStableCallback(handleContinueWithProvider)
   const canRollbackOrFork = useRuntimeCapabilitySupported(provider, "rollback")
@@ -4290,7 +4540,7 @@ const ChatViewInner = memo(function ChatViewInner({
         messageTokenData={messageTokenData}
         subChatId={subChatId}
         parentChatId={parentChatId}
-        provider={provider}
+          binding={binding}
         repository={repository}
         projectPath={projectPath}
         changedFiles={changedFilesForSubChat}
@@ -4300,7 +4550,7 @@ const ChatViewInner = memo(function ChatViewInner({
         firstQueueItemId={queue[0]?.id}
         onInputContentChange={setInputHasContent}
         onSubmitWithQuestionAnswer={submitWithQuestionAnswerCallback}
-        onProviderChange={handleInputProviderChange}
+          onBindingChange={handleInputBindingChange}
         onContinueWithProvider={stableHandleContinueWithProvider}
         isActive={isActive}
       />
@@ -4382,6 +4632,13 @@ export function ChatView({
   // Check if any chat has unseen changes
   const hasAnyUnseenChanges = unseenChanges.size > 0
   const [, forceUpdate] = useState({})
+  const chatViewMountedRef = useRef(false)
+  useEffect(() => {
+    chatViewMountedRef.current = true
+    return () => {
+      chatViewMountedRef.current = false
+    }
+  }, [])
   // Per-chat diff sidebar state - each chat remembers its own open/close state
   const diffSidebarAtom = useMemo(
     () => diffSidebarOpenAtomFamily(chatId),
@@ -4762,14 +5019,7 @@ export function ChatView({
       splitPaneIds: state.splitPaneIds,
     }))
   )
-  const [
-    subChatProviderOverrides,
-    setSubChatProviderOverrides,
-  ] = useState<Record<string, AgentChatProvider>>({})
 
-  useEffect(() => {
-    setSubChatProviderOverrides({})
-  }, [chatId])
 
   // Clear sub-chat "unseen changes" indicator when sub-chat becomes active
   useEffect(() => {
@@ -4834,6 +5084,7 @@ export function ChatView({
     updated_at?: Date | string | null
     messages?: CanonicalChatMessage[] | string | null
     stream_id?: string | null
+    binding: ChatSessionBinding
   }>
   const agentSubChatsRef = useRef(agentSubChats)
   agentSubChatsRef.current = agentSubChats
@@ -4916,11 +5167,34 @@ export function ChatView({
     const previousParentChatId = previousParentChatIdRef.current
     if (previousParentChatId && previousParentChatId !== chatId) {
       for (const subChatId of agentChatStore.keys()) {
-        if (agentChatStore.getParentChatId(subChatId) !== previousParentChatId) continue
-        if (useStreamingStatusStore.getState().isStreaming(subChatId)) continue
-        if ((useMessageQueueStore.getState().queues[subChatId]?.length ?? 0) > 0) continue
-        agentChatStore.delete(subChatId)
-        clearRuntimeCachesForSubChat(subChatId)
+        const prunePreviousParentChat = (deferred = false) => {
+          if (
+            agentChatStore.getParentChatId(subChatId) !== previousParentChatId
+          ) return
+          if (appStore.get(selectedAgentChatIdAtom) === previousParentChatId) return
+          if (
+            deferred &&
+            (mountedChatViewInnerCounts.get(subChatId) ?? 0) > 0
+          ) return
+          if (
+            deferUntilPendingChatSessionOperationsSettle(
+              subChatId,
+              () => prunePreviousParentChat(true),
+            )
+          ) return
+          if (
+            shouldRetainChatSessionDuringNormalEviction({
+              subChatId,
+              isStreaming:
+                useStreamingStatusStore.getState().isStreaming(subChatId),
+              queuedMessageCount:
+                useMessageQueueStore.getState().queues[subChatId]?.length ?? 0,
+            })
+          ) return
+          agentChatStore.delete(subChatId)
+          clearRuntimeCachesForSubChat(subChatId)
+        }
+        prunePreviousParentChat()
       }
     }
     previousParentChatIdRef.current = chatId
@@ -4935,13 +5209,34 @@ export function ChatView({
     const keep = new Set(tabsToRender)
     keep.add(activeSubChatId)
     for (const subChatId of agentChatStore.keys()) {
-      if (agentChatStore.getParentChatId(subChatId) !== chatId) continue
-      if (keep.has(subChatId)) continue
-      if (useStreamingStatusStore.getState().isStreaming(subChatId)) continue
-      if ((useMessageQueueStore.getState().queues[subChatId]?.length ?? 0) > 0) continue
+      const pruneNonResidentChat = (deferred = false) => {
+        if (agentChatStore.getParentChatId(subChatId) !== chatId) return
+        if (keep.has(subChatId)) return
+        if (
+          deferred &&
+          ((mountedChatViewInnerCounts.get(subChatId) ?? 0) > 0 ||
+            useAgentSubChatStore.getState().activeSubChatId === subChatId)
+        ) return
+        if (
+          deferUntilPendingChatSessionOperationsSettle(
+            subChatId,
+            () => pruneNonResidentChat(true),
+          )
+        ) return
+        if (
+          shouldRetainChatSessionDuringNormalEviction({
+            subChatId,
+            isStreaming:
+              useStreamingStatusStore.getState().isStreaming(subChatId),
+            queuedMessageCount:
+              useMessageQueueStore.getState().queues[subChatId]?.length ?? 0,
+          })
+        ) return
 
-      agentChatStore.delete(subChatId)
-      clearRuntimeCachesForSubChat(subChatId)
+        agentChatStore.delete(subChatId)
+        clearRuntimeCachesForSubChat(subChatId)
+      }
+      pruneNonResidentChat()
     }
   }, [activeSubChatId, chatId, tabsToRender])
 
@@ -5583,31 +5878,21 @@ Make sure to preserve all functionality from both branches when resolving confli
     setCurrentPlanPath(lastPlanPath)
   }, [agentSubChats, activeSubChatIdForPlan, setCurrentPlanPath])
 
-  const inferProviderFromMessages = useCallback(
-    (subChatId?: string): AgentChatProvider => {
-      if (!subChatId) return "claude-code"
-
-      const override = subChatProviderOverrides[subChatId]
-      if (override) return override
-
-      const subChat = agentChat?.subChats?.find((sc) => sc?.id === subChatId)
-      const rawMessages = subChat?.messages
-
-      let messages: CanonicalChatMessage[] = []
-      if (Array.isArray(rawMessages)) {
-        messages = rawMessages
-      } else if (typeof rawMessages === "string") {
-        messages = normalizePersistedChatMessages(rawMessages)
-      }
-
-      return inferAgentChatProviderFromMessages(messages)
+  const getSubChatBinding = useCallback(
+    (subChatId?: string): ChatSessionBinding | null => {
+      if (!subChatId) return null
+      return (
+        agentSubChatsRef.current.find((subChat) => subChat.id === subChatId)
+          ?.binding ?? null
+      )
     },
-    [agentChat, subChatProviderOverrides],
+    [],
   )
 
   const activeSubChatProvider = useMemo(
-    () => inferProviderFromMessages(activeSubChatId || undefined),
-    [activeSubChatId, inferProviderFromMessages],
+    () =>
+      getSubChatBinding(activeSubChatId || undefined)?.runtime ?? "claude-code",
+    [activeSubChatId, getSubChatBinding, agentSubChats],
   )
 
   const { data: codexMcpConfig } = trpc.codex.getAllMcpConfig.useQuery(undefined, {
@@ -5742,15 +6027,10 @@ Make sure to preserve all functionality from both branches when resolving confli
 
   // If a stream finishes after user already switched to another workspace,
   // eagerly evict this runtime chat once it's idle to avoid permanent retention.
-  const pruneIfDetachedAndIdle = useCallback((subChatId: string, parentChatId: string) => {
-    const currentSelectedChatId = appStore.get(selectedAgentChatIdAtom)
-    if (!currentSelectedChatId || currentSelectedChatId === parentChatId) return
-    if (useStreamingStatusStore.getState().isStreaming(subChatId)) return
-    if ((useMessageQueueStore.getState().queues[subChatId]?.length ?? 0) > 0) return
-
-    agentChatStore.delete(subChatId)
-    clearRuntimeCachesForSubChat(subChatId)
-  }, [])
+  const pruneIfDetachedAndIdle = useCallback(
+    pruneDetachedChatSessionIfIdle,
+    [],
+  )
 
   // Create or get Chat instance for a sub-chat
   const getOrCreateChat = useCallback(
@@ -5769,45 +6049,17 @@ Make sure to preserve all functionality from both branches when resolving confli
         ? undefined
         : originalProjectPath
 
-      // Fast path for existing chats. Only inspect messages when a local empty-chat provider override
-      // might require transport recreation.
+      // Binding changes delete this cached chat before publishing their receipt,
+      // so an existing instance is already bound to the current DTO snapshot.
       const existing = agentChatStore.get(subChatId)
-      if (existing) {
-        const overrideProvider = subChatProviderOverrides[subChatId]
-        if (!overrideProvider) return existing
-
-        const existingTransport = (
-          existing as unknown as { transport?: unknown }
-        ).transport
-        const existingProvider: AgentChatProvider =
-          existingTransport instanceof ACPChatTransport
-            ? "codex"
-            : "claude-code"
-        if (existingProvider === overrideProvider) return existing
-
-        const subChatForOverride = agentSubChats.find(
-          (sc) => sc.id === subChatId,
-        )
-        const rawExistingMessages = subChatForOverride?.messages
-        const existingMessageCount = Array.isArray(rawExistingMessages)
-          ? rawExistingMessages.length
-          : typeof rawExistingMessages === "string"
-            ? (() => {
-                try {
-                  const parsed = JSON.parse(rawExistingMessages)
-                  return Array.isArray(parsed) ? parsed.length : 0
-                } catch {
-                  return 0
-                }
-              })()
-            : 0
-
-        if (existingMessageCount > 0) return existing
-        agentChatStore.delete(subChatId)
-      }
+      if (existing) return existing
 
       // Find sub-chat data
-      const subChat = agentSubChats.find((sc) => sc.id === subChatId)
+      const subChat = agentSubChatsRef.current.find(
+        (candidate) => candidate.id === subChatId,
+      )
+      const binding = subChat?.binding
+      if (!binding) return null
       const rawMessages = subChat?.messages
       const messages = Array.isArray(rawMessages)
         ? rawMessages
@@ -5828,7 +6080,7 @@ Make sure to preserve all functionality from both branches when resolving confli
         .allSubChats.find((sc) => sc.id === subChatId)
       const subChatMode = subChatMeta?.mode || currentMode
 
-      const chatProvider = inferProviderFromMessages(subChatId)
+      const chatProvider = binding.runtime
 
       console.log("[getOrCreateChat] Transport selection", {
         subChatId: subChatId.slice(-8),
@@ -5845,6 +6097,7 @@ Make sure to preserve all functionality from both branches when resolving confli
         transport = new ACPChatTransport({
           chatId,
           subChatId,
+          binding,
           projectPath,
           mode: subChatMode,
           provider: "codex",
@@ -5853,6 +6106,7 @@ Make sure to preserve all functionality from both branches when resolving confli
         transport = new IPCChatTransport({
           chatId,
           subChatId,
+          binding,
           projectPath,
           mode: subChatMode,
         })
@@ -5954,8 +6208,6 @@ Make sure to preserve all functionality from both branches when resolving confli
       originalProjectPath,
       chatId,
       currentMode,
-      inferProviderFromMessages,
-      subChatProviderOverrides,
       setSubChatUnseenChanges,
       selectedChatId,
       setUnseenChanges,
@@ -5965,87 +6217,137 @@ Make sure to preserve all functionality from both branches when resolving confli
     ],
   )
 
-  const handleProviderChange = useCallback(
-    (subChatId: string, nextProvider: AgentChatProvider) => {
-      // Provider switch is only allowed for brand new sub-chats.
-      const activeChat = agentChatStore.get(subChatId) as any
-      let messageCount = Array.isArray(activeChat?.messages)
-        ? activeChat.messages.length
-        : 0
-
-      if (messageCount === 0) {
-        const subChat = agentSubChatsRef.current.find((sc) => sc.id === subChatId)
-        const rawMessages = subChat?.messages
-        if (Array.isArray(rawMessages)) {
-          messageCount = rawMessages.length
-        } else if (typeof rawMessages === "string") {
-          try {
-            const parsed = JSON.parse(rawMessages)
-            messageCount = Array.isArray(parsed) ? parsed.length : 0
-          } catch {
-            messageCount = 0
-          }
+  const handleBindingChange = useCallback(
+    async (subChatId: string, bindingPatch: ChatSessionBindingPatch) => {
+      await withChatSessionBindingGate(subChatId, async (operationContext) => {
+        if (useStreamingStatusStore.getState().isStreaming(subChatId)) {
+          throw new Error(
+            "Stop the current response before changing this chat binding",
+          )
         }
-      }
 
-      if (messageCount > 0) return
+        const subChat = agentSubChatsRef.current.find(
+          (candidate) => candidate.id === subChatId,
+        )
+        const isRuntimeSwitch =
+          bindingPatch.runtime !== undefined &&
+          bindingPatch.runtime !== subChat?.binding.runtime
 
-      setSubChatProviderOverrides((prev) => ({
-        ...prev,
-        [subChatId]: nextProvider,
-      }))
+        if (isRuntimeSwitch) {
+          const activeChat = agentChatStore.get(subChatId)
+          let messageCount = Array.isArray(activeChat?.messages)
+            ? activeChat.messages.length
+            : 0
+          const rawMessages = subChat?.messages
+          if (messageCount === 0 && Array.isArray(rawMessages)) {
+            messageCount = rawMessages.length
+          } else if (messageCount === 0 && typeof rawMessages === "string") {
+            try {
+              const parsed = JSON.parse(rawMessages)
+              messageCount = Array.isArray(parsed) ? parsed.length : 1
+            } catch {
+              messageCount = 1
+            }
+          } else if (messageCount === 0) {
+            messageCount = 1
+          }
+          if (messageCount > 0) return
+        }
 
-      // Force transport recreation with the newly selected provider.
-      agentChatStore.delete(subChatId)
-      forceUpdate({})
+        const updatedBinding =
+          await trpcClient.chats.updateSubChatBinding.mutate({
+            id: subChatId,
+            binding: bindingPatch,
+          })
+        publishChatSessionBindingReceipt({
+          context: operationContext,
+          receipt: updatedBinding,
+          publish: (canonicalBinding) => {
+            utils.agents.getAgentChat.setData({ chatId }, (old) => {
+              if (!old?.subChats) return old
+              return {
+                ...old,
+                subChats: old.subChats.map(
+                  (candidate: {
+                    id: string
+                    binding?: ChatSessionBinding
+                    [key: string]: unknown
+                  }) =>
+                    candidate.id === subChatId
+                      ? { ...candidate, binding: canonicalBinding }
+                      : candidate,
+                ),
+              }
+            })
+            agentSubChatsRef.current = agentSubChatsRef.current.map(
+              (candidate) =>
+                candidate.id === subChatId
+                  ? { ...candidate, binding: canonicalBinding }
+                  : candidate,
+            )
+            const pendingAuthRetry = appStore.get(pendingAuthRetryMessageAtom)
+            if (pendingAuthRetry?.subChatId === subChatId) {
+              appStore.set(pendingAuthRetryMessageAtom, null)
+            }
+          },
+        })
+
+        // Publish the replacement independently of a mounted target view. A
+        // normal workspace switch or resident-tab eviction can unmount the
+        // view while a captured submit is waiting for this receipt.
+        agentChatStore.delete(subChatId)
+        const replacementChat = getOrCreateChat(subChatId)
+        if (!replacementChat) {
+          throw new Error(
+            `Failed to recreate the current binding transport for ${subChatId}`,
+          )
+        }
+        if (chatViewMountedRef.current) {
+          flushSync(() => forceUpdate({}))
+        }
+      })
     },
-    [],
+    [chatId, getOrCreateChat, utils],
   )
 
   // Handle creating a new sub-chat
   const handleCreateNewSubChat = useCallback(async () => {
     const store = useAgentSubChatStore.getState()
-    const sourceSubChatId = activeSubChatId || ""
     // New sub-chats use the user's default mode preference
     const newSubChatMode = isFolderlessChat ? "agent" : defaultAgentMode
-    const newSubChatProvider = inferProviderFromMessages(activeSubChatId || undefined)
+    const newSubChatBinding = getNewSubChatBinding()
 
     const newSubChat = await trpcClient.chats.createSubChat.mutate({
       chatId,
       name: t("chat.defaultTitle"),
       mode: newSubChatMode,
+      binding: newSubChatBinding,
     })
     const newId = newSubChat.id
-    utils.agents.getAgentChat.invalidate({ chatId })
+    agentSubChatsRef.current = [
+      ...agentSubChatsRef.current,
+      {
+        ...newSubChat,
+        mode: newSubChatMode,
+        created_at: newSubChat.createdAt,
+        updated_at: newSubChat.updatedAt,
+        stream_id: newSubChat.streamId,
+      },
+    ]
 
-    // Optimistic update: add new sub-chat to React Query cache immediately.
+    // Add the returned DTO (including its canonical binding) immediately.
     // This is CRITICAL for workspace isolation - without this, the new sub-chat
     // won't be in validSubChatIds and will be filtered out by tabsToRender.
     utils.agents.getAgentChat.setData({ chatId }, (old) => {
       if (!old) return old
       return {
         ...old,
-        subChats: [
-          ...(old.subChats || []),
-          {
-            id: newId,
-            name: t("chat.defaultTitle"),
-            mode: newSubChatMode,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            messages: null,
-            stream_id: null,
-          },
-        ],
+        subChats: [...(old.subChats || []), newSubChat],
       }
     })
 
     // Track this subchat as just created for typewriter effect
     setJustCreatedIds((prev) => new Set([...prev, newId]))
-    setSubChatProviderOverrides((prev) => ({
-      ...prev,
-      [newId]: newSubChatProvider,
-    }))
 
     // Add to allSubChats with placeholder name
     store.addToAllSubChats({
@@ -6057,27 +6359,6 @@ Make sure to preserve all functionality from both branches when resolving confli
 
     // Set the mode atomFamily for the new sub-chat (so currentMode reads correct value)
     appStore.set(subChatModeAtomFamily(newId), newSubChatMode)
-    // Inherit model preferences from source sub-chat for deterministic behavior.
-    appStore.set(
-      subChatModelIdAtomFamily(newId),
-      appStore.get(subChatModelIdAtomFamily(sourceSubChatId)),
-    )
-    appStore.set(
-      subChatClaudeModelSourceAtomFamily(newId),
-      appStore.get(subChatClaudeModelSourceAtomFamily(sourceSubChatId)),
-    )
-    appStore.set(
-      subChatCodexModelIdAtomFamily(newId),
-      appStore.get(subChatCodexModelIdAtomFamily(sourceSubChatId)),
-    )
-    appStore.set(
-      subChatCodexModelSourceAtomFamily(newId),
-      appStore.get(subChatCodexModelSourceAtomFamily(sourceSubChatId)),
-    )
-    appStore.set(
-      subChatCodexThinkingAtomFamily(newId),
-      appStore.get(subChatCodexThinkingAtomFamily(sourceSubChatId)),
-    )
 
     // Add to open tabs and set as active
     store.addToOpenSubChats(newId)
@@ -6092,7 +6373,7 @@ Make sure to preserve all functionality from both branches when resolving confli
       workspaceKind: isFolderlessChat ? "folderless" : "project",
     })
 
-    const chatProvider = newSubChatProvider
+    const chatProvider = newSubChat.binding.runtime
     let newSubChatTransport: IPCChatTransport | ACPChatTransport | null = null
 
     if (worktreePath || isFolderlessChat) {
@@ -6103,6 +6384,7 @@ Make sure to preserve all functionality from both branches when resolving confli
         newSubChatTransport = new ACPChatTransport({
           chatId,
           subChatId: newId,
+          binding: newSubChat.binding,
           projectPath: isFolderlessChat ? undefined : projectPath,
           mode: newSubChatMode,
           provider: "codex",
@@ -6112,6 +6394,7 @@ Make sure to preserve all functionality from both branches when resolving confli
         newSubChatTransport = new IPCChatTransport({
           chatId,
           subChatId: newId,
+          binding: newSubChat.binding,
           projectPath: isFolderlessChat ? undefined : projectPath,
           mode: newSubChatMode,
         })
@@ -6207,8 +6490,6 @@ Make sure to preserve all functionality from both branches when resolving confli
     originalProjectPath,
     chatId,
     defaultAgentMode,
-    activeSubChatId,
-    inferProviderFromMessages,
     utils,
     setSubChatUnseenChanges,
     selectedChatId,
@@ -6575,7 +6856,7 @@ Make sure to preserve all functionality from both branches when resolving confli
 
   const stableHandleAutoRename = useStableCallback(handleAutoRename)
   const stableHandleCreateNewSubChat = useStableCallback(handleCreateNewSubChat)
-  const stableHandleProviderChange = useStableCallback(handleProviderChange)
+  const stableHandleBindingChange = useStableCallback(handleBindingChange)
   const stableHandleRestoreWorkspace = useStableCallback(handleRestoreWorkspace)
 
   // Check if active sub-chat is the first one (for renaming parent chat)
@@ -6781,66 +7062,82 @@ Make sure to preserve all functionality from both branches when resolving confli
                 </div>
               ) : splitPaneIds.length >= 2 && !!activeSubChatId && splitPaneIds.includes(activeSubChatId) ? (
                 <SplitViewContainer
-                  panes={splitPaneIds.flatMap((paneId) => {
-                    const chat = getOrCreateChat(paneId)
-                    const isFirstSubChat = getFirstSubChatId(agentSubChats) === paneId
-                    const belongsToWorkspace = agentSubChats.some(sc => sc.id === paneId) ||
-                                              allSubChats.some(sc => sc.id === paneId)
+                      panes={splitPaneIds.flatMap((paneId) => {
+                        const chat = getOrCreateChat(paneId)
+                        const binding = getSubChatBinding(paneId)
+                        const isFirstSubChat =
+                          getFirstSubChatId(agentSubChats) === paneId
+                        const belongsToWorkspace =
+                          agentSubChats.some((sc) => sc.id === paneId) ||
+                          allSubChats.some((sc) => sc.id === paneId)
 
-                    if (!chat || !belongsToWorkspace) return []
+                        if (!chat || !binding || !belongsToWorkspace) return []
 
-                    return [{
-                      id: paneId,
-                      content: (
-                        <div
-                          className="h-full flex flex-col"
-                          onMouseDownCapture={() => {
-                            const store = useAgentSubChatStore.getState()
-                            if (store.activeSubChatId !== paneId) {
-                              // Mouse interaction already has an explicit target in this pane.
-                              // Suppress auto-focus to avoid stealing focus from clicked controls
-                              // (e.g. model selector popover trigger) on first click.
-                              appStore.set(suppressInputFocusAtom, true)
-                              store.setActiveSubChat(paneId)
-                            }
-                          }}
-                        >
-                          <ChatViewInner
-                            chat={chat}
-                            subChatId={paneId}
-                            parentChatId={chatId}
-                            provider={inferProviderFromMessages(paneId)}
-                            isFirstSubChat={isFirstSubChat}
-                            onAutoRename={stableHandleAutoRename}
-                            onCreateNewSubChat={stableHandleCreateNewSubChat}
-                            onProviderChange={stableHandleProviderChange}
-                            repository={repository}
-                            streamId={agentChatStore.getStreamId(paneId)}
-                            isMobile={isMobileFullscreen}
-                            isSubChatsSidebarOpen={subChatsSidebarMode === "sidebar"}
-                            projectPath={worktreePath || undefined}
-                            isFolderlessChat={isFolderlessChat}
-                            isArchived={isArchived}
-                            onRestoreWorkspace={stableHandleRestoreWorkspace}
-                            existingPrUrl={agentChat?.prUrl}
-                            isActive={paneId === activeSubChatId}
-                            isSplitPane={true}
-                            workspaceName={agentChat?.name ?? null}
-                            workspaceBranch={agentChat?.branch ?? null}
-                            workspaceRepoName={workspaceRepoName}
-                          />
-                        </div>
-                      )
-                    }]
-                  })}
-                  hiddenTabs={tabsToRender
-                    .filter(id => !splitPaneIds.includes(id))
-                    .map(subChatId => {
+                        return [
+                          {
+                            id: paneId,
+                            content: (
+                              <div
+                                className="h-full flex flex-col"
+                                onMouseDownCapture={() => {
+                                  const store = useAgentSubChatStore.getState()
+                                  if (store.activeSubChatId !== paneId) {
+                                    // Mouse interaction already has an explicit target in this pane.
+                                    // Suppress auto-focus to avoid stealing focus from clicked controls
+                                    // (e.g. model selector popover trigger) on first click.
+                                    appStore.set(suppressInputFocusAtom, true)
+                                    store.setActiveSubChat(paneId)
+                                  }
+                                }}
+                              >
+                                <ChatViewInner
+                                  key={getChatViewInstanceKey(chat)}
+                                  chat={chat}
+                                  subChatId={paneId}
+                                  parentChatId={chatId}
+                                  binding={binding}
+                                  isFirstSubChat={isFirstSubChat}
+                                  onAutoRename={stableHandleAutoRename}
+                                  onCreateNewSubChat={
+                                    stableHandleCreateNewSubChat
+                                  }
+                                  onBindingChange={stableHandleBindingChange}
+                                  repository={repository}
+                                  streamId={agentChatStore.getStreamId(paneId)}
+                                  isMobile={isMobileFullscreen}
+                                  isSubChatsSidebarOpen={
+                                    subChatsSidebarMode === "sidebar"
+                                  }
+                                  projectPath={worktreePath || undefined}
+                                  isFolderlessChat={isFolderlessChat}
+                                  isArchived={isArchived}
+                                  onRestoreWorkspace={
+                                    stableHandleRestoreWorkspace
+                                  }
+                                  existingPrUrl={agentChat?.prUrl}
+                                  isActive={paneId === activeSubChatId}
+                                  isSplitPane={true}
+                                  workspaceName={agentChat?.name ?? null}
+                                  workspaceBranch={agentChat?.branch ?? null}
+                                  workspaceRepoName={workspaceRepoName}
+                                />
+                              </div>
+                            ),
+                          },
+                        ]
+                      })}
+                      hiddenTabs={tabsToRender
+                        .filter((id) => !splitPaneIds.includes(id))
+                        .map((subChatId) => {
                           const chat = getOrCreateChat(subChatId)
-                          const isFirstSubChat = getFirstSubChatId(agentSubChats) === subChatId
-                          const belongsToWorkspace = agentSubChats.some(sc => sc.id === subChatId) ||
-                                                    allSubChats.some(sc => sc.id === subChatId)
-                          if (!chat || !belongsToWorkspace) return null
+                          const binding = getSubChatBinding(subChatId)
+                          const isFirstSubChat =
+                            getFirstSubChatId(agentSubChats) === subChatId
+                          const belongsToWorkspace =
+                            agentSubChats.some((sc) => sc.id === subChatId) ||
+                            allSubChats.some((sc) => sc.id === subChatId)
+                          if (!chat || !binding || !belongsToWorkspace)
+                            return null
                           return (
                             <div
                               key={subChatId}
@@ -6853,22 +7150,29 @@ Make sure to preserve all functionality from both branches when resolving confli
                               aria-hidden
                             >
                               <ChatViewInner
+                                key={getChatViewInstanceKey(chat)}
                                 chat={chat}
                                 subChatId={subChatId}
                                 parentChatId={chatId}
-                                provider={inferProviderFromMessages(subChatId)}
+                                binding={binding}
                                 isFirstSubChat={isFirstSubChat}
                                 onAutoRename={stableHandleAutoRename}
-                                onCreateNewSubChat={stableHandleCreateNewSubChat}
-                                onProviderChange={stableHandleProviderChange}
+                                onCreateNewSubChat={
+                                  stableHandleCreateNewSubChat
+                                }
+                                onBindingChange={stableHandleBindingChange}
                                 repository={repository}
                                 streamId={agentChatStore.getStreamId(subChatId)}
                                 isMobile={isMobileFullscreen}
-                                isSubChatsSidebarOpen={subChatsSidebarMode === "sidebar"}
+                                isSubChatsSidebarOpen={
+                                  subChatsSidebarMode === "sidebar"
+                                }
                                 projectPath={worktreePath || undefined}
                                 isFolderlessChat={isFolderlessChat}
                                 isArchived={isArchived}
-                                onRestoreWorkspace={stableHandleRestoreWorkspace}
+                                onRestoreWorkspace={
+                                  stableHandleRestoreWorkspace
+                                }
                                 existingPrUrl={agentChat?.prUrl}
                                 isActive={false}
                                 isSplitPane={false}
@@ -6878,11 +7182,12 @@ Make sure to preserve all functionality from both branches when resolving confli
                               />
                             </div>
                           )
-                      })}
-                />
+                        })}
+                    />
               ) : (
                 tabsToRender.map(subChatId => {
                 const chat = getOrCreateChat(subChatId)
+                      const binding = getSubChatBinding(subChatId)
                 const isActive = subChatId === activeSubChatId
                 const isFirstSubChat = getFirstSubChatId(agentSubChats) === subChatId
 
@@ -6892,7 +7197,7 @@ Make sure to preserve all functionality from both branches when resolving confli
                 const belongsToWorkspace = agentSubChats.some(sc => sc.id === subChatId) ||
                                           allSubChats.some(sc => sc.id === subChatId)
 
-                if (!chat || !belongsToWorkspace) return null
+                      if (!chat || !binding || !belongsToWorkspace) return null
 
                 return (
                   <div
@@ -6913,14 +7218,15 @@ Make sure to preserve all functionality from both branches when resolving confli
                     aria-hidden={!isActive}
                   >
                     <ChatViewInner
+                            key={getChatViewInstanceKey(chat)}
                       chat={chat}
                       subChatId={subChatId}
                       parentChatId={chatId}
-                      provider={inferProviderFromMessages(subChatId)}
+                            binding={binding}
                       isFirstSubChat={isFirstSubChat}
                       onAutoRename={stableHandleAutoRename}
                       onCreateNewSubChat={stableHandleCreateNewSubChat}
-                      onProviderChange={stableHandleProviderChange}
+                            onBindingChange={stableHandleBindingChange}
                       repository={repository}
                       streamId={agentChatStore.getStreamId(subChatId)}
                       isMobile={isMobileFullscreen}

@@ -6,6 +6,7 @@ import type { AgentGuardEvent } from "../../../shared/agent-scope-contracts"
 import type { DesktopRunRequest } from "../agent-runtime/desktop-run-request"
 import type { ClaudePermissionMapping } from "../agent-runtime/permission-policy"
 import { redactRuntimePayload } from "../agent-runtime/redaction"
+import { isActiveClaudeSessionSignal } from "./active-sessions"
 import {
   type CreateClaudeAgentSdkToolPermissionHandlerInput,
   createClaudeAgentSdkPermissionControls,
@@ -214,7 +215,7 @@ export function createClaudeAgentSdkRuntimeQueryOptions({
 export function createClaudeAgentSdkDesktopRuntimeQueryOptions({
   permissionPolicy,
   guardedContract,
-  getGuardedContract,
+  isGuardedContractCurrent,
   guardEvents,
   emit,
   subChatId,
@@ -227,12 +228,15 @@ export function createClaudeAgentSdkDesktopRuntimeQueryOptions({
     permissionHandler: {
       permissionPolicy,
       guardedContract,
-      getGuardedContract,
+      isGuardedContractCurrent,
       recordGuardEvent: (event) => {
         guardEvents.push(event)
       },
       emit,
       subChatId,
+      isCurrentRunOwner: () =>
+        !input.request.signal.aborted &&
+        isActiveClaudeSessionSignal(subChatId, input.request.signal),
       pendingToolApprovals,
       parts,
     },

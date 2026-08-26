@@ -39,7 +39,169 @@ function fakeSpawn(child: FakeChildProcess): typeof spawn {
   return (() => child) as unknown as typeof spawn
 }
 
+function deferred(): {
+  promise: Promise<void>
+  resolve: () => void
+} {
+  let resolve!: () => void
+  const promise = new Promise<void>((nextResolve) => {
+    resolve = nextResolve
+  })
+  return { promise, resolve }
+}
+
+function nextWrittenProtocolMessage(
+  child: FakeChildProcess,
+): Promise<Record<string, unknown>> {
+  return new Promise((resolve, reject) => {
+    child.stdin.once("data", (chunk) => {
+      try {
+        resolve(JSON.parse(String(chunk).trim()) as Record<string, unknown>)
+      } catch (error) {
+        reject(error)
+      }
+    })
+  })
+}
+
 describe("Codex app-server stdio transport", () => {
+  test.each([
+    {
+      label: "same external runId command replacement",
+      method: "item/commandExecution/requestApproval",
+      result: { decision: "accept" },
+      failClosedResult: { decision: "decline" },
+      ownerBRunId: "run-shared",
+    },
+    {
+      label: "different external runId file replacement",
+      method: "item/fileChange/requestApproval",
+      result: { decision: "accept" },
+      failClosedResult: { decision: "decline" },
+      ownerBRunId: "run-b",
+    },
+  ])("rechecks exact owner after an approval barrier before the native $label response", async ({
+    method,
+    result,
+    failClosedResult,
+    ownerBRunId,
+  }) => {
+    const child = new FakeChildProcess()
+    const transport = createCodexAppServerStdioTransport({
+      executable: "/bin/codex",
+      spawnProcess: fakeSpawn(child),
+    })
+    const ownerA = { runId: "run-shared", token: Symbol("owner-a") }
+    const ownerB = { runId: ownerBRunId, token: Symbol("owner-b") }
+    let activeOwner = ownerA
+    const approvalResolved = deferred()
+    const releaseResponse = deferred()
+    transport.onServerRequest(async () => {
+      approvalResolved.resolve()
+      await releaseResponse.promise
+      return {
+        result,
+        failClosedResult,
+        isResponseStillAuthorized: () => activeOwner === ownerA,
+      }
+    })
+
+    const written = nextWrittenProtocolMessage(child)
+    child.stdout.write(
+      `${JSON.stringify({ id: "approval-1", method, params: {} })}\n`,
+    )
+    await approvalResolved.promise
+    activeOwner = ownerB
+    releaseResponse.resolve()
+
+    await expect(written).resolves.toEqual({
+      id: "approval-1",
+      result: failClosedResult,
+    })
+    expect(result).toEqual({ decision: "accept" })
+    await transport.close()
+  })
+
+  test("rechecks abort from subscription cancellation before writing a native permissions grant", async () => {
+    const child = new FakeChildProcess()
+    const transport = createCodexAppServerStdioTransport({
+      executable: "/bin/codex",
+      spawnProcess: fakeSpawn(child),
+    })
+    const controller = new AbortController()
+    const approvalResolved = deferred()
+    const releaseResponse = deferred()
+    const permissions = {
+      network: null,
+      fileSystem: { read: null, write: ["/repo/src/new.ts"] },
+    }
+    transport.onServerRequest(async () => {
+      approvalResolved.resolve()
+      await releaseResponse.promise
+      return {
+        result: { permissions, scope: "turn", strictAutoReview: true },
+        failClosedResult: {
+          permissions: {},
+          scope: "turn",
+          strictAutoReview: true,
+        },
+        isResponseStillAuthorized: () => !controller.signal.aborted,
+      }
+    })
+
+    const written = nextWrittenProtocolMessage(child)
+    child.stdout.write(
+      `${JSON.stringify({
+        id: "permissions-1",
+        method: "item/permissions/requestApproval",
+        params: {},
+      })}\n`,
+    )
+    await approvalResolved.promise
+    controller.abort(new Error("exact subscription canceled"))
+    releaseResponse.resolve()
+
+    await expect(written).resolves.toEqual({
+      id: "permissions-1",
+      result: {
+        permissions: {},
+        scope: "turn",
+        strictAutoReview: true,
+      },
+    })
+    await transport.close()
+  })
+
+  test("treats a throwing final response predicate as a native denial", async () => {
+    const child = new FakeChildProcess()
+    const transport = createCodexAppServerStdioTransport({
+      executable: "/bin/codex",
+      spawnProcess: fakeSpawn(child),
+    })
+    transport.onServerRequest(() => ({
+      result: { decision: "accept" },
+      failClosedResult: { decision: "decline" },
+      isResponseStillAuthorized: () => {
+        throw new Error("owner lookup failed")
+      },
+    }))
+
+    const written = nextWrittenProtocolMessage(child)
+    child.stdout.write(
+      `${JSON.stringify({
+        id: "command-1",
+        method: "item/commandExecution/requestApproval",
+        params: {},
+      })}\n`,
+    )
+
+    await expect(written).resolves.toEqual({
+      id: "command-1",
+      result: { decision: "decline" },
+    })
+    await transport.close()
+  })
+
   test("redacts stderr before rejecting pending app-server requests", async () => {
     const child = new FakeChildProcess()
     const transport = createCodexAppServerStdioTransport({

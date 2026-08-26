@@ -1,22 +1,26 @@
 import { and, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm"
 import { z } from "zod"
-import {
-  agentChatProviders,
-  buildAgentChatMessageMetadata,
-} from "../../../../shared/agent-chat-provider"
+import { buildAgentChatMessageMetadata } from "../../../../shared/agent-chat-provider"
 import { agentUserMessagePartSchema } from "../../../../shared/chat-message"
+import { normalizeChatSessionBindingWrite } from "../../../../shared/chat-session-binding"
 import {
   trackWorkspaceArchived,
   trackWorkspaceCreated,
   trackWorkspaceDeleted,
 } from "../../analytics"
 import { attachProjectToChat } from "../../chat-project-attach"
+import {
+  attachBindingsToSubChats,
+  seedSubChatBinding,
+} from "../../chat-session-binding"
 import { cleanupChatWorkspaceForDelete } from "../../chats/workspace-cleanup"
 import { chats, getDatabase, projects, subChats } from "../../db"
 import { removeWorktree } from "../../git"
 import { gitCache } from "../../git/cache"
 import { resolveProjectChatWorktree } from "../../project-chat-worktree"
+import { getProviderProfileChatBindingMetadataFromDatabase } from "../../provider-profiles/storage"
 import { terminalManager } from "../../terminal/manager"
+import { chatSessionBindingInputSchema } from "../chat-session-binding-schema"
 import { publicProcedure } from "../index"
 import {
   sendWorktreeSetupApprovalRequired,
@@ -87,7 +91,11 @@ export const chatCrudProcedures = {
             .get()
         : null
 
-      return { ...chat, subChats: chatSubChats, project }
+      return {
+        ...chat,
+        subChats: attachBindingsToSubChats(db, chatSubChats),
+        project,
+      }
     }),
 
   /**
@@ -98,10 +106,7 @@ export const chatCrudProcedures = {
       z.object({
         projectId: z.string().nullable().optional(),
         name: z.string().optional(),
-        model: z.string().optional(),
-        provider: z.enum(agentChatProviders).optional(),
-        modelSource: z.string().optional(),
-        providerProfileId: z.string().nullable().optional(),
+        binding: chatSessionBindingInputSchema,
         initialMessage: z.string().optional(),
         initialMessageParts: z.array(agentUserMessagePartSchema).optional(),
         baseBranch: z.string().optional(), // Branch to base the worktree off
@@ -115,6 +120,8 @@ export const chatCrudProcedures = {
       const db = getDatabase()
       const requestingWindowId = ctx.getWindow?.()?.id ?? null
 
+      const bindingInput = normalizeChatSessionBindingWrite(input.binding)
+
       // Get project path when creating a project-backed workspace.
       const project = input.projectId
         ? db
@@ -126,25 +133,14 @@ export const chatCrudProcedures = {
       console.log("[chats.create] found project:", project)
       if (input.projectId && !project) throw new Error("Project not found")
 
-      // Create chat (fast path)
-      const chat = db
-        .insert(chats)
-        .values({
-          name: input.name,
-          projectId: input.projectId ?? null,
-        })
-        .returning()
-        .get()
-      console.log("[chats.create] created chat:", chat)
-
       // Create initial sub-chat with user message (AI SDK format)
       // If initialMessageParts is provided, use it; otherwise fallback to text-only message
       let initialMessages = "[]"
       const initialMetadata = buildAgentChatMessageMetadata({
-        model: input.model,
-        provider: input.provider,
-        modelSource: input.modelSource,
-        providerProfileId: input.providerProfileId,
+        model: bindingInput.modelId,
+        provider: bindingInput.runtime,
+        modelSource: bindingInput.modelSource,
+        providerProfileId: bindingInput.providerProfileId,
       })
 
       if (input.initialMessageParts && input.initialMessageParts.length > 0) {
@@ -169,15 +165,31 @@ export const chatCrudProcedures = {
         ])
       }
 
-      const subChat = db
-        .insert(subChats)
-        .values({
-          chatId: chat.id,
-          mode: input.mode,
-          messages: initialMessages,
+      const { chat, subChat, binding } = db.transaction((tx) => {
+        const chat = tx
+          .insert(chats)
+          .values({
+            name: input.name,
+            projectId: input.projectId ?? null,
+          })
+          .returning()
+          .get()
+        const subChat = tx
+          .insert(subChats)
+          .values({
+            chatId: chat.id,
+            mode: input.mode,
+            messages: initialMessages,
+          })
+          .returning()
+          .get()
+        const binding = seedSubChatBinding(tx, subChat.id, bindingInput, {
+          getProviderProfileMetadata:
+            getProviderProfileChatBindingMetadataFromDatabase,
         })
-        .returning()
-        .get()
+        return { chat, subChat, binding }
+      })
+      console.log("[chats.create] created chat:", chat)
       console.log("[chats.create] created subChat:", subChat)
 
       // Only create worktree if this is a project-backed workspace.
@@ -222,7 +234,7 @@ export const chatCrudProcedures = {
         branch: worktreeResult.branch,
         baseBranch: worktreeResult.baseBranch,
         baseCommit: worktreeResult.baseCommit,
-        subChats: [subChat],
+        subChats: [{ ...subChat, binding }],
       }
 
       // Track workspace created

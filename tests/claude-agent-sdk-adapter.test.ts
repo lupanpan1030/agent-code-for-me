@@ -1,14 +1,23 @@
-import { describe, expect, test } from "bun:test"
-import { resolveDesktopPermissionPolicy } from "../src/main/lib/agent-runtime/permission-policy"
+import { afterEach, describe, expect, mock, test } from "bun:test"
 import type { DesktopRunRequest } from "../src/main/lib/agent-runtime/desktop-run-request"
+import { resolveDesktopPermissionPolicy } from "../src/main/lib/agent-runtime/permission-policy"
 import type { RunEvent } from "../src/main/lib/agent-runtime/runtime-events"
+import {
+  clearClaudeActiveSessionsForTest,
+  getActiveClaudeSession,
+  setActiveClaudeSession,
+} from "../src/main/lib/claude/active-sessions"
 import {
   ClaudeAgentSdkLoadError,
   ClaudeAgentSdkQueryStartError,
   createClaudeAgentSdkAdapter,
 } from "../src/main/lib/claude/agent-sdk-adapter"
+import type { ClaudeAgentSdkQuery } from "../src/main/lib/claude/agent-sdk-query-loader"
+import type { ClaudeAgentSdkQueryParams } from "../src/main/lib/claude/agent-sdk-query-options"
 
 function createRequest(emittedEvents: RunEvent[] = []): DesktopRunRequest {
+  const controller = new AbortController()
+  setActiveClaudeSession("sub-1", { controller, runId: "run-1" })
   return {
     identity: { runId: "run-1", jobId: "job-1" },
     context: {
@@ -28,7 +37,7 @@ function createRequest(emittedEvents: RunEvent[] = []): DesktopRunRequest {
     mcp: { status: "skipped", serverNames: [], blockers: [] },
     attachments: [],
     trace: { emit: (event) => emittedEvents.push(event) },
-    signal: new AbortController().signal,
+    signal: controller.signal,
     session: {},
   }
 }
@@ -38,6 +47,10 @@ async function* createStream() {
 }
 
 describe("Claude Agent SDK adapter", () => {
+  afterEach(() => {
+    clearClaudeActiveSessionsForTest()
+  })
+
   test("starts the SDK query inside DesktopRuntimeAdapter.run and hands off the stream", async () => {
     const emittedEvents: RunEvent[] = []
     const request = createRequest(emittedEvents)
@@ -118,6 +131,39 @@ describe("Claude Agent SDK adapter", () => {
     })
     expect(loadCalls).toEqual(["load"])
     expect(queryCalls).toEqual([queryOptions])
+  })
+
+  test("does not invoke a loaded SDK query after same-run-id owner replacement during import", async () => {
+    let resolveQuery!: (query: ClaudeAgentSdkQuery) => void
+    const queryLoaded = new Promise<ClaudeAgentSdkQuery>((resolve) => {
+      resolveQuery = resolve
+    })
+    const query = mock(() => createStream())
+    const adapter = createClaudeAgentSdkAdapter({
+      loadQuery: () => queryLoaded,
+      queryOptions: {
+        prompt: "hello",
+        options: {},
+      } as unknown as ClaudeAgentSdkQueryParams,
+      consumeStream: async () => ({ status: "succeeded" }),
+    })
+    const request = createRequest()
+    const ownerA = getActiveClaudeSession("sub-1")
+    const run = adapter.run(request)
+    await Promise.resolve()
+
+    const controllerB = new AbortController()
+    setActiveClaudeSession("sub-1", {
+      controller: controllerB,
+      runId: "run-1",
+    })
+    ownerA?.controller.abort()
+    resolveQuery(query as unknown as ClaudeAgentSdkQuery)
+
+    await expect(run).resolves.toEqual({ status: "canceled" })
+    expect(query).not.toHaveBeenCalled()
+    expect(getActiveClaudeSession("sub-1")?.controller).toBe(controllerB)
+    expect(controllerB.signal.aborted).toBe(false)
   })
 
   test("propagates SDK query startup failures to the route boundary", async () => {

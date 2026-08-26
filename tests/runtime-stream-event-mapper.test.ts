@@ -60,6 +60,7 @@ describe("desktop stream event mapper", () => {
       }),
       ...mapper.map({
         type: "ask-user-question",
+        approvalId: "approval-1",
         toolUseId: "tool-1",
         questions: [{ question: "Continue?", header: "Confirm" }],
       }),

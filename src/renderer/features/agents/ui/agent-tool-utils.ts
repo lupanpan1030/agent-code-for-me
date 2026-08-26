@@ -16,16 +16,19 @@
 
 interface CachedToolState {
   state: string | undefined
-  inputJson: string  // JSON stringified input for deep comparison
+  inputJson: string // JSON stringified input for deep comparison
   outputJson: string // JSON stringified output for deep comparison
 }
 
 const toolStateCache = new Map<string, CachedToolState>()
 
-export function clearToolStateCachesByToolCallIds(toolCallIds: string[]) {
+export function clearToolStateCachesByToolCallIds(
+  subChatId: string,
+  toolCallIds: string[],
+) {
   for (const toolCallId of toolCallIds) {
     toolStateCache.delete(toolCallId)
-    askUserStateCache.delete(toolCallId)
+    askUserStateCache.delete(JSON.stringify([subChatId, toolCallId]))
   }
 }
 
@@ -236,6 +239,7 @@ export function areAskUserQuestionPropsEqual(
     state: string
     isError?: boolean
     isStreaming?: boolean
+    subChatId: string
     toolCallId?: string
   },
   nextProps: {
@@ -245,9 +249,12 @@ export function areAskUserQuestionPropsEqual(
     state: string
     isError?: boolean
     isStreaming?: boolean
+    subChatId: string
     toolCallId?: string
   },
 ): boolean {
+  if (prevProps.subChatId !== nextProps.subChatId) return false
+
   // Different toolCallId = different tool
   if (prevProps.toolCallId !== nextProps.toolCallId) return false
 
@@ -266,10 +273,11 @@ export function areAskUserQuestionPropsEqual(
     resultJson: JSON.stringify(nextProps.result || {}),
   }
 
-  const cached = askUserStateCache.get(toolCallId)
+  const cacheKey = JSON.stringify([nextProps.subChatId, toolCallId])
+  const cached = askUserStateCache.get(cacheKey)
 
   if (!cached) {
-    askUserStateCache.set(toolCallId, current)
+    askUserStateCache.set(cacheKey, current)
     return false // First render
   }
 
@@ -281,7 +289,7 @@ export function areAskUserQuestionPropsEqual(
     cached.resultJson !== current.resultJson
 
   if (changed) {
-    askUserStateCache.set(toolCallId, current)
+    askUserStateCache.set(cacheKey, current)
     return false
   }
 

@@ -100,7 +100,6 @@ describe("Claude Agent SDK stream consumer", () => {
         return true
       },
       complete: () => {},
-      getContract: () => null,
       deleteContract: () => undefined,
       state,
     })
@@ -200,7 +199,6 @@ describe("Claude Agent SDK stream consumer", () => {
           return true
         },
         complete: () => {},
-        getContract: () => null,
         deleteContract: () => undefined,
         state,
       })

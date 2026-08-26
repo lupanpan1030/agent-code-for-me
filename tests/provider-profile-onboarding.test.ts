@@ -15,6 +15,11 @@ describe("provider profile onboarding", () => {
     const source = read(API_KEY_ACTION)
     expect(source).toContain("trpc.providerProfiles.saveProfile.useMutation")
     expect(source).toContain("providerProfileSource(profile.id)")
+    expect(source).toContain("setLastSelectedClaudeSelectionAtom")
+    expect(source).toContain("setLastSelectedClaudeSelection({")
+    expect(source).toContain("modelId: profile.defaultModel")
+    expect(source).not.toContain("lastSelectedClaudeModelSourceAtom")
+    expect(source).not.toContain("lastSelectedModelIdAtom")
     expect(source).toContain("onboarding.apiKey.alreadyConnected")
     expect(source).toContain("config?.credentialUsable")
     expect(source).toContain("profile.credentialUsable")
@@ -24,6 +29,9 @@ describe("provider profile onboarding", () => {
     expect(source).not.toContain("claudeProviderConfig.save")
     expect(source).not.toContain(
       'setLastSelectedClaudeModelSource("custom-provider")',
+    )
+    expect(source.indexOf("setLastSelectedClaudeSelection({")).toBeLessThan(
+      source.indexOf("providerProfiles.listProfiles.invalidate()"),
     )
   })
 
@@ -46,6 +54,14 @@ describe("provider profile onboarding", () => {
   test("custom provider onboarding reuses the shared Provider Profile editor", () => {
     const panel = read(AI_PATH_PANEL)
     expect(panel).toContain("ProviderProfileEditor")
+    expect(panel).toContain("setLastSelectedClaudeSelectionAtom")
+    expect(panel).toContain("setLastSelectedCodexSelectionAtom")
+    expect(panel).toContain("setLastSelectedClaudeSelection({")
+    expect(panel).toContain("setLastSelectedCodexSelection({")
+    expect(panel).toContain("thinkingLevel: lastSelectedCodexThinking")
+    expect(panel).not.toContain("lastSelectedClaudeModelSourceAtom")
+    expect(panel).not.toContain("lastSelectedCodexModelSourceAtom")
+    expect(panel).toContain('profile.targetRuntimes.includes("codex")')
 
     const editor = read(EDITOR)
     expect(editor).toContain("trpc.providerProfiles.saveProfile.useMutation")
@@ -55,6 +71,9 @@ describe("provider profile onboarding", () => {
     // The preset list (the multi-API setup) is surfaced.
     expect(editor).toContain("listPresets")
     expect(editor).toContain("applyPreset")
+    expect(editor.indexOf("onSaved?.(profile)")).toBeLessThan(
+      editor.indexOf("providerProfiles.listProfiles.invalidate()"),
+    )
   })
 
   test("shared editor keeps the Provider Profile boundary and supports no-auth", () => {

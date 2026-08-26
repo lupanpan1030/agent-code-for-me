@@ -1,6 +1,6 @@
 import type { AgentGuardEvent } from "../../../shared/agent-scope-contracts"
 import {
-  getActiveGuardedContract,
+  isActiveGuardedContract,
   type ValidatedAgentScopeContract,
 } from "../agent-guard"
 import {
@@ -35,7 +35,7 @@ export type PrepareClaudeAgentSdkDesktopRuntimeQueryInput = Omit<
   | "mcpServers"
   | "model"
   | "pendingToolApprovals"
-  | "getGuardedContract"
+  | "isGuardedContractCurrent"
   | "permission"
   | "guardEvents"
   | "parts"
@@ -53,9 +53,7 @@ export type PrepareClaudeAgentSdkDesktopRuntimeQueryInput = Omit<
   ensureTokensFresh?: PrepareClaudeAgentSdkMcpServersInput["ensureTokensFresh"]
   pendingToolApprovals?: CreateClaudeAgentSdkDesktopRuntimeQueryOptionsInput["pendingToolApprovals"]
   getPendingToolApprovals?: typeof getClaudePendingToolApprovalStore
-  getGuardedContract?: (
-    contractId: string,
-  ) => ValidatedAgentScopeContract | undefined
+  isGuardedContractCurrent?: (contract: ValidatedAgentScopeContract) => boolean
   permission?: ClaudePermissionMapping
   permissionPolicy?: CreateClaudeAgentSdkDesktopRuntimeQueryOptionsInput["permissionPolicy"]
   subChatId?: CreateClaudeAgentSdkDesktopRuntimeQueryOptionsInput["subChatId"]
@@ -86,7 +84,7 @@ export async function prepareClaudeAgentSdkDesktopRuntimeQuery({
   ensureTokensFresh = ensureClaudeAgentSdkMcpTokensFresh,
   pendingToolApprovals,
   getPendingToolApprovals = getClaudePendingToolApprovalStore,
-  getGuardedContract = getActiveGuardedContract,
+  isGuardedContractCurrent = isActiveGuardedContract,
   permission,
   guardEvents,
   parts = [],
@@ -138,7 +136,7 @@ export async function prepareClaudeAgentSdkDesktopRuntimeQuery({
       pendingToolApprovals: pendingToolApprovals ?? getPendingToolApprovals(),
       parts,
       stderrLines,
-      getGuardedContract,
+      isGuardedContractCurrent,
       guardEvents: runtimeGuardEvents,
     }),
   }

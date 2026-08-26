@@ -77,16 +77,20 @@ describe("agent guard runtime pipeline", () => {
     expect(claude).toContain(".input(claudeChatInputSchema)")
     expect(claude).toContain("prepareClaudeAgentSdkDesktopRunControls")
     expect(claude).not.toContain("prepareActiveGuardedRunContract")
-    expect(claudeControls).toContain("prepareActiveGuardedRunContract")
+    expect(claudeControls).toContain("prepareGuardedRunContract")
+    expect(claudeControls).not.toContain("prepareActiveGuardedRunContract")
     expect(claude).not.toContain(
       "validateAgentScopeContract(input.scopeContract",
     )
-    expect(claude).not.toContain("setActiveGuardedContract(guardedContract)")
+    expect(claude).toContain("replaceActiveGuardedContractForSubChat(")
     expect(claude).not.toContain("captureGuardedGitStatus(runtimeCwd)")
     expect(activeContracts).toContain(
       "validateAgentScopeContract(scopeContract",
     )
-    expect(activeContracts).toContain("setActiveGuardedContract(contract)")
+    expect(activeContracts).not.toContain("prepareActiveGuardedRunContract")
+    expect(activeContracts).not.toContain("setActiveGuardedContract")
+    expect(activeContracts).toContain("activeGuardedContractsBySubChatId")
+    expect(activeContracts).toContain("isActiveGuardedContract")
     expect(activeContracts).toContain("captureGuardedGitStatus")
     expect(claude).not.toContain("permissionHandler: {")
     expect(claudeQueryOptions).toContain("permissionHandler: {")
@@ -150,7 +154,8 @@ describe("agent guard runtime pipeline", () => {
     expect(claude).not.toContain("startActiveClaudeSessionForDesktopRun")
     expect(claude).toContain("createClaudeAgentSdkDesktopRunEnvelope")
     expect(runEnvelope).toContain("startActiveClaudeSessionForDesktopRun")
-    expect(claude).toContain("cancelClaudeAgentSdkActiveDesktopRun")
+    expect(claude).not.toContain("cancelClaudeAgentSdkActiveDesktopRun")
+    expect(claude).not.toContain("cancel: publicProcedure")
     expect(claude).toContain("cleanupClaudeAgentSdkDesktopRunSubscription")
     expect(claude).toContain("superviseClaudeAgentSdkDesktopRun")
     expect(claude).not.toContain(
@@ -167,8 +172,7 @@ describe("agent guard runtime pipeline", () => {
     expect(subscriptionCleanup).toContain(
       "deleteActiveClaudeSessionIfController(",
     )
-    expect(claude).not.toContain("input.runId && session.runId !== input.runId")
-    expect(subscriptionCleanup).toContain(
+    expect(subscriptionCleanup).not.toContain(
       "input.runId && session.runId !== input.runId",
     )
     expect(claude).not.toContain("activeSessions.get")
@@ -213,6 +217,7 @@ describe("agent guard runtime pipeline", () => {
       "scopeContract: agentScopeContractInputSchema.optional()",
     )
     expect(codex).toContain('codexAdapterSource: "codex-app-server"')
+    expect(codex).toContain("replaceActiveGuardedContractForSubChat(")
     expect(codexAppServerAdapter).toContain(
       "getCodexAppServerPermissionMapping",
     )

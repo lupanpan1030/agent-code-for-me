@@ -1,15 +1,16 @@
 import { CLAUDE_AGENT_SDK_DESKTOP_ADAPTER_METADATA } from "../agent-runtime/desktop-adapter-metadata"
-import {
-  emitDesktopRuntimeAdapterStarted,
-  type DesktopRuntimeAdapter,
-} from "../agent-runtime/desktop-runner"
 import type {
   DesktopRunRequest,
   DesktopRunResult,
 } from "../agent-runtime/desktop-run-request"
 import {
-  getClaudeAgentSdkQuery,
+  type DesktopRuntimeAdapter,
+  emitDesktopRuntimeAdapterStarted,
+} from "../agent-runtime/desktop-runner"
+import { isActiveClaudeSessionSignal } from "./active-sessions"
+import {
   type ClaudeAgentSdkQuery,
+  getClaudeAgentSdkQuery,
 } from "./agent-sdk-query-loader"
 import type { ClaudeAgentSdkQueryParams } from "./agent-sdk-query-options"
 
@@ -25,6 +26,20 @@ export type CreateClaudeAgentSdkAdapterInput = {
   loadQuery?: () => Promise<ClaudeAgentSdkQuery>
   queryOptions: ClaudeAgentSdkQueryParams
   consumeStream: ClaudeAgentSdkStreamConsumer
+  isRequestAuthoritative?: ClaudeAgentSdkRequestAuthority
+}
+
+export type ClaudeAgentSdkRequestAuthority = (
+  request: DesktopRunRequest,
+) => boolean
+
+export function isAuthoritativeClaudeAgentSdkRequest(
+  request: DesktopRunRequest,
+): boolean {
+  return (
+    !request.signal.aborted &&
+    isActiveClaudeSessionSignal(request.context.subChatId, request.signal)
+  )
 }
 
 export class ClaudeAgentSdkLoadError extends Error {
@@ -52,12 +67,15 @@ export function createClaudeAgentSdkAdapter({
   loadQuery = getClaudeAgentSdkQuery,
   queryOptions,
   consumeStream,
+  isRequestAuthoritative = isAuthoritativeClaudeAgentSdkRequest,
 }: CreateClaudeAgentSdkAdapterInput): DesktopRuntimeAdapter {
   return {
     metadata: CLAUDE_AGENT_SDK_DESKTOP_ADAPTER_METADATA,
 
     async run(request: DesktopRunRequest): Promise<DesktopRunResult> {
-      emitDesktopRuntimeAdapterStarted(request, CLAUDE_AGENT_SDK_DESKTOP_ADAPTER_METADATA)
+      if (!isRequestAuthoritative(request)) {
+        return { status: "canceled" }
+      }
 
       let sdkQuery = query
       if (!sdkQuery) {
@@ -67,6 +85,15 @@ export function createClaudeAgentSdkAdapter({
           throw new ClaudeAgentSdkLoadError(error)
         }
       }
+
+      if (!isRequestAuthoritative(request)) {
+        return { status: "canceled" }
+      }
+
+      emitDesktopRuntimeAdapterStarted(
+        request,
+        CLAUDE_AGENT_SDK_DESKTOP_ADAPTER_METADATA,
+      )
 
       let stream: ClaudeAgentSdkStream
       try {

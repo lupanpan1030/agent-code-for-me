@@ -89,6 +89,7 @@ interface AgentModelSelectorProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   selectedAgentId: AgentProviderId
+  disabled?: boolean
   selectedModelLabel: string
   triggerClassName?: string
   contentClassName?: string
@@ -101,6 +102,7 @@ interface AgentModelSelectorProps {
     onSelectModel: (modelId: string) => void
     selectedModelSource: ClaudeModelSource
     onSelectModelSource: (source: ClaudeModelSource) => void
+    onSelectProviderProfile: (profile: ProviderProfileOption) => void
     isOffline: boolean
     ollamaModels: string[]
     selectedOllamaModel?: string
@@ -118,9 +120,14 @@ interface AgentModelSelectorProps {
     onSelectModel: (modelId: string) => void
     selectedModelSource: CodexModelSource
     effectiveFirstPartyModelSource: CodexFirstPartyModelSource | null
-    onSelectModelSource: (source: CodexModelSource) => void
+    onSelectModelSource: (
+      source: CodexModelSource,
+      compatibleModelId?: string,
+    ) => void
+    onSelectProviderProfile: (profile: ProviderProfileOption) => void
     selectedThinking: CodexThinkingLevel
     onSelectThinking: (thinking: CodexThinkingLevel) => void
+    supportsThinking?: boolean
     isConnected: boolean
   }
 }
@@ -487,6 +494,7 @@ export function AgentModelSelector({
   open,
   onOpenChange,
   selectedAgentId,
+  disabled = false,
   selectedModelLabel,
   triggerClassName,
   contentClassName,
@@ -674,6 +682,7 @@ export function AgentModelSelector({
 
   const handleOpenChange = useCallback(
     (nextOpen: boolean) => {
+      if (nextOpen && disabled) return
       onOpenChange(nextOpen)
       if (!nextOpen) {
         setSearch("")
@@ -683,8 +692,14 @@ export function AgentModelSelector({
         setCustomModelAttempted(false)
       }
     },
-    [onOpenChange],
+    [disabled, onOpenChange],
   )
+
+  useEffect(() => {
+    if (disabled && open) {
+      onOpenChange(false)
+    }
+  }, [disabled, onOpenChange, open])
 
   const handleCustomModelSubmit = useCallback(
     (event: React.FormEvent<HTMLFormElement>) => {
@@ -839,7 +854,6 @@ export function AgentModelSelector({
     switch (item.type) {
       case "claude":
         if (!providerIsAllowed("claude-code")) return
-        claude.onSelectModelSource("claude-oauth")
         claude.onSelectModel(item.model.id)
         break
       case "codex":
@@ -849,9 +863,6 @@ export function AgentModelSelector({
         ) {
           return
         }
-        if (isProviderProfileSource(codex.selectedModelSource)) {
-          codex.onSelectModelSource("chatgpt")
-        }
         setCodexCompatibilityNotice(null)
         codex.onSelectModel(item.model.id)
         break
@@ -860,14 +871,13 @@ export function AgentModelSelector({
         claude.onSelectOllamaModel(item.modelName)
         break
       case "provider-profile": {
-        const source = providerProfileSource(item.profile.id)
         const targetProvider = getItemProvider(item)
         if (!providerIsAllowed(targetProvider)) return
         if (targetProvider === "claude-code") {
-          claude.onSelectModelSource(source as ClaudeModelSource)
+          claude.onSelectProviderProfile(item.profile)
         } else {
           setCodexCompatibilityNotice(null)
-          codex.onSelectModelSource(source as CodexModelSource)
+          codex.onSelectProviderProfile(item.profile)
         }
         break
       }
@@ -878,11 +888,11 @@ export function AgentModelSelector({
   const handleCodexAccountSourceSelect = useCallback(
     (source: CodexFirstPartyModelSource) => {
       if (!providerIsAllowed("codex")) return
-      codex.onSelectModelSource(source)
       if (
         codex.selectedModel.kind === "custom" ||
         isCodexModelSupportedBySource(source, codex.selectedModel)
       ) {
+        codex.onSelectModelSource(source)
         setCodexCompatibilityNotice(null)
         return
       }
@@ -893,7 +903,7 @@ export function AgentModelSelector({
       })
 
       if (resolved.model && resolved.changed) {
-        codex.onSelectModel(resolved.model.id)
+        codex.onSelectModelSource(source, resolved.model.id)
         setCodexCompatibilityNotice(
           t("agent.model.codexSourceAutoSwitchedModel", {
             model: resolved.model.name,
@@ -902,6 +912,7 @@ export function AgentModelSelector({
         return
       }
 
+      codex.onSelectModelSource(source)
       setCodexCompatibilityNotice(null)
     },
     [codex, providerIsAllowed, t],
@@ -969,14 +980,16 @@ export function AgentModelSelector({
   }
 
   return (
-    <Popover open={open} onOpenChange={handleOpenChange}>
+    <Popover open={disabled ? false : open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
         <button
           type="button"
+          disabled={disabled}
           aria-label={t("agent.model.selector")}
           className={cn(
             "flex items-center gap-1.5 px-2 py-1 text-sm text-muted-foreground transition-[background-color,color] duration-150 ease-out rounded-md outline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70",
             "hover:text-foreground hover:bg-muted/50",
+            "disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-muted-foreground",
             triggerClassName,
           )}
         >
@@ -1046,6 +1059,7 @@ export function AgentModelSelector({
 
           {/* Codex thinking level selector with hover sub-menu */}
           {selectedAgentId === "codex" &&
+            codex.supportsThinking !== false &&
             (() => {
               return (
                 <>

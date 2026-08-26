@@ -227,6 +227,193 @@ describe("provider profile gateway token scope", () => {
     expect(JSON.stringify(modelsBody)).not.toContain(endpointB.token)
   })
 
+  test("forwards only the token-bound Codex model regardless of request body or edited default", async () => {
+    const upstream = await createUpstreamCaptureServer()
+    const profileId = "profile_gateway_bound_model"
+    try {
+      runtimeProfiles.set(profileId, {
+        id: profileId,
+        name: "Gateway Bound Model",
+        presetId: "test",
+        protocol: "openai-chat",
+        baseUrl: upstream.baseUrl,
+        defaultModel: "edited-profile-default",
+        authMode: "none",
+        token: null,
+        headers: {},
+        targetRuntimes: ["codex"],
+        capabilities: { codex: true },
+      })
+
+      const endpoint = await gatewayModule.getProviderGatewayEndpoint(
+        profileId,
+        "responses",
+        {
+          modelResolution: "codex-chat-binding",
+          codexChatBoundModelId: "bound-profile-model",
+        },
+      )
+      const modelsResponse = await fetch(`${endpoint.baseUrl}/models`, {
+        headers: { authorization: `Bearer ${endpoint.token}` },
+      })
+      const modelsBody = await modelsResponse.json()
+      const response = await fetch(`${endpoint.baseUrl}/responses`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${endpoint.token}` },
+        body: JSON.stringify({
+          model: "bound-profile-model/none",
+          input: "hello",
+        }),
+      })
+      const slashModelResponse = await fetch(`${endpoint.baseUrl}/responses`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${endpoint.token}` },
+        body: JSON.stringify({ model: "org/high/none", input: "hello" }),
+      })
+      const rawNoneModelResponse = await fetch(
+        `${endpoint.baseUrl}/responses`,
+        {
+          method: "POST",
+          headers: { authorization: `Bearer ${endpoint.token}` },
+          body: JSON.stringify({ model: "vendor/none/none", input: "hello" }),
+        },
+      )
+      const builtInSnapshotResponse = await fetch(
+        `${endpoint.baseUrl}/responses`,
+        {
+          method: "POST",
+          headers: { authorization: `Bearer ${endpoint.token}` },
+          body: JSON.stringify({ model: "gpt-5.5/none", input: "hello" }),
+        },
+      )
+
+      expect(response.status).toBe(200)
+      expect(modelsResponse.status).toBe(200)
+      expect(JSON.stringify(modelsBody)).toContain("bound-profile-model")
+      expect(JSON.stringify(modelsBody)).not.toContain(
+        "edited-profile-default",
+      )
+      expect(slashModelResponse.status).toBe(200)
+      expect(rawNoneModelResponse.status).toBe(200)
+      expect(builtInSnapshotResponse.status).toBe(200)
+      expect(upstream.requests).toHaveLength(4)
+      expect(upstream.requests.map((request) => request.body.model)).toEqual([
+        "bound-profile-model",
+        "bound-profile-model",
+        "bound-profile-model",
+        "bound-profile-model",
+      ])
+      expect(upstream.requests[0]?.body.reasoning).toBeUndefined()
+      expect(upstream.requests[0]?.body.reasoning_effort).toBeUndefined()
+    } finally {
+      runtimeProfiles.delete(profileId)
+      await upstream.close()
+    }
+  })
+
+  test("requires a bound model only for Codex chat gateway tokens", async () => {
+    await expect(
+      gatewayModule.getProviderGatewayEndpoint(
+        "profile_gateway_b",
+        "responses",
+        { modelResolution: "codex-chat-binding" },
+      ),
+    ).rejects.toThrow("require an admitted bound model snapshot")
+
+    await expect(
+      gatewayModule.getProviderGatewayEndpoint(
+        "profile_gateway_b",
+        "responses",
+        { codexChatBoundModelId: "must-not-apply" },
+      ),
+    ).rejects.toThrow("only valid for codex-chat-binding")
+  })
+
+  test("keeps legacy headless model resolution isolated from chat-binding suffix rules", async () => {
+    const upstream = await createUpstreamCaptureServer()
+    const profileId = "profile_gateway_headless_model"
+    try {
+      runtimeProfiles.set(profileId, {
+        id: profileId,
+        name: "Gateway Headless Model",
+        presetId: "test",
+        protocol: "openai-chat",
+        baseUrl: upstream.baseUrl,
+        defaultModel: "org/high",
+        authMode: "none",
+        token: null,
+        headers: {},
+        targetRuntimes: ["codex"],
+        capabilities: { codex: true },
+      })
+
+      const endpoint = await gatewayModule.getProviderGatewayEndpoint(
+        profileId,
+        "responses",
+      )
+      for (const model of ["org/high", "org/high/none", "vendor/none"]) {
+        const response = await fetch(`${endpoint.baseUrl}/responses`, {
+          method: "POST",
+          headers: { authorization: `Bearer ${endpoint.token}` },
+          body: JSON.stringify({ model, input: "hello" }),
+        })
+        expect(response.status).toBe(200)
+      }
+
+      expect(upstream.requests).toHaveLength(3)
+      expect(upstream.requests.map((request) => request.body.model)).toEqual([
+        "org/high",
+        "org/high",
+        "vendor/none",
+      ])
+    } finally {
+      runtimeProfiles.delete(profileId)
+      await upstream.close()
+    }
+  })
+
+  test("preserves slash-suffixed Claude profile model IDs verbatim", async () => {
+    const upstream = await createUpstreamCaptureServer()
+    const profileId = "profile_gateway_claude_bound_model"
+    try {
+      runtimeProfiles.set(profileId, {
+        id: profileId,
+        name: "Gateway Claude Bound Model",
+        presetId: "test",
+        protocol: "anthropic",
+        baseUrl: upstream.baseUrl,
+        defaultModel: "edited-claude-default",
+        authMode: "none",
+        token: null,
+        headers: {},
+        targetRuntimes: ["claude"],
+        capabilities: { claude: true },
+      })
+
+      const endpoint = await gatewayModule.getProviderGatewayEndpoint(
+        profileId,
+        "anthropic",
+        { modelResolution: "claude-chat-binding" },
+      )
+      const response = await fetch(`${endpoint.baseUrl}/messages`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${endpoint.token}` },
+        body: JSON.stringify({
+          model: "org/model/high",
+          messages: [{ role: "user", content: "hello" }],
+          max_tokens: 16,
+        }),
+      })
+
+      expect(response.status).toBe(200)
+      expect(upstream.requests).toHaveLength(1)
+      expect(upstream.requests[0]?.body.model).toBe("org/model/high")
+    } finally {
+      runtimeProfiles.delete(profileId)
+      await upstream.close()
+    }
+  })
+
   test("redacts direct upstream error bodies before returning them", async () => {
     const upstream = await createUpstreamErrorServer()
     try {

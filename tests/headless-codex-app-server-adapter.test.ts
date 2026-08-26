@@ -8,7 +8,9 @@ import type {
   CodexAppServerTransportExit,
   CodexAppServerTransportNotification,
   CodexAppServerTransportServerRequest,
+  CodexAppServerTransportServerRequestResponse,
 } from "../src/main/lib/codex/app-server-transport"
+import { selectCodexAppServerServerRequestResult } from "../src/main/lib/codex/app-server-transport"
 import {
   createCodexAppServerHeadlessTaskRunner,
   createHeadlessCodexAppServerDesktopAdapter,
@@ -157,9 +159,12 @@ class FakeCodexAppServerTransport implements CodexAppServerTransport {
   onServerRequest(
     handler: (
       request: CodexAppServerTransportServerRequest,
-    ) => unknown | Promise<unknown>,
+    ) =>
+      | CodexAppServerTransportServerRequestResponse
+      | Promise<CodexAppServerTransportServerRequestResponse>,
   ): () => void {
-    this.serverRequestHandler = handler
+    this.serverRequestHandler = async (request) =>
+      selectCodexAppServerServerRequestResult(await handler(request))
     return () => {
       this.serverRequestHandler = null
     }

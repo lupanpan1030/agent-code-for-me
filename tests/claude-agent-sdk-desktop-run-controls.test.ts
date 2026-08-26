@@ -36,7 +36,7 @@ function createBaseInput() {
 }
 
 describe("Claude Agent SDK desktop run controls", () => {
-  test("verifies preflight, activates guard contract, and resolves permission policy", async () => {
+  test("verifies preflight, prepares guard contract, and resolves permission policy", async () => {
     const base = createBaseInput()
     const calls: any[] = []
     const preflight = {

@@ -11,6 +11,7 @@ export type CompleteClaudeAgentSdkRunAfterAdapterInput = {
   db: any
   chatId: string
   subChatId: string
+  activeSessionSignal: AbortSignal
   messagesToSave: any[]
   parts: Array<Record<string, any>>
   metadata: any
@@ -33,7 +34,6 @@ export type CompleteClaudeAgentSdkRunAfterAdapterInput = {
   emitError: (error: unknown, context: string) => void
   emit: (chunk: UIMessageChunk) => void
   complete: () => void
-  getContract: FinalizeClaudeAgentSdkGuardMetadataInput["getContract"]
   deleteContract: FinalizeClaudeAgentSdkGuardMetadataInput["deleteContract"]
   log?: (...args: any[]) => void
   nowMs?: () => number
@@ -111,6 +111,7 @@ export async function completeClaudeAgentSdkRunAfterAdapter({
   db,
   chatId,
   subChatId,
+  activeSessionSignal,
   messagesToSave,
   parts,
   metadata,
@@ -133,7 +134,6 @@ export async function completeClaudeAgentSdkRunAfterAdapter({
   emitError,
   emit,
   complete,
-  getContract,
   deleteContract,
   log = console.log,
   nowMs = Date.now,
@@ -169,7 +169,6 @@ export async function completeClaudeAgentSdkRunAfterAdapter({
       stopped: aborted,
     },
     emit,
-    getContract,
     deleteContract,
   })
 
@@ -177,6 +176,7 @@ export async function completeClaudeAgentSdkRunAfterAdapter({
     db,
     chatId,
     subChatId,
+    activeSessionSignal,
     messagesToSave,
     parts,
     metadata: finalizedMetadata,

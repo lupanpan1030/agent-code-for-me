@@ -8,6 +8,7 @@ type AgentModelSelectorProps = ComponentProps<typeof AgentModelSelector>
 
 export function RuntimeModelSelector({
   selectedEngineId,
+  disabled = false,
   selectedModelLabel,
   modelOpen,
   onModelOpenChange,
@@ -19,6 +20,7 @@ export function RuntimeModelSelector({
   codex,
 }: {
   selectedEngineId: AgentChatProvider
+  disabled?: boolean
   selectedModelLabel: string
   modelOpen: boolean
   onModelOpenChange: (open: boolean) => void
@@ -34,6 +36,7 @@ export function RuntimeModelSelector({
       open={modelOpen}
       onOpenChange={onModelOpenChange}
       selectedAgentId={selectedEngineId}
+      disabled={disabled}
       selectedModelLabel={selectedModelLabel}
       triggerClassName={triggerClassName}
       contentClassName={contentClassName}

@@ -7,6 +7,7 @@ import {
   getActiveClaudeSession,
   hasActiveClaudeSession,
   hasActiveClaudeSessions,
+  isActiveClaudeSessionSignal,
   setActiveClaudeSession,
   startActiveClaudeSessionForDesktopRun,
 } from "../src/main/lib/claude/active-sessions"
@@ -32,6 +33,17 @@ describe("Claude active session owner", () => {
     })
     expect(deleteActiveClaudeSession("sub-1")).toBe(true)
     expect(hasActiveClaudeSessions()).toBe(false)
+  })
+
+  test("keeps a draining owner discoverable without authorizing its aborted signal", () => {
+    const controller = new AbortController()
+    setActiveClaudeSession("sub-1", { controller, runId: "run-1" })
+
+    expect(isActiveClaudeSessionSignal("sub-1", controller.signal)).toBe(true)
+    controller.abort()
+
+    expect(getActiveClaudeSession("sub-1")?.controller).toBe(controller)
+    expect(isActiveClaudeSessionSignal("sub-1", controller.signal)).toBe(false)
   })
 
   test("deletes a session only when cleanup owns its controller", () => {

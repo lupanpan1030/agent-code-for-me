@@ -5,7 +5,6 @@ import {
   createClaudeDesktopProviderBinding,
   createClaudeDesktopRunRequest,
   createClaudeDesktopRunRequestFromRuntimeStartup,
-  resolveClaudeDesktopRunResumeSessionId,
 } from "../src/main/lib/claude/desktop-run-request"
 
 describe("Claude desktop run request", () => {
@@ -182,24 +181,6 @@ describe("Claude desktop run request", () => {
     expect(emitted).toEqual([event])
   })
 
-  test("resolves resume session metadata from requested and existing sessions", () => {
-    expect(
-      resolveClaudeDesktopRunResumeSessionId({
-        requestedSessionId: "requested-session",
-        existingSessionId: "existing-session",
-      }),
-    ).toBe("requested-session")
-
-    expect(
-      resolveClaudeDesktopRunResumeSessionId({
-        requestedSessionId: "",
-        existingSessionId: "existing-session",
-      }),
-    ).toBe("existing-session")
-
-    expect(resolveClaudeDesktopRunResumeSessionId({})).toBeUndefined()
-  })
-
   test("creates DesktopRunRequest from runtime startup metadata", () => {
     const permissionPolicy = resolveDesktopPermissionPolicy({
       runtimeId: "claude-code",
@@ -229,7 +210,6 @@ describe("Claude desktop run request", () => {
       modelSource: "provider-profile:profile-1",
       selectedProviderProfileId: "profile-1",
       signal: abortController.signal,
-      requestedSessionId: "",
       existingSessionId: "existing-session",
       emitTrace: () => {},
     })
@@ -243,7 +223,7 @@ describe("Claude desktop run request", () => {
     })
     expect(request.session).toEqual({
       resumeSessionId: "existing-session",
-      parentSessionId: "",
+      parentSessionId: "existing-session",
     })
   })
 })

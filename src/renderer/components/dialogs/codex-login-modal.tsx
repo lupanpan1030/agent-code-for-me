@@ -7,6 +7,10 @@ import { pendingAuthRetryMessageAtom } from "../../features/agents/atoms"
 import { CodexLoginContent } from "../../features/agents/components/codex-login-content"
 import { useCodexLoginFlow } from "../../features/agents/hooks/use-codex-login-flow"
 import {
+  didCodexAuthRetryLoginSatisfyBinding,
+  resolveRequiredCodexAuthRetryMethod,
+} from "../../features/agents/lib/codex-auth-retry"
+import {
   agentsSettingsDialogActiveTabAtom,
   agentsSettingsDialogOpenAtom,
   codexLoginModalOpenAtom,
@@ -35,6 +39,8 @@ export function CodexLoginModal({ autoStart = true }: CodexLoginModalProps) {
   const didStartForOpenRef = useRef(false)
   const shouldAutoOpenUrlRef = useRef(false)
   const isAuthRetryFlow = pendingAuthRetry?.provider === "codex"
+  const requiredAuthRetryMethod =
+    resolveRequiredCodexAuthRetryMethod(pendingAuthRetry)
   const shouldAutoStartForCurrentFlow = autoStart && !isAuthRetryFlow
 
   const {
@@ -47,6 +53,7 @@ export function CodexLoginModal({ autoStart = true }: CodexLoginModalProps) {
     isOpeningUrl,
     start,
     saveApiKey,
+    setMethod,
     setApiKeyInput,
     cancel,
     reset,
@@ -76,6 +83,11 @@ export function CodexLoginModal({ autoStart = true }: CodexLoginModalProps) {
       reset()
     }
 
+    if (requiredAuthRetryMethod && method !== requiredAuthRetryMethod) {
+      setMethod(requiredAuthRetryMethod)
+      return
+    }
+
     if (!shouldAutoStartForCurrentFlow || method !== "chatgpt") {
       return
     }
@@ -86,7 +98,15 @@ export function CodexLoginModal({ autoStart = true }: CodexLoginModalProps) {
 
     didStartForOpenRef.current = true
     void start()
-  }, [method, open, reset, shouldAutoStartForCurrentFlow, start])
+  }, [
+    method,
+    open,
+    requiredAuthRetryMethod,
+    reset,
+    setMethod,
+    shouldAutoStartForCurrentFlow,
+    start,
+  ])
 
   useEffect(() => {
     if (!open || method !== "chatgpt") {
@@ -116,11 +136,19 @@ export function CodexLoginModal({ autoStart = true }: CodexLoginModalProps) {
       pendingAuthRetry?.provider === "codex" &&
       !pendingAuthRetry.readyToRetry
     ) {
+      if (
+        !didCodexAuthRetryLoginSatisfyBinding({
+          pending: pendingAuthRetry,
+          successfulMethod: method,
+        })
+      ) {
+        return
+      }
       setPendingAuthRetry({ ...pendingAuthRetry, readyToRetry: true })
     }
 
     setOpen(false)
-  }, [open, pendingAuthRetry, setOpen, setPendingAuthRetry, state])
+  }, [method, open, pendingAuthRetry, setOpen, setPendingAuthRetry, state])
 
   const handleConnect = () => {
     if (method === "api_key") {

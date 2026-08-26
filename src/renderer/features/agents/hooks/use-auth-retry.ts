@@ -1,12 +1,14 @@
-import { useEffect } from "react"
 import { useAtom } from "jotai"
-import { pendingAuthRetryMessageAtom } from "../atoms"
+import { useEffect } from "react"
 import type { AgentChatProvider } from "../../../../shared/agent-chat-provider"
-import type { LongTextAttachmentPart } from "../../../../shared/long-text-attachments"
 import {
-  isSupportedChatImageMediaType,
   type ChatImageAttachmentPart,
+  isSupportedChatImageMediaType,
 } from "../../../../shared/chat-attachments"
+import type { ChatSessionBinding } from "../../../../shared/chat-session-binding"
+import type { LongTextAttachmentPart } from "../../../../shared/long-text-attachments"
+import { pendingAuthRetryMessageAtom } from "../atoms"
+import { pendingAuthRetryMatchesBinding } from "../lib/auth-retry-binding"
 
 type AuthRetryPart =
   | { type: "text"; text: string }
@@ -14,19 +16,24 @@ type AuthRetryPart =
   | ChatImageAttachmentPart
   | LongTextAttachmentPart
 
-type SendAuthRetryMessage = (message: {
-  role: "user"
-  parts: AuthRetryPart[]
-}) => void
+type SendAuthRetryMessage = (
+  message: {
+    role: "user"
+    parts: AuthRetryPart[]
+  },
+  expectedBindingIdentity: string,
+) => Promise<boolean> | boolean
 
 export function useAuthRetry({
   subChatId,
   provider,
+  binding,
   isStreaming,
   sendMessage,
 }: {
   subChatId: string
   provider: AgentChatProvider
+  binding: ChatSessionBinding
   isStreaming: boolean
   sendMessage: SendAuthRetryMessage
 }) {
@@ -37,13 +44,18 @@ export function useAuthRetry({
   useEffect(() => {
     if (
       !pendingAuthRetry ||
-      !pendingAuthRetry.readyToRetry ||
       pendingAuthRetry.subChatId !== subChatId ||
-      pendingAuthRetry.provider !== provider ||
-      isStreaming
+      pendingAuthRetry.provider !== provider
     ) {
       return
     }
+
+    if (!pendingAuthRetryMatchesBinding(pendingAuthRetry, binding)) {
+      setPendingAuthRetry(null)
+      return
+    }
+
+    if (!pendingAuthRetry.readyToRetry || isStreaming) return
 
     setPendingAuthRetry(null)
 
@@ -80,13 +92,24 @@ export function useAuthRetry({
       parts.push(attachment)
     }
 
-    sendMessage({
-      role: "user",
-      parts,
+    void Promise.resolve(
+      sendMessage(
+        {
+          role: "user",
+          parts,
+        },
+        pendingAuthRetry.bindingIdentity,
+      ),
+    ).catch((error) => {
+      console.error(
+        "[useAuthRetry] Failed to retry authenticated message",
+        error,
+      )
     })
   }, [
     pendingAuthRetry,
     provider,
+    binding,
     isStreaming,
     sendMessage,
     setPendingAuthRetry,

@@ -28,7 +28,10 @@ export type CodexAskUserQuestionApproval = {
 }
 
 export type CodexAskUserQuestionPending = {
+  approvalId: string
+  toolUseId: string
   subChatId: string
+  isCurrentRunOwner: () => boolean
   resolve: (response: CodexAskUserQuestionApproval) => void
 }
 
@@ -255,13 +258,25 @@ export function createCodexAskUserQuestionTools(input: {
   subChatId: string
   emit: EmitCodexAskUserQuestionChunk
   registerPending: (
-    toolUseId: string,
+    approvalId: string,
     pending: CodexAskUserQuestionPending,
   ) => void
-  unregisterPending: (toolUseId: string) => void
+  unregisterPending: (
+    approvalId: string,
+    pending: CodexAskUserQuestionPending,
+  ) => boolean
+  isCurrentRunOwner?: () => boolean
+  createApprovalId?: () => string
   timeoutMs?: number
 }) {
   const timeoutMs = input.timeoutMs ?? 60000
+  const runOwnerIsCurrent = (): boolean => {
+    try {
+      return input.isCurrentRunOwner?.() ?? true
+    } catch {
+      return false
+    }
+  }
 
   return acpTools({
     [CODEX_ASK_USER_QUESTION_TOOL_NAME]: tool({
@@ -271,47 +286,62 @@ export function createCodexAskUserQuestionTools(input: {
       execute: async (rawInput: unknown) => {
         const questions = normalizeCodexAskUserQuestions(rawInput)
         const toolUseId = `codex-ask-${randomUUID()}`
+        const approvalId =
+          input.createApprovalId?.() ?? `codex-approval-${randomUUID()}`
 
         if (questions.length === 0) {
           return "AskUserQuestion was called without a valid question."
         }
 
-        input.emit({
-          type: "ask-user-question",
-          toolUseId,
-          questions,
-        })
-
         const response = await new Promise<CodexAskUserQuestionApproval>(
           (resolve) => {
+            let settled = false
+            let pending!: CodexAskUserQuestionPending
+            const finish = (approval: CodexAskUserQuestionApproval) => {
+              if (settled) return
+              settled = true
+              clearTimeout(timeoutId)
+              input.unregisterPending(approvalId, pending)
+              resolve(approval)
+            }
             const timeoutId = setTimeout(() => {
-              input.unregisterPending(toolUseId)
-              input.emit({
-                type: "ask-user-question-timeout",
-                toolUseId,
-              })
-              resolve({
+              const owned =
+                input.unregisterPending(approvalId, pending) !== false
+              if (owned) {
+                input.emit({
+                  type: "ask-user-question-timeout",
+                  approvalId,
+                  toolUseId,
+                })
+              }
+              finish({
                 approved: false,
                 message: QUESTIONS_TIMED_OUT_MESSAGE,
               })
             }, timeoutMs)
 
-            input.registerPending(toolUseId, {
+            pending = {
+              approvalId,
+              toolUseId,
               subChatId: input.subChatId,
-              resolve: (approval) => {
-                clearTimeout(timeoutId)
-                resolve(approval)
-              },
+              isCurrentRunOwner: runOwnerIsCurrent,
+              resolve: finish,
+            }
+            input.registerPending(approvalId, pending)
+            input.emit({
+              type: "ask-user-question",
+              approvalId,
+              toolUseId,
+              questions,
             })
           },
         )
-
-        input.unregisterPending(toolUseId)
 
         if (!response.approved) {
           const result = response.message || QUESTIONS_SKIPPED_MESSAGE
           input.emit({
             type: "ask-user-question-result",
+            approvalId,
             toolUseId,
             result,
           })
@@ -323,6 +353,7 @@ export function createCodexAskUserQuestionTools(input: {
         }
         input.emit({
           type: "ask-user-question-result",
+          approvalId,
           toolUseId,
           result,
         })

@@ -1,4 +1,8 @@
 import type { AgentJobMode } from "../../../shared/agent-jobs"
+import {
+  deleteActiveGuardedContractIfMatch,
+  type ValidatedAgentScopeContract,
+} from "../agent-guard"
 import type { DesktopPermissionPolicy } from "../agent-runtime/permission-policy"
 import {
   completeDesktopChatAgentJobSafely,
@@ -8,7 +12,8 @@ import {
 } from "../desktop-agent-jobs"
 import type { AgentJobDatabase } from "../headless/job-store"
 import {
-  deleteActiveCodexStreamIfRun,
+  type ActiveCodexStream,
+  deleteActiveCodexStreamIfOwner,
   getActiveCodexStream,
 } from "./active-streams"
 import { clearPendingCodexApprovals } from "./tool-approvals"
@@ -30,7 +35,8 @@ export type CodexDesktopRunFinalizeDependencies = {
   clearPendingApprovals: typeof clearPendingCodexApprovals
   completeDesktopJob: typeof completeDesktopChatAgentJobSafely
   createAndRegisterDesktopJob: typeof createAndRegisterDesktopChatAgentJob
-  deleteActiveStreamIfRun: typeof deleteActiveCodexStreamIfRun
+  deleteGuardedContractIfMatch: typeof deleteActiveGuardedContractIfMatch
+  deleteActiveStreamIfOwner: typeof deleteActiveCodexStreamIfOwner
   getActiveStream: typeof getActiveCodexStream
   requestCancelDesktopJob: typeof requestCancelDesktopChatAgentJobSafely
 }
@@ -39,7 +45,8 @@ const defaultDependencies: CodexDesktopRunFinalizeDependencies = {
   clearPendingApprovals: clearPendingCodexApprovals,
   completeDesktopJob: completeDesktopChatAgentJobSafely,
   createAndRegisterDesktopJob: createAndRegisterDesktopChatAgentJob,
-  deleteActiveStreamIfRun: deleteActiveCodexStreamIfRun,
+  deleteGuardedContractIfMatch: deleteActiveGuardedContractIfMatch,
+  deleteActiveStreamIfOwner: deleteActiveCodexStreamIfOwner,
   getActiveStream: getActiveCodexStream,
   requestCancelDesktopJob: requestCancelDesktopChatAgentJobSafely,
 }
@@ -100,6 +107,7 @@ export function createAndRegisterCodexDesktopRunJob(input: {
   cwd: string
   prompt: string
   runId: string
+  activeStreamOwner: ActiveCodexStream
   permissionPolicy: DesktopPermissionPolicy
   dependencies?: Partial<CodexDesktopRunFinalizeDependencies>
 }): DesktopAgentJobHandle {
@@ -115,9 +123,9 @@ export function createAndRegisterCodexDesktopRunJob(input: {
     permissionPolicy: input.permissionPolicy,
     cancel: () => {
       const activeStream = dependencies.getActiveStream(input.subChatId)
-      if (activeStream?.runId !== input.runId) return
-      activeStream.cancelRequested = true
-      activeStream.controller.abort()
+      if (activeStream !== input.activeStreamOwner) return
+      input.activeStreamOwner.cancelRequested = true
+      input.activeStreamOwner.controller.abort()
       dependencies.clearPendingApprovals("Session cancelled.", input.subChatId)
     },
   })
@@ -127,7 +135,8 @@ export function createAndRegisterCodexDesktopRunJob(input: {
 
 export function finalizeCodexDesktopRunAfterLifecycle(input: {
   state: CodexDesktopRunState
-  abortController: AbortController
+  activeStreamOwner: ActiveCodexStream
+  guardedContract: ValidatedAgentScopeContract | null
   chatId: string
   subChatId: string
   runId: string
@@ -147,7 +156,8 @@ export function finalizeCodexDesktopRunAfterLifecycle(input: {
         jobId,
         runtime: "codex",
         aborted:
-          input.abortController.signal.aborted && !input.state.adapterFailed(),
+          input.activeStreamOwner.controller.signal.aborted &&
+          !input.state.adapterFailed(),
         reachedNaturalFinish: input.state.reachedNaturalFinish(),
         sawError: input.state.sawError() || input.state.adapterFailed(),
         result: {
@@ -161,18 +171,24 @@ export function finalizeCodexDesktopRunAfterLifecycle(input: {
   }
 
   const activeStream = dependencies.getActiveStream(input.subChatId)
-  if (activeStream?.runId === input.runId) {
+  if (activeStream === input.activeStreamOwner) {
     dependencies.clearPendingApprovals("Session cancelled.", input.subChatId)
-    dependencies.deleteActiveStreamIfRun(input.subChatId, input.runId)
+    dependencies.deleteActiveStreamIfOwner(
+      input.subChatId,
+      input.activeStreamOwner,
+    )
+  }
+  if (input.guardedContract) {
+    dependencies.deleteGuardedContractIfMatch(input.guardedContract)
   }
   input.clearProviderSecrets()
 }
 
 export function cleanupCodexDesktopRunSubscription(input: {
   state: CodexDesktopRunState
-  abortController: AbortController
+  activeStreamOwner: ActiveCodexStream
+  guardedContract: ValidatedAgentScopeContract | null
   subChatId: string
-  runId: string
   markInactive: () => void
   getFallbackDb: () => AgentJobDatabase
   revokeProviderBinding: () => void
@@ -190,11 +206,15 @@ export function cleanupCodexDesktopRunSubscription(input: {
       requestedBy: "desktop-chat",
     },
   )
-  input.abortController.abort()
+  input.activeStreamOwner.controller.abort()
   input.revokeProviderBinding()
 
+  if (input.guardedContract) {
+    dependencies.deleteGuardedContractIfMatch(input.guardedContract)
+  }
+
   const activeStream = dependencies.getActiveStream(input.subChatId)
-  if (activeStream?.runId === input.runId) {
-    activeStream.cancelRequested = true
+  if (activeStream === input.activeStreamOwner) {
+    input.activeStreamOwner.cancelRequested = true
   }
 }

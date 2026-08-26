@@ -10,6 +10,11 @@ export type ClaudeDesktopSessionStartup = {
   previousSessionAborted: boolean
 }
 
+export type ClaudeDesktopSessionIdentity = {
+  streamId: string
+  runId: string
+}
+
 const activeSessions = new Map<string, ClaudeActiveSession>()
 
 export function getActiveClaudeSession(
@@ -27,6 +32,16 @@ export function setActiveClaudeSession(
 
 export function hasActiveClaudeSession(subChatId: string): boolean {
   return activeSessions.has(subChatId)
+}
+
+export function isActiveClaudeSessionSignal(
+  subChatId: string,
+  signal: AbortSignal,
+): boolean {
+  return (
+    !signal.aborted &&
+    activeSessions.get(subChatId)?.controller.signal === signal
+  )
 }
 
 export function hasActiveClaudeSessions(): boolean {
@@ -47,6 +62,15 @@ export function deleteActiveClaudeSessionIfController(
   return true
 }
 
+export function createClaudeDesktopSessionIdentity(input: {
+  requestedRunId?: string | null
+  createId?: () => string
+}): ClaudeDesktopSessionIdentity {
+  const streamId = (input.createId ?? crypto.randomUUID)()
+  const runId = input.requestedRunId ?? streamId
+  return { streamId, runId }
+}
+
 export function startActiveClaudeSessionForDesktopRun(input: {
   subChatId: string
   requestedRunId?: string | null
@@ -56,10 +80,8 @@ export function startActiveClaudeSessionForDesktopRun(input: {
   const existingSession = getActiveClaudeSession(input.subChatId)
   existingSession?.controller.abort()
 
-  const createId = input.createId ?? crypto.randomUUID
   const controller = input.createAbortController?.() ?? new AbortController()
-  const streamId = createId()
-  const runId = input.requestedRunId ?? streamId
+  const { streamId, runId } = createClaudeDesktopSessionIdentity(input)
 
   setActiveClaudeSession(input.subChatId, {
     controller,

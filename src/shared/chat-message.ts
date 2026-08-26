@@ -34,9 +34,21 @@ export const canonicalToolStates = [
 
 export type CanonicalToolState = (typeof canonicalToolStates)[number]
 
+const rollbackCheckpointRefPattern =
+  /^refs\/locus-checkpoints\/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+const rollbackCheckpointOidPattern = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/
+
+export type RollbackCheckpointBinding = {
+  ref: string
+  oid: string
+}
+
 export type ChatMessageMetadata = AgentChatMessageMetadata & {
   sessionId?: string
   sdkMessageUuid?: string
+  rollbackCheckpointAvailable?: boolean
+  rollbackCheckpointRef?: string
+  rollbackCheckpointOid?: string
   shouldForkResume?: boolean
   inputTokens?: number
   outputTokens?: number
@@ -46,6 +58,32 @@ export type ChatMessageMetadata = AgentChatMessageMetadata & {
   totalTokens?: number
   guardedRun?: unknown
   [key: string]: unknown
+}
+
+export function isCanonicalRollbackCheckpointBinding(
+  input: RollbackCheckpointBinding,
+): boolean {
+  return (
+    rollbackCheckpointRefPattern.test(input.ref) &&
+    rollbackCheckpointOidPattern.test(input.oid)
+  )
+}
+
+export function getAvailableRollbackCheckpointBinding(
+  metadata: ChatMessageMetadata | null | undefined,
+): RollbackCheckpointBinding | null {
+  if (
+    metadata?.rollbackCheckpointAvailable !== true ||
+    typeof metadata.rollbackCheckpointRef !== "string" ||
+    typeof metadata.rollbackCheckpointOid !== "string"
+  ) {
+    return null
+  }
+  const binding = {
+    ref: metadata.rollbackCheckpointRef,
+    oid: metadata.rollbackCheckpointOid,
+  }
+  return isCanonicalRollbackCheckpointBinding(binding) ? binding : null
 }
 
 type CommonMessagePartFields = {
@@ -356,6 +394,15 @@ export const chatMessageMetadataSchema = z
     providerProfileId: z.string().optional(),
     sessionId: z.string().optional(),
     sdkMessageUuid: z.string().optional(),
+    rollbackCheckpointAvailable: z.boolean().optional(),
+    rollbackCheckpointRef: z
+      .string()
+      .regex(rollbackCheckpointRefPattern)
+      .optional(),
+    rollbackCheckpointOid: z
+      .string()
+      .regex(rollbackCheckpointOidPattern)
+      .optional(),
     shouldForkResume: z.boolean().optional(),
     inputTokens: z.number().optional(),
     outputTokens: z.number().optional(),
@@ -366,6 +413,24 @@ export const chatMessageMetadataSchema = z
     guardedRun: z.unknown().optional(),
   })
   .passthrough()
+  .superRefine((metadata, context) => {
+    const hasRef = metadata.rollbackCheckpointRef !== undefined
+    const hasOid = metadata.rollbackCheckpointOid !== undefined
+    if (metadata.rollbackCheckpointAvailable === true && (!hasRef || !hasOid)) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "Available rollback checkpoints require both a canonical ref and expected OID",
+      })
+    }
+    if (metadata.rollbackCheckpointAvailable !== true && (hasRef || hasOid)) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "Unavailable rollback checkpoints must not retain a ref or expected OID",
+      })
+    }
+  })
 
 export const canonicalChatMessageSchema = z
   .object({

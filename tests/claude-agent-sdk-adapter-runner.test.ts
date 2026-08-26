@@ -1,8 +1,13 @@
-import { describe, expect, mock, test } from "bun:test"
+import { afterEach, describe, expect, mock, test } from "bun:test"
 import { randomBytes } from "node:crypto"
 import type { DesktopRunRequest } from "../src/main/lib/agent-runtime/desktop-run-request"
 import type { DesktopRuntimeAdapter } from "../src/main/lib/agent-runtime/desktop-runner"
 import { resolveDesktopPermissionPolicy } from "../src/main/lib/agent-runtime/permission-policy"
+import {
+  clearClaudeActiveSessionsForTest,
+  getActiveClaudeSession,
+  setActiveClaudeSession,
+} from "../src/main/lib/claude/active-sessions"
 import {
   ClaudeAgentSdkLoadError,
   ClaudeAgentSdkQueryStartError,
@@ -23,6 +28,8 @@ import type { UIMessageChunk } from "../src/main/lib/claude/types"
 import { EXACT_SECRET_REDACTION_MARKER } from "../src/shared/secret-redaction-policy"
 
 function createRequest(): DesktopRunRequest {
+  const controller = new AbortController()
+  setActiveClaudeSession("sub-1", { controller, runId: "run-1" })
   return {
     identity: { runId: "run-1", jobId: "job-1" },
     context: {
@@ -45,7 +52,7 @@ function createRequest(): DesktopRunRequest {
     mcp: { status: "skipped", serverNames: [], blockers: [] },
     attachments: [],
     trace: { emit: () => {} },
-    signal: new AbortController().signal,
+    signal: controller.signal,
     session: {},
   }
 }
@@ -83,6 +90,10 @@ async function* createClaudeAssistantStream() {
 }
 
 describe("Claude Agent SDK adapter runner", () => {
+  afterEach(() => {
+    clearClaudeActiveSessionsForTest()
+  })
+
   test("resolves the Claude Agent SDK adapter through the desktop factory", () => {
     const request = createRequest()
     const adapter = createAdapter(async () => ({ status: "succeeded" }))
@@ -202,7 +213,6 @@ describe("Claude Agent SDK adapter runner", () => {
         guardedPreRunStatus: null,
         guardEvents: [],
         guardedRunStartedAt: "2026-06-01T00:00:00.000Z",
-        getContract: () => null,
         deleteContract: () => undefined,
         subId: "sub-1",
         emitError: () => {
@@ -272,7 +282,6 @@ describe("Claude Agent SDK adapter runner", () => {
         guardedPreRunStatus: null,
         guardEvents: [],
         guardedRunStartedAt: "2026-06-01T00:00:00.000Z",
-        getContract: () => null,
         deleteContract: () => undefined,
         subId: "sub-1",
         emitError: () => {
@@ -337,6 +346,57 @@ describe("Claude Agent SDK adapter runner", () => {
     expect(flattenedCalls(log)).toContain(
       "[claude] Policy retry 1/2 - waiting 3s",
     )
+  })
+
+  test("does not start a retry after same-run-id owner replacement during backoff", async () => {
+    const policyRetry = createClaudeAgentSdkPolicyRetryState()
+    const request = createRequest()
+    const ownerA = getActiveClaudeSession("sub-1")
+    let resolveSleep!: () => void
+    const sleeping = new Promise<void>((resolve) => {
+      resolveSleep = resolve
+    })
+    let sleepStarted = false
+    let runs = 0
+    const adapter = createAdapter(async () => {
+      runs += 1
+      recordClaudeAgentSdkPolicyRetry({ state: policyRetry, log: () => {} })
+      return { status: "succeeded" }
+    })
+
+    const result = runClaudeAgentSdkAdapterWithPolicyRetry({
+      adapter,
+      request,
+      policyRetry,
+      beforeAttempt: () => {},
+      getChunkCount: () => 0,
+      subId: "sub-1",
+      emitError: () => {},
+      emit: () => {},
+      complete: () => {},
+      sleep: () => {
+        sleepStarted = true
+        return sleeping
+      },
+      log: () => {},
+    })
+    for (let attempt = 0; attempt < 20 && !sleepStarted; attempt += 1) {
+      await Promise.resolve()
+    }
+    expect(sleepStarted).toBe(true)
+
+    const controllerB = new AbortController()
+    setActiveClaudeSession("sub-1", {
+      controller: controllerB,
+      runId: "run-1",
+    })
+    ownerA?.controller.abort()
+    resolveSleep()
+
+    await expect(result).resolves.toEqual({ status: "canceled" })
+    expect(runs).toBe(1)
+    expect(getActiveClaudeSession("sub-1")?.controller).toBe(controllerB)
+    expect(controllerB.signal.aborted).toBe(false)
   })
 
   test("handles SDK load failures at the route boundary", async () => {

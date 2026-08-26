@@ -3,6 +3,7 @@ import type { DesktopRunRequest } from "../agent-runtime/desktop-run-request"
 import type { DesktopPermissionPolicy } from "../agent-runtime/permission-policy"
 import type { DesktopRunPreflightResult } from "../agent-runtime/preflight"
 import type { AgentJobDatabase } from "../headless/job-store"
+import { isActiveClaudeSessionSignal } from "./active-sessions"
 import {
   type ClaudeAgentSdkDesktopRunStartup,
   createClaudeAgentSdkDesktopRunStartup,
@@ -44,7 +45,6 @@ export type PrepareClaudeAgentSdkDesktopRunStartupInput = {
   images?: ImageAttachment[]
   longTextAttachments?: LongTextAttachment[]
   signal: AbortSignal
-  requestedSessionId?: string | null
   existingSessionId?: string | null
   emitPreflightBlocker: Parameters<
     typeof prepareClaudeAgentSdkProviderStartupForDesktopRun
@@ -70,7 +70,7 @@ export type PrepareClaudeAgentSdkDesktopRunStartupResult =
   | ({ ok: true } & PreparedClaudeAgentSdkDesktopRunStartup)
   | {
       ok: false
-      reason: "provider-startup-blocked"
+      reason: "provider-startup-blocked" | "stale-active-session"
     }
 
 const defaultDependencies: PrepareClaudeAgentSdkDesktopRunStartupDependencies =
@@ -94,6 +94,7 @@ export async function prepareClaudeAgentSdkDesktopRunStartup(
   const dependencies = withDefaultDependencies(input.dependencies)
   const providerStartup = await dependencies.prepareProviderStartup({
     modelSource: input.modelSource,
+    requestedModel: input.requestedModel,
     offlineModeEnabled: input.offlineModeEnabled ?? false,
     emitPreflightBlocker: input.emitPreflightBlocker,
   })
@@ -112,6 +113,16 @@ export async function prepareClaudeAgentSdkDesktopRunStartup(
     secretHints,
     cleanupRuntimeSecrets,
   } = providerStartup.startup
+  if (
+    input.signal.aborted ||
+    !isActiveClaudeSessionSignal(input.subChatId, input.signal)
+  ) {
+    cleanupRuntimeSecrets()
+    return {
+      ok: false,
+      reason: "stale-active-session",
+    }
+  }
   try {
     input.onRuntimeSecretsResolved?.({
       secretHints,
@@ -137,7 +148,6 @@ export async function prepareClaudeAgentSdkDesktopRunStartup(
         images: input.images,
         longTextAttachments: input.longTextAttachments,
         signal: input.signal,
-        requestedSessionId: input.requestedSessionId,
         existingSessionId: input.existingSessionId,
         secretHints,
       })

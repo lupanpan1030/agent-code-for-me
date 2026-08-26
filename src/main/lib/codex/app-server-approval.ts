@@ -1,5 +1,7 @@
+import { randomUUID } from "node:crypto"
 import type { AgentGuardEvent } from "../../../shared/agent-scope-contracts"
 import {
+  isActiveGuardedContract,
   resolveGuardedScopedShellWriteApproval,
   type ValidatedAgentScopeContract,
 } from "../agent-guard"
@@ -91,14 +93,19 @@ export type CodexAppServerApplyPatchApprovalParams = {
 export type CodexAppServerApprovalBridgeInput = {
   subChatId: string
   permission: CodexAppServerPermissionMapping
+  /** Exact active-Run owner check supplied by the desktop lifecycle owner. */
+  isCurrentRunOwner?: () => boolean
   controlledEditEnabled?: boolean
   guardedContract?: ValidatedAgentScopeContract | null
   emit?: (chunk: Record<string, unknown>) => void
   registerPendingQuestion?: (
-    toolUseId: string,
+    approvalId: string,
     pending: CodexAskUserQuestionPending,
   ) => void
-  unregisterPendingQuestion?: (toolUseId: string) => void
+  unregisterPendingQuestion?: (
+    approvalId: string,
+    pending: CodexAskUserQuestionPending,
+  ) => boolean
   onGuardEvent?: (event: AgentGuardEvent) => void
   onObservedToolDecision?: (event: {
     controlLevel: "observe"
@@ -127,6 +134,7 @@ type AppServerApprovalDecision =
 const DEFAULT_TIMEOUT_MS = 60000
 const APPROVE_OPTION_LABEL = "Approve"
 const DENY_OPTION_LABEL = "Deny"
+const STALE_RUN_MESSAGE = "Codex run is no longer active."
 
 function cleanString(value: unknown): string {
   return typeof value === "string" ? value.trim() : ""
@@ -435,6 +443,7 @@ export function resolveCodexAppServerPermissionsApprovalDecision(input: {
 
 async function waitForApproval(input: {
   subChatId: string
+  approvalId: string
   toolUseId: string
   questions: Array<{
     question: string
@@ -445,36 +454,53 @@ async function waitForApproval(input: {
   timeoutMs: number
   emit: (chunk: Record<string, unknown>) => void
   registerPending: (
-    toolUseId: string,
+    approvalId: string,
     pending: CodexAskUserQuestionPending,
   ) => void
-  unregisterPending: (toolUseId: string) => void
+  unregisterPending: (
+    approvalId: string,
+    pending: CodexAskUserQuestionPending,
+  ) => boolean
+  isCurrentRunOwner: () => boolean
 }): Promise<CodexAskUserQuestionApproval> {
-  input.emit({
-    type: "ask-user-question",
-    toolUseId: input.toolUseId,
-    questions: input.questions,
-  })
-
   return new Promise<CodexAskUserQuestionApproval>((resolve) => {
+    let settled = false
+    let pending!: CodexAskUserQuestionPending
+    const finish = (approval: CodexAskUserQuestionApproval) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timeoutId)
+      input.unregisterPending(input.approvalId, pending)
+      resolve(approval)
+    }
     const timeoutId = setTimeout(() => {
-      input.unregisterPending(input.toolUseId)
-      input.emit({
-        type: "ask-user-question-timeout",
-        toolUseId: input.toolUseId,
-      })
-      resolve({
+      const owned = input.unregisterPending(input.approvalId, pending) !== false
+      if (owned) {
+        input.emit({
+          type: "ask-user-question-timeout",
+          approvalId: input.approvalId,
+          toolUseId: input.toolUseId,
+        })
+      }
+      finish({
         approved: false,
         message: QUESTIONS_TIMED_OUT_MESSAGE,
       })
     }, input.timeoutMs)
 
-    input.registerPending(input.toolUseId, {
+    pending = {
+      approvalId: input.approvalId,
+      toolUseId: input.toolUseId,
       subChatId: input.subChatId,
-      resolve: (approval) => {
-        clearTimeout(timeoutId)
-        resolve(approval)
-      },
+      isCurrentRunOwner: input.isCurrentRunOwner,
+      resolve: finish,
+    }
+    input.registerPending(input.approvalId, pending)
+    input.emit({
+      type: "ask-user-question",
+      approvalId: input.approvalId,
+      toolUseId: input.toolUseId,
+      questions: input.questions,
     })
   })
 }
@@ -504,6 +530,7 @@ function approvalQuestion(
 export function createCodexAppServerApprovalBridge({
   subChatId,
   permission,
+  isCurrentRunOwner = () => true,
   controlledEditEnabled = false,
   guardedContract = null,
   emit,
@@ -514,6 +541,19 @@ export function createCodexAppServerApprovalBridge({
   timeoutMs = DEFAULT_TIMEOUT_MS,
   secretHints = [],
 }: CodexAppServerApprovalBridgeInput) {
+  const runOwnerIsCurrent = (): boolean => {
+    try {
+      return isCurrentRunOwner()
+    } catch {
+      return false
+    }
+  }
+  const guardedOwnerIsCurrent = (): boolean =>
+    !guardedContract ||
+    (guardedContract.subChatId === subChatId &&
+      isActiveGuardedContract(guardedContract))
+  const callbackAuthorityIsCurrent = (): boolean =>
+    runOwnerIsCurrent() && guardedOwnerIsCurrent()
   const canAskUser = Boolean(
     emit && registerPendingQuestion && unregisterPendingQuestion,
   )
@@ -527,6 +567,9 @@ export function createCodexAppServerApprovalBridge({
     tool: CodexToolPermissionRequest
     question: ReturnType<typeof approvalQuestion>
   }): Promise<CodexAskUserQuestionApproval> {
+    if (!callbackAuthorityIsCurrent()) {
+      return { approved: false, message: STALE_RUN_MESSAGE }
+    }
     if (
       !canAskUser ||
       !emit ||
@@ -544,24 +587,30 @@ export function createCodexAppServerApprovalBridge({
       requestId: input.requestId,
       toolUseId: input.tool.toolUseId,
     })
+    const approvalId = `codex-approval-${randomUUID()}`
     const approval = await waitForApproval({
       subChatId,
+      approvalId,
       toolUseId,
       questions: [input.question],
       timeoutMs,
       emit,
       registerPending: registerPendingQuestion,
       unregisterPending: unregisterPendingQuestion,
+      isCurrentRunOwner: callbackAuthorityIsCurrent,
     })
-    unregisterPendingQuestion(toolUseId)
+    const effectiveApproval = callbackAuthorityIsCurrent()
+      ? approval
+      : { approved: false, message: STALE_RUN_MESSAGE }
     emit({
       type: "ask-user-question-result",
+      approvalId,
       toolUseId,
-      result: approvalAccepted(approval)
+      result: approvalAccepted(effectiveApproval)
         ? "approved"
-        : approval.message || "declined",
+        : effectiveApproval.message || "declined",
     })
-    return approval
+    return effectiveApproval
   }
 
   return {
@@ -569,6 +618,7 @@ export function createCodexAppServerApprovalBridge({
       requestId: CodexAppServerMessageId
       params: CodexAppServerCommandExecutionRequestApprovalParams
     }) {
+      if (!callbackAuthorityIsCurrent()) return { decision: "decline" }
       const tool = createCommandTool(input.params)
       const decision = policyDecisionForCommandTool({
         tool,
@@ -578,6 +628,7 @@ export function createCodexAppServerApprovalBridge({
         onObservedToolDecision,
       })
       if (!decision.allowedByPolicy) return { decision: "decline" }
+      if (!callbackAuthorityIsCurrent()) return { decision: "decline" }
 
       const approval = await askUser({
         requestId: input.requestId,
@@ -589,6 +640,7 @@ export function createCodexAppServerApprovalBridge({
           policyMessage: decision.message,
         }),
       })
+      if (!callbackAuthorityIsCurrent()) return { decision: "decline" }
       return {
         decision: approvalAccepted(approval)
           ? "accept"
@@ -600,6 +652,7 @@ export function createCodexAppServerApprovalBridge({
       requestId: CodexAppServerMessageId
       params: CodexAppServerFileChangeRequestApprovalParams
     }) {
+      if (!callbackAuthorityIsCurrent()) return { decision: "decline" }
       const tool = createFileTool(input.params)
       const decision = policyDecisionForTool({
         tool,
@@ -609,6 +662,7 @@ export function createCodexAppServerApprovalBridge({
         onObservedToolDecision,
       })
       if (!decision.allowedByPolicy) return { decision: "decline" }
+      if (!callbackAuthorityIsCurrent()) return { decision: "decline" }
 
       const approval = await askUser({
         requestId: input.requestId,
@@ -623,6 +677,7 @@ export function createCodexAppServerApprovalBridge({
           policyMessage: decision.message,
         }),
       })
+      if (!callbackAuthorityIsCurrent()) return { decision: "decline" }
       return {
         decision: approvalAccepted(approval)
           ? "accept"
@@ -634,6 +689,9 @@ export function createCodexAppServerApprovalBridge({
       requestId: CodexAppServerMessageId
       params: CodexAppServerPermissionsRequestApprovalParams
     }) {
+      if (!callbackAuthorityIsCurrent()) {
+        return { permissions: {}, scope: "turn", strictAutoReview: true }
+      }
       const decision = resolveCodexAppServerPermissionsApprovalDecision({
         params: input.params,
         permission,
@@ -642,6 +700,9 @@ export function createCodexAppServerApprovalBridge({
         onObservedToolDecision,
       })
       if (!decision.allowedByPolicy) {
+        return { permissions: {}, scope: "turn", strictAutoReview: true }
+      }
+      if (!callbackAuthorityIsCurrent()) {
         return { permissions: {}, scope: "turn", strictAutoReview: true }
       }
 
@@ -657,6 +718,9 @@ export function createCodexAppServerApprovalBridge({
           policyMessage: decision.message,
         }),
       })
+      if (!callbackAuthorityIsCurrent()) {
+        return { permissions: {}, scope: "turn", strictAutoReview: true }
+      }
       return {
         permissions: approvalAccepted(approval)
           ? (decision.permissionsGrant ?? input.params.permissions)
@@ -670,6 +734,7 @@ export function createCodexAppServerApprovalBridge({
       requestId: CodexAppServerMessageId
       params: CodexAppServerExecCommandApprovalParams
     }) {
+      if (!callbackAuthorityIsCurrent()) return { decision: "denied" }
       const tool = createLegacyCommandTool(input.params)
       const decision = policyDecisionForCommandTool({
         tool,
@@ -679,6 +744,7 @@ export function createCodexAppServerApprovalBridge({
         onObservedToolDecision,
       })
       if (!decision.allowedByPolicy) return { decision: "denied" }
+      if (!callbackAuthorityIsCurrent()) return { decision: "denied" }
       const approval = await askUser({
         requestId: input.requestId,
         prefix: "legacy-command-approval",
@@ -689,6 +755,7 @@ export function createCodexAppServerApprovalBridge({
           policyMessage: decision.message,
         }),
       })
+      if (!callbackAuthorityIsCurrent()) return { decision: "denied" }
       return {
         decision: approvalAccepted(approval)
           ? "approved"
@@ -700,6 +767,7 @@ export function createCodexAppServerApprovalBridge({
       requestId: CodexAppServerMessageId
       params: CodexAppServerApplyPatchApprovalParams
     }) {
+      if (!callbackAuthorityIsCurrent()) return { decision: "denied" }
       const tool = createLegacyPatchTool(input.params)
       const decision = policyDecisionForTool({
         tool,
@@ -709,6 +777,7 @@ export function createCodexAppServerApprovalBridge({
         onObservedToolDecision,
       })
       if (!decision.allowedByPolicy) return { decision: "denied" }
+      if (!callbackAuthorityIsCurrent()) return { decision: "denied" }
       const approval = await askUser({
         requestId: input.requestId,
         prefix: "legacy-patch-approval",
@@ -720,6 +789,7 @@ export function createCodexAppServerApprovalBridge({
           policyMessage: decision.message,
         }),
       })
+      if (!callbackAuthorityIsCurrent()) return { decision: "denied" }
       return {
         decision: approvalAccepted(approval)
           ? "approved"
@@ -731,6 +801,9 @@ export function createCodexAppServerApprovalBridge({
       requestId: CodexAppServerMessageId
       params: CodexAppServerDynamicToolCallParams
     }): Promise<CodexAppServerDynamicToolCallResponse> {
+      if (!callbackAuthorityIsCurrent()) {
+        return dynamicToolResponse(false, STALE_RUN_MESSAGE)
+      }
       if (!isCodexControlledEditToolCall(input.params)) {
         return dynamicToolResponse(
           false,
@@ -763,6 +836,9 @@ export function createCodexAppServerApprovalBridge({
         onObservedToolDecision,
       })
       if (!prepared.ok) return dynamicToolResponse(false, prepared.message)
+      if (!callbackAuthorityIsCurrent()) {
+        return dynamicToolResponse(false, STALE_RUN_MESSAGE)
+      }
       const displayDiff = formatCodexControlledEditDiffForDisplay(
         prepared.edit.diff,
         secretHints,
@@ -786,10 +862,21 @@ export function createCodexAppServerApprovalBridge({
         }),
       })
       if (!approvalAccepted(approval)) {
-        return dynamicToolResponse(false, responseForRejectedApproval(approval))
+        return dynamicToolResponse(
+          false,
+          approval.message === STALE_RUN_MESSAGE
+            ? STALE_RUN_MESSAGE
+            : responseForRejectedApproval(approval),
+        )
+      }
+      if (!callbackAuthorityIsCurrent()) {
+        return dynamicToolResponse(false, STALE_RUN_MESSAGE)
       }
 
       try {
+        if (!callbackAuthorityIsCurrent()) {
+          return dynamicToolResponse(false, STALE_RUN_MESSAGE)
+        }
         applyCodexControlledEdit(prepared.edit)
       } catch (error) {
         return dynamicToolResponse(
@@ -807,6 +894,9 @@ export function createCodexAppServerApprovalBridge({
         status: "applied",
         source: "codex-app-server-controlled-edit",
       })
+      if (!callbackAuthorityIsCurrent()) {
+        return dynamicToolResponse(false, STALE_RUN_MESSAGE)
+      }
       return dynamicToolResponse(
         true,
         `Applied controlled edit to ${prepared.edit.relativePath}.`,

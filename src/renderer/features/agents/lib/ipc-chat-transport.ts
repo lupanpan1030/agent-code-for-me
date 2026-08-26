@@ -2,6 +2,7 @@ import type { ChatTransport, UIMessage } from "ai"
 import { toast } from "sonner"
 import type { UIMessageChunk as ClaudeUIMessageChunk } from "../../../../main/lib/claude"
 import { normalizeChatImageAttachmentPart } from "../../../../shared/chat-attachments"
+import type { ChatSessionBinding } from "../../../../shared/chat-session-binding"
 import {
   type LongTextAttachmentPart,
   normalizeLongTextAttachmentPart,
@@ -21,14 +22,16 @@ import { appStore } from "../../../lib/jotai-store"
 import { trpcClient } from "../../../lib/trpc"
 import {
   approvedGuardedRunContractsAtom,
-  type ClaudeModelSource,
   compactingSubChatsAtom,
   pendingAuthRetryMessageAtom,
-  subChatClaudeModelSourceAtomFamily,
-  subChatModelIdAtomFamily,
 } from "../atoms"
 import { useAgentSubChatStore } from "../stores/sub-chat-store"
-import type { AgentMessageMetadata } from "../ui/agent-message-usage"
+import {
+  type AuthRetryTransportGeneration,
+  isCurrentAuthRetryTransportGeneration,
+  registerAuthRetryTransportGeneration,
+  releaseAuthRetryTransportGeneration,
+} from "./auth-retry-binding"
 import {
   type AiSdkTransportChunk,
   getCanonicalMessageParts,
@@ -42,7 +45,7 @@ import {
   applyRuntimeEventStateChunk,
   clearPendingUserQuestionForRuntimeChunk,
 } from "./runtime-event-state"
-import { resolveClaudeTransportModelId } from "./transport-model-selection"
+import { resolveClaudeTransportModelForEffectiveSource } from "./transport-model-selection"
 
 /**
  * Whether the default Claude auth path can actually run. Desktop runs consume
@@ -184,6 +187,7 @@ const ERROR_TOAST_CONFIG: Record<
 type IPCChatTransportConfig = {
   chatId: string
   subChatId: string
+  binding: ChatSessionBinding
   projectPath?: string // Original project path for MCP config lookup (when using worktrees)
   mode: "plan" | "agent"
   model?: string
@@ -203,7 +207,14 @@ type ImageAttachment = {
 }
 
 export class IPCChatTransport implements ChatTransport<UIMessage> {
-  constructor(private config: IPCChatTransportConfig) {}
+  private readonly authRetryTransportGeneration: AuthRetryTransportGeneration
+
+  constructor(private config: IPCChatTransportConfig) {
+    this.authRetryTransportGeneration = registerAuthRetryTransportGeneration(
+      config.subChatId,
+      config.binding,
+    )
+  }
 
   async sendMessages(options: {
     messages: UIMessage[]
@@ -217,14 +228,6 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
     const images = this.extractImages(lastUser)
     const longTextAttachments = this.extractLongTextAttachments(lastUser)
 
-    // Get sessionId for resume (server preserves sessionId on abort so
-    // the next message can resume with full conversation context)
-    const lastAssistant = [...options.messages]
-      .reverse()
-      .find((m) => m.role === "assistant")
-    const metadata = lastAssistant?.metadata as AgentMessageMetadata | undefined
-    const sessionId = metadata?.sessionId
-
     // Read extended thinking setting dynamically (so toggle applies to existing chats)
     const thinkingEnabled = appStore.get(extendedThinkingEnabledAtom)
     // Max thinking tokens for extended thinking mode
@@ -236,24 +239,13 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
     // settings control (default ON); inlined to the default to drop the orphan.
     const enableTasks = true
 
-    // Read model selection dynamically per sub-chat (so split panes stay independent)
-    const selectedModelId = appStore.get(
-      subChatModelIdAtomFamily(this.config.subChatId),
-    )
-    const modelString = resolveClaudeTransportModelId(selectedModelId)
-    const selectedModelSource = appStore.get(
-      subChatClaudeModelSourceAtomFamily(this.config.subChatId),
-    )
-    let modelSource: string =
-      selectedModelSource === "auto" ? "claude-oauth" : selectedModelSource
-    if (
-      selectedModelSource === "auto" ||
-      selectedModelSource === "custom-provider"
-    ) {
-      const providerProfiles =
-        selectedModelSource === "custom-provider"
-          ? (await trpcClient.providerProfiles.listProfiles.query()).profiles
-          : []
+    const selectedModelId = this.config.binding.modelId
+    const selectedModelSource = this.config.binding.modelSource
+    let modelSource: string = selectedModelSource ?? "claude-oauth"
+    if (selectedModelSource === "custom-provider") {
+      const providerProfiles = (
+        await trpcClient.providerProfiles.listProfiles.query()
+      ).profiles
       const normalizedSource = normalizeClaudeModelSourceForRun({
         source: selectedModelSource,
         providerProfiles,
@@ -265,12 +257,6 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
         throw new Error(normalizedSource.blocker.message)
       }
       modelSource = normalizedSource.source
-      if (normalizedSource.changed) {
-        appStore.set(
-          subChatClaudeModelSourceAtomFamily(this.config.subChatId),
-          normalizedSource.source as ClaudeModelSource,
-        )
-      }
     }
 
     // Run-admission guard: never launch the OAuth path when OAuth is not usable.
@@ -293,14 +279,15 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
         })
         throw new Error(diverted.blocker.message)
       }
-      if (diverted.changed) {
-        appStore.set(
-          subChatClaudeModelSourceAtomFamily(this.config.subChatId),
-          diverted.source as ClaudeModelSource,
-        )
-      }
+      // This is a run-scoped effective source only. Persisted binding changes go
+      // through the canonical chat-session-binding owner and recreate transport.
       modelSource = diverted.source
     }
+    const modelString = resolveClaudeTransportModelForEffectiveSource({
+      selectedModelId,
+      bindingModelSource: selectedModelSource,
+      effectiveModelSource: modelSource,
+    })
 
     // Get selected Ollama model for offline mode
     const selectedOllamaModel = appStore.get(selectedOllamaModelAtom)
@@ -333,7 +320,6 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
             prompt,
             projectPath: this.config.projectPath, // Original project path for MCP config lookup
             mode: currentMode,
-            sessionId,
             ...(modelSource && { modelSource }),
             ...(maxThinkingTokens && { maxThinkingTokens }),
             ...(modelString && { model: modelString }),
@@ -417,12 +403,21 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
 
               // Handle authentication errors - show Claude login modal
               if (chunk.type === "auth-error") {
+                if (
+                  !isCurrentAuthRetryTransportGeneration(
+                    this.authRetryTransportGeneration,
+                  )
+                ) {
+                  return
+                }
                 // Store the failed message for retry after successful auth.
                 // readyToRetry=false prevents immediate retry; modal sets it
                 // to true on successful local Claude Code credential import.
                 appStore.set(pendingAuthRetryMessageAtom, {
                   subChatId: this.config.subChatId,
                   provider: "claude-code",
+                  bindingIdentity:
+                    this.authRetryTransportGeneration.bindingIdentity,
                   prompt,
                   ...(images.length > 0 && { images }),
                   ...(longTextAttachments.length > 0 && {
@@ -527,7 +522,7 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
                 // Truncate long descriptions for toast (keep first 300 chars)
                 const description =
                   rawDescription.length > 300
-                    ? rawDescription.slice(0, 300) + "..."
+                    ? `${rawDescription.slice(0, 300)}...`
                     : rawDescription
 
                 toast.error(title, {
@@ -590,7 +585,6 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
             `[SD] R:ABORT sub=${subId} n=${chunkCount} last=${lastChunkType}`,
           )
           sub.unsubscribe()
-          // trpcClient.claude.cancel.mutate({ subChatId: this.config.subChatId })
           try {
             controller.close()
           } catch {
@@ -603,6 +597,10 @@ export class IPCChatTransport implements ChatTransport<UIMessage> {
 
   async reconnectToStream(): Promise<ReadableStream<AiSdkTransportChunk> | null> {
     return null // Not needed for local app
+  }
+
+  cleanup(): void {
+    releaseAuthRetryTransportGeneration(this.authRetryTransportGeneration)
   }
 
   private extractText(msg: UIMessage | undefined): string {

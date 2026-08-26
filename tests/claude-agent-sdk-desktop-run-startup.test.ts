@@ -1,11 +1,22 @@
-import { describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, test } from "bun:test"
+import {
+  clearClaudeActiveSessionsForTest,
+  getActiveClaudeSession,
+  setActiveClaudeSession,
+} from "../src/main/lib/claude/active-sessions"
 import { prepareClaudeAgentSdkDesktopRunStartup } from "../src/main/lib/claude/agent-sdk-desktop-run-startup"
+import type { ClaudeAgentSdkProviderDesktopStartupResult } from "../src/main/lib/claude/agent-sdk-provider-startup"
 
 function createBaseInput() {
   const abortController = new AbortController()
+  setActiveClaudeSession("sub-1", {
+    controller: abortController,
+    runId: "run-1",
+  })
   const desktopJobs: any[] = []
   const blockers: any[] = []
   return {
+    abortController,
     desktopJobs,
     blockers,
     input: {
@@ -35,7 +46,6 @@ function createBaseInput() {
         },
       ],
       signal: abortController.signal,
-      requestedSessionId: "requested-session",
       existingSessionId: "existing-session",
       emitPreflightBlocker: (blocker: any) => {
         blockers.push(blocker)
@@ -50,6 +60,10 @@ function createBaseInput() {
 }
 
 describe("Claude Agent SDK desktop run startup", () => {
+  afterEach(() => {
+    clearClaudeActiveSessionsForTest()
+  })
+
   test("stops before job creation when provider startup is blocked", async () => {
     const base = createBaseInput()
     const calls: string[] = []
@@ -212,7 +226,6 @@ describe("Claude Agent SDK desktop run startup", () => {
       streamId: "stream-1",
       selectedProviderProfileId: "provider-1",
       requestedModel: "claude-sonnet",
-      requestedSessionId: "requested-session",
       existingSessionId: "existing-session",
       secretHints: ["provider-token", "claude-token"],
     })
@@ -232,6 +245,68 @@ describe("Claude Agent SDK desktop run startup", () => {
         cleanup: cleanupRuntimeSecrets,
       },
     ])
+  })
+
+  test("stops before job creation when the exact owner changes during provider startup", async () => {
+    const base = createBaseInput()
+    let resolveProviderStartup!: (
+      value: ClaudeAgentSdkProviderDesktopStartupResult,
+    ) => void
+    const providerStartup =
+      new Promise<ClaudeAgentSdkProviderDesktopStartupResult>((resolve) => {
+        resolveProviderStartup = resolve
+      })
+    const calls: string[] = []
+    let cleanupCalls = 0
+
+    const result = prepareClaudeAgentSdkDesktopRunStartup({
+      ...base.input,
+      dependencies: {
+        prepareProviderStartup: () => {
+          calls.push("provider")
+          return providerStartup
+        },
+        createDesktopRunStartup: () => {
+          calls.push("job")
+          throw new Error("stale job should not be created")
+        },
+        prepareRuntimeStartup: async () => {
+          calls.push("runtime")
+          throw new Error("stale runtime startup should not run")
+        },
+      },
+    })
+    const controllerB = new AbortController()
+    setActiveClaudeSession("sub-1", {
+      controller: controllerB,
+      runId: "run-1",
+    })
+    base.abortController.abort()
+    resolveProviderStartup({
+      ok: true,
+      connectionMethod: "api-key",
+      startup: {
+        selectedProviderProfileId: null,
+        claudeCodeToken: null,
+        claudeCredentialMetadata: null,
+        finalCustomConfig: null,
+        isUsingOllama: false,
+        secretHints: [],
+        cleanupRuntimeSecrets: () => {
+          cleanupCalls += 1
+        },
+      },
+    })
+
+    await expect(result).resolves.toEqual({
+      ok: false,
+      reason: "stale-active-session",
+    })
+    expect(calls).toEqual(["provider"])
+    expect(base.desktopJobs).toEqual([])
+    expect(cleanupCalls).toBe(1)
+    expect(getActiveClaudeSession("sub-1")?.controller).toBe(controllerB)
+    expect(controllerB.signal.aborted).toBe(false)
   })
 
   test("cleans resolved runtime secrets when later desktop startup fails", async () => {
@@ -263,9 +338,9 @@ describe("Claude Agent SDK desktop run startup", () => {
               cleanupRuntimeSecrets,
             },
           }),
-          createDesktopRunStartup: (() => {
+          createDesktopRunStartup: () => {
             throw new Error("desktop job failed")
-          }),
+          },
         },
       }),
     ).rejects.toThrow("desktop job failed")

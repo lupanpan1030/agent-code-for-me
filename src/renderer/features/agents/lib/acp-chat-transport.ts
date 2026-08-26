@@ -1,16 +1,12 @@
 import type { ChatTransport, UIMessage } from "ai"
 import { toast } from "sonner"
-import { normalizeAgentChatMetadataModel } from "../../../../shared/agent-chat-provider"
 import { normalizeChatImageAttachmentPart } from "../../../../shared/chat-attachments"
+import type { ChatSessionBinding } from "../../../../shared/chat-session-binding"
 import { normalizeCodexStreamChunk } from "../../../../shared/codex-tool-normalizer"
 import {
   type LongTextAttachmentPart,
   normalizeLongTextAttachmentPart,
 } from "../../../../shared/long-text-attachments"
-import {
-  parseProviderProfileSource,
-  providerProfileSource,
-} from "../../../../shared/provider-profile-types"
 import { codexLoginModalOpenAtom, sessionInfoAtom } from "../../../lib/atoms"
 import { en, type TranslationKey, zhCN } from "../../../lib/i18n/dictionaries"
 import { appStore } from "../../../lib/jotai-store"
@@ -18,12 +14,14 @@ import { trpcClient } from "../../../lib/trpc"
 import {
   approvedGuardedRunContractsAtom,
   pendingAuthRetryMessageAtom,
-  subChatCodexModelIdAtomFamily,
-  subChatCodexModelSourceAtomFamily,
-  subChatCodexThinkingAtomFamily,
 } from "../atoms"
 import { useAgentSubChatStore } from "../stores/sub-chat-store"
-import type { AgentMessageMetadata } from "../ui/agent-message-usage"
+import {
+  type AuthRetryTransportGeneration,
+  isCurrentAuthRetryTransportGeneration,
+  registerAuthRetryTransportGeneration,
+  releaseAuthRetryTransportGeneration,
+} from "./auth-retry-binding"
 import {
   type AiSdkTransportChunk,
   type CodexTransportChunk,
@@ -33,8 +31,14 @@ import {
   isTextMessagePart,
   toAiSdkTransportChunk,
 } from "./chat-message-ui-adapter"
+import { failCodexAuthErrorStream } from "./codex-auth-retry"
 import { applyRuntimeEventStateChunk } from "./runtime-event-state"
-import { composeCodexTransportModel } from "./transport-model-selection"
+import {
+  composeCodexTransportModel,
+  composeProviderProfileCodexTransportModel,
+  resolveCodexAuthMethodForBindingSource,
+  resolveCodexBoundCredentialState,
+} from "./transport-model-selection"
 
 function tr(key: TranslationKey, values?: Record<string, string | number>) {
   const useZh =
@@ -53,6 +57,7 @@ function tr(key: TranslationKey, values?: Record<string, string | number>) {
 type ACPChatTransportConfig = {
   chatId: string
   subChatId: string
+  binding: ChatSessionBinding
   projectPath?: string
   mode: "plan" | "agent"
   provider: "codex"
@@ -72,19 +77,10 @@ type ImageAttachment = {
 
 // When a sub-chat hits auth-error, force one fresh Codex ACP session on next send.
 const forceFreshSessionSubChats = new Set<string>()
-const PROVIDER_PROFILE_CODEX_REASONING = "none"
-
-function formatProviderProfileCodexModel(model: string): string {
-  return /\/(?:none|low|medium|high|xhigh)$/.test(model)
-    ? model
-    : `${model}/${PROVIDER_PROFILE_CODEX_REASONING}`
-}
 
 async function getStoredCodexCredentials(): Promise<{
   hasApiKey: boolean
   hasSubscription: boolean
-  hasAny: boolean
-  authMethod: "chatgpt" | "api_key"
 }> {
   // App-managed Codex API key is what "openai-api-key" runs use.
   let hasApiKey = false
@@ -107,34 +103,30 @@ async function getStoredCodexCredentials(): Promise<{
   return {
     hasApiKey,
     hasSubscription,
-    hasAny: hasApiKey || hasSubscription,
-    authMethod: hasSubscription ? "chatgpt" : hasApiKey ? "api_key" : "chatgpt",
   }
 }
 
 async function resolveCodexCredentialsForAuthError(): Promise<{
   hasApiKey: boolean
   hasSubscription: boolean
-  hasAny: boolean
 }> {
   const snapshot = await getStoredCodexCredentials()
   return {
     hasApiKey: snapshot.hasApiKey,
     hasSubscription: snapshot.hasSubscription,
-    hasAny: snapshot.hasAny,
   }
 }
 
-function getSelectedCodexModel(subChatId: string): string {
-  const selectedModelId = appStore.get(subChatCodexModelIdAtomFamily(subChatId))
-  const selectedThinking = appStore.get(
-    subChatCodexThinkingAtomFamily(subChatId),
-  )
-  return composeCodexTransportModel(selectedModelId, selectedThinking)
-}
-
 export class ACPChatTransport implements ChatTransport<UIMessage> {
-  constructor(private config: ACPChatTransportConfig) {}
+  private readonly authRetryTransportGeneration: AuthRetryTransportGeneration
+  private activeRunOwner: { unsubscribe: () => void } | null = null
+
+  constructor(private config: ACPChatTransportConfig) {
+    this.authRetryTransportGeneration = registerAuthRetryTransportGeneration(
+      config.subChatId,
+      config.binding,
+    )
+  }
 
   async sendMessages(options: {
     messages: UIMessage[]
@@ -148,12 +140,6 @@ export class ACPChatTransport implements ChatTransport<UIMessage> {
     const images = this.extractImages(lastUser)
     const longTextAttachments = this.extractLongTextAttachments(lastUser)
 
-    const lastAssistant = [...options.messages]
-      .reverse()
-      .find((message) => message.role === "assistant")
-    const metadata = lastAssistant?.metadata as AgentMessageMetadata | undefined
-    const sessionId = metadata?.sessionId
-
     const currentMode =
       useAgentSubChatStore
         .getState()
@@ -163,61 +149,49 @@ export class ACPChatTransport implements ChatTransport<UIMessage> {
     if (forceNewSession) {
       forceFreshSessionSubChats.delete(this.config.subChatId)
     }
-    const userMetadata = lastUser?.metadata as
-      | { model?: unknown; modelSource?: unknown; providerProfileId?: unknown }
-      | undefined
-    const metadataModel = normalizeAgentChatMetadataModel(userMetadata?.model)
-    const metadataModelSource =
-      typeof userMetadata?.modelSource === "string" &&
-      userMetadata.modelSource.trim()
-        ? userMetadata.modelSource.trim()
-        : typeof userMetadata?.providerProfileId === "string" &&
-            userMetadata.providerProfileId.trim()
-          ? providerProfileSource(userMetadata.providerProfileId.trim())
-          : null
     const selectedCodexModelSource =
-      metadataModelSource ??
-      appStore.get(subChatCodexModelSourceAtomFamily(this.config.subChatId))
-    const codexCredentials = await getStoredCodexCredentials()
-    const effectiveCodexModelSource =
-      selectedCodexModelSource === "openai-api-key" &&
-      !codexCredentials.hasApiKey
-        ? "chatgpt"
-        : selectedCodexModelSource === "chatgpt" &&
-            codexCredentials.authMethod === "api_key" &&
-            codexCredentials.hasApiKey
-          ? "openai-api-key"
-          : selectedCodexModelSource
-    const providerProfileId = parseProviderProfileSource(
-      effectiveCodexModelSource,
+      this.config.binding.modelSource ?? "chatgpt"
+    const providerProfileId = this.config.binding.providerProfileId
+    const codexAuthMethod = resolveCodexAuthMethodForBindingSource(
+      selectedCodexModelSource,
     )
-    const codexAuthMethod =
-      effectiveCodexModelSource === "openai-api-key" ? "api_key" : "chatgpt"
-    const selectedModel =
-      providerProfileId && metadataModel
-        ? formatProviderProfileCodexModel(metadataModel)
-        : getSelectedCodexModel(this.config.subChatId)
+    const selectedModel = this.config.binding.modelId
+      ? providerProfileId
+        ? composeProviderProfileCodexTransportModel(this.config.binding.modelId)
+        : composeCodexTransportModel(
+            this.config.binding.modelId,
+            this.config.binding.thinkingLevel,
+          )
+      : ""
 
     return new ReadableStream({
       start: (controller) => {
         const runId = crypto.randomUUID()
         let sub: { unsubscribe: () => void } | null = null
         let didUnsubscribe = false
-        let forcedUnsubscribeTimer: ReturnType<typeof setTimeout> | null = null
         let lastRuntimeStatusError: string | null = null
-
-        const clearForcedUnsubscribeTimer = () => {
-          if (!forcedUnsubscribeTimer) return
-          clearTimeout(forcedUnsubscribeTimer)
-          forcedUnsubscribeTimer = null
-        }
+        let runOwner: { unsubscribe: () => void } | null = null
 
         const safeUnsubscribe = () => {
           if (didUnsubscribe) return
           didUnsubscribe = true
-          clearForcedUnsubscribeTimer()
           sub?.unsubscribe()
+          if (runOwner && this.activeRunOwner === runOwner) {
+            this.activeRunOwner = null
+          }
         }
+        const failAuthErrorStream = (error: Error) => {
+          failCodexAuthErrorStream({
+            error,
+            errorStream: (streamError) => controller.error(streamError),
+            unsubscribe: safeUnsubscribe,
+          })
+        }
+
+        runOwner = { unsubscribe: safeUnsubscribe }
+        const previousRunOwner = this.activeRunOwner
+        this.activeRunOwner = runOwner
+        previousRunOwner?.unsubscribe()
 
         sub = trpcClient.codex.chat.subscribe(
           {
@@ -228,9 +202,8 @@ export class ACPChatTransport implements ChatTransport<UIMessage> {
             ...(this.config.projectPath
               ? { projectPath: this.config.projectPath }
               : {}),
-            model: selectedModel,
+            ...(selectedModel ? { model: selectedModel } : {}),
             mode: currentMode,
-            ...(sessionId ? { sessionId } : {}),
             ...(forceNewSession ? { forceNewSession: true } : {}),
             ...(images.length > 0 ? { images } : {}),
             ...(longTextAttachments.length > 0 ? { longTextAttachments } : {}),
@@ -267,19 +240,37 @@ export class ACPChatTransport implements ChatTransport<UIMessage> {
                   toast.error(tr("agent.transport.codexRequestFailed"), {
                     description: error.message,
                   })
-                  controller.error(error)
+                  failAuthErrorStream(error)
                   return
                 }
 
                 void (async () => {
                   const credentials =
                     await resolveCodexCredentialsForAuthError()
+                  const boundCredential = resolveCodexBoundCredentialState(
+                    selectedCodexModelSource,
+                    credentials,
+                  )
                   const shouldAutoRetryOnce =
-                    credentials.hasAny && !forceNewSession
+                    boundCredential.hasBoundCredential && !forceNewSession
+
+                  // Credential probes are asynchronous. A binding receipt can
+                  // replace this same-id transport while they are pending; a
+                  // retired transport must never resurrect its old prompt.
+                  if (
+                    !isCurrentAuthRetryTransportGeneration(
+                      this.authRetryTransportGeneration,
+                    )
+                  ) {
+                    return
+                  }
 
                   appStore.set(pendingAuthRetryMessageAtom, {
                     subChatId: this.config.subChatId,
                     provider: "codex",
+                    bindingIdentity:
+                      this.authRetryTransportGeneration.bindingIdentity,
+                    requiredCodexAuthMethod: codexAuthMethod,
                     prompt,
                     ...(images.length > 0 && { images }),
                     ...(longTextAttachments.length > 0 && {
@@ -288,25 +279,20 @@ export class ACPChatTransport implements ChatTransport<UIMessage> {
                     readyToRetry: shouldAutoRetryOnce,
                   })
 
-                  if (!credentials.hasAny) {
+                  if (!boundCredential.hasBoundCredential) {
                     appStore.set(codexLoginModalOpenAtom, true)
                   } else if (!shouldAutoRetryOnce) {
                     toast.error(tr("agent.transport.codexAuthFailed"), {
-                      description: credentials.hasApiKey
-                        ? tr("agent.transport.codexApiKeyRejected")
-                        : tr("agent.transport.codexSubscriptionAuthFailed"),
+                      description:
+                        boundCredential.kind === "api-key"
+                          ? tr("agent.transport.codexApiKeyRejected")
+                          : tr("agent.transport.codexSubscriptionAuthFailed"),
                     })
                   }
                 })()
 
-                void trpcClient.codex.cleanup
-                  .mutate({ subChatId: this.config.subChatId })
-                  .catch(() => {
-                    // No-op
-                  })
-
                 // Force stream status reset so retry can start once auth succeeds.
-                controller.error(new Error("Codex authentication required"))
+                failAuthErrorStream(new Error("Codex authentication required"))
                 return
               }
 
@@ -387,35 +373,19 @@ export class ACPChatTransport implements ChatTransport<UIMessage> {
             },
           },
         )
+        if (didUnsubscribe) sub.unsubscribe()
 
         options.abortSignal?.addEventListener("abort", () => {
-          // Start server-side cancellation first so the router still has
-          // active run ownership when processing cancel(runId).
-          const cancelPromise = trpcClient.codex.cancel
-            .mutate({ subChatId: this.config.subChatId, runId })
-            .catch(() => {
-              // No-op
-            })
-
           // Keep stop UX immediate in the client.
           try {
             controller.close()
           } catch {
             // Stream already closed
           }
-
-          // Keep subscription alive briefly so server-side onFinish can persist
-          // interrupted response state before cleanup unsubscribe runs.
-          void (async () => {
-            try {
-              await cancelPromise
-            } finally {
-              clearForcedUnsubscribeTimer()
-              forcedUnsubscribeTimer = setTimeout(() => {
-                safeUnsubscribe()
-              }, 10000)
-            }
-          })()
+          // Unsubscription reaches this subscription's main-process closure,
+          // which owns the exact ActiveCodexStream object. A subChatId/runId
+          // mutation cannot safely express this ownership when Runs alias.
+          safeUnsubscribe()
         })
       },
     })
@@ -426,11 +396,9 @@ export class ACPChatTransport implements ChatTransport<UIMessage> {
   }
 
   cleanup(): void {
-    void trpcClient.codex.cleanup
-      .mutate({ subChatId: this.config.subChatId })
-      .catch(() => {
-        // No-op
-      })
+    releaseAuthRetryTransportGeneration(this.authRetryTransportGeneration)
+    this.activeRunOwner?.unsubscribe()
+    this.activeRunOwner = null
   }
 
   private extractText(message: UIMessage | undefined): string {

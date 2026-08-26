@@ -102,8 +102,7 @@ describe("Claude Agent SDK desktop job setup", () => {
       modelSource: "provider:profile-1",
       selectedProviderProfileId: "profile-1",
       signal: abortController.signal,
-      requestedSessionId: "session-1",
-      existingSessionId: "session-0",
+      existingSessionId: "session-1",
       dependencies: {
         appendRunEventsToAgentJob: (dbArg, events) => {
           appended.push({ db: dbArg, events })

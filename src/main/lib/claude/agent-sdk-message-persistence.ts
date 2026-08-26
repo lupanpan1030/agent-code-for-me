@@ -1,9 +1,16 @@
 import { randomUUID } from "node:crypto"
 import { eq } from "drizzle-orm"
+import type { RollbackCheckpointBinding } from "../../../shared/chat-message"
 import { redactRuntimePayload } from "../agent-runtime/redaction"
 import type { JsonValue } from "../agent-runtime/runtime-events"
 import { chats, subChats } from "../db/schema"
-import { createRollbackStash } from "../git/stash"
+import {
+  createRollbackStashDraft,
+  discardRollbackStashDraft,
+  publishRollbackStashDraft,
+  type RollbackStashDraft,
+} from "../git/stash"
+import { isActiveClaudeSessionSignal } from "./active-sessions"
 
 export type PrepareClaudeAgentSdkAssistantPersistenceInput = {
   messagesToSave: any[]
@@ -23,6 +30,7 @@ export type PersistClaudeAgentSdkAssistantResponseInput = {
   db: any
   chatId: string
   subChatId: string
+  activeSessionSignal: AbortSignal
   messagesToSave: any[]
   parts: any[]
   metadata: any
@@ -33,12 +41,64 @@ export type PersistClaudeAgentSdkAssistantResponseInput = {
   touchChatWhenEmpty?: boolean
   createId?: () => string
   now?: () => Date
-  createRollbackStashFn?: typeof createRollbackStash
+  createRollbackStashDraftFn?: typeof createRollbackStashDraft
+  publishRollbackStashDraftFn?: typeof publishRollbackStashDraft
+  discardRollbackStashDraftFn?: typeof discardRollbackStashDraft
 }
 
 export type PersistClaudeAgentSdkAssistantResponseResult = {
   persistence: ClaudeAgentSdkAssistantPersistence
   rollbackStashCreated: boolean
+  committed: boolean
+}
+
+function withRollbackCheckpointMetadata(
+  metadata: unknown,
+  checkpoint: RollbackCheckpointBinding | null,
+): Record<string, unknown> {
+  const metadataRecord =
+    typeof metadata === "object" &&
+    metadata !== null &&
+    !Array.isArray(metadata)
+      ? (metadata as Record<string, unknown>)
+      : {}
+  const {
+    rollbackCheckpointAvailable: _ignoredAvailability,
+    rollbackCheckpointRef: _ignoredRef,
+    rollbackCheckpointOid: _ignoredOid,
+    ...runtimeMetadata
+  } = metadataRecord
+  if (!checkpoint) {
+    return {
+      ...runtimeMetadata,
+      rollbackCheckpointAvailable: false,
+    }
+  }
+  return {
+    ...runtimeMetadata,
+    rollbackCheckpointAvailable: true,
+    rollbackCheckpointRef: checkpoint.ref,
+    rollbackCheckpointOid: checkpoint.oid,
+  }
+}
+
+function bindRollbackCheckpointToAssistantPersistence(
+  persistence: ClaudeAgentSdkAssistantPersistence,
+  checkpoint: RollbackCheckpointBinding | null,
+): ClaudeAgentSdkAssistantPersistence {
+  if (!persistence.assistantMessage) return persistence
+  const assistantMessage = {
+    ...persistence.assistantMessage,
+    metadata: withRollbackCheckpointMetadata(
+      persistence.assistantMessage.metadata,
+      checkpoint,
+    ),
+  }
+  return {
+    ...persistence,
+    assistantMessage,
+    messages: [...persistence.messages.slice(0, -1), assistantMessage],
+  }
 }
 
 export function prepareClaudeAgentSdkAssistantPersistence({
@@ -62,7 +122,7 @@ export function prepareClaudeAgentSdkAssistantPersistence({
     role: "assistant",
     createdAt: now().toISOString(),
     parts,
-    metadata,
+    metadata: withRollbackCheckpointMetadata(metadata, null),
   }
 
   return {
@@ -90,6 +150,7 @@ export async function persistClaudeAgentSdkAssistantResponse({
   db,
   chatId,
   subChatId,
+  activeSessionSignal,
   messagesToSave,
   parts,
   metadata,
@@ -100,7 +161,9 @@ export async function persistClaudeAgentSdkAssistantResponse({
   touchChatWhenEmpty = true,
   createId,
   now = () => new Date(),
-  createRollbackStashFn = createRollbackStash,
+  createRollbackStashDraftFn = createRollbackStashDraft,
+  publishRollbackStashDraftFn = publishRollbackStashDraft,
+  discardRollbackStashDraftFn = discardRollbackStashDraft,
 }: PersistClaudeAgentSdkAssistantResponseInput): Promise<PersistClaudeAgentSdkAssistantResponseResult> {
   const redactedInput = redactRuntimePayload(
     {
@@ -119,7 +182,7 @@ export async function persistClaudeAgentSdkAssistantResponse({
     parts: typeof parts
     metadata: typeof metadata
   }
-  const persistence = prepareClaudeAgentSdkAssistantPersistence({
+  let persistence = prepareClaudeAgentSdkAssistantPersistence({
     messagesToSave: redactedInput.messagesToSave,
     parts: redactedInput.parts,
     metadata: redactedInput.metadata,
@@ -127,51 +190,106 @@ export async function persistClaudeAgentSdkAssistantResponse({
     now,
   })
   const updatedAt = now()
+  const staleResult = (): PersistClaudeAgentSdkAssistantResponseResult => ({
+    persistence: bindRollbackCheckpointToAssistantPersistence(
+      persistence,
+      null,
+    ),
+    rollbackStashCreated: false,
+    committed: false,
+  })
 
-  if (persistence.assistantMessage) {
-    db.update(subChats)
-      .set({
-        messages: JSON.stringify(persistence.messages),
-        sessionId: persistence.sessionId,
-        streamId: null,
-        updatedAt,
-      })
-      .where(eq(subChats.id, subChatId))
-      .run()
-    db.update(chats).set({ updatedAt }).where(eq(chats.id, chatId)).run()
-  } else if (clearStreamWhenEmpty) {
-    db.update(subChats)
-      .set({
-        sessionId: persistence.sessionId,
-        streamId: null,
-        updatedAt,
-      })
-      .where(eq(subChats.id, subChatId))
-      .run()
-
-    if (touchChatWhenEmpty) {
-      db.update(chats).set({ updatedAt }).where(eq(chats.id, chatId)).run()
-    }
+  if (!isActiveClaudeSessionSignal(subChatId, activeSessionSignal)) {
+    return staleResult()
   }
 
-  let rollbackStashCreated = false
-  if (
-    shouldCreateClaudeAgentSdkRollbackStash({
-      historyEnabled,
-      metadata: redactedInput.metadata,
-      cwd,
-    })
-  ) {
-    const rollbackCwd = cwd
-    const sdkMessageUuid = redactedInput.metadata.sdkMessageUuid
-    if (typeof rollbackCwd === "string" && typeof sdkMessageUuid === "string") {
-      await createRollbackStashFn(rollbackCwd, sdkMessageUuid)
-      rollbackStashCreated = true
+  let rollbackDraft: RollbackStashDraft | null = null
+  let publishedCheckpoint: RollbackCheckpointBinding | null = null
+  let assistantCommitted = false
+  try {
+    if (
+      persistence.assistantMessage &&
+      shouldCreateClaudeAgentSdkRollbackStash({
+        historyEnabled,
+        metadata: redactedInput.metadata,
+        cwd,
+      })
+    ) {
+      const rollbackCwd = cwd
+      const sdkMessageUuid = redactedInput.metadata.sdkMessageUuid
+      if (
+        typeof rollbackCwd === "string" &&
+        typeof sdkMessageUuid === "string"
+      ) {
+        rollbackDraft = await createRollbackStashDraftFn(
+          rollbackCwd,
+          sdkMessageUuid,
+        )
+        if (!isActiveClaudeSessionSignal(subChatId, activeSessionSignal)) {
+          return staleResult()
+        }
+        if (rollbackDraft) {
+          publishedCheckpoint = await publishRollbackStashDraftFn(rollbackDraft)
+          if (!isActiveClaudeSessionSignal(subChatId, activeSessionSignal)) {
+            return staleResult()
+          }
+        }
+      }
     }
-  }
 
-  return {
-    persistence,
-    rollbackStashCreated,
+    persistence = bindRollbackCheckpointToAssistantPersistence(
+      persistence,
+      publishedCheckpoint,
+    )
+    if (!isActiveClaudeSessionSignal(subChatId, activeSessionSignal)) {
+      return staleResult()
+    }
+
+    if (persistence.assistantMessage) {
+      db.transaction((tx: typeof db) => {
+        tx.update(subChats)
+          .set({
+            messages: JSON.stringify(persistence.messages),
+            sessionId: persistence.sessionId,
+            streamId: null,
+            updatedAt,
+          })
+          .where(eq(subChats.id, subChatId))
+          .run()
+        tx.update(chats).set({ updatedAt }).where(eq(chats.id, chatId)).run()
+      })
+      assistantCommitted = true
+    } else if (clearStreamWhenEmpty) {
+      db.transaction((tx: typeof db) => {
+        tx.update(subChats)
+          .set({
+            sessionId: persistence.sessionId,
+            streamId: null,
+            updatedAt,
+          })
+          .where(eq(subChats.id, subChatId))
+          .run()
+
+        if (touchChatWhenEmpty) {
+          tx.update(chats).set({ updatedAt }).where(eq(chats.id, chatId)).run()
+        }
+      })
+    }
+
+    return {
+      persistence,
+      rollbackStashCreated: publishedCheckpoint !== null,
+      committed: true,
+    }
+  } finally {
+    if (rollbackDraft) {
+      if (assistantCommitted) {
+        await discardRollbackStashDraftFn(rollbackDraft)
+      } else {
+        await discardRollbackStashDraftFn(rollbackDraft, {
+          publishedCheckpoint,
+        })
+      }
+    }
   }
 }

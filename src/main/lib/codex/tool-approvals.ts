@@ -6,35 +6,47 @@ import type {
 const pendingCodexToolApprovals = new Map<string, CodexAskUserQuestionPending>()
 
 export function setCodexPendingToolApproval(
-  toolUseId: string,
+  approvalId: string,
   pending: CodexAskUserQuestionPending,
 ): void {
-  pendingCodexToolApprovals.set(toolUseId, pending)
+  if (pending.approvalId !== approvalId) {
+    throw new Error("Codex pending approval identity mismatch.")
+  }
+  pendingCodexToolApprovals.set(approvalId, pending)
 }
 
-export function deleteCodexPendingToolApproval(toolUseId: string): boolean {
-  return pendingCodexToolApprovals.delete(toolUseId)
+export function deleteCodexPendingToolApproval(
+  approvalId: string,
+  expected: CodexAskUserQuestionPending,
+): boolean {
+  if (pendingCodexToolApprovals.get(approvalId) !== expected) return false
+  return pendingCodexToolApprovals.delete(approvalId)
 }
 
 export function clearPendingCodexApprovals(
   message = "Session cancelled.",
   subChatId?: string,
 ): void {
-  for (const [toolUseId, pending] of pendingCodexToolApprovals) {
+  for (const [approvalId, pending] of pendingCodexToolApprovals) {
     if (subChatId && pending.subChatId !== subChatId) continue
+    if (!deleteCodexPendingToolApproval(approvalId, pending)) continue
     pending.resolve({ approved: false, message })
-    pendingCodexToolApprovals.delete(toolUseId)
   }
 }
 
 export function resolveCodexPendingToolApproval(input: {
-  toolUseId: string
+  approvalId: string
   decision: CodexAskUserQuestionApproval
 }): boolean {
-  const pending = pendingCodexToolApprovals.get(input.toolUseId)
+  const pending = pendingCodexToolApprovals.get(input.approvalId)
   if (!pending) return false
+  try {
+    if (!pending.isCurrentRunOwner()) return false
+  } catch {
+    return false
+  }
+  if (!deleteCodexPendingToolApproval(input.approvalId, pending)) return false
   pending.resolve(input.decision)
-  pendingCodexToolApprovals.delete(input.toolUseId)
   return true
 }
 

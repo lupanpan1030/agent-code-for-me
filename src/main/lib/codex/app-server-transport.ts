@@ -47,6 +47,18 @@ export type CodexAppServerTransportServerRequest = {
   params?: unknown
 }
 
+/**
+ * A native app-server response stays conditional until the stdio transport is
+ * about to serialize it. The adapter captures the exact Run owner in
+ * `isResponseStillAuthorized`; the transport is the only owner that selects
+ * between the candidate result and the protocol-valid fail-closed result.
+ */
+export type CodexAppServerTransportServerRequestResponse = {
+  result: unknown
+  failClosedResult: unknown
+  isResponseStillAuthorized: () => boolean
+}
+
 export type CodexAppServerTransportExit = {
   code: number | null
   signal: NodeJS.Signals | null
@@ -65,7 +77,9 @@ export type CodexAppServerTransport = {
   onServerRequest(
     handler: (
       request: CodexAppServerTransportServerRequest,
-    ) => unknown | Promise<unknown>,
+    ) =>
+      | CodexAppServerTransportServerRequestResponse
+      | Promise<CodexAppServerTransportServerRequestResponse>,
   ): () => void
   onExit(handler: (exit: CodexAppServerTransportExit) => void): () => void
   close(): Promise<void>
@@ -79,6 +93,29 @@ export type CreateCodexAppServerStdioTransportInput = {
   closeGraceMs?: number
   /** Main-process-only exact values used to scrub transport diagnostics. */
   secretHints?: readonly string[]
+}
+
+export function selectCodexAppServerServerRequestResult(
+  response: CodexAppServerTransportServerRequestResponse,
+): unknown {
+  if (
+    !isRecord(response) ||
+    !("failClosedResult" in response) ||
+    typeof response.isResponseStillAuthorized !== "function"
+  ) {
+    throw new Error(
+      "Codex app-server handler returned a malformed response envelope.",
+    )
+  }
+  try {
+    if (response.isResponseStillAuthorized() === true) {
+      return response.result
+    }
+  } catch {
+    // Exact owner/abort predicates are security gates. A throwing predicate is
+    // indistinguishable from a stale Run and selects the fail-closed result.
+  }
+  return response.failClosedResult
 }
 
 type PendingRequest = {
@@ -157,7 +194,9 @@ export function createCodexAppServerStdioTransport({
   const serverRequestHandlers = new Set<
     (
       request: CodexAppServerTransportServerRequest,
-    ) => unknown | Promise<unknown>
+    ) =>
+      | CodexAppServerTransportServerRequestResponse
+      | Promise<CodexAppServerTransportServerRequestResponse>
   >()
   const exitHandlers = new Set<(exit: CodexAppServerTransportExit) => void>()
   let lifecycleExit: CodexAppServerTransportExit | null = null
@@ -301,7 +340,11 @@ export function createCodexAppServerStdioTransport({
           }
           return handler(request)
         })
-        .then((result) => {
+        .then((response) => {
+          const result = selectCodexAppServerServerRequestResult(response)
+          // Do not insert an await, callback, or notification between this
+          // final exact-owner check and serialization. This synchronous pair
+          // is the native side-effect authorization boundary.
           writeJsonLine(
             child,
             {

@@ -1,16 +1,17 @@
 "use client"
 
-import { memo } from "react"
 import { useAtomValue } from "jotai"
-import { TextShimmer } from "../../../components/ui/text-shimmer"
+import { memo } from "react"
 import { QuestionIcon } from "../../../components/ui/icons"
+import { TextShimmer } from "../../../components/ui/text-shimmer"
 import { useI18n } from "../../../lib/i18n"
 import {
-  QUESTIONS_SKIPPED_MESSAGE,
-  QUESTIONS_TIMED_OUT_MESSAGE,
   askUserQuestionResultsAtom,
   pendingUserQuestionsAtom,
+  QUESTIONS_SKIPPED_MESSAGE,
+  QUESTIONS_TIMED_OUT_MESSAGE,
 } from "../atoms"
+import { createAskUserQuestionStateKey } from "../lib/runtime-event-state"
 import { areAskUserQuestionPropsEqual } from "./agent-tool-utils"
 
 interface AgentAskUserQuestionToolProps {
@@ -32,6 +33,7 @@ interface AgentAskUserQuestionToolProps {
   state: "call" | "result"
   isError?: boolean
   isStreaming?: boolean // Whether the message is currently streaming
+  subChatId: string
   toolCallId?: string // Tool call ID for looking up real-time results
 }
 
@@ -42,6 +44,7 @@ export const AgentAskUserQuestionTool = memo(function AgentAskUserQuestionTool({
   state,
   isError,
   isStreaming,
+  subChatId,
   toolCallId,
 }: AgentAskUserQuestionToolProps) {
   const { t } = useI18n()
@@ -50,12 +53,17 @@ export const AgentAskUserQuestionTool = memo(function AgentAskUserQuestionTool({
 
   // Get real-time results from atom (for immediate updates before DB sync)
   const resultsMap = useAtomValue(askUserQuestionResultsAtom)
-  const realtimeResult = toolCallId ? resultsMap.get(toolCallId) : undefined
+  const realtimeResult = toolCallId
+    ? resultsMap.get(createAskUserQuestionStateKey(subChatId, toolCallId))
+    : undefined
 
   // Check if the question dialog is currently shown for this tool
   const pendingQuestionsMap = useAtomValue(pendingUserQuestionsAtom)
   const isDialogShown = toolCallId
-    ? Array.from(pendingQuestionsMap.values()).some(q => q.toolUseId === toolCallId)
+    ? Array.from(pendingQuestionsMap.values()).some(
+        (question) =>
+          question.subChatId === subChatId && question.toolUseId === toolCallId,
+      )
     : false
 
   // Use realtime result if available, otherwise fall back to prop
@@ -63,11 +71,14 @@ export const AgentAskUserQuestionTool = memo(function AgentAskUserQuestionTool({
 
   // For errors, SDK stores errorText separately - use it to detect skip/timeout
   const effectiveErrorText =
-    errorText || (typeof effectiveResult === "string" ? effectiveResult : undefined)
+    errorText ||
+    (typeof effectiveResult === "string" ? effectiveResult : undefined)
 
   // Extract answers for display
   const answers =
-    effectiveResult && typeof effectiveResult === "object" && "answers" in effectiveResult
+    effectiveResult &&
+    typeof effectiveResult === "object" &&
+    "answers" in effectiveResult
       ? (effectiveResult as { answers?: Record<string, string> }).answers
       : null
 
@@ -80,7 +91,10 @@ export const AgentAskUserQuestionTool = memo(function AgentAskUserQuestionTool({
   // Show loading state if:
   // 1. No questions yet (still streaming input)
   // 2. Streaming but dialog not yet shown (waiting for ask-user-question chunk)
-  if (state === "call" && (questionCount === 0 || (isStreaming && !isDialogShown))) {
+  if (
+    state === "call" &&
+    (questionCount === 0 || (isStreaming && !isDialogShown))
+  ) {
     return (
       <div className="flex items-center gap-2 py-1 px-2 text-xs text-muted-foreground">
         <TextShimmer className="text-xs" duration={1.5}>
@@ -173,7 +187,14 @@ export const AgentAskUserQuestionTool = memo(function AgentAskUserQuestionTool({
   // show "Submitting..." (user just answered, waiting for sync)
   // Note: realtimeResult is set immediately when user answers via ask-user-question-result chunk
   // If there's no realtimeResult and no answers, the stream was interrupted without an answer
-  if (state === "result" && realtimeResult && !answers && !isError && !isSkipped && !isTimedOut) {
+  if (
+    state === "result" &&
+    realtimeResult &&
+    !answers &&
+    !isError &&
+    !isSkipped &&
+    !isTimedOut
+  ) {
     return (
       <div className="flex items-center gap-2 py-1 px-2 text-xs text-muted-foreground">
         <span>{firstQuestion || t("agent.askUser.question")}</span>

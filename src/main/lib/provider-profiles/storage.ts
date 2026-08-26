@@ -14,6 +14,7 @@ import {
   providerProfileAuthModes,
   providerProfileDefaultPurposes,
   providerProfileProtocols,
+  providerProfileSupportsDefaultPurpose,
   providerProfileTargets,
 } from "../../../shared/provider-profile-types"
 import { getActiveClaudeProviderConfig } from "../claude/provider-config-store"
@@ -128,6 +129,11 @@ export type ProviderProfileRuntimeMetadata = {
   id: string
   targetRuntimes: ProviderProfileTarget[]
 }
+
+export type ProviderProfileChatBindingMetadata =
+  ProviderProfileRuntimeMetadata & {
+    defaultModel: string
+  }
 
 const storedProviderHeadersSchema = z.record(z.string(), z.string())
 const storedProviderTargetsSchema = z.array(providerProfileTargetSchema).min(1)
@@ -339,6 +345,41 @@ export function getProviderProfileRuntimeMetadataFromDatabase(
       value: row.targetRuntimesJson,
       schema: storedProviderTargetsSchema,
     }),
+  }
+}
+
+export function getProviderProfileChatBindingMetadataFromDatabase(
+  db: ProviderProfileStorageDatabase,
+  id: string,
+): ProviderProfileChatBindingMetadata | null {
+  const row = db
+    .select({
+      id: agentProviderProfiles.id,
+      targetRuntimesJson: agentProviderProfiles.targetRuntimesJson,
+      defaultModel: agentProviderProfiles.defaultModel,
+    })
+    .from(agentProviderProfiles)
+    .where(eq(agentProviderProfiles.id, id))
+    .get()
+  if (!row) return null
+
+  const defaultModel = normalizeStoredProviderRequiredText(row.defaultModel)
+  if (!defaultModel) {
+    throw new ProviderProfileStorageReadError({
+      reason: "invalid-profile",
+      profileId: row.id,
+      message: `Provider profile ${row.id} has invalid default model.`,
+    })
+  }
+  return {
+    id: row.id,
+    targetRuntimes: parseStoredProfileJson({
+      profileId: row.id,
+      field: "target runtimes",
+      value: row.targetRuntimesJson,
+      schema: storedProviderTargetsSchema,
+    }),
+    defaultModel,
   }
 }
 
@@ -621,14 +662,32 @@ export function saveProviderProfile(input: {
     updatedAt: new Date(),
   }
 
-  if (existing) {
-    db.update(agentProviderProfiles)
-      .set(values)
-      .where(eq(agentProviderProfiles.id, id))
-      .run()
-  } else {
-    db.insert(agentProviderProfiles).values(values).run()
-  }
+  db.transaction((tx) => {
+    if (existing) {
+      tx.update(agentProviderProfiles)
+        .set(values)
+        .where(eq(agentProviderProfiles.id, id))
+        .run()
+    } else {
+      tx.insert(agentProviderProfiles).values(values).run()
+    }
+
+    for (const purpose of providerProfileDefaultPurposes) {
+      if (providerProfileSupportsDefaultPurpose(targetRuntimes, purpose)) {
+        continue
+      }
+      const defaultRow = tx
+        .select()
+        .from(agentProviderDefaults)
+        .where(eq(agentProviderDefaults.purpose, purpose))
+        .get()
+      if (defaultRow?.profileId !== id) continue
+      tx.update(agentProviderDefaults)
+        .set({ profileId: null, modelOverride: null, updatedAt: new Date() })
+        .where(eq(agentProviderDefaults.purpose, purpose))
+        .run()
+    }
+  })
 
   const saved = getProviderProfileMetadata(id)
   if (!saved) throw new Error("Failed to read saved provider profile")
@@ -654,27 +713,48 @@ export function setProviderDefault(input: {
   modelOverride?: string | null
 }): void {
   const db = getDatabase()
-  const existing = db
-    .select()
-    .from(agentProviderDefaults)
-    .where(eq(agentProviderDefaults.purpose, input.purpose))
-    .get()
+  const purpose = providerProfileDefaultPurposeSchema.parse(input.purpose)
+  const profileId = input.profileId?.trim() || null
 
-  const values = {
-    purpose: providerProfileDefaultPurposeSchema.parse(input.purpose),
-    profileId: input.profileId,
-    modelOverride: input.modelOverride?.trim() || null,
-    updatedAt: new Date(),
-  }
+  db.transaction((tx) => {
+    if (profileId) {
+      const profile = getProviderProfileRuntimeMetadataFromDatabase(
+        tx,
+        profileId,
+      )
+      if (!profile) {
+        throw new Error(`Provider profile ${profileId} was not found.`)
+      }
+      if (
+        !providerProfileSupportsDefaultPurpose(profile.targetRuntimes, purpose)
+      ) {
+        throw new Error(
+          `Provider profile ${profileId} does not support ${purpose}.`,
+        )
+      }
+    }
 
-  if (existing) {
-    db.update(agentProviderDefaults)
-      .set(values)
-      .where(eq(agentProviderDefaults.purpose, input.purpose))
-      .run()
-  } else {
-    db.insert(agentProviderDefaults).values(values).run()
-  }
+    const existing = tx
+      .select()
+      .from(agentProviderDefaults)
+      .where(eq(agentProviderDefaults.purpose, purpose))
+      .get()
+    const values = {
+      purpose,
+      profileId,
+      modelOverride: profileId ? input.modelOverride?.trim() || null : null,
+      updatedAt: new Date(),
+    }
+
+    if (existing) {
+      tx.update(agentProviderDefaults)
+        .set(values)
+        .where(eq(agentProviderDefaults.purpose, purpose))
+        .run()
+    } else {
+      tx.insert(agentProviderDefaults).values(values).run()
+    }
+  })
 }
 
 export function getProviderDefaults(): Record<

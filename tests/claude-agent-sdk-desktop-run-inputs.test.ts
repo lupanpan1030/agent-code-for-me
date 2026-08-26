@@ -1,8 +1,10 @@
-import { describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, test } from "bun:test"
 import { eq } from "drizzle-orm"
 import {
-  prepareClaudeAgentSdkDesktopRunInputs,
-} from "../src/main/lib/claude/agent-sdk-desktop-run-inputs"
+  clearClaudeActiveSessionsForTest,
+  setActiveClaudeSession,
+} from "../src/main/lib/claude/active-sessions"
+import { prepareClaudeAgentSdkDesktopRunInputs } from "../src/main/lib/claude/agent-sdk-desktop-run-inputs"
 import { chats, projects, subChats } from "../src/main/lib/db/schema"
 import { getChatImageAttachmentCapability } from "../src/shared/chat-attachment-capabilities"
 import { createAgentJobTestDb } from "./helpers/agent-job-test-db"
@@ -11,6 +13,12 @@ const supportedImageCapability = getChatImageAttachmentCapability({
   provider: "claude-code",
   modelVision: "supported",
 })
+
+function activateClaudeSession(): AbortSignal {
+  const controller = new AbortController()
+  setActiveClaudeSession("sub-1", { controller, runId: "run-1" })
+  return controller.signal
+}
 
 function seedChat(
   db: ReturnType<typeof createAgentJobTestDb>,
@@ -44,6 +52,10 @@ function seedChat(
 }
 
 describe("Claude Agent SDK desktop run input preparation", () => {
+  afterEach(() => {
+    clearClaudeActiveSessionsForTest()
+  })
+
   test("resolves image attachments and prepares chat history together", async () => {
     const db = createAgentJobTestDb()
     seedChat(db)
@@ -51,6 +63,7 @@ describe("Claude Agent SDK desktop run input preparation", () => {
     const result = await prepareClaudeAgentSdkDesktopRunInputs({
       db,
       subChatId: "sub-1",
+      activeSessionSignal: activateClaudeSession(),
       streamId: "stream-1",
       prompt: "hello",
       images: [
@@ -109,6 +122,7 @@ describe("Claude Agent SDK desktop run input preparation", () => {
     const result = await prepareClaudeAgentSdkDesktopRunInputs({
       db,
       subChatId: "sub-1",
+      activeSessionSignal: activateClaudeSession(),
       streamId: "stream-blocked",
       prompt: "hello",
       images: [

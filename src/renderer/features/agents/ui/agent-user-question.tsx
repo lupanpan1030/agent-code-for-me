@@ -8,8 +8,10 @@ import type { PendingUserQuestions } from "../atoms"
 
 interface AgentUserQuestionProps {
   pendingQuestions: PendingUserQuestions
-  onAnswer: (answers: Record<string, string>) => void
-  onSkip: () => void
+  onAnswer: (
+    answers: Record<string, string>,
+  ) => boolean | Promise<boolean>
+  onSkip: () => boolean | Promise<boolean>
   hasCustomText?: boolean
 }
 
@@ -24,14 +26,14 @@ export const AgentUserQuestion = memo(forwardRef<AgentUserQuestionHandle, AgentU
     onSkip,
     hasCustomText = false,
   }: AgentUserQuestionProps, ref) {
-  const { questions, toolUseId } = pendingQuestions
+  const { approvalId, questions } = pendingQuestions
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0)
   const [answers, setAnswers] = useState<Record<string, string[]>>({})
   const [focusedOptionIndex, setFocusedOptionIndex] = useState(0)
   const [isVisible, setIsVisible] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const prevIndexRef = useRef(currentQuestionIndex)
-  const prevToolUseIdRef = useRef(toolUseId)
+  const prevApprovalIdRef = useRef(approvalId)
 
   // Expose getAnswers method to parent via ref
   useImperativeHandle(ref, () => ({
@@ -47,16 +49,17 @@ export const AgentUserQuestion = memo(forwardRef<AgentUserQuestionHandle, AgentU
     }
   }), [answers, questions])
 
-  // Reset when toolUseId changes (new question set)
+  // Runtime tool IDs are provider provenance and may be reused. Reset for the
+  // main-minted approval owner so a deferred A submit cannot leave B disabled.
   useEffect(() => {
-    if (prevToolUseIdRef.current !== toolUseId) {
+    if (prevApprovalIdRef.current !== approvalId) {
       setIsSubmitting(false)
       setCurrentQuestionIndex(0)
       setAnswers({})
       setFocusedOptionIndex(0)
-      prevToolUseIdRef.current = toolUseId
+      prevApprovalIdRef.current = approvalId
     }
-  }, [toolUseId])
+  }, [approvalId])
 
   // Animate on question change
   useEffect(() => {
@@ -158,7 +161,15 @@ export const AgentUserQuestion = memo(forwardRef<AgentUserQuestionHandle, AgentU
           const selected = answers[question.question] || []
           formattedAnswers[question.question] = selected.join(", ")
         }
-        onAnswer(formattedAnswers)
+        void (async () => {
+          try {
+            if (!(await onAnswer(formattedAnswers))) {
+              setIsSubmitting(false)
+            }
+          } catch {
+            setIsSubmitting(false)
+          }
+        })()
       }
     }
   }, [
@@ -168,13 +179,21 @@ export const AgentUserQuestion = memo(forwardRef<AgentUserQuestionHandle, AgentU
     questions,
     currentQuestion?.question,
     isSubmitting,
-    pendingQuestions.toolUseId,
+    pendingQuestions.approvalId,
   ])
 
   const handleSkipWithGuard = useCallback(() => {
     if (isSubmitting) return
     setIsSubmitting(true)
-    onSkip()
+    void (async () => {
+      try {
+        if (!(await onSkip())) {
+          setIsSubmitting(false)
+        }
+      } catch {
+        setIsSubmitting(false)
+      }
+    })()
   }, [isSubmitting, onSkip])
 
   const getOptionNumber = (index: number) => {

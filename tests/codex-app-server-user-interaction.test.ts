@@ -23,8 +23,11 @@ function createHarness(timeoutMs = 1000) {
     subChatId: "subchat-1",
     timeoutMs,
     emit: (chunk) => chunks.push(chunk),
-    registerPending: (toolUseId, item) => pending.set(toolUseId, item),
-    unregisterPending: (toolUseId) => pending.delete(toolUseId),
+    registerPending: (approvalId, item) => pending.set(approvalId, item),
+    unregisterPending: (approvalId, item) => {
+      if (pending.get(approvalId) !== item) return false
+      return pending.delete(approvalId)
+    },
   })
 
   return { bridge, chunks, pending }
@@ -87,10 +90,11 @@ describe("Codex app-server user interaction bridge", () => {
       toolUseId: "codex-app-server-user-input-req-1",
       questions: [{ question: "Proceed?" }, { question: "Enter token" }],
     })
+    const approvalId = chunks[0].approvalId
     const toolUseId = chunks[0].toolUseId
-    expect(pending.has(toolUseId)).toBe(true)
+    expect(pending.has(approvalId)).toBe(true)
 
-    pending.get(toolUseId)?.resolve({
+    pending.get(approvalId)?.resolve({
       approved: true,
       updatedInput: {
         answers: {
@@ -106,9 +110,10 @@ describe("Codex app-server user interaction bridge", () => {
         "q-token": { answers: ["secret-token-value"] },
       },
     })
-    expect(pending.has(toolUseId)).toBe(false)
+    expect(pending.has(approvalId)).toBe(false)
     expect(chunks.at(-1)).toEqual({
       type: "ask-user-question-result",
+      approvalId,
       toolUseId,
       result: {
         answers: {
@@ -146,18 +151,20 @@ describe("Codex app-server user interaction bridge", () => {
       requestId: "req-timeout",
       params: userInputParams,
     })
-    const toolUseId = chunks[0].toolUseId
+    const { approvalId, toolUseId } = chunks[0]
 
     await sleep(20)
 
     await expect(promise).resolves.toEqual({ answers: {} })
-    expect(pending.has(toolUseId)).toBe(false)
+    expect(pending.has(approvalId)).toBe(false)
     expect(chunks).toContainEqual({
       type: "ask-user-question-timeout",
+      approvalId,
       toolUseId,
     })
     expect(chunks.at(-1)).toEqual({
       type: "ask-user-question-result",
+      approvalId,
       toolUseId,
       result: "Timed out",
     })
@@ -213,8 +220,8 @@ describe("Codex app-server user interaction bridge", () => {
       },
     ])
 
-    const toolUseId = chunks[0].toolUseId
-    pending.get(toolUseId)?.resolve({
+    const { approvalId, toolUseId } = chunks[0]
+    pending.get(approvalId)?.resolve({
       approved: true,
       updatedInput: {
         answers: {
@@ -234,6 +241,7 @@ describe("Codex app-server user interaction bridge", () => {
     })
     expect(chunks.at(-1)).toEqual({
       type: "ask-user-question-result",
+      approvalId,
       toolUseId,
       result: {
         action: "accept",

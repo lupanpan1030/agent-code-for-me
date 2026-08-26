@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto"
 import {
   QUESTIONS_SKIPPED_MESSAGE,
   QUESTIONS_TIMED_OUT_MESSAGE,
@@ -82,12 +83,16 @@ export type CodexAppServerMcpElicitationRequestResponse = {
 
 export type CreateCodexAppServerUserInteractionBridgeInput = {
   subChatId: string
+  isCurrentRunOwner?: () => boolean
   emit: (chunk: Record<string, unknown>) => void
   registerPending: (
-    toolUseId: string,
+    approvalId: string,
     pending: CodexAskUserQuestionPending,
   ) => void
-  unregisterPending: (toolUseId: string) => void
+  unregisterPending: (
+    approvalId: string,
+    pending: CodexAskUserQuestionPending,
+  ) => boolean
   timeoutMs?: number
 }
 
@@ -354,76 +359,117 @@ function redactedMcpContent(content: JsonValue | null): JsonValue | null {
 
 async function waitForApproval(input: {
   subChatId: string
+  approvalId: string
   toolUseId: string
+  questions: CodexAskUserQuestion[]
   timeoutMs: number
   emit: (chunk: Record<string, unknown>) => void
   registerPending: (
-    toolUseId: string,
+    approvalId: string,
     pending: CodexAskUserQuestionPending,
   ) => void
-  unregisterPending: (toolUseId: string) => void
+  unregisterPending: (
+    approvalId: string,
+    pending: CodexAskUserQuestionPending,
+  ) => boolean
+  isCurrentRunOwner: () => boolean
 }): Promise<CodexAskUserQuestionApproval> {
   return new Promise<CodexAskUserQuestionApproval>((resolve) => {
+    let settled = false
+    let pending!: CodexAskUserQuestionPending
+    const finish = (approval: CodexAskUserQuestionApproval) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timeoutId)
+      input.unregisterPending(input.approvalId, pending)
+      resolve(approval)
+    }
     const timeoutId = setTimeout(() => {
-      input.unregisterPending(input.toolUseId)
-      input.emit({
-        type: "ask-user-question-timeout",
-        toolUseId: input.toolUseId,
-      })
-      resolve({
+      const owned =
+        input.unregisterPending(input.approvalId, pending) !== false
+      if (owned) {
+        input.emit({
+          type: "ask-user-question-timeout",
+          approvalId: input.approvalId,
+          toolUseId: input.toolUseId,
+        })
+      }
+      finish({
         approved: false,
         message: QUESTIONS_TIMED_OUT_MESSAGE,
       })
     }, input.timeoutMs)
 
-    input.registerPending(input.toolUseId, {
+    pending = {
+      approvalId: input.approvalId,
+      toolUseId: input.toolUseId,
       subChatId: input.subChatId,
-      resolve: (approval) => {
-        clearTimeout(timeoutId)
-        resolve(approval)
-      },
+      isCurrentRunOwner: input.isCurrentRunOwner,
+      resolve: finish,
+    }
+    input.registerPending(input.approvalId, pending)
+    input.emit({
+      type: "ask-user-question",
+      approvalId: input.approvalId,
+      toolUseId: input.toolUseId,
+      questions: input.questions,
     })
   })
 }
 
 export function createCodexAppServerUserInteractionBridge({
   subChatId,
+  isCurrentRunOwner = () => true,
   emit,
   registerPending,
   unregisterPending,
   timeoutMs = DEFAULT_TIMEOUT_MS,
 }: CreateCodexAppServerUserInteractionBridgeInput) {
+  const runOwnerIsCurrent = (): boolean => {
+    try {
+      return isCurrentRunOwner()
+    } catch {
+      return false
+    }
+  }
+
   return {
     async handleUserInputRequest(input: {
       requestId: string
       params: CodexAppServerToolRequestUserInputParams
     }): Promise<CodexAppServerToolRequestUserInputResponse> {
       const toolUseId = `codex-app-server-user-input-${input.requestId}`
+      const approvalId = `codex-approval-${randomUUID()}`
       const questions = normalizeCodexAppServerUserInputQuestions(input.params)
 
-      if (questions.length === 0) return { answers: {} }
+      if (questions.length === 0 || !runOwnerIsCurrent()) return { answers: {} }
 
-      emit({ type: "ask-user-question", toolUseId, questions })
       const approval = await waitForApproval({
         subChatId,
+        approvalId,
         toolUseId,
+        questions,
         timeoutMs,
         emit,
         registerPending,
         unregisterPending,
+        isCurrentRunOwner: runOwnerIsCurrent,
       })
-      unregisterPending(toolUseId)
+      const effectiveApproval = runOwnerIsCurrent()
+        ? approval
+        : { approved: false, message: "Codex run is no longer active." }
 
       const response = buildCodexAppServerUserInputResponse(
         input.params,
-        approval,
+        effectiveApproval,
       )
       emit({
         type: "ask-user-question-result",
+        approvalId,
         toolUseId,
-        result: approval.approved
+        result: effectiveApproval.approved
           ? redactedUserInputResult(input.params, response)
-          : approval.message || QUESTIONS_SKIPPED_MESSAGE,
+          : effectiveApproval.message || QUESTIONS_SKIPPED_MESSAGE,
       })
       return response
     },
@@ -433,27 +479,36 @@ export function createCodexAppServerUserInteractionBridge({
       params: CodexAppServerMcpElicitationRequestParams
     }): Promise<CodexAppServerMcpElicitationRequestResponse> {
       const toolUseId = `codex-app-server-mcp-elicitation-${input.requestId}`
+      const approvalId = `codex-approval-${randomUUID()}`
       const questions = normalizeCodexAppServerMcpElicitationQuestions(
         input.params,
       )
 
-      emit({ type: "ask-user-question", toolUseId, questions })
+      if (!runOwnerIsCurrent()) {
+        return { action: "cancel", content: null, _meta: null }
+      }
       const approval = await waitForApproval({
         subChatId,
+        approvalId,
         toolUseId,
+        questions,
         timeoutMs,
         emit,
         registerPending,
         unregisterPending,
+        isCurrentRunOwner: runOwnerIsCurrent,
       })
-      unregisterPending(toolUseId)
+      const effectiveApproval = runOwnerIsCurrent()
+        ? approval
+        : { approved: false, message: "Codex run is no longer active." }
 
       const response = buildCodexAppServerMcpElicitationResponse(
         input.params,
-        approval,
+        effectiveApproval,
       )
       emit({
         type: "ask-user-question-result",
+        approvalId,
         toolUseId,
         result: {
           action: response.action,

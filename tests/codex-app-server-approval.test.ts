@@ -1,9 +1,23 @@
-import { describe, expect, test } from "bun:test"
-import type { ValidatedAgentScopeContract } from "../src/main/lib/agent-guard"
+import { afterEach, describe, expect, test } from "bun:test"
+import { existsSync, mkdtempSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import {
+  clearActiveGuardedContractsForTest,
+  isActiveGuardedContract,
+  replaceActiveGuardedContractForSubChat,
+  type ValidatedAgentScopeContract,
+} from "../src/main/lib/agent-guard"
 import {
   getCodexAppServerPermissionMapping,
   resolveDesktopPermissionPolicy,
 } from "../src/main/lib/agent-runtime/permission-policy"
+import {
+  type ActiveCodexStream,
+  clearActiveCodexStreamsForTest,
+  getActiveCodexStream,
+  setActiveCodexStream,
+} from "../src/main/lib/codex/active-streams"
 import {
   type CodexAppServerPermissionsRequestApprovalParams,
   createCodexAppServerApprovalBridge,
@@ -27,7 +41,7 @@ function appServerPermission(
   )
 }
 
-function guardedContract(): ValidatedAgentScopeContract {
+function guardedContract(cwd = "/repo"): ValidatedAgentScopeContract {
   return {
     id: "contract-approval",
     version: 1,
@@ -38,13 +52,19 @@ function guardedContract(): ValidatedAgentScopeContract {
     chatId: "chat-1",
     subChatId: "sub-1",
     runId: "run-app-server",
-    cwd: "/repo",
+    cwd,
     editableScope: [{ path: "src", kind: "directory" }],
     readOnlyEvidence: [],
     successChecks: [{ command: "bun test" }],
     blockedPaths: [],
     expansions: [],
   }
+}
+
+function activeGuardedContract(cwd = "/repo"): ValidatedAgentScopeContract {
+  const contract = guardedContract(cwd)
+  replaceActiveGuardedContractForSubChat(contract.subChatId, contract)
+  return contract
 }
 
 function permissionsParams(
@@ -62,6 +82,11 @@ function permissionsParams(
 }
 
 describe("Codex app-server approval policy", () => {
+  afterEach(() => {
+    clearActiveGuardedContractsForTest()
+    clearActiveCodexStreamsForTest()
+  })
+
   test("denies network permission expansions directly", () => {
     const decision = resolveCodexAppServerPermissionsApprovalDecision({
       params: permissionsParams({
@@ -167,7 +192,7 @@ describe("Codex app-server approval policy", () => {
         },
       }),
       permission: appServerPermission("agent", true),
-      guardedContract: guardedContract(),
+      guardedContract: activeGuardedContract(),
     })
 
     expect(decision).toMatchObject({
@@ -188,7 +213,7 @@ describe("Codex app-server approval policy", () => {
         },
       }),
       permission: appServerPermission("agent", true),
-      guardedContract: guardedContract(),
+      guardedContract: activeGuardedContract(),
       onGuardEvent: (event) => guardEvents.push(event),
     })
 
@@ -202,7 +227,7 @@ describe("Codex app-server approval policy", () => {
   })
 
   test("emits explicit Deny approval option and maps it to decline", async () => {
-    const chunks: Record<string, any>[] = []
+    const chunks: Array<Record<string, unknown>> = []
     const pending = new Map<string, CodexAskUserQuestionPending>()
     const bridge = createCodexAppServerApprovalBridge({
       subChatId: "sub-1",
@@ -231,11 +256,14 @@ describe("Codex app-server approval policy", () => {
     const askQuestion = askChunk?.questions?.[0] as
       | { options: Array<{ label: string }> }
       | undefined
-    expect(
-      askQuestion?.options.map((option) => option.label),
-    ).toEqual(["Approve", "Deny"])
-
-    pending.get(askChunk!.toolUseId)?.resolve({
+    expect(askQuestion?.options.map((option) => option.label)).toEqual([
+      "Approve",
+      "Deny",
+    ])
+    if (!askChunk || typeof askChunk.approvalId !== "string") {
+      throw new Error("Expected a command approval request")
+    }
+    pending.get(askChunk.approvalId)?.resolve({
       approved: true,
       updatedInput: { answers: { "Run command": "Deny" } },
     })
@@ -248,12 +276,12 @@ describe("Codex app-server approval policy", () => {
   })
 
   test("asks for user approval before accepting scoped shell file writes", async () => {
-    const chunks: Record<string, any>[] = []
+    const chunks: Array<Record<string, unknown>> = []
     const pending = new Map<string, CodexAskUserQuestionPending>()
     const bridge = createCodexAppServerApprovalBridge({
       subChatId: "sub-1",
       permission: appServerPermission("agent", true),
-      guardedContract: guardedContract(),
+      guardedContract: activeGuardedContract(),
       emit: (chunk) => chunks.push(chunk),
       onGuardEvent: (event) => chunks.push({ type: "guard-event", event }),
       registerPendingQuestion: (toolUseId, approval) => {
@@ -286,8 +314,10 @@ describe("Codex app-server approval policy", () => {
     })
     const askChunk = chunks.find((chunk) => chunk.type === "ask-user-question")
     expect(askChunk?.toolUseId).toContain("command-approval")
-
-    pending.get(askChunk!.toolUseId)?.resolve({
+    if (!askChunk || typeof askChunk.approvalId !== "string") {
+      throw new Error("Expected a scoped command approval request")
+    }
+    pending.get(askChunk.approvalId)?.resolve({
       approved: true,
       updatedInput: { answers: { "Run command": "Approve" } },
     })
@@ -301,7 +331,7 @@ describe("Codex app-server approval policy", () => {
     const bridge = createCodexAppServerApprovalBridge({
       subChatId: "sub-1",
       permission: appServerPermission("agent", true),
-      guardedContract: guardedContract(),
+      guardedContract: activeGuardedContract(),
       emit: (chunk) => chunks.push(chunk),
       onGuardEvent: (event) => chunks.push({ type: "guard-event", event }),
       registerPendingQuestion: (toolUseId, approval) => {
@@ -334,8 +364,10 @@ describe("Codex app-server approval policy", () => {
     })
     const askChunk = chunks.find((chunk) => chunk.type === "ask-user-question")
     expect(askChunk?.toolUseId).toContain("command-approval")
-
-    pending.get(askChunk!.toolUseId)?.resolve({
+    if (!askChunk || typeof askChunk.approvalId !== "string") {
+      throw new Error("Expected an absolute-executable approval request")
+    }
+    pending.get(askChunk.approvalId)?.resolve({
       approved: true,
       updatedInput: { answers: { "Run command": "Approve" } },
     })
@@ -349,7 +381,7 @@ describe("Codex app-server approval policy", () => {
     const bridge = createCodexAppServerApprovalBridge({
       subChatId: "sub-1",
       permission: appServerPermission("agent", true),
-      guardedContract: guardedContract(),
+      guardedContract: activeGuardedContract(),
       emit: (chunk) => chunks.push(chunk),
       onGuardEvent: (event) => chunks.push({ type: "guard-event", event }),
       registerPendingQuestion: (toolUseId, approval) => {
@@ -381,13 +413,79 @@ describe("Codex app-server approval policy", () => {
     })
     const askChunk = chunks.find((chunk) => chunk.type === "ask-user-question")
     expect(askChunk?.toolUseId).toContain("command-approval")
-
-    pending.get(askChunk!.toolUseId)?.resolve({
+    if (!askChunk || typeof askChunk.approvalId !== "string") {
+      throw new Error("Expected an echo approval request")
+    }
+    pending.get(askChunk.approvalId)?.resolve({
       approved: true,
       updatedInput: { answers: { "Run command": "Approve" } },
     })
 
     await expect(responsePromise).resolves.toEqual({ decision: "accept" })
+  })
+
+  test("isolates same-ID cross-chat contracts and denies the stale captured callback", async () => {
+    const first = guardedContract()
+    const second = {
+      ...guardedContract(),
+      chatId: "chat-2",
+      subChatId: "sub-2",
+      runId: "run-app-server-2",
+    }
+    replaceActiveGuardedContractForSubChat(first.subChatId, first)
+    replaceActiveGuardedContractForSubChat(second.subChatId, second)
+    const pending = new Map<string, CodexAskUserQuestionPending>()
+    const bridge = createCodexAppServerApprovalBridge({
+      subChatId: first.subChatId,
+      permission: appServerPermission("agent", true),
+      guardedContract: first,
+      emit: () => {},
+      registerPendingQuestion: (approvalId, approval) => {
+        pending.set(approvalId, approval)
+      },
+      unregisterPendingQuestion: (approvalId) => {
+        pending.delete(approvalId)
+      },
+    })
+    const commandParams = {
+      threadId: "thread-1",
+      turnId: "turn-1",
+      itemId: "same-id-cross-chat",
+      startedAtMs: Date.now(),
+      command: "/bin/zsh -lc \"echo 'hello' > /repo/src/generated.txt\"",
+    }
+
+    const accepted = bridge.handleCommandExecution({
+      requestId: "same-id-cross-chat-accepted",
+      params: commandParams,
+    })
+    const firstApproval = [...pending.values()][0]
+    expect(firstApproval).toBeDefined()
+    firstApproval?.resolve({
+      approved: true,
+      updatedInput: { answers: { "Run command": "Approve" } },
+    })
+    await expect(accepted).resolves.toEqual({ decision: "accept" })
+    expect(isActiveGuardedContract(first)).toBe(true)
+    expect(isActiveGuardedContract(second)).toBe(true)
+
+    const denied = bridge.handleCommandExecution({
+      requestId: "same-id-cross-chat-stale",
+      params: commandParams,
+    })
+    const staleApproval = [...pending.values()][0]
+    expect(staleApproval).toBeDefined()
+    const replacement = { ...first, runId: "replacement-run" }
+    replaceActiveGuardedContractForSubChat(first.subChatId, replacement)
+    staleApproval?.resolve({
+      approved: true,
+      updatedInput: { answers: { "Run command": "Approve" } },
+    })
+
+    await expect(denied).resolves.toEqual({ decision: "decline" })
+    expect(isActiveGuardedContract(first)).toBe(false)
+    expect(isActiveGuardedContract(replacement)).toBe(true)
+    expect(isActiveGuardedContract(second)).toBe(true)
   })
 
   test("keeps out-of-scope shell file writes fail-closed before user approval", async () => {
@@ -396,7 +494,7 @@ describe("Codex app-server approval policy", () => {
     const bridge = createCodexAppServerApprovalBridge({
       subChatId: "sub-1",
       permission: appServerPermission("agent", true),
-      guardedContract: guardedContract(),
+      guardedContract: activeGuardedContract(),
       emit: (chunk) => chunks.push(chunk),
       onGuardEvent: (event) => chunks.push({ type: "guard-event", event }),
       registerPendingQuestion: (toolUseId, approval) => {
@@ -443,7 +541,7 @@ describe("Codex app-server approval policy", () => {
       const bridge = createCodexAppServerApprovalBridge({
         subChatId: "sub-1",
         permission: appServerPermission("agent", true),
-        guardedContract: guardedContract(),
+        guardedContract: activeGuardedContract(),
         emit: (chunk) => chunks.push(chunk),
         onGuardEvent: (event) => chunks.push({ type: "guard-event", event }),
         registerPendingQuestion: (toolUseId, approval) => {
@@ -472,6 +570,86 @@ describe("Codex app-server approval policy", () => {
         "ask-user-question",
       )
       expect(pending.size).toBe(0)
+    }
+  })
+
+  test("refuses a stale controlled edit approval after exact Run owner replacement", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "locus-stale-controlled-edit-"))
+    const pending = new Map<string, CodexAskUserQuestionPending>()
+    const chunks: Array<Record<string, unknown>> = []
+    const staleOwner: ActiveCodexStream = {
+      runId: "same-run-id",
+      controller: new AbortController(),
+      cancelRequested: false,
+    }
+    const winner: ActiveCodexStream = {
+      runId: "same-run-id",
+      controller: new AbortController(),
+      cancelRequested: false,
+    }
+    setActiveCodexStream("sub-1", staleOwner)
+
+    try {
+      const bridge = createCodexAppServerApprovalBridge({
+        subChatId: "sub-1",
+        permission: appServerPermission("agent", true),
+        controlledEditEnabled: true,
+        guardedContract: activeGuardedContract(cwd),
+        isCurrentRunOwner: () =>
+          getActiveCodexStream("sub-1") === staleOwner &&
+          !staleOwner.controller.signal.aborted,
+        emit: (chunk) => chunks.push(chunk),
+        registerPendingQuestion: (toolUseId, approval) => {
+          pending.set(toolUseId, approval)
+        },
+        unregisterPendingQuestion: (toolUseId) => {
+          pending.delete(toolUseId)
+        },
+      })
+      const responsePromise = bridge.handleDynamicToolCall({
+        requestId: "stale-controlled-edit",
+        params: {
+          threadId: "thread-1",
+          turnId: "turn-1",
+          callId: "stale-controlled-edit",
+          namespace: "locus_edit",
+          tool: "propose_file_edit",
+          arguments: {
+            operation: "create",
+            path: "src/stale.txt",
+            content: "must not be written\n",
+          },
+        },
+      })
+      const askChunk = chunks.find(
+        (chunk) => chunk.type === "ask-user-question",
+      )
+      const approvalId =
+        typeof askChunk?.approvalId === "string" ? askChunk.approvalId : null
+      expect(approvalId).not.toBeNull()
+      if (!approvalId) throw new Error("expected controlled edit approval")
+
+      staleOwner.cancelRequested = true
+      staleOwner.controller.abort()
+      setActiveCodexStream("sub-1", winner)
+      pending.get(approvalId)?.resolve({
+        approved: true,
+        updatedInput: {
+          answers: { "Apply edit": "Approve" },
+        },
+      })
+
+      await expect(responsePromise).resolves.toMatchObject({
+        success: false,
+        contentItems: [
+          { type: "inputText", text: "Codex run is no longer active." },
+        ],
+      })
+      expect(existsSync(join(cwd, "src/stale.txt"))).toBe(false)
+      expect(getActiveCodexStream("sub-1")).toBe(winner)
+    } finally {
+      clearActiveCodexStreamsForTest()
+      rmSync(cwd, { recursive: true, force: true })
     }
   })
 })

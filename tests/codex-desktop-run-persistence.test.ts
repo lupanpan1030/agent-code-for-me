@@ -56,6 +56,12 @@ describe("Codex desktop run persistence owner", () => {
 
   test("loads history and preserves the user-message JSON shape", () => {
     const db = createPersistenceDb()
+    const activeStreamOwner = {
+      runId: "run-1",
+      controller: new AbortController(),
+      cancelRequested: false,
+    }
+    setActiveCodexStream("sub-1", activeStreamOwner)
     const timestamps = [
       new Date("2026-08-26T01:02:03.000Z"),
       new Date("2026-08-26T01:02:04.000Z"),
@@ -68,6 +74,7 @@ describe("Codex desktop run persistence owner", () => {
     const result = persistCodexDesktopRunUserMessage({
       db,
       subChatId: "sub-1",
+      activeStreamOwner,
       existingMessages,
       prompt: "hello",
       images: undefined,
@@ -78,6 +85,7 @@ describe("Codex desktop run persistence owner", () => {
     })
 
     expect(result).toEqual({
+      authoritative: true,
       isDuplicatePrompt: false,
       messagesForStream: [
         {
@@ -95,9 +103,16 @@ describe("Codex desktop run persistence owner", () => {
 
   test("preserves prompt, long-text, and image signature comparison", () => {
     const db = createPersistenceDb()
+    const activeStreamOwner = {
+      runId: "run-1",
+      controller: new AbortController(),
+      cancelRequested: false,
+    }
+    setActiveCodexStream("sub-1", activeStreamOwner)
     const first = persistCodexDesktopRunUserMessage({
       db,
       subChatId: "sub-1",
+      activeStreamOwner,
       existingMessages: [],
       prompt: "hello",
       images: undefined,
@@ -117,6 +132,7 @@ describe("Codex desktop run persistence owner", () => {
     const duplicate = persistCodexDesktopRunUserMessage({
       db,
       subChatId: "sub-1",
+      activeStreamOwner,
       existingMessages: first.messagesForStream,
       prompt: "hello",
       images: undefined,
@@ -133,6 +149,8 @@ describe("Codex desktop run persistence owner", () => {
       createId: () => "must-not-be-used",
     })
 
+    expect(first.authoritative).toBe(true)
+    expect(duplicate.authoritative).toBe(true)
     expect(duplicate.isDuplicatePrompt).toBe(true)
     expect(duplicate.messagesForStream).toEqual(first.messagesForStream)
     expect(readMessages(db)).toEqual(first.messagesForStream)
@@ -185,6 +203,128 @@ describe("Codex desktop run persistence owner", () => {
     ).toBe(false)
   })
 
+  test("rejects A user persistence after B replaces it with the same run id", () => {
+    const db = createPersistenceDb()
+    const ownerA = {
+      runId: "run-shared",
+      controller: new AbortController(),
+      cancelRequested: false,
+    }
+    const ownerB = {
+      runId: "run-shared",
+      controller: new AbortController(),
+      cancelRequested: false,
+    }
+    setActiveCodexStream("sub-1", ownerA)
+    const existingMessages = loadCodexDesktopRunHistory({
+      db,
+      subChatId: "sub-1",
+    })
+    const initialUpdatedAt = readUpdatedAt(db)
+
+    setActiveCodexStream("sub-1", ownerB)
+    const staleResult = persistCodexDesktopRunUserMessage({
+      db,
+      subChatId: "sub-1",
+      activeStreamOwner: ownerA,
+      existingMessages,
+      prompt: "stale A prompt",
+      images: undefined,
+      longTextAttachments: undefined,
+      metadataModel: "gpt-5.4",
+      createId: () => "stale-user",
+      now: () => new Date("2026-08-26T04:05:06.000Z"),
+    })
+
+    expect(staleResult).toEqual({
+      authoritative: false,
+      isDuplicatePrompt: false,
+      messagesForStream: existingMessages,
+    })
+    expect(readMessages(db)).toEqual([])
+    expect(readUpdatedAt(db)).toEqual(initialUpdatedAt)
+
+    deleteActiveCodexStream("sub-1")
+    const missingResult = persistCodexDesktopRunUserMessage({
+      db,
+      subChatId: "sub-1",
+      activeStreamOwner: ownerB,
+      existingMessages,
+      prompt: "missing owner prompt",
+      images: undefined,
+      longTextAttachments: undefined,
+      metadataModel: "gpt-5.4",
+    })
+    expect(missingResult.authoritative).toBe(false)
+    expect(readMessages(db)).toEqual([])
+    expect(readUpdatedAt(db)).toEqual(initialUpdatedAt)
+  })
+
+  test("rejects user, duplicate, and assistant persistence after the exact owner aborts", () => {
+    const db = createPersistenceDb()
+    const activeStreamOwner = {
+      runId: "run-aborted",
+      controller: new AbortController(),
+      cancelRequested: true,
+    }
+    setActiveCodexStream("sub-1", activeStreamOwner)
+    activeStreamOwner.controller.abort()
+    const initialUpdatedAt = readUpdatedAt(db)
+    const duplicateMessage = buildCodexDesktopRunUserMessage({
+      prompt: "duplicate",
+      images: undefined,
+      longTextAttachments: undefined,
+      metadataModel: "gpt-5.4",
+      createId: () => "existing-user",
+      now: () => new Date("2026-08-26T04:05:06.000Z"),
+    })
+
+    expect(
+      persistCodexDesktopRunUserMessage({
+        db,
+        subChatId: "sub-1",
+        activeStreamOwner,
+        existingMessages: [],
+        prompt: "must not persist",
+        images: undefined,
+        longTextAttachments: undefined,
+        metadataModel: "gpt-5.4",
+      }),
+    ).toEqual({
+      authoritative: false,
+      isDuplicatePrompt: false,
+      messagesForStream: [],
+    })
+    expect(
+      persistCodexDesktopRunUserMessage({
+        db,
+        subChatId: "sub-1",
+        activeStreamOwner,
+        existingMessages: [duplicateMessage],
+        prompt: "duplicate",
+        images: undefined,
+        longTextAttachments: undefined,
+        metadataModel: "gpt-5.4",
+      }),
+    ).toEqual({
+      authoritative: false,
+      isDuplicatePrompt: true,
+      messagesForStream: [duplicateMessage],
+    })
+    expect(
+      persistCodexDesktopAssistantAfterNaturalFinish({
+        db,
+        subChatId: "sub-1",
+        activeStreamOwner,
+        messagesForStream: [],
+        chunks: [{ type: "text-delta", delta: "must not persist" }],
+        model: "gpt-5.4",
+      }),
+    ).toBe(false)
+    expect(readMessages(db)).toEqual([])
+    expect(readUpdatedAt(db)).toEqual(initialUpdatedAt)
+  })
+
   test("builds assistant JSON with the established metadata precedence", () => {
     expect(
       buildCodexAppServerAssistantMessage({
@@ -220,18 +360,23 @@ describe("Codex desktop run persistence owner", () => {
 
   test("persists an assistant only when the run remains authoritative", () => {
     const db = createPersistenceDb()
-    const controller = new AbortController()
-    setActiveCodexStream("sub-1", {
-      runId: "run-new",
-      controller,
+    const staleOwner = {
+      runId: "run-shared",
+      controller: new AbortController(),
       cancelRequested: false,
-    })
+    }
+    const currentOwner = {
+      runId: "run-shared",
+      controller: new AbortController(),
+      cancelRequested: false,
+    }
+    setActiveCodexStream("sub-1", currentOwner)
 
     expect(
       persistCodexDesktopAssistantAfterNaturalFinish({
         db,
         subChatId: "sub-1",
-        runId: "run-old",
+        activeStreamOwner: staleOwner,
         messagesForStream: [],
         chunks: [{ type: "text-delta", delta: "stale" }],
         model: "gpt-5.4",
@@ -243,7 +388,7 @@ describe("Codex desktop run persistence owner", () => {
       persistCodexDesktopAssistantAfterNaturalFinish({
         db,
         subChatId: "sub-1",
-        runId: "run-new",
+        activeStreamOwner: currentOwner,
         messagesForStream: [],
         chunks: [{ type: "text-delta", delta: "current" }],
         model: "gpt-5.4",
@@ -262,32 +407,28 @@ describe("Codex desktop run persistence owner", () => {
     ])
 
     deleteActiveCodexStream("sub-1")
-    const timestamps = [
-      new Date("2026-08-26T03:04:06.000Z"),
-      new Date("2026-08-26T03:04:07.000Z"),
-    ]
     expect(
       persistCodexDesktopAssistantAfterNaturalFinish({
         db,
         subChatId: "sub-1",
-        runId: "run-without-registered-stream",
+        activeStreamOwner: currentOwner,
         messagesForStream: [],
-        chunks: [{ type: "text-delta", delta: "no stream is allowed" }],
+        chunks: [{ type: "text-delta", delta: "missing owner" }],
         model: "gpt-5.4",
         createId: () => "assistant-2",
-        now: () => timestamps.shift() ?? new Date(0),
+        now: () => new Date("2026-08-26T03:04:06.000Z"),
       }),
-    ).toBe(true)
+    ).toBe(false)
     expect(readMessages(db)).toEqual([
       {
-        id: "assistant-2",
+        id: "assistant-1",
         role: "assistant",
-        createdAt: "2026-08-26T03:04:06.000Z",
-        parts: [{ type: "text", text: "no stream is allowed" }],
+        createdAt: "2026-08-26T03:04:05.000Z",
+        parts: [{ type: "text", text: "current" }],
         metadata: { model: "gpt-5.4", provider: "codex" },
       },
     ])
-    expect(readUpdatedAt(db)).toEqual(new Date("2026-08-26T03:04:07.000Z"))
+    expect(readUpdatedAt(db)).toEqual(new Date("2026-08-26T03:04:05.000Z"))
   })
 
   test("keeps the second history read and resume snapshot at their original route positions", () => {
@@ -306,12 +447,25 @@ describe("Codex desktop run persistence owner", () => {
       "persistCodexDesktopRunUserMessage({",
       providerBindingIndex,
     )
+    const userAuthorityGateIndex = route.indexOf(
+      "if (!userPersistence.authoritative)",
+      userPersistenceIndex,
+    )
+    const mcpResolutionIndex = route.indexOf(
+      "await resolveCodexMcpSnapshotForDesktopRun({",
+      userPersistenceIndex,
+    )
 
     expect(runtimeGateIndex).toBeGreaterThan(0)
     expect(historyReadIndex).toBeGreaterThan(runtimeGateIndex)
     expect(imagePreparationIndex).toBeGreaterThan(historyReadIndex)
     expect(providerBindingIndex).toBeGreaterThan(imagePreparationIndex)
     expect(userPersistenceIndex).toBeGreaterThan(providerBindingIndex)
+    expect(route.slice(userPersistenceIndex, userAuthorityGateIndex)).toContain(
+      "activeStreamOwner",
+    )
+    expect(userAuthorityGateIndex).toBeGreaterThan(userPersistenceIndex)
+    expect(mcpResolutionIndex).toBeGreaterThan(userAuthorityGateIndex)
     expect(route).toContain("getLastCodexSessionId(existingMessages)")
     expect(route).not.toContain("getLastCodexSessionId(messagesForStream)")
   })

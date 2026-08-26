@@ -12,6 +12,7 @@ import type { ImageAttachment, LongTextAttachment } from "./chat-input-schema"
 export type PrepareClaudeAgentSdkDesktopRunInputsInput = {
   db: AgentJobDatabase
   subChatId: string
+  activeSessionSignal: AbortSignal
   streamId: string
   prompt: string
   images?: ImageAttachment[]
@@ -38,6 +39,10 @@ export type PrepareClaudeAgentSdkDesktopRunInputsResult =
       reason: "image-attachment-blocked"
       blocker: DesktopRunPreflightBlocker
     }
+  | {
+      ok: false
+      reason: "stale-active-session"
+    }
 
 export async function prepareClaudeAgentSdkDesktopRunInputs(
   input: PrepareClaudeAgentSdkDesktopRunInputsInput,
@@ -55,18 +60,27 @@ export async function prepareClaudeAgentSdkDesktopRunInputs(
     }
   }
 
+  const chatHistory = prepareClaudeChatHistoryForDesktopRun({
+    db: input.db,
+    subChatId: input.subChatId,
+    activeSessionSignal: input.activeSessionSignal,
+    streamId: input.streamId,
+    prompt: input.prompt,
+    images: input.images,
+    longTextAttachments: input.longTextAttachments,
+    createId: input.createId,
+  })
+  if (!chatHistory) {
+    return {
+      ok: false,
+      reason: "stale-active-session",
+    }
+  }
+
   return {
     ok: true,
     historyEnabled: input.historyEnabled === true,
     resolvedImages: imageAttachments.attachments,
-    chatHistory: prepareClaudeChatHistoryForDesktopRun({
-      db: input.db,
-      subChatId: input.subChatId,
-      streamId: input.streamId,
-      prompt: input.prompt,
-      images: input.images,
-      longTextAttachments: input.longTextAttachments,
-      createId: input.createId,
-    }),
+    chatHistory,
   }
 }

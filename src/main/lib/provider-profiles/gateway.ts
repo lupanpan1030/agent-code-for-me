@@ -40,9 +40,20 @@ type GatewayEndpoint = {
   providerId: string
 }
 
+export type ProviderGatewayModelResolution =
+  | "legacy-profile-default"
+  | "claude-chat-binding"
+  | "codex-chat-binding"
+
 type GatewayTokenScope = {
   providerId: string
   kind: GatewayEndpointKind
+  modelResolution: ProviderGatewayModelResolution
+  /**
+   * Immutable model catalog snapshot for an admitted Codex desktop chat.
+   * Legacy/headless and Claude tokens intentionally leave this unset.
+   */
+  codexChatBoundModelId: string | null
   expiresAt: number
   ttlMs: number
 }
@@ -114,9 +125,10 @@ function sendText(res: ServerResponse, status: number, body: string): void {
 function sendModelsList(
   res: ServerResponse,
   profile: ProviderProfileRuntimeConfig,
+  modelIdOverride?: string | null,
 ): void {
-  const modelId = profile.defaultModel
-  const displayName = profile.defaultModel
+  const modelId = modelIdOverride ?? profile.defaultModel
+  const displayName = modelId
   const description = profile.name
     ? `Provider profile: ${profile.name}`
     : "Provider profile model"
@@ -277,12 +289,33 @@ function recordGatewayToolTrace(input: {
 function resolveProviderModel(
   profile: ProviderProfileRuntimeConfig,
   requestedModel: unknown,
+  modelResolution: ProviderGatewayModelResolution,
+  codexChatBoundModelId: string | null,
 ): string {
+  if (modelResolution === "codex-chat-binding") {
+    const admittedModel = codexChatBoundModelId?.trim()
+    if (!admittedModel) {
+      throw new Error(
+        "Codex chat gateway request is missing its admitted bound model snapshot.",
+      )
+    }
+    // The opaque token scope is the authority admitted by main. The native
+    // request body is untrusted routing input and must never broaden it.
+    return admittedModel
+  }
+
   if (typeof requestedModel !== "string" || !requestedModel.trim()) {
     return profile.defaultModel
   }
 
   const normalized = requestedModel.trim()
+  if (modelResolution === "claude-chat-binding") {
+    return normalized
+  }
+
+  // Preserve the pre-chat-binding gateway behavior for Local Job/headless
+  // tokens. It recognizes the mutable profile default and legacy built-in
+  // Codex aliases, but must not reinterpret arbitrary slash-suffixed models.
   const [baseModel, reasoningSuffix] = normalized.split("/")
   if (
     baseModel &&
@@ -356,25 +389,25 @@ function readGatewayAuthToken(req: IncomingMessage): string | null {
   return null
 }
 
-function hasScopedGatewayAuth(params: {
+function resolveScopedGatewayAuth(params: {
   req: IncomingMessage
   tokens: Map<string, GatewayTokenScope>
   providerId: string
   kind: GatewayEndpointKind
-}): boolean {
+}): GatewayTokenScope | null {
   const token = readGatewayAuthToken(params.req)
-  if (!token) return false
+  if (!token) return null
   const scope = params.tokens.get(token)
-  if (!scope) return false
+  if (!scope) return null
   if (scope.expiresAt <= Date.now()) {
     params.tokens.delete(token)
-    return false
+    return null
   }
   if (scope.providerId !== params.providerId || scope.kind !== params.kind) {
-    return false
+    return null
   }
   scope.expiresAt = Date.now() + scope.ttlMs
-  return true
+  return scope
 }
 
 function appendPath(baseUrl: string, path: string): string {
@@ -1264,9 +1297,16 @@ async function handleAnthropicRequest(
   profile: ProviderProfileRuntimeConfig,
   body: any,
   res: ServerResponse,
+  modelResolution: ProviderGatewayModelResolution,
+  codexChatBoundModelId: string | null,
 ) {
   const redactionValues = getProviderRedactionValues(profile)
-  const model = resolveProviderModel(profile, body.model)
+  const model = resolveProviderModel(
+    profile,
+    body.model,
+    modelResolution,
+    codexChatBoundModelId,
+  )
   recordGatewayToolTrace({
     phase: "incoming",
     endpointKind: "anthropic",
@@ -1381,9 +1421,16 @@ async function handleResponsesRequest(
   profile: ProviderProfileRuntimeConfig,
   body: any,
   res: ServerResponse,
+  modelResolution: ProviderGatewayModelResolution,
+  codexChatBoundModelId: string | null,
 ) {
   const redactionValues = getProviderRedactionValues(profile)
-  const model = resolveProviderModel(profile, body.model)
+  const model = resolveProviderModel(
+    profile,
+    body.model,
+    modelResolution,
+    codexChatBoundModelId,
+  )
   recordGatewayToolTrace({
     phase: "incoming",
     endpointKind: "responses",
@@ -1475,14 +1522,13 @@ async function handleGatewayRequest(req: IncomingMessage, res: ServerResponse) {
     const [, profileId, kind, endpoint] = match
     const decodedProfileId = decodeURIComponent(profileId)
     const gatewayKind = kind as GatewayEndpointKind
-    if (
-      !hasScopedGatewayAuth({
-        req,
-        tokens: current.tokens,
-        providerId: decodedProfileId,
-        kind: gatewayKind,
-      })
-    ) {
+    const tokenScope = resolveScopedGatewayAuth({
+      req,
+      tokens: current.tokens,
+      providerId: decodedProfileId,
+      kind: gatewayKind,
+    })
+    if (!tokenScope) {
       sendJson(res, 401, { error: "Unauthorized provider gateway request" })
       return
     }
@@ -1495,17 +1541,29 @@ async function handleGatewayRequest(req: IncomingMessage, res: ServerResponse) {
     redactionValues = getProviderRedactionValues(profile)
 
     if (endpoint === "models" && req.method === "GET") {
-      sendModelsList(res, profile)
+      sendModelsList(res, profile, tokenScope.codexChatBoundModelId)
       return
     }
 
     const body = await readBody(req)
     if (gatewayKind === "anthropic" && endpoint === "messages") {
-      await handleAnthropicRequest(profile, body, res)
+      await handleAnthropicRequest(
+        profile,
+        body,
+        res,
+        tokenScope.modelResolution,
+        tokenScope.codexChatBoundModelId,
+      )
       return
     }
     if (gatewayKind === "responses" && endpoint === "responses") {
-      await handleResponsesRequest(profile, body, res)
+      await handleResponsesRequest(
+        profile,
+        body,
+        res,
+        tokenScope.modelResolution,
+        tokenScope.codexChatBoundModelId,
+      )
       return
     }
     sendJson(res, 404, { error: "Unsupported provider gateway endpoint" })
@@ -1546,8 +1604,31 @@ async function ensureProviderGateway() {
 export async function getProviderGatewayEndpoint(
   providerId: string,
   kind: GatewayEndpointKind,
-  options: { ttlMs?: number } = {},
+  options: {
+    ttlMs?: number
+    modelResolution?: ProviderGatewayModelResolution
+    codexChatBoundModelId?: string
+  } = {},
 ): Promise<GatewayEndpoint> {
+  const modelResolution =
+    options.modelResolution ?? "legacy-profile-default"
+  const codexChatBoundModelId = options.codexChatBoundModelId?.trim() || null
+  if (
+    modelResolution === "codex-chat-binding" &&
+    !codexChatBoundModelId
+  ) {
+    throw new Error(
+      "Codex chat gateway tokens require an admitted bound model snapshot.",
+    )
+  }
+  if (
+    modelResolution !== "codex-chat-binding" &&
+    codexChatBoundModelId
+  ) {
+    throw new Error(
+      "A Codex chat bound model snapshot is only valid for codex-chat-binding tokens.",
+    )
+  }
   const gateway = await ensureProviderGateway()
   const token = randomBytes(32).toString("hex")
   const ttlMs = Math.max(
@@ -1557,6 +1638,8 @@ export async function getProviderGatewayEndpoint(
   gateway.tokens.set(token, {
     providerId,
     kind,
+    modelResolution,
+    codexChatBoundModelId,
     ttlMs,
     expiresAt: Date.now() + ttlMs,
   })

@@ -143,7 +143,6 @@ export type CreateClaudeAgentSdkStreamConsumerInput = {
   guardedRunStartedAt: string
   emit: (chunk: UIMessageChunk) => boolean
   complete: () => void
-  getContract: FinalizeClaudeAgentSdkGuardMetadataInput["getContract"]
   deleteContract: FinalizeClaudeAgentSdkGuardMetadataInput["deleteContract"]
   state: ClaudeAgentSdkStreamConsumerStateAccess
 }
@@ -180,7 +179,6 @@ export function createClaudeAgentSdkStreamConsumer({
   guardedRunStartedAt,
   emit,
   complete,
-  getContract,
   deleteContract,
   state,
 }: CreateClaudeAgentSdkStreamConsumerInput): ClaudeAgentSdkStreamConsumer {
@@ -315,6 +313,7 @@ export function createClaudeAgentSdkStreamConsumer({
         db,
         chatId,
         subChatId,
+        activeSessionSignal: abortSignal,
         messagesToSave,
         secretHints,
         parts,
@@ -333,7 +332,6 @@ export function createClaudeAgentSdkStreamConsumer({
         lastChunkType: state.getLastChunkType(),
         emit: emitWithMcpRegistryVerification,
         complete,
-        getContract,
         deleteContract,
       })
       state.setCurrentText(streamFailure.currentText)

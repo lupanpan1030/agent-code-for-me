@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, test } from "bun:test"
 import { randomBytes } from "node:crypto"
 import {
   existsSync,
@@ -11,7 +11,11 @@ import {
 } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import type { ValidatedAgentScopeContract } from "../src/main/lib/agent-guard"
+import {
+  clearActiveGuardedContractsForTest,
+  replaceActiveGuardedContractForSubChat,
+  type ValidatedAgentScopeContract,
+} from "../src/main/lib/agent-guard"
 import type { DesktopRunRequest } from "../src/main/lib/agent-runtime/desktop-run-request"
 import {
   type DesktopPermissionPolicy,
@@ -28,7 +32,9 @@ import type {
   CodexAppServerTransportExit,
   CodexAppServerTransportNotification,
   CodexAppServerTransportServerRequest,
+  CodexAppServerTransportServerRequestResponse,
 } from "../src/main/lib/codex/app-server-transport"
+import { selectCodexAppServerServerRequestResult } from "../src/main/lib/codex/app-server-transport"
 import {
   createAgentJob,
   listAgentJobEvents,
@@ -83,6 +89,14 @@ class FakeCodexAppServerTransport implements CodexAppServerTransport {
         request: CodexAppServerTransportServerRequest,
       ) => unknown | Promise<unknown>)
     | null = null
+  beforeServerResponseWrite?: (input: {
+    request: CodexAppServerTransportServerRequest
+    response: CodexAppServerTransportServerRequestResponse
+  }) => void | Promise<void>
+  writtenServerResponses: Array<{
+    request: CodexAppServerTransportServerRequest
+    result: unknown
+  }> = []
   exitHandler: ((exit: CodexAppServerTransportExit) => void) | null = null
   onTurnStart?: () => void | Promise<void>
   assistantDelta = "hello from app-server"
@@ -235,9 +249,17 @@ class FakeCodexAppServerTransport implements CodexAppServerTransport {
   onServerRequest(
     handler: (
       request: CodexAppServerTransportServerRequest,
-    ) => unknown | Promise<unknown>,
+    ) =>
+      | CodexAppServerTransportServerRequestResponse
+      | Promise<CodexAppServerTransportServerRequestResponse>,
   ): () => void {
-    this.serverRequestHandler = handler
+    this.serverRequestHandler = async (request) => {
+      const response = await handler(request)
+      await this.beforeServerResponseWrite?.({ request, response })
+      const result = selectCodexAppServerServerRequestResult(response)
+      this.writtenServerResponses.push({ request, result })
+      return result
+    }
     return () => {
       this.serverRequestHandler = null
     }
@@ -318,6 +340,12 @@ function guardedContract(cwd = "/repo"): ValidatedAgentScopeContract {
   }
 }
 
+function activeGuardedContract(cwd = "/repo"): ValidatedAgentScopeContract {
+  const contract = guardedContract(cwd)
+  replaceActiveGuardedContractForSubChat(contract.subChatId, contract)
+  return contract
+}
+
 function createPendingHarness() {
   const chunks: Record<string, any>[] = []
   const pending = new Map<string, { resolve: (approval: any) => void }>()
@@ -341,11 +369,14 @@ function createPendingHarness() {
         (chunk) => chunk.type === "ask-user-question",
       )
       expect(askChunk).toBeTruthy()
-      pending.get(askChunk!.toolUseId)?.resolve({
+      if (!askChunk || typeof askChunk.approvalId !== "string") {
+        throw new Error("Expected an approval request")
+      }
+      pending.get(askChunk.approvalId)?.resolve({
         approved: true,
         updatedInput: { answers: { Approve: "Approve" } },
       })
-      return askChunk!
+      return askChunk
     },
   }
 }
@@ -355,6 +386,10 @@ function sleep(ms: number) {
 }
 
 describe("Codex app-server adapter", () => {
+  afterEach(() => {
+    clearActiveGuardedContractsForTest()
+  })
+
   test("declares app-server metadata without marking it as temporary fallback", () => {
     expect(createCodexAppServerAdapter().metadata).toMatchObject({
       runtimeId: "codex",
@@ -436,6 +471,38 @@ describe("Codex app-server adapter", () => {
     expect(chunks.filter((chunk) => chunk.type === "finish")).toEqual([
       expect.objectContaining({ type: "finish", status: "canceled" }),
     ])
+  })
+
+  test("does not dispatch after prompt preparation loses exact Run ownership", async () => {
+    const transport = new FakeCodexAppServerTransport()
+    let currentOwner = true
+    let resolvePrompt!: (value: {
+      prompt: string
+      attachmentRefs: never[]
+    }) => void
+    let markPromptStarted!: () => void
+    const promptStarted = new Promise<void>((resolve) => {
+      markPromptStarted = resolve
+    })
+    const resultPromise = createCodexAppServerAdapter({
+      enabled: true,
+      createTransport: () => transport,
+      isCurrentRunOwner: () => currentOwner,
+      prepareRuntimePrompt: () => {
+        markPromptStarted()
+        return new Promise((resolve) => {
+          resolvePrompt = resolve
+        })
+      },
+    }).run(createRequest(appServerPolicy()))
+
+    await promptStarted
+    currentOwner = false
+    resolvePrompt({ prompt: "hello", attachmentRefs: [] })
+
+    await expect(resultPromise).resolves.toMatchObject({ status: "canceled" })
+    expect(transport.requests).toEqual([])
+    expect(transport.closed).toBe(true)
   })
 
   test("cancellation escapes a non-cooperative transport request and closes it", async () => {
@@ -807,7 +874,7 @@ describe("Codex app-server adapter", () => {
       enabled: true,
       experimentalApi: true,
       controlledEditEnabled: true,
-      guardedContract: guardedContract(),
+      guardedContract: activeGuardedContract(),
       createTransport: () => transport,
     }).run(
       createRequest(appServerPolicy("agent", true), {
@@ -835,7 +902,7 @@ describe("Codex app-server adapter", () => {
     await createCodexAppServerAdapter({
       enabled: true,
       controlledEditEnabled: true,
-      guardedContract: guardedContract(),
+      guardedContract: activeGuardedContract(),
       createTransport: () => transport,
     }).run(
       createRequest(appServerPolicy("agent", true), {
@@ -862,7 +929,7 @@ describe("Codex app-server adapter", () => {
       experimentalApi: true,
       controlledEditEnabled: true,
       providerGatewayToken: "gateway-token-selected",
-      guardedContract: guardedContract(),
+      guardedContract: activeGuardedContract(),
       createTransport: () => transport,
     }).run(
       createRequest(appServerPolicy("agent", true), {
@@ -1400,6 +1467,114 @@ describe("Codex app-server adapter", () => {
     }).run(createRequest(appServerPolicy()))
   })
 
+  test("binds an approved command response to the exact Run owner across a same-run-id replacement", async () => {
+    const transport = new FakeCodexAppServerTransport()
+    const harness = createPendingHarness()
+    const ownerA = { runId: "run-app-server", token: Symbol("owner-a") }
+    const ownerB = { runId: "run-app-server", token: Symbol("owner-b") }
+    let activeOwner = ownerA
+
+    transport.beforeServerResponseWrite = ({ response }) => {
+      // This hook is the deterministic native-write barrier: user approval
+      // has resolved, but the transport has not performed its final predicate
+      // check or serialized the response yet.
+      expect(response.result).toEqual({ decision: "accept" })
+      activeOwner = ownerB
+    }
+    transport.onTurnStart = async () => {
+      const responsePromise = transport.serverRequestHandler?.({
+        id: "same-id-command",
+        method: "item/commandExecution/requestApproval",
+        params: {
+          threadId: "thread-1",
+          turnId: "turn-1",
+          itemId: "item-command",
+          startedAtMs: Date.now(),
+          command: "bun test",
+        },
+      })
+      harness.approveLatest()
+      await expect(responsePromise).resolves.toEqual({ decision: "decline" })
+    }
+
+    await createCodexAppServerAdapter({
+      enabled: true,
+      createTransport: () => transport,
+      isCurrentRunOwner: () => activeOwner === ownerA,
+      ...harness.adapterInput,
+    }).run(
+      createRequest(appServerPolicy("agent"), {
+        context: agentContext(),
+      }),
+    )
+
+    expect(transport.writtenServerResponses).toEqual([
+      {
+        request: expect.objectContaining({ id: "same-id-command" }),
+        result: { decision: "decline" },
+      },
+    ])
+  })
+
+  for (const invalidation of ["replacement", "clear"] as const) {
+    test(`fails closed at the native write barrier after guarded contract ${invalidation}`, async () => {
+      const transport = new FakeCodexAppServerTransport()
+      const harness = createPendingHarness()
+      const contractA = guardedContract()
+      replaceActiveGuardedContractForSubChat(contractA.subChatId, contractA)
+      let exactRunOwnerCurrent = true
+
+      transport.beforeServerResponseWrite = ({ response }) => {
+        // Approval has resolved and the exact Run still owns execution, but a
+        // later admission can replace or clear the captured guard contract
+        // before the transport's synchronous final authorization check.
+        expect(response.result).toEqual({ decision: "accept" })
+        expect(exactRunOwnerCurrent).toBe(true)
+        replaceActiveGuardedContractForSubChat(
+          contractA.subChatId,
+          invalidation === "replacement" ? guardedContract() : null,
+        )
+      }
+      transport.onTurnStart = async () => {
+        const responsePromise = transport.serverRequestHandler?.({
+          id: `guard-contract-${invalidation}`,
+          method: "item/fileChange/requestApproval",
+          params: {
+            threadId: "thread-1",
+            turnId: "turn-1",
+            itemId: "item-file",
+            startedAtMs: Date.now(),
+            grantRoot: "src/app.ts",
+          },
+        })
+        harness.approveLatest()
+        await expect(responsePromise).resolves.toEqual({ decision: "decline" })
+      }
+
+      await createCodexAppServerAdapter({
+        enabled: true,
+        createTransport: () => transport,
+        guardedContract: contractA,
+        isCurrentRunOwner: () => exactRunOwnerCurrent,
+        ...harness.adapterInput,
+      }).run(
+        createRequest(appServerPolicy("agent", true), {
+          context: agentContext(),
+        }),
+      )
+
+      expect(transport.writtenServerResponses).toEqual([
+        {
+          request: expect.objectContaining({
+            id: `guard-contract-${invalidation}`,
+          }),
+          result: { decision: "decline" },
+        },
+      ])
+      exactRunOwnerCurrent = false
+    })
+  }
+
   test("bridges app-server user-input requests through shared pending question owner", async () => {
     const transport = new FakeCodexAppServerTransport()
     const { chunks, pending, adapterInput } = createPendingHarness()
@@ -1433,7 +1608,10 @@ describe("Codex app-server adapter", () => {
         toolUseId: "codex-app-server-user-input-question-1",
         questions: [{ question: "Proceed?" }],
       })
-      pending.get(askChunk!.toolUseId)?.resolve({
+      if (!askChunk || typeof askChunk.approvalId !== "string") {
+        throw new Error("Expected a user-input approval request")
+      }
+      pending.get(askChunk.approvalId)?.resolve({
         approved: true,
         updatedInput: { answers: { "Proceed?": "Yes" } },
       })
@@ -1479,7 +1657,7 @@ describe("Codex app-server adapter", () => {
     await createCodexAppServerAdapter({
       enabled: true,
       createTransport: () => transport,
-      guardedContract: guardedContract(),
+      guardedContract: activeGuardedContract(),
       ...harness.adapterInput,
     }).run(
       createRequest(appServerPolicy("agent", true), {
@@ -1536,7 +1714,7 @@ describe("Codex app-server adapter", () => {
         experimentalApi: true,
         controlledEditEnabled: true,
         createTransport: () => transport,
-        guardedContract: guardedContract(cwd),
+        guardedContract: activeGuardedContract(cwd),
         ...harness.adapterInput,
       }).run(
         createRequest(appServerPolicy("agent", true), {
@@ -1602,7 +1780,7 @@ describe("Codex app-server adapter", () => {
         experimentalApi: true,
         controlledEditEnabled: true,
         createTransport: () => transport,
-        guardedContract: guardedContract(cwd),
+        guardedContract: activeGuardedContract(cwd),
         secretHints: [secret],
         ...harness.adapterInput,
       }).run(
@@ -1621,6 +1799,8 @@ describe("Codex app-server adapter", () => {
     const cwd = mkdtempSync(join(tmpdir(), "locus-controlled-edit-"))
     const transport = new FakeCodexAppServerTransport()
     const harness = createPendingHarness()
+    const contract = guardedContract(cwd)
+    replaceActiveGuardedContractForSubChat(contract.subChatId, contract)
 
     try {
       transport.onTurnStart = async () => {
@@ -1650,7 +1830,7 @@ describe("Codex app-server adapter", () => {
         experimentalApi: true,
         controlledEditEnabled: true,
         createTransport: () => transport,
-        guardedContract: guardedContract(cwd),
+        guardedContract: contract,
         ...harness.adapterInput,
       }).run(
         createRequest(appServerPolicy("agent", true), {
@@ -1664,6 +1844,7 @@ describe("Codex app-server adapter", () => {
         "ask-user-question",
       )
     } finally {
+      clearActiveGuardedContractsForTest()
       rmSync(cwd, { recursive: true, force: true })
     }
   })
@@ -1695,7 +1876,10 @@ describe("Codex app-server adapter", () => {
           (chunk) => chunk.type === "ask-user-question",
         )
         expect(askChunk).toBeTruthy()
-        harness.pending.get(askChunk!.toolUseId)?.resolve({
+        if (!askChunk || typeof askChunk.approvalId !== "string") {
+          throw new Error("Expected a controlled-edit approval request")
+        }
+        harness.pending.get(askChunk.approvalId)?.resolve({
           approved: true,
           updatedInput: { answers: { "Apply edit": "Deny" } },
         })
@@ -1709,7 +1893,7 @@ describe("Codex app-server adapter", () => {
         experimentalApi: true,
         controlledEditEnabled: true,
         createTransport: () => transport,
-        guardedContract: guardedContract(cwd),
+        guardedContract: activeGuardedContract(cwd),
         ...harness.adapterInput,
       }).run(
         createRequest(appServerPolicy("agent", true), {
@@ -1753,7 +1937,7 @@ describe("Codex app-server adapter", () => {
         experimentalApi: true,
         controlledEditEnabled: true,
         createTransport: () => transport,
-        guardedContract: guardedContract(cwd),
+        guardedContract: activeGuardedContract(cwd),
         ...harness.adapterInput,
       }).run(
         createRequest(appServerPolicy("agent", true), {
@@ -1804,7 +1988,7 @@ describe("Codex app-server adapter", () => {
         experimentalApi: true,
         controlledEditEnabled: true,
         createTransport: () => transport,
-        guardedContract: guardedContract(cwd),
+        guardedContract: activeGuardedContract(cwd),
         ...harness.adapterInput,
       }).run(
         createRequest(appServerPolicy("agent", true), {
@@ -1868,7 +2052,7 @@ describe("Codex app-server adapter", () => {
         experimentalApi: true,
         controlledEditEnabled: true,
         createTransport: () => transport,
-        guardedContract: guardedContract(cwd),
+        guardedContract: activeGuardedContract(cwd),
         ...harness.adapterInput,
       }).run(
         createRequest(appServerPolicy("agent", true), {
@@ -1918,7 +2102,7 @@ describe("Codex app-server adapter", () => {
         experimentalApi: true,
         controlledEditEnabled: true,
         createTransport: () => transport,
-        guardedContract: guardedContract(cwd),
+        guardedContract: activeGuardedContract(cwd),
         userInputTimeoutMs: 5,
         ...harness.adapterInput,
       }).run(
@@ -1973,7 +2157,7 @@ describe("Codex app-server adapter", () => {
     await createCodexAppServerAdapter({
       enabled: true,
       createTransport: () => transport,
-      guardedContract: guardedContract(),
+      guardedContract: activeGuardedContract(),
       ...harness.adapterInput,
     }).run(
       createRequest(appServerPolicy("agent", true), {
@@ -2081,7 +2265,7 @@ describe("Codex app-server adapter", () => {
     await createCodexAppServerAdapter({
       enabled: true,
       createTransport: () => transport,
-      guardedContract: guardedContract(),
+      guardedContract: activeGuardedContract(),
       ...harness.adapterInput,
     }).run(
       createRequest(appServerPolicy("agent", true), {

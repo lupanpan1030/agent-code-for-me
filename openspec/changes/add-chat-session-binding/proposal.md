@@ -63,12 +63,70 @@ Foundation Stabilization batch, shaped per C4 SessionBinding, so Phase 5 Portabl
   empty chat becomes a binding update + transport recreation (replacing the
   `handleProviderChange` override path at `active-chat.tsx` ~L5963–5998). Creation paths
   (`chats.create` in `chats-crud.ts` ~L173, `chats.createSubChat` in `chats-sub-chats.ts`
-  ~L93) seed a binding row; `forkSubChat` (~L197) copies the source binding.
+  ~L93) seed a binding row; `forkSubChat` (~L197) copies the source binding. A shared
+  per-sub-chat gate serializes binding mutations with direct/queued sends, initial
+  regeneration, and stream resume so no send can retain a transport replaced by a completed
+  mutation. Renderer state is receipt-first: it waits for the canonical mutation result,
+  publishes that returned binding, and then recreates the transport. A same-sub-chat
+  `chat-view-instance-key` remount prevents a cached Chat instance from surviving recreation.
+  The pre-await pending-operation context is inherited by every nested gate, so explicit close
+  followed by same-ID reopen cannot give an old submit a fresh cancellation generation.
 - **The five per-sub-chat binding atom families are deleted in this same change**, together
   with all their remaining read/write call sites (Owner decision 2026-08-26; see design.md
   "No temporary dual path"). The `lastSelected*` global atoms keep their default-seeding role
   for NEW chats only. Existing chats read their binding from the DB alone — localStorage is no
   longer consulted for existing chats; the stored defaults apply only at creation time.
+- **Provider Profile capability honesty** (Owner decision 2026-08-26): Codex Provider
+  Profiles currently advertise reasoning `none` only, so their bindings normalize
+  `thinkingLevel` to `NULL`, their effort selector is hidden, and the transport continues to
+  submit `/none`. Real per-protocol reasoning-effort support is Yellow follow-up TICKET-116,
+  not implemented here.
+- **Provider Profile model snapshot**: explicit Profile selection writes its current
+  `defaultModel` into the binding in the same mutation as source/profile identity. Runtime and
+  gateway startup use that snapshotted model, so editing a Profile later cannot silently
+  rebind an existing chat. Run-scoped OAuth diversion remains non-persistent and may use the
+  diverted Profile's current default for that one run.
+- **Exact snapshot admission**: creation, entering a Profile, and explicit Profile model
+  reselection require a live Profile that targets the selected runtime and require `modelId`
+  to equal its current `defaultModel`; a fork instead copies the historical source binding
+  without consulting a subsequently edited or deleted Profile. Before a desktop run starts,
+  main re-reads the DB binding and rejects a stale or forged renderer source/profile/model/
+  effort tuple. Claude's documented run-scoped OAuth diversion is the only non-persistent
+  source exception and remains constrained to a valid targeted Profile. Full chat/cwd/scope
+  preflight also completes before active-run replacement, and a per-chat admission generation
+  ensures only the latest concurrent request may activate after asynchronous checks.
+- **Owner-authorized rollback maintenance fence** (Red exception approved 2026-08-26): a
+  canonical main-process owner at
+  `src/main/lib/agent-runtime/chat-maintenance-fence.ts` holds an exact, per-sub-chat,
+  in-memory token only while `rollbackToMessage` is performing its maintenance operation.
+  An active Claude or Codex Run rejects rollback, and an acquired rollback fence rejects the
+  final claim of a new desktop Run. Conflicts use the C4.1-aligned code
+  `SESSION_BINDING_BUSY` with structured `subChatId`, `operation: "rollback"`, exact
+  `activeRunId` (or `null` when maintenance is the blocker), and
+  `reason: "active-run" | "maintenance"`. This is deliberately not a durable or general
+  execution lease: it writes no database state, survives no process restart, and never touches
+  `agent_jobs` or a binding row. Phase 5 MUST absorb or replace it with the durable C4
+  SessionBinding lease and delete this temporary owner. If rollback invalidates an already
+  reserved candidate and releases before its final claim, a one-shot exact-admission in-memory
+  tombstone preserves the same BUSY result without turning ordinary staleness into maintenance.
+- **Rollback checkpoint and history-write hardening**: rollback requires main-minted checkpoint
+  metadata containing a unique canonical ref plus its exact OID, verifies the ref/OID binding
+  before any destructive Git operation, and fails closed when metadata, publication, the ref,
+  or OID is missing or mismatched. Same-SDK-UUID Runs receive different refs; stale cleanup may
+  retract only its exact ref/OID. A failed checkpoint publication persists explicit
+  unavailability, and a DB failure after publication retracts only that exact public ref while
+  preserving the old message row. The unused `updateSubChatMessages` arbitrary overwrite route
+  is deleted in the same change, leaving rollback as the sole history-rewrite envelope.
+- **Token-scoped gateway decoding and headless isolation**: a server-minted desktop Codex chat
+  token carries the exact admitted model snapshot and uses it as the sole upstream model
+  authority; a request's reserved final `/none` transport marker or arbitrary body model cannot
+  expand that scope. Desktop Claude chat tokens forward opaque model IDs verbatim, and the
+  default `legacy-profile-default` token preserves the existing headless/Local Job
+  Profile-default behavior. Request data cannot select a decode mode, and headless remains
+  independent of `sub_chat_bindings`.
+- **Coherent new-chat defaults**: Profile save/delete/target/default changes and app-managed
+  API-key save/remove update global source/model/thinking defaults as one compatible tuple.
+  These writes affect only subsequently created chats; existing DB bindings never change.
 - **Register ownership and guards**: `docs/OWNERSHIP_MAP.md` gains a "Chat Session Binding"
   section naming `src/main/lib/chat-session-binding.ts` as canonical owner;
   `scripts/check-architecture-guards.mjs` gains assertions that (a) no `atomWithStorage`
@@ -77,8 +135,9 @@ Foundation Stabilization batch, shaped per C4 SessionBinding, so Phase 5 Portabl
   outside `src/shared/agent-chat-provider.ts`, the backfill in the owner module, and tests.
 - **Data lifecycle note (W4.2)**: the repo is PRE-PRODUCTION / DISPOSABLE TEST DATA, so the
   migration is deliberately simple (no rollback path, per-sub-chat localStorage model/thinking
-  overrides for existing chats are not migrated — they fall back to DB `NULL` + global
-  defaults). The backfill is still documented and verified as the migration gate.
+  overrides for existing chats are not migrated — they fall back to DB `NULL` + the
+  runtime/catalog defaults resolved at send time, never renderer localStorage). The backfill
+  is still documented and verified as the migration gate.
 
 ## Sequencing
 
@@ -91,7 +150,9 @@ routers, DB schema, and shared chat-provider code, none of which that extraction
 
 - Any structural split of `active-chat.tsx` (7,250 lines stays; only binding-related surgery).
 - Conversation / SessionBinding as a first-class API object, binding lifecycle states,
-  runtime-installation pins, leases, successor bindings (Phase 5 / C4 full shape).
+  runtime-installation pins, durable/general execution leases, successor bindings (Phase 5 /
+  C4 full shape). The Owner-authorized, process-local rollback maintenance fence above is the
+  only narrow exception and carries a mandatory Phase 5 absorption/deletion note.
 - Headless/job binding — `agent_jobs.runtime` / `agent_jobs.providerProfileId` already exist
   and remain the job path's own admission snapshot; `sub_chat_bindings` is **not** made
   authoritative for headless paths.
@@ -100,6 +161,8 @@ routers, DB schema, and shared chat-provider code, none of which that extraction
 - Moving renderer pre-resolution (`normalizeClaudeModelSourceForRun`, OAuth divert) into main —
   registered debt per the dual-path audit (c); the divert becomes per-send-effective-only here
   (no persistence), relocation is a follow-up.
+- Adding low/medium/high/xhigh reasoning support to Provider Profiles or changing gateway
+  protocol translation/capability declarations (TICKET-116).
 - `mode` handling (`sub_chats.mode` / `subChatModeAtomFamily`) — mode is not binding and is
   already DB-persisted.
 
@@ -110,10 +173,15 @@ routers, DB schema, and shared chat-provider code, none of which that extraction
   `architecture-ownership` (generic ownership/guard rules) are unchanged in behavior; the new
   guard assertions implement, not alter, `architecture-ownership`'s existing requirements.
 - **Affected code**:
-  - New: `drizzle/00XX_*.sql` migration, `src/main/lib/chat-session-binding.ts`,
-    `src/shared/chat-session-binding.ts`, tests.
+  - New: `drizzle/0023_lonely_wrecking_crew.sql` migration,
+    `src/main/lib/chat-session-binding.ts`, `src/shared/chat-session-binding.ts`, renderer
+    binding gate/default/resume/remount helpers, the desktop Run admission-generation guard,
+    the process-local chat maintenance fence owner, smoke binding tuple helper, and tests.
   - Edited: `src/main/lib/db/schema/index.ts`, `src/main/lib/db/index.ts`,
     `src/main/lib/trpc/routers/chats-sub-chats.ts`, `src/main/lib/trpc/routers/chats-crud.ts`,
+    Codex/Claude desktop Run routers and startup owners, rollback/checkpoint persistence and
+    Git-apply helpers, Provider Profile storage/gateway,
+    settings/onboarding Profile and API-key surfaces,
     `src/shared/agent-chat-provider.ts` (no signature change; call-site retirement),
     `src/renderer/features/agents/lib/ipc-chat-transport.ts`,
     `src/renderer/features/agents/lib/acp-chat-transport.ts`,
@@ -123,7 +191,8 @@ routers, DB schema, and shared chat-provider code, none of which that extraction
     `src/renderer/features/agents/main/new-chat-form.tsx`,
     `src/renderer/features/agents/atoms/index.ts` (the five per-sub-chat binding atom
     families deleted),
-    `scripts/check-architecture-guards.mjs`, `docs/OWNERSHIP_MAP.md`.
+    both desktop smoke scripts, `scripts/check-architecture-guards.mjs`, and
+    `docs/OWNERSHIP_MAP.md`.
 - **Persisted data**: new table + backfill (migration gate; W4.2 pre-production simplicity).
 - **Public consumers**: none. The Local Job API surface is untouched; `chats.*` tRPC is a
   private main↔renderer boundary (W4.2 atomic replacement applies, no compatibility layer).
@@ -135,6 +204,21 @@ routers, DB schema, and shared chat-provider code, none of which that extraction
   `claude-code` default), binding normalization (provider-profile source ↔ `providerProfileId`
   consistency), and a transport-construction test asserting binding is consumed from config
   (no `appStore` binding atom imports in either transport — also enforced by guard).
+- Main-boundary tests prove stale/forged desktop Run tuples fail closed, the one documented
+  Claude run-scoped divert is constrained, and unknown Claude sources never fall through to
+  OAuth credentials.
+- Gateway-scope tests prove Codex token-bound model authority despite arbitrary body models,
+  Claude verbatim models, immutable token-selected modes, and the legacy headless/Local Job
+  default. Renderer tests prove
+  receipt-first transport recreation, same-id Chat remount, persisted stream resume dedupe/
+  retry, close-context inheritance across nested sends, and coherent global default writes.
+- Rollback/fence tests prove both active Engines reject maintenance; maintenance rejects both
+  Engines' final Run claims; BUSY errors carry the exact approved shape; exact-token release
+  survives success, failure, and stale cleanup; an earlier invalidated candidate still reports
+  BUSY after token release; and the fence remains process-local without DB or schema writes.
+  Checkpoint tests cover same-SDK-UUID A/B unique refs, publication failure,
+  DB transaction failure, missing/unavailable metadata, wrong OID, and an unchanged worktree on
+  every pre-apply rejection. A route-surface assertion proves `updateSubChatMessages` is gone.
 - Negative assertion (residue proof): the five deleted family identifiers
   (`subChatModelIdAtomFamily`, `subChatClaudeModelSourceAtomFamily`,
   `subChatCodexModelSourceAtomFamily`, `subChatCodexModelIdAtomFamily`,
@@ -159,9 +243,17 @@ routers, DB schema, and shared chat-provider code, none of which that extraction
   into the binding; moving
   `normalizeClaudeModelSourceForRun` / renderer pre-resolution into main; surfacing binding in
   History/Workbench UI; a per-chat Claude thinking level (today Claude thinking is the global
-  `extendedThinkingEnabledAtom` settings toggle and stays out of the binding row).
+  `extendedThinkingEnabledAtom` settings toggle and stays out of the binding row); real Codex
+  Provider Profile reasoning-effort support, including per-protocol gateway translation and
+  explicit provider capability declarations (TICKET-116).
+- **Owner-authorized Red exception (implement exactly, no widening)**: the process-local
+  per-sub-chat rollback maintenance fence described above. It may coordinate only rollback and
+  a new desktop Run's final claim; its state must not be persisted or reused as a generic Run,
+  binding-mutation, headless, job, or workspace lease. Phase 5 must absorb/replace it and delete
+  its temporary owner.
 - **Red (stop and ask Owner)**: any deviation from C4 field semantics — including adding
-  lifecycle/status, `runtimeInstallationId` pins, leases, or successor-binding columns now;
+  lifecycle/status, `runtimeInstallationId` pins, any other lease/fence, or successor-binding
+  columns now;
   making `sub_chat_bindings` authoritative for headless/job paths or feeding it into Run
   admission beyond desktop chat transports; changing `sub_chats.sessionId` semantics; renaming
   tables; exposing binding through the public Local Job API; widening the runtime enum beyond

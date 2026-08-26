@@ -1,73 +1,13 @@
 "use client"
 
-import React, { useMemo, useState, useCallback, useRef, useEffect, memo } from "react"
-import { createPortal } from "react-dom"
 import { useAtom, useAtomValue, useSetAtom } from "jotai"
-import { motion, AnimatePresence } from "motion/react"
-import { Button } from "../../components/ui/button"
-import { Input } from "../../components/ui/input"
-import { cn } from "../../lib/utils"
-import {
-  loadingSubChatsAtom,
-  agentsSubChatUnseenChangesAtom,
-  selectedAgentChatIdAtom,
-  previousAgentChatIdAtom,
-  subChatFilesAtom,
-  justCreatedIdsAtom,
-  pendingUserQuestionsAtom,
-  undoStackAtom,
-  subChatModeAtomFamily,
-  suppressInputFocusAtom,
-  type UndoItem,
-} from "../agents/atoms"
-import {
-  selectedSubChatIdsAtom,
-  isSubChatMultiSelectModeAtom,
-  toggleSubChatSelectionAtom,
-  selectAllSubChatsAtom,
-  clearSubChatSelectionAtom,
-  selectedSubChatsCountAtom,
-  isDesktopAtom,
-  isFullscreenAtom,
-  defaultAgentModeAtom,
-} from "../../lib/atoms"
-import { trpc } from "../../lib/trpc"
-import { appStore } from "../../lib/jotai-store"
-import {
-  useAgentSubChatStore,
-  type SubChatMeta,
-} from "../agents/stores/sub-chat-store"
-import { useShallow } from "zustand/react/shallow"
-import {
-  PlusIcon,
-  ArchiveIcon,
-  IconDoubleChevronLeft,
-  IconSpinner,
-  LoadingDot,
-  PlanIcon,
-  AgentIcon,
-  IconOpenSidebar,
-  ClockIcon,
-  QuestionIcon,
-} from "../../components/ui/icons"
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "../../components/ui/tooltip"
-import { Kbd } from "../../components/ui/kbd"
-import { isDesktopApp, getShortcutKey } from "../../lib/utils/platform"
-import { useResolvedHotkeyDisplay } from "../../lib/hotkeys"
-import { TrafficLightSpacer } from "../agents/components/traffic-light-spacer"
-import { PopoverTrigger } from "../../components/ui/popover"
 import { AlignJustify } from "lucide-react"
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuSeparator,
-  ContextMenuTrigger,
-} from "../../components/ui/context-menu"
+import { AnimatePresence, motion } from "motion/react"
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { createPortal } from "react-dom"
+import { useHotkeys } from "react-hotkeys-hook"
+import { toast } from "sonner"
+import { useShallow } from "zustand/react/shallow"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -78,18 +18,75 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "../../components/ui/alert-dialog"
-import { agentChatApi } from "../agents/lib/agent-chat-api"
-import { trpcClient } from "../../lib/trpc"
-import { toast } from "sonner"
-import { AgentsRenameSubChatDialog } from "../agents/components/agents-rename-subchat-dialog"
+import { Button } from "../../components/ui/button"
+import { Checkbox } from "../../components/ui/checkbox"
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "../../components/ui/context-menu"
+import {
+  AgentIcon,
+  ArchiveIcon,
+  ClockIcon,
+  IconDoubleChevronLeft,
+  IconSpinner,
+  LoadingDot,
+  PlanIcon,
+  QuestionIcon,
+} from "../../components/ui/icons"
+import { Input } from "../../components/ui/input"
+import { Kbd } from "../../components/ui/kbd"
+import { PopoverTrigger } from "../../components/ui/popover"
 import { SearchCombobox } from "../../components/ui/search-combobox"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "../../components/ui/tooltip"
+import { TypewriterText } from "../../components/ui/typewriter-text"
+import {
+  clearSubChatSelectionAtom,
+  defaultAgentModeAtom,
+  isDesktopAtom,
+  isFullscreenAtom,
+  isSubChatMultiSelectModeAtom,
+  selectAllSubChatsAtom,
+  selectedSubChatIdsAtom,
+  selectedSubChatsCountAtom,
+  toggleSubChatSelectionAtom,
+} from "../../lib/atoms"
+import { useResolvedHotkeyDisplay } from "../../lib/hotkeys"
+import { useI18n } from "../../lib/i18n"
+import { appStore } from "../../lib/jotai-store"
+import { trpc, trpcClient } from "../../lib/trpc"
+import { cn } from "../../lib/utils"
+import {
+  agentsSubChatUnseenChangesAtom,
+  justCreatedIdsAtom,
+  loadingSubChatsAtom,
+  pendingUserQuestionsAtom,
+  previousAgentChatIdAtom,
+  selectedAgentChatIdAtom,
+  subChatFilesAtom,
+  subChatModeAtomFamily,
+  suppressInputFocusAtom,
+  type UndoItem,
+  undoStackAtom,
+} from "../agents/atoms"
+import { AgentsRenameSubChatDialog } from "../agents/components/agents-rename-subchat-dialog"
+import { TrafficLightSpacer } from "../agents/components/traffic-light-spacer"
+import { agentChatApi } from "../agents/lib/agent-chat-api"
+import { getNewChatSessionBindingDefaults } from "../agents/lib/chat-session-binding-defaults"
+import { getSubChatDraftKey, useSubChatDraftsCache } from "../agents/lib/drafts"
+import {
+  type SubChatMeta,
+  useAgentSubChatStore,
+} from "../agents/stores/sub-chat-store"
 import { SubChatContextMenu } from "../agents/ui/sub-chat-context-menu"
 import { formatTimeAgo } from "../agents/utils/format-time-ago"
-import { useHotkeys } from "react-hotkeys-hook"
-import { useSubChatDraftsCache, getSubChatDraftKey } from "../agents/lib/drafts"
-import { Checkbox } from "../../components/ui/checkbox"
-import { TypewriterText } from "../../components/ui/typewriter-text"
-import { useI18n } from "../../lib/i18n"
 
 // Isolated Search History Popover for sidebar - prevents parent re-renders when popover opens/closes
 interface SidebarSearchHistoryPopoverProps {
@@ -716,8 +713,18 @@ export function AgentsSubChatsSidebar({
       chatId: parentChatId,
       name: t("chat.defaultTitle"),
       mode: defaultAgentMode,
+      binding: getNewChatSessionBindingDefaults(),
     })
     const newId = newSubChat.id
+
+    utils.chats.get.setData({ id: parentChatId }, (current) => {
+      if (!current) return current
+      return {
+        ...current,
+        subChats: [...(current.subChats ?? []), newSubChat],
+      }
+    })
+    void utils.chats.get.invalidate({ id: parentChatId })
 
     // Track this subchat as just created for typewriter effect
     setJustCreatedIds((prev) => new Set([...prev, newId]))

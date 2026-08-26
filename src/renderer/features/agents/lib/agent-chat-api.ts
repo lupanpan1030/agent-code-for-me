@@ -1,7 +1,9 @@
 import { useMemo } from "react"
 import type { CanonicalChatMessage } from "../../../../shared/chat-message"
 import { normalizePersistedChatMessages } from "../../../../shared/chat-message-normalizer"
+import type { ChatSessionBinding } from "../../../../shared/chat-session-binding"
 import { trpc } from "../../../lib/trpc"
+import { resolvePersistedChatStreamId } from "./chat-stream-resume"
 
 type AnyFn = (...args: any[]) => any
 type AnyObj = Record<string, any>
@@ -14,6 +16,7 @@ export type DesktopAgentSubChat = AnyObj & {
   updated_at?: string | Date | null
   messages: CanonicalChatMessage[]
   stream_id: string | null
+  binding: ChatSessionBinding
 }
 
 export type DesktopAgentChat = AnyObj & {
@@ -57,7 +60,8 @@ function toDesktopAgentSubChat(sc: AnyObj): DesktopAgentSubChat {
         )
       },
     }),
-    stream_id: sc.stream_id ?? null,
+    stream_id: resolvePersistedChatStreamId(sc),
+    binding: sc.binding as ChatSessionBinding,
   }
 }
 
@@ -94,7 +98,10 @@ function useAgentChat(
     },
   )
   const data = useMemo(
-    () => (result.data ? toDesktopAgentChatWithSubChats(result.data as AnyObj) : null),
+    () =>
+      result.data
+        ? toDesktopAgentChatWithSubChats(result.data as AnyObj)
+        : null,
     [result.data],
   )
   return { data, isLoading: result.isLoading }

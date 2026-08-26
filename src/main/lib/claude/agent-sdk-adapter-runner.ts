@@ -12,8 +12,10 @@ import type { JsonValue } from "../agent-runtime/runtime-events"
 import {
   ClaudeAgentSdkLoadError,
   ClaudeAgentSdkQueryStartError,
+  type ClaudeAgentSdkRequestAuthority,
   type ClaudeAgentSdkStreamConsumer,
   createClaudeAgentSdkAdapter,
+  isAuthoritativeClaudeAgentSdkRequest,
 } from "./agent-sdk-adapter"
 import {
   type ClaudeAgentSdkPolicyRetryState,
@@ -47,6 +49,7 @@ export type RunClaudeAgentSdkAdapterWithPolicyRetryInput = {
   sleep?: (delayMs: number) => Promise<unknown>
   log?: (...args: any[]) => void
   error?: (...args: any[]) => void
+  isRequestAuthoritative?: ClaudeAgentSdkRequestAuthority
 }
 
 export type RunClaudeAgentSdkDesktopAdapterInput = Omit<
@@ -110,6 +113,7 @@ export async function runClaudeAgentSdkDesktopAdapter({
   queryOptions,
   consumeStream,
   resolveAdapter = resolveClaudeAgentSdkDesktopAdapter,
+  isRequestAuthoritative = isAuthoritativeClaudeAgentSdkRequest,
   ...runnerInput
 }: RunClaudeAgentSdkDesktopAdapterInput): Promise<DesktopRunResult> {
   const adapter = createClaudeAgentSdkAdapter({
@@ -117,6 +121,7 @@ export async function runClaudeAgentSdkDesktopAdapter({
     loadQuery,
     queryOptions,
     consumeStream,
+    isRequestAuthoritative,
   })
   const desktopAdapter = resolveAdapter({
     adapter,
@@ -124,6 +129,7 @@ export async function runClaudeAgentSdkDesktopAdapter({
   })
   return runClaudeAgentSdkAdapterWithPolicyRetry({
     adapter: desktopAdapter,
+    isRequestAuthoritative,
     ...runnerInput,
   })
 }
@@ -235,11 +241,15 @@ export async function runClaudeAgentSdkAdapterWithPolicyRetry({
   sleep,
   log = console.log,
   error = console.error,
+  isRequestAuthoritative = isAuthoritativeClaudeAgentSdkRequest,
 }: RunClaudeAgentSdkAdapterWithPolicyRetryInput): Promise<DesktopRunResult> {
   let attempt = 0
 
   // eslint-disable-next-line no-constant-condition
   while (true) {
+    if (!isRequestAuthoritative(request)) {
+      return { status: "canceled" }
+    }
     attempt += 1
     resetClaudeAgentSdkPolicyRetryAttempt(policyRetry)
     beforeAttempt()
@@ -247,7 +257,7 @@ export async function runClaudeAgentSdkAdapterWithPolicyRetry({
 
     try {
       const adapterResult = await adapter.run(attemptRequest)
-      if (adapterResult.status === "failed") {
+      if (adapterResult.status !== "succeeded") {
         return adapterResult
       }
     } catch (adapterError) {

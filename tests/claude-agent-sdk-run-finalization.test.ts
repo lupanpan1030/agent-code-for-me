@@ -1,6 +1,10 @@
-import { describe, expect, mock, test } from "bun:test"
+import { afterEach, describe, expect, mock, test } from "bun:test"
 import { randomBytes } from "node:crypto"
 import { eq } from "drizzle-orm"
+import {
+  clearClaudeActiveSessionsForTest,
+  setActiveClaudeSession,
+} from "../src/main/lib/claude/active-sessions"
 import {
   completeClaudeAgentSdkRunAfterAdapter,
   completeClaudeAgentSdkRunAfterAdapterWithStreamState,
@@ -42,10 +46,13 @@ function seedChat(db: ReturnType<typeof createAgentJobTestDb>) {
 }
 
 function baseInput(db: ReturnType<typeof createAgentJobTestDb>) {
+  const controller = new AbortController()
+  setActiveClaudeSession("sub-1", { controller, runId: "run-1" })
   return {
     db,
     chatId: "chat-1",
     subChatId: "sub-1",
+    activeSessionSignal: controller.signal,
     messagesToSave: [{ id: "user-1", role: "user" }],
     parts: [] as Array<Record<string, any>>,
     metadata: { sessionId: "session-1" },
@@ -67,7 +74,6 @@ function baseInput(db: ReturnType<typeof createAgentJobTestDb>) {
     emitError: mock(() => {}),
     emit: mock(() => {}),
     complete: mock(() => {}),
-    getContract: () => null,
     deleteContract: () => undefined,
     log: mock(() => {}),
     nowMs: () => 3500,
@@ -75,6 +81,10 @@ function baseInput(db: ReturnType<typeof createAgentJobTestDb>) {
 }
 
 describe("Claude Agent SDK run finalization", () => {
+  afterEach(() => {
+    clearClaudeActiveSessionsForTest()
+  })
+
   test("finalizes unexpected route errors with finish and completion", () => {
     const error = new Error("boom")
     const emitError = mock(() => {})

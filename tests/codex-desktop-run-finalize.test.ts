@@ -1,18 +1,64 @@
-import { describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, test } from "bun:test"
+import {
+  clearActiveGuardedContractsForTest,
+  isActiveGuardedContract,
+  replaceActiveGuardedContractForSubChat,
+  type ValidatedAgentScopeContract,
+} from "../src/main/lib/agent-guard"
 import type { DesktopPermissionPolicy } from "../src/main/lib/agent-runtime/permission-policy"
+import {
+  clearActiveCodexStreamsForTest,
+  getActiveCodexStream,
+  setActiveCodexStream,
+} from "../src/main/lib/codex/active-streams"
 import {
   cleanupCodexDesktopRunSubscription,
   createAndRegisterCodexDesktopRunJob,
   createCodexDesktopRunState,
   finalizeCodexDesktopRunAfterLifecycle,
 } from "../src/main/lib/codex/desktop-run-finalize"
+import {
+  clearCodexPendingToolApprovalsForTest,
+  resolveCodexPendingToolApproval,
+  setCodexPendingToolApproval,
+} from "../src/main/lib/codex/tool-approvals"
 import type { DesktopAgentJobHandle } from "../src/main/lib/desktop-agent-jobs"
 import type { AgentJobDatabase } from "../src/main/lib/headless/job-store"
 
 const fakeDb = {} as AgentJobDatabase
 const permissionPolicy = {} as DesktopPermissionPolicy
 
+function guardedContract(input: {
+  id: string
+  runId: string
+}): ValidatedAgentScopeContract {
+  return {
+    id: input.id,
+    version: 1,
+    status: "approved",
+    createdAt: "2026-08-26T00:00:00.000Z",
+    approvedAt: "2026-08-26T00:00:00.000Z",
+    source: "manual",
+    chatId: "chat-1",
+    subChatId: "sub-1",
+    runId: input.runId,
+    cwd: "/repo",
+    projectPath: "/repo",
+    editableScope: [{ path: "src", kind: "directory" }],
+    readOnlyEvidence: [],
+    successChecks: [],
+    blockedPaths: [],
+    expansions: [],
+  }
+}
+
 describe("Codex desktop run finalization owner", () => {
+  afterEach(() => {
+    clearActiveGuardedContractsForTest()
+    clearActiveCodexStreamsForTest()
+    clearCodexPendingToolApprovalsForTest()
+  })
+
   test("keeps job flags and database state together", () => {
     const state = createCodexDesktopRunState()
     expect(state.getDb()).toBeNull()
@@ -34,23 +80,23 @@ describe("Codex desktop run finalization owner", () => {
     expect(state.reachedNaturalFinish()).toBe(true)
   })
 
-  test("registers a run-id-fenced cancel callback", () => {
+  test("registers an exact-stream-owner-fenced cancel callback", () => {
     const state = createCodexDesktopRunState()
-    const currentController = new AbortController()
-    const staleController = new AbortController()
-    const currentStream = {
+    const candidateController = new AbortController()
+    const replacementController = new AbortController()
+    const candidateOwner = {
       runId: "run-1",
-      controller: currentController,
+      controller: candidateController,
       cancelRequested: false,
     }
-    const staleStream = {
-      runId: "run-new",
-      controller: staleController,
+    const replacementOwner = {
+      runId: "run-1",
+      controller: replacementController,
       cancelRequested: false,
     }
     const clearCalls: unknown[] = []
     let registeredCancel: (() => void) | undefined
-    let activeRunId = "run-new"
+    let activeStream = replacementOwner
 
     createAndRegisterCodexDesktopRunJob({
       db: fakeDb,
@@ -61,6 +107,7 @@ describe("Codex desktop run finalization owner", () => {
       cwd: "/repo",
       prompt: "hello",
       runId: "run-1",
+      activeStreamOwner: candidateOwner,
       permissionPolicy,
       dependencies: {
         createAndRegisterDesktopJob: (_db, input) => {
@@ -82,21 +129,21 @@ describe("Codex desktop run finalization owner", () => {
             cwd: "/repo",
           } as unknown as DesktopAgentJobHandle
         },
-        getActiveStream: () =>
-          activeRunId === "run-1" ? currentStream : staleStream,
+        getActiveStream: () => activeStream,
         clearPendingApprovals: (...args) => clearCalls.push(args),
       },
     })
 
     expect(state.getJobId()).toBe("job-1")
     registeredCancel?.()
-    expect(staleController.signal.aborted).toBe(false)
+    expect(replacementController.signal.aborted).toBe(false)
+    expect(replacementOwner.cancelRequested).toBe(false)
     expect(clearCalls).toEqual([])
 
-    activeRunId = "run-1"
+    activeStream = candidateOwner
     registeredCancel?.()
-    expect(currentStream.cancelRequested).toBe(true)
-    expect(currentController.signal.aborted).toBe(true)
+    expect(candidateOwner.cancelRequested).toBe(true)
+    expect(candidateController.signal.aborted).toBe(true)
     expect(clearCalls).toEqual([["Session cancelled.", "sub-1"]])
   })
 
@@ -109,10 +156,16 @@ describe("Codex desktop run finalization owner", () => {
     state.setJobId("job-1")
     state.markSawError()
     state.setAdapterFailed(true)
+    const activeStreamOwner = {
+      runId: "run-1",
+      controller: abortController,
+      cancelRequested: false,
+    }
 
     finalizeCodexDesktopRunAfterLifecycle({
       state,
-      abortController,
+      activeStreamOwner,
+      guardedContract: null,
       chatId: "chat-1",
       subChatId: "sub-1",
       runId: "run-1",
@@ -139,13 +192,11 @@ describe("Codex desktop run finalization owner", () => {
           })
           return null
         },
-        getActiveStream: () => ({
-          runId: "run-1",
-          controller: abortController,
-          cancelRequested: false,
-        }),
+        getActiveStream: () => activeStreamOwner,
         clearPendingApprovals: () => calls.push("clear-approvals"),
-        deleteActiveStreamIfRun: () => {
+        deleteActiveStreamIfOwner: (subChatId, owner) => {
+          expect(subChatId).toBe("sub-1")
+          expect(owner).toBe(activeStreamOwner)
           calls.push("delete-stream")
           return true
         },
@@ -168,10 +219,16 @@ describe("Codex desktop run finalization owner", () => {
     state.setDb(fakeDb)
     state.setJobId("job-1")
     state.setReachedNaturalFinish(true)
+    const activeStreamOwner = {
+      runId: "run-1",
+      controller: abortController,
+      cancelRequested: false,
+    }
 
     finalizeCodexDesktopRunAfterLifecycle({
       state,
-      abortController,
+      activeStreamOwner,
+      guardedContract: null,
       chatId: "chat-1",
       subChatId: "sub-1",
       runId: "run-1",
@@ -196,30 +253,34 @@ describe("Codex desktop run finalization owner", () => {
   })
 
   test("does not clear approvals or delete a stale or missing stream", () => {
-    for (const activeRunId of ["run-new", null]) {
+    const staleOwner = {
+      runId: "run-shared",
+      controller: new AbortController(),
+      cancelRequested: false,
+    }
+    const replacementOwner = {
+      runId: "run-shared",
+      controller: new AbortController(),
+      cancelRequested: false,
+    }
+    for (const activeStream of [replacementOwner, null]) {
       const calls: string[] = []
       finalizeCodexDesktopRunAfterLifecycle({
         state: createCodexDesktopRunState(),
-        abortController: new AbortController(),
+        activeStreamOwner: staleOwner,
+        guardedContract: null,
         chatId: "chat-1",
         subChatId: "sub-1",
-        runId: "run-1",
+        runId: "run-shared",
         getFallbackDb: () => {
           throw new Error("no job must not resolve a fallback DB")
         },
         revokeProviderBinding: () => calls.push("revoke"),
         clearProviderSecrets: () => calls.push("clear-secrets"),
         dependencies: {
-          getActiveStream: () =>
-            activeRunId
-              ? {
-                  runId: activeRunId,
-                  controller: new AbortController(),
-                  cancelRequested: false,
-                }
-              : null,
+          getActiveStream: () => activeStream,
           clearPendingApprovals: () => calls.push("clear-approvals"),
-          deleteActiveStreamIfRun: () => {
+          deleteActiveStreamIfOwner: () => {
             calls.push("delete-stream")
             return true
           },
@@ -227,8 +288,126 @@ describe("Codex desktop run finalization owner", () => {
       })
 
       expect(calls).toEqual(["revoke", "clear-secrets"])
+      expect(replacementOwner.controller.signal.aborted).toBe(false)
+      expect(replacementOwner.cancelRequested).toBe(false)
     }
   })
+
+  test("stale finalization preserves the installed same-run-id owner and its approval", () => {
+    const staleOwner = {
+      runId: "run-shared",
+      controller: new AbortController(),
+      cancelRequested: false,
+    }
+    const replacementOwner = {
+      runId: "run-shared",
+      controller: new AbortController(),
+      cancelRequested: false,
+    }
+    const decisions: unknown[] = []
+    setActiveCodexStream("sub-1", replacementOwner)
+    setCodexPendingToolApproval("approval-replacement", {
+      approvalId: "approval-replacement",
+      toolUseId: "tool-replacement",
+      subChatId: "sub-1",
+      isCurrentRunOwner: () =>
+        getActiveCodexStream("sub-1") === replacementOwner,
+      resolve: (decision) => decisions.push(decision),
+    })
+
+    finalizeCodexDesktopRunAfterLifecycle({
+      state: createCodexDesktopRunState(),
+      activeStreamOwner: staleOwner,
+      guardedContract: null,
+      chatId: "chat-1",
+      subChatId: "sub-1",
+      runId: "run-shared",
+      getFallbackDb: () => {
+        throw new Error("no job must not resolve a fallback DB")
+      },
+      revokeProviderBinding: () => {},
+      clearProviderSecrets: () => {},
+    })
+
+    expect(getActiveCodexStream("sub-1")).toBe(replacementOwner)
+    expect(replacementOwner.controller.signal.aborted).toBe(false)
+    expect(replacementOwner.cancelRequested).toBe(false)
+    expect(decisions).toEqual([])
+    expect(
+      resolveCodexPendingToolApproval({
+        approvalId: "approval-replacement",
+        decision: { approved: true },
+      }),
+    ).toBe(true)
+    expect(decisions).toEqual([{ approved: true }])
+  })
+
+  for (const replacementId of ["contract-shared", "contract-replacement"]) {
+    const idCase =
+      replacementId === "contract-shared" ? "same ID" : "different ID"
+
+    test(`stale finalize and unsubscribe preserve a newer ${idCase} guarded owner`, () => {
+      const staleOwner = {
+        runId: "run-shared",
+        controller: new AbortController(),
+        cancelRequested: false,
+      }
+      const replacementOwner = {
+        runId: "run-shared",
+        controller: new AbortController(),
+        cancelRequested: false,
+      }
+      const staleContract = guardedContract({
+        id: "contract-shared",
+        runId: "run-shared",
+      })
+      const replacementContract = guardedContract({
+        id: replacementId,
+        runId: "run-shared",
+      })
+      replaceActiveGuardedContractForSubChat(
+        staleContract.subChatId,
+        staleContract,
+      )
+      replaceActiveGuardedContractForSubChat(
+        replacementContract.subChatId,
+        replacementContract,
+      )
+
+      finalizeCodexDesktopRunAfterLifecycle({
+        state: createCodexDesktopRunState(),
+        activeStreamOwner: staleOwner,
+        guardedContract: staleContract,
+        chatId: "chat-1",
+        subChatId: "sub-1",
+        runId: "run-shared",
+        getFallbackDb: () => {
+          throw new Error("no job must not resolve a fallback DB")
+        },
+        revokeProviderBinding: () => {},
+        clearProviderSecrets: () => {},
+        dependencies: {
+          getActiveStream: () => replacementOwner,
+        },
+      })
+      cleanupCodexDesktopRunSubscription({
+        state: createCodexDesktopRunState(),
+        activeStreamOwner: staleOwner,
+        guardedContract: staleContract,
+        subChatId: "sub-1",
+        markInactive: () => {},
+        getFallbackDb: () => fakeDb,
+        revokeProviderBinding: () => {},
+        dependencies: {
+          getActiveStream: () => replacementOwner,
+          requestCancelDesktopJob: () => null,
+        },
+      })
+
+      expect(isActiveGuardedContract(replacementContract)).toBe(true)
+      expect(replacementOwner.controller.signal.aborted).toBe(false)
+    })
+  }
 
   test("subscription cleanup requests cancellation before abort and revoke", () => {
     const calls: string[] = []
@@ -243,9 +422,9 @@ describe("Codex desktop run finalization owner", () => {
 
     cleanupCodexDesktopRunSubscription({
       state,
-      abortController,
+      activeStreamOwner: activeStream,
+      guardedContract: null,
       subChatId: "sub-1",
-      runId: "run-1",
       markInactive: () => calls.push("inactive"),
       getFallbackDb: () => {
         calls.push("fallback-db")
@@ -282,8 +461,50 @@ describe("Codex desktop run finalization owner", () => {
     expect(activeStream.cancelRequested).toBe(true)
   })
 
+  test("stale subscription cleanup cannot mark or abort a replacement with the same run id", () => {
+    const staleOwner = {
+      runId: "run-shared",
+      controller: new AbortController(),
+      cancelRequested: false,
+    }
+    const replacementOwner = {
+      runId: "run-shared",
+      controller: new AbortController(),
+      cancelRequested: false,
+    }
+    let cancelRequests = 0
+
+    cleanupCodexDesktopRunSubscription({
+      state: createCodexDesktopRunState(),
+      activeStreamOwner: staleOwner,
+      guardedContract: null,
+      subChatId: "sub-1",
+      markInactive: () => {},
+      getFallbackDb: () => fakeDb,
+      revokeProviderBinding: () => {},
+      dependencies: {
+        requestCancelDesktopJob: () => {
+          cancelRequests += 1
+          return null
+        },
+        getActiveStream: () => replacementOwner,
+      },
+    })
+
+    expect(cancelRequests).toBe(1)
+    expect(staleOwner.controller.signal.aborted).toBe(true)
+    expect(staleOwner.cancelRequested).toBe(false)
+    expect(replacementOwner.controller.signal.aborted).toBe(false)
+    expect(replacementOwner.cancelRequested).toBe(false)
+  })
+
   test("subscription cleanup prefers state DB and forwards job flags", () => {
     const state = createCodexDesktopRunState()
+    const activeStreamOwner = {
+      runId: "run-1",
+      controller: new AbortController(),
+      cancelRequested: false,
+    }
     state.setDb(fakeDb)
     state.setJobId("job-1")
     state.markSawError()
@@ -291,9 +512,9 @@ describe("Codex desktop run finalization owner", () => {
 
     cleanupCodexDesktopRunSubscription({
       state,
-      abortController: new AbortController(),
+      activeStreamOwner,
+      guardedContract: null,
       subChatId: "sub-1",
-      runId: "run-1",
       markInactive: () => {},
       getFallbackDb: () => {
         throw new Error("state DB should win")

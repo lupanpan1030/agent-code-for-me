@@ -12,6 +12,7 @@ import { toast } from "sonner"
 import finderIcon from "../../../assets/app-icons/finder.png"
 import { settingsProjectsSidebarWidthAtom } from "../../../features/agents/atoms"
 import { COMMAND_PROMPTS } from "../../../features/agents/commands"
+import { getNewChatSessionBindingDefaults } from "../../../features/agents/lib/chat-session-binding-defaults"
 import {
   agentsSettingsDialogOpenAtom,
   selectedAgentChatIdAtom,
@@ -683,6 +684,7 @@ function ProjectDetail({ projectId }: { projectId: string }) {
                       initialMessageParts: [{ type: "text", text: prompt }],
                       useWorktree: false,
                       mode: "agent",
+                      binding: getNewChatSessionBindingDefaults(),
                     })
                   }
                 }}

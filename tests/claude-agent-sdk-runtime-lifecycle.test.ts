@@ -1,14 +1,21 @@
-import { describe, expect, mock, test } from "bun:test"
+import { afterEach, describe, expect, mock, test } from "bun:test"
 import { eq } from "drizzle-orm"
 import type { DesktopRunRequest } from "../src/main/lib/agent-runtime/desktop-run-request"
 import { resolveDesktopPermissionPolicy } from "../src/main/lib/agent-runtime/permission-policy"
+import {
+  clearClaudeActiveSessionsForTest,
+  getActiveClaudeSession,
+  setActiveClaudeSession,
+} from "../src/main/lib/claude/active-sessions"
 import { runClaudeAgentSdkDesktopRuntimeLifecycle } from "../src/main/lib/claude/agent-sdk-runtime-lifecycle"
 import { createClaudeAgentSdkStreamConsumerMutableState } from "../src/main/lib/claude/agent-sdk-stream-consumer"
 import type { UIMessageChunk } from "../src/main/lib/claude/types"
 import { chats, projects, subChats } from "../src/main/lib/db/schema"
 import { createAgentJobTestDb } from "./helpers/agent-job-test-db"
 
-function createRequest(signal = new AbortController().signal): DesktopRunRequest {
+function createRequest(
+  signal = new AbortController().signal,
+): DesktopRunRequest {
   return {
     identity: { runId: "run-1", jobId: "job-1" },
     context: {
@@ -81,8 +88,13 @@ function createLifecycleInput(
     prepareRuntimePrompt?: any
     prepareRuntimeStartupDiagnostics?: any
     logStartupDiagnostics?: any
-    signal?: AbortSignal
-    streamState?: ReturnType<typeof createClaudeAgentSdkStreamConsumerMutableState>
+    readAgentsMd?: (
+      cwd: string,
+    ) => Promise<{ path: string; content: string } | null>
+    controller?: AbortController
+    streamState?: ReturnType<
+      typeof createClaudeAgentSdkStreamConsumerMutableState
+    >
     nativePluginConfigs?: Array<{
       type: "local"
       path: string
@@ -90,8 +102,9 @@ function createLifecycleInput(
     }>
   } = {},
 ) {
-  const signal = input.signal ?? new AbortController().signal
-  const request = createRequest(signal)
+  const controller = input.controller ?? new AbortController()
+  setActiveClaudeSession("sub-1", { controller, runId: "run-1" })
+  const request = createRequest(controller.signal)
   const emit = mock((chunk: UIMessageChunk) => true)
   const prepareRuntimePrompt =
     input.prepareRuntimePrompt ??
@@ -125,7 +138,7 @@ function createLifecycleInput(
       resolvedModel: "claude-sonnet",
       maxThinkingTokens: null,
       projectPath: "/repo",
-      readAgentsMd: async () => null,
+      readAgentsMd: input.readAgentsMd ?? (async () => null),
       getClaudeBinaryPath: () => "/owned/claude",
     },
     runtimePrompt: {
@@ -144,8 +157,7 @@ function createLifecycleInput(
           expiresAt: "2026-06-08T00:00:00.000Z",
         },
         existingSessionId: "session-0",
-        logStartupDiagnostics:
-          input.logStartupDiagnostics ?? mock(() => {}),
+        logStartupDiagnostics: input.logStartupDiagnostics ?? mock(() => {}),
         prepareRuntimeStartupDiagnostics:
           input.prepareRuntimeStartupDiagnostics ?? mock(async () => {}),
       },
@@ -176,6 +188,10 @@ function createLifecycleInput(
 }
 
 describe("Claude Agent SDK runtime lifecycle", () => {
+  afterEach(() => {
+    clearClaudeActiveSessionsForTest()
+  })
+
   test("reports adapter failures before run finalization", async () => {
     const db = createAgentJobTestDb()
     const input = createLifecycleInput(db, {
@@ -194,7 +210,9 @@ describe("Claude Agent SDK runtime lifecycle", () => {
     })
 
     expect(input.emitError).toHaveBeenCalledTimes(1)
-    expect(input.emitError.mock.calls[0][1]).toBe("Failed to start Claude query")
+    expect(input.emitError.mock.calls[0][1]).toBe(
+      "Failed to start Claude query",
+    )
     expect(input.complete).toHaveBeenCalledTimes(1)
   })
 
@@ -240,6 +258,45 @@ describe("Claude Agent SDK runtime lifecycle", () => {
 
     expect(input.prepareRuntimePrompt).toHaveBeenCalledTimes(1)
     expect(query).not.toHaveBeenCalled()
+  })
+
+  test("does not dispatch after same-run-id owner replacement during AGENTS.md resolution", async () => {
+    const db = createAgentJobTestDb()
+    const query = mock(() => createClaudeAssistantStream())
+    let resolveAgentsMd!: (value: null) => void
+    const agentsMdResolution = new Promise<null>((resolve) => {
+      resolveAgentsMd = resolve
+    })
+    const readAgentsMd = mock(() => agentsMdResolution)
+    const input = createLifecycleInput(db, { query, readAgentsMd })
+    const ownerAController = getActiveClaudeSession("sub-1")?.controller
+
+    const lifecycle = runClaudeAgentSdkDesktopRuntimeLifecycle(input)
+    for (
+      let attempt = 0;
+      attempt < 20 && readAgentsMd.mock.calls.length === 0;
+      attempt += 1
+    ) {
+      await Promise.resolve()
+    }
+    expect(readAgentsMd).toHaveBeenCalledTimes(1)
+
+    const controllerB = new AbortController()
+    setActiveClaudeSession("sub-1", {
+      controller: controllerB,
+      runId: "run-1",
+    })
+    ownerAController?.abort()
+    resolveAgentsMd(null)
+
+    await expect(lifecycle).resolves.toMatchObject({
+      status: "failed",
+      phase: "adapter",
+      reachedNaturalFinish: false,
+    })
+    expect(query).not.toHaveBeenCalled()
+    expect(getActiveClaudeSession("sub-1")?.controller).toBe(controllerB)
+    expect(controllerB.signal.aborted).toBe(false)
   })
 
   test("runs startup diagnostics with lifecycle request context", async () => {

@@ -1,4 +1,6 @@
 export const PROVIDER_PROFILE_SOURCE_PREFIX = "provider-profile:"
+export type ProviderProfileSource =
+  `${typeof PROVIDER_PROFILE_SOURCE_PREFIX}${string}`
 
 export const providerProfileProtocols = [
   "anthropic",
@@ -26,6 +28,23 @@ export const providerProfileDefaultPurposes = [
 ] as const
 export type ProviderProfileDefaultPurpose =
   (typeof providerProfileDefaultPurposes)[number]
+
+export const providerProfileDefaultPurposeTargets: Record<
+  ProviderProfileDefaultPurpose,
+  ProviderProfileTarget
+> = {
+  "claude-main": "claude",
+  "codex-main": "codex",
+  sub_chat_title: "helpers",
+  commit_message: "helpers",
+}
+
+export function providerProfileSupportsDefaultPurpose(
+  targets: readonly ProviderProfileTarget[],
+  purpose: ProviderProfileDefaultPurpose,
+): boolean {
+  return targets.includes(providerProfileDefaultPurposeTargets[purpose])
+}
 
 export type ProviderProfileCapabilities = {
   claude?: boolean
@@ -125,7 +144,9 @@ export type ProviderProfileMetadata = {
   updatedAt: string | null
 }
 
-export function providerProfileSource(profileId: string): string {
+export function providerProfileSource(
+  profileId: string,
+): ProviderProfileSource {
   return `${PROVIDER_PROFILE_SOURCE_PREFIX}${profileId}`
 }
 

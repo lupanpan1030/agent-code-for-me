@@ -38,7 +38,6 @@ export const codexChatInputSchema = z
     cwd: z.string().optional(),
     projectPath: z.string().optional(),
     mode: z.enum(["plan", "agent"]).default("agent"),
-    sessionId: z.string().optional(),
     forceNewSession: z.boolean().optional(),
     images: z.array(imageAttachmentSchema).optional(),
     longTextAttachments: z.array(longTextAttachmentSchema).optional(),

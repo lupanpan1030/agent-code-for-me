@@ -777,14 +777,6 @@ const DANGEROUS_ROUTER_INPUT_ALLOWLIST = new Map([
     },
   ],
   [
-    "src/main/lib/trpc/routers/agent-runtime.ts:respondScopeExpansion",
-    {
-      fields: ["path"],
-      reason:
-        "pre-existing scope expansion response delegates path handling to the agent-guard owner",
-    },
-  ],
-  [
     "src/main/lib/trpc/routers/agent-runtime.ts:chat",
     {
       fields: ["cwd"],
@@ -870,14 +862,6 @@ const DANGEROUS_ROUTER_INPUT_ALLOWLIST = new Map([
       fields: ["cwd", "projectPath"],
       reason:
         "TICKET-104: runtime cwd is server-resolved; projectPath is only MCP lookup metadata",
-    },
-  ],
-  [
-    "src/main/lib/trpc/routers/claude.ts:respondScopeExpansion",
-    {
-      fields: ["path"],
-      reason:
-        "pre-existing scope expansion response delegates path handling to the agent-guard owner",
     },
   ],
   [
@@ -1483,6 +1467,8 @@ function assertOwnershipDocs() {
     "## Runtime Capability Truth",
     "## Runtime Chat UI Event State",
     "## Renderer Chat Message Model And Hydration",
+    "## Chat Session Binding",
+    "## Chat Maintenance Fence",
     "## Guard Decisions",
     "## Provider Credentials",
     "## Claude Desktop Chat Runtime",
@@ -1648,6 +1634,472 @@ function assertChatMessageModelOwner() {
   }
 }
 
+const CHAT_SESSION_BINDING_OWNER = "src/main/lib/chat-session-binding.ts"
+const CHAT_SESSION_BINDING_SCHEMA = "src/main/lib/db/schema/index.ts"
+const CHAT_SESSION_BINDING_TRANSPORTS = [
+  "src/renderer/features/agents/lib/ipc-chat-transport.ts",
+  "src/renderer/features/agents/lib/acp-chat-transport.ts",
+]
+const CHAT_SESSION_BINDING_INPUT_SCHEMAS = [
+  "src/main/lib/claude/chat-input-schema.ts",
+  "src/main/lib/codex/chat-input-schema.ts",
+]
+const RETIRED_CHAT_BINDING_ATOM_FAMILIES = [
+  "subChatModelIdAtomFamily",
+  "subChatClaudeModelSourceAtomFamily",
+  "subChatCodexModelSourceAtomFamily",
+  "subChatCodexModelIdAtomFamily",
+  "subChatCodexThinkingAtomFamily",
+]
+const CHAT_BINDING_SEMANTIC_NAME =
+  /(?:model|source|thinking|effort|agentId|engine|runtime|provider|profile)/i
+const CHAT_SESSION_BINDING_TABLE_OWNERS = new Set([
+  CHAT_SESSION_BINDING_OWNER,
+  CHAT_SESSION_BINDING_SCHEMA,
+])
+const CHAT_SESSION_BINDING_INFERENCE_OWNERS = new Set([
+  CHAT_SESSION_BINDING_OWNER,
+  "src/shared/agent-chat-provider.ts",
+])
+
+function retiredChatBindingAtomFamiliesIn(content) {
+  return RETIRED_CHAT_BINDING_ATOM_FAMILIES.filter((identifier) =>
+    new RegExp(`\\b${identifier}\\b`).test(content),
+  )
+}
+
+function hasDisallowedChatBindingInference(filePath, content) {
+  return (
+    !CHAT_SESSION_BINDING_INFERENCE_OWNERS.has(filePath) &&
+    /\binferAgentChatProviderFromMessages\b/.test(content)
+  )
+}
+
+function hasDisallowedChatBindingTableAccess(filePath, content) {
+  return (
+    !CHAT_SESSION_BINDING_TABLE_OWNERS.has(filePath) &&
+    /\b(?:subChatBindings|sub_chat_bindings)\b/.test(content)
+  )
+}
+
+function hasTransportBindingAtomAccess(content) {
+  return /\bsubChat\w*AtomFamily\b/.test(content)
+}
+
+function hasRendererNativeSessionPayload(content) {
+  return /\bsessionId\s*:/.test(content)
+}
+
+function hasNativeSessionInputSchemaField(content) {
+  return /\bsessionId\s*:\s*z\./.test(content)
+}
+
+function hasCodexBoundModelCatalogPath({ router, providerBinding, gateway }) {
+  return (
+    router.includes("providerProfileBoundModelId:") &&
+    router.includes("bindingAdmission.binding.modelId") &&
+    providerBinding.includes("codexChatBoundModelId:") &&
+    gateway.includes("tokenScope.codexChatBoundModelId")
+  )
+}
+
+function collectPerChatBindingAtomFindings(content, filePath) {
+  const sourceFile = ts.createSourceFile(
+    filePath,
+    content,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS,
+  )
+  const findings = []
+
+  function visit(node) {
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.initializer
+    ) {
+      const name = node.name.text
+      const initializer = unwrapExpression(node.initializer)
+      if (initializer && ts.isCallExpression(initializer)) {
+        const callee = unwrapExpression(initializer.expression)
+        const helperName = ts.isIdentifier(callee) ? callee.text : null
+        const isStorageHelper =
+          helperName === "atomWithStorage" || helperName === "atomFamily"
+        const isBindingFamilyName =
+          /^subChat/i.test(name) && CHAT_BINDING_SEMANTIC_NAME.test(name)
+
+        if (isStorageHelper && isBindingFamilyName) {
+          findings.push(`${name} uses ${helperName}`)
+        }
+
+        if (helperName === "atomWithStorage") {
+          const storageKey = stringLiteralValue(initializer.arguments[0])
+          const perChatSuffix = storageKey?.match(/^agents:subChat(.+)$/i)?.[1]
+          if (perChatSuffix && CHAT_BINDING_SEMANTIC_NAME.test(perChatSuffix)) {
+            findings.push(`${name} persists ${storageKey}`)
+          }
+        }
+      }
+    }
+    ts.forEachChild(node, visit)
+  }
+
+  visit(sourceFile)
+  return [...new Set(findings)]
+}
+
+function isRendererSourcePath(filePath) {
+  return filePath.startsWith("src/renderer/")
+}
+
+function assertChatSessionBindingGuardSelfTest() {
+  const multilineStorageFixture = `
+    const subChatRuntimeStorageAtom = atomWithStorage<
+      Record<string, string>
+    >(
+      "agents:subChatRuntime",
+      {},
+    )
+  `
+  const familyFixture = `
+    export const subChatProviderAtomFamily = atomFamily(
+      (subChatId: string) => atom(subChatId),
+    )
+  `
+  const effortFamilyFixture = `
+    export const subChatEffortAtomFamily = atomFamily(
+      (subChatId: string) =>
+        atom(subChatId),
+    )
+  `
+  const sourceStorageFixture = `
+    const subChatSourceStorageAtom = atomWithStorage<
+      Record<string, string>
+    >(
+      "agents:subChatSource",
+      {},
+    )
+  `
+  const allowedModeFixture = `
+    const subChatModesStorageAtom = atomWithStorage(
+      "agents:subChatModes",
+      {},
+    )
+    export const subChatModeAtomFamily = atomFamily(
+      (subChatId: string) => atom(subChatId),
+    )
+  `
+  const externalRendererFixturePath =
+    "src/renderer/features/fixture-binding-atoms.ts"
+
+  if (
+    collectPerChatBindingAtomFindings(
+      multilineStorageFixture,
+      "binding-storage-negative-fixture.ts",
+    ).length === 0
+  ) {
+    fail(
+      "Chat Session Binding guard self-test must reject multiline per-chat runtime storage.",
+    )
+  }
+  if (
+    !isRendererSourcePath(externalRendererFixturePath) ||
+    collectPerChatBindingAtomFindings(
+      `const subChatEngineAtomFamily = atomFamily(
+        (subChatId: string) => atom(subChatId),
+      )`,
+      externalRendererFixturePath,
+    ).length === 0
+  ) {
+    fail(
+      "Chat Session Binding guard self-test must scan binding atom families outside the canonical atoms file.",
+    )
+  }
+  if (
+    collectPerChatBindingAtomFindings(
+      familyFixture,
+      "binding-family-negative-fixture.ts",
+    ).length === 0
+  ) {
+    fail(
+      "Chat Session Binding guard self-test must reject per-chat provider atom families.",
+    )
+  }
+  if (
+    collectPerChatBindingAtomFindings(
+      effortFamilyFixture,
+      "binding-effort-family-negative-fixture.ts",
+    ).length === 0 ||
+    collectPerChatBindingAtomFindings(
+      sourceStorageFixture,
+      "binding-source-storage-negative-fixture.ts",
+    ).length === 0
+  ) {
+    fail(
+      "Chat Session Binding guard self-test must reject per-chat effort and source storage.",
+    )
+  }
+  if (
+    collectPerChatBindingAtomFindings(
+      allowedModeFixture,
+      "binding-mode-positive-fixture.ts",
+    ).length > 0
+  ) {
+    fail(
+      "Chat Session Binding guard self-test must allow the non-binding sub-chat mode atom family.",
+    )
+  }
+  if (
+    retiredChatBindingAtomFamiliesIn(
+      "const value = subChatCodexThinkingAtomFamily(id)",
+    ).length !== 1
+  ) {
+    fail(
+      "Chat Session Binding guard self-test must reject retired binding-family residue.",
+    )
+  }
+  if (
+    !hasDisallowedChatBindingInference(
+      "src/renderer/fixture.ts",
+      "inferAgentChatProviderFromMessages(messages)",
+    ) ||
+    hasDisallowedChatBindingInference(
+      CHAT_SESSION_BINDING_OWNER,
+      "inferAgentChatProviderFromMessages(messages)",
+    )
+  ) {
+    fail(
+      "Chat Session Binding guard self-test must allow inference only in the canonical backfill owner.",
+    )
+  }
+  if (
+    !hasTransportBindingAtomAccess(
+      "appStore.get(subChatModelAtomFamily(subChatId))",
+    )
+  ) {
+    fail(
+      "Chat Session Binding guard self-test must reject transport subChat*AtomFamily access.",
+    )
+  }
+  if (
+    !hasDisallowedChatBindingTableAccess(
+      "src/main/lib/trpc/routers/fixture.ts",
+      "db.select().from(subChatBindings)",
+    ) ||
+    hasDisallowedChatBindingTableAccess(
+      CHAT_SESSION_BINDING_SCHEMA,
+      'sqliteTable("sub_chat_bindings")',
+    )
+  ) {
+    fail(
+      "Chat Session Binding guard self-test must reserve table access for schema and the canonical owner.",
+    )
+  }
+  if (
+    !hasRendererNativeSessionPayload(
+      "const payload = { sessionId: rendererSessionId }",
+    ) ||
+    hasRendererNativeSessionPayload(
+      "const currentSessionIdentity = loadFromMainHistory()",
+    ) ||
+    !hasNativeSessionInputSchemaField("sessionId: z.string().optional()")
+  ) {
+    fail(
+      "Chat Session Binding guard self-test must reject renderer-supplied native session provenance.",
+    )
+  }
+  if (
+    !hasCodexBoundModelCatalogPath({
+      router:
+        "providerProfileBoundModelId: bindingAdmission.binding.modelId",
+      providerBinding: "codexChatBoundModelId: providerProfileBoundModelId",
+      gateway: "tokenScope.codexChatBoundModelId",
+    }) ||
+    hasCodexBoundModelCatalogPath({
+      router: "providerProfileBoundModelId: profile.defaultModel",
+      providerBinding: "codexChatBoundModelId: providerProfileBoundModelId",
+      gateway: "tokenScope.codexChatBoundModelId",
+    })
+  ) {
+    fail(
+      "Chat Session Binding guard self-test must require admitted historical Codex catalog provenance.",
+    )
+  }
+}
+
+function assertChatSessionBindingSingleOwner() {
+  assertChatSessionBindingGuardSelfTest()
+
+  const sourceFiles = walkFiles("src", [".ts", ".tsx"])
+  for (const absolutePath of sourceFiles) {
+    const filePath = relative(absolutePath)
+    const content = readFileSync(absolutePath, "utf8")
+
+    if (isRendererSourcePath(filePath)) {
+      for (const finding of collectPerChatBindingAtomFindings(
+        content,
+        filePath,
+      )) {
+        fail(
+          `Per-chat binding state must not persist in renderer atoms: ${filePath} ${finding}.`,
+        )
+      }
+    }
+
+    for (const identifier of retiredChatBindingAtomFamiliesIn(content)) {
+      fail(
+        `${identifier} is retired; ${filePath} must consume the DB-backed chat binding instead.`,
+      )
+    }
+
+    if (hasDisallowedChatBindingInference(filePath, content)) {
+      fail(
+        `Message-metadata runtime inference is retired outside backfill; remove it from ${filePath}.`,
+      )
+    }
+
+    if (hasDisallowedChatBindingTableAccess(filePath, content)) {
+      fail(
+        `Chat Session Binding table access belongs in ${CHAT_SESSION_BINDING_OWNER}, not ${filePath}.`,
+      )
+    }
+  }
+
+  for (const transport of CHAT_SESSION_BINDING_TRANSPORTS) {
+    const content = readText(transport)
+    if (hasTransportBindingAtomAccess(content)) {
+      fail(
+        `${transport} must consume an injected ChatSessionBinding and contain no subChat*AtomFamily reads or writes.`,
+      )
+    }
+    if (hasRendererNativeSessionPayload(content)) {
+      fail(
+        `${transport} must not submit renderer-derived native session provenance.`,
+      )
+    }
+  }
+
+  for (const inputSchema of CHAT_SESSION_BINDING_INPUT_SCHEMAS) {
+    if (hasNativeSessionInputSchemaField(readText(inputSchema))) {
+      fail(
+        `${inputSchema} must reject renderer-supplied native session provenance.`,
+      )
+    }
+  }
+
+  const subChatRouter = readText(
+    "src/main/lib/trpc/routers/chats-sub-chats.ts",
+  )
+  if (/\bupdateSubChatSession\b/.test(subChatRouter)) {
+    fail(
+      "The retired updateSubChatSession route must not coexist with main-owned native session provenance.",
+    )
+  }
+
+  const codexRouter = readText("src/main/lib/trpc/routers/codex.ts")
+  const codexProviderBinding = readText(
+    "src/main/lib/codex/desktop-run-provider-binding.ts",
+  )
+  const providerGateway = readText(
+    "src/main/lib/provider-profiles/gateway.ts",
+  )
+  if (
+    !hasCodexBoundModelCatalogPath({
+      router: codexRouter,
+      providerBinding: codexProviderBinding,
+      gateway: providerGateway,
+    })
+  ) {
+    fail(
+      "Codex Provider Profile model discovery must remain bound to the admitted historical Chat model snapshot.",
+    )
+  }
+}
+
+const CHAT_MAINTENANCE_FENCE_OWNER =
+  "src/main/lib/agent-runtime/chat-maintenance-fence.ts"
+
+function assertChatMaintenanceFenceSingleOwner() {
+  const owner = readText(CHAT_MAINTENANCE_FENCE_OWNER)
+  const forbiddenOwnerDependencies = [
+    [/(?:from|import\()\s*["'][^"']*(?:\/db(?:\/|["'])|db\/schema)/, "database"],
+    [/(?:from|import\()\s*["'][^"']*(?:agent-jobs|job-store)/, "agent job"],
+    [/(?:from|import\()\s*["'][^"']*chat-session-binding/, "binding row"],
+  ]
+
+  for (const [pattern, label] of forbiddenOwnerDependencies) {
+    if (pattern.test(owner)) {
+      fail(
+        `${CHAT_MAINTENANCE_FENCE_OWNER} must remain process-memory-only and cannot import a ${label} owner.`,
+      )
+    }
+  }
+
+  for (const stateIdentifier of [
+    "maintenanceFenceBySubChat",
+    "maintenanceInvalidatedAdmissions",
+    "runBlockersBySubChat",
+  ]) {
+    const stateOwners = []
+    for (const absolutePath of walkFiles("src", [".ts", ".tsx"])) {
+      const filePath = relative(absolutePath)
+      const content = readFileSync(absolutePath, "utf8")
+      if (new RegExp(`\\b${stateIdentifier}\\b`).test(content)) {
+        stateOwners.push(filePath)
+      }
+    }
+    if (
+      stateOwners.length !== 1 ||
+      stateOwners[0] !== CHAT_MAINTENANCE_FENCE_OWNER
+    ) {
+      fail(
+        `Chat maintenance fence state ${stateIdentifier} must exist only in ${CHAT_MAINTENANCE_FENCE_OWNER}; found ${stateOwners.join(", ") || "none"}.`,
+      )
+    }
+  }
+
+  const subChatRouter = readText(
+    "src/main/lib/trpc/routers/chats-sub-chats.ts",
+  )
+  if (/\bupdateSubChatMessages\b/.test(subChatRouter)) {
+    fail(
+      "The retired updateSubChatMessages route must not coexist with canonical rollback.",
+    )
+  }
+  if (/\bupdateSubChatSession\b/.test(subChatRouter)) {
+    fail(
+      "The retired updateSubChatSession route must not coexist with main-owned native session provenance.",
+    )
+  }
+  for (const symbol of [
+    "acquireChatMaintenanceFence",
+    "releaseChatMaintenanceFence",
+  ]) {
+    if (!subChatRouter.includes(symbol)) {
+      fail(`rollbackToMessage must use ${symbol}.`)
+    }
+  }
+
+  for (const runtimeRouter of [
+    "src/main/lib/trpc/routers/claude.ts",
+    "src/main/lib/trpc/routers/codex.ts",
+  ]) {
+    const runtimeRouterSource = readText(runtimeRouter)
+    for (const symbol of [
+      "claimDesktopRunAdmissionWithMaintenanceFence",
+      "releaseChatMaintenanceRunBlocker",
+      "releaseDesktopRunAdmissionWithMaintenanceFence",
+    ]) {
+      if (!runtimeRouterSource.includes(symbol)) {
+        fail(
+          `${runtimeRouter} must use ${symbol} from the maintenance owner.`,
+        )
+      }
+    }
+  }
+}
+
 function assertNoDeadSettingsState() {
   const atomsFile = "src/renderer/lib/atoms/index.ts"
   const atomsContent = readText(atomsFile)
@@ -1786,6 +2238,8 @@ assertRuntimeCapabilitySingleOwner()
 assertGuardDecisionSingleOwner()
 assertRuntimeEventStateOwner()
 assertChatMessageModelOwner()
+assertChatSessionBindingSingleOwner()
+assertChatMaintenanceFenceSingleOwner()
 assertNoUnresolvedDangerousRouterInput()
 assertRuntimeCoreImportBoundary()
 assertNoDeadSettingsState()

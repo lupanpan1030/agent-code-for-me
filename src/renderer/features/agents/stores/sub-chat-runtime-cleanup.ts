@@ -7,5 +7,5 @@ export function clearSubChatRuntimeCaches(subChatId: string) {
   const { messageIds, toolCallIds } = clearSubChatCaches(subChatId)
   clearMessageStateCacheByMessageIds(subChatId, messageIds)
   clearTextPartStoreByMessageIds(subChatId, messageIds)
-  clearToolStateCachesByToolCallIds(toolCallIds)
+  clearToolStateCachesByToolCallIds(subChatId, toolCallIds)
 }

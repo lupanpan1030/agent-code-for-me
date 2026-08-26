@@ -10,11 +10,28 @@ import {
 } from "../../../../shared/agent-chat-provider"
 import { buildAgentRuntimeCapabilityDiagnostic } from "../../../../shared/agent-runtime-capabilities"
 import {
+  type CanonicalChatMessage,
+  type CanonicalChatMessagePart,
+  getAvailableRollbackCheckpointBinding,
+} from "../../../../shared/chat-message"
+import {
+  acquireChatMaintenanceFence,
+  type ChatMaintenanceBusyError,
+  formatChatMaintenanceBusyMessage,
+  releaseChatMaintenanceFence,
+} from "../../agent-runtime/chat-maintenance-fence"
+import {
   trackPRCreated,
   trackWorkspaceArchived,
   trackWorkspaceCreated,
   trackWorkspaceDeleted,
 } from "../../analytics"
+import {
+  copySubChatBinding,
+  getSubChatBinding,
+  seedSubChatBinding,
+  updateSubChatBinding,
+} from "../../chat-session-binding"
 import { chats, getDatabase, projects, subChats } from "../../db"
 import {
   createWorktreeForChat,
@@ -33,8 +50,12 @@ import {
 } from "../../local-api-provider-config"
 import { assertOfficialCloudAllowed } from "../../local-only"
 import { checkOllamaStatus } from "../../ollama"
-import { getProviderDefaultRuntimeConfig } from "../../provider-profiles/storage"
+import { getProviderProfileChatBindingMetadataFromDatabase } from "../../provider-profiles/storage"
 import { terminalManager } from "../../terminal/manager"
+import {
+  chatSessionBindingInputSchema,
+  chatSessionBindingPatchSchema,
+} from "../chat-session-binding-schema"
 import { publicProcedure, router } from "../index"
 import {
   getCodexRollbackUnsupportedMessage,
@@ -45,6 +66,19 @@ import {
   buildCommitMessagePrompt,
   cleanGeneratedCommitMessage,
 } from "./commit-message-utils"
+
+type RollbackMessagePart = CanonicalChatMessagePart & {
+  input?: {
+    file_path?: string
+    old_string?: string
+    new_string?: string
+    content?: string
+  }
+}
+
+type RollbackMessage = Omit<CanonicalChatMessage, "parts"> & {
+  parts?: RollbackMessagePart[]
+}
 
 export const subChatProcedures = {
   getSubChat: publicProcedure
@@ -73,7 +107,11 @@ export const subChatProcedures = {
             .get()
         : null
 
-      return { ...subChat, chat: chat ? { ...chat, project } : null }
+      return {
+        ...subChat,
+        binding: getSubChatBinding(db, subChat.id),
+        chat: chat ? { ...chat, project } : null,
+      }
     }),
 
   /**
@@ -85,21 +123,43 @@ export const subChatProcedures = {
         chatId: z.string(),
         name: z.string().optional(),
         mode: z.enum(["plan", "agent"]).default("agent"),
+        binding: chatSessionBindingInputSchema,
       }),
     )
     .mutation(({ input }) => {
       const db = getDatabase()
-      return db
-        .insert(subChats)
-        .values({
-          chatId: input.chatId,
-          name: input.name,
-          mode: input.mode,
-          messages: "[]",
+      return db.transaction((tx) => {
+        const subChat = tx
+          .insert(subChats)
+          .values({
+            chatId: input.chatId,
+            name: input.name,
+            mode: input.mode,
+            messages: "[]",
+          })
+          .returning()
+          .get()
+        const binding = seedSubChatBinding(tx, subChat.id, input.binding, {
+          getProviderProfileMetadata:
+            getProviderProfileChatBindingMetadataFromDatabase,
         })
-        .returning()
-        .get()
+        return { ...subChat, binding }
+      })
     }),
+
+  updateSubChatBinding: publicProcedure
+    .input(
+      z.object({
+        id: z.string(),
+        binding: chatSessionBindingPatchSchema,
+      }),
+    )
+    .mutation(({ input }) =>
+      updateSubChatBinding(getDatabase(), input.id, input.binding, {
+        getProviderProfileMetadata:
+          getProviderProfileChatBindingMetadataFromDatabase,
+      }),
+    ),
 
   /**
    * Fork a sub-chat from a specific message, preserving SDK session context.
@@ -134,7 +194,11 @@ export const subChatProcedures = {
       // Fallback: AI SDK generates its own message IDs on the client which differ
       // from the server-generated UUIDs stored in the DB. Use the message index
       // (passed from the client) as a fallback when the ID doesn't match.
-      if (cutoffIndex === -1 && input.messageIndex !== undefined && input.messageIndex < allMessages.length) {
+      if (
+        cutoffIndex === -1 &&
+        input.messageIndex !== undefined &&
+        input.messageIndex < allMessages.length
+      ) {
         cutoffIndex = input.messageIndex
       }
       if (cutoffIndex === -1) throw new Error("Message not found")
@@ -142,9 +206,7 @@ export const subChatProcedures = {
       // 3. Slice messages up to and including the target
       const messagesToFork = allMessages.slice(0, cutoffIndex + 1)
       if (hasCodexBackedMessages(messagesToFork)) {
-        throw new Error(
-          getCodexRollbackUnsupportedMessage(),
-        )
+        throw new Error(getCodexRollbackUnsupportedMessage())
       }
 
       // 4. Find sdkMessageUuid of last assistant message (for resumeSessionAt)
@@ -193,17 +255,21 @@ export const subChatProcedures = {
       }
 
       // 7. Insert new sub-chat with sessionId from original (needed for resume)
-      const newSubChat = db
-        .insert(subChats)
-        .values({
-          chatId: sourceSubChat.chatId,
-          name: forkName,
-          mode: sourceSubChat.mode,
-          messages: JSON.stringify(forkedMessages),
-          sessionId: sourceSubChat.sessionId,
-        })
-        .returning()
-        .get()
+      const { newSubChat, binding } = db.transaction((tx) => {
+        const newSubChat = tx
+          .insert(subChats)
+          .values({
+            chatId: sourceSubChat.chatId,
+            name: forkName,
+            mode: sourceSubChat.mode,
+            messages: JSON.stringify(forkedMessages),
+            sessionId: sourceSubChat.sessionId,
+          })
+          .returning()
+          .get()
+        const binding = copySubChatBinding(tx, sourceSubChat.id, newSubChat.id)
+        return { newSubChat, binding }
+      })
 
       // 8. Copy .jsonl session files to the new isolated config dir
       if (sourceSubChat.sessionId) {
@@ -246,28 +312,17 @@ export const subChatProcedures = {
         }
       }
 
-      console.log("[forkSubChat] Created", { id: newSubChat.id, name: forkName, messages: forkedMessages.length })
+      console.log("[forkSubChat] Created", {
+        id: newSubChat.id,
+        name: forkName,
+        messages: forkedMessages.length,
+      })
 
       return {
-        subChat: newSubChat,
+        subChat: { ...newSubChat, binding },
         messageCount: forkedMessages.length,
         forkAtSdkUuid,
       }
-    }),
-
-  /**
-   * Update sub-chat messages
-   */
-  updateSubChatMessages: publicProcedure
-    .input(z.object({ id: z.string(), messages: z.string() }))
-    .mutation(({ input }) => {
-      const db = getDatabase()
-      return db
-        .update(subChats)
-        .set({ messages: input.messages, updatedAt: new Date() })
-        .where(eq(subChats.id, input.id))
-        .returning()
-        .get()
     }),
 
   /**
@@ -282,103 +337,141 @@ export const subChatProcedures = {
         sdkMessageUuid: z.string(),
       }),
     )
-    .mutation(async ({ input }): Promise<
-      | { success: false; error: string }
-      | { success: true; messages: any[] }
-    > => {
-      const db = getDatabase()
-
-      // 1. Get the sub-chat and its messages
-      const subChat = db
-        .select()
-        .from(subChats)
-        .where(eq(subChats.id, input.subChatId))
-        .get()
-      if (!subChat) {
-        return { success: false, error: "Sub-chat not found" }
-      }
-
-      // 2. Parse messages and find the target message by sdkMessageUuid
-      const messages = JSON.parse(subChat.messages || "[]")
-      const targetIndex = messages.findIndex(
-        (m: any) => m.metadata?.sdkMessageUuid === input.sdkMessageUuid,
-      )
-
-      if (targetIndex === -1) {
-        return { success: false, error: "Message not found" }
-      }
-      if (hasCodexBackedMessages(messages)) {
-        return {
-          success: false,
-          error: getCodexRollbackUnsupportedMessage(),
+    .mutation(
+      async ({
+        input,
+      }): Promise<
+        | {
+            success: false
+            error: string
+            busy?: ChatMaintenanceBusyError
+          }
+        | { success: true; messages: RollbackMessage[] }
+      > => {
+        const maintenance = acquireChatMaintenanceFence(
+          input.subChatId,
+          "rollback",
+        )
+        if (!maintenance.ok) {
+          return {
+            success: false,
+            error: formatChatMaintenanceBusyMessage(
+              maintenance.error,
+              "rollback",
+            ),
+            busy: maintenance.error,
+          }
         }
-      }
 
-      // 3. Get the parent chat for worktreePath
-      const chat = db
-        .select()
-        .from(chats)
-        .where(eq(chats.id, subChat.chatId))
-        .get()
+        try {
+          const db = getDatabase()
 
-      // 4. Rollback git state first - if this fails, abort the whole operation
-      if (chat?.worktreePath) {
-        const res = await applyRollbackStash(chat.worktreePath, input.sdkMessageUuid)
-        if (!res.success) {
-          return { success: false, error: `Git rollback failed: ${res.error}` }
+          // 1. Get the sub-chat and its messages
+          const subChat = db
+            .select()
+            .from(subChats)
+            .where(eq(subChats.id, input.subChatId))
+            .get()
+          if (!subChat) {
+            return { success: false, error: "Sub-chat not found" }
+          }
+
+          // 2. Parse messages and find the target message by sdkMessageUuid
+          const messages = JSON.parse(
+            subChat.messages || "[]",
+          ) as RollbackMessage[]
+          const targetIndex = messages.findIndex(
+            (message) =>
+              message.role === "assistant" &&
+              message.metadata?.sdkMessageUuid === input.sdkMessageUuid,
+          )
+
+          if (targetIndex === -1) {
+            return { success: false, error: "Message not found" }
+          }
+          if (hasCodexBackedMessages(messages)) {
+            return {
+              success: false,
+              error: getCodexRollbackUnsupportedMessage(),
+            }
+          }
+          const targetMessage = messages[targetIndex]
+          const checkpoint = getAvailableRollbackCheckpointBinding(
+            targetMessage?.metadata,
+          )
+          if (!checkpoint) {
+            return {
+              success: false,
+              error: "Rollback checkpoint is unavailable for this message",
+            }
+          }
+
+          // 3. Get the parent chat for worktreePath
+          const chat = db
+            .select()
+            .from(chats)
+            .where(eq(chats.id, subChat.chatId))
+            .get()
+
+          // 4. Rollback git state first - if this fails, abort the whole operation
+          if (!chat?.worktreePath) {
+            return {
+              success: false,
+              error: "Worktree not found - cannot rollback git state",
+            }
+          }
+          const res = await applyRollbackStash(chat.worktreePath, checkpoint)
+          if (!res.success) {
+            return {
+              success: false,
+              error: `Git rollback failed: ${res.error}`,
+            }
+          }
+          // If checkpoint wasn't found, we still fail because we can't safely rollback
+          // without reverting the git state to match the message history
+          if (!res.checkpointFound) {
+            return {
+              success: false,
+              error: "Checkpoint not found - cannot rollback git state",
+            }
+          }
+
+          // 5. Truncate messages to include up to and including the target message
+          let truncatedMessages = messages.slice(0, targetIndex + 1)
+
+          // 5.5. Clear any old shouldResume flags, then set on the target message
+          truncatedMessages = truncatedMessages.map((message, index) => {
+            const { shouldResume, ...restMeta } = message.metadata || {}
+            return {
+              ...message,
+              metadata: {
+                ...restMeta,
+                ...(index === truncatedMessages.length - 1 && {
+                  shouldResume: true,
+                }),
+              },
+            }
+          })
+
+          // 6. Update the sub-chat with truncated messages
+          db.update(subChats)
+            .set({
+              messages: JSON.stringify(truncatedMessages),
+              updatedAt: new Date(),
+            })
+            .where(eq(subChats.id, input.subChatId))
+            .returning()
+            .get()
+
+          return {
+            success: true,
+            messages: truncatedMessages,
+          }
+        } finally {
+          releaseChatMaintenanceFence(maintenance.fence)
         }
-        // If checkpoint wasn't found, we still fail because we can't safely rollback
-        // without reverting the git state to match the message history
-        if (!res.checkpointFound) {
-          return { success: false, error: "Checkpoint not found - cannot rollback git state" }
-        }
-      }
-
-      // 5. Truncate messages to include up to and including the target message
-      let truncatedMessages = messages.slice(0, targetIndex + 1)
-
-      // 5.5. Clear any old shouldResume flags, then set on the target message
-      truncatedMessages = truncatedMessages.map((m: any, i: number) => {
-        const { shouldResume, ...restMeta } = m.metadata || {}
-        return {
-          ...m,
-          metadata: {
-            ...restMeta,
-            ...(i === truncatedMessages.length - 1 && { shouldResume: true }),
-          },
-        }
-      })
-
-      // 6. Update the sub-chat with truncated messages
-      db.update(subChats)
-        .set({
-          messages: JSON.stringify(truncatedMessages),
-          updatedAt: new Date(),
-        })
-        .where(eq(subChats.id, input.subChatId))
-        .returning()
-        .get()
-
-      return {
-        success: true,
-        messages: truncatedMessages,
-      }
-    }),
-
-  /**
-   * Update sub-chat session ID (for Claude resume)
-   */
-  updateSubChatSession: publicProcedure
-    .input(z.object({ id: z.string(), sessionId: z.string().nullable() }))
-    .mutation(({ input }) => {
-      const db = getDatabase()
-      return db
-        .update(subChats)
-        .set({ sessionId: input.sessionId })
-        .where(eq(subChats.id, input.id))
-        .returning()
-        .get()
-    }),
+      },
+    ),
 
   /**
    * Update sub-chat mode

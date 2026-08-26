@@ -75,6 +75,101 @@ or UI helper.
   `runtime-event-state.ts`; main-process message writers may adopt the shared
   type later without introducing a second definition.
 
+## Chat Session Binding
+
+- Canonical owner: `src/main/lib/chat-session-binding.ts`
+- Shared contract types and write normalization:
+  `src/shared/chat-session-binding.ts`
+- Desktop Run admission-order guard:
+  `src/main/lib/agent-runtime/desktop-run-admission-generation.ts`
+- Consumers: `src/main/lib/trpc/routers/chats-crud.ts` and
+  `src/main/lib/trpc/routers/chats-sub-chats.ts` as transport envelopes;
+  Codex/Claude desktop Run routes as exact DB-binding admission consumers;
+  renderer chat transports through constructor-injected binding DTOs; database
+  startup through the idempotent legacy-chat backfill.
+- Rule: runtime, provider profile, model, model source, and thinking selection
+  for an existing chat are read and written only through the canonical owner.
+  Renderer `lastSelected*` atoms are creation-time defaults only and must never
+  resolve an existing chat. Message metadata may provide provenance and the
+  one-time startup backfill input, but it must not select the current runtime or
+  transport after a binding row exists. Explicit Provider Profile selection
+  snapshots its current default model into the binding; later Profile edits may
+  change credentials/routing but must not replace that model snapshot. Codex
+  Provider Profiles currently expose reasoning `none` only: their binding
+  thinking level is `NULL`, their UI effort control is absent, and only the
+  Codex responses gateway removes the reserved `/none` transport suffix. A
+  desktop Codex gateway token also owns the admitted Profile model snapshot
+  used by `/models`; legacy/headless tokens retain mutable-default discovery.
+  Desktop Run routes must complete binding/chat/cwd/scope preflight before
+  replacing active runtime state, and only the latest per-chat admission
+  generation may activate after asynchronous controls; the generation helper
+  orders candidates but does not own active sessions. The canonical binding
+  owner rejects all mutations while either Codex or Claude owns an active Run;
+  a mutation before active ownership is invalidated by the candidate's final
+  DB re-admission and does not create a second pending-run registry or lease.
+  Active lifecycle cancellation, persistence, approval cleanup, and deletion
+  compare the exact installed runtime-owner object; an external `runId` is
+  metadata and cannot authorize an old Run to affect a newer same-ID Run. Every
+  chat-history write rechecks the exact owner immediately before committing,
+  and every asynchronous preparation/retry rechecks immediately before job or
+  runtime dispatch. Codex stop and transport cleanup travel through the exact
+  tRPC subscription closure; the former sub-chat/run-ID mutation routes are
+  removed because they could not express object ownership. Pending questions
+  use a main-minted per-pending `approvalId`; runtime `toolUseId` remains only
+  tool provenance and cannot resolve or delete another Run's approval. Renderer
+  cleanup compare-deletes the exact chat/approval/tool tuple and cannot clear a
+  newer question after an asynchronous response.
+  Guarded tool callbacks likewise require their captured contract object to
+  remain installed before authorization, after asynchronous user approval,
+  and before consuming a cached pre-tool decision. Activating a contract
+  revokes any prior contract for that sub-chat even when its renderer ID
+  differs; callbacks never substitute a newer contract. The sole active
+  contract registry is keyed by sub-chat and exposes winner publication plus
+  exact-object current/delete operations; pre-admission publish helpers are
+  forbidden. Codex native protocol responses repeat exact Run/contract checks
+  at the final child-write boundary before any allow response.
+  `sub_chats.sessionId` remains native session provenance, not binding truth;
+  only main-owned DB/history readers and persistence writers may select or
+  update it. Renderer chat inputs/transports and generic renderer mutation
+  routes must not accept native session identity.
+
+## Chat Maintenance Fence (Temporary Phase 5 Precursor)
+
+- Canonical owner:
+  `src/main/lib/agent-runtime/chat-maintenance-fence.ts`
+- Consumers: `chats.rollbackToMessage` and the final active-owner claim paths
+  of Claude and Codex desktop Runs.
+- Rule: this owner holds at most one exact, main-process-memory maintenance
+  token per sub-chat plus exact rollback-only blockers for every desktop Run
+  that passed final claim but whose supervised lifecycle has not settled. It
+  coordinates only destructive rollback against those Runs and a new desktop
+  Run's final claim. It does not wait,
+  renew, recover, persist, write schema, touch `agent_jobs` or binding rows,
+  govern binding mutation, or serve headless/job/workspace execution. Process
+  restart clears it. Conflicts use the structured precursor shape
+  `code: SESSION_BINDING_BUSY`, exact `subChatId`, `operation: rollback`,
+  `activeRunId: string | null`, and
+  `reason: active-run | maintenance`; Foundation uses `subChatId`, not a
+  durable `bindingId`, because this is not yet the C4 SessionBinding lease.
+  Every successful final Run claim atomically installs an exact blocker in
+  this owner; only that Run's supervised lifecycle `finally` releases it.
+  Blockers never arbitrate Run versus Run and grant no execution authority, so
+  a successor may start while an aborted predecessor drains. If successor B
+  settles before predecessor A, B releases only B and A still keeps rollback
+  BUSY, including when both use the same external Run ID or the single current
+  runtime registry has been cleared. Signal-aware runtime and persistence
+  paths reject aborted owners, so blocker retention never authorizes more work
+  or DB writes.
+  Cleanup compare-releases only the exact token. If acquisition invalidates an
+  already-reserved Run candidate, this same owner may retain a one-shot exact
+  admission tombstone solely so that candidate reports maintenance BUSY even
+  after token release; it is consumed on claim/release, is restart-cleared,
+  and is not waiting, renewal, or execution authority.
+- Mandatory Phase 5 absorption/deletion: the durable C4 SessionBinding lease
+  MUST absorb or replace this ordering rule and delete
+  `chat-maintenance-fence.ts`. The temporary in-memory owner and durable lease
+  must never remain as parallel fences.
+
 ## Guard Decisions
 
 - Canonical owner: `src/main/lib/agent-guard/decision.ts`

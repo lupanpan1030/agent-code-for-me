@@ -1,7 +1,8 @@
 import { eq } from "drizzle-orm"
-import { z } from "zod"
+import type { z } from "zod"
 import { subChats } from "../db"
-import {
+import { isActiveClaudeSessionSignal } from "./active-sessions"
+import type {
   imageAttachmentSchema,
   longTextAttachmentSchema,
 } from "./chat-input-schema"
@@ -212,6 +213,7 @@ export function prepareClaudeUserMessageForHistory(input: {
 export type PrepareClaudeChatHistoryForDesktopRunInput = {
   db: any
   subChatId: string
+  activeSessionSignal: AbortSignal
   streamId: string
   prompt: string
   images: z.infer<typeof imageAttachmentSchema>[] | undefined
@@ -232,13 +234,14 @@ export type PrepareClaudeChatHistoryForDesktopRunResult =
 export function prepareClaudeChatHistoryForDesktopRun({
   db,
   subChatId,
+  activeSessionSignal,
   streamId,
   prompt,
   images,
   longTextAttachments,
   createId,
   now,
-}: PrepareClaudeChatHistoryForDesktopRunInput): PrepareClaudeChatHistoryForDesktopRunResult {
+}: PrepareClaudeChatHistoryForDesktopRunInput): PrepareClaudeChatHistoryForDesktopRunResult | null {
   const existing = db
     .select()
     .from(subChats)
@@ -247,10 +250,17 @@ export function prepareClaudeChatHistoryForDesktopRun({
   let existingMessages = JSON.parse(existing?.messages || "[]")
   const existingSessionId = existing?.sessionId || null
 
+  if (!isActiveClaudeSessionSignal(subChatId, activeSessionSignal)) {
+    return null
+  }
+
   const resumeMetadata = resolveClaudeChatResumeMetadata(existingMessages)
   if (resumeMetadata.shouldForkResume) {
     const forkResumeFlags = consumeClaudeChatForkResumeFlags(existingMessages)
     existingMessages = forkResumeFlags.messages
+    if (!isActiveClaudeSessionSignal(subChatId, activeSessionSignal)) {
+      return null
+    }
     db.update(subChats)
       .set({ messages: JSON.stringify(existingMessages) })
       .where(eq(subChats.id, subChatId))
@@ -267,6 +277,9 @@ export function prepareClaudeChatHistoryForDesktopRun({
   })
 
   if (!userMessageHistory.isDuplicate) {
+    if (!isActiveClaudeSessionSignal(subChatId, activeSessionSignal)) {
+      return null
+    }
     db.update(subChats)
       .set({
         messages: JSON.stringify(userMessageHistory.messagesToSave),

@@ -56,6 +56,7 @@ export async function runCodexAppServerDesktopAdapter(input: {
   secretHints: readonly string[]
   resolvedImages: ResolvedChatImageAttachment[]
   guardedContract: ValidatedAgentScopeContract | null
+  isCurrentRunOwner: () => boolean
   emit: (chunk: Record<string, unknown>) => void
   registerPendingQuestion: NonNullable<
     CreateCodexAppServerAdapterInput["registerPendingQuestion"]
@@ -67,6 +68,13 @@ export async function runCodexAppServerDesktopAdapter(input: {
   dependencies?: Partial<CodexAppServerDesktopAdapterRunnerDependencies>
 }): Promise<DesktopRunResult> {
   const dependencies = withDefaultDependencies(input.dependencies)
+  const runOwnerIsCurrent = (): boolean => {
+    try {
+      return input.isCurrentRunOwner()
+    } catch {
+      return false
+    }
+  }
   const env = input.env ?? process.env
   const selection = dependencies.resolveAdapterSelection(env)
   const pluginConfig = await dependencies.resolvePluginConfig({
@@ -74,6 +82,9 @@ export async function runCodexAppServerDesktopAdapter(input: {
     chatId: input.request.context.chatId,
     subChatId: input.request.context.subChatId,
   })
+  if (!runOwnerIsCurrent() || input.request.signal?.aborted === true) {
+    return { status: "canceled" }
+  }
 
   const adapter = dependencies.createAdapter({
     enabled: selection.useAppServer,
@@ -105,6 +116,7 @@ export async function runCodexAppServerDesktopAdapter(input: {
       env.LOCUS_CODEX_APP_SERVER_CONTROLLED_EDIT_EXECUTOR === "1",
     resolvedImages: input.resolvedImages,
     guardedContract: input.guardedContract,
+    isCurrentRunOwner: runOwnerIsCurrent,
     emit: input.emit,
     registerPendingQuestion: input.registerPendingQuestion,
     unregisterPendingQuestion: input.unregisterPendingQuestion,

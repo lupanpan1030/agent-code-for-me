@@ -1,8 +1,5 @@
 import type { AgentGuardEvent } from "../../../shared/agent-scope-contracts"
-import {
-  deleteActiveGuardedContract,
-  getActiveGuardedContract,
-} from "../agent-guard"
+import { deleteActiveGuardedContractIfMatch } from "../agent-guard"
 import type { DesktopRunResult } from "../agent-runtime/desktop-run-request"
 import {
   type RunClaudeAgentSdkDesktopAdapterWithPreparedRuntimeQueryInput,
@@ -75,7 +72,6 @@ export type RunClaudeAgentSdkDesktopRuntimeLifecycleQueryInput = Omit<
 export type RunClaudeAgentSdkDesktopRuntimeLifecycleInput = Omit<
   RunClaudeAgentSdkDesktopAdapterWithPreparedRuntimeQueryInput,
   | "runtimeQuery"
-  | "getContract"
   | "deleteContract"
   | "guardEvents"
   | "guardedRunStartedAt"
@@ -94,7 +90,6 @@ export type RunClaudeAgentSdkDesktopRuntimeLifecycleInput = Omit<
   | "resolvedModel"
 > & {
   runtimeQuery: RunClaudeAgentSdkDesktopRuntimeLifecycleQueryInput
-  getContract?: RunClaudeAgentSdkDesktopAdapterWithPreparedRuntimeQueryInput["getContract"]
   deleteContract?: RunClaudeAgentSdkDesktopAdapterWithPreparedRuntimeQueryInput["deleteContract"]
   guardEvents?: AgentGuardEvent[]
   guardedRunStartedAt?: string
@@ -127,8 +122,7 @@ export async function runClaudeAgentSdkDesktopRuntimeLifecycle(
     desktopJobSawError,
     streamStart,
     nowMs,
-    getContract = getActiveGuardedContract,
-    deleteContract = deleteActiveGuardedContract,
+    deleteContract = deleteActiveGuardedContractIfMatch,
     guardEvents,
     guardedRunStartedAt = new Date().toISOString(),
     runtimeStreamSetup,
@@ -246,7 +240,6 @@ export async function runClaudeAgentSdkDesktopRuntimeLifecycle(
     await runClaudeAgentSdkDesktopAdapterWithPreparedRuntimeQuery({
       ...adapterInput,
       request,
-      getContract,
       deleteContract,
       runtimeQuery,
       guardEvents: runtimeQuery.guardEvents,
@@ -257,7 +250,7 @@ export async function runClaudeAgentSdkDesktopRuntimeLifecycle(
       parts,
       stderrLines,
     })
-  if (adapterResult.status === "failed") {
+  if (adapterResult.status !== "succeeded") {
     return {
       status: "failed",
       phase: "adapter",
@@ -271,6 +264,7 @@ export async function runClaudeAgentSdkDesktopRuntimeLifecycle(
       db: input.db,
       chatId: requestContext.chatId,
       subChatId: requestContext.subChatId,
+      activeSessionSignal: request.signal,
       messagesToSave: input.messagesToSave,
       secretHints: input.secretHints,
       parts,
@@ -288,7 +282,6 @@ export async function runClaudeAgentSdkDesktopRuntimeLifecycle(
       emitError: input.emitError,
       emit: input.emit,
       complete: input.complete,
-      getContract,
       deleteContract,
       log: input.log,
       nowMs,

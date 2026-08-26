@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm"
 import { normalizeCodexStreamChunk } from "../../../shared/codex-tool-normalizer"
 import type { getDatabase } from "../db"
 import { subChats } from "../db"
-import { getActiveCodexStream } from "./active-streams"
+import { type ActiveCodexStream, getActiveCodexStream } from "./active-streams"
 import {
   buildCodexUserParts,
   codexImageAttachmentSignatureFromInput,
@@ -30,6 +30,18 @@ type CodexDesktopRunPersistenceDependencies = {
 
 const defaultDependencies: CodexDesktopRunPersistenceDependencies = {
   getActiveStream: getActiveCodexStream,
+}
+
+function isAuthoritativeWritableCodexStream(input: {
+  subChatId: string
+  activeStreamOwner: ActiveCodexStream
+  dependencies: CodexDesktopRunPersistenceDependencies
+}): boolean {
+  return (
+    input.dependencies.getActiveStream(input.subChatId) ===
+      input.activeStreamOwner &&
+    !input.activeStreamOwner.controller.signal.aborted
+  )
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -98,6 +110,7 @@ export function buildCodexDesktopRunUserMessage(input: {
 export function persistCodexDesktopRunUserMessage(input: {
   db: CodexDesktopRunPersistenceDatabase
   subChatId: string
+  activeStreamOwner: ActiveCodexStream
   existingMessages: unknown[]
   prompt: string
   images: CodexChatInput["images"]
@@ -105,7 +118,9 @@ export function persistCodexDesktopRunUserMessage(input: {
   metadataModel: string
   createId?: () => string
   now?: () => Date
+  dependencies?: Partial<CodexDesktopRunPersistenceDependencies>
 }): {
+  authoritative: boolean
   isDuplicatePrompt: boolean
   messagesForStream: unknown[]
 } {
@@ -113,8 +128,14 @@ export function persistCodexDesktopRunUserMessage(input: {
     input.existingMessages,
     input,
   )
+  const dependencies = { ...defaultDependencies, ...input.dependencies }
   if (isDuplicatePrompt) {
     return {
+      authoritative: isAuthoritativeWritableCodexStream({
+        subChatId: input.subChatId,
+        activeStreamOwner: input.activeStreamOwner,
+        dependencies,
+      }),
       isDuplicatePrompt,
       messagesForStream: input.existingMessages,
     }
@@ -124,6 +145,19 @@ export function persistCodexDesktopRunUserMessage(input: {
   const messagesForStream = [...input.existingMessages, userMessage]
   const now = input.now ?? (() => new Date())
 
+  if (
+    !isAuthoritativeWritableCodexStream({
+      subChatId: input.subChatId,
+      activeStreamOwner: input.activeStreamOwner,
+      dependencies,
+    })
+  ) {
+    return {
+      authoritative: false,
+      isDuplicatePrompt,
+      messagesForStream: input.existingMessages,
+    }
+  }
   input.db
     .update(subChats)
     .set({
@@ -133,7 +167,7 @@ export function persistCodexDesktopRunUserMessage(input: {
     .where(eq(subChats.id, input.subChatId))
     .run()
 
-  return { isDuplicatePrompt, messagesForStream }
+  return { authoritative: true, isDuplicatePrompt, messagesForStream }
 }
 
 export function buildCodexAppServerAssistantMessage(input: {
@@ -180,7 +214,7 @@ export function buildCodexAppServerAssistantMessage(input: {
 export function persistCodexDesktopAssistantAfterNaturalFinish(input: {
   db: CodexDesktopRunPersistenceDatabase
   subChatId: string
-  runId: string
+  activeStreamOwner: ActiveCodexStream
   messagesForStream: unknown[]
   chunks: Record<string, unknown>[]
   model: string
@@ -197,8 +231,13 @@ export function persistCodexDesktopAssistantAfterNaturalFinish(input: {
   if (!assistantMessage) return false
 
   const dependencies = { ...defaultDependencies, ...input.dependencies }
-  const currentStream = dependencies.getActiveStream(input.subChatId)
-  if (currentStream && currentStream.runId !== input.runId) {
+  if (
+    !isAuthoritativeWritableCodexStream({
+      subChatId: input.subChatId,
+      activeStreamOwner: input.activeStreamOwner,
+      dependencies,
+    })
+  ) {
     return false
   }
 

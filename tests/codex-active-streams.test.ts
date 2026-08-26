@@ -3,7 +3,7 @@ import {
   abortAllCodexStreams,
   clearActiveCodexStreamsForTest,
   deleteActiveCodexStream,
-  deleteActiveCodexStreamIfRun,
+  deleteActiveCodexStreamIfOwner,
   getActiveCodexStream,
   hasActiveCodexStreams,
   setActiveCodexStream,
@@ -38,16 +38,22 @@ describe("Codex active stream owner", () => {
     expect(hasActiveCodexStreams()).toBe(false)
   })
 
-  test("deletes a stream only when cleanup owns its run", () => {
-    setActiveCodexStream("sub-1", {
+  test("deletes a stream only when cleanup owns its exact installed stream", () => {
+    const staleOwner = {
       controller: new AbortController(),
-      runId: "run-new",
+      runId: "run-shared",
       cancelRequested: false,
-    })
+    }
+    const currentOwner = {
+      controller: new AbortController(),
+      runId: "run-shared",
+      cancelRequested: false,
+    }
+    setActiveCodexStream("sub-1", currentOwner)
 
-    expect(deleteActiveCodexStreamIfRun("sub-1", "run-old")).toBe(false)
-    expect(getActiveCodexStream("sub-1")?.runId).toBe("run-new")
-    expect(deleteActiveCodexStreamIfRun("sub-1", "run-new")).toBe(true)
+    expect(deleteActiveCodexStreamIfOwner("sub-1", staleOwner)).toBe(false)
+    expect(getActiveCodexStream("sub-1")).toBe(currentOwner)
+    expect(deleteActiveCodexStreamIfOwner("sub-1", currentOwner)).toBe(true)
     expect(hasActiveCodexStreams()).toBe(false)
   })
 
@@ -59,8 +65,11 @@ describe("Codex active stream owner", () => {
       runId: "run-1",
       cancelRequested: false,
     })
-    setCodexPendingToolApproval("tool-1", {
+    setCodexPendingToolApproval("approval-1", {
+      approvalId: "approval-1",
+      toolUseId: "tool-1",
       subChatId: "sub-1",
+      isCurrentRunOwner: () => true,
       resolve: (decision) => decisions.push(decision),
     })
 

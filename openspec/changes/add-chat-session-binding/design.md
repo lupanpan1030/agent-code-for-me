@@ -11,11 +11,14 @@ override + per-render metadata inference), while the job path already persists `
 `providerProfileId` on `agent_jobs` — a confirmed dual path.
 
 Foundation scope is deliberately narrow: move binding truth to the DB and make transports take
-it explicitly. No lifecycle, no leases, no installation pins, no API object — those are Phase 5
-(Portable Sessions) and later C4 work. The data stage is **PRE-PRODUCTION / DISPOSABLE TEST
-DATA** (W4.2 Owner decision), which authorizes a simple forward-only migration with no
-data-rollback path, while still requiring the backfill to be named and verified as the
-migration gate.
+it explicitly. No portable/durable lifecycle model, general execution lease, installation pin,
+or API object is introduced — those are Phase 5 (Portable Sessions) and later C4 work. The sole
+exception is the Owner-authorized, process-local rollback maintenance fence in Decision 7. It
+coordinates only rollback with a new desktop Run's final claim and carries a mandatory Phase 5
+absorption/deletion note; it is not SessionBinding lease state. The data stage is
+**PRE-PRODUCTION / DISPOSABLE TEST DATA** (W4.2 Owner decision), which authorizes a simple
+forward-only migration with no data-rollback path, while still requiring the backfill to be
+named and verified as the migration gate.
 
 ## Goals / Non-Goals
 
@@ -27,12 +30,17 @@ migration gate.
     write-backs in `sendMessages`.
   - Retire message-metadata provider inference everywhere except the one-time backfill.
   - Guards + OWNERSHIP_MAP entry so the split-brain cannot regrow.
+  - Prevent destructive rollback from racing either Engine's active Run or final Run claim,
+    without creating durable state or a second general execution owner.
 - Non-Goals:
-  - C4 lifecycle/version-pin semantics (states, leases, `runtimeInstallationId`, successor
-    bindings), Conversation identity work, table renames.
+  - C4 lifecycle/version-pin semantics (states, durable SessionBinding leases,
+    `runtimeInstallationId`, successor bindings), Conversation identity work, table renames.
   - Headless/job binding — `agent_jobs` columns remain that path's own snapshot.
   - Moving renderer provider pre-resolution (`normalizeClaudeModelSourceForRun`, OAuth divert)
     into main — registered debt from the dual-path audit (c), untouched here.
+  - Adding reasoning-effort support to Codex Provider Profiles. Their gateway advertises only
+    `none`; protocol-specific translation and capability declaration require a separately
+    approved change and are tracked, but not authorized, by TICKET-116.
   - Restructuring `active-chat.tsx` beyond the binding call sites.
 
 ## Decisions
@@ -83,13 +91,52 @@ Field semantics (Red-flag any deviation — see W7 envelope):
 | `modelId` | renderer Claude model id (e.g. `"fable"`) | Codex model id (e.g. `"gpt-5.5"`) |
 | `modelSource` | `"claude-oauth" \| "custom-provider" \| "provider-profile:<id>"` | `"chatgpt" \| "openai-api-key" \| "provider-profile:<id>"` |
 | `providerProfileId` | denormalized from `provider-profile:*` source, else `NULL` | same |
-| `thinkingLevel` | `NULL` (global `extendedThinkingEnabledAtom` stays a settings toggle) | `"low" \| "medium" \| "high" \| "xhigh"` |
+| `thinkingLevel` | `NULL` (global `extendedThinkingEnabledAtom` stays a settings toggle) | `"low" \| "medium" \| "high" \| "xhigh"` for sources that advertise selectable effort; `NULL` for Provider Profiles, whose current gateway capability is reasoning `none` only |
 
 The owner normalizes on write: when `modelSource` is `provider-profile:<id>`,
 `providerProfileId` MUST equal `<id>`; when it is not, `providerProfileId` MUST be `NULL`.
-`runtime` accepts only the contract runtime ids. `sub_chats.sessionId` is untouched: it stays
-the Claude-oriented native-session field, which C1 §3.2 already classifies as provenance, not
-binding truth.
+An explicit Profile selection snapshots that Profile's current `defaultModel` into `modelId`
+in the same write. Provider credentials/protocol routing remain dynamic, but later Profile
+edits MUST NOT override an existing binding's model at renderer, main-runtime, or gateway
+boundaries. Leaving a Profile likewise writes source/profile/model/thinking as one mutation.
+For creation, entering a Profile, or explicitly reselecting a Profile model, the owner requires
+the Profile to exist, target the binding runtime, and have `defaultModel === modelId`; this
+prevents a caller from manufacturing a historical Profile snapshot. Fork is intentionally
+different: it copies the source chat's complete historical tuple without consulting the
+current Profile row, so an edited or deleted Profile cannot mutate fork provenance.
+`runtime` accepts only the contract runtime ids. The `sub_chats.sessionId` column stays the
+Claude-oriented native-session provenance field classified by C1 §3.2, but its authority is
+main-only: renderer chat schemas and transports do not accept or submit a native `sessionId`,
+and the unused `updateSubChatSession` renderer mutation is deleted. Claude resume/parent
+identity comes from the main-owned sub-chat row; Codex resume/parent identity comes from the
+main-read persisted message history. A stale or forged renderer therefore cannot select or
+rewrite another native session.
+
+Capability-honesty exception (Owner decision 2026-08-26): the current Provider Profile gateway
+advertises `supported_reasoning_levels = [none]`. Therefore a Codex Provider Profile binding
+MUST normalize `thinkingLevel` to `NULL`, the renderer MUST hide its effort selector, and the
+transport keeps submitting `/none`. Persisting low/medium/high/xhigh while the gateway ignores
+it would be false capability state. Real Provider Profile effort support requires per-protocol
+translation and explicit provider capability declarations and is deferred to TICKET-116.
+The Codex responses gateway treats the model snapshot carried by a `codex-chat-binding` token
+as the sole upstream model authority. The app-server may submit that opaque model with the
+reserved final `/none` transport suffix, but the gateway forwards the token-bound snapshot;
+an arbitrary request-body model cannot expand the token's authority. Anthropic model IDs remain
+verbatim. The gateway does not translate or advertise another effort. This decode is scoped by
+the server-minted gateway token: desktop Codex requests `codex-chat-binding` model resolution,
+desktop Claude requests `claude-chat-binding` verbatim resolution, and the default
+`legacy-profile-default` behavior remains isolated to headless/Local Job callers. Request
+bodies, headers, and query parameters cannot opt into another model-resolution mode or model.
+
+This is a token capability, not a client option. Desktop tokens are minted only by the
+main-process chat startup owners; the unchanged headless owner never reads
+`sub_chat_bindings`, and its default token retains `legacy-profile-default`. The Local Job API
+schema and `agent_jobs.runtime` / `providerProfileId` admission snapshot remain independent.
+For a `codex-chat-binding` token, the main owner also embeds the DB-admitted `modelId` (without
+the reserved `/none` transport marker) in that same token scope. Authenticated `/models`
+advertises this immutable catalog model rather than re-reading the Profile's mutable current
+default. Other token modes carry no such snapshot and retain their existing catalog behavior;
+there is no second registry or client-selectable override.
 
 **Decision 2: Canonical owner is a single main-process module.**
 
@@ -104,8 +151,83 @@ storage + invariants) owns every read and write of `sub_chat_bindings`:
   renderer's global default atoms), other fields optional.
 - `copySubChatBinding(sourceSubChatId, targetSubChatId)` — called from `forkSubChat`
   (`chats-sub-chats.ts` ~L197).
-- `updateSubChatBinding(subChatId, patch)` — the only mutation path; enforces normalization.
+- `updateSubChatBinding(subChatId, patch)` — the only mutation path; enforces normalization
+  and synchronously rejects every mutation while either the Codex or Claude active-run owner
+  holds that sub-chat. This includes same-runtime model/Profile/effort edits as well as runtime
+  switches.
 - `backfillSubChatBindings(db)` — the migration gate (Decision 4).
+- `admitCodexChatSessionBindingRun` / `admitClaudeChatSessionBindingRun` — desktop Run
+  admission after preflight and before any active-run replacement. The owner re-reads the DB
+  row and exact-checks runtime/source/profile/model/effort against renderer input, returning
+  only canonical values to startup. Claude permits one documented run-scoped exception:
+  OAuth/custom-provider may divert to a valid Claude-targeted Profile when the request omits
+  the bound model. Unknown or malformed sources fail closed and never fall through to OAuth.
+
+Binding admission alone is not enough to authorize active-state replacement. Chat/sub-chat/cwd
+preflight and scope controls also complete first. Each candidate reserves a per-sub-chat
+admission generation before its first asynchronous control; after the last `await`, only the
+latest generation may synchronously abort/replace the active run. A failed, cancelled, or stale
+candidate never restores an earlier generation and never touches the current active owner.
+Guarded scope validation and pre-run status capture likewise remain candidate-local during
+preflight: the contract enters the global active registry only after the candidate wins its
+admission claim and creates the active envelope. Cleanup compare-deletes the exact contract
+object, so a late old Run cannot delete a new Run that reused or replaced the renderer contract
+ID. Contract activation also revokes any earlier contract for the same sub-chat, regardless of
+renderer contract ID, so the registry cannot retain two Runs' authority for one lifecycle owner.
+The sole registry is keyed by `subChatId`, never by renderer-supplied contract ID, and exposes
+only winner publication, exact-object current checks, and exact compare-delete. The retired
+prepare-and-publish compatibility wrapper/raw mutation exports are deleted so preflight cannot
+activate authority through a second path.
+This generation is an admission-order guard, not a second active-session registry.
+
+Active lifecycle authority also uses exact installed-owner identity, never the renderer-supplied
+`runId` alone. Codex installs one `ActiveCodexStream` object and passes that same object through
+desktop-job cancellation, natural-finish persistence, finalization, and unsubscribe cleanup.
+Each path compares the object against the current registry entry before mutating active state,
+clearing approvals, or persisting either side of the conversation. Claude applies the equivalent
+rule with its exact installed active-session controller/signal. Both engines recheck their exact
+owner immediately before every user/assistant/error history write, so an old Run cannot alias a
+new Run that happens to reuse the same external `runId`. A stale candidate stops before later
+MCP, job, or adapter dispatch. The check repeats after every nested asynchronous preparation and
+retry backoff immediately before the actual adapter/SDK query call. Codex transport stop,
+auth-error teardown, and replacement cleanup unsubscribe the exact subscription closure; no
+public mutation accepting only `subChatId` or external `runId` remains.
+For native Codex app-server requests, exact authority is checked once more in the same
+synchronous callback immediately before the protocol response is written to the child. Losing
+the Run or guarded-contract owner during any approval Promise gap fails closed and can never
+write an allow/accept response. Claude relies on the exact Run signal shared with the official
+SDK transport, whose final write boundary checks the same aborted signal.
+
+Pending approval identity is separate from provider tool identity. Main mints a unique
+`approvalId` for every pending Codex or Claude question, keys the pending store and renderer
+response by that ID, and carries the provider `toolUseId` separately for tool-part association.
+Resolution and timeout compare-delete the exact pending object and exact active Run owner. Thus a
+late response or timeout from Run A cannot approve, remove, or clear Run B even when the runtime
+reuses the same `toolUseId`, sub-chat, and external `runId`.
+Renderer retirement follows the same tuple: after a response receipt (including `ok: false`) it
+compare-deletes only the captured `{subChatId, approvalId, toolUseId}`. If question B replaced A
+while A awaited main, A's continuation cannot hide B; a transport exception leaves exact A
+visible for retry and surfaces the error.
+
+Guarded tool authority follows the same identity rule. Claude tool callbacks require the active
+guard registry to contain the exact captured contract object before deciding a tool and again
+after any asynchronous user approval. The later `canUseTool` consumption of a cached
+`PreToolUse` decision repeats the same exact-object check. Installing a newer contract revokes
+the previous contract for that sub-chat even if its renderer ID differs; no newer contract is
+substituted. Scope expansion mutates the installed object in place, so this exact-object rule
+preserves valid expansions without granting an old callback a newer Run's scope.
+
+The active-run mutation fence is likewise not a Phase 5 lifecycle lease. Because binding
+mutation and active-owner registration occur synchronously in one main-process event loop, the
+canonical owner can atomically reject mutations after a Run has claimed active ownership.
+Before that claim exists, a mutation remains allowed and the candidate Run's mandatory final
+DB re-admission invalidates its stale tuple. No pending-preflight registry or durable lock is
+introduced.
+
+This binding-mutation rule is distinct from the rollback maintenance fence in Decision 7. The
+latter has its own canonical owner and coordinates only destructive rollback with the final
+claim of a new desktop Run; neither mechanism is generalized into a durable SessionBinding
+lease in Foundation 1b.
 
 Routers stay envelope/input surfaces per the existing OWNERSHIP_MAP convention. Shared types
 (`ChatSessionBinding`, runtime/source/thinking unions) live in
@@ -134,10 +256,108 @@ write-back sites in the IPC transport are deleted. The OAuth-unusable divert
 localStorage). Non-binding settings reads (`extendedThinkingEnabledAtom`, `historyEnabledAtom`,
 offline atoms) are global settings, not binding, and stay as-is.
 
+When that run-scoped divert selects a Profile for a non-Profile binding, the transport omits
+the original binding model for that run so the diverted Profile can use its current default;
+the durable source/model binding remains untouched. This is distinct from an explicitly bound
+Profile, whose snapshotted `modelId` stays authoritative across Profile edits.
+
 Mid-conversation binding changes (model/thinking on Codex, model/source on Claude, runtime on
 an empty chat) go through `chats.updateSubChatBinding` and then reuse the existing
 recreation mechanism (`agentChatStore.delete(subChatId)` + invalidate, generalized from
 `handleProviderChange` ~L5963–5998, which is deleted).
+
+Recreation is receipt-first, not optimistic: the renderer awaits the owner mutation, publishes
+the returned canonical binding into the query cache and local DTO reference, deletes the old
+transport, explicitly creates the replacement `Chat` from the published DTO, and only then
+notifies a still-mounted view. Canonical receipt publication does not depend on the target view
+remaining mounted: normal parent-workspace navigation, resident-tab eviction, or explicit close
+can occur while the mutation awaits main without leaving the continuously mounted query/DTO
+cache stale. A successful receipt always updates the canonical query and local DTO reference
+first; cancellation is checked immediately before deleting/recreating/sending through a Chat.
+Therefore explicit close never resurrects UI work, while a later history reopen constructs the
+transport from the committed binding.
+`getChatViewInstanceKey` includes the binding revision so a same-sub-chat-id view remounts
+instead of retaining a stale Chat object; a real React regression test covers this case.
+
+All existing-chat send and lifecycle entry points share one per-sub-chat serialization gate:
+direct sends, queued sends, initial-message regeneration, stream resume, and binding mutation.
+Every direct submit captures its uncontrolled editor/attachment payload and claims its durable
+draft before awaiting a pending binding mutation, because the mutation receipt may remount the
+same chat ID and detach the submitting component. After acquiring the gate, direct sends,
+queued sends, regeneration, and resume resolve the current `Chat`/transport from
+`agentChatStore`; none closes over a mounted component's `useChat` send/regenerate/resume
+callback. Actions that must replace an active run (force-send, empty-input queue drain, and a
+live question answer followed by custom text) stop/release that run before awaiting a binding
+mutation queued behind it; ordinary sends await the pending mutation directly. This ordering
+prevents payload loss, stale-transport sends, duplicate restored drafts, and stop/wait
+deadlocks.
+
+The pending-operation context captured before those awaited preparation steps is also the
+cancellation authority for every nested binding/current-Chat gate. A nested gate MUST reuse
+that inherited context rather than capture the post-close generation. Each awaited binding
+wait, slash-command expansion, stop/readiness wait, and live-question continuation rechecks the
+inherited context before queue publication, current-Chat lookup, or send. Therefore close →
+same-ID reopen cannot let an old prompt execute through the replacement Chat; a genuinely new
+post-reopen user operation receives a new context and remains independent.
+
+The same operation owner also controls renderer eviction. Parent-workspace pruning,
+resident-tab bounding, and detached-finish cleanup all retain a `Chat` while a captured direct
+submit, binding mutation, regeneration, or resume is pending. An explicit user tab close is the
+only path that cancels that pending UI work. Binding mutation publishes any successful
+main-process receipt to canonical cache/ref even after cancellation, then checks cancellation
+before recreating or sending, so explicit close does not reopen the tab or lose committed truth.
+Operation counts and cancellation generations
+are removed when the last operation releases; deferred normal-eviction callbacks then recheck
+the current mount/stream/queue state so a completion callback cannot retain a detached Chat
+forever merely because its send promise had not yet unwound. They are not another durable state
+owner. If explicit close races a queue item that was already popped, gate exit normalizes the
+result/error to cancellation and both queue senders drop that item instead of requeueing it
+after `clearQueue`.
+
+Initial-message auto-generation also owns a module-scoped claim keyed by stable sub-chat and
+initial-message identity. The claim is acquired before entering the gate, survives a
+binding-sensitive React remount, and is retained after success; only the exact failed claim is
+released for a later retry. This is separate from active Run state: it prevents the old and new
+mount from both queuing the same initial prompt while the binding mutation owns the gate.
+
+Persisted stream resume is part of the same lifecycle boundary. The DTO mapper accepts the
+Drizzle `streamId` field (and the legacy snake-case wire spelling), and a per-key claim prevents
+duplicate resume on remount. The claim owner lives outside the React component lifecycle and
+retains at most the current stream key per sub-chat; a failed resume releases only its own claim
+so a later render can retry without clearing a newer stream's claim. If the outer current-Chat
+gate fails before the resume or initial-generation helper receives control (for example after
+an explicit close), that outer failure releases the exact claim as well.
+
+For non-Profile Codex bindings, `modelSource` is also strict binding truth. Credential probes
+are admission/readiness checks only: a ChatGPT-bound chat is never silently rewritten to
+`openai-api-key`, and an API-key-bound chat is never silently rewritten to `chatgpt`. Changing
+the app-managed API-key state updates the global new-chat source/model/thinking defaults as one
+coherent write, but never changes an existing chat binding.
+Auth-error retry follows the same rule: only subscription availability can make a `chatgpt`
+binding retry-ready, and only the app-managed API key can make an `openai-api-key` binding
+retry-ready. An unrelated credential neither triggers a doomed retry nor selects the error
+diagnostic. The pending retry records its required Codex auth method; the login modal preselects
+that method and unlocks the retry only when the same method reaches success.
+
+Every pending auth retry also records the exact non-secret binding identity, including runtime,
+source, Profile, model, effort, and binding revision. Each constructed transport owns an opaque
+per-sub-chat generation. A replacement transport retires the old generation, and both Codex's
+asynchronous credential probe and Claude's auth-error publisher verify that ownership before
+publishing a retry. Consumption repeats the exact binding check inside the current-Chat gate.
+Therefore an old prompt cannot be published or auto-sent through a newly selected Profile or
+credential endpoint.
+
+The same tuple-coherence rule applies to settings and onboarding Profile operations. Save,
+delete, runtime-target removal, and default selection update source/model/thinking together
+when the affected Profile is the global default; API-key save/remove does the same for its
+source. An existing chat whose Profile becomes unavailable keeps displaying its bound Profile
+source as unavailable and blocks honestly until the user explicitly rebinds; it never
+masquerades as OAuth.
+
+For Codex Provider Profiles, model/source changes still use this path, but thinking selection
+is absent because that source currently declares only reasoning `none`; its binding stores
+`thinkingLevel = NULL`. The transport's `/none` suffix is a capability result, not a second
+binding owner.
 
 *Alternative considered:* transports fetch the binding from tRPC at each `sendMessages`.
 Rejected — it keeps the transport a self-serving reader (same shape as the appStore steal-read,
@@ -153,6 +373,11 @@ table. `backfillSubChatBindings` runs immediately after `migrate()` in
 `src/shared/agent-chat-provider.ts:51`, mapped 1:1 onto runtime ids), all other fields `NULL`.
 Insert-if-missing makes it idempotent and safe to run every startup. This is the **only**
 permitted call site of the inference outside its defining module and tests (guarded).
+The existing-binding scan is independent of the number of sub-chat IDs (it does not construct
+one unbounded SQLite `IN (...)` parameter list), so a large local history cannot exceed the
+driver's bind-variable limit during startup. The canonical owner's list hydration also chunks
+`attachBindingsToSubChats` lookups into at most 500 IDs per query, so opening an unpaginated Chat
+cannot recreate the same bind-variable failure through a second read shape.
 
 Per W4.2 (PRE-PRODUCTION / DISPOSABLE TEST DATA) the backfill is deliberately lossy about
 renderer-only state: per-sub-chat localStorage model/thinking overrides for existing chats are
@@ -194,9 +419,10 @@ binding.
 In `scripts/check-architecture-guards.mjs` (existing framework; atom matcher precedent at
 ~L1657):
 
-- *Binding-atom ban*: parse `src/renderer/features/agents/atoms/index.ts`; any
+- *Binding-atom ban*: scan all `src/renderer/**/*.{ts,tsx}` sources; any
   `atomWithStorage`/storage-backed `atomFamily` whose key or name matches binding semantics
-  (`model`, `modelSource`, `thinking`, `agentId`, `runtime`, `provider` — case-insensitive,
+  (`model`, `source`, `thinking`, `effort`, `agentId`, `engine`, `runtime`, `provider`,
+  `profile` — case-insensitive,
   scoped to per-chat keys) fails the guard. No allowlist is needed: no per-chat binding
   storage atom may exist at all, so the five deleted families cannot reappear.
 - *Deleted-family residue*: the five deleted family identifiers have zero references anywhere
@@ -205,18 +431,126 @@ In `scripts/check-architecture-guards.mjs` (existing framework; atom matcher pre
   `src/shared/agent-chat-provider.ts`, `src/main/lib/chat-session-binding.ts`, and `tests/`.
 - *Transport purity*: `ipc-chat-transport.ts` and `acp-chat-transport.ts` contain no
   `subChat*AtomFamily` identifier.
+- *Table ownership*: `subChatBindings` / `sub_chat_bindings` may appear only in the DB schema
+  and `src/main/lib/chat-session-binding.ts`; routers and other consumers must use the owner.
 
 `docs/OWNERSHIP_MAP.md` gains a "Chat Session Binding" section (owner, consumers, rule:
 binding truth is read/written only through the owner; renderer atoms are new-chat defaults
 only; metadata inference lives only in the backfill).
 
+**Decision 7: Rollback and a new desktop Run's final claim share one temporary in-memory
+maintenance fence.**
+
+`src/main/lib/agent-runtime/chat-maintenance-fence.ts` is the canonical owner of one exact
+maintenance token per sub-chat, exact rollback-only blockers for claimed-but-unsettled desktop
+Run lifecycles, and one-shot admission rejection receipts. The owner is intentionally next to
+`desktop-run-admission-generation.ts`, because it participates only in desktop Run admission
+and maintenance ordering. Its tokens, blockers, and one-shot rejection receipts are
+main-process in-memory structures: they are not written to SQLite, create no schema column,
+never change `agent_jobs`, never change `sub_chat_bindings`, and are empty after process
+restart.
+
+The only permitted interaction is:
+
+1. `rollbackToMessage` synchronously checks that neither Claude nor Codex owns an active Run
+   for the sub-chat, then acquires an exact maintenance token. An active owner rejects the
+   rollback before checkpoint/Git/history mutation. Signal-aware runtime and persistence checks
+   reject an aborted owner, but rollback continues to see every claimed lifecycle's exact
+   rollback blocker until side effects have settled.
+2. The rollback holds that token through sub-chat/checkpoint re-read, exact checkpoint
+   validation, destructive Git application, and message-history truncation. It compare-releases
+   only its exact token in `finally`, whether rollback succeeds, returns a failure, or throws.
+3. Each Claude and Codex desktop Run checks the same owner immediately before its final active
+   claim. A held rollback token rejects that claim; it does not cancel, replace, or queue the
+   candidate. A successful claim atomically creates an exact rollback-only lifecycle blocker,
+   and only the corresponding supervised lifecycle `finally` releases it. The fence check,
+   blocker creation, and active-owner install stay synchronous in the main-process event loop,
+   so rollback cannot enter between the final check and claim.
+4. These lifecycle blockers do not arbitrate or authorize Run versus Run. Successor B may start
+   while aborted predecessor A drains. If B settles first, exact cleanup releases only B; A
+   continues to make rollback BUSY even when both share an external Run ID, B removed the single
+   current-owner entry, or renderer reload cleanup cleared that registry. Only A's actual
+   supervised finalization releases A.
+5. If rollback wins against a Run candidate that was already reserved, the owner retains only
+   an exact, process-local rejection tombstone for that candidate. Its later final claim consumes
+   the tombstone and returns the same structured maintenance BUSY result even if rollback has
+   already released its token. Ordinary latest-request-wins staleness remains silent and is not
+   reclassified. The tombstone is neither durable state nor a waiting/execution lease and is
+   cleared by process restart.
+
+Codex user, duplicate-prompt authority, and assistant persistence likewise require both the
+exact installed stream object and its captured controller to remain non-aborted immediately at
+the write barrier. Retaining an aborted owner for lifecycle cleanup never authorizes a late DB
+write.
+
+The structured conflict shape is deliberately named for future C4.1 absorption:
+
+```ts
+{
+  code: "SESSION_BINDING_BUSY"
+  subChatId: string
+  operation: "rollback"
+  activeRunId: string | null
+  reason: "active-run" | "maintenance"
+}
+```
+
+When an active Run blocks rollback, `activeRunId` is that exact installed owner's external Run
+identifier and `reason` is `active-run`. When rollback maintenance blocks a new final claim,
+`activeRunId` is `null` and `reason` is `maintenance`. Foundation 1b uses `subChatId`, not a
+durable `bindingId`, because this temporary owner is scoped to today's one-binding-per-chat
+desktop implementation and MUST NOT pretend to be the C4 SessionBinding lease.
+
+This is not a general execution, binding-mutation, headless/job, workspace, or pending-preflight
+lease. A lifecycle blocker is negative rollback authority only: it cannot admit, cancel, wait
+for, renew, or exclude another Run. The owner has no waiting/renewal/recovery semantics and does
+not survive a Host/process crash.
+Phase 5's durable C4 SessionBinding lease design MUST absorb or replace this ordering rule and
+delete `chat-maintenance-fence.ts`; carrying both owners forward is forbidden. The
+`OWNERSHIP_MAP` entry contains this explicit absorption/deletion condition.
+
+*Alternative considered:* treat rollback as another binding mutation under
+`chat-session-binding.ts`. Rejected — rollback mutates Git and message history, not binding
+truth, and folding it into the durable binding owner would misrepresent this narrow precursor
+as SessionBinding lifecycle authority.
+
+**Decision 8: Rollback checkpoint authority is a unique main-minted ref bound to an exact
+OID.**
+
+Checkpoint capture first creates a private draft ref, then publishes a never-reused
+`refs/locus-checkpoints/<uuid>` public ref with compare-and-create semantics. Persisted assistant
+metadata marks rollback available only when it contains all three canonical fields:
+`rollbackCheckpointAvailable: true`, that unique `rollbackCheckpointRef`, and the exact
+40- or 64-hex `rollbackCheckpointOid`. Runtime-supplied paths or legacy SDK UUID-derived refs
+cannot become rollback authority. Two Runs A/B with the same SDK message UUID therefore receive
+different public refs, and stale A cleanup can compare-delete only A's exact ref/OID without
+altering B.
+
+Publication and DB persistence fail closed. If public-ref publication fails, the assistant row
+records `rollbackCheckpointAvailable: false` and stores no ref/OID. If the DB transaction throws
+after publication, exact compare-delete retracts that public ref and the old message row remains
+unchanged. Rollback accepts only canonical availability/ref/OID metadata, resolves the ref and
+requires it to equal the recorded OID before any `read-tree`, `checkout-index`, `clean`, or
+history truncation, and rechecks the same binding immediately before application. Missing,
+unavailable, malformed, moved, or wrong-OID checkpoints return failure with both worktree and
+message history unchanged.
+
+The unused `updateSubChatMessages` tRPC mutation is deleted in this same change. It allowed an
+arbitrary renderer-supplied history replacement without checkpoint/Git coupling and would be a
+second history-write path. `rollbackToMessage` remains the only renderer envelope for this
+maintenance operation and delegates checkpoint authority to the shared metadata/Git helpers.
+
 ## Risks / Trade-offs
 
 - **Empty-chat runtime switch changes from local state to a mutation round-trip.** The
   `subChatProviderOverrides` path was synchronous; the replacement awaits
-  `updateSubChatBinding` before recreating the transport. → Mitigation: optimistic cache
-  update on the `chats.get` query (the pattern already used by `handleCreateNewSubChat`,
-  ~L6019), plus a regression test for switch-then-send-immediately.
+  `updateSubChatBinding` before recreating the transport. → Mitigation: publish the canonical
+  mutation receipt before transport recreation, serialize switch/send through the gate, and
+  cover switch-then-send-immediately plus same-id remount in regression tests.
+- **Same-ID remount can replay an initial prompt.** A component-local auto-generation ref resets
+  when binding recreation remounts the view, allowing both mounts to queue generation. →
+  Mitigation: a bounded module-scoped claim keyed by sub-chat/message identity, plus a real
+  React + AI SDK replacement-Chat regression proving one transport execution.
 - **A sub-chat row without a binding row** (e.g. created by a concurrent older build during
   the transition). → Mitigation: the startup backfill is insert-if-missing on every boot, and
   the owner's read path falls back to `runtime: "claude-code"`-shaped defaults *in memory*
@@ -225,12 +559,24 @@ only; metadata inference lives only in the backfill).
   source back to localStorage; now the divert is per-send only, so a user stays on their
   chosen source until they change it. This is the intended truth semantics; UX surfacing of a
   standing divert is a Yellow follow-up.
+- **Provider Profile reasoning remains `none`.** Exposing low..xhigh would claim a capability
+  the gateway does not advertise. → Mitigation: normalize the binding field to `NULL`, hide
+  the selector, and track real per-protocol support in TICKET-116.
 - **`chats.get` grows a join/second query.** Trivial for SQLite at this row count; the owner
   batches with a single `IN` select in `attachBindingsToSubChats`.
 - **Guard false positives** on the name-based binding-atom scan. → Mitigation: scoped
   key-prefix matching (`agents:subChat*`) plus the semantic-term list, same style as existing
   guards; `subChatModeAtomFamily` (mode, not binding) and the global `lastSelected*` atoms
   fall outside the per-chat binding scan by construction.
+- **The maintenance fence is process-local.** A process crash clears it rather than recovering
+  a durable operation. → Mitigation: rollback and desktop Runs already cannot survive that
+  process; Foundation does not claim recovery semantics. Phase 5 must replace this owner with
+  the durable C4 lease rather than extending the map.
+- **Checkpoint publication and message persistence are separate effects.** A publication or DB
+  failure could otherwise leave false authority or an orphan ref. → Mitigation: availability
+  is explicit, public refs are unique and compare-created, post-publication DB failure retracts
+  only the exact ref/OID, and destructive rollback verifies exact metadata before touching the
+  worktree.
 
 ## Migration Plan
 
@@ -243,8 +589,10 @@ only; metadata inference lives only in the backfill).
    mutation; delete `subChatProviderOverrides`, `inferProviderFromMessages`, both transport
    steal-read/write-back blocks, `handleProviderChange` override logic, and the five
    per-sub-chat binding atom family definitions.
-5. Guards, OWNERSHIP_MAP.
-6. Verify: unit tests, `bun run check`, desktop smoke (localStorage-clear survival), then
+5. Add the narrow rollback maintenance owner, wire both desktop final-claim paths, harden
+   checkpoint ref/OID authority, and delete `updateSubChatMessages` in the same change.
+6. Guards, OWNERSHIP_MAP, including the mandatory Phase 5 fence absorption/deletion note.
+7. Verify: unit tests, `bun run check`, desktop smoke (localStorage-clear survival), then
    closeout gates.
 
 **Rollback:** pre-production/disposable stage — revert the branch; the orphaned
@@ -255,3 +603,6 @@ be dropped by a later migration or profile reset. No data-rollback path is requi
 
 - None blocking. Phase 5 questions deliberately deferred (lifecycle states, native identity
   columns, relaxing the unique index, Conversation-level API) — flagged Red if pulled forward.
+  Phase 5 has one mandatory input rather than an open question: absorb/replace the temporary
+  `chat-maintenance-fence.ts` owner with its durable C4 SessionBinding lease and delete the
+  temporary owner so no dual fence survives.

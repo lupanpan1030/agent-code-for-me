@@ -11,6 +11,8 @@ type FakeDatabaseConnection = {
 let shouldFailMigration = false
 const connections: FakeDatabaseConnection[] = []
 const migrationCalls: Array<{ db: unknown; migrationsFolder: string }> = []
+const backfillCalls: unknown[] = []
+const initializationSteps: string[] = []
 
 class FakeDatabase implements FakeDatabaseConnection {
   closed = false
@@ -49,10 +51,19 @@ mock.module("drizzle-orm/better-sqlite3", () => ({
 
 mock.module("drizzle-orm/better-sqlite3/migrator", () => ({
   migrate: (db: unknown, options: { migrationsFolder: string }) => {
+    initializationSteps.push("migrate")
     migrationCalls.push({ db, migrationsFolder: options.migrationsFolder })
     if (shouldFailMigration) {
       throw new Error("migration boom")
     }
+  },
+}))
+
+mock.module("../src/main/lib/chat-session-binding", () => ({
+  backfillSubChatBindings: (db: unknown) => {
+    initializationSteps.push("backfill")
+    backfillCalls.push(db)
+    return 0
   },
 }))
 
@@ -65,6 +76,8 @@ afterEach(() => {
   closeDatabase()
   connections.length = 0
   migrationCalls.length = 0
+  backfillCalls.length = 0
+  initializationSteps.length = 0
 })
 
 describe("database initialization", () => {
@@ -74,6 +87,7 @@ describe("database initialization", () => {
     expect(() => initDatabase()).toThrow("migration boom")
     expect(connections).toHaveLength(1)
     expect(connections[0]?.closed).toBe(true)
+    expect(backfillCalls).toHaveLength(0)
 
     shouldFailMigration = false
     const recovered = getDatabase()
@@ -81,5 +95,7 @@ describe("database initialization", () => {
     expect(connections).toHaveLength(2)
     expect(connections[1]?.closed).toBe(false)
     expect(recovered).toBe(migrationCalls.at(-1)?.db)
+    expect(backfillCalls).toEqual([recovered])
+    expect(initializationSteps).toEqual(["migrate", "migrate", "backfill"])
   })
 })

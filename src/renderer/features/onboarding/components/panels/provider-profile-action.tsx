@@ -9,10 +9,7 @@ import { IconSpinner } from "../../../../components/ui/icons"
 import { Input } from "../../../../components/ui/input"
 import { useI18n } from "../../../../lib/i18n"
 import { trpc } from "../../../../lib/trpc"
-import {
-  type ClaudeModelSource,
-  lastSelectedClaudeModelSourceAtom,
-} from "../../../agents/atoms"
+import { setLastSelectedClaudeSelectionAtom } from "../../../agents/atoms"
 
 const isValidApiKey = (key: string) => {
   const trimmed = key.trim()
@@ -30,8 +27,8 @@ function getErrorMessage(error: unknown): string {
  */
 export function ProviderProfileAction() {
   const { t } = useI18n()
-  const setLastSelectedClaudeModelSource = useSetAtom(
-    lastSelectedClaudeModelSourceAtom,
+  const setLastSelectedClaudeSelection = useSetAtom(
+    setLastSelectedClaudeSelectionAtom,
   )
   const trpcUtils = trpc.useUtils()
   const saveProviderProfile = trpc.providerProfiles.saveProfile.useMutation()
@@ -92,11 +89,12 @@ export function ProviderProfileAction() {
       },
       {
         onSuccess: async ({ profile }) => {
+          setLastSelectedClaudeSelection({
+            modelSource: providerProfileSource(profile.id),
+            modelId: profile.defaultModel,
+          })
           await trpcUtils.providerProfiles.listProfiles.invalidate()
           await trpcUtils.claudeProviderConfig.get.invalidate()
-          setLastSelectedClaudeModelSource(
-            providerProfileSource(profile.id) as ClaudeModelSource,
-          )
           setApiKey("")
         },
         onError: (error) => {

@@ -1,6 +1,6 @@
 "use client"
 
-import { useAtom, useSetAtom } from "jotai"
+import { useAtom, useAtomValue, useSetAtom } from "jotai"
 import { CheckCircle2 } from "lucide-react"
 import type { ReactNode } from "react"
 import { providerProfileSource } from "../../../../shared/provider-profile-types"
@@ -13,8 +13,9 @@ import { onboardingProviderModeAtom } from "../../../lib/atoms"
 import { type TranslationKey, useI18n } from "../../../lib/i18n"
 import { cn } from "../../../lib/utils"
 import {
-  type ClaudeModelSource,
-  lastSelectedClaudeModelSourceAtom,
+  lastSelectedCodexThinkingAtom,
+  setLastSelectedClaudeSelectionAtom,
+  setLastSelectedCodexSelectionAtom,
 } from "../../agents/atoms"
 import { ProviderProfileEditor } from "../../agents/components/provider-profile-editor"
 import {
@@ -102,17 +103,29 @@ function ClaudeAction() {
 
 /** Custom provider uses the canonical shared editor (presets + protocol). */
 function CustomProviderAction() {
-  const setLastSelectedClaudeModelSource = useSetAtom(
-    lastSelectedClaudeModelSourceAtom,
+  const lastSelectedCodexThinking = useAtomValue(lastSelectedCodexThinkingAtom)
+  const setLastSelectedClaudeSelection = useSetAtom(
+    setLastSelectedClaudeSelectionAtom,
+  )
+  const setLastSelectedCodexSelection = useSetAtom(
+    setLastSelectedCodexSelectionAtom,
   )
   return (
     <ProviderProfileEditor
       dense
       onSaved={(profile) => {
         if (profile.targetRuntimes.includes("claude")) {
-          setLastSelectedClaudeModelSource(
-            providerProfileSource(profile.id) as ClaudeModelSource,
-          )
+          setLastSelectedClaudeSelection({
+            modelSource: providerProfileSource(profile.id),
+            modelId: profile.defaultModel,
+          })
+        }
+        if (profile.targetRuntimes.includes("codex")) {
+          setLastSelectedCodexSelection({
+            modelSource: providerProfileSource(profile.id),
+            modelId: profile.defaultModel,
+            thinkingLevel: lastSelectedCodexThinking,
+          })
         }
       }}
     />

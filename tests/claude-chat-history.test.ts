@@ -1,5 +1,9 @@
-import { describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, test } from "bun:test"
 import { eq } from "drizzle-orm"
+import {
+  clearClaudeActiveSessionsForTest,
+  setActiveClaudeSession,
+} from "../src/main/lib/claude/active-sessions"
 import {
   buildClaudeUserParts,
   claudeImageAttachmentSignatureFromInput,
@@ -46,7 +50,17 @@ function seedChatHistory(
     .run()
 }
 
+function activateClaudeSession(): AbortSignal {
+  const controller = new AbortController()
+  setActiveClaudeSession("sub-1", { controller, runId: "run-1" })
+  return controller.signal
+}
+
 describe("Claude chat history helpers", () => {
+  afterEach(() => {
+    clearClaudeActiveSessionsForTest()
+  })
+
   test("resolves rollback and fork resume metadata from the latest assistant message", () => {
     expect(
       resolveClaudeChatResumeMetadata([
@@ -350,6 +364,7 @@ describe("Claude chat history helpers", () => {
     const result = prepareClaudeChatHistoryForDesktopRun({
       db,
       subChatId: "sub-1",
+      activeSessionSignal: activateClaudeSession(),
       streamId: "stream-1",
       prompt: "next",
       images: [],
@@ -358,6 +373,8 @@ describe("Claude chat history helpers", () => {
       now: () => new Date("2026-06-01T00:00:00.000Z"),
     })
 
+    expect(result).not.toBeNull()
+    if (!result) return
     expect(result).toMatchObject({
       existingSessionId: "session-old",
       existingMessages: [
@@ -409,6 +426,7 @@ describe("Claude chat history helpers", () => {
     const result = prepareClaudeChatHistoryForDesktopRun({
       db,
       subChatId: "sub-1",
+      activeSessionSignal: activateClaudeSession(),
       streamId: "stream-duplicate",
       prompt: "same",
       images: [],
@@ -416,6 +434,8 @@ describe("Claude chat history helpers", () => {
       createId: () => "user-new",
     })
 
+    expect(result).not.toBeNull()
+    if (!result) return
     expect(result).toMatchObject({
       existingSessionId: "session-old",
       existingMessages: [duplicateMessage],
@@ -431,5 +451,41 @@ describe("Claude chat history helpers", () => {
       .get()
     expect(saved?.streamId).toBeNull()
     expect(JSON.parse(saved?.messages ?? "[]")).toEqual([duplicateMessage])
+  })
+
+  test("does not persist a stale user after a same-run-id replacement", () => {
+    const db = createAgentJobTestDb()
+    seedChatHistory(db, [])
+    const staleController = new AbortController()
+    const replacementController = new AbortController()
+    setActiveClaudeSession("sub-1", {
+      controller: staleController,
+      runId: "run-shared",
+    })
+    setActiveClaudeSession("sub-1", {
+      controller: replacementController,
+      runId: "run-shared",
+    })
+
+    expect(
+      prepareClaudeChatHistoryForDesktopRun({
+        db,
+        subChatId: "sub-1",
+        activeSessionSignal: staleController.signal,
+        streamId: "stream-stale",
+        prompt: "stale user",
+        images: [],
+        longTextAttachments: [],
+        createId: () => "stale-user",
+      }),
+    ).toBeNull()
+
+    expect(
+      db.select().from(subChats).where(eq(subChats.id, "sub-1")).get(),
+    ).toMatchObject({
+      sessionId: "session-old",
+      streamId: null,
+      messages: "[]",
+    })
   })
 })

@@ -41,12 +41,12 @@ function dependencies(
     validateCodexApiKey: async () => ({ ok: true }),
     getCachedCodexApiKeyModelIds: () => [],
     updateStoredCodexApiKeyModelIds: () => {},
-    getCodexIntegrationStatus: async () =>
-      ({ isConnected: true }) as Awaited<
-        ReturnType<
-          CodexDesktopRunProviderBindingDependencies["getCodexIntegrationStatus"]
-        >
-      >,
+    getCodexIntegrationStatus: async () => ({
+      state: "connected_chatgpt",
+      isConnected: true,
+      rawOutput: "Logged in using ChatGPT",
+      exitCode: 0,
+    }),
     warn: () => {},
     ...overrides,
   }
@@ -57,6 +57,7 @@ function runInput(
 ): ResolveCodexDesktopRunProviderBindingInput {
   return {
     requestedModel: "gpt-5.5/high",
+    providerProfileBoundModelId: "gpt-5.5",
     signal: new AbortController().signal,
     emit: () => {},
     complete: () => {},
@@ -72,6 +73,8 @@ describe("Codex desktop run provider binding", () => {
     const gatewayToken = randomBytes(32).toString("hex")
     let releaseGateway: (() => void) | undefined
     let appManagedKeyRead = false
+    let gatewayModelResolution: string | undefined
+    let gatewayBoundModelId: string | undefined
     const gatewayReady = new Promise<void>((resolve) => {
       releaseGateway = resolve
     })
@@ -79,7 +82,9 @@ describe("Codex desktop run provider binding", () => {
       dependencies: dependencies({
         getProviderProfileRuntimeConfig: (id) =>
           providerProfile({ id, token: upstreamToken }),
-        getProviderGatewayEndpoint: async (providerId) => {
+        getProviderGatewayEndpoint: async (providerId, _kind, options) => {
+          gatewayModelResolution = options?.modelResolution
+          gatewayBoundModelId = options?.codexChatBoundModelId
           await gatewayReady
           return {
             baseUrl: `http://127.0.0.1:45100/profile/${providerId}/responses/v1`,
@@ -107,6 +112,8 @@ describe("Codex desktop run provider binding", () => {
 
     expect(result.ok).toBe(true)
     if (!result.ok) throw new Error("expected provider binding")
+    expect(gatewayModelResolution).toBe("codex-chat-binding")
+    expect(gatewayBoundModelId).toBe("gpt-5.5")
     expect(appManagedKeyRead).toBe(false)
     expect(result.providerProfile).toEqual({
       id: "profile-1",
@@ -116,13 +123,47 @@ describe("Codex desktop run provider binding", () => {
       defaultModel: "provider-model",
     })
     expect(result.providerBinding).toEqual({
-      model: "provider-model",
+      model: "gpt-5.5/high",
       modelSource: "request",
       providerProfileId: "profile-1",
       gatewayEndpoint: "http://127.0.0.1:45100/profile/profile-1/responses/v1",
       authMode: "provider-profile",
     })
     expect(result.getSecretHints()).toEqual([upstreamToken, gatewayToken])
+  })
+
+  test("keeps the requested chat model authoritative over an edited profile default", async () => {
+    let gatewayBoundModelId: string | undefined
+    const stage = createCodexDesktopRunProviderBindingStage({
+      dependencies: dependencies({
+        getProviderProfileRuntimeConfig: (id) =>
+          providerProfile({ id, defaultModel: "new-profile-default/high" }),
+        getProviderGatewayEndpoint: async (providerId, _kind, options) => {
+          gatewayBoundModelId = options?.codexChatBoundModelId
+          return {
+            baseUrl: `http://127.0.0.1:45100/profile/${providerId}/responses/v1`,
+            token: `gateway-token-${providerId}`,
+            providerId,
+          }
+        },
+      }),
+    })
+
+    const result = await stage.resolve(
+      runInput({
+        providerProfileId: "profile-1",
+        requestedModel: "bound-profile-model/none",
+        providerProfileBoundModelId: "bound-profile-model",
+      }),
+    )
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error("expected provider binding")
+    expect(result.appServerSelectedModelId).toBe("bound-profile-model/none")
+    expect(result.metadataModel).toBe("bound-profile-model/none")
+    expect(result.providerBinding.model).toBe("bound-profile-model/none")
+    expect(result.providerProfile.defaultModel).toBe("new-profile-default/high")
+    expect(gatewayBoundModelId).toBe("bound-profile-model")
   })
 
   test("shares one idempotent gateway revoke across unsubscribe and finally", async () => {
@@ -294,11 +335,12 @@ describe("Codex desktop run provider binding", () => {
       const stage = createCodexDesktopRunProviderBindingStage({
         dependencies: dependencies({
           getCodexIntegrationStatus: async () =>
-            ({ isConnected: false }) as Awaited<
-              ReturnType<
-                CodexDesktopRunProviderBindingDependencies["getCodexIntegrationStatus"]
-              >
-            >,
+            ({
+              state: "not_logged_in",
+              isConnected: false,
+              rawOutput: "Not logged in",
+              exitCode: 1,
+            }) as const,
         }),
       })
       const result = await stage.resolve({
@@ -319,5 +361,33 @@ describe("Codex desktop run provider binding", () => {
         "capability-error",
       ])
     }
+  })
+
+  test("rejects CLI API-key auth for a ChatGPT-bound chat", async () => {
+    const emitted: Record<string, unknown>[] = []
+    const stage = createCodexDesktopRunProviderBindingStage({
+      dependencies: dependencies({
+        getCodexIntegrationStatus: async () => ({
+          state: "connected_api_key",
+          isConnected: true,
+          rawOutput: "Logged in using an API key",
+          exitCode: 0,
+        }),
+      }),
+    })
+
+    const result = await stage.resolve(
+      runInput({
+        codexAuthMethod: "chatgpt",
+        emitPreflightBlocker: (blocker) => emitted.push(blocker),
+      }),
+    )
+
+    expect(result).toEqual({ ok: false })
+    expect(emitted).toHaveLength(1)
+    expect(emitted[0]).toMatchObject({
+      id: "provider-profile",
+      status: "needs-auth",
+    })
   })
 })

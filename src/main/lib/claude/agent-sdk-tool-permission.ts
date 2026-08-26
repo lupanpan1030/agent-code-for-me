@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto"
 import type {
   Options as ClaudeAgentSdkOptions,
   HookCallback,
@@ -9,6 +10,7 @@ import type { AgentGuardEvent } from "../../../shared/agent-scope-contracts"
 import {
   classifyObservedToolRisk,
   decideClaudeToolUse,
+  registerActiveGuardedScopeExpansionRequest,
   resolveGuardedScopedShellWriteApproval,
   toClaudePermissionResult,
   type ValidatedAgentScopeContract,
@@ -35,17 +37,15 @@ export type ClaudeAskUserQuestionDecision = {
 }
 
 export type ClaudeAskUserQuestionPending = {
-  subChatId: string
-  toolName: "AskUserQuestion"
-  toolInput: Record<string, unknown>
-  resolve: (decision: ClaudeAskUserQuestionDecision) => void
-} | {
+  approvalId: string
+  toolUseId: string
   subChatId: string
   toolName: string
   toolInput: Record<string, unknown>
-  approvalInput: {
+  approvalInput?: {
     questions: AskUserQuestionChunk["questions"]
   }
+  isCurrentRunOwner: () => boolean
   resolve: (decision: ClaudeAskUserQuestionDecision) => void
 }
 
@@ -53,12 +53,11 @@ export type CreateClaudeAgentSdkToolPermissionHandlerInput = {
   isUsingOllama: boolean
   permissionPolicy: DesktopPermissionPolicy
   guardedContract: ValidatedAgentScopeContract | null
-  getGuardedContract: (
-    contractId: string,
-  ) => ValidatedAgentScopeContract | undefined
+  isGuardedContractCurrent: (contract: ValidatedAgentScopeContract) => boolean
   recordGuardEvent: (event: AgentGuardEvent) => void
   emit: (chunk: UIMessageChunk) => void
   subChatId: string
+  isCurrentRunOwner?: () => boolean
   pendingToolApprovals: Map<string, ClaudeAskUserQuestionPending>
   parts: Array<Record<string, any>>
 }
@@ -74,9 +73,14 @@ const PLAN_MODE_BLOCKED_TOOLS = new Set([
 const APPROVE_OPTION_LABEL = "Approve"
 const DENY_OPTION_LABEL = "Deny"
 
-type AskUserQuestionChunk = Extract<UIMessageChunk, { type: "ask-user-question" }>
+type AskUserQuestionChunk = Extract<
+  UIMessageChunk,
+  { type: "ask-user-question" }
+>
 
-function createGuardedShellApprovalQuestions(reason: string): AskUserQuestionChunk["questions"] {
+function createGuardedShellApprovalQuestions(
+  reason: string,
+): AskUserQuestionChunk["questions"] {
   return [
     {
       header: "Scoped shell write",
@@ -96,7 +100,9 @@ function createGuardedShellApprovalQuestions(reason: string): AskUserQuestionChu
   ]
 }
 
-function approvalAnswers(decision: ClaudeAskUserQuestionDecision): Record<string, unknown> {
+function approvalAnswers(
+  decision: ClaudeAskUserQuestionDecision,
+): Record<string, unknown> {
   const updatedInput = decision.updatedInput
   if (
     !updatedInput ||
@@ -218,14 +224,102 @@ export function createClaudeAgentSdkPermissionControls({
   isUsingOllama,
   permissionPolicy,
   guardedContract,
-  getGuardedContract,
+  isGuardedContractCurrent,
   recordGuardEvent,
   emit,
   subChatId,
+  isCurrentRunOwner = () => true,
   pendingToolApprovals,
   parts,
 }: CreateClaudeAgentSdkToolPermissionHandlerInput): ClaudeAgentSdkPermissionControls {
   const preToolUseDecisions = new Map<string, PermissionResult>()
+  const runOwnerIsCurrent = (): boolean => {
+    try {
+      return isCurrentRunOwner()
+    } catch {
+      return false
+    }
+  }
+  const guardedOwnerIsCurrent = (): boolean => {
+    if (!guardedContract) return true
+    try {
+      return (
+        guardedContract.subChatId === subChatId &&
+        isGuardedContractCurrent(guardedContract)
+      )
+    } catch {
+      return false
+    }
+  }
+  const callbackAuthorityIsCurrent = (): boolean =>
+    runOwnerIsCurrent() && guardedOwnerIsCurrent()
+  const staleRunMessage = (): string =>
+    runOwnerIsCurrent()
+      ? "Guarded run is no longer active."
+      : "Claude run is no longer active."
+  const staleRunDecision = (): PermissionResult => ({
+    behavior: "deny",
+    message: staleRunMessage(),
+  })
+  const deletePendingIfCurrent = (
+    approvalId: string,
+    pending: ClaudeAskUserQuestionPending,
+  ): boolean => {
+    if (pendingToolApprovals.get(approvalId) !== pending) return false
+    return pendingToolApprovals.delete(approvalId)
+  }
+  const waitForUserApproval = (input: {
+    toolUseId: string
+    toolName: string
+    toolInput: Record<string, unknown>
+    questions: AskUserQuestionChunk["questions"]
+    approvalInput?: ClaudeAskUserQuestionPending["approvalInput"]
+  }): Promise<{
+    approvalId: string
+    response: ClaudeAskUserQuestionDecision
+  }> => {
+    const approvalId = `claude-approval-${randomUUID()}`
+    return new Promise((resolve) => {
+      let settled = false
+      let pending!: ClaudeAskUserQuestionPending
+      const finish = (response: ClaudeAskUserQuestionDecision) => {
+        if (settled) return
+        settled = true
+        clearTimeout(timeoutId)
+        deletePendingIfCurrent(approvalId, pending)
+        resolve({ approvalId, response })
+      }
+      const timeoutId = setTimeout(() => {
+        const owned = deletePendingIfCurrent(approvalId, pending)
+        if (owned) {
+          emit({
+            type: "ask-user-question-timeout",
+            approvalId,
+            toolUseId: input.toolUseId,
+          })
+        }
+        finish({ approved: false, message: "Timed out" })
+      }, 60000)
+
+      pending = {
+        approvalId,
+        toolUseId: input.toolUseId,
+        subChatId,
+        toolName: input.toolName,
+        toolInput: { ...input.toolInput },
+        ...(input.approvalInput ? { approvalInput: input.approvalInput } : {}),
+        isCurrentRunOwner: callbackAuthorityIsCurrent,
+        resolve: finish,
+      }
+      pendingToolApprovals.set(approvalId, pending)
+      emit({
+        type: "ask-user-question",
+        approvalId,
+        toolUseId: input.toolUseId,
+        questions: input.questions,
+      })
+    })
+  }
 
   const decideToolPermission = async ({
     toolName,
@@ -238,6 +332,8 @@ export function createClaudeAgentSdkPermissionControls({
     toolUseID: string
     handleAskUserQuestion: boolean
   }): Promise<PermissionResult> => {
+    if (!callbackAuthorityIsCurrent()) return staleRunDecision()
+
     if (isUsingOllama) {
       fixOllamaToolInputAliases(toolName, toolInput)
     }
@@ -250,6 +346,7 @@ export function createClaudeAgentSdkPermissionControls({
           message: decision.message || "Assistant mode blocked tool use.",
         }
       }
+      if (!callbackAuthorityIsCurrent()) return staleRunDecision()
       return {
         behavior: "allow",
         updatedInput: toolInput,
@@ -277,10 +374,14 @@ export function createClaudeAgentSdkPermissionControls({
       permissionPolicy.enforcement === "locus-guarded-tool-policy" &&
       toolName !== "AskUserQuestion"
     ) {
-      const currentGuardedContract =
-        getGuardedContract(guardedContract.id) ?? guardedContract
+      if (!guardedOwnerIsCurrent()) {
+        return {
+          behavior: "deny",
+          message: "Guarded run is no longer active.",
+        }
+      }
       const approval = resolveGuardedScopedShellWriteApproval({
-        contract: currentGuardedContract,
+        contract: guardedContract,
         toolName,
         toolInput,
         toolUseId: toolUseID,
@@ -293,40 +394,33 @@ export function createClaudeAgentSdkPermissionControls({
         })
 
         const questions = createGuardedShellApprovalQuestions(approval.reason)
-        emit({
-          type: "ask-user-question",
+        const { approvalId, response } = await waitForUserApproval({
           toolUseId: toolUseID,
+          toolName,
+          toolInput,
           questions,
+          approvalInput: { questions },
         })
 
-        const response = await new Promise<ClaudeAskUserQuestionDecision>(
-          (resolve) => {
-            const timeoutId = setTimeout(() => {
-              pendingToolApprovals.delete(toolUseID)
-              emit({
-                type: "ask-user-question-timeout",
-                toolUseId: toolUseID,
-              })
-              resolve({ approved: false, message: "Timed out" })
-            }, 60000)
-
-            pendingToolApprovals.set(toolUseID, {
-              subChatId,
-              toolName,
-              toolInput: { ...toolInput },
-              approvalInput: { questions },
-              resolve: (decision) => {
-                clearTimeout(timeoutId)
-                resolve(decision)
-              },
-            })
-          },
-        )
+        if (!callbackAuthorityIsCurrent()) {
+          const errorMessage = "Guarded run is no longer active."
+          emit({
+            type: "ask-user-question-result",
+            approvalId,
+            toolUseId: toolUseID,
+            result: errorMessage,
+          })
+          return {
+            behavior: "deny",
+            message: errorMessage,
+          }
+        }
 
         if (!approvalAccepted(response)) {
           const errorMessage = response.message || "Denied"
           emit({
             type: "ask-user-question-result",
+            approvalId,
             toolUseId: toolUseID,
             result: errorMessage,
           })
@@ -338,9 +432,11 @@ export function createClaudeAgentSdkPermissionControls({
 
         emit({
           type: "ask-user-question-result",
+          approvalId,
           toolUseId: toolUseID,
           result: "approved",
         })
+        if (!callbackAuthorityIsCurrent()) return staleRunDecision()
         return {
           behavior: "allow",
           updatedInput: approval.updatedInput,
@@ -348,69 +444,64 @@ export function createClaudeAgentSdkPermissionControls({
       }
 
       const decision = decideClaudeToolUse({
-        contract: currentGuardedContract,
+        contract: guardedContract,
         toolName,
         toolInput,
         toolUseId: toolUseID,
       })
+      if (
+        decision.decision === "request-expansion" &&
+        !registerActiveGuardedScopeExpansionRequest({
+          contract: guardedContract,
+          event: decision.event,
+        })
+      ) {
+        return {
+          behavior: "deny",
+          message: "Guarded run is no longer active.",
+        }
+      }
       recordGuardEvent(decision.event)
       emit({
         type: "guard-event",
         event: decision.event,
       })
+      if (!callbackAuthorityIsCurrent()) return staleRunDecision()
       return toClaudePermissionResult(decision)
     }
 
     if (toolName === "AskUserQuestion") {
       if (!handleAskUserQuestion) {
+        if (!callbackAuthorityIsCurrent()) return staleRunDecision()
         return {
           behavior: "allow",
           updatedInput: toolInput,
         }
       }
 
-      emit({
-        type: "ask-user-question",
+      const { approvalId, response } = await waitForUserApproval({
         toolUseId: toolUseID,
+        toolName: "AskUserQuestion",
+        toolInput,
         questions: (toolInput as any).questions,
       })
-
-      const response = await new Promise<ClaudeAskUserQuestionDecision>(
-        (resolve) => {
-          const timeoutId = setTimeout(() => {
-            pendingToolApprovals.delete(toolUseID)
-            emit({
-              type: "ask-user-question-timeout",
-              toolUseId: toolUseID,
-            })
-            resolve({ approved: false, message: "Timed out" })
-          }, 60000)
-
-          pendingToolApprovals.set(toolUseID, {
-            subChatId,
-            toolName: "AskUserQuestion",
-            toolInput: { ...toolInput },
-            resolve: (decision) => {
-              clearTimeout(timeoutId)
-              resolve(decision)
-            },
-          })
-        },
-      )
 
       const askToolPart = parts.find(
         (part) =>
           part.toolCallId === toolUseID && part.type === "tool-AskUserQuestion",
       )
 
-      if (!response.approved) {
-        const errorMessage = response.message || "Skipped"
+      if (!response.approved || !callbackAuthorityIsCurrent()) {
+        const errorMessage = callbackAuthorityIsCurrent()
+          ? response.message || "Skipped"
+          : staleRunMessage()
         if (askToolPart) {
           askToolPart.result = errorMessage
           askToolPart.state = "result"
         }
         emit({
           type: "ask-user-question-result",
+          approvalId,
           toolUseId: toolUseID,
           result: errorMessage,
         })
@@ -428,9 +519,11 @@ export function createClaudeAgentSdkPermissionControls({
       }
       emit({
         type: "ask-user-question-result",
+        approvalId,
         toolUseId: toolUseID,
         result: answerResult,
       })
+      if (!callbackAuthorityIsCurrent()) return staleRunDecision()
       return {
         behavior: "allow",
         updatedInput: response.updatedInput as Record<string, unknown>,
@@ -465,6 +558,7 @@ export function createClaudeAgentSdkPermissionControls({
       }
     }
 
+    if (!callbackAuthorityIsCurrent()) return staleRunDecision()
     return {
       behavior: "allow",
       updatedInput: toolInput,
@@ -476,17 +570,30 @@ export function createClaudeAgentSdkPermissionControls({
     toolInput,
     options,
   ) => {
+    if (!callbackAuthorityIsCurrent()) return staleRunDecision()
     const cachedDecision = preToolUseDecisions.get(options.toolUseID)
     if (cachedDecision && toolName !== "AskUserQuestion") {
-      return cachedDecision
+      preToolUseDecisions.delete(options.toolUseID)
+      if (
+        guardedContract &&
+        permissionPolicy.enforcement === "locus-guarded-tool-policy" &&
+        !guardedOwnerIsCurrent()
+      ) {
+        return {
+          behavior: "deny",
+          message: "Guarded run is no longer active.",
+        }
+      }
+      return callbackAuthorityIsCurrent() ? cachedDecision : staleRunDecision()
     }
 
-    return decideToolPermission({
+    const decision = await decideToolPermission({
       toolName,
       toolInput,
       toolUseID: options.toolUseID,
       handleAskUserQuestion: true,
     })
+    return callbackAuthorityIsCurrent() ? decision : staleRunDecision()
   }
 
   const preToolUseHook: ClaudeAgentSdkPreToolUseHook = async (
@@ -495,6 +602,10 @@ export function createClaudeAgentSdkPermissionControls({
   ) => {
     if (!isPreToolUseHookInput(hookInput)) {
       return { continue: true }
+    }
+
+    if (!callbackAuthorityIsCurrent()) {
+      return toClaudePreToolUseHookOutput(staleRunDecision())
     }
 
     const resolvedToolUseID =
@@ -509,8 +620,13 @@ export function createClaudeAgentSdkPermissionControls({
       toolUseID: resolvedToolUseID,
       handleAskUserQuestion: false,
     })
-    preToolUseDecisions.set(resolvedToolUseID, decision)
-    return toClaudePreToolUseHookOutput(decision)
+    const effectiveDecision = callbackAuthorityIsCurrent()
+      ? decision
+      : staleRunDecision()
+    if (callbackAuthorityIsCurrent()) {
+      preToolUseDecisions.set(resolvedToolUseID, effectiveDecision)
+    }
+    return toClaudePreToolUseHookOutput(effectiveDecision)
   }
 
   return {

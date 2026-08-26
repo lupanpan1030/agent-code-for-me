@@ -7,11 +7,15 @@ import {
   agentUserMessagePartSchema,
   canonicalChatMessagePartSchema,
   canonicalChatMessageSchema,
+  getAvailableRollbackCheckpointBinding,
   renderableMessagePartSchema,
 } from "../src/shared/chat-message"
 
 describe("canonical chat message model", () => {
-  const textPart = { type: "text", text: "hello" } satisfies CanonicalChatMessagePart
+  const textPart = {
+    type: "text",
+    text: "hello",
+  } satisfies CanonicalChatMessagePart
   const toolPart = {
     type: "tool-Read",
     toolCallId: "tool-1",
@@ -139,9 +143,9 @@ describe("canonical chat message model", () => {
     }
 
     expect(genericDataPart.type).toBe("data-foo")
-    expect(canonicalChatMessagePartSchema.safeParse(genericDataPart).success).toBe(
-      false,
-    )
+    expect(
+      canonicalChatMessagePartSchema.safeParse(genericDataPart).success,
+    ).toBe(false)
   })
 
   test("user message part schema derives from the canonical local part schema", () => {
@@ -181,5 +185,45 @@ describe("canonical chat message model", () => {
         createdAt: new Date("2026-06-18T00:00:00.000Z"),
       }).success,
     ).toBe(true)
+  })
+
+  test("accepts only canonical main-minted rollback checkpoint metadata", () => {
+    const metadata = {
+      sdkMessageUuid: "sdk-1",
+      rollbackCheckpointAvailable: true,
+      rollbackCheckpointRef:
+        "refs/locus-checkpoints/123e4567-e89b-42d3-a456-426614174000",
+      rollbackCheckpointOid: "a".repeat(40),
+    }
+    expect(
+      canonicalChatMessageSchema.safeParse({
+        id: "assistant-checkpoint",
+        role: "assistant",
+        metadata,
+      }).success,
+    ).toBe(true)
+    expect(getAvailableRollbackCheckpointBinding(metadata)).toEqual({
+      ref: metadata.rollbackCheckpointRef,
+      oid: metadata.rollbackCheckpointOid,
+    })
+
+    for (const invalidMetadata of [
+      {
+        ...metadata,
+        rollbackCheckpointRef: "refs/checkpoints/sdk-1",
+      },
+      { ...metadata, rollbackCheckpointOid: "not-an-oid" },
+      { ...metadata, rollbackCheckpointOid: undefined },
+      { ...metadata, rollbackCheckpointAvailable: false },
+    ]) {
+      expect(
+        canonicalChatMessageSchema.safeParse({
+          id: "assistant-invalid-checkpoint",
+          role: "assistant",
+          metadata: invalidMetadata,
+        }).success,
+      ).toBe(false)
+      expect(getAvailableRollbackCheckpointBinding(invalidMetadata)).toBeNull()
+    }
   })
 })

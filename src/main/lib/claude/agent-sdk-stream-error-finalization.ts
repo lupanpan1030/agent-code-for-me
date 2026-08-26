@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm"
 import { redactRuntimePayload } from "../agent-runtime/redaction"
 import type { JsonValue } from "../agent-runtime/runtime-events"
 import { subChats } from "../db/schema"
+import { isActiveClaudeSessionSignal } from "./active-sessions"
 import { flushClaudeAgentSdkTextAccumulator } from "./agent-sdk-chunk-processor"
 import { classifyClaudeAgentSdkStreamError } from "./agent-sdk-errors"
 import {
@@ -20,6 +21,7 @@ export type FinalizeClaudeAgentSdkStreamErrorInput = {
   db: any
   chatId: string
   subChatId: string
+  activeSessionSignal: AbortSignal
   messagesToSave: any[]
   parts: Array<Record<string, any>>
   metadata: any
@@ -38,7 +40,6 @@ export type FinalizeClaudeAgentSdkStreamErrorInput = {
   lastChunkType: string
   emit: (chunk: UIMessageChunk) => void
   complete: () => void
-  getContract: FinalizeClaudeAgentSdkGuardMetadataInput["getContract"]
   deleteContract: FinalizeClaudeAgentSdkGuardMetadataInput["deleteContract"]
   log?: (...args: any[]) => void
 }
@@ -61,6 +62,7 @@ export async function finalizeClaudeAgentSdkStreamError({
   db,
   chatId,
   subChatId,
+  activeSessionSignal,
   messagesToSave,
   parts,
   metadata,
@@ -79,7 +81,6 @@ export async function finalizeClaudeAgentSdkStreamError({
   lastChunkType,
   emit,
   complete,
-  getContract,
   deleteContract,
   log = console.log,
 }: FinalizeClaudeAgentSdkStreamErrorInput): Promise<FinalizeClaudeAgentSdkStreamErrorResult> {
@@ -122,7 +123,10 @@ export async function finalizeClaudeAgentSdkStreamError({
   const errorContext = streamDiagnostic.context
   const errorCategory = streamDiagnostic.category
 
-  if (streamDiagnostic.isSessionNotFound) {
+  if (
+    streamDiagnostic.isSessionNotFound &&
+    isActiveClaudeSessionSignal(subChatId, activeSessionSignal)
+  ) {
     log("[claude] Session not found - clearing invalid sessionId from database")
     db.update(subChats)
       .set({ sessionId: null })
@@ -163,13 +167,13 @@ export async function finalizeClaudeAgentSdkStreamError({
       stopped: aborted,
     },
     emit,
-    getContract,
     deleteContract,
   })
   await persistClaudeAgentSdkAssistantResponse({
     db,
     chatId,
     subChatId,
+    activeSessionSignal,
     messagesToSave,
     parts,
     metadata: finalizedMetadata,

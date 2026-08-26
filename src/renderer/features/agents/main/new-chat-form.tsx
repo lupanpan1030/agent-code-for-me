@@ -46,12 +46,12 @@ import {
   getNextMode,
   type AgentMode,
   type ClaudeModelSource,
+  type CodexModelSource,
   type SelectedProject,
-  subChatClaudeModelSourceAtomFamily,
-  subChatCodexModelSourceAtomFamily,
+  setLastSelectedClaudeSelectionAtom,
+  setLastSelectedCodexSelectionAtom,
 } from "../atoms"
 import { defaultAgentModeAtom } from "../../../lib/atoms"
-import { appStore } from "../../../lib/jotai-store"
 import { ProjectSelector } from "../components/project-selector"
 import { WorkModeSelector } from "../components/work-mode-selector"
 import {
@@ -113,6 +113,10 @@ import {
 } from "../../../../shared/provider-profile-types"
 import type { AgentChatProvider } from "../../../../shared/agent-chat-provider"
 import {
+  createProviderProfileChatSessionBindingWrite,
+  normalizeChatSessionBindingWrite,
+} from "../../../../shared/chat-session-binding"
+import {
   getChatImageAttachmentCapability,
   resolveChatImageModelVision,
 } from "../../../../shared/chat-attachment-capabilities"
@@ -135,6 +139,7 @@ import {
 } from "../lib/drafts"
 import { imageAttachmentBlockDescriptionKey } from "../lib/image-attachment-copy"
 import { buildAgentMessageParts } from "../lib/message-parts"
+import { resolveCodexNewChatDefaultsForSource } from "../lib/chat-session-binding-defaults"
 import {
   buildCodexApiKeyModels,
   type ClaudeCatalogModel,
@@ -314,8 +319,9 @@ export function NewChatForm({
   )
   const [lastSelectedAgentId, setLastSelectedAgentId] =
     useAtom(projectAgentIdAtom)
-  const [lastSelectedModelId, setLastSelectedModelId] = useAtom(
-    lastSelectedModelIdAtom,
+  const [lastSelectedModelId] = useAtom(lastSelectedModelIdAtom)
+  const setLastSelectedClaudeSelection = useSetAtom(
+    setLastSelectedClaudeSelectionAtom,
   )
   // Mode for new chat - uses user's default preference directly
   // Note: defaultAgentMode is initialized synchronously via atomWithStorage with getOnInit: true
@@ -345,9 +351,7 @@ export function NewChatForm({
       staleTime: 30_000,
     })
   const providerProfiles = providerProfilesData?.profiles ?? []
-  const [selectedClaudeModelSource, setSelectedClaudeModelSource] = useAtom(
-    lastSelectedClaudeModelSourceAtom,
-  )
+  const [selectedClaudeModelSource] = useAtom(lastSelectedClaudeModelSourceAtom)
   // Connection status, derived from the provider/runtime owners.
   const setupStatus = useSetupStatus()
   // OAuth is only usable when a non-expired OAuth credential and the runtime are
@@ -541,13 +545,15 @@ export function NewChatForm({
   const [selectedOllamaModel, setSelectedOllamaModel] = useAtom(
     selectedOllamaModelAtom,
   )
-  const [lastSelectedCodexModelId, setLastSelectedCodexModelId] = useAtom(
-    lastSelectedCodexModelIdAtom,
+  const [lastSelectedCodexModelId] = useAtom(lastSelectedCodexModelIdAtom)
+  const [lastSelectedCodexModelSource] = useAtom(
+    lastSelectedCodexModelSourceAtom,
   )
-  const [lastSelectedCodexModelSource, setLastSelectedCodexModelSource] =
-    useAtom(lastSelectedCodexModelSourceAtom)
   const [lastSelectedCodexThinking, setLastSelectedCodexThinking] = useAtom(
     lastSelectedCodexThinkingAtom,
+  )
+  const setLastSelectedCodexSelection = useSetAtom(
+    setLastSelectedCodexSelectionAtom,
   )
   const [thinkingEnabled, setThinkingEnabled] = useAtom(
     extendedThinkingEnabledAtom,
@@ -565,18 +571,13 @@ export function NewChatForm({
       staleTime: 30_000,
     },
   )
-  const hasAppCodexApiKey = Boolean(codexApiKeyStatus?.hasApiKey)
   const hiddenModels = useAtomValue(hiddenModelsAtom)
-  const shouldUseCodexApiKeyModels =
-    lastSelectedCodexModelSource === "openai-api-key" ||
-    (lastSelectedCodexModelSource === "chatgpt" &&
-      setupStatus.codex.authMethod === "api_key" &&
-      hasAppCodexApiKey)
-  const effectiveCodexFirstPartySource = shouldUseCodexApiKeyModels
-    ? "openai-api-key"
-    : lastSelectedCodexModelSource === "chatgpt"
-      ? "chatgpt"
-      : null
+  const effectiveCodexFirstPartySource =
+    lastSelectedCodexModelSource === "openai-api-key"
+      ? "openai-api-key"
+      : lastSelectedCodexModelSource === "chatgpt"
+        ? "chatgpt"
+        : null
   const codexApiKeyModels = useMemo(
     () =>
       buildCodexApiKeyModels(codexApiKeyStatus?.modelIds ?? [], codexModels),
@@ -640,6 +641,9 @@ export function NewChatForm({
     Boolean(selectedCodexProfileId) && !providerProfilesData
 
   useEffect(() => {
+    // A Profile binding exposes reasoning=none and stores NULL. Keep the
+    // user's first-party effort preference untouched while Profile is active.
+    if (selectedCodexProfileId) return
     if (
       selectedCodexModel.thinkings.includes(
         lastSelectedCodexThinking as CodexThinkingLevel,
@@ -650,6 +654,7 @@ export function NewChatForm({
 
     setLastSelectedCodexThinking(selectedCodexThinking)
   }, [
+    selectedCodexProfileId,
     selectedCodexModel,
     lastSelectedCodexThinking,
     selectedCodexThinking,
@@ -662,13 +667,25 @@ export function NewChatForm({
       !selectedCodexProviderProfile &&
       !selectedCodexProfileIsPending
     ) {
-      setLastSelectedCodexModelSource("chatgpt")
+      const nextDefaults = resolveCodexNewChatDefaultsForSource({
+        models: codexModels,
+        selectedModelId: lastSelectedCodexModelId,
+        selectedThinking: lastSelectedCodexThinking,
+        source: "chatgpt",
+      })
+      setLastSelectedCodexSelection({
+        modelSource: "chatgpt",
+        ...nextDefaults,
+      })
     }
   }, [
     selectedCodexProfileId,
     selectedCodexProviderProfile,
     selectedCodexProfileIsPending,
-    setLastSelectedCodexModelSource,
+    codexModels,
+    lastSelectedCodexModelId,
+    lastSelectedCodexThinking,
+    setLastSelectedCodexSelection,
   ])
 
   const selectedChatModel = useMemo(() => {
@@ -702,6 +719,47 @@ export function NewChatForm({
   )
     ? selectedAgent.id
     : "claude-code"
+  const selectedChatBinding = useMemo(() => {
+    const selectedProviderProfile =
+      selectedRuntimeProvider === "codex"
+        ? selectedCodexProviderProfile
+        : selectedClaudeProviderProfile
+    if (selectedProviderProfile) {
+      return createProviderProfileChatSessionBindingWrite({
+        runtime: selectedRuntimeProvider,
+        profile: selectedProviderProfile,
+      })
+    }
+
+    return normalizeChatSessionBindingWrite({
+      runtime: selectedRuntimeProvider,
+      providerProfileId:
+        selectedRuntimeProvider === "codex"
+          ? selectedCodexProfileId
+          : selectedClaudeProfileId,
+      modelId:
+        selectedRuntimeProvider === "codex"
+          ? selectedCodexModel.id
+          : selectedChatModel,
+      modelSource:
+        selectedRuntimeProvider === "codex"
+          ? lastSelectedCodexModelSource
+          : effectiveClaudeModelSource,
+      thinkingLevel:
+        selectedRuntimeProvider === "codex" ? selectedCodexThinking : null,
+    })
+  }, [
+    effectiveClaudeModelSource,
+    lastSelectedCodexModelSource,
+    selectedChatModel,
+    selectedClaudeProviderProfile,
+    selectedClaudeProfileId,
+    selectedCodexModel.id,
+    selectedCodexProviderProfile,
+    selectedCodexProfileId,
+    selectedCodexThinking,
+    selectedRuntimeProvider,
+  ])
 
   // Determine current Ollama model (selected or recommended)
   const currentOllamaModel =
@@ -747,9 +805,16 @@ export function NewChatForm({
   ])
   useEffect(() => {
     if (claudeSourceNormalization?.ok && claudeSourceNormalization.changed) {
-      setSelectedClaudeModelSource(
-        claudeSourceNormalization.source as ClaudeModelSource,
+      const normalizedProfileId = parseProviderProfileSource(
+        claudeSourceNormalization.source,
       )
+      const normalizedProfile = normalizedProfileId
+        ? providerProfiles.find((profile) => profile.id === normalizedProfileId)
+        : undefined
+      setLastSelectedClaudeSelection({
+        modelSource: claudeSourceNormalization.source as ClaudeModelSource,
+        modelId: normalizedProfile?.defaultModel ?? lastSelectedModelId,
+      })
       return
     }
     if (
@@ -757,14 +822,20 @@ export function NewChatForm({
       !selectedClaudeProviderProfile &&
       !selectedClaudeProfileIsPending
     ) {
-      setSelectedClaudeModelSource("claude-oauth")
+      setLastSelectedClaudeSelection({
+        modelSource: "claude-oauth",
+        modelId: availableModels.models[0]?.id ?? "opus",
+      })
     }
   }, [
     claudeSourceNormalization,
     selectedClaudeModelSource,
     selectedClaudeProviderProfile,
     selectedClaudeProfileIsPending,
-    setSelectedClaudeModelSource,
+    availableModels.models,
+    lastSelectedModelId,
+    providerProfiles,
+    setLastSelectedClaudeSelection,
   ])
   const [repoPopoverOpen, setRepoPopoverOpen] = useState(false)
   const [branchPopoverOpen, setBranchPopoverOpen] = useState(false)
@@ -1307,14 +1378,6 @@ export function NewChatForm({
       if (data.subChats?.[0]?.id) {
         const firstSubChatId = data.subChats[0].id
         ids.push(firstSubChatId)
-        appStore.set(
-          subChatClaudeModelSourceAtomFamily(firstSubChatId),
-          effectiveClaudeModelSource,
-        )
-        appStore.set(
-          subChatCodexModelSourceAtomFamily(firstSubChatId),
-          lastSelectedCodexModelSource,
-        )
       }
       setJustCreatedIds((prev) => new Set([...prev, ...ids]))
     },
@@ -1393,16 +1456,7 @@ export function NewChatForm({
     createChatMutation.mutate({
       projectId: projectForChat?.id ?? null,
       name: message.trim().slice(0, 50), // Use first 50 chars as chat name
-      model: selectedChatModel,
-      provider: selectedRuntimeProvider,
-      modelSource:
-        selectedRuntimeProvider === "codex"
-          ? lastSelectedCodexModelSource
-          : effectiveClaudeModelSource,
-      providerProfileId:
-        selectedRuntimeProvider === "codex"
-          ? selectedCodexProfileId
-          : selectedClaudeProfileId,
+      binding: selectedChatBinding,
       initialMessageParts: parts.length > 0 ? parts : undefined,
       baseBranch:
         projectForChat && workMode === "worktree"
@@ -1432,6 +1486,7 @@ export function NewChatForm({
     selectedChatModel,
     selectedAgent.id,
     selectedRuntimeProvider,
+    selectedChatBinding,
     lastSelectedCodexModelSource,
     effectiveClaudeModelSource,
     claudeSourceNormalization,
@@ -2268,10 +2323,36 @@ export function NewChatForm({
                               availableModels.models,
                               modelId,
                             )
-                            setLastSelectedModelId(model.id)
+                            setLastSelectedClaudeSelection({
+                              modelSource: selectedClaudeProfileId
+                                ? "claude-oauth"
+                                : effectiveClaudeModelSource,
+                              modelId: model.id,
+                            })
                           },
                           selectedModelSource: effectiveClaudeModelSource,
-                          onSelectModelSource: setSelectedClaudeModelSource,
+                          onSelectModelSource: (source) => {
+                            const persistedSource =
+                              source === "auto" ? "claude-oauth" : source
+                            setLastSelectedClaudeSelection({
+                              modelSource: persistedSource,
+                              modelId: selectedClaudeProfileId
+                                ? (availableModels.models[0]?.id ?? "opus")
+                                : lastSelectedModelId,
+                            })
+                          },
+                          onSelectProviderProfile: (profile) => {
+                            const binding =
+                              createProviderProfileChatSessionBindingWrite({
+                                runtime: "claude-code",
+                                profile,
+                              })
+                            setLastSelectedClaudeSelection({
+                              modelSource:
+                                binding.modelSource as ClaudeModelSource,
+                              modelId: profile.defaultModel,
+                            })
+                          },
                           isOffline:
                             availableModels.isOffline &&
                             availableModels.hasOllama,
@@ -2302,14 +2383,52 @@ export function NewChatForm({
                                 ? "high"
                                 : getDefaultCodexThinking(model)
 
-                            setLastSelectedCodexModelId(model.id)
-                            setLastSelectedCodexThinking(nextThinking)
+                            setLastSelectedCodexSelection({
+                              modelSource: selectedCodexProfileId
+                                ? "chatgpt"
+                                : lastSelectedCodexModelSource,
+                              modelId: model.id,
+                              thinkingLevel: nextThinking,
+                            })
                           },
                           selectedModelSource: lastSelectedCodexModelSource,
                           effectiveFirstPartyModelSource:
                             effectiveCodexFirstPartySource,
-                          onSelectModelSource: setLastSelectedCodexModelSource,
+                          onSelectModelSource: (source, compatibleModelId) => {
+                            const nextModel = compatibleModelId
+                              ? resolveCodexCatalogModel(
+                                  selectableCodexModels,
+                                  compatibleModelId,
+                                )
+                              : selectedCodexModel
+                            const nextThinking = nextModel.thinkings.includes(
+                              lastSelectedCodexThinking as CodexThinkingLevel,
+                            )
+                              ? (lastSelectedCodexThinking as CodexThinkingLevel)
+                              : nextModel.thinkings.includes("high")
+                                ? "high"
+                                : getDefaultCodexThinking(nextModel)
+                            setLastSelectedCodexSelection({
+                              modelSource: source,
+                              modelId: nextModel.id,
+                              thinkingLevel: nextThinking,
+                            })
+                          },
+                          onSelectProviderProfile: (profile) => {
+                            const binding =
+                              createProviderProfileChatSessionBindingWrite({
+                                runtime: "codex",
+                                profile,
+                              })
+                            setLastSelectedCodexSelection({
+                              modelSource:
+                                binding.modelSource as CodexModelSource,
+                              modelId: profile.defaultModel,
+                              thinkingLevel: lastSelectedCodexThinking,
+                            })
+                          },
                           selectedThinking: selectedCodexThinking,
+                          supportsThinking: !selectedCodexProfileId,
                           onSelectThinking: setLastSelectedCodexThinking,
                           isConnected: setupStatus.codex.connected,
                         }}
@@ -2632,7 +2751,7 @@ export function NewChatForm({
                   createChatMutation.mutate({
                     projectId: projectForChat.id,
                     name: t("chat.worktreeSetupBanner.chatName"),
-                    model: selectedChatModel,
+                    binding: selectedChatBinding,
                     initialMessageParts: [{ type: "text", text: prompt }],
                     useWorktree: false,
                     mode: "agent",

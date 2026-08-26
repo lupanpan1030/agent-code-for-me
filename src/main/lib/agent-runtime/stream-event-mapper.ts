@@ -344,6 +344,7 @@ function eventPayloadForChunk(chunk: Record<string, unknown>): {
       return {
         type: "question_pending",
         payload: {
+          approvalId: getString(chunk, "approvalId") ?? null,
           toolUseId: getString(chunk, "toolUseId") ?? null,
           questions: toJsonValue(chunk.questions),
         },
@@ -353,6 +354,7 @@ function eventPayloadForChunk(chunk: Record<string, unknown>): {
       return {
         type: "question_result",
         payload: {
+          approvalId: getString(chunk, "approvalId") ?? null,
           toolUseId: getString(chunk, "toolUseId") ?? null,
           result:
             chunk.type === "ask-user-question-timeout"

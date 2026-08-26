@@ -1,7 +1,11 @@
-import { describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, test } from "bun:test"
 import { resolveDesktopPermissionPolicy } from "../src/main/lib/agent-runtime/permission-policy"
-import { createClaudeDesktopRunRequest } from "../src/main/lib/claude/desktop-run-request"
+import {
+  clearClaudeActiveSessionsForTest,
+  setActiveClaudeSession,
+} from "../src/main/lib/claude/active-sessions"
 import { prepareClaudeAgentSdkDesktopRuntimeQuery } from "../src/main/lib/claude/agent-sdk-runtime-query"
+import { createClaudeDesktopRunRequest } from "../src/main/lib/claude/desktop-run-request"
 
 function createRequest() {
   const permissionPolicy = resolveDesktopPermissionPolicy({
@@ -9,6 +13,11 @@ function createRequest() {
     mode: "agent",
   })
 
+  const controller = new AbortController()
+  setActiveClaudeSession("sub-1", {
+    controller,
+    runId: "run-1",
+  })
   return createClaudeDesktopRunRequest({
     runId: "run-1",
     streamId: "stream-1",
@@ -29,10 +38,14 @@ function createRequest() {
       gatewayEndpoint: null,
       authMode: "runtime-managed",
     },
-    signal: new AbortController().signal,
+    signal: controller.signal,
     emitTrace: () => {},
   })
 }
+
+afterEach(() => {
+  clearClaudeActiveSessionsForTest()
+})
 
 describe("Claude Agent SDK desktop runtime query startup", () => {
   test("prepares MCP servers, prompt context, and SDK query options together", async () => {
@@ -98,9 +111,7 @@ describe("Claude Agent SDK desktop runtime query startup", () => {
     expect(result.queryOptions.options.mcpServers).toBe(refreshedServers)
     expect(result.queryOptions.options.plugins).toBe(plugins)
     expect(result.queryOptions.options.model).toBe("claude-sonnet-4")
-    expect(result.queryOptions.options.permissionMode).toBe(
-      "bypassPermissions",
-    )
+    expect(result.queryOptions.options.permissionMode).toBe("bypassPermissions")
     expect(result.queryOptions.options.allowDangerouslySkipPermissions).toBe(
       true,
     )
@@ -144,8 +155,11 @@ describe("Claude Agent SDK desktop runtime query startup", () => {
       { toolUseID: "tool-1" } as any,
     )
 
-    expect(approvalStore.has("tool-1")).toBe(true)
-    approvalStore.get("tool-1")?.resolve({
+    const pending = [...approvalStore.values()].find(
+      (approval) => approval.toolUseId === "tool-1",
+    )
+    expect(pending).toBeDefined()
+    pending?.resolve({
       approved: false,
       message: "No",
     })
@@ -156,11 +170,13 @@ describe("Claude Agent SDK desktop runtime query startup", () => {
     expect(emitted).toEqual([
       {
         type: "ask-user-question",
+        approvalId: pending?.approvalId,
         toolUseId: "tool-1",
         questions: ["Proceed?"],
       },
       {
         type: "ask-user-question-result",
+        approvalId: pending?.approvalId,
         toolUseId: "tool-1",
         result: "No",
       },

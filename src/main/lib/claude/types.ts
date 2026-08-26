@@ -38,6 +38,7 @@ export type UIMessageChunk =
   | { type: "retry-notification"; message: string }
   | {
       type: "ask-user-question"
+      approvalId: string
       toolUseId: string
       questions: Array<{
         question: string
@@ -46,8 +47,17 @@ export type UIMessageChunk =
         multiSelect: boolean
       }>
     }
-  | { type: "ask-user-question-timeout"; toolUseId: string }
-  | { type: "ask-user-question-result"; toolUseId: string; result: unknown }
+  | {
+      type: "ask-user-question-timeout"
+      approvalId: string
+      toolUseId: string
+    }
+  | {
+      type: "ask-user-question-result"
+      approvalId: string
+      toolUseId: string
+      result: unknown
+    }
   | { type: "guard-event"; event: AgentGuardEvent }
   | { type: "guard-audit"; audit: GuardedRunAudit }
   | {

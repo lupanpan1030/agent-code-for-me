@@ -78,15 +78,16 @@ describe("provider routing UX source guards", () => {
     "utf8",
   )
   const codexDesktopProviderBindingSource = readFileSync(
-    join(
-      process.cwd(),
-      "src/main/lib/codex/desktop-run-provider-binding.ts",
-    ),
+    join(process.cwd(), "src/main/lib/codex/desktop-run-provider-binding.ts"),
     "utf8",
   )
   const codexAppServerAdapterSource = readFileSync(
     join(process.cwd(), "src/main/lib/codex/app-server-adapter.ts"),
     "utf8",
+  )
+  const providerProfilesSettingsSource = modelsTabSource.slice(
+    modelsTabSource.indexOf("function ProviderProfilesSettingsSection()"),
+    modelsTabSource.indexOf("export function AgentsModelsTab()"),
   )
 
   test("Models settings uses a wide layout for provider routing controls", () => {
@@ -165,16 +166,71 @@ describe("provider routing UX source guards", () => {
     expect(providerEditorSource).not.toContain('{"HTTP-Referer"')
   })
 
+  test("editing a selected Profile refreshes only the new-chat model default", () => {
+    expect(providerProfilesSettingsSource).toContain(
+      "if (lastSelectedClaudeModelSource === source)",
+    )
+    expect(providerProfilesSettingsSource).toContain(
+      "setLastSelectedClaudeSelection({",
+    )
+    expect(providerProfilesSettingsSource).toContain(
+      "modelId: profile.defaultModel",
+    )
+    expect(providerProfilesSettingsSource).toContain(
+      "if (lastSelectedCodexModelSource === source)",
+    )
+    expect(providerProfilesSettingsSource).toMatch(
+      /setCodexProfileDefaults\(\s*profile\.id,\s*profile\.defaultModel/,
+    )
+    expect(providerProfilesSettingsSource).toContain(
+      'profile.targetRuntimes.includes("claude")',
+    )
+    expect(providerProfilesSettingsSource).toContain(
+      'profile.targetRuntimes.includes("codex")',
+    )
+    expect(providerProfilesSettingsSource).toContain(
+      'modelSource: "claude-oauth"',
+    )
+    expect(providerProfilesSettingsSource).toContain(
+      "setCodexFirstPartyDefaults()",
+    )
+    expect(providerProfilesSettingsSource).not.toContain(
+      "setLastSelectedClaudeModelSource",
+    )
+    expect(providerProfilesSettingsSource).not.toContain(
+      "setLastSelectedCodexModelSource",
+    )
+  })
+
+  test("selecting a Codex Profile preserves the first-party effort preference", () => {
+    const helperStart = modelsTabSource.indexOf(
+      "const setCodexProfileDefaults =",
+    )
+    const helperEnd = modelsTabSource.indexOf(
+      "const handleDeleteProfile =",
+      helperStart,
+    )
+    expect(helperStart).toBeGreaterThanOrEqual(0)
+    expect(helperEnd).toBeGreaterThan(helperStart)
+    const helperSource = modelsTabSource.slice(helperStart, helperEnd)
+    expect(helperSource).toContain("thinkingLevel: lastSelectedCodexThinking")
+    expect(helperSource).not.toMatch(/thinkingLevel:\s*["']high["']/)
+  })
+
   test("new chats persist selected provider metadata for transport routing", () => {
-    expect(newChatFormSource).toContain("provider: selectedRuntimeProvider")
-    expect(newChatFormSource).toContain("modelSource:")
-    expect(newChatFormSource).toContain("providerProfileId:")
+    expect(newChatFormSource).toContain("binding: selectedChatBinding")
     expect(chatsRouterSource).toContain("buildAgentChatMessageMetadata")
-    expect(chatsRouterSource).toContain("provider: input.provider")
-    expect(acpChatTransportSource).toContain("normalizeAgentChatMetadataModel")
-    expect(acpChatTransportSource).toContain("formatProviderProfileCodexModel")
+    expect(chatsRouterSource).toContain("provider: bindingInput.runtime")
+    expect(chatsRouterSource).not.toContain("input.provider")
+    expect(acpChatTransportSource).toContain("this.config.binding.modelId")
     expect(acpChatTransportSource).toContain(
-      "providerProfileId && metadataModel",
+      "this.config.binding.providerProfileId",
+    )
+    expect(acpChatTransportSource).not.toContain(
+      "normalizeAgentChatMetadataModel",
+    )
+    expect(acpChatTransportSource).toContain(
+      "composeProviderProfileCodexTransportModel",
     )
     expect(codexDesktopProviderBindingSource).toContain("model: metadataModel")
     expect(codexAppServerAdapterSource).toContain("providerBinding.model")

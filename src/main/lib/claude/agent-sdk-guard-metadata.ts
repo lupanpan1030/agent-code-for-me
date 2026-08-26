@@ -1,8 +1,3 @@
-import {
-  buildGuardedRunAudit,
-  captureGuardedGitStatus,
-  type GuardedGitStatusSnapshot,
-} from "../agent-guard/audit"
 import type {
   AgentGuardEvent,
   AgentScopeContract,
@@ -10,6 +5,11 @@ import type {
   AgentSuccessCheck,
   GuardedRunAudit,
 } from "../../../shared/agent-scope-contracts"
+import {
+  buildGuardedRunAudit,
+  captureGuardedGitStatus,
+  type GuardedGitStatusSnapshot,
+} from "../agent-guard/audit"
 
 export type ClaudeAgentSdkGuardedContract = AgentScopeContract & {
   editableScope: AgentScopePath[]
@@ -50,10 +50,7 @@ export type FinalizeClaudeAgentSdkGuardMetadataInput = {
   options?: FinalizeClaudeAgentSdkGuardMetadataOptions
   emit: (chunk: { type: "guard-audit"; audit: GuardedRunAudit }) => void
   captureGitStatus?: typeof captureGuardedGitStatus
-  getContract?: (
-    contractId: string,
-  ) => ClaudeAgentSdkGuardedContract | null | undefined
-  deleteContract?: (contractId: string) => unknown
+  deleteContract?: (contract: ClaudeAgentSdkGuardedContract) => unknown
 }
 
 export async function finalizeClaudeAgentSdkGuardMetadata({
@@ -66,21 +63,19 @@ export async function finalizeClaudeAgentSdkGuardMetadata({
   options = {},
   emit,
   captureGitStatus = captureGuardedGitStatus,
-  getContract,
   deleteContract,
 }: FinalizeClaudeAgentSdkGuardMetadataInput): Promise<any> {
   if (!guardedContract || !guardedPreRunStatus) {
     return currentMetadata
   }
 
-  if (!getContract || !deleteContract) {
+  if (!deleteContract) {
     throw new Error("Guarded contract lifecycle dependencies are required")
   }
 
-  const finalContract = getContract(guardedContract.id) ?? guardedContract
   const postRunStatus = await captureGitStatus(runtimeCwd)
   const audit = buildGuardedRunAudit({
-    contract: finalContract,
+    contract: guardedContract,
     runtime: "claude",
     enforcementMode: "hard",
     preRunStatus: guardedPreRunStatus,
@@ -90,7 +85,7 @@ export async function finalizeClaudeAgentSdkGuardMetadata({
     failed: options.failed,
     stopped: options.stopped,
   })
-  deleteContract(guardedContract.id)
+  deleteContract(guardedContract)
   emit({ type: "guard-audit", audit })
 
   return {

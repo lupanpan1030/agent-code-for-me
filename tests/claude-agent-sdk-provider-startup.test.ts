@@ -66,10 +66,19 @@ function dependencies(
 describe("Claude Agent SDK provider startup", () => {
   test("resolves selected Claude provider profiles through the gateway", async () => {
     let credentialCalled = false
+    let gatewayModelResolution: string | undefined
     const result = await resolveClaudeAgentSdkProviderStartup({
       modelSource: "provider-profile:profile-1",
       dependencies: dependencies({
         getProviderProfileRuntimeConfig: (id) => providerProfile({ id }),
+        getProviderGatewayEndpoint: async (providerId, kind, options) => {
+          gatewayModelResolution = options?.modelResolution
+          return {
+            baseUrl: `http://127.0.0.1:45100/profile/${providerId}/${kind}/v1`,
+            token: `gateway-token-${providerId}`,
+            providerId,
+          }
+        },
         getValidClaudeCodeCredential: async () => {
           credentialCalled = true
           throw new Error("unexpected credential lookup")
@@ -79,6 +88,7 @@ describe("Claude Agent SDK provider startup", () => {
 
     expect(result.ok).toBe(true)
     if (!result.ok) throw new Error("expected startup success")
+    expect(gatewayModelResolution).toBe("claude-chat-binding")
     expect(credentialCalled).toBe(false)
     expect(result.startup.selectedProviderProfileId).toBe("profile-1")
     expect(result.startup.claudeCodeToken).toBeNull()
@@ -88,6 +98,21 @@ describe("Claude Agent SDK provider startup", () => {
       token: "gateway-token-profile-1",
       authMode: "auth_token",
     })
+  })
+
+  test("keeps the requested chat model authoritative over an edited profile default", async () => {
+    const result = await resolveClaudeAgentSdkProviderStartup({
+      modelSource: "provider-profile:profile-1",
+      requestedModel: "bound-claude-model",
+      dependencies: dependencies({
+        getProviderProfileRuntimeConfig: (id) =>
+          providerProfile({ id, defaultModel: "new-profile-default" }),
+      }),
+    })
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error("expected startup success")
+    expect(result.startup.finalCustomConfig?.model).toBe("bound-claude-model")
   })
 
   test("blocks provider profiles that are missing or not Claude-capable", async () => {
@@ -185,6 +210,43 @@ describe("Claude Agent SDK provider startup", () => {
         message: "Legacy custom provider source is no longer runnable.",
       },
     })
+  })
+
+  test("rejects unknown, blank, and malformed sources before reading OAuth", async () => {
+    for (const modelSource of [
+      "",
+      "   ",
+      "openai-api-key",
+      "provider-profile:",
+      "unknown-source",
+    ]) {
+      let credentialCalled = false
+      let offlineChecked = false
+      const result = await resolveClaudeAgentSdkProviderStartup({
+        modelSource,
+        dependencies: dependencies({
+          getValidClaudeCodeCredential: async () => {
+            credentialCalled = true
+            throw new Error("OAuth must not be read")
+          },
+          checkOfflineFallback: async () => {
+            offlineChecked = true
+            return { config: undefined, isUsingOllama: false }
+          },
+        }),
+      })
+
+      expect(result).toMatchObject({
+        ok: false,
+        blocker: {
+          id: "provider-profile",
+          status: "blocked",
+          message: "Unsupported Claude model source.",
+        },
+      })
+      expect(credentialCalled).toBe(false)
+      expect(offlineChecked).toBe(false)
+    }
   })
 
   test("uses Claude Code OAuth metadata before offline fallback", async () => {

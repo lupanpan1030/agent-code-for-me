@@ -831,6 +831,7 @@ export const AssistantMessageItem = memo(function AssistantMessageItem({
             state={isPending ? "call" : "result"}
             isError={isError}
             isStreaming={isStreaming && isLastMessage}
+            subChatId={subChatId}
             toolCallId={part.toolCallId}
           />
         )

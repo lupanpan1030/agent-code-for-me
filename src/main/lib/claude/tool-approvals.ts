@@ -47,7 +47,7 @@ function validateApprovalUpdatedInput(
   }
 
   const expectedQuestions =
-    "approvalInput" in pending
+    pending.approvalInput
       ? pending.approvalInput.questions
       : pending.toolInput.questions
 
@@ -60,7 +60,7 @@ function validateApprovalUpdatedInput(
     )
   }
 
-  if ("approvalInput" in pending) {
+  if (pending.approvalInput) {
     return pending.toolInput
   }
 
@@ -78,19 +78,38 @@ export function clearClaudePendingToolApprovals(
   message: string,
   subChatId?: string,
 ): void {
-  for (const [toolUseId, pending] of pendingToolApprovals) {
+  for (const [approvalId, pending] of pendingToolApprovals) {
     if (subChatId && pending.subChatId !== subChatId) continue
+    if (!deleteClaudePendingToolApproval(approvalId, pending)) continue
     pending.resolve({ approved: false, message })
-    pendingToolApprovals.delete(toolUseId)
+  }
+}
+
+export function deleteClaudePendingToolApproval(
+  approvalId: string,
+  expected: ClaudeAskUserQuestionPending,
+): boolean {
+  if (pendingToolApprovals.get(approvalId) !== expected) return false
+  return pendingToolApprovals.delete(approvalId)
+}
+
+function isPendingRunOwnerCurrent(
+  pending: ClaudeAskUserQuestionPending,
+): boolean {
+  try {
+    return pending.isCurrentRunOwner()
+  } catch {
+    return false
   }
 }
 
 export function resolveClaudePendingToolApproval(input: {
-  toolUseId: string
+  approvalId: string
   decision: ClaudeAskUserQuestionDecision
 }): boolean {
-  const pending = pendingToolApprovals.get(input.toolUseId)
+  const pending = pendingToolApprovals.get(input.approvalId)
   if (!pending) return false
+  if (!isPendingRunOwnerCurrent(pending)) return false
   const decision =
     input.decision.updatedInput === undefined
       ? input.decision
@@ -101,8 +120,8 @@ export function resolveClaudePendingToolApproval(input: {
             input.decision.updatedInput,
           ),
         }
+  if (!deleteClaudePendingToolApproval(input.approvalId, pending)) return false
   pending.resolve(decision)
-  pendingToolApprovals.delete(input.toolUseId)
   return true
 }
 

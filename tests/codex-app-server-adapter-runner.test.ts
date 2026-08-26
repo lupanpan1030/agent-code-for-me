@@ -88,6 +88,7 @@ describe("Codex app-server desktop adapter runner", () => {
       secretHints: ["upstream-token", "gateway-token"],
       resolvedImages,
       guardedContract,
+      isCurrentRunOwner: () => true,
       emit,
       registerPendingQuestion,
       unregisterPendingQuestion,
@@ -158,6 +159,7 @@ describe("Codex app-server desktop adapter runner", () => {
       secretHints: [],
       resolvedImages: [],
       guardedContract: null,
+      isCurrentRunOwner: () => true,
       emit: () => {},
       registerPendingQuestion: () => {},
       unregisterPendingQuestion: () => {},
@@ -183,5 +185,54 @@ describe("Codex app-server desktop adapter runner", () => {
       appManagedApiKey: "app-key",
     })
     expect(adapterInput?.configOverrides).toBeUndefined()
+  })
+
+  test("does not create or dispatch an adapter after plugin resolution loses exact ownership", async () => {
+    let resolvePluginConfig!: (value: {
+      configOverrides: Record<string, unknown>
+      diagnostics: never[]
+      enabledPluginIds: never[]
+    }) => void
+    let markResolutionStarted!: () => void
+    const resolutionStarted = new Promise<void>((resolve) => {
+      markResolutionStarted = resolve
+    })
+    let currentOwner = true
+    let createAdapterCalls = 0
+    const resultPromise = runCodexAppServerDesktopAdapter({
+      request: createRequest(),
+      providerGatewayToken: null,
+      appManagedApiKey: null,
+      secretHints: [],
+      resolvedImages: [],
+      guardedContract: null,
+      isCurrentRunOwner: () => currentOwner,
+      emit: () => {},
+      registerPendingQuestion: () => {},
+      unregisterPendingQuestion: () => {},
+      dependencies: {
+        resolvePluginConfig: () => {
+          markResolutionStarted()
+          return new Promise((resolve) => {
+            resolvePluginConfig = resolve
+          })
+        },
+        createAdapter: () => {
+          createAdapterCalls += 1
+          return createAdapter(async () => ({ status: "succeeded" }))
+        },
+      },
+    })
+
+    await resolutionStarted
+    currentOwner = false
+    resolvePluginConfig({
+      configOverrides: {},
+      diagnostics: [],
+      enabledPluginIds: [],
+    })
+
+    await expect(resultPromise).resolves.toEqual({ status: "canceled" })
+    expect(createAdapterCalls).toBe(0)
   })
 })

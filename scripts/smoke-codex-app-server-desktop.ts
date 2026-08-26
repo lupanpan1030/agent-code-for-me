@@ -8,8 +8,20 @@ import {
 } from "node:fs"
 import { homedir } from "node:os"
 import path from "node:path"
-import { app } from "electron"
 import { eq } from "drizzle-orm"
+import { app } from "electron"
+import {
+  type ChatSessionBindingWriteDependencies,
+  getSubChatBinding,
+  seedSubChatBinding,
+  updateSubChatBinding,
+} from "../src/main/lib/chat-session-binding"
+import { getProviderProfileChatBindingMetadataFromDatabase } from "../src/main/lib/provider-profiles/storage"
+import type { ChatSessionBindingWriteInput } from "../src/shared/chat-session-binding"
+import {
+  type CodexAppServerSmokeAuthMode,
+  createCodexAppServerSmokeBindingTuple,
+} from "./lib/codex-app-server-smoke-binding"
 
 type Scenario =
   | "provider-plan"
@@ -23,8 +35,33 @@ type Scenario =
   | "locus-edit-adoption"
   | "controlled-edit"
 
-type AuthMode = "provider" | "chatgpt" | "api_key"
+type AuthMode = CodexAppServerSmokeAuthMode
 type AdoptionTier = "zero" | "light" | "explicit"
+
+type SmokeQuestion = {
+  header?: string
+  question?: string
+}
+
+type SmokeChunk = Record<string, unknown> & {
+  type?: string
+  delta?: unknown
+  errorText?: unknown
+  event?: unknown
+  mcp?: unknown
+  questions?: SmokeQuestion[]
+  approvalId?: string
+}
+
+type LocusEditLogEntry = Record<string, unknown> & {
+  message?: {
+    method?: unknown
+    params?: {
+      name?: unknown
+      arguments?: unknown
+    }
+  }
+}
 
 type DbModule = typeof import("../src/main/lib/db")
 let dbModulePromise: Promise<DbModule> | null = null
@@ -60,10 +97,13 @@ function nowIso(): string {
   return new Date().toISOString()
 }
 
-function parseJson(value: string | null | undefined, fallback: any = null): any {
+function parseJson<T = unknown>(
+  value: string | null | undefined,
+  fallback: T | null = null,
+): T | null {
   if (!value) return fallback
   try {
-    return JSON.parse(value)
+    return JSON.parse(value) as T
   } catch {
     return fallback
   }
@@ -78,12 +118,15 @@ function redactText(value: string): string {
     .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/g, "Bearer <redacted>")
     .replace(/smoke-mcp-secret-[A-Za-z0-9_-]+/g, "<redacted>")
     .replace(/locus-edit-probe-secret-[A-Za-z0-9_-]+/g, "<redacted>")
-    .replace(/(SMOKE_MCP_SECRET\s*=\s*)"[^\"]*"/g, '$1"<redacted>"')
+    .replace(/(SMOKE_MCP_SECRET\s*=\s*)"[^"]*"/g, '$1"<redacted>"')
     .replace(
       /(^|[^A-Za-z0-9])(sk-[A-Za-z0-9_-]{12,}|xox[baprs]-[A-Za-z0-9-]{10,})/g,
       "$1<redacted>",
     )
-    .replace(/(api[_-]?key|access[_-]?token|refresh[_-]?token|token)=\S+/gi, "$1=<redacted>")
+    .replace(
+      /(api[_-]?key|access[_-]?token|refresh[_-]?token|token)=\S+/gi,
+      "$1=<redacted>",
+    )
 }
 
 function redact(value: unknown): string {
@@ -111,7 +154,11 @@ function resolveSmokeNodePath(): string {
 }
 
 function sourceCodexHome(): string {
-  return path.resolve(readOptionalArg("source-codex-home") ?? process.env.CODEX_HOME ?? path.join(homedir(), ".codex"))
+  return path.resolve(
+    readOptionalArg("source-codex-home") ??
+      process.env.CODEX_HOME ??
+      path.join(homedir(), ".codex"),
+  )
 }
 
 function copyCodexAuthFiles(targetCodexHome: string): string[] {
@@ -268,7 +315,14 @@ function setupLocusEditAdoptionCodexHome(outDir: string): {
   const copiedAuthFiles = readBooleanArg("inherit-codex-auth", false)
     ? copyCodexAuthFiles(codexHome)
     : []
-  return { codexHome, serverName, toolName, toolCallLogPath, secret, copiedAuthFiles }
+  return {
+    codexHome,
+    serverName,
+    toolName,
+    toolCallLogPath,
+    secret,
+    copiedAuthFiles,
+  }
 }
 
 function redactMcpReadinessCodexHome(codexHome: string): void {
@@ -303,6 +357,7 @@ async function seedDesktopRows(input: {
   cwd: string
   scenario: Scenario
   mode: "plan" | "agent"
+  binding: ChatSessionBindingWriteInput
 }) {
   const { getDatabase, projects, chats, subChats } = await loadDbModule()
   const db = getDatabase()
@@ -318,7 +373,8 @@ async function seedDesktopRows(input: {
     .from(projects)
     .all()
     .find((project) => project.path === input.cwd)
-  const projectId = existingProjectById?.id ?? existingProjectByPath?.id ?? input.projectId
+  const projectId =
+    existingProjectById?.id ?? existingProjectByPath?.id ?? input.projectId
 
   if (!existingProjectById && !existingProjectByPath) {
     db.insert(projects)
@@ -376,6 +432,22 @@ async function seedDesktopRows(input: {
       .where(eq(subChats.id, input.subChatId))
       .run()
   }
+
+  const existingBinding = getSubChatBinding(db, input.subChatId)
+  const bindingDependencies: ChatSessionBindingWriteDependencies = {
+    getProviderProfileMetadata:
+      getProviderProfileChatBindingMetadataFromDatabase,
+  }
+  if (existingBinding.id === null) {
+    seedSubChatBinding(db, input.subChatId, input.binding, bindingDependencies)
+  } else {
+    updateSubChatBinding(
+      db,
+      input.subChatId,
+      input.binding,
+      bindingDependencies,
+    )
+  }
 }
 
 async function latestJobForRun(runId: string) {
@@ -385,33 +457,84 @@ async function latestJobForRun(runId: string) {
     .select()
     .from(agentJobs)
     .all()
-    .filter((job) => parseJson(job.inputJson)?.runId === runId)
+    .filter(
+      (job) => parseJson<{ runId?: unknown }>(job.inputJson)?.runId === runId,
+    )
     .at(-1)
 }
 
-async function resolveProviderProfileId(
+async function waitForCanceledJobForRun(
+  runId: string,
+  timeoutMs = 30_000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const job = await latestJobForRun(runId)
+    if (job?.status === "canceled") return
+    if (
+      job &&
+      (job.status === "succeeded" ||
+        job.status === "failed" ||
+        job.status === "interrupted")
+    ) {
+      throw new Error(
+        `Cancellation scenario reached unexpected terminal job status: ${job.status}`,
+      )
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50))
+  }
+  throw new Error(`Cancellation scenario did not settle: ${runId}`)
+}
+
+async function resolveProviderProfileBinding(
   authMode: AuthMode,
   explicitProfileId?: string,
-): Promise<string | null> {
+): Promise<{ id: string; defaultModel: string } | null> {
   if (authMode !== "provider") return null
-  if (explicitProfileId) return explicitProfileId
 
   const { getDatabase, agentProviderProfiles } = await loadDbModule()
   const db = getDatabase()
+  if (explicitProfileId) {
+    const metadata = getProviderProfileChatBindingMetadataFromDatabase(
+      db,
+      explicitProfileId,
+    )
+    if (!metadata?.targetRuntimes.includes("codex")) {
+      throw new Error(
+        `Provider Profile ${explicitProfileId} is missing or does not target Codex.`,
+      )
+    }
+    return { id: metadata.id, defaultModel: metadata.defaultModel }
+  }
+
   const profile = db
     .select()
     .from(agentProviderProfiles)
     .all()
     .find((candidate) => {
-      const targetRuntimes = parseJson(candidate.targetRuntimesJson, [])
-      return Boolean(candidate.encryptedToken) && targetRuntimes.includes("codex")
+      const targetRuntimes = parseJson<string[]>(
+        candidate.targetRuntimesJson,
+        [],
+      )
+      return (
+        Boolean(candidate.encryptedToken) && targetRuntimes.includes("codex")
+      )
     })
 
   if (!profile) {
-    throw new Error("No Codex-targeted provider profile with a stored token found. Pass --profile=<id>.")
+    throw new Error(
+      "No Codex-targeted provider profile with a stored token found. Pass --profile=<id>.",
+    )
   }
 
-  return profile.id
+  const metadata = getProviderProfileChatBindingMetadataFromDatabase(
+    db,
+    profile.id,
+  )
+  if (!metadata) {
+    throw new Error(`Provider Profile ${profile.id} disappeared during setup.`)
+  }
+  return { id: metadata.id, defaultModel: metadata.defaultModel }
 }
 
 async function jobEvents(jobId: string) {
@@ -432,6 +555,7 @@ async function runScenario(input: {
   scenario: Scenario
   cwd: string
   providerProfileId: string | null
+  providerProfileCurrentDefaultModel: string | null
   authMode: AuthMode
   model: string
   outDir: string
@@ -462,6 +586,12 @@ async function runScenario(input: {
     model: input.model,
   })
 
+  const bindingTuple = createCodexAppServerSmokeBindingTuple({
+    authMode: input.authMode,
+    providerProfileId: input.providerProfileId,
+    modelId: input.model,
+  })
+
   await seedDesktopRows({
     projectId,
     chatId,
@@ -469,6 +599,7 @@ async function runScenario(input: {
     cwd: input.cwd,
     scenario: scenarioId,
     mode,
+    binding: bindingTuple.binding,
   })
   logSmokePhase("scenario:seeded", { scenario: scenarioId, runId })
 
@@ -478,8 +609,10 @@ async function runScenario(input: {
   const caller = createAppRouter(() => null).createCaller({
     getWindow: () => null,
   })
-  const chunks: unknown[] = []
+  const chunks: SmokeChunk[] = []
   let completed = false
+  let cancellationScheduled = false
+  let canceledThroughSubscription = false
   let subscription: { unsubscribe: () => void } | null = null
   const promptByScenario: Record<Scenario, string> = {
     "provider-plan":
@@ -564,7 +697,12 @@ async function runScenario(input: {
           runId,
           cwd: input.cwd,
           projectPath: input.cwd,
-          editableScope: [{ path: path.relative(input.cwd, input.outDir), kind: "directory" as const }],
+          editableScope: [
+            {
+              path: path.relative(input.cwd, input.outDir),
+              kind: "directory" as const,
+            },
+          ],
           readOnlyEvidence: [],
           successChecks:
             scenarioId === "locus-edit-adoption"
@@ -581,34 +719,31 @@ async function runScenario(input: {
 
   logSmokePhase("scenario:chat-request", { scenario: scenarioId, runId })
   const chatObservable = await caller.codex.chat({
-      subChatId,
-      chatId,
-      runId,
-      prompt: promptByScenario[scenarioId],
-      cwd: input.cwd,
-      projectPath: input.cwd,
-      mode,
-      model: input.model,
-      providerProfileId: input.providerProfileId ?? undefined,
-      ...(input.providerProfileId
-        ? {}
-        : {
-            codexAuthMethod:
-              input.authMode === "api_key" ? ("api_key" as const) : ("chatgpt" as const),
-          }),
-      forceNewSession: true,
-      images: [],
-      longTextAttachments: [],
-      scopeContract,
-    })
+    subChatId,
+    chatId,
+    runId,
+    prompt: promptByScenario[scenarioId],
+    cwd: input.cwd,
+    projectPath: input.cwd,
+    mode,
+    ...bindingTuple.request,
+    forceNewSession: true,
+    images: [],
+    longTextAttachments: [],
+    scopeContract,
+  })
   logSmokePhase("scenario:chat-observable", { scenario: scenarioId, runId })
 
   const done = new Promise<void>((resolve, reject) => {
     subscription = chatObservable.subscribe({
       next: (chunk: unknown) => {
-        chunks.push(chunk)
-        const record = chunk as any
-        if (chunks.length <= 5 || record?.type === "ask-user-question" || record?.type === "finish") {
+        const record = chunk as SmokeChunk
+        chunks.push(record)
+        if (
+          chunks.length <= 5 ||
+          record?.type === "ask-user-question" ||
+          record?.type === "finish"
+        ) {
           logSmokePhase("scenario:chunk", {
             scenario: scenarioId,
             runId,
@@ -617,6 +752,17 @@ async function runScenario(input: {
           })
         }
         if (record?.type === "ask-user-question") {
+          if (
+            typeof record.approvalId !== "string" ||
+            record.approvalId.length === 0
+          ) {
+            reject(
+              new Error(
+                "Codex approval chunk is missing its main-minted approvalId.",
+              ),
+            )
+            return
+          }
           const answers: Record<string, string> = {}
           for (const question of record.questions ?? []) {
             const prompt = question.header || question.question || "Approve"
@@ -625,14 +771,39 @@ async function runScenario(input: {
                 ? "Deny"
                 : "Approve"
           }
-          void caller.codex.respondToolApproval({
-            toolUseId: record.toolUseId,
-            approved: true,
-            updatedInput: { answers },
-          })
+          void caller.codex
+            .respondToolApproval({
+              approvalId: record.approvalId,
+              approved: true,
+              updatedInput: { answers },
+            })
+            .catch(reject)
         }
-        if (scenarioId === "cancel" && chunks.length >= 3) {
-          void caller.codex.cancel({ subChatId, runId })
+        if (
+          scenarioId === "cancel" &&
+          chunks.length >= 3 &&
+          !cancellationScheduled
+        ) {
+          cancellationScheduled = true
+          queueMicrotask(() => {
+            const activeSubscription = subscription
+            if (!activeSubscription) {
+              reject(
+                new Error(
+                  "Cancellation scenario lost its exact subscription closure.",
+                ),
+              )
+              return
+            }
+            activeSubscription.unsubscribe()
+            subscription = null
+            canceledThroughSubscription = true
+            logSmokePhase("scenario:unsubscribe", {
+              scenario: scenarioId,
+              runId,
+            })
+            void waitForCanceledJobForRun(runId).then(resolve, reject)
+          })
         }
       },
       error: (error: unknown) => {
@@ -641,9 +812,11 @@ async function runScenario(input: {
           runId,
           error: error instanceof Error ? error.message : String(error),
         })
+        if (cancellationScheduled) return
         reject(error)
       },
       complete: () => {
+        if (cancellationScheduled) return
         completed = true
         logSmokePhase("scenario:complete", { scenario: scenarioId, runId })
         resolve()
@@ -652,7 +825,10 @@ async function runScenario(input: {
   })
 
   const timeout = new Promise<void>((_, reject) => {
-    setTimeout(() => reject(new Error(`Scenario timed out: ${scenarioId}`)), 150_000)
+    setTimeout(
+      () => reject(new Error(`Scenario timed out: ${scenarioId}`)),
+      150_000,
+    )
   })
   try {
     await Promise.race([done, timeout])
@@ -663,34 +839,37 @@ async function runScenario(input: {
   const job = await latestJobForRun(runId)
   const events = job ? await jobEvents(job.id) : []
   const textDeltas = chunks
-    .filter((chunk: any) => chunk?.type === "text-delta")
-    .map((chunk: any) => (typeof chunk.delta === "string" ? chunk.delta : ""))
+    .filter((chunk) => chunk.type === "text-delta")
+    .map((chunk) => (typeof chunk.delta === "string" ? chunk.delta : ""))
   const textContent = textDeltas.join("")
   const askUserQuestionChunks = chunks.filter(
-    (chunk: any) => chunk?.type === "ask-user-question",
+    (chunk) => chunk.type === "ask-user-question",
   )
-  const approvalQuestionHeaders = askUserQuestionChunks.flatMap((chunk: any) =>
-    (chunk.questions ?? []).map((question: any) => question.header ?? null),
+  const approvalQuestionHeaders = askUserQuestionChunks.flatMap((chunk) =>
+    (chunk.questions ?? []).map((question) => question.header ?? null),
   )
-  const structuredFileChangeChunks = chunks.filter((chunk: any) =>
-    chunk?.type === "file-change-patch" ||
-    chunk?.type === "file-change-diff" ||
-    chunk?.type === "file-change-delta",
+  const structuredFileChangeChunks = chunks.filter(
+    (chunk) =>
+      chunk.type === "file-change-patch" ||
+      chunk.type === "file-change-diff" ||
+      chunk.type === "file-change-delta",
   )
   const locusEditCallLogPath =
     scenarioId === "locus-edit-adoption"
       ? path.join(input.outDir, "locus-edit-probe-calls.jsonl")
       : null
-  const locusEditLogEntries = locusEditCallLogPath ? readJsonl(locusEditCallLogPath) : []
-  const locusEditToolCalls = locusEditLogEntries.filter((entry: any) => {
-    const message = entry?.message
+  const locusEditLogEntries = locusEditCallLogPath
+    ? readJsonl(locusEditCallLogPath)
+    : []
+  const locusEditToolCalls = locusEditLogEntries.filter((entry) => {
+    const message = (entry as LocusEditLogEntry).message
     return (
       message?.method === "tools/call" &&
       message?.params?.name === "propose_file_edit"
     )
   })
   const locusEditToolCallArguments = locusEditToolCalls.map(
-    (entry: any) => entry?.message?.params?.arguments ?? null,
+    (entry) => (entry as LocusEditLogEntry).message?.params?.arguments ?? null,
   )
   const locusEditAdoptionClass =
     locusEditToolCalls.length > 0
@@ -706,12 +885,18 @@ async function runScenario(input: {
   const evidence = {
     scenario: scenarioId,
     completed,
+    canceledThroughSubscription,
     runId,
     projectId,
     chatId,
     subChatId,
     mode,
     providerProfileId: input.providerProfileId,
+    providerProfileCurrentDefaultModel:
+      input.providerProfileCurrentDefaultModel,
+    bindingUsesHistoricalProviderModel:
+      Boolean(input.providerProfileCurrentDefaultModel) &&
+      input.model !== input.providerProfileCurrentDefaultModel,
     authMode: input.authMode,
     model: input.model,
     denyShellApprovals: input.denyShellApprovals,
@@ -733,7 +918,9 @@ async function runScenario(input: {
       : [],
     canaryPath,
     canaryExists: existsSync(canaryPath),
-    canaryContent: existsSync(canaryPath) ? readFileSync(canaryPath, "utf8") : null,
+    canaryContent: existsSync(canaryPath)
+      ? readFileSync(canaryPath, "utf8")
+      : null,
     textDeltaCount: textDeltas.length,
     textContent,
     askUserQuestionCount: askUserQuestionChunks.length,
@@ -752,61 +939,64 @@ async function runScenario(input: {
     locusEditToolCallCount: locusEditToolCalls.length,
     locusEditToolCallArguments,
     locusEditLogEntries,
-    guardEventCount: chunks.filter((chunk: any) => chunk?.type === "guard-event")
+    guardEventCount: chunks.filter((chunk) => chunk.type === "guard-event")
       .length,
     approvalQuestionHeaders,
     guardEvents: chunks
-      .filter((chunk: any) => chunk?.type === "guard-event")
-      .map((chunk: any) => chunk.event ?? null),
+      .filter((chunk) => chunk.type === "guard-event")
+      .map((chunk) => chunk.event ?? null),
     mcpRuntimeStatusChunks: chunks.filter(
-      (chunk: any) => chunk?.type === "runtime-status" && chunk?.mcp,
+      (chunk) => chunk.type === "runtime-status" && chunk.mcp,
     ),
     structuredFileChangeChunks,
-    chunkTypes: chunks.map((chunk: any) => chunk?.type ?? null),
+    chunkTypes: chunks.map((chunk) => chunk.type ?? null),
     chunks,
     job,
     events,
   }
   writeFileSync(path.join(input.outDir, `${scenarioId}.json`), redact(evidence))
-  console.log(redact({
-    scenario: scenarioId,
-    completed,
-    runId,
-    jobId: job?.id ?? null,
-    jobStatus: job?.status ?? null,
-    authMode: evidence.authMode,
-    model: evidence.model,
-    controlledEditExecutor: evidence.controlledEditExecutor,
-    appServerExperimentalApi: evidence.appServerExperimentalApi,
-    applyPatchExperimentalApi: evidence.applyPatchExperimentalApi,
-    applyPatchExperimentConfigKeys: evidence.applyPatchExperimentConfigKeys,
-    canaryExists: evidence.canaryExists,
-    canaryContent: evidence.canaryContent,
-    textDeltaCount: evidence.textDeltaCount,
-    textContent: evidence.textContent,
-    askUserQuestionCount: evidence.askUserQuestionCount,
-    commandApprovalQuestionCount: evidence.commandApprovalQuestionCount,
-    fileChangeApprovalQuestionCount: evidence.fileChangeApprovalQuestionCount,
-    controlledEditApprovalQuestionCount:
-      evidence.controlledEditApprovalQuestionCount,
-    structuredFileChangeChunkCount: evidence.structuredFileChangeChunkCount,
-    locusEditAdoptionClass: evidence.locusEditAdoptionClass,
-    locusEditAdoptionProven: evidence.locusEditAdoptionProven,
-    locusEditToolCallCount: evidence.locusEditToolCallCount,
-    locusEditToolCallArguments: evidence.locusEditToolCallArguments,
-    approvalQuestionHeaders: evidence.approvalQuestionHeaders,
-    guardEventCount: evidence.guardEventCount,
-    mcpRuntimeStatusChunks: evidence.mcpRuntimeStatusChunks,
-    chunkTypes: evidence.chunkTypes,
-    eventTypes: events.map((event) => event.type),
-  }))
+  console.log(
+    redact({
+      scenario: scenarioId,
+      completed,
+      canceledThroughSubscription,
+      runId,
+      jobId: job?.id ?? null,
+      jobStatus: job?.status ?? null,
+      authMode: evidence.authMode,
+      model: evidence.model,
+      controlledEditExecutor: evidence.controlledEditExecutor,
+      appServerExperimentalApi: evidence.appServerExperimentalApi,
+      applyPatchExperimentalApi: evidence.applyPatchExperimentalApi,
+      applyPatchExperimentConfigKeys: evidence.applyPatchExperimentConfigKeys,
+      canaryExists: evidence.canaryExists,
+      canaryContent: evidence.canaryContent,
+      textDeltaCount: evidence.textDeltaCount,
+      textContent: evidence.textContent,
+      askUserQuestionCount: evidence.askUserQuestionCount,
+      commandApprovalQuestionCount: evidence.commandApprovalQuestionCount,
+      fileChangeApprovalQuestionCount: evidence.fileChangeApprovalQuestionCount,
+      controlledEditApprovalQuestionCount:
+        evidence.controlledEditApprovalQuestionCount,
+      structuredFileChangeChunkCount: evidence.structuredFileChangeChunkCount,
+      locusEditAdoptionClass: evidence.locusEditAdoptionClass,
+      locusEditAdoptionProven: evidence.locusEditAdoptionProven,
+      locusEditToolCallCount: evidence.locusEditToolCallCount,
+      locusEditToolCallArguments: evidence.locusEditToolCallArguments,
+      approvalQuestionHeaders: evidence.approvalQuestionHeaders,
+      guardEventCount: evidence.guardEventCount,
+      mcpRuntimeStatusChunks: evidence.mcpRuntimeStatusChunks,
+      chunkTypes: evidence.chunkTypes,
+      eventTypes: events.map((event) => event.type),
+    }),
+  )
 
   if (scenarioId === "multi-round-resume") {
-    const firstSessionInit = chunks.find((chunk: any) => chunk?.type === "session-init") as
-      | Record<string, unknown>
-      | undefined
+    const firstSessionInit = chunks.find(
+      (chunk) => chunk.type === "session-init",
+    ) as Record<string, unknown> | undefined
     const secondRunId = `${runId}-turn-2`
-    const secondChunks: unknown[] = []
+    const secondChunks: SmokeChunk[] = []
     let secondCompleted = false
 
     const secondObservable = await caller.codex.chat({
@@ -818,14 +1008,7 @@ async function runScenario(input: {
       cwd: input.cwd,
       projectPath: input.cwd,
       mode,
-      model: input.model,
-      providerProfileId: input.providerProfileId ?? undefined,
-      ...(input.providerProfileId
-        ? {}
-        : {
-            codexAuthMethod:
-              input.authMode === "api_key" ? ("api_key" as const) : ("chatgpt" as const),
-          }),
+      ...bindingTuple.request,
       forceNewSession: false,
       images: [],
       longTextAttachments: [],
@@ -833,7 +1016,7 @@ async function runScenario(input: {
 
     const secondDone = new Promise<void>((resolve, reject) => {
       const secondSubscription = secondObservable.subscribe({
-        next: (chunk: unknown) => secondChunks.push(chunk),
+        next: (chunk: unknown) => secondChunks.push(chunk as SmokeChunk),
         error: reject,
         complete: () => {
           secondCompleted = true
@@ -846,25 +1029,29 @@ async function runScenario(input: {
     await Promise.race([
       secondDone,
       new Promise<void>((_, reject) =>
-        setTimeout(() => reject(new Error("Scenario timed out: multi-round-resume turn 2")), 150_000),
+        setTimeout(
+          () =>
+            reject(new Error("Scenario timed out: multi-round-resume turn 2")),
+          150_000,
+        ),
       ),
     ])
 
     const secondJob = await latestJobForRun(secondRunId)
     const secondEvents = secondJob ? await jobEvents(secondJob.id) : []
     const secondTextContent = secondChunks
-      .filter((chunk: any) => chunk?.type === "text-delta")
-      .map((chunk: any) => (typeof chunk.delta === "string" ? chunk.delta : ""))
+      .filter((chunk) => chunk.type === "text-delta")
+      .map((chunk) => (typeof chunk.delta === "string" ? chunk.delta : ""))
       .join("")
     const secondErrorTexts = secondChunks
-      .filter((chunk: any) => chunk?.type === "error")
-      .map((chunk: any) =>
+      .filter((chunk) => chunk.type === "error")
+      .map((chunk) =>
         typeof chunk.errorText === "string" ? chunk.errorText : null,
       )
       .filter(Boolean)
-    const secondSessionInit = secondChunks.find((chunk: any) => chunk?.type === "session-init") as
-      | Record<string, unknown>
-      | undefined
+    const secondSessionInit = secondChunks.find(
+      (chunk) => chunk.type === "session-init",
+    ) as Record<string, unknown> | undefined
     const resumeEvidence = {
       scenario: scenarioId,
       authMode: input.authMode,
@@ -885,8 +1072,8 @@ async function runScenario(input: {
       sameSessionId:
         typeof firstSessionInit?.sessionId === "string" &&
         firstSessionInit.sessionId === secondSessionInit?.sessionId,
-      firstChunkTypes: chunks.map((chunk: any) => chunk?.type ?? null),
-      secondChunkTypes: secondChunks.map((chunk: any) => chunk?.type ?? null),
+      firstChunkTypes: chunks.map((chunk) => chunk.type ?? null),
+      secondChunkTypes: secondChunks.map((chunk) => chunk.type ?? null),
       secondChunks,
       secondErrorTexts,
       firstEvents: events,
@@ -896,20 +1083,22 @@ async function runScenario(input: {
       path.join(input.outDir, `${scenarioId}-resume.json`),
       redact(resumeEvidence),
     )
-    console.log(redact({
-      scenario: `${scenarioId}-resume`,
-      authMode: resumeEvidence.authMode,
-      firstJobId: resumeEvidence.firstJobId,
-      secondJobId: resumeEvidence.secondJobId,
-      firstJobStatus: resumeEvidence.firstJobStatus,
-      secondJobStatus: resumeEvidence.secondJobStatus,
-      firstTextContent: resumeEvidence.firstTextContent,
-      secondTextContent: resumeEvidence.secondTextContent,
-      secondErrorTexts: resumeEvidence.secondErrorTexts,
-      firstSessionId: firstSessionInit?.sessionId ?? null,
-      secondSessionId: secondSessionInit?.sessionId ?? null,
-      sameSessionId: resumeEvidence.sameSessionId,
-    }))
+    console.log(
+      redact({
+        scenario: `${scenarioId}-resume`,
+        authMode: resumeEvidence.authMode,
+        firstJobId: resumeEvidence.firstJobId,
+        secondJobId: resumeEvidence.secondJobId,
+        firstJobStatus: resumeEvidence.firstJobStatus,
+        secondJobStatus: resumeEvidence.secondJobStatus,
+        firstTextContent: resumeEvidence.firstTextContent,
+        secondTextContent: resumeEvidence.secondTextContent,
+        secondErrorTexts: resumeEvidence.secondErrorTexts,
+        firstSessionId: firstSessionInit?.sessionId ?? null,
+        secondSessionId: secondSessionInit?.sessionId ?? null,
+        sameSessionId: resumeEvidence.sameSessionId,
+      }),
+    )
   }
 }
 
@@ -926,17 +1115,25 @@ async function main() {
   await app.whenReady()
 
   const cwd = path.resolve(readArg("project", process.cwd()))
-  const outDir = path.resolve(readArg("out", path.join(cwd, ".tmp-app-server-smoke", "evidence", "desktop")))
+  const outDir = path.resolve(
+    readArg(
+      "out",
+      path.join(cwd, ".tmp-app-server-smoke", "evidence", "desktop"),
+    ),
+  )
   const scenario = readArg("scenario", "provider-plan") as Scenario
   const authMode = readArg("auth", "provider") as AuthMode
   if (!["provider", "chatgpt", "api_key"].includes(authMode)) {
     throw new Error(`Unsupported --auth=${authMode}`)
   }
-  const providerProfileId = await resolveProviderProfileId(
+  const providerProfile = await resolveProviderProfileBinding(
     authMode,
     readOptionalArg("profile"),
   )
-  const model = readArg("model", "deepseek-v4-flash")
+  const explicitModel = readOptionalArg("model")
+  const providerProfileId = providerProfile?.id ?? null
+  const model =
+    explicitModel ?? providerProfile?.defaultModel ?? "deepseek-v4-flash"
   const denyShellApprovals = readBooleanArg("deny-shell-approvals", false)
   const adoptionTier = readArg("adoption-tier", "zero") as AdoptionTier
   if (!["zero", "light", "explicit"].includes(adoptionTier)) {
@@ -948,7 +1145,8 @@ async function main() {
   )
   ensureDir(outDir)
   const previousCodexHome = process.env.CODEX_HOME
-  const previousExperimentalApi = process.env.LOCUS_CODEX_APP_SERVER_EXPERIMENTAL_API
+  const previousExperimentalApi =
+    process.env.LOCUS_CODEX_APP_SERVER_EXPERIMENTAL_API
   const previousApplyPatchExperiment =
     process.env.LOCUS_CODEX_APP_SERVER_APPLY_PATCH_EXPERIMENT
   const previousControlledEditExecutor =
@@ -958,14 +1156,15 @@ async function main() {
       ? setupMcpReadinessCodexHome(outDir)
       : scenario === "locus-edit-adoption"
         ? setupLocusEditAdoptionCodexHome(outDir)
-      : null
+        : null
   if (mcpSetup) {
     process.env.CODEX_HOME = mcpSetup.codexHome
     logSmokePhase("scenario:mcp-home", {
       codexHome: mcpSetup.codexHome,
       serverName: mcpSetup.serverName,
       secret: mcpSetup.secret,
-      copiedAuthFiles: "copiedAuthFiles" in mcpSetup ? mcpSetup.copiedAuthFiles : [],
+      copiedAuthFiles:
+        "copiedAuthFiles" in mcpSetup ? mcpSetup.copiedAuthFiles : [],
     })
   }
   if (enableApplyPatchExperiment) {
@@ -980,6 +1179,8 @@ async function main() {
       scenario,
       cwd,
       providerProfileId,
+      providerProfileCurrentDefaultModel:
+        providerProfile?.defaultModel ?? null,
       authMode,
       model,
       outDir,

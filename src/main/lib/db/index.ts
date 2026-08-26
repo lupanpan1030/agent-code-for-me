@@ -1,9 +1,10 @@
+import { existsSync, mkdirSync } from "node:fs"
+import { join } from "node:path"
 import Database from "better-sqlite3"
 import { drizzle } from "drizzle-orm/better-sqlite3"
 import { migrate } from "drizzle-orm/better-sqlite3/migrator"
 import * as electron from "electron"
-import { join } from "path"
-import { existsSync, mkdirSync } from "fs"
+import { backfillSubChatBindings } from "../chat-session-binding"
 import * as schema from "./schema"
 
 let db: ReturnType<typeof drizzle<typeof schema>> | null = null
@@ -61,10 +62,13 @@ export function initDatabase() {
     const migrationsPath = getMigrationsPath()
     console.log(`[DB] Running migrations from: ${migrationsPath}`)
     migrate(instance, { migrationsFolder: migrationsPath })
+    const backfilledBindings = backfillSubChatBindings(instance)
 
     sqlite = connection
     db = instance
-    console.log("[DB] Migrations completed")
+    console.log(
+      `[DB] Migrations completed; backfilled ${backfilledBindings} chat session binding(s)`,
+    )
     return db
   } catch (error) {
     console.error("[DB] Migration error:", error)

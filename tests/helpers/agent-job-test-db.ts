@@ -48,6 +48,20 @@ export function createAgentJobTestDb() {
       updated_at integer,
       FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE cascade
     );
+    CREATE TABLE sub_chat_bindings (
+      id text PRIMARY KEY NOT NULL,
+      sub_chat_id text NOT NULL,
+      runtime text NOT NULL,
+      provider_profile_id text,
+      model_id text,
+      model_source text,
+      thinking_level text,
+      created_at integer,
+      updated_at integer,
+      FOREIGN KEY (sub_chat_id) REFERENCES sub_chats(id) ON DELETE cascade
+    );
+    CREATE UNIQUE INDEX sub_chat_bindings_sub_chat_idx
+      ON sub_chat_bindings (sub_chat_id);
     CREATE TABLE worktree_setup_trust_decisions (
       id text PRIMARY KEY NOT NULL,
       project_id text NOT NULL,

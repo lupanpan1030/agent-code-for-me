@@ -2,10 +2,11 @@
 
 import { atom } from "jotai"
 import { atomFamily } from "jotai/utils"
-import type {
-  CanonicalChatMessage,
-  CanonicalChatMessagePart,
-  ChatMessageMetadata,
+import {
+  type CanonicalChatMessage,
+  type CanonicalChatMessagePart,
+  type ChatMessageMetadata,
+  getAvailableRollbackCheckpointBinding,
 } from "../../../../shared/chat-message"
 import { appStore } from "../../../lib/jotai-store"
 
@@ -528,9 +529,13 @@ export function findRollbackTargetSdkUuidForUserIndex(
     }
   }
 
-  // 3) No compact after target assistant: allow rollback only if target has SDK UUID.
+  // 3) No compact after target assistant: expose rollback only when the
+  // persisted message owns an explicitly available canonical checkpoint.
   const sdkUuid = targetAssistantMessage.metadata?.sdkMessageUuid
-  return typeof sdkUuid === "string" && sdkUuid.length > 0 ? sdkUuid : null
+  if (typeof sdkUuid !== "string" || sdkUuid.length === 0) return null
+  return getAvailableRollbackCheckpointBinding(targetAssistantMessage.metadata)
+    ? sdkUuid
+    : null
 }
 
 // Per-subchat rollback target for split panes.

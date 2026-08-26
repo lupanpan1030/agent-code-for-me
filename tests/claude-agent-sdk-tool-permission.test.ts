@@ -1,4 +1,4 @@
-import { describe, expect, mock, test } from "bun:test"
+import { afterEach, describe, expect, mock, test } from "bun:test"
 import { join } from "node:path"
 import type { PreToolUseHookInput } from "@anthropic-ai/claude-agent-sdk"
 import {
@@ -6,6 +6,7 @@ import {
   resolveDesktopPermissionPolicy,
 } from "../src/main/lib/agent-runtime/permission-policy"
 import type { ClaudeAskUserQuestionPending } from "../src/main/lib/claude/agent-sdk-tool-permission"
+import type { UIMessageChunk } from "../src/main/lib/claude/types"
 import type { AgentScopeContract } from "../src/shared/agent-scope-contracts"
 
 mock.module("electron", () => ({
@@ -24,11 +25,26 @@ const {
   createClaudeAgentSdkPermissionControls,
   createClaudeAgentSdkToolPermissionHandler,
 } = await import("../src/main/lib/claude/agent-sdk-tool-permission")
-const { validateAgentScopeContract } = await import(
-  "../src/main/lib/agent-guard"
-)
+const {
+  clearActiveGuardedContractsForTest,
+  hasPendingActiveGuardedScopeExpansionForTest,
+  isActiveGuardedContract,
+  replaceActiveGuardedContractForSubChat,
+  validateAgentScopeContract,
+} = await import("../src/main/lib/agent-guard")
 
 const cwd = join(process.cwd(), "example-project")
+
+afterEach(() => {
+  clearActiveGuardedContractsForTest()
+})
+
+function pendingForTool(
+  pending: Map<string, ClaudeAskUserQuestionPending>,
+  toolUseId: string,
+): ClaudeAskUserQuestionPending | undefined {
+  return [...pending.values()].find((item) => item.toolUseId === toolUseId)
+}
 
 function toolOptions(toolUseID: string) {
   return {
@@ -49,7 +65,7 @@ function baseHandlerInput(
       mode: "agent",
     }),
     guardedContract: null,
-    getGuardedContract: () => undefined,
+    isGuardedContractCurrent: () => false,
     recordGuardEvent: () => {},
     emit: () => {},
     subChatId: "sub-1",
@@ -209,8 +225,9 @@ describe("Claude Agent SDK tool permission handler", () => {
       toolOptions("ask-1"),
     )
 
-    expect(pendingToolApprovals.has("ask-1")).toBe(true)
-    pendingToolApprovals.get("ask-1")?.resolve({
+    const pending = pendingForTool(pendingToolApprovals, "ask-1")
+    expect(pending).toBeDefined()
+    pending?.resolve({
       approved: true,
       updatedInput: { answers: ["Yes"] },
     })
@@ -254,7 +271,7 @@ describe("Claude Agent SDK tool permission handler", () => {
       baseHandlerInput({
         permissionPolicy,
         guardedContract,
-        getGuardedContract: () => guardedContract,
+        isGuardedContractCurrent: (contract) => contract === guardedContract,
         recordGuardEvent: (event) => {
           guardEvents.push(event)
         },
@@ -279,6 +296,320 @@ describe("Claude Agent SDK tool permission handler", () => {
         event: guardEvents[0],
       },
     ])
+  })
+
+  test("denies a stale guarded handler when a broader same-ID contract replaces it", async () => {
+    const guardedContract = await validateAgentScopeContract(baseContract(), {
+      cwd,
+      projectPath: cwd,
+      chatId: "chat-1",
+      subChatId: "sub-1",
+      runId: "run-1",
+      requireRegisteredWorktree: false,
+    })
+    const replacementContract = await validateAgentScopeContract(
+      {
+        ...baseContract(),
+        runId: "run-2",
+        editableScope: [{ path: "src", kind: "directory" }],
+      },
+      {
+        cwd,
+        projectPath: cwd,
+        chatId: "chat-1",
+        subChatId: "sub-1",
+        runId: "run-2",
+        requireRegisteredWorktree: false,
+      },
+    )
+    const guardEvents: unknown[] = []
+    const handler = createClaudeAgentSdkToolPermissionHandler(
+      baseHandlerInput({
+        permissionPolicy: resolveDesktopPermissionPolicy({
+          runtimeId: "claude-code",
+          mode: "agent",
+          hasScopeContract: true,
+        }),
+        guardedContract,
+        isGuardedContractCurrent: (contract) =>
+          contract === replacementContract,
+        recordGuardEvent: (event) => guardEvents.push(event),
+      }),
+    )
+
+    await expect(
+      handler(
+        "Edit",
+        { file_path: "src/replacement-only.ts" },
+        toolOptions("stale-guard-tool"),
+      ),
+    ).resolves.toEqual({
+      behavior: "deny",
+      message: "Guarded run is no longer active.",
+    })
+    expect(guardEvents).toEqual([])
+  })
+
+  test("denies a stale guarded handler when a different-ID contract replaces it", async () => {
+    const guardedContract = await validateAgentScopeContract(baseContract(), {
+      cwd,
+      projectPath: cwd,
+      chatId: "chat-1",
+      subChatId: "sub-1",
+      runId: "run-1",
+      requireRegisteredWorktree: false,
+    })
+    const replacementContract = await validateAgentScopeContract(
+      {
+        ...baseContract(),
+        id: "contract-2",
+        runId: "run-2",
+        editableScope: [{ path: "src", kind: "directory" }],
+      },
+      {
+        cwd,
+        projectPath: cwd,
+        chatId: "chat-1",
+        subChatId: "sub-1",
+        runId: "run-2",
+        requireRegisteredWorktree: false,
+      },
+    )
+    let currentContract = guardedContract
+    const handler = createClaudeAgentSdkToolPermissionHandler(
+      baseHandlerInput({
+        permissionPolicy: resolveDesktopPermissionPolicy({
+          runtimeId: "claude-code",
+          mode: "agent",
+          hasScopeContract: true,
+        }),
+        guardedContract,
+        isGuardedContractCurrent: (contract) => contract === currentContract,
+      }),
+    )
+
+    currentContract = replacementContract
+
+    await expect(
+      handler(
+        "Edit",
+        { file_path: "src/replacement-only.ts" },
+        toolOptions("different-id-stale-guard-tool"),
+      ),
+    ).resolves.toEqual({
+      behavior: "deny",
+      message: "Guarded run is no longer active.",
+    })
+  })
+
+  test("isolates same-ID cross-chat contracts before rejecting a replaced capture", async () => {
+    const first = await validateAgentScopeContract(baseContract(), {
+      cwd,
+      projectPath: cwd,
+      chatId: "chat-1",
+      subChatId: "sub-1",
+      runId: "run-1",
+      requireRegisteredWorktree: false,
+    })
+    const second = await validateAgentScopeContract(
+      {
+        ...baseContract(),
+        chatId: "chat-2",
+        subChatId: "sub-2",
+        runId: "run-2",
+      },
+      {
+        cwd,
+        projectPath: cwd,
+        chatId: "chat-2",
+        subChatId: "sub-2",
+        runId: "run-2",
+        requireRegisteredWorktree: false,
+      },
+    )
+    replaceActiveGuardedContractForSubChat(first.subChatId, first)
+    replaceActiveGuardedContractForSubChat(second.subChatId, second)
+    const handler = createClaudeAgentSdkToolPermissionHandler(
+      baseHandlerInput({
+        permissionPolicy: resolveDesktopPermissionPolicy({
+          runtimeId: "claude-code",
+          mode: "agent",
+          hasScopeContract: true,
+        }),
+        guardedContract: first,
+        isGuardedContractCurrent: isActiveGuardedContract,
+      }),
+    )
+
+    await expect(
+      handler(
+        "Edit",
+        { file_path: "src/app.ts" },
+        toolOptions("cross-chat-same-contract-id"),
+      ),
+    ).resolves.toMatchObject({ behavior: "allow" })
+    expect(isActiveGuardedContract(first)).toBe(true)
+    expect(isActiveGuardedContract(second)).toBe(true)
+
+    const replacement = { ...first, runId: "run-replacement" }
+    replaceActiveGuardedContractForSubChat(first.subChatId, replacement)
+    await expect(
+      handler(
+        "Edit",
+        { file_path: "src/app.ts" },
+        toolOptions("stale-captured-contract"),
+      ),
+    ).resolves.toEqual({
+      behavior: "deny",
+      message: "Guarded run is no longer active.",
+    })
+    expect(isActiveGuardedContract(second)).toBe(true)
+  })
+
+  test("denies a guarded shell write when different-ID replacement happens during approval", async () => {
+    const guardedContract = await validateAgentScopeContract(
+      {
+        ...baseContract(),
+        editableScope: [{ path: "src", kind: "directory" }],
+      },
+      {
+        cwd,
+        projectPath: cwd,
+        chatId: "chat-1",
+        subChatId: "sub-1",
+        runId: "run-1",
+        requireRegisteredWorktree: false,
+      },
+    )
+    const replacementContract = await validateAgentScopeContract(
+      {
+        ...baseContract(),
+        id: "contract-2",
+        runId: "run-2",
+        editableScope: [{ path: "src", kind: "directory" }],
+      },
+      {
+        cwd,
+        projectPath: cwd,
+        chatId: "chat-1",
+        subChatId: "sub-1",
+        runId: "run-2",
+        requireRegisteredWorktree: false,
+      },
+    )
+    const pendingToolApprovals = new Map<string, ClaudeAskUserQuestionPending>()
+    const emitted: UIMessageChunk[] = []
+    let currentContract = guardedContract
+    const handler = createClaudeAgentSdkToolPermissionHandler(
+      baseHandlerInput({
+        permissionPolicy: resolveDesktopPermissionPolicy({
+          runtimeId: "claude-code",
+          mode: "agent",
+          hasScopeContract: true,
+        }),
+        guardedContract,
+        isGuardedContractCurrent: (contract) => contract === currentContract,
+        pendingToolApprovals,
+        emit: (chunk) => emitted.push(chunk),
+      }),
+    )
+    const resultPromise = handler(
+      "Bash",
+      {
+        command: `/bin/zsh -lc "printf 'hello' > ${join(cwd, "src/generated.txt")}"`,
+      },
+      toolOptions("stale-during-approval"),
+    )
+    const pending = pendingForTool(
+      pendingToolApprovals,
+      "stale-during-approval",
+    )
+    if (!pending?.approvalInput) {
+      throw new Error("expected guarded shell approval pending state")
+    }
+
+    currentContract = replacementContract
+    pending.resolve({
+      approved: true,
+      updatedInput: {
+        questions: pending.approvalInput.questions,
+        answers: {
+          [pending.approvalInput.questions[0].question]: "Approve",
+        },
+      },
+    })
+
+    await expect(resultPromise).resolves.toEqual({
+      behavior: "deny",
+      message: "Guarded run is no longer active.",
+    })
+    expect(emitted.at(-1)).toEqual({
+      type: "ask-user-question-result",
+      approvalId: pending.approvalId,
+      toolUseId: "stale-during-approval",
+      result: "Guarded run is no longer active.",
+    })
+  })
+
+  test("denies a guarded approval when an unguarded Run replaces its owner", async () => {
+    const guardedContract = await validateAgentScopeContract(
+      {
+        ...baseContract(),
+        editableScope: [{ path: "src", kind: "directory" }],
+      },
+      {
+        cwd,
+        projectPath: cwd,
+        chatId: "chat-1",
+        subChatId: "sub-1",
+        runId: "run-1",
+        requireRegisteredWorktree: false,
+      },
+    )
+    const pendingToolApprovals = new Map<string, ClaudeAskUserQuestionPending>()
+    let currentContract: typeof guardedContract | undefined = guardedContract
+    const handler = createClaudeAgentSdkToolPermissionHandler(
+      baseHandlerInput({
+        permissionPolicy: resolveDesktopPermissionPolicy({
+          runtimeId: "claude-code",
+          mode: "agent",
+          hasScopeContract: true,
+        }),
+        guardedContract,
+        isGuardedContractCurrent: (contract) => contract === currentContract,
+        pendingToolApprovals,
+      }),
+    )
+    const resultPromise = handler(
+      "Bash",
+      {
+        command: `/bin/zsh -lc "printf 'hello' > ${join(cwd, "src/generated.txt")}"`,
+      },
+      toolOptions("unguarded-replacement"),
+    )
+    const pending = pendingForTool(
+      pendingToolApprovals,
+      "unguarded-replacement",
+    )
+    if (!pending?.approvalInput) {
+      throw new Error("expected guarded shell approval pending state")
+    }
+
+    currentContract = undefined
+    pending.resolve({
+      approved: true,
+      updatedInput: {
+        questions: pending.approvalInput.questions,
+        answers: {
+          [pending.approvalInput.questions[0].question]: "Approve",
+        },
+      },
+    })
+
+    await expect(resultPromise).resolves.toEqual({
+      behavior: "deny",
+      message: "Guarded run is no longer active.",
+    })
   })
 
   test("requires user approval before allowing guarded bounded shell writes", async () => {
@@ -308,7 +639,7 @@ describe("Claude Agent SDK tool permission handler", () => {
           hasScopeContract: true,
         }),
         guardedContract,
-        getGuardedContract: () => guardedContract,
+        isGuardedContractCurrent: (contract) => contract === guardedContract,
         pendingToolApprovals,
         recordGuardEvent: (event) => {
           guardEvents.push(event)
@@ -328,13 +659,16 @@ describe("Claude Agent SDK tool permission handler", () => {
       toolOptions("guard-shell-approval-1"),
     )
 
-    const pendingApproval = pendingToolApprovals.get("guard-shell-approval-1")
+    const pendingApproval = pendingForTool(
+      pendingToolApprovals,
+      "guard-shell-approval-1",
+    )
     expect(pendingApproval).toBeDefined()
     expect(pendingApproval).toMatchObject({
       toolName: "Bash",
       toolInput,
     })
-    if (!pendingApproval || !("approvalInput" in pendingApproval)) {
+    if (!pendingApproval?.approvalInput) {
       throw new Error("expected guarded shell approval pending state")
     }
     const question = pendingApproval.approvalInput.questions[0]
@@ -370,6 +704,7 @@ describe("Claude Agent SDK tool permission handler", () => {
     })
     expect(emitted.at(-1)).toEqual({
       type: "ask-user-question-result",
+      approvalId: pendingApproval.approvalId,
       toolUseId: "guard-shell-approval-1",
       result: "approved",
     })
@@ -400,7 +735,7 @@ describe("Claude Agent SDK tool permission handler", () => {
           hasScopeContract: true,
         }),
         guardedContract,
-        getGuardedContract: () => guardedContract,
+        isGuardedContractCurrent: (contract) => contract === guardedContract,
         pendingToolApprovals,
       }),
     )
@@ -411,8 +746,11 @@ describe("Claude Agent SDK tool permission handler", () => {
       },
       toolOptions("guard-shell-deny-1"),
     )
-    const pendingApproval = pendingToolApprovals.get("guard-shell-deny-1")
-    if (!pendingApproval || !("approvalInput" in pendingApproval)) {
+    const pendingApproval = pendingForTool(
+      pendingToolApprovals,
+      "guard-shell-deny-1",
+    )
+    if (!pendingApproval?.approvalInput) {
       throw new Error("expected guarded shell approval pending state")
     }
     pendingApproval.resolve({
@@ -538,6 +876,69 @@ describe("Claude Agent SDK tool permission handler", () => {
     expect(emitted).toHaveLength(1)
   })
 
+  test("same-run-id replacement denies unguarded callbacks and cached allows", async () => {
+    let activeOwner = "A"
+    const controlsA = createClaudeAgentSdkPermissionControls(
+      baseHandlerInput({
+        isCurrentRunOwner: () => activeOwner === "A",
+      }),
+    )
+
+    await expect(
+      controlsA.preToolUseHook(
+        {
+          hook_event_name: "PreToolUse",
+          tool_name: "Edit",
+          tool_input: { file_path: "src/app.ts" },
+          tool_use_id: "cached-unguarded-allow",
+        } as PreToolUseHookInput,
+        "cached-unguarded-allow",
+        { signal: new AbortController().signal },
+      ),
+    ).resolves.toMatchObject({
+      hookSpecificOutput: { permissionDecision: "allow" },
+    })
+
+    activeOwner = "B"
+    await expect(
+      controlsA.canUseTool(
+        "Edit",
+        { file_path: "src/app.ts" },
+        toolOptions("cached-unguarded-allow"),
+      ),
+    ).resolves.toMatchObject({
+      behavior: "deny",
+      message: "Claude run is no longer active.",
+    })
+    await expect(
+      controlsA.canUseTool(
+        "Bash",
+        { command: "printf safe" },
+        toolOptions("late-direct-bash"),
+      ),
+    ).resolves.toMatchObject({
+      behavior: "deny",
+      message: "Claude run is no longer active.",
+    })
+    await expect(
+      controlsA.preToolUseHook(
+        {
+          hook_event_name: "PreToolUse",
+          tool_name: "Edit",
+          tool_input: { file_path: "src/late.ts" },
+          tool_use_id: "late-hook-edit",
+        } as PreToolUseHookInput,
+        "late-hook-edit",
+        { signal: new AbortController().signal },
+      ),
+    ).resolves.toMatchObject({
+      hookSpecificOutput: {
+        permissionDecision: "deny",
+        permissionDecisionReason: "Claude run is no longer active.",
+      },
+    })
+  })
+
   test("uses PreToolUse for guarded scope decisions", async () => {
     const guardedContract = await validateAgentScopeContract(baseContract(), {
       cwd,
@@ -549,6 +950,10 @@ describe("Claude Agent SDK tool permission handler", () => {
     })
     const guardEvents: any[] = []
     const emitted: any[] = []
+    replaceActiveGuardedContractForSubChat(
+      guardedContract.subChatId,
+      guardedContract,
+    )
     const controls = createClaudeAgentSdkPermissionControls(
       baseHandlerInput({
         permissionPolicy: resolveDesktopPermissionPolicy({
@@ -557,7 +962,7 @@ describe("Claude Agent SDK tool permission handler", () => {
           hasScopeContract: true,
         }),
         guardedContract,
-        getGuardedContract: () => guardedContract,
+        isGuardedContractCurrent: (contract) => contract === guardedContract,
         recordGuardEvent: (event) => {
           guardEvents.push(event)
         },
@@ -597,5 +1002,75 @@ describe("Claude Agent SDK tool permission handler", () => {
         event: guardEvents[0],
       },
     ])
+    expect(
+      hasPendingActiveGuardedScopeExpansionForTest(guardEvents[0].id),
+    ).toBe(true)
+  })
+
+  test("does not reuse a cached guarded allow after its contract is replaced", async () => {
+    const guardedContract = await validateAgentScopeContract(baseContract(), {
+      cwd,
+      projectPath: cwd,
+      chatId: "chat-1",
+      subChatId: "sub-1",
+      runId: "run-1",
+      requireRegisteredWorktree: false,
+    })
+    const replacementContract = await validateAgentScopeContract(
+      {
+        ...baseContract(),
+        id: "contract-2",
+        runId: "run-2",
+        editableScope: [{ path: "src", kind: "directory" }],
+      },
+      {
+        cwd,
+        projectPath: cwd,
+        chatId: "chat-1",
+        subChatId: "sub-1",
+        runId: "run-2",
+        requireRegisteredWorktree: false,
+      },
+    )
+    let currentContract = guardedContract
+    const controls = createClaudeAgentSdkPermissionControls(
+      baseHandlerInput({
+        permissionPolicy: resolveDesktopPermissionPolicy({
+          runtimeId: "claude-code",
+          mode: "agent",
+          hasScopeContract: true,
+        }),
+        guardedContract,
+        isGuardedContractCurrent: (contract) => contract === currentContract,
+      }),
+    )
+
+    await expect(
+      controls.preToolUseHook(
+        {
+          hook_event_name: "PreToolUse",
+          tool_name: "Edit",
+          tool_input: { file_path: "src/app.ts" },
+          tool_use_id: "cached-guard-allow",
+        } as PreToolUseHookInput,
+        "cached-guard-allow",
+        { signal: new AbortController().signal },
+      ),
+    ).resolves.toMatchObject({
+      hookSpecificOutput: { permissionDecision: "allow" },
+    })
+
+    currentContract = replacementContract
+
+    await expect(
+      controls.canUseTool(
+        "Edit",
+        { file_path: "src/app.ts" },
+        toolOptions("cached-guard-allow"),
+      ),
+    ).resolves.toEqual({
+      behavior: "deny",
+      message: "Guarded run is no longer active.",
+    })
   })
 })

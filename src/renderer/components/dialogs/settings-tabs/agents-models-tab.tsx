@@ -28,20 +28,26 @@ import {
   type ProviderDiagnosticStatus,
   type ProviderProfileDefaultPurpose,
   providerProfileSource,
+  providerProfileSupportsDefaultPurpose,
 } from "../../../../shared/provider-profile-types"
 import {
-  type ClaudeModelSource,
-  type CodexModelSource,
   lastSelectedClaudeModelSourceAtom,
+  lastSelectedCodexModelIdAtom,
   lastSelectedCodexModelSourceAtom,
+  lastSelectedCodexThinkingAtom,
+  setLastSelectedClaudeSelectionAtom,
+  setLastSelectedCodexSelectionAtom,
 } from "../../../features/agents/atoms"
 import {
   getProviderAuthModeLabel,
   getProviderTargetLabel,
   ProviderProfileEditor,
 } from "../../../features/agents/components/provider-profile-editor"
-import { useModelCatalogStore } from "../../../features/agents/lib/model-catalog-store"
-import { runtimeCapabilityManifestsAtom } from "../../../features/agents/lib/runtime-manifest-store"
+import { resolveCodexNewChatDefaultsForSource } from "../../../features/agents/lib/chat-session-binding-defaults"
+import {
+  buildCodexApiKeyModels,
+  useModelCatalogStore,
+} from "../../../features/agents/lib/model-catalog-store"
 import {
   agentsLoginModalOpenAtom,
   autoOfflineModeAtom,
@@ -642,21 +648,6 @@ function getProviderPurposeLabel(
   }
 }
 
-function purposeMatchesProfile(
-  purpose: ProviderProfileDefaultPurpose,
-  targets: string[],
-) {
-  switch (purpose) {
-    case "claude-main":
-      return targets.includes("claude")
-    case "codex-main":
-      return targets.includes("codex")
-    case "sub_chat_title":
-    case "commit_message":
-      return targets.includes("helpers")
-  }
-}
-
 const DIAGNOSTIC_CHECK_LABEL_KEYS: Record<
   ProviderDiagnosticCheckId,
   TranslationKey
@@ -730,11 +721,20 @@ function profileStatusClassName(ok: boolean) {
 
 function ProviderProfilesSettingsSection() {
   const { t } = useI18n()
-  const setLastSelectedClaudeModelSource = useSetAtom(
+  const { claudeModels, codexModels } = useModelCatalogStore()
+  const [lastSelectedClaudeModelSource] = useAtom(
     lastSelectedClaudeModelSourceAtom,
   )
-  const setLastSelectedCodexModelSource = useSetAtom(
+  const [lastSelectedCodexModelSource] = useAtom(
     lastSelectedCodexModelSourceAtom,
+  )
+  const [lastSelectedCodexModelId] = useAtom(lastSelectedCodexModelIdAtom)
+  const [lastSelectedCodexThinking] = useAtom(lastSelectedCodexThinkingAtom)
+  const setLastSelectedClaudeSelection = useSetAtom(
+    setLastSelectedClaudeSelectionAtom,
+  )
+  const setLastSelectedCodexSelection = useSetAtom(
+    setLastSelectedCodexSelectionAtom,
   )
   const trpcUtils = trpc.useUtils()
   const { data: profilesData } = trpc.providerProfiles.listProfiles.useQuery()
@@ -759,6 +759,30 @@ function ProviderProfilesSettingsSection() {
     setEditingId(profile.id)
   }
 
+  const setCodexFirstPartyDefaults = () => {
+    const nextDefaults = resolveCodexNewChatDefaultsForSource({
+      models: codexModels,
+      selectedModelId: lastSelectedCodexModelId,
+      selectedThinking: lastSelectedCodexThinking,
+      source: "chatgpt",
+    })
+    setLastSelectedCodexSelection({
+      modelSource: "chatgpt",
+      ...nextDefaults,
+    })
+  }
+
+  const setCodexProfileDefaults = (profileId: string, modelId: string) => {
+    setLastSelectedCodexSelection({
+      modelSource: providerProfileSource(profileId),
+      modelId,
+      // Provider Profiles expose reasoning=none, so the durable binding stores
+      // NULL and hides effort. Keep the user's first-party preference ready for
+      // the next first-party selection instead of overwriting it here.
+      thinkingLevel: lastSelectedCodexThinking,
+    })
+  }
+
   const handleDeleteProfile = (profileId: string) => {
     setConfirmAction({
       title: t("common.delete"),
@@ -770,6 +794,16 @@ function ProviderProfilesSettingsSection() {
           {
             onSuccess: async () => {
               if (editingId === profileId) setEditingId(undefined)
+              const deletedSource = providerProfileSource(profileId)
+              if (lastSelectedClaudeModelSource === deletedSource) {
+                setLastSelectedClaudeSelection({
+                  modelSource: "claude-oauth",
+                  modelId: claudeModels[0]?.id ?? "opus",
+                })
+              }
+              if (lastSelectedCodexModelSource === deletedSource) {
+                setCodexFirstPartyDefaults()
+              }
               await Promise.all([
                 trpcUtils.providerProfiles.listProfiles.invalidate(),
                 trpcUtils.providerProfiles.getDefaults.invalidate(),
@@ -820,6 +854,9 @@ function ProviderProfilesSettingsSection() {
   ) => {
     const currentProfileId = defaults?.[purpose]?.profileId ?? null
     const nextProfileId = currentProfileId === profileId ? null : profileId
+    const nextProfile = nextProfileId
+      ? profiles.find((profile) => profile.id === nextProfileId)
+      : undefined
     setDefaultMutation.mutate(
       {
         purpose,
@@ -828,17 +865,19 @@ function ProviderProfilesSettingsSection() {
       {
         onSuccess: async () => {
           if (purpose === "claude-main") {
-            setLastSelectedClaudeModelSource(
-              nextProfileId
-                ? (providerProfileSource(nextProfileId) as ClaudeModelSource)
+            setLastSelectedClaudeSelection({
+              modelSource: nextProfileId
+                ? providerProfileSource(nextProfileId)
                 : "claude-oauth",
-            )
+              modelId:
+                nextProfile?.defaultModel ?? claudeModels[0]?.id ?? "opus",
+            })
           } else if (purpose === "codex-main") {
-            setLastSelectedCodexModelSource(
-              nextProfileId
-                ? (providerProfileSource(nextProfileId) as CodexModelSource)
-                : "chatgpt",
-            )
+            if (nextProfileId && nextProfile) {
+              setCodexProfileDefaults(nextProfileId, nextProfile.defaultModel)
+            } else {
+              setCodexFirstPartyDefaults()
+            }
           }
           await trpcUtils.providerProfiles.getDefaults.invalidate()
           toast.success(t("toast.models.providerDefaultSaved"))
@@ -874,7 +913,30 @@ function ProviderProfilesSettingsSection() {
         <ProviderProfileEditor
           key={editingId ?? "new"}
           editingProfile={editingProfile}
-          onSaved={(profile) => setEditingId(profile.id)}
+          onSaved={(profile) => {
+            setEditingId(profile.id)
+            const source = providerProfileSource(profile.id)
+            if (lastSelectedClaudeModelSource === source) {
+              if (profile.targetRuntimes.includes("claude")) {
+                setLastSelectedClaudeSelection({
+                  modelSource: source,
+                  modelId: profile.defaultModel,
+                })
+              } else {
+                setLastSelectedClaudeSelection({
+                  modelSource: "claude-oauth",
+                  modelId: claudeModels[0]?.id ?? "opus",
+                })
+              }
+            }
+            if (lastSelectedCodexModelSource === source) {
+              if (profile.targetRuntimes.includes("codex")) {
+                setCodexProfileDefaults(profile.id, profile.defaultModel)
+              } else {
+                setCodexFirstPartyDefaults()
+              }
+            }
+          }}
           onReset={() => setEditingId(undefined)}
           className="border-b border-border p-4"
         />
@@ -1052,9 +1114,9 @@ function ProviderProfilesSettingsSection() {
                     {PROVIDER_DEFAULT_PURPOSES.map((purpose) => {
                       const active =
                         defaults?.[purpose]?.profileId === profile.id
-                      const supported = purposeMatchesProfile(
-                        purpose,
+                      const supported = providerProfileSupportsDefaultPurpose(
                         profile.targetRuntimes,
+                        purpose,
                       )
                       return (
                         <Button
@@ -1385,8 +1447,10 @@ export function AgentsModelsTab() {
   // OpenAI API key state
   const [codexApiKey, setCodexApiKey] = useState("")
   const [isSavingCodexApiKey, setIsSavingCodexApiKey] = useState(false)
-  const setLastSelectedCodexModelSource = useSetAtom(
-    lastSelectedCodexModelSourceAtom,
+  const [lastSelectedCodexModelId] = useAtom(lastSelectedCodexModelIdAtom)
+  const [lastSelectedCodexThinking] = useAtom(lastSelectedCodexThinkingAtom)
+  const setLastSelectedCodexSelection = useSetAtom(
+    setLastSelectedCodexSelectionAtom,
   )
   const codexLogoutMutation = trpc.codex.logout.useMutation()
   const saveCodexApiKeyMutation = trpc.codex.saveCodexApiKey.useMutation()
@@ -1495,8 +1559,20 @@ export function AgentsModelsTab() {
       const saveResult = await saveCodexApiKeyMutation.mutateAsync({
         apiKey: normalized,
       })
+      const nextDefaults = resolveCodexNewChatDefaultsForSource({
+        models: [
+          ...codexModels,
+          ...buildCodexApiKeyModels(saveResult.modelIds, codexModels),
+        ],
+        selectedModelId: lastSelectedCodexModelId,
+        selectedThinking: lastSelectedCodexThinking,
+        source: "openai-api-key",
+      })
       setCodexApiKey("")
-      setLastSelectedCodexModelSource("openai-api-key")
+      setLastSelectedCodexSelection({
+        modelSource: "openai-api-key",
+        ...nextDefaults,
+      })
       await trpcUtils.codex.getCodexApiKeyStatus.invalidate()
       await trpcUtils.codex.getIntegration.invalidate()
       if (saveResult.verified === false) {
@@ -1521,8 +1597,17 @@ export function AgentsModelsTab() {
     setIsSavingCodexApiKey(true)
     try {
       await removeCodexApiKeyMutation.mutateAsync()
+      const nextDefaults = resolveCodexNewChatDefaultsForSource({
+        models: codexModels,
+        selectedModelId: lastSelectedCodexModelId,
+        selectedThinking: lastSelectedCodexThinking,
+        source: "chatgpt",
+      })
       setCodexApiKey("")
-      setLastSelectedCodexModelSource("chatgpt")
+      setLastSelectedCodexSelection({
+        modelSource: "chatgpt",
+        ...nextDefaults,
+      })
 
       if (codexIntegration?.state === "connected_api_key") {
         await codexLogoutMutation.mutateAsync().catch(() => {

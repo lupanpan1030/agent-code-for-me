@@ -85,6 +85,7 @@ describe("chat creation base commit persistence", () => {
       branchType: "local",
       useWorktree: true,
       mode: "agent",
+      binding: { runtime: "claude-code" },
     })
 
     expect(created.baseCommit).toBe("fork-commit-sha")

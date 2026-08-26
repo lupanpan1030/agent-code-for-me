@@ -1,10 +1,10 @@
 import type { AgentJobMode } from "../../../shared/agent-jobs"
 import {
   type GuardedGitStatusSnapshot,
-  prepareActiveGuardedRunContract,
+  prepareGuardedRunContract,
   type ValidatedAgentScopeContract,
 } from "../agent-guard"
-import type { PrepareActiveGuardedRunContractInput } from "../agent-guard/active-contracts"
+import type { PrepareGuardedRunContractInput } from "../agent-guard/active-contracts"
 import {
   type DesktopPermissionPolicy,
   resolveDesktopPermissionPolicy,
@@ -18,7 +18,7 @@ import type { UIMessageChunk } from "./types"
 
 export type PrepareClaudeAgentSdkDesktopRunControlsDependencies = {
   verifyPreflight: typeof verifyDesktopRunPreflight
-  prepareGuardedRunContract: typeof prepareActiveGuardedRunContract
+  prepareGuardedRunContract: typeof prepareGuardedRunContract
   resolvePermissionPolicy: typeof resolveDesktopPermissionPolicy
 }
 
@@ -29,7 +29,7 @@ export type PrepareClaudeAgentSdkDesktopRunControlsInput = {
   cwd: string
   projectPath?: string
   mode: AgentJobMode
-  scopeContract?: PrepareActiveGuardedRunContractInput["scopeContract"]
+  scopeContract?: PrepareGuardedRunContractInput["scopeContract"]
   runId?: string
   fallbackRunId: string
   emitError: (error: unknown, context: string) => void
@@ -56,7 +56,7 @@ export type PrepareClaudeAgentSdkDesktopRunControlsResult =
 
 const defaultDependencies: PrepareClaudeAgentSdkDesktopRunControlsDependencies =
   {
-    prepareGuardedRunContract: prepareActiveGuardedRunContract,
+    prepareGuardedRunContract,
     resolvePermissionPolicy: resolveDesktopPermissionPolicy,
     verifyPreflight: verifyDesktopRunPreflight,
   }
@@ -80,7 +80,7 @@ export async function prepareClaudeAgentSdkDesktopRunControls(
   })
   const runtimeCwd = preflight.cwd
 
-  const activeGuardedRun = await dependencies.prepareGuardedRunContract({
+  const preparedGuardedRun = await dependencies.prepareGuardedRunContract({
     scopeContract: input.scopeContract,
     cwd: runtimeCwd,
     projectPath: input.projectPath,
@@ -89,9 +89,9 @@ export async function prepareClaudeAgentSdkDesktopRunControls(
     runId: input.runId,
     fallbackRunId: input.fallbackRunId,
   })
-  if (!activeGuardedRun.ok) {
+  if (!preparedGuardedRun.ok) {
     input.emitError(
-      new Error(activeGuardedRun.error),
+      new Error(preparedGuardedRun.error),
       "Guarded run contract rejected",
     )
     input.emit({ type: "finish" })
@@ -99,7 +99,7 @@ export async function prepareClaudeAgentSdkDesktopRunControls(
     return {
       ok: false,
       reason: "guarded-contract-rejected",
-      error: activeGuardedRun.error,
+      error: preparedGuardedRun.error,
     }
   }
 
@@ -107,15 +107,15 @@ export async function prepareClaudeAgentSdkDesktopRunControls(
     runtimeId: "claude-code",
     mode: input.mode,
     workspaceKind: preflight.kind,
-    hasScopeContract: Boolean(activeGuardedRun.contract),
+    hasScopeContract: Boolean(preparedGuardedRun.contract),
   })
 
   return {
     ok: true,
     preflight,
     runtimeCwd,
-    guardedContract: activeGuardedRun.contract,
-    guardedPreRunStatus: activeGuardedRun.preRunStatus,
+    guardedContract: preparedGuardedRun.contract,
+    guardedPreRunStatus: preparedGuardedRun.preRunStatus,
     permissionPolicy,
   }
 }

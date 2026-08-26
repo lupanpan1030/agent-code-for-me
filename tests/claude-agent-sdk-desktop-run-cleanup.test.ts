@@ -1,11 +1,31 @@
-import { describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, test } from "bun:test"
+import {
+  clearActiveGuardedContractsForTest,
+  isActiveGuardedContract,
+  replaceActiveGuardedContractForSubChat,
+  type ValidatedAgentScopeContract,
+} from "../src/main/lib/agent-guard"
+import {
+  acquireChatMaintenanceFence,
+  clearChatMaintenanceFencesForTest,
+  releaseChatMaintenanceFence,
+} from "../src/main/lib/agent-runtime/chat-maintenance-fence"
+import {
+  clearClaudeActiveSessionsForTest,
+  getActiveClaudeSession,
+  setActiveClaudeSession,
+} from "../src/main/lib/claude/active-sessions"
 import {
   abortClaudeAgentSdkDesktopRunRequest,
-  cancelClaudeAgentSdkActiveDesktopRun,
   cleanupClaudeAgentSdkDesktopRunSubscription,
   finalizeClaudeAgentSdkDesktopRunAfterLifecycle,
 } from "../src/main/lib/claude/agent-sdk-desktop-run-cleanup"
 import { createClaudeAgentSdkDesktopRunState } from "../src/main/lib/claude/agent-sdk-desktop-run-state"
+import type { ClaudeAskUserQuestionPending } from "../src/main/lib/claude/agent-sdk-tool-permission"
+import {
+  clearClaudePendingToolApprovalsForTest,
+  getClaudePendingToolApprovalStore,
+} from "../src/main/lib/claude/tool-approvals"
 
 function createDbRecorder() {
   const updates: any[] = []
@@ -34,7 +54,35 @@ function createDbRecorder() {
   return { db: db as any, updates }
 }
 
+function createGuardedContract(runId: string): ValidatedAgentScopeContract {
+  return {
+    id: "shared-contract",
+    version: 1,
+    status: "approved",
+    createdAt: "2026-08-26T00:00:00.000Z",
+    approvedAt: "2026-08-26T00:00:00.000Z",
+    source: "manual",
+    chatId: "chat-1",
+    subChatId: "sub-1",
+    runId,
+    cwd: "/repo",
+    projectPath: "/repo",
+    editableScope: [{ path: "src", kind: "directory" }],
+    readOnlyEvidence: [],
+    successChecks: [],
+    blockedPaths: [],
+    expansions: [],
+  }
+}
+
 describe("Claude Agent SDK desktop run cleanup", () => {
+  afterEach(() => {
+    clearActiveGuardedContractsForTest()
+    clearChatMaintenanceFencesForTest()
+    clearClaudeActiveSessionsForTest()
+    clearClaudePendingToolApprovalsForTest()
+  })
+
   test("cleans owned active sessions, guard contracts, pending approvals, jobs, and stream id", () => {
     const { db, updates } = createDbRecorder()
     const controller = new AbortController()
@@ -63,12 +111,17 @@ describe("Claude Agent SDK desktop run cleanup", () => {
         runtimeSecretCleanupCalls += 1
       },
       dependencies: {
+        getActiveClaudeSession: () => ({
+          controller,
+          runId: "run-1",
+        }),
         deleteActiveClaudeSessionIfController: (subChatId, abortController) => {
           deletedSessions.push({ subChatId, abortController })
           return true
         },
-        deleteGuardedContract: (contractId) => {
-          deletedContracts.push(contractId)
+        deleteGuardedContractIfMatch: (contract) => {
+          deletedContracts.push(contract.id)
+          return true
         },
         clearClaudePendingToolApprovals: (message, subChatId) => {
           clearedApprovals.push({ message, subChatId })
@@ -87,9 +140,7 @@ describe("Claude Agent SDK desktop run cleanup", () => {
     expect(controller.signal.aborted).toBe(true)
     expect(runtimeSecretCleanupCalls).toBe(1)
     expect(logs).toEqual([["[SD] M:CLEANUP sub=sub-tail sessionId=session-1"]])
-    expect(deletedSessions).toEqual([
-      { subChatId: "sub-1", abortController: controller },
-    ])
+    expect(deletedSessions).toEqual([])
     expect(deletedContracts).toEqual(["contract-1"])
     expect(clearedApprovals).toEqual([
       { message: "Session ended.", subChatId: "sub-1" },
@@ -126,7 +177,7 @@ describe("Claude Agent SDK desktop run cleanup", () => {
       getDb: () => db,
       desktopRunState,
       dependencies: {
-        deleteActiveClaudeSessionIfController: () => false,
+        getActiveClaudeSession: () => undefined,
         clearClaudePendingToolApprovals: (message, subChatId) => {
           clearedApprovals.push({ message, subChatId })
         },
@@ -149,6 +200,114 @@ describe("Claude Agent SDK desktop run cleanup", () => {
         reachedNaturalFinish: true,
       },
     ])
+  })
+
+  test("late unsubscribe cleanup preserves a newer same-ID guard winner", () => {
+    const { db } = createDbRecorder()
+    const oldController = new AbortController()
+    const winnerController = new AbortController()
+    const oldContract = createGuardedContract("run-old")
+    const winnerContract = createGuardedContract("run-winner")
+    setActiveClaudeSession("sub-1", {
+      runId: "run-winner",
+      controller: winnerController,
+    })
+    replaceActiveGuardedContractForSubChat(
+      winnerContract.subChatId,
+      winnerContract,
+    )
+    const desktopRunState = createClaudeAgentSdkDesktopRunState()
+
+    const result = cleanupClaudeAgentSdkDesktopRunSubscription({
+      subId: "sub-tail",
+      subChatId: "sub-1",
+      abortController: oldController,
+      guardedContract: oldContract,
+      getDb: () => db,
+      desktopRunState,
+      dependencies: {
+        requestCancelClaudeAgentSdkDesktopJob: () => {},
+        log: () => {},
+      },
+    })
+
+    expect(result).toEqual({ ownsActiveSession: false })
+    expect(oldController.signal.aborted).toBe(true)
+    expect(winnerController.signal.aborted).toBe(false)
+    expect(getActiveClaudeSession("sub-1")?.controller).toBe(winnerController)
+    expect(isActiveGuardedContract(winnerContract)).toBe(true)
+  })
+
+  test("retains a draining owner until exact lifecycle finalization, including same run IDs", () => {
+    const { db } = createDbRecorder()
+    const controllerA = new AbortController()
+    const controllerB = new AbortController()
+    const desktopRunStateA = createClaudeAgentSdkDesktopRunState()
+    const desktopRunStateB = createClaudeAgentSdkDesktopRunState()
+    setActiveClaudeSession("sub-1", {
+      controller: controllerA,
+      runId: "run-shared",
+    })
+
+    expect(
+      cleanupClaudeAgentSdkDesktopRunSubscription({
+        subId: "sub-tail-a",
+        subChatId: "sub-1",
+        abortController: controllerA,
+        guardedContract: null,
+        getDb: () => db,
+        desktopRunState: desktopRunStateA,
+        dependencies: {
+          requestCancelClaudeAgentSdkDesktopJob: () => {},
+          log: () => {},
+        },
+      }),
+    ).toEqual({ ownsActiveSession: true })
+    expect(controllerA.signal.aborted).toBe(true)
+    expect(getActiveClaudeSession("sub-1")?.controller).toBe(controllerA)
+    expect(acquireChatMaintenanceFence("sub-1")).toEqual({
+      ok: false,
+      error: {
+        code: "SESSION_BINDING_BUSY",
+        subChatId: "sub-1",
+        operation: "rollback",
+        activeRunId: "run-shared",
+        reason: "active-run",
+      },
+    })
+
+    setActiveClaudeSession("sub-1", {
+      controller: controllerB,
+      runId: "run-shared",
+    })
+    finalizeClaudeAgentSdkDesktopRunAfterLifecycle({
+      chatId: "chat-1",
+      subChatId: "sub-1",
+      abortController: controllerA,
+      guardedContract: null,
+      getDb: () => db,
+      desktopRunState: desktopRunStateA,
+    })
+    expect(getActiveClaudeSession("sub-1")?.controller).toBe(controllerB)
+    expect(acquireChatMaintenanceFence("sub-1")).toMatchObject({
+      ok: false,
+      error: { activeRunId: "run-shared", reason: "active-run" },
+    })
+
+    finalizeClaudeAgentSdkDesktopRunAfterLifecycle({
+      chatId: "chat-1",
+      subChatId: "sub-1",
+      abortController: controllerB,
+      guardedContract: null,
+      getDb: () => db,
+      desktopRunState: desktopRunStateB,
+    })
+    expect(getActiveClaudeSession("sub-1")).toBeUndefined()
+    const maintenance = acquireChatMaintenanceFence("sub-1")
+    expect(maintenance.ok).toBe(true)
+    if (maintenance.ok) {
+      expect(releaseChatMaintenanceFence(maintenance.fence)).toBe(true)
+    }
   })
 
   test("finalizes lifecycle cleanup with the existing job db and guard teardown", () => {
@@ -182,8 +341,9 @@ describe("Claude Agent SDK desktop run cleanup", () => {
           deletedSessions.push({ subChatId, abortController })
           return true
         },
-        deleteGuardedContract: (contractId) => {
-          deletedContracts.push(contractId)
+        deleteGuardedContractIfMatch: (contract) => {
+          deletedContracts.push(contract.id)
+          return true
         },
       },
     })
@@ -241,9 +401,41 @@ describe("Claude Agent SDK desktop run cleanup", () => {
     ])
   })
 
+  test("late lifecycle finalization preserves a newer same-ID guard winner", () => {
+    const oldController = new AbortController()
+    const winnerController = new AbortController()
+    const oldContract = createGuardedContract("run-old")
+    const winnerContract = createGuardedContract("run-winner")
+    setActiveClaudeSession("sub-1", {
+      runId: "run-winner",
+      controller: winnerController,
+    })
+    replaceActiveGuardedContractForSubChat(
+      winnerContract.subChatId,
+      winnerContract,
+    )
+    const desktopRunState = createClaudeAgentSdkDesktopRunState()
+
+    finalizeClaudeAgentSdkDesktopRunAfterLifecycle({
+      chatId: "chat-1",
+      subChatId: "sub-1",
+      abortController: oldController,
+      guardedContract: oldContract,
+      getDb: () => {
+        throw new Error("fallback db should not be used")
+      },
+      desktopRunState,
+    })
+
+    expect(winnerController.signal.aborted).toBe(false)
+    expect(getActiveClaudeSession("sub-1")?.controller).toBe(winnerController)
+    expect(isActiveGuardedContract(winnerContract)).toBe(true)
+  })
+
   test("aborts a desktop run request and clears pending approvals", () => {
     const controller = new AbortController()
     const clearedApprovals: any[] = []
+    setActiveClaudeSession("sub-1", { controller, runId: "run-1" })
 
     abortClaudeAgentSdkDesktopRunRequest({
       subChatId: "sub-1",
@@ -261,68 +453,91 @@ describe("Claude Agent SDK desktop run cleanup", () => {
     ])
   })
 
-  test("cancels the active desktop run with run identity fencing", () => {
-    const controller = new AbortController()
-    const clearedApprovals: any[] = []
-    const deletedSessions: string[] = []
-
-    const result = cancelClaudeAgentSdkActiveDesktopRun({
+  test("stale same-run-id job cancellation aborts only A and preserves B approvals", () => {
+    const controllerA = new AbortController()
+    const controllerB = new AbortController()
+    setActiveClaudeSession("sub-1", {
+      controller: controllerB,
+      runId: "run-shared",
+    })
+    let approvalResolution: unknown = null
+    const pendingApproval: ClaudeAskUserQuestionPending = {
+      approvalId: "approval-b",
+      toolUseId: "tool-b",
       subChatId: "sub-1",
-      runId: "run-1",
-      dependencies: {
-        getActiveClaudeSession: () => ({ controller, runId: "run-1" }),
-        clearClaudePendingToolApprovals: (message, subChatId) => {
-          clearedApprovals.push({ message, subChatId })
-        },
-        deleteActiveClaudeSession: (subChatId) => {
-          deletedSessions.push(subChatId)
-          return true
-        },
+      toolName: "AskUserQuestion",
+      toolInput: { questions: ["Continue?"] },
+      isCurrentRunOwner: () =>
+        getActiveClaudeSession("sub-1")?.controller === controllerB,
+      resolve: (decision) => {
+        approvalResolution = decision
       },
+    }
+    getClaudePendingToolApprovalStore().set("approval-b", pendingApproval)
+
+    abortClaudeAgentSdkDesktopRunRequest({
+      subChatId: "sub-1",
+      abortController: controllerA,
     })
 
-    expect(result).toEqual({ cancelled: true, ignoredStale: false })
-    expect(controller.signal.aborted).toBe(true)
-    expect(clearedApprovals).toEqual([
-      { message: "Session cancelled.", subChatId: "sub-1" },
-    ])
-    expect(deletedSessions).toEqual(["sub-1"])
+    expect(controllerA.signal.aborted).toBe(true)
+    expect(controllerB.signal.aborted).toBe(false)
+    expect(getActiveClaudeSession("sub-1")?.controller).toBe(controllerB)
+    expect(getClaudePendingToolApprovalStore().has("approval-b")).toBe(true)
+    expect(approvalResolution).toBeNull()
   })
 
-  test("ignores stale active desktop run cancellation by run id", () => {
-    const controller = new AbortController()
-    const clearedApprovals: any[] = []
-    const deletedSessions: string[] = []
-
-    const result = cancelClaudeAgentSdkActiveDesktopRun({
+  test("late A unsubscribe job cancellation preserves B pending approval", () => {
+    const { db } = createDbRecorder()
+    const controllerA = new AbortController()
+    const controllerB = new AbortController()
+    setActiveClaudeSession("sub-1", {
+      controller: controllerB,
+      runId: "run-shared",
+    })
+    let approvalResolution: unknown = null
+    const pendingApproval: ClaudeAskUserQuestionPending = {
+      approvalId: "approval-b",
+      toolUseId: "tool-b",
       subChatId: "sub-1",
-      runId: "newer-run",
+      toolName: "AskUserQuestion",
+      toolInput: { questions: ["Continue?"] },
+      isCurrentRunOwner: () =>
+        getActiveClaudeSession("sub-1")?.controller === controllerB,
+      resolve: (decision) => {
+        approvalResolution = decision
+      },
+    }
+    getClaudePendingToolApprovalStore().set("approval-b", pendingApproval)
+    const desktopRunState = createClaudeAgentSdkDesktopRunState()
+    desktopRunState.setDesktopJob({
+      jobId: "job-a",
+      streamEventMapper: { map: () => [] },
+    })
+
+    const result = cleanupClaudeAgentSdkDesktopRunSubscription({
+      subId: "sub-tail",
+      subChatId: "sub-1",
+      abortController: controllerA,
+      guardedContract: null,
+      getDb: () => db,
+      desktopRunState,
       dependencies: {
-        getActiveClaudeSession: () => ({ controller, runId: "older-run" }),
-        clearClaudePendingToolApprovals: (message, subChatId) => {
-          clearedApprovals.push({ message, subChatId })
+        requestCancelClaudeAgentSdkDesktopJob: () => {
+          abortClaudeAgentSdkDesktopRunRequest({
+            subChatId: "sub-1",
+            abortController: controllerA,
+          })
         },
-        deleteActiveClaudeSession: (subChatId) => {
-          deletedSessions.push(subChatId)
-          return true
-        },
+        log: () => {},
       },
     })
 
-    expect(result).toEqual({ cancelled: false, ignoredStale: true })
-    expect(controller.signal.aborted).toBe(false)
-    expect(clearedApprovals).toEqual([])
-    expect(deletedSessions).toEqual([])
-  })
-
-  test("reports no cancellation when there is no active desktop run", () => {
-    const result = cancelClaudeAgentSdkActiveDesktopRun({
-      subChatId: "sub-1",
-      dependencies: {
-        getActiveClaudeSession: () => undefined,
-      },
-    })
-
-    expect(result).toEqual({ cancelled: false, ignoredStale: false })
+    expect(result).toEqual({ ownsActiveSession: false })
+    expect(controllerA.signal.aborted).toBe(true)
+    expect(controllerB.signal.aborted).toBe(false)
+    expect(getActiveClaudeSession("sub-1")?.controller).toBe(controllerB)
+    expect(getClaudePendingToolApprovalStore().has("approval-b")).toBe(true)
+    expect(approvalResolution).toBeNull()
   })
 })

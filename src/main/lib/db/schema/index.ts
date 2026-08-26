@@ -157,7 +157,45 @@ export const subChatsRelations = relations(subChats, ({ one }) => ({
     fields: [subChats.chatId],
     references: [chats.id],
   }),
+  binding: one(subChatBindings),
 }))
+
+// ============ SUB-CHAT SESSION BINDINGS ============
+export const subChatBindings = sqliteTable(
+  "sub_chat_bindings",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    subChatId: text("sub_chat_id")
+      .notNull()
+      .references(() => subChats.id, { onDelete: "cascade" }),
+    runtime: text("runtime").notNull(),
+    providerProfileId: text("provider_profile_id"),
+    modelId: text("model_id"),
+    modelSource: text("model_source"),
+    thinkingLevel: text("thinking_level"),
+    createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(
+      () => new Date(),
+    ),
+    updatedAt: integer("updated_at", { mode: "timestamp" }).$defaultFn(
+      () => new Date(),
+    ),
+  },
+  (table) => [
+    uniqueIndex("sub_chat_bindings_sub_chat_idx").on(table.subChatId),
+  ],
+)
+
+export const subChatBindingsRelations = relations(
+  subChatBindings,
+  ({ one }) => ({
+    subChat: one(subChats, {
+      fields: [subChatBindings.subChatId],
+      references: [subChats.id],
+    }),
+  }),
+)
 
 // ============ CLAUDE CODE CREDENTIALS ============
 // Stores encrypted OAuth credential for Claude Code integration
@@ -514,6 +552,8 @@ export type NewWorktreeSetupTrustDecision =
   typeof worktreeSetupTrustDecisions.$inferInsert
 export type SubChat = typeof subChats.$inferSelect
 export type NewSubChat = typeof subChats.$inferInsert
+export type SubChatBinding = typeof subChatBindings.$inferSelect
+export type NewSubChatBinding = typeof subChatBindings.$inferInsert
 export type ClaudeCodeCredential = typeof claudeCodeCredentials.$inferSelect
 export type NewClaudeCodeCredential = typeof claudeCodeCredentials.$inferInsert
 export type AnthropicAccount = typeof anthropicAccounts.$inferSelect

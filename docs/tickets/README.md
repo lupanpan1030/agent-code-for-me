@@ -83,3 +83,15 @@ envelope。以下事项在 1a 中**仅登记，不授权实施**；每项都需�
 | [TICKET-112](TICKET-112-codex-image-duplicate-signature.md) | Codex 图片提示词重复签名语义统一 | 🟡 Yellow（行为） | 待产品决策 / 未授权实施 |
 | [TICKET-113](TICKET-113-router-module-state-guard.md) | Router module-level state 通用架构守卫 | 🟡 Yellow（治理） | 待盘点 / 未授权实施 |
 | [TICKET-114](TICKET-114-codex-desktop-extraction-gui-smoke.md) | Codex desktop service extraction GUI 补测 | 🟡 验证跟进 | 待 GUI-capable host 补跑 |
+
+## 第五批 — Chat Session Binding Yellow 后续（2026-08-26）
+
+来源：approved OpenSpec `add-chat-session-binding` 的 W7 autonomy envelope。该事项在
+Foundation 1b 中只登记；需要新的设计、Owner 批准和独立变更。
+
+| 工单 | 标题 | 级别 | 状态 |
+|------|------|------|------|
+| [TICKET-115](TICKET-115-claude-binding-source-resolution.md) | Claude binding source resolution 与 divert UX | 🟡 Yellow（架构/体验） | 待设计 / 未授权实施 |
+| [TICKET-116](TICKET-116-provider-profile-codex-reasoning-effort.md) | Provider Profile Codex reasoning effort 与逐协议翻译 | 🟡 Yellow（能力/协议） | 待设计 / 未授权实施 |
+| [TICKET-117](TICKET-117-provider-helper-default-protocol-eligibility.md) | Provider helper 默认项的协议能力一致性 | 🟡 Yellow（能力/一致性） | 待设计 / 未授权实施 |
+| [TICKET-118](TICKET-118-first-party-chat-model-admission-authority.md) | 一方聊天模型准入与 catalog 权威 | 🟡 Yellow（架构/能力） | 待设计 / 未授权实施 |

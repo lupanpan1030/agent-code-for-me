@@ -1,14 +1,22 @@
-import { describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, test } from "bun:test"
 import { randomBytes } from "node:crypto"
 import { join } from "node:path"
 import type { CanUseTool } from "@anthropic-ai/claude-agent-sdk"
-import { validateAgentScopeContract } from "../src/main/lib/agent-guard"
+import {
+  clearActiveGuardedContractsForTest,
+  replaceActiveGuardedContractForSubChat,
+  validateAgentScopeContract,
+} from "../src/main/lib/agent-guard"
 import {
   getClaudeAssistantSdkDisallowedTools,
   getClaudePermissionMapping,
   resolveDesktopPermissionPolicy,
 } from "../src/main/lib/agent-runtime/permission-policy"
 import type { DesktopRunPreflightResult } from "../src/main/lib/agent-runtime/preflight"
+import {
+  clearClaudeActiveSessionsForTest,
+  setActiveClaudeSession,
+} from "../src/main/lib/claude/active-sessions"
 import {
   createClaudeAgentSdkDesktopRuntimeQueryOptions,
   createClaudeAgentSdkQueryOptions,
@@ -57,6 +65,11 @@ function createRequest(options: {
 }
 
 const cwd = join(process.cwd(), "example-project")
+
+afterEach(() => {
+  clearClaudeActiveSessionsForTest()
+  clearActiveGuardedContractsForTest()
+})
 
 function baseScopeContract(): AgentScopeContract {
   return {
@@ -240,7 +253,7 @@ describe("Claude Agent SDK query options", () => {
       permissionHandler: {
         permissionPolicy: request.permissionPolicy,
         guardedContract: null,
-        getGuardedContract: () => undefined,
+        isGuardedContractCurrent: () => false,
         recordGuardEvent: (event) => {
           guardEvents.push(event)
         },
@@ -339,6 +352,10 @@ describe("Claude Agent SDK query options", () => {
 
   test("builds desktop runtime query options with owned guard event recording", async () => {
     const sourceController = new AbortController()
+    setActiveClaudeSession("sub-1", {
+      controller: sourceController,
+      runId: "run-1",
+    })
     const request = createRequest({
       signal: sourceController.signal,
       resumeSessionId: "session-1",
@@ -359,6 +376,10 @@ describe("Claude Agent SDK query options", () => {
         requireRegisteredWorktree: false,
       },
     )
+    replaceActiveGuardedContractForSubChat(
+      guardedContract.subChatId,
+      guardedContract,
+    )
     const guardEvents: any[] = []
     const emitted: any[] = []
 
@@ -375,7 +396,7 @@ describe("Claude Agent SDK query options", () => {
       isUsingOllama: false,
       permissionPolicy,
       guardedContract,
-      getGuardedContract: () => guardedContract,
+      isGuardedContractCurrent: (contract) => contract === guardedContract,
       guardEvents,
       emit: (chunk) => {
         emitted.push(chunk)

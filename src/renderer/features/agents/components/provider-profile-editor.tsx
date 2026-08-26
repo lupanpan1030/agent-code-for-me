@@ -325,12 +325,14 @@ export function ProviderProfileEditor({
       {
         onSuccess: async ({ profile }) => {
           setToken("")
+          // Publish the saved source/model tuple before any asynchronous cache
+          // refresh can expose a hidden new-chat creator to stale defaults.
+          onSaved?.(profile)
           await Promise.all([
             trpcUtils.providerProfiles.listProfiles.invalidate(),
             trpcUtils.providerProfiles.getDefaults.invalidate(),
           ])
           toast.success(t("toast.models.providerProfileSaved"))
-          onSaved?.(profile)
         },
         onError: (error) => {
           toast.error(

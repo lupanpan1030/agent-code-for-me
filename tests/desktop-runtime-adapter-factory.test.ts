@@ -246,7 +246,7 @@ describe("desktop runtime adapter factory", () => {
       "utf8",
     )
 
-    expect(claudeRouter).toContain("prepareClaudeAgentSdkDesktopRunStartup({")
+    expect(claudeRouter).toContain("prepareClaudeAgentSdkDesktopRunStartup(")
     expect(claudeRouter).not.toContain(
       "createClaudeAgentSdkDesktopRunStartup({",
     )

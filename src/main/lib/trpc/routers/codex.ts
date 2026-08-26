@@ -13,9 +13,18 @@ import {
 import { MAX_HEADER_SAFE_CREDENTIAL_LENGTH } from "../../../../shared/secret-redaction-policy"
 import {
   formatScopeValidationError,
+  replaceActiveGuardedContractForSubChat,
   type ValidatedAgentScopeContract,
   validateAgentScopeContract,
 } from "../../agent-guard"
+import {
+  type ChatMaintenanceRunBlocker,
+  claimDesktopRunAdmissionWithMaintenanceFence,
+  formatChatMaintenanceBusyMessage,
+  releaseChatMaintenanceRunBlocker,
+  releaseDesktopRunAdmissionWithMaintenanceFence,
+} from "../../agent-runtime/chat-maintenance-fence"
+import { reserveDesktopRunAdmission } from "../../agent-runtime/desktop-run-admission-generation"
 import { resolveDesktopPermissionPolicy } from "../../agent-runtime/permission-policy"
 import { verifyDesktopRunPreflight } from "../../agent-runtime/preflight"
 import {
@@ -23,8 +32,9 @@ import {
   redactRendererRuntimeChunk,
 } from "../../agent-runtime/stream-event-mapper"
 import { prepareChatImageAttachmentsForDesktopRun } from "../../chat-attachments"
+import { admitCodexChatSessionBindingRun } from "../../chat-session-binding"
 import {
-  deleteActiveCodexStreamIfRun,
+  type ActiveCodexStream,
   getActiveCodexStream,
   setActiveCodexStream,
 } from "../../codex/active-streams"
@@ -85,7 +95,6 @@ import {
 } from "../../codex/login-session"
 import { getCodexRuntimeStatus } from "../../codex/runtime-status"
 import {
-  clearPendingCodexApprovals,
   deleteCodexPendingToolApproval,
   resolveCodexPendingToolApproval,
   setCodexPendingToolApproval,
@@ -396,20 +405,49 @@ export const codexRouter = router({
     .input(codexChatInputSchema)
     .subscription(({ input }) => {
       return observable<any>((emit) => {
-        const existingStream = getActiveCodexStream(input.subChatId)
-        if (existingStream) {
-          existingStream.cancelRequested = true
-          existingStream.controller.abort()
+        const db = getDatabase()
+        const initialBindingAdmission = admitCodexChatSessionBindingRun(
+          db,
+          input.subChatId,
+          {
+            providerProfileId: input.providerProfileId,
+            codexAuthMethod: input.codexAuthMethod,
+            model: input.model,
+          },
+        )
+        if (!initialBindingAdmission.ok) {
+          const { emitPreflightBlocker } = createCodexDesktopRunPreflightStage({
+            emit: (chunk) => {
+              emit.next(
+                redactRendererRuntimeChunk({
+                  runtimeId: "codex",
+                  runId: input.runId,
+                  jobId: null,
+                  chunk,
+                }),
+              )
+            },
+            complete: () => emit.complete(),
+          })
+          emitPreflightBlocker({
+            id: "provider-profile",
+            status: "mismatch",
+            message: initialBindingAdmission.message,
+            hint: initialBindingAdmission.hint,
+          })
+          return () => {}
         }
+        const runAdmission = reserveDesktopRunAdmission(input.subChatId)
 
         const abortController = new AbortController()
-        setActiveCodexStream(input.subChatId, {
+        const activeStreamOwner: ActiveCodexStream = {
           runId: input.runId,
           controller: abortController,
           cancelRequested: false,
-        })
-
+        }
         let isActive = true
+        let ownsActiveStream = false
+        let runMaintenanceBlocker: ChatMaintenanceRunBlocker | null = null
         const desktopRunState = createCodexDesktopRunState()
         const appServerPersistenceChunks: Record<string, unknown>[] = []
         const providerBindingStage = createCodexDesktopRunProviderBindingStage()
@@ -471,7 +509,6 @@ export const codexRouter = router({
 
         ;(async () => {
           try {
-            const db = getDatabase()
             desktopRunState.setDb(db)
             const verifiedRunContext = verifyDesktopRunPreflight(db, {
               chatId: input.chatId,
@@ -527,20 +564,75 @@ export const codexRouter = router({
               return
             }
 
+            if (!isActive || abortController.signal.aborted) {
+              return
+            }
+            const bindingAdmission = admitCodexChatSessionBindingRun(
+              db,
+              input.subChatId,
+              {
+                providerProfileId: input.providerProfileId,
+                codexAuthMethod: input.codexAuthMethod,
+                model: input.model,
+              },
+            )
+            if (!bindingAdmission.ok) {
+              emitPreflightBlocker({
+                id: "provider-profile",
+                status: "mismatch",
+                message: bindingAdmission.message,
+                hint: bindingAdmission.hint,
+              })
+              return
+            }
+            const runClaim =
+              claimDesktopRunAdmissionWithMaintenanceFence(
+                runAdmission,
+                input.runId,
+              )
+            if (!runClaim.ok) {
+              if (runClaim.reason === "maintenance") {
+                safeEmit({
+                  type: "error",
+                  errorText: formatChatMaintenanceBusyMessage(
+                    runClaim.error,
+                    "run",
+                  ),
+                  ...runClaim.error,
+                })
+              }
+              safeEmit({ type: "finish" })
+              safeComplete()
+              return
+            }
+            runMaintenanceBlocker = runClaim.blocker
+            const existingStream = getActiveCodexStream(input.subChatId)
+            if (existingStream) {
+              existingStream.cancelRequested = true
+              existingStream.controller.abort()
+            }
+            setActiveCodexStream(input.subChatId, activeStreamOwner)
+            ownsActiveStream = true
+            replaceActiveGuardedContractForSubChat(
+              input.subChatId,
+              guardedContract,
+            )
+
             const existingMessages = loadCodexDesktopRunHistory({
               db,
               subChatId: input.subChatId,
             })
-            const codexProviderProfileMetadata = input.providerProfileId
-              ? getProviderProfileMetadata(input.providerProfileId)
-              : null
+            const codexProviderProfileMetadata =
+              bindingAdmission.providerProfileId
+                ? getProviderProfileMetadata(bindingAdmission.providerProfileId)
+                : null
             const imageCapability = getChatImageAttachmentCapability({
               provider: "codex",
               modelVision: resolveChatImageModelVision({
                 provider: "codex",
-                providerProfileId: input.providerProfileId,
+                providerProfileId: bindingAdmission.providerProfileId,
                 getProviderProfileMetadata: (id) =>
-                  id === input.providerProfileId
+                  id === bindingAdmission.providerProfileId
                     ? codexProviderProfileMetadata
                     : getProviderProfileMetadata(id),
               }),
@@ -556,9 +648,14 @@ export const codexRouter = router({
             }
             const resolvedImages = imageAttachments.attachments
             const providerBindingResult = await providerBindingStage.resolve({
-              providerProfileId: input.providerProfileId,
-              codexAuthMethod: input.codexAuthMethod,
-              requestedModel: input.model,
+              providerProfileId:
+                bindingAdmission.providerProfileId ?? undefined,
+              codexAuthMethod: bindingAdmission.codexAuthMethod ?? undefined,
+              requestedModel: bindingAdmission.requestedModel ?? undefined,
+              providerProfileBoundModelId:
+                bindingAdmission.providerProfileId
+                  ? (bindingAdmission.binding.modelId ?? undefined)
+                  : undefined,
               signal: abortController.signal,
               emit: safeEmit,
               complete: safeComplete,
@@ -574,15 +671,22 @@ export const codexRouter = router({
               metadataModel,
             } = providerBindingResult
 
-            const { messagesForStream } = persistCodexDesktopRunUserMessage({
+            const userPersistence = persistCodexDesktopRunUserMessage({
               db,
               subChatId: input.subChatId,
+              activeStreamOwner,
               existingMessages,
               prompt: input.prompt,
               images: input.images,
               longTextAttachments: input.longTextAttachments,
               metadataModel,
             })
+            if (!userPersistence.authoritative) {
+              safeEmit({ type: "finish" })
+              safeComplete()
+              return
+            }
+            const { messagesForStream } = userPersistence
 
             let mcpSnapshot: CodexMcpSnapshot = createEmptyCodexMcpSnapshot({
               toolsResolved: false,
@@ -647,6 +751,15 @@ export const codexRouter = router({
               return
             }
 
+            if (
+              getActiveCodexStream(input.subChatId) !== activeStreamOwner ||
+              abortController.signal.aborted
+            ) {
+              safeEmit({ type: "finish" })
+              safeComplete()
+              return
+            }
+
             const desktopJob = createAndRegisterCodexDesktopRunJob({
               db,
               state: desktopRunState,
@@ -656,10 +769,13 @@ export const codexRouter = router({
               cwd: runtimeCwd,
               prompt: input.prompt,
               runId: input.runId,
+              activeStreamOwner,
               permissionPolicy,
             })
             const desktopJobId = desktopJob.job.id
 
+            const persistedCodexSessionId =
+              getLastCodexSessionId(existingMessages) ?? null
             const desktopRunRequest = createCodexDesktopRunRequest({
               runId: input.runId,
               jobId: desktopJobId,
@@ -674,10 +790,8 @@ export const codexRouter = router({
               signal: abortController.signal,
               resumeSessionId: input.forceNewSession
                 ? null
-                : (input.sessionId ??
-                  getLastCodexSessionId(existingMessages) ??
-                  null),
-              parentSessionId: input.sessionId ?? null,
+                : persistedCodexSessionId,
+              parentSessionId: persistedCodexSessionId,
               emitTrace: (event) => {
                 appendRunEventsToAgentJob(db, [event])
               },
@@ -692,12 +806,15 @@ export const codexRouter = router({
                   secretHints: providerSecretHints(),
                   resolvedImages,
                   guardedContract,
+                  isCurrentRunOwner: () =>
+                    getActiveCodexStream(input.subChatId) ===
+                      activeStreamOwner && !abortController.signal.aborted,
                   emit: safeEmit,
-                  registerPendingQuestion: (toolUseId, pending) => {
-                    setCodexPendingToolApproval(toolUseId, pending)
+                  registerPendingQuestion: (approvalId, pending) => {
+                    setCodexPendingToolApproval(approvalId, pending)
                   },
-                  unregisterPendingQuestion: (toolUseId) => {
-                    deleteCodexPendingToolApproval(toolUseId)
+                  unregisterPendingQuestion: (approvalId, pending) => {
+                    return deleteCodexPendingToolApproval(approvalId, pending)
                   },
                 }),
               (adapterResult) => {
@@ -734,7 +851,7 @@ export const codexRouter = router({
                   persistCodexDesktopAssistantAfterNaturalFinish({
                     db,
                     subChatId: input.subChatId,
-                    runId: input.runId,
+                    activeStreamOwner,
                     messagesForStream,
                     chunks: appServerPersistenceChunks,
                     model: metadataModel,
@@ -766,25 +883,46 @@ export const codexRouter = router({
             safeEmit({ type: "finish" })
             safeComplete()
           } finally {
-            finalizeCodexDesktopRunAfterLifecycle({
-              state: desktopRunState,
-              abortController,
-              chatId: input.chatId,
-              subChatId: input.subChatId,
-              runId: input.runId,
-              getFallbackDb: getDatabase,
-              revokeProviderBinding: providerBindingStage.revoke,
-              clearProviderSecrets: providerBindingStage.release,
-            })
+            releaseDesktopRunAdmissionWithMaintenanceFence(runAdmission)
+            try {
+              if (ownsActiveStream) {
+                finalizeCodexDesktopRunAfterLifecycle({
+                  state: desktopRunState,
+                  activeStreamOwner,
+                  guardedContract,
+                  chatId: input.chatId,
+                  subChatId: input.subChatId,
+                  runId: input.runId,
+                  getFallbackDb: getDatabase,
+                  revokeProviderBinding: providerBindingStage.revoke,
+                  clearProviderSecrets: providerBindingStage.release,
+                })
+              } else {
+                providerBindingStage.revoke()
+                providerBindingStage.release()
+              }
+            } finally {
+              if (runMaintenanceBlocker) {
+                releaseChatMaintenanceRunBlocker(runMaintenanceBlocker)
+                runMaintenanceBlocker = null
+              }
+            }
           }
         })()
 
         return () => {
+          releaseDesktopRunAdmissionWithMaintenanceFence(runAdmission)
+          if (!ownsActiveStream) {
+            isActive = false
+            abortController.abort()
+            providerBindingStage.revoke()
+            return
+          }
           cleanupCodexDesktopRunSubscription({
             state: desktopRunState,
-            abortController,
+            activeStreamOwner,
+            guardedContract,
             subChatId: input.subChatId,
-            runId: input.runId,
             markInactive: () => {
               isActive = false
             },
@@ -795,34 +933,10 @@ export const codexRouter = router({
       })
     }),
 
-  cancel: publicProcedure
-    .input(
-      z.object({
-        subChatId: z.string(),
-        runId: z.string(),
-      }),
-    )
-    .mutation(({ input }) => {
-      const activeStream = getActiveCodexStream(input.subChatId)
-      if (!activeStream) {
-        return { cancelled: false, ignoredStale: false }
-      }
-
-      if (activeStream.runId !== input.runId) {
-        return { cancelled: false, ignoredStale: true }
-      }
-
-      activeStream.cancelRequested = true
-      activeStream.controller.abort()
-      clearPendingCodexApprovals("Session cancelled.", input.subChatId)
-
-      return { cancelled: true, ignoredStale: false }
-    }),
-
   respondToolApproval: publicProcedure
     .input(
       z.object({
-        toolUseId: z.string(),
+        approvalId: z.string(),
         approved: z.boolean(),
         message: z.string().optional(),
         updatedInput: z.unknown().optional(),
@@ -831,7 +945,7 @@ export const codexRouter = router({
     .mutation(({ input }) => {
       return {
         ok: resolveCodexPendingToolApproval({
-          toolUseId: input.toolUseId,
+          approvalId: input.approvalId,
           decision: {
             approved: input.approved,
             message: input.message,
@@ -839,18 +953,5 @@ export const codexRouter = router({
           },
         }),
       }
-    }),
-
-  cleanup: publicProcedure
-    .input(z.object({ subChatId: z.string() }))
-    .mutation(({ input }) => {
-      const activeStream = getActiveCodexStream(input.subChatId)
-      if (activeStream) {
-        activeStream.controller.abort()
-        clearPendingCodexApprovals("Session cancelled.", input.subChatId)
-        deleteActiveCodexStreamIfRun(input.subChatId, activeStream.runId)
-      }
-
-      return { success: true }
     }),
 })

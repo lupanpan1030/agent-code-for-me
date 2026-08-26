@@ -4,7 +4,10 @@ import type { DesktopRunPreflightBlocker } from "../agent-runtime/preflight"
 import { redactExactSecretHints } from "../agent-runtime/redaction"
 import { setConnectionMethod as recordAnalyticsConnectionMethod } from "../analytics"
 import type { ClaudeCodeCredentialMetadata } from "../claude-credentials"
-import { revokeProviderGatewayToken } from "../provider-profiles/gateway"
+import {
+  type ProviderGatewayModelResolution,
+  revokeProviderGatewayToken,
+} from "../provider-profiles/gateway"
 import type { ProviderProfileRuntimeConfig } from "../provider-profiles/storage"
 import {
   type ClaudeProviderRuntimeConfig,
@@ -76,6 +79,7 @@ export type ClaudeAgentSdkProviderStartupDependencies = {
   getProviderGatewayEndpoint: (
     providerId: string,
     kind: "anthropic",
+    options?: { modelResolution?: ProviderGatewayModelResolution },
   ) => Promise<ProviderGatewayEndpoint>
   revokeProviderGatewayToken: (token: string) => boolean
   getValidClaudeCodeCredential: () => Promise<{
@@ -100,9 +104,9 @@ const defaultDependencies: ClaudeAgentSdkProviderStartupDependencies = {
     const storage = await import("../provider-profiles/storage")
     return storage.getProviderProfileRuntimeConfig(id)
   },
-  getProviderGatewayEndpoint: async (providerId, kind) => {
+  getProviderGatewayEndpoint: async (providerId, kind, options) => {
     const gateway = await import("../provider-profiles/gateway")
-    return gateway.getProviderGatewayEndpoint(providerId, kind)
+    return gateway.getProviderGatewayEndpoint(providerId, kind, options)
   },
   revokeProviderGatewayToken,
   getValidClaudeCodeCredential: async () => {
@@ -137,6 +141,7 @@ function withDefaultDependencies(
 
 export async function resolveClaudeAgentSdkProviderStartup(input: {
   modelSource?: string | null
+  requestedModel?: string | null
   offlineModeEnabled?: boolean
   dependencies?: Partial<ClaudeAgentSdkProviderStartupDependencies>
 }): Promise<ClaudeAgentSdkProviderStartupResult> {
@@ -153,6 +158,34 @@ export async function resolveClaudeAgentSdkProviderStartup(input: {
 
   const selectedProviderProfileId =
     await dependencies.parseProviderProfileSource(input.modelSource)
+  const isClaudeOAuthSource =
+    input.modelSource === undefined ||
+    input.modelSource === null ||
+    input.modelSource === "auto" ||
+    input.modelSource === "claude-oauth"
+
+  if (!selectedProviderProfileId && !isClaudeOAuthSource) {
+    if (input.modelSource === "custom-provider") {
+      return {
+        ok: false,
+        blocker: {
+          id: "provider-profile",
+          status: "blocked",
+          message: "Legacy custom provider source is no longer runnable.",
+          hint: "Select the migrated Provider Profile in Settings > Models.",
+        },
+      }
+    }
+    return {
+      ok: false,
+      blocker: {
+        id: "provider-profile",
+        status: "blocked",
+        message: "Unsupported Claude model source.",
+        hint: "Refresh the chat and select Claude OAuth or a valid Provider Profile.",
+      },
+    }
+  }
 
   if (selectedProviderProfileId) {
     const profile = await dependencies.getProviderProfileRuntimeConfig(
@@ -196,6 +229,7 @@ export async function resolveClaudeAgentSdkProviderStartup(input: {
       gateway = await dependencies.getProviderGatewayEndpoint(
         profile.id,
         "anthropic",
+        { modelResolution: "claude-chat-binding" },
       )
     } catch (error) {
       const message = redactExactSecretHints(
@@ -213,20 +247,10 @@ export async function resolveClaudeAgentSdkProviderStartup(input: {
     }
     providerGatewayToken = gateway.token
     providerConfig = {
-      model: profile.defaultModel,
+      model: input.requestedModel?.trim() || profile.defaultModel,
       baseUrl: gateway.baseUrl,
       token: gateway.token,
       authMode: "auth_token",
-    }
-  } else if (input.modelSource === "custom-provider") {
-    return {
-      ok: false,
-      blocker: {
-        id: "provider-profile",
-        status: "blocked",
-        message: "Legacy custom provider source is no longer runnable.",
-        hint: "Select the migrated Provider Profile in Settings > Models.",
-      },
     }
   }
 
@@ -418,6 +442,7 @@ export function recordClaudeAgentSdkConnectionMethod(input: {
 
 export async function prepareClaudeAgentSdkProviderStartupForDesktopRun(input: {
   modelSource?: string | null
+  requestedModel?: string | null
   offlineModeEnabled?: boolean
   dependencies?: Partial<ClaudeAgentSdkProviderStartupDependencies>
   emitPreflightBlocker?: (blocker: DesktopRunPreflightBlocker) => void
@@ -425,6 +450,7 @@ export async function prepareClaudeAgentSdkProviderStartupForDesktopRun(input: {
 }): Promise<ClaudeAgentSdkProviderDesktopStartupResult> {
   const providerStartup = await resolveClaudeAgentSdkProviderStartup({
     modelSource: input.modelSource,
+    requestedModel: input.requestedModel,
     offlineModeEnabled: input.offlineModeEnabled,
     dependencies: input.dependencies,
   })

@@ -23,8 +23,11 @@ function createHarness(timeoutMs = 1000) {
     subChatId: "subchat-1",
     timeoutMs,
     emit: (chunk) => chunks.push(chunk),
-    registerPending: (toolUseId, item) => pending.set(toolUseId, item),
-    unregisterPending: (toolUseId) => pending.delete(toolUseId),
+    registerPending: (approvalId, item) => pending.set(approvalId, item),
+    unregisterPending: (approvalId, item) => {
+      if (pending.get(approvalId) !== item) return false
+      return pending.delete(approvalId)
+    },
   })
   const execute = (tools as any)[CODEX_ASK_USER_QUESTION_TOOL_NAME].execute as (
     input: unknown,
@@ -67,10 +70,11 @@ describe("Codex AskUserQuestion bridge", () => {
       type: "ask-user-question",
       questions: [{ question: "Proceed?" }],
     })
+    const approvalId = chunks[0].approvalId
     const toolUseId = chunks[0].toolUseId
-    expect(pending.has(toolUseId)).toBe(true)
+    expect(pending.has(approvalId)).toBe(true)
 
-    pending.get(toolUseId)?.resolve({
+    pending.get(approvalId)?.resolve({
       approved: true,
       updatedInput: {
         answers: {
@@ -86,6 +90,7 @@ describe("Codex AskUserQuestion bridge", () => {
     }))
     expect(chunks.at(-1)).toEqual({
       type: "ask-user-question-result",
+      approvalId,
       toolUseId,
       result: {
         answers: {
@@ -93,7 +98,7 @@ describe("Codex AskUserQuestion bridge", () => {
         },
       },
     })
-    expect(pending.has(toolUseId)).toBe(false)
+    expect(pending.has(approvalId)).toBe(false)
   })
 
   test("emits denial result events when the user skips", async () => {
@@ -101,9 +106,9 @@ describe("Codex AskUserQuestion bridge", () => {
     const promise = execute({
       questions: [{ question: "Proceed?", options: [{ label: "Yes" }] }],
     })
-    const toolUseId = chunks[0].toolUseId
+    const { approvalId, toolUseId } = chunks[0]
 
-    pending.get(toolUseId)?.resolve({
+    pending.get(approvalId)?.resolve({
       approved: false,
       message: QUESTIONS_SKIPPED_MESSAGE,
     })
@@ -111,6 +116,7 @@ describe("Codex AskUserQuestion bridge", () => {
     await expect(promise).resolves.toBe(QUESTIONS_SKIPPED_MESSAGE)
     expect(chunks.at(-1)).toEqual({
       type: "ask-user-question-result",
+      approvalId,
       toolUseId,
       result: QUESTIONS_SKIPPED_MESSAGE,
     })
@@ -121,18 +127,20 @@ describe("Codex AskUserQuestion bridge", () => {
     const promise = execute({
       questions: [{ question: "Proceed?", options: [{ label: "Yes" }] }],
     })
-    const toolUseId = chunks[0].toolUseId
+    const { approvalId, toolUseId } = chunks[0]
 
     await sleep(20)
 
     await expect(promise).resolves.toBe(QUESTIONS_TIMED_OUT_MESSAGE)
-    expect(pending.has(toolUseId)).toBe(false)
+    expect(pending.has(approvalId)).toBe(false)
     expect(chunks).toContainEqual({
       type: "ask-user-question-timeout",
+      approvalId,
       toolUseId,
     })
     expect(chunks.at(-1)).toEqual({
       type: "ask-user-question-result",
+      approvalId,
       toolUseId,
       result: QUESTIONS_TIMED_OUT_MESSAGE,
     })

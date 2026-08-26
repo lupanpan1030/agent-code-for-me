@@ -13,6 +13,11 @@ import {
 } from "../../../../shared/chat-attachment-capabilities"
 import type { ChatImageAttachmentSource } from "../../../../shared/chat-attachments"
 import {
+  type ChatSessionBinding,
+  type ChatSessionBindingWriteInput,
+  createProviderProfileChatSessionBindingWrite,
+} from "../../../../shared/chat-session-binding"
+import {
   isProviderProfileSource,
   parseProviderProfileSource,
 } from "../../../../shared/provider-profile-types"
@@ -72,20 +77,15 @@ import {
   type AgentMode,
   approvedGuardedRunContractsAtom,
   type ClaudeModelSource,
+  type CodexModelSource,
   getNextMode,
-  lastSelectedClaudeModelSourceAtom,
-  lastSelectedCodexModelIdAtom,
-  lastSelectedCodexModelSourceAtom,
+  lastSelectedAgentIdAtom,
   lastSelectedCodexThinkingAtom,
-  lastSelectedModelIdAtom,
   pendingScopeExpansionRequestsAtom,
   type SubChatFileChange,
-  subChatClaudeModelSourceAtomFamily,
-  subChatCodexModelIdAtomFamily,
-  subChatCodexModelSourceAtomFamily,
-  subChatCodexThinkingAtomFamily,
+  setLastSelectedClaudeSelectionAtom,
+  setLastSelectedCodexSelectionAtom,
   subChatModeAtomFamily,
-  subChatModelIdAtomFamily,
 } from "../atoms"
 import { AgentsSlashCommand, type SlashCommandOption } from "../commands"
 import { AgentContextRecommendations } from "../components/agent-context-recommendations"
@@ -106,6 +106,13 @@ import {
   parseScopePathLines,
   serializeScopePaths,
 } from "../lib/agent-guard-draft"
+import { getNewChatSessionBindingDefaults } from "../lib/chat-session-binding-defaults"
+import {
+  type ChatSessionOperationContext,
+  isChatSessionOperationCancelledError,
+  stopBeforePendingChatSessionBindingUpdate,
+  withPendingChatSessionOperation,
+} from "../lib/chat-session-binding-gate"
 import {
   clearSubChatDraft,
   saveSubChatDraftWithAttachments,
@@ -128,6 +135,7 @@ import {
 } from "../lib/models"
 import type { DiffTextContext, SelectedTextContext } from "../lib/queue-utils"
 import { useRuntimeCapabilitySupported } from "../lib/runtime-manifest-store"
+import { isBoundProviderProfileUnavailable } from "../lib/transport-model-selection"
 import {
   AgentsFileMention,
   AgentsMentionsEditor,
@@ -201,8 +209,14 @@ export interface ChatInputAreaProps {
   // File input ref - for attachment button
   fileInputRef: React.RefObject<HTMLInputElement | null>
   // Core callbacks
-  onSend: () => void
-  onForceSend: () => void // Opt+Enter: stop stream and send immediately, bypassing queue
+  onSend: (
+    waitForBindingUpdate?: () => Promise<boolean>,
+    operationContext?: ChatSessionOperationContext,
+  ) => Promise<void> | void
+  onForceSend: (
+    waitForBindingUpdate?: () => Promise<boolean>,
+    operationContext?: ChatSessionOperationContext,
+  ) => Promise<void> | void // Opt+Enter: stop stream and send immediately, bypassing queue
   onStop: () => Promise<void>
   onCompact: () => void
   onCreateNewSubChat?: () => void
@@ -234,7 +248,7 @@ export interface ChatInputAreaProps {
   // Context
   subChatId: string
   parentChatId: string
-  provider?: AgentChatProvider
+  binding: ChatSessionBinding
   repository?: string
   projectPath?: string
   changedFiles: SubChatFileChange[]
@@ -242,14 +256,23 @@ export interface ChatInputAreaProps {
   isMobile?: boolean
   // Queue - for sending from queue when input is empty
   queueLength?: number
-  onSendFromQueue?: (itemId: string) => void
+  onSendFromQueue?: (
+    itemId: string,
+    operationContext?: ChatSessionOperationContext,
+  ) => Promise<void> | void
   firstQueueItemId?: string
   // Callback to notify parent when input has content (for custom text with questions)
   onInputContentChange?: (hasContent: boolean) => void
   // Callback to send message with question answer (Enter sends immediately, not to queue)
-  onSubmitWithQuestionAnswer?: () => void
-  // Callback to switch provider for brand new (empty) sub-chats
-  onProviderChange?: (provider: AgentChatProvider) => void
+  onSubmitWithQuestionAnswer?: (
+    waitForBindingUpdate?: () => Promise<boolean>,
+    operationContext?: ChatSessionOperationContext,
+  ) => Promise<void> | void
+  // Canonical per-chat binding updates. The promise resolves only after the
+  // cache and transport have been replaced with the persisted binding.
+  onBindingChange?: (
+    binding: Partial<ChatSessionBindingWriteInput>,
+  ) => Promise<void>
   // Callback to continue chat with a different provider (creates new sub-chat with history)
   onContinueWithProvider?: (
     provider: AgentChatProvider,
@@ -274,7 +297,15 @@ function arePropsEqual(
     prevProps.isUploading !== nextProps.isUploading ||
     prevProps.subChatId !== nextProps.subChatId ||
     prevProps.parentChatId !== nextProps.parentChatId ||
-    prevProps.provider !== nextProps.provider ||
+    prevProps.binding.id !== nextProps.binding.id ||
+    prevProps.binding.runtime !== nextProps.binding.runtime ||
+    prevProps.binding.providerProfileId !==
+      nextProps.binding.providerProfileId ||
+    prevProps.binding.modelId !== nextProps.binding.modelId ||
+    prevProps.binding.modelSource !== nextProps.binding.modelSource ||
+    prevProps.binding.thinkingLevel !== nextProps.binding.thinkingLevel ||
+    prevProps.binding.createdAt !== nextProps.binding.createdAt ||
+    prevProps.binding.updatedAt !== nextProps.binding.updatedAt ||
     prevProps.repository !== nextProps.repository ||
     prevProps.projectPath !== nextProps.projectPath ||
     prevProps.isMobile !== nextProps.isMobile ||
@@ -311,7 +342,7 @@ function arePropsEqual(
     prevProps.onInputContentChange !== nextProps.onInputContentChange ||
     prevProps.onSubmitWithQuestionAnswer !==
       nextProps.onSubmitWithQuestionAnswer ||
-    prevProps.onProviderChange !== nextProps.onProviderChange ||
+    prevProps.onBindingChange !== nextProps.onBindingChange ||
     prevProps.onContinueWithProvider !== nextProps.onContinueWithProvider ||
     prevProps.onSendFromQueue !== nextProps.onSendFromQueue
   ) {
@@ -457,7 +488,7 @@ export const ChatInputArea = memo(function ChatInputArea({
   messageTokenData,
   subChatId,
   parentChatId,
-  provider = "claude-code",
+  binding,
   repository,
   projectPath,
   changedFiles,
@@ -467,11 +498,12 @@ export const ChatInputArea = memo(function ChatInputArea({
   firstQueueItemId,
   onInputContentChange,
   onSubmitWithQuestionAnswer,
-  onProviderChange,
+  onBindingChange,
   onContinueWithProvider,
   isActive = true,
 }: ChatInputAreaProps) {
   const { t } = useI18n()
+  const provider = binding.runtime
   // Local state - changes here don't re-render parent
   const [hasContent, setHasContent] = useState(false)
   const [draftText, setDraftText] = useState("")
@@ -532,47 +564,81 @@ export const ChatInputArea = memo(function ChatInputArea({
 
   // Model dropdown state
   const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false)
-  const subChatModelIdAtom = useMemo(
-    () => subChatModelIdAtomFamily(subChatId),
+  const selectedSubChatModelId =
+    provider === "claude-code" ? (binding.modelId ?? "") : ""
+  const selectedSubChatCodexModelId =
+    provider === "codex" ? (binding.modelId ?? "") : ""
+  const selectedSubChatCodexModelSource =
+    provider === "codex"
+      ? ((binding.modelSource ?? "chatgpt") as CodexModelSource)
+      : "chatgpt"
+  const selectedSubChatCodexThinking =
+    provider === "codex" ? binding.thinkingLevel : null
+  const selectedClaudeModelSource =
+    provider === "claude-code"
+      ? ((binding.modelSource ?? "claude-oauth") as ClaudeModelSource)
+      : "claude-oauth"
+  const pendingBindingUpdateRef = useRef<Promise<void> | null>(null)
+  const updateBinding = useCallback(
+    (patch: Partial<ChatSessionBindingWriteInput>) => {
+      const previous = pendingBindingUpdateRef.current ?? Promise.resolve()
+      const operation = previous
+        .catch(() => {})
+        .then(() => onBindingChange?.(patch) ?? Promise.resolve())
+      pendingBindingUpdateRef.current = operation
+      void operation
+        .catch((error) => {
+          console.error("[ChatInputArea] Failed to update binding:", error)
+          toast.error(
+            error instanceof Error
+              ? error.message
+              : "Failed to update engine binding",
+          )
+        })
+        .finally(() => {
+          if (pendingBindingUpdateRef.current === operation) {
+            pendingBindingUpdateRef.current = null
+          }
+        })
+      return operation
+    },
+    [onBindingChange],
+  )
+  const waitForBindingUpdate = useCallback(async (): Promise<boolean> => {
+    try {
+      await pendingBindingUpdateRef.current
+      return true
+    } catch {
+      return false
+    }
+  }, [])
+  const runPendingSubmit = useCallback(
+    async (
+      operation: (context: ChatSessionOperationContext) => Promise<void> | void,
+    ): Promise<void> => {
+      try {
+        await withPendingChatSessionOperation(subChatId, async (context) => {
+          await operation(context)
+          context.throwIfCancelled()
+        })
+      } catch (error) {
+        if (!isChatSessionOperationCancelledError(error)) {
+          console.error("[ChatInputArea] Pending submit failed:", error)
+        }
+      }
+    },
     [subChatId],
   )
-  const [selectedSubChatModelId, setSelectedSubChatModelId] =
-    useAtom(subChatModelIdAtom)
-  const subChatCodexModelIdAtom = useMemo(
-    () => subChatCodexModelIdAtomFamily(subChatId),
-    [subChatId],
+  const setLastSelectedAgentId = useSetAtom(lastSelectedAgentIdAtom)
+  const lastSelectedCodexThinkingPreference = useAtomValue(
+    lastSelectedCodexThinkingAtom,
   )
-  const [selectedSubChatCodexModelId, setSelectedSubChatCodexModelId] = useAtom(
-    subChatCodexModelIdAtom,
+  const setLastSelectedClaudeSelection = useSetAtom(
+    setLastSelectedClaudeSelectionAtom,
   )
-  const subChatCodexModelSourceAtom = useMemo(
-    () => subChatCodexModelSourceAtomFamily(subChatId),
-    [subChatId],
+  const setLastSelectedCodexSelection = useSetAtom(
+    setLastSelectedCodexSelectionAtom,
   )
-  const [selectedSubChatCodexModelSource, setSelectedSubChatCodexModelSource] =
-    useAtom(subChatCodexModelSourceAtom)
-  const subChatCodexThinkingAtom = useMemo(
-    () => subChatCodexThinkingAtomFamily(subChatId),
-    [subChatId],
-  )
-  const [selectedSubChatCodexThinking, setSelectedSubChatCodexThinking] =
-    useAtom(subChatCodexThinkingAtom)
-  const subChatClaudeModelSourceAtom = useMemo(
-    () => subChatClaudeModelSourceAtomFamily(subChatId),
-    [subChatId],
-  )
-  const [selectedClaudeModelSource, setSelectedClaudeModelSource] = useAtom(
-    subChatClaudeModelSourceAtom,
-  )
-  const setLastSelectedModelId = useSetAtom(lastSelectedModelIdAtom)
-  const setLastSelectedClaudeModelSource = useSetAtom(
-    lastSelectedClaudeModelSourceAtom,
-  )
-  const setLastSelectedCodexModelId = useSetAtom(lastSelectedCodexModelIdAtom)
-  const setLastSelectedCodexModelSource = useSetAtom(
-    lastSelectedCodexModelSourceAtom,
-  )
-  const setLastSelectedCodexThinking = useSetAtom(lastSelectedCodexThinkingAtom)
   const [selectedOllamaModel, setSelectedOllamaModel] = useAtom(
     selectedOllamaModelAtom,
   )
@@ -584,21 +650,12 @@ export const ChatInputArea = memo(function ChatInputArea({
     [availableModels.models, selectedSubChatModelId],
   )
 
-  // Materialize the resolved Claude model into per-subChat storage once mounted.
-  // This prevents later global default changes from affecting existing sub-chats.
-  useEffect(() => {
-    if (provider !== "claude-code") return
-    if (!selectedModel?.id) return
-    setSelectedSubChatModelId(selectedModel.id)
-  }, [provider, selectedModel?.id, setSelectedSubChatModelId])
-
   const { data: codexApiKeyStatus } = trpc.codex.getCodexApiKeyStatus.useQuery(
     undefined,
     {
       staleTime: 30_000,
     },
   )
-  const hasAppCodexApiKey = Boolean(codexApiKeyStatus?.hasApiKey)
   const hiddenModels = useAtomValue(hiddenModelsAtom)
   const { data: providerProfilesData } =
     trpc.providerProfiles.listProfiles.useQuery(undefined, {
@@ -608,16 +665,12 @@ export const ChatInputArea = memo(function ChatInputArea({
 
   // Connection status, derived from the provider/runtime owners.
   const setupStatus = useSetupStatus()
-  const shouldUseCodexApiKeyModels =
-    selectedSubChatCodexModelSource === "openai-api-key" ||
-    (selectedSubChatCodexModelSource === "chatgpt" &&
-      setupStatus.codex.authMethod === "api_key" &&
-      hasAppCodexApiKey)
-  const effectiveCodexFirstPartySource = shouldUseCodexApiKeyModels
-    ? "openai-api-key"
-    : selectedSubChatCodexModelSource === "chatgpt"
-      ? "chatgpt"
-      : null
+  const effectiveCodexFirstPartySource =
+    selectedSubChatCodexModelSource === "openai-api-key"
+      ? "openai-api-key"
+      : selectedSubChatCodexModelSource === "chatgpt"
+        ? "chatgpt"
+        : null
   const codexApiKeyModels = useMemo(
     () =>
       buildCodexApiKeyModels(codexApiKeyStatus?.modelIds ?? [], codexModels),
@@ -677,61 +730,12 @@ export const ChatInputArea = memo(function ChatInputArea({
           profile.targetRuntimes.includes("codex"),
       )
     : undefined
-  const selectedCodexProfileIsPending =
-    Boolean(selectedCodexProfileId) && !providerProfilesData
-
-  useEffect(() => {
-    if (
-      selectedCodexModel.thinkings.includes(
-        selectedSubChatCodexThinking as CodexThinkingLevel,
-      )
-    ) {
-      return
-    }
-
-    setSelectedSubChatCodexThinking(selectedCodexThinking)
-  }, [
-    selectedCodexModel,
-    selectedSubChatCodexThinking,
-    selectedCodexThinking,
-    setSelectedSubChatCodexThinking,
-  ])
-
-  // Materialize resolved Codex model/thinking into per-subChat storage once mounted.
-  // This prevents later global default changes from affecting existing sub-chats.
-  useEffect(() => {
-    if (provider !== "codex") return
-    setSelectedSubChatCodexModelSource(selectedSubChatCodexModelSource)
-    if (selectedCodexModel?.id) {
-      setSelectedSubChatCodexModelId(selectedCodexModel.id)
-    }
-    setSelectedSubChatCodexThinking(selectedCodexThinking)
-  }, [
-    provider,
-    selectedSubChatCodexModelSource,
-    setSelectedSubChatCodexModelSource,
-    selectedCodexModel?.id,
-    selectedCodexThinking,
-    setSelectedSubChatCodexModelId,
-    setSelectedSubChatCodexThinking,
-  ])
-
-  useEffect(() => {
-    if (
-      selectedCodexProfileId &&
-      !selectedCodexProviderProfile &&
-      !selectedCodexProfileIsPending
-    ) {
-      setSelectedSubChatCodexModelSource("chatgpt")
-      setLastSelectedCodexModelSource("chatgpt")
-    }
-  }, [
-    selectedCodexProfileId,
-    selectedCodexProviderProfile,
-    selectedCodexProfileIsPending,
-    setLastSelectedCodexModelSource,
-    setSelectedSubChatCodexModelSource,
-  ])
+  const selectedCodexProfileIsUnavailable = isBoundProviderProfileUnavailable({
+    modelSource: selectedSubChatCodexModelSource,
+    profilesLoaded: Boolean(providerProfilesData),
+    targetRuntime: "codex",
+    providerProfiles,
+  })
 
   // OAuth is only usable when a non-expired OAuth credential and the runtime are
   // both ready — a saved Provider Profile is a separate selectable source.
@@ -770,14 +774,15 @@ export const ChatInputArea = memo(function ChatInputArea({
           profile.targetRuntimes.includes("claude"),
       )
     : undefined
-  const selectedClaudeProfileIsPending =
-    Boolean(selectedClaudeProfileId) && !providerProfilesData
-  const effectiveClaudeModelSource =
-    selectedClaudeProfileId &&
-    !selectedClaudeProviderProfile &&
-    !selectedClaudeProfileIsPending
-      ? "claude-oauth"
-      : normalizedClaudeModelSource
+  const selectedClaudeProfileIsUnavailable = isBoundProviderProfileUnavailable({
+    modelSource: selectedClaudeModelSource,
+    profilesLoaded: Boolean(providerProfilesData),
+    targetRuntime: "claude",
+    providerProfiles,
+  })
+  // Availability can block a run, but an existing durable Profile binding
+  // must never masquerade as an OAuth source switch in the UI.
+  const effectiveClaudeModelSource = normalizedClaudeModelSource
   const isClaudeConnected =
     canUseClaudeOAuth ||
     providerProfiles.some(
@@ -785,31 +790,6 @@ export const ChatInputArea = memo(function ChatInputArea({
         profile.targetRuntimes.includes("claude") &&
         profile.lastTestStatus?.ok !== false,
     )
-
-  useEffect(() => {
-    if (claudeSourceNormalization?.ok && claudeSourceNormalization.changed) {
-      const normalizedSource =
-        claudeSourceNormalization.source as ClaudeModelSource
-      setSelectedClaudeModelSource(normalizedSource)
-      setLastSelectedClaudeModelSource(normalizedSource)
-      return
-    }
-    if (
-      isProviderProfileSource(selectedClaudeModelSource) &&
-      !selectedClaudeProviderProfile &&
-      !selectedClaudeProfileIsPending
-    ) {
-      setSelectedClaudeModelSource("claude-oauth")
-      setLastSelectedClaudeModelSource("claude-oauth")
-    }
-  }, [
-    claudeSourceNormalization,
-    selectedClaudeModelSource,
-    selectedClaudeProviderProfile,
-    selectedClaudeProfileIsPending,
-    setLastSelectedClaudeModelSource,
-    setSelectedClaudeModelSource,
-  ])
 
   // Determine current Ollama model (selected or recommended)
   const currentOllamaModel =
@@ -833,14 +813,16 @@ export const ChatInputArea = memo(function ChatInputArea({
 
   const selectedModelLabel = useMemo(() => {
     if (provider === "codex") {
-      const selectedProfileId = parseProviderProfileSource(
-        selectedSubChatCodexModelSource,
-      )
-      const selectedProfile = selectedProfileId
-        ? providerProfiles.find((profile) => profile.id === selectedProfileId)
-        : undefined
-      if (selectedProfile) {
-        return `${selectedProfile.name} · ${selectedProfile.defaultModel}`
+      if (selectedCodexProviderProfile) {
+        return selectedSubChatCodexModelId
+          ? `${selectedCodexProviderProfile.name} · ${selectedSubChatCodexModelId}`
+          : selectedCodexProviderProfile.name
+      }
+      if (selectedCodexProfileIsUnavailable) {
+        const unavailableProfileLabel = `${t("settings.models.providerProfiles.title")} · ${t("settings.models.unavailable")}`
+        return selectedSubChatCodexModelId
+          ? `${unavailableProfileLabel} · ${selectedSubChatCodexModelId}`
+          : unavailableProfileLabel
       }
       return selectedCodexModel.displayLabel
     }
@@ -850,7 +832,16 @@ export const ChatInputArea = memo(function ChatInputArea({
     }
 
     if (selectedClaudeProviderProfile) {
-      return `${selectedClaudeProviderProfile.name} · ${selectedClaudeProviderProfile.defaultModel}`
+      return selectedSubChatModelId
+        ? `${selectedClaudeProviderProfile.name} · ${selectedSubChatModelId}`
+        : selectedClaudeProviderProfile.name
+    }
+
+    if (selectedClaudeProfileIsUnavailable) {
+      const unavailableProfileLabel = `${t("settings.models.providerProfiles.title")} · ${t("settings.models.unavailable")}`
+      return selectedSubChatModelId
+        ? `${unavailableProfileLabel} · ${selectedSubChatModelId}`
+        : unavailableProfileLabel
     }
 
     if (!selectedModel) {
@@ -860,13 +851,18 @@ export const ChatInputArea = memo(function ChatInputArea({
     return selectedModel.displayLabel
   }, [
     provider,
-    providerProfiles,
+    selectedSubChatCodexModelId,
+    selectedCodexProviderProfile,
+    selectedCodexProfileIsUnavailable,
     selectedCodexModel.displayLabel,
     availableModels.isOffline,
     availableModels.hasOllama,
     currentOllamaModel,
     selectedClaudeProviderProfile,
+    selectedClaudeProfileIsUnavailable,
+    selectedSubChatModelId,
     selectedModel,
+    t,
   ])
   const readyImageCount = images.filter(
     (image) =>
@@ -1076,45 +1072,48 @@ export const ChatInputArea = memo(function ChatInputArea({
     })
     return false
   }, [guardApproved, guardEnabled])
-  const clearPendingScopeExpansion = useCallback(() => {
-    setPendingScopeExpansionRequests((current) => {
-      const next = new Map(current)
-      next.delete(subChatId)
-      return next
-    })
-  }, [setPendingScopeExpansionRequests, subChatId])
+  const clearPendingScopeExpansion = useCallback(
+    (requestId: string) => {
+      setPendingScopeExpansionRequests((current) => {
+        if (current.get(subChatId)?.requestId !== requestId) return current
+        const next = new Map(current)
+        next.delete(subChatId)
+        return next
+      })
+    },
+    [setPendingScopeExpansionRequests, subChatId],
+  )
   const approveScopeExpansion = useCallback(
     async (request: NonNullable<typeof pendingScopeExpansion>) => {
       const result = await respondScopeExpansionMutation.mutateAsync({
-        contractId: request.contractId,
-        toolUseId: request.toolUseId,
+        requestId: request.requestId,
         approved: true,
-        path: request.path,
-        paths: request.paths,
-        reason: request.reason,
       })
       if (!result.ok) {
+        clearPendingScopeExpansion(request.requestId)
         toast.error("Scope expansion failed.", {
           description: result.error,
         })
         return
       }
-      clearPendingScopeExpansion()
+      clearPendingScopeExpansion(request.requestId)
       toast.success("Scope expansion approved. The runtime can retry.")
     },
     [clearPendingScopeExpansion, respondScopeExpansionMutation],
   )
   const rejectScopeExpansion = useCallback(
     async (request: NonNullable<typeof pendingScopeExpansion>) => {
-      await respondScopeExpansionMutation.mutateAsync({
-        contractId: request.contractId,
-        toolUseId: request.toolUseId,
+      const result = await respondScopeExpansionMutation.mutateAsync({
+        requestId: request.requestId,
         approved: false,
-        path: request.path,
-        paths: request.paths,
-        reason: request.reason,
       })
-      clearPendingScopeExpansion()
+      clearPendingScopeExpansion(request.requestId)
+      if (!result.ok) {
+        toast.error("Scope expansion response failed.", {
+          description: result.error,
+        })
+        return
+      }
       toast.info("Scope expansion rejected.")
     },
     [clearPendingScopeExpansion, respondScopeExpansionMutation],
@@ -1368,11 +1367,27 @@ export const ChatInputArea = memo(function ChatInputArea({
       onSendFromQueue &&
       firstQueueItemId
     ) {
-      // Input empty, queue has items - stop stream and send from queue
-      await onStop()
-      onSendFromQueue(firstQueueItemId)
+      await runPendingSubmit(async (context) => {
+        // Stop first: a pending binding update may be queued behind the current
+        // run's binding gate and cannot complete until that run is released.
+        if (
+          !(await stopBeforePendingChatSessionBindingUpdate({
+            shouldStop: isStreaming,
+            stop: onStop,
+            waitForBindingUpdate,
+          }))
+        ) {
+          return
+        }
+        context.throwIfCancelled()
+        await onSendFromQueue(firstQueueItemId, context)
+      })
     } else {
-      onSend()
+      // Invoke synchronously so the parent captures uncontrolled input and
+      // attachments before the pending update can remount this component.
+      void runPendingSubmit((context) =>
+        onSend(waitForBindingUpdate, context),
+      )
     }
   }, [
     editorRef,
@@ -1385,6 +1400,9 @@ export const ChatInputArea = memo(function ChatInputArea({
     firstQueueItemId,
     onStop,
     onSend,
+    runPendingSubmit,
+    isStreaming,
+    waitForBindingUpdate,
   ])
 
   // Mention select handler
@@ -1762,7 +1780,19 @@ export const ChatInputArea = memo(function ChatInputArea({
     return true
   }, [imageAttachmentBlockDescription, imageAttachmentBlocked, t])
   const blockInvalidClaudeModelSource = useCallback(() => {
+    if (provider === "codex" && selectedCodexProfileIsUnavailable) {
+      toast.error(t("workbench.error.provider_profile_missing.title"), {
+        description: t("workbench.error.provider_profile_missing.nextAction"),
+      })
+      return true
+    }
     if (provider !== "claude-code") return false
+    if (selectedClaudeProfileIsUnavailable) {
+      toast.error(t("workbench.error.provider_profile_missing.title"), {
+        description: t("workbench.error.provider_profile_missing.nextAction"),
+      })
+      return true
+    }
     if (
       selectedClaudeModelSource === "custom-provider" &&
       !claudeSourceNormalization
@@ -1777,24 +1807,37 @@ export const ChatInputArea = memo(function ChatInputArea({
       return true
     }
     return false
-  }, [claudeSourceNormalization, provider, selectedClaudeModelSource, t])
+  }, [
+    claudeSourceNormalization,
+    provider,
+    selectedCodexProfileIsUnavailable,
+    selectedClaudeModelSource,
+    selectedClaudeProfileIsUnavailable,
+    t,
+  ])
   const guardedSend = useCallback(() => {
     if (blockUnsupportedImageSend()) return
     if (blockInvalidClaudeModelSource()) return
     if (!ensureGuardedRunReady()) return
-    onSend()
+    void runPendingSubmit((context) => onSend(waitForBindingUpdate, context))
   }, [
     blockInvalidClaudeModelSource,
     blockUnsupportedImageSend,
     ensureGuardedRunReady,
     onSend,
+    runPendingSubmit,
+    waitForBindingUpdate,
   ])
-  const guardedEditorSubmit = useCallback(() => {
+  const guardedEditorSubmit = useCallback(async () => {
     if (blockUnsupportedImageSend()) return
     if (blockInvalidClaudeModelSource()) return
     if (!ensureGuardedRunReady()) return
     if (onSubmitWithQuestionAnswer) {
-      onSubmitWithQuestionAnswer()
+      // The parent captures custom input synchronously. A live answer also
+      // releases its run before awaiting the supplied binding update.
+      await runPendingSubmit((context) =>
+        onSubmitWithQuestionAnswer(waitForBindingUpdate, context),
+      )
     } else {
       void handleEditorSubmit()
     }
@@ -1804,17 +1847,25 @@ export const ChatInputArea = memo(function ChatInputArea({
     ensureGuardedRunReady,
     handleEditorSubmit,
     onSubmitWithQuestionAnswer,
+    runPendingSubmit,
+    waitForBindingUpdate,
   ])
   const guardedForceSend = useCallback(() => {
     if (blockUnsupportedImageSend()) return
     if (blockInvalidClaudeModelSource()) return
     if (!ensureGuardedRunReady()) return
-    onForceSend()
+    // The parent captures first, then stops any run before awaiting this
+    // component's pending binding update.
+    void runPendingSubmit((context) =>
+      onForceSend(waitForBindingUpdate, context),
+    )
   }, [
     blockInvalidClaudeModelSource,
     blockUnsupportedImageSend,
     ensureGuardedRunReady,
     onForceSend,
+    runPendingSubmit,
+    waitForBindingUpdate,
   ])
   const stablePromptSubmit = useStableCallback(guardedSend)
   const stableEditorSubmit = useStableCallback(guardedEditorSubmit)
@@ -1822,7 +1873,7 @@ export const ChatInputArea = memo(function ChatInputArea({
   const handlePromptContainerClick = useCallback(() => {
     editorRef.current?.focus()
   }, [editorRef])
-  const handleSendButtonClick = useCallback(() => {
+  const handleSendButtonClick = useCallback(async () => {
     if (blockUnsupportedImageSend()) return
     if (blockInvalidClaudeModelSource()) return
     if (!ensureGuardedRunReady()) return
@@ -1835,9 +1886,23 @@ export const ChatInputArea = memo(function ChatInputArea({
       onSendFromQueue &&
       firstQueueItemId
     ) {
-      onSendFromQueue(firstQueueItemId)
+      await runPendingSubmit(async (context) => {
+        if (
+          !(await stopBeforePendingChatSessionBindingUpdate({
+            shouldStop: isStreaming,
+            stop: onStop,
+            waitForBindingUpdate,
+          }))
+        ) {
+          return
+        }
+        context.throwIfCancelled()
+        await onSendFromQueue(firstQueueItemId, context)
+      })
     } else {
-      onSend()
+      void runPendingSubmit((context) =>
+        onSend(waitForBindingUpdate, context),
+      )
     }
   }, [
     blockInvalidClaudeModelSource,
@@ -1846,10 +1911,14 @@ export const ChatInputArea = memo(function ChatInputArea({
     firstQueueItemId,
     files.length,
     hasContent,
+    isStreaming,
     onSend,
+    runPendingSubmit,
     onSendFromQueue,
+    onStop,
     queueLength,
     readyImageCount,
+    waitForBindingUpdate,
   ])
 
   const hasSendButtonContent =
@@ -2231,7 +2300,10 @@ export const ChatInputArea = memo(function ChatInputArea({
                       canSwitchInPlace={canSwitchProvider}
                       onSelectEngine={(nextProvider) => {
                         if (nextProvider === provider) return
-                        onProviderChange?.(nextProvider)
+                        setLastSelectedAgentId(nextProvider)
+                        void updateBinding(
+                          getNewChatSessionBindingDefaults(nextProvider),
+                        )
                       }}
                       onContinueWithEngine={(nextProvider) => {
                         if (nextProvider === provider) return
@@ -2240,6 +2312,7 @@ export const ChatInputArea = memo(function ChatInputArea({
                     />
                     <RuntimeModelSelector
                       selectedEngineId={provider}
+                      disabled={isStreaming}
                       modelOpen={isModelDropdownOpen}
                       onModelOpenChange={setIsModelDropdownOpen}
                       selectedModelLabel={selectedModelLabel}
@@ -2261,13 +2334,52 @@ export const ChatInputArea = memo(function ChatInputArea({
                             availableModels.models,
                             modelId,
                           )
-                          setSelectedSubChatModelId(model.id)
-                          setLastSelectedModelId(model.id)
+                          void updateBinding({
+                            modelId: model.id,
+                            ...(selectedClaudeProfileId
+                              ? {
+                                  modelSource: "claude-oauth" as const,
+                                  providerProfileId: null,
+                                }
+                              : {}),
+                          })
+                          setLastSelectedClaudeSelection({
+                            modelSource: selectedClaudeProfileId
+                              ? "claude-oauth"
+                              : effectiveClaudeModelSource,
+                            modelId: model.id,
+                          })
                         },
                         selectedModelSource: effectiveClaudeModelSource,
                         onSelectModelSource: (source) => {
-                          setSelectedClaudeModelSource(source)
-                          setLastSelectedClaudeModelSource(source)
+                          const persistedSource =
+                            source === "auto" ? "claude-oauth" : source
+                          const nextModelId = selectedClaudeProfileId
+                            ? (availableModels.models[0]?.id ?? "opus")
+                            : (selectedModel?.id ?? selectedSubChatModelId)
+                          void updateBinding({
+                            modelSource: persistedSource,
+                            providerProfileId:
+                              parseProviderProfileSource(persistedSource),
+                            modelId: nextModelId,
+                          })
+                          setLastSelectedClaudeSelection({
+                            modelSource: persistedSource,
+                            modelId: nextModelId,
+                          })
+                        },
+                        onSelectProviderProfile: (profile) => {
+                          const binding =
+                            createProviderProfileChatSessionBindingWrite({
+                              runtime: "claude-code",
+                              profile,
+                            })
+                          void updateBinding(binding)
+                          setLastSelectedClaudeSelection({
+                            modelSource:
+                              binding.modelSource as ClaudeModelSource,
+                            modelId: profile.defaultModel,
+                          })
                         },
                         isOffline:
                           availableModels.isOffline &&
@@ -2299,22 +2411,79 @@ export const ChatInputArea = memo(function ChatInputArea({
                               ? "high"
                               : getDefaultCodexThinking(model)
 
-                          setSelectedSubChatCodexModelId(model.id)
-                          setSelectedSubChatCodexThinking(nextThinking)
-                          setLastSelectedCodexModelId(model.id)
-                          setLastSelectedCodexThinking(nextThinking)
+                          void updateBinding({
+                            modelId: model.id,
+                            ...(selectedCodexProfileId
+                              ? {
+                                  modelSource: "chatgpt" as const,
+                                  providerProfileId: null,
+                                }
+                              : {}),
+                            thinkingLevel: nextThinking,
+                          })
+                          setLastSelectedCodexSelection({
+                            modelSource: selectedCodexProfileId
+                              ? "chatgpt"
+                              : selectedSubChatCodexModelSource,
+                            modelId: model.id,
+                            thinkingLevel: nextThinking,
+                          })
                         },
                         selectedModelSource: selectedSubChatCodexModelSource,
                         effectiveFirstPartyModelSource:
                           effectiveCodexFirstPartySource,
-                        onSelectModelSource: (source) => {
-                          setSelectedSubChatCodexModelSource(source)
-                          setLastSelectedCodexModelSource(source)
+                        onSelectModelSource: (source, compatibleModelId) => {
+                          const nextModel = compatibleModelId
+                            ? resolveCodexCatalogModel(
+                                selectableCodexModels,
+                                compatibleModelId,
+                              )
+                            : selectedCodexModel
+                          const nextThinking = nextModel.thinkings.includes(
+                            selectedSubChatCodexThinking as CodexThinkingLevel,
+                          )
+                            ? (selectedSubChatCodexThinking as CodexThinkingLevel)
+                            : nextModel.thinkings.includes("high")
+                              ? "high"
+                              : getDefaultCodexThinking(nextModel)
+                          void updateBinding({
+                            modelSource: source,
+                            providerProfileId: null,
+                            modelId: nextModel.id,
+                            thinkingLevel: nextThinking,
+                          })
+                          setLastSelectedCodexSelection({
+                            modelSource: source,
+                            modelId: nextModel.id,
+                            thinkingLevel: nextThinking,
+                          })
+                        },
+                        onSelectProviderProfile: (profile) => {
+                          const binding =
+                            createProviderProfileChatSessionBindingWrite({
+                              runtime: "codex",
+                              profile,
+                            })
+                          void updateBinding(binding)
+                          setLastSelectedCodexSelection({
+                            modelSource:
+                              binding.modelSource as CodexModelSource,
+                            modelId: profile.defaultModel,
+                            thinkingLevel: lastSelectedCodexThinkingPreference,
+                          })
                         },
                         selectedThinking: selectedCodexThinking,
+                        supportsThinking: !selectedCodexProfileId,
                         onSelectThinking: (thinking) => {
-                          setSelectedSubChatCodexThinking(thinking)
-                          setLastSelectedCodexThinking(thinking)
+                          void updateBinding({
+                            modelId: selectedCodexModel.id,
+                            thinkingLevel: thinking,
+                          })
+                          setLastSelectedCodexSelection({
+                            modelSource: selectedSubChatCodexModelSource,
+                            modelId: selectedCodexModel.id,
+                            thinkingLevel: thinking,
+                          })
                         },
                         isConnected: setupStatus.codex.connected,
                       }}

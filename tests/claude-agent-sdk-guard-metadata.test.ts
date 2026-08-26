@@ -107,19 +107,18 @@ describe("Claude Agent SDK guard metadata", () => {
     expect(emitted).toEqual([])
   })
 
-  test("emits audit metadata from the latest active guarded contract", async () => {
+  test("emits audit metadata from the exact captured guarded contract", async () => {
     const contract = createContract()
-    const expandedContract = createContract({
-      expansions: [
-        {
-          id: "expansion-1",
-          requestedAt: "2026-06-01T00:02:00.000Z",
-          approvedAt: "2026-06-01T00:03:00.000Z",
-          paths: [{ path: "src/new-file.ts", kind: "file" }],
-          reason: "Need one extra file",
-        },
-      ],
-    })
+    const expandedContract = contract
+    expandedContract.expansions = [
+      {
+        id: "expansion-1",
+        requestedAt: "2026-06-01T00:02:00.000Z",
+        approvedAt: "2026-06-01T00:03:00.000Z",
+        paths: [{ path: "src/new-file.ts", kind: "file" }],
+        reason: "Need one extra file",
+      },
+    ]
     const guardEvent: AgentGuardEvent = {
       id: "event-1",
       runId: "run-1",
@@ -153,10 +152,8 @@ describe("Claude Agent SDK guard metadata", () => {
         captured.push(cwd)
         return createStatus(["src/new-file.ts"])
       },
-      getContract: (contractId) =>
-        contractId === "contract-1" ? expandedContract : null,
-      deleteContract: (contractId) => {
-        deleted.push(contractId)
+      deleteContract: (contractToDelete) => {
+        deleted.push(contractToDelete.id)
       },
     })
 
@@ -181,6 +178,37 @@ describe("Claude Agent SDK guard metadata", () => {
       contractId: "contract-1",
       runtime: "claude",
       audit: emitted[0].audit,
+    })
+  })
+
+  test("does not audit or delete a newer same-ID contract", async () => {
+    const staleContract = createContract({ runId: "run-stale" })
+    const winnerContract = createContract({ runId: "run-winner" })
+    let activeContract: ClaudeAgentSdkGuardedContract | null = winnerContract
+    const emitted: Array<{
+      audit: { runId: string; contractId: string }
+    }> = []
+
+    await finalizeClaudeAgentSdkGuardMetadata({
+      currentMetadata: {},
+      guardedContract: staleContract,
+      guardedPreRunStatus: createStatus([]),
+      runtimeCwd: "/repo",
+      guardEvents: [],
+      startedAt: "2026-06-01T00:00:00.000Z",
+      emit: (chunk) => emitted.push(chunk),
+      captureGitStatus: async () => createStatus([]),
+      deleteContract: (contractToDelete) => {
+        if (activeContract !== contractToDelete) return false
+        activeContract = null
+        return true
+      },
+    })
+
+    expect(activeContract).toBe(winnerContract)
+    expect(emitted[0]?.audit).toMatchObject({
+      runId: "run-stale",
+      contractId: "contract-1",
     })
   })
 })

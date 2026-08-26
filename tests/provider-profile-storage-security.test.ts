@@ -480,4 +480,95 @@ describe("provider profile storage security", () => {
       storageModule.getProviderProfileMetadata(profileId)?.targetRuntimes,
     ).toEqual(["codex"])
   })
+
+  test("clears incompatible defaults in the same profile edit and lets headless fall back to native", async () => {
+    const profile = storageModule.saveProviderProfile({
+      id: "multi-target-default",
+      name: "Multi target default",
+      protocol: "openai-responses",
+      baseUrl: "https://api.example.com/v1",
+      defaultModel: "provider-model",
+      authMode: "none",
+      targetRuntimes: ["claude", "codex", "helpers"],
+    })
+    for (const purpose of [
+      "claude-main",
+      "codex-main",
+      "sub_chat_title",
+      "commit_message",
+    ] as const) {
+      storageModule.setProviderDefault({
+        purpose,
+        profileId: profile.id,
+        modelOverride: `${purpose}-model`,
+      })
+    }
+
+    storageModule.saveProviderProfile({
+      id: profile.id,
+      name: profile.name,
+      protocol: profile.protocol,
+      baseUrl: profile.baseUrl,
+      defaultModel: profile.defaultModel,
+      authMode: profile.authMode,
+      targetRuntimes: ["claude"],
+    })
+
+    expect(storageModule.getProviderDefaults()).toEqual({
+      "claude-main": {
+        profileId: profile.id,
+        modelOverride: "claude-main-model",
+      },
+      "codex-main": { profileId: null, modelOverride: null },
+      sub_chat_title: { profileId: null, modelOverride: null },
+      commit_message: { profileId: null, modelOverride: null },
+    })
+    expect(
+      await headlessBindingModule.resolveHeadlessProviderBinding({
+        db: testDb,
+        runtime: "codex",
+      }),
+    ).toMatchObject({
+      resolvedProvider: { source: "native", profileId: null, model: null },
+    })
+  })
+
+  test("rejects missing or target-incompatible provider defaults at the storage owner", () => {
+    storageModule.saveProviderProfile({
+      id: "claude-only-default",
+      name: "Claude only",
+      protocol: "anthropic",
+      baseUrl: "https://api.example.com/v1",
+      defaultModel: "claude-model",
+      authMode: "none",
+      targetRuntimes: ["claude"],
+    })
+
+    expect(() =>
+      storageModule.setProviderDefault({
+        purpose: "codex-main",
+        profileId: "claude-only-default",
+      }),
+    ).toThrow("does not support codex-main")
+    expect(() =>
+      storageModule.setProviderDefault({
+        purpose: "sub_chat_title",
+        profileId: "claude-only-default",
+      }),
+    ).toThrow("does not support sub_chat_title")
+    expect(() =>
+      storageModule.setProviderDefault({
+        purpose: "claude-main",
+        profileId: "missing-profile",
+      }),
+    ).toThrow("was not found")
+
+    storageModule.setProviderDefault({
+      purpose: "claude-main",
+      profileId: "claude-only-default",
+    })
+    expect(storageModule.getProviderDefaults()["claude-main"].profileId).toBe(
+      "claude-only-default",
+    )
+  })
 })

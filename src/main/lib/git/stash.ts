@@ -1,7 +1,12 @@
+import { randomUUID } from "node:crypto"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import simpleGit from "simple-git"
+import {
+  isCanonicalRollbackCheckpointBinding,
+  type RollbackCheckpointBinding,
+} from "../../../shared/chat-message"
 
 const APPLY_RETRIES = 3
 const APPLY_RETRY_DELAY_MS = 200
@@ -14,22 +19,59 @@ type CheckpointPayload = {
   worktreeTree: string
 }
 
+export type RollbackStashDraft = {
+  cwd: string
+  sdkMessageUuid: string
+  oid: string
+  privateRef: string
+  publicRef: string
+}
+
+async function deleteRefIfMatching(input: {
+  cwd: string
+  ref: string
+  oid: string
+}): Promise<boolean> {
+  const git = simpleGit(input.cwd)
+  try {
+    await git.raw(["update-ref", "-d", input.ref, input.oid])
+    return true
+  } catch (error) {
+    let currentCommitHash: string | null = null
+    try {
+      currentCommitHash = (
+        await git.raw(["rev-parse", "--verify", input.ref])
+      ).trim()
+    } catch {
+      return false
+    }
+    if (currentCommitHash !== input.oid) {
+      return false
+    }
+    throw error
+  }
+}
+
 /**
- * Create a checkpoint ref for rollback support.
- * Stores index and worktree trees in an orphan commit under refs/checkpoints/.
- * If there are no changes, no checkpoint is created (this is fine).
+ * Capture a rollback checkpoint without publishing it to refs/locus-checkpoints/.
+ *
+ * The temporary ref keeps the orphan commit alive while the caller verifies
+ * that its Run still owns the chat. Rollback readers never consult this ref.
  */
-export async function createRollbackStash(
+export async function createRollbackStashDraft(
   cwd: string,
   sdkMessageUuid: string,
-): Promise<void> {
+): Promise<RollbackStashDraft | null> {
+  let privateRef: string | null = null
+  let privateRefCreated = false
+  let oid = ""
   try {
     const git = simpleGit(cwd)
 
     const indexTreeRaw = await git.raw(["write-tree"])
     const indexTree = indexTreeRaw.trim()
     if (!indexTree) {
-      return
+      return null
     }
 
     let worktreeTree = ""
@@ -49,7 +91,7 @@ export async function createRollbackStash(
     }
 
     if (!worktreeTree) {
-      return
+      return null
     }
 
     const checkpointPayload: CheckpointPayload = {
@@ -67,24 +109,111 @@ export async function createRollbackStash(
       "-m",
       JSON.stringify(checkpointPayload),
     ])
-    const commitHash = commitRaw.trim()
-    if (!commitHash) {
-      return
+    oid = commitRaw.trim()
+    if (!oid) {
+      return null
     }
 
-    await git.raw([
-      "update-ref",
-      `refs/checkpoints/${sdkMessageUuid}`,
-      commitHash,
-    ])
+    privateRef = `refs/locus-checkpoint-drafts/${randomUUID()}`
+    const publicRef = `refs/locus-checkpoints/${randomUUID()}`
+    await git.raw(["update-ref", privateRef, oid, "0".repeat(oid.length)])
+    privateRefCreated = true
+    return {
+      cwd,
+      sdkMessageUuid,
+      oid,
+      privateRef,
+      publicRef,
+    }
   } catch (e) {
-    console.error("[claude] Failed to create rollback checkpoint:", e)
+    if (privateRefCreated && privateRef && oid) {
+      try {
+        await deleteRefIfMatching({ cwd, ref: privateRef, oid })
+      } catch {
+        // The draft is private and best-effort cleanup is sufficient here.
+      }
+    }
+    console.error("[claude] Failed to create rollback checkpoint draft:", e)
+    return null
   }
 }
 
-function parseCheckpointTrees(
-  message: string,
-): { indexTree: string | null; worktreeTree: string | null } {
+/** Publish a prepared draft to its main-minted, never-reused public ref. */
+export async function publishRollbackStashDraft(
+  draft: RollbackStashDraft,
+): Promise<RollbackCheckpointBinding | null> {
+  const checkpoint = { ref: draft.publicRef, oid: draft.oid }
+  if (!isCanonicalRollbackCheckpointBinding(checkpoint)) {
+    console.error(
+      "[claude] Refusing to publish an invalid rollback checkpoint draft",
+    )
+    return null
+  }
+  const git = simpleGit(draft.cwd)
+  try {
+    await git.raw([
+      "update-ref",
+      draft.publicRef,
+      draft.oid,
+      "0".repeat(draft.oid.length),
+    ])
+    return checkpoint
+  } catch (e) {
+    try {
+      if ((await git.raw(["rev-parse", "--verify", draft.publicRef])).trim()) {
+        console.warn(
+          "[claude] Rollback checkpoint ref collision; publication skipped",
+        )
+        return null
+      }
+    } catch {
+      // Fall through to the unexpected publication failure diagnostic.
+    }
+    console.error("[claude] Failed to publish rollback checkpoint draft:", e)
+    return null
+  }
+}
+
+/**
+ * Discard a private draft and, when requested, retract only the public ref that
+ * still points to this exact draft. A newer checkpoint is never deleted.
+ */
+export async function discardRollbackStashDraft(
+  draft: RollbackStashDraft,
+  options: { publishedCheckpoint?: RollbackCheckpointBinding | null } = {},
+): Promise<void> {
+  const publishedCheckpoint = options.publishedCheckpoint
+  if (
+    publishedCheckpoint &&
+    publishedCheckpoint.ref === draft.publicRef &&
+    publishedCheckpoint.oid === draft.oid
+  ) {
+    try {
+      await deleteRefIfMatching({
+        cwd: draft.cwd,
+        ref: publishedCheckpoint.ref,
+        oid: publishedCheckpoint.oid,
+      })
+    } catch (e) {
+      console.error("[claude] Failed to retract rollback checkpoint:", e)
+    }
+  }
+
+  try {
+    await deleteRefIfMatching({
+      cwd: draft.cwd,
+      ref: draft.privateRef,
+      oid: draft.oid,
+    })
+  } catch (e) {
+    console.error("[claude] Failed to discard rollback checkpoint draft:", e)
+  }
+}
+
+function parseCheckpointTrees(message: string): {
+  indexTree: string | null
+  worktreeTree: string | null
+} {
   const body = message.trim()
   if (body) {
     try {
@@ -110,43 +239,62 @@ export type RollbackResult =
   | { success: true; checkpointFound: false }
   | { success: false; error: string }
 
+type ApplyRollbackStashDependencies = {
+  beforeApplyRefRecheck?: () => Promise<void> | void
+}
+
 export async function applyRollbackStash(
   worktreePath: string,
-  sdkMessageUuid: string,
+  checkpoint: RollbackCheckpointBinding,
+  dependencies: ApplyRollbackStashDependencies = {},
 ): Promise<RollbackResult> {
   try {
+    if (!isCanonicalRollbackCheckpointBinding(checkpoint)) {
+      return { success: false, error: "Invalid rollback checkpoint binding" }
+    }
+
     const git = simpleGit(worktreePath)
 
-    const ref = `refs/checkpoints/${sdkMessageUuid}`
-    let commitHash = ""
+    let resolvedOid = ""
     try {
-      commitHash = (await git.raw(["rev-parse", ref])).trim()
-    } catch (error) {
-      console.warn(
-        `[claude] Rollback checkpoint not found for sdkMessageUuid=${sdkMessageUuid}`,
-      )
-      // Checkpoint not found - return success but indicate no checkpoint was applied
-      // The caller can decide whether to proceed with message truncation
+      resolvedOid = (
+        await git.raw(["rev-parse", "--verify", checkpoint.ref])
+      ).trim()
+    } catch {
       return { success: true, checkpointFound: false }
+    }
+    if (resolvedOid !== checkpoint.oid) {
+      return {
+        success: false,
+        error: "Rollback checkpoint reference does not match its expected OID",
+      }
     }
 
     const commitMessage = await git.raw([
       "show",
       "-s",
       "--format=%B",
-      commitHash,
+      checkpoint.oid,
     ])
     const { indexTree, worktreeTree } = parseCheckpointTrees(commitMessage)
     if (!indexTree || !worktreeTree) {
-      console.error(
-        `[claude] Rollback checkpoint missing tree metadata for sdkMessageUuid=${sdkMessageUuid}`,
-      )
       return { success: false, error: "Checkpoint missing tree metadata" }
     }
+
+    await dependencies.beforeApplyRefRecheck?.()
 
     let lastError: unknown
     for (let attempt = 1; attempt <= APPLY_RETRIES; attempt += 1) {
       try {
+        const currentOid = (
+          await git.raw(["rev-parse", "--verify", checkpoint.ref])
+        ).trim()
+        if (currentOid !== checkpoint.oid) {
+          return {
+            success: false,
+            error: "Rollback checkpoint changed before it could be applied",
+          }
+        }
         await git.raw(["read-tree", worktreeTree])
         await git.raw(["checkout-index", "-a", "-f"])
         await git.raw(["clean", "-fd"])

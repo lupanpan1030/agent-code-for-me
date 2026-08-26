@@ -1,12 +1,27 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
+import type { ClaudeAskUserQuestionPending } from "../src/main/lib/claude/agent-sdk-tool-permission"
 import {
   clearClaudePendingToolApprovals,
   clearClaudePendingToolApprovalsForTest,
   getClaudePendingToolApprovalStore,
   resolveClaudePendingToolApproval,
 } from "../src/main/lib/claude/tool-approvals"
+
+function setPending(
+  approvalId: string,
+  pending: Omit<
+    ClaudeAskUserQuestionPending,
+    "approvalId" | "isCurrentRunOwner"
+  > & { isCurrentRunOwner?: () => boolean },
+): void {
+  getClaudePendingToolApprovalStore().set(approvalId, {
+    approvalId,
+    isCurrentRunOwner: () => true,
+    ...pending,
+  })
+}
 
 describe("Claude tool approval owner", () => {
   afterEach(() => {
@@ -15,7 +30,8 @@ describe("Claude tool approval owner", () => {
 
   test("resolves and removes a pending approval", () => {
     const decisions: unknown[] = []
-    getClaudePendingToolApprovalStore().set("tool-1", {
+    setPending("approval-1", {
+      toolUseId: "tool-1",
       subChatId: "sub-1",
       toolName: "AskUserQuestion",
       toolInput: { questions: ["Proceed?"] },
@@ -24,7 +40,7 @@ describe("Claude tool approval owner", () => {
 
     expect(
       resolveClaudePendingToolApproval({
-        toolUseId: "tool-1",
+        approvalId: "approval-1",
         decision: {
           approved: true,
           updatedInput: {
@@ -44,12 +60,13 @@ describe("Claude tool approval owner", () => {
         },
       },
     ])
-    expect(getClaudePendingToolApprovalStore().has("tool-1")).toBe(false)
+    expect(getClaudePendingToolApprovalStore().has("approval-1")).toBe(false)
   })
 
   test("rejects approval updatedInput fields outside the approved tool schema", () => {
     const decisions: unknown[] = []
-    getClaudePendingToolApprovalStore().set("tool-1", {
+    setPending("approval-1", {
+      toolUseId: "tool-1",
       subChatId: "sub-1",
       toolName: "AskUserQuestion",
       toolInput: { questions: ["Proceed?"] },
@@ -58,7 +75,7 @@ describe("Claude tool approval owner", () => {
 
     expect(() =>
       resolveClaudePendingToolApproval({
-        toolUseId: "tool-1",
+        approvalId: "approval-1",
         decision: {
           approved: true,
           updatedInput: {
@@ -71,12 +88,13 @@ describe("Claude tool approval owner", () => {
     ).toThrow("Invalid updatedInput for Claude tool approval.")
 
     expect(decisions).toEqual([])
-    expect(getClaudePendingToolApprovalStore().has("tool-1")).toBe(true)
+    expect(getClaudePendingToolApprovalStore().has("approval-1")).toBe(true)
   })
 
   test("rejects approval updatedInput that swaps the displayed questions", () => {
     const decisions: unknown[] = []
-    getClaudePendingToolApprovalStore().set("tool-1", {
+    setPending("approval-1", {
+      toolUseId: "tool-1",
       subChatId: "sub-1",
       toolName: "AskUserQuestion",
       toolInput: { questions: ["Proceed?"] },
@@ -85,7 +103,7 @@ describe("Claude tool approval owner", () => {
 
     expect(() =>
       resolveClaudePendingToolApproval({
-        toolUseId: "tool-1",
+        approvalId: "approval-1",
         decision: {
           approved: true,
           updatedInput: {
@@ -97,14 +115,15 @@ describe("Claude tool approval owner", () => {
     ).toThrow("questions changed")
 
     expect(decisions).toEqual([])
-    expect(getClaudePendingToolApprovalStore().has("tool-1")).toBe(true)
+    expect(getClaudePendingToolApprovalStore().has("approval-1")).toBe(true)
   })
 
   test("guarded tool approvals cannot replace the approved tool input", () => {
     const decisions: unknown[] = []
     const questions = [
       {
-        question: "Scoped shell file operation targets approved editable scope and requires user approval.",
+        question:
+          "Scoped shell file operation targets approved editable scope and requires user approval.",
         header: "Scoped shell write",
         options: [
           { label: "Approve", description: "Allow this action once." },
@@ -116,7 +135,8 @@ describe("Claude tool approval owner", () => {
     const originalToolInput = {
       command: "printf 'safe' > /repo/src/generated.txt",
     }
-    getClaudePendingToolApprovalStore().set("tool-guarded-shell", {
+    setPending("approval-guarded-shell", {
+      toolUseId: "tool-guarded-shell",
       subChatId: "sub-1",
       toolName: "Bash",
       toolInput: originalToolInput,
@@ -126,7 +146,7 @@ describe("Claude tool approval owner", () => {
 
     expect(() =>
       resolveClaudePendingToolApproval({
-        toolUseId: "tool-guarded-shell",
+        approvalId: "approval-guarded-shell",
         decision: {
           approved: true,
           updatedInput: {
@@ -141,13 +161,13 @@ describe("Claude tool approval owner", () => {
     ).toThrow("Invalid updatedInput for Claude tool approval.")
 
     expect(decisions).toEqual([])
-    expect(getClaudePendingToolApprovalStore().has("tool-guarded-shell")).toBe(
-      true,
-    )
+    expect(
+      getClaudePendingToolApprovalStore().has("approval-guarded-shell"),
+    ).toBe(true)
 
     expect(
       resolveClaudePendingToolApproval({
-        toolUseId: "tool-guarded-shell",
+        approvalId: "approval-guarded-shell",
         decision: {
           approved: true,
           updatedInput: {
@@ -166,9 +186,9 @@ describe("Claude tool approval owner", () => {
         updatedInput: originalToolInput,
       },
     ])
-    expect(getClaudePendingToolApprovalStore().has("tool-guarded-shell")).toBe(
-      false,
-    )
+    expect(
+      getClaudePendingToolApprovalStore().has("approval-guarded-shell"),
+    ).toBe(false)
   })
 
   test("clears only approvals for the requested sub-chat", () => {
@@ -176,13 +196,15 @@ describe("Claude tool approval owner", () => {
       first: [],
       second: [],
     }
-    getClaudePendingToolApprovalStore().set("tool-1", {
+    setPending("approval-1", {
+      toolUseId: "tool-1",
       subChatId: "sub-1",
       toolName: "AskUserQuestion",
       toolInput: { questions: ["Proceed?"] },
       resolve: (decision) => decisions.first.push(decision),
     })
-    getClaudePendingToolApprovalStore().set("tool-2", {
+    setPending("approval-2", {
+      toolUseId: "tool-2",
       subChatId: "sub-2",
       toolName: "AskUserQuestion",
       toolInput: { questions: ["Proceed?"] },
@@ -198,17 +220,48 @@ describe("Claude tool approval owner", () => {
       },
     ])
     expect(decisions.second).toEqual([])
-    expect(getClaudePendingToolApprovalStore().has("tool-1")).toBe(false)
-    expect(getClaudePendingToolApprovalStore().has("tool-2")).toBe(true)
+    expect(getClaudePendingToolApprovalStore().has("approval-1")).toBe(false)
+    expect(getClaudePendingToolApprovalStore().has("approval-2")).toBe(true)
   })
 
   test("returns false when no pending approval exists", () => {
     expect(
       resolveClaudePendingToolApproval({
-        toolUseId: "missing",
+        approvalId: "missing",
         decision: { approved: false },
       }),
     ).toBe(false)
+  })
+
+  test("rejects delayed A approval after same-run-id owner replacement", () => {
+    let currentOwner = "A"
+    const decisions: string[] = []
+    for (const owner of ["A", "B"] as const) {
+      setPending(`approval-${owner}`, {
+        toolUseId: "shared-runtime-tool",
+        subChatId: "sub-1",
+        toolName: "AskUserQuestion",
+        toolInput: { questions: ["Continue?"] },
+        isCurrentRunOwner: () => currentOwner === owner,
+        resolve: () => decisions.push(owner),
+      })
+      currentOwner = owner
+    }
+
+    expect(
+      resolveClaudePendingToolApproval({
+        approvalId: "approval-A",
+        decision: { approved: true },
+      }),
+    ).toBe(false)
+    expect(decisions).toEqual([])
+    expect(
+      resolveClaudePendingToolApproval({
+        approvalId: "approval-B",
+        decision: { approved: true },
+      }),
+    ).toBe(true)
+    expect(decisions).toEqual(["B"])
   })
 
   test("Claude approval route no longer accepts unknown top-level updatedInput", () => {

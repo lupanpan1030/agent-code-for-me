@@ -223,7 +223,7 @@ describe("desktop runtime preflight", () => {
       controlsIndex,
     )
     const startupIndex = claude.indexOf(
-      "prepareClaudeAgentSdkDesktopRunStartup({",
+      "prepareClaudeAgentSdkDesktopRunStartup(",
       inputsIndex,
     )
     const runRequestIndex = claude.indexOf("desktopRunRequest,", startupIndex)
@@ -274,7 +274,7 @@ describe("desktop runtime preflight", () => {
       runtimeStatusGateIndex,
     )
     const providerProfileMetadataIndex = codex.indexOf(
-      "getProviderProfileMetadata(input.providerProfileId)",
+      "getProviderProfileMetadata(bindingAdmission.providerProfileId)",
       runtimeStatusGateIndex,
     )
     const providerBindingIndex = codex.indexOf(

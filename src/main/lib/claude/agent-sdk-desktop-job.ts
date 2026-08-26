@@ -199,7 +199,6 @@ export function createClaudeAgentSdkDesktopRunStartup({
     images: input.images,
     longTextAttachments: input.longTextAttachments,
     signal: input.signal,
-    requestedSessionId: input.requestedSessionId,
     existingSessionId: input.existingSessionId,
     emitTrace,
   })

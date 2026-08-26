@@ -1,5 +1,9 @@
 import type { ResolvedChatImageAttachment } from "../../../shared/chat-attachments"
-import type { ValidatedAgentScopeContract } from "../agent-guard"
+import {
+  isActiveGuardedContract,
+  registerActiveGuardedScopeExpansionRequest,
+  type ValidatedAgentScopeContract,
+} from "../agent-guard"
 import { CODEX_APP_SERVER_DESKTOP_ADAPTER_METADATA } from "../agent-runtime/desktop-adapter-metadata"
 import type {
   DesktopRunMcpSessionServer,
@@ -60,6 +64,7 @@ import {
 import {
   type CodexAppServerTransport,
   type CodexAppServerTransportServerRequest,
+  type CodexAppServerTransportServerRequestResponse,
   createCodexAppServerStdioTransport,
 } from "./app-server-transport"
 import {
@@ -98,12 +103,17 @@ export type CreateCodexAppServerAdapterInput = {
   shellEnv?: NodeJS.ProcessEnv
   resolvedImages?: ResolvedChatImageAttachment[]
   guardedContract?: ValidatedAgentScopeContract | null
+  /** Exact desktop lifecycle owner check; fail-closed around async callbacks. */
+  isCurrentRunOwner?: () => boolean
   emit?: (chunk: Record<string, unknown>) => void
   registerPendingQuestion?: (
-    toolUseId: string,
+    approvalId: string,
     pending: CodexAskUserQuestionPending,
   ) => void
-  unregisterPendingQuestion?: (toolUseId: string) => void
+  unregisterPendingQuestion?: (
+    approvalId: string,
+    pending: CodexAskUserQuestionPending,
+  ) => boolean
   userInputTimeoutMs?: number
   prepareRuntimePrompt?: typeof prepareCodexAppServerRuntimePrompt
 }
@@ -289,33 +299,11 @@ function defaultServerRequestResponse(
 ): unknown {
   switch (request.method) {
     case "item/commandExecution/requestApproval":
-      return { decision: "decline" }
     case "item/fileChange/requestApproval":
-      return { decision: "decline" }
     case "item/permissions/requestApproval":
-      return {
-        permissions: {},
-        scope: "turn",
-        strictAutoReview: true,
-      }
     case "item/tool/requestUserInput":
-      return buildCodexAppServerUserInputResponse(
-        request.params as CodexAppServerToolRequestUserInputParams,
-        {
-          approved: false,
-          message:
-            "Codex app-server adapter has no user-input bridge installed.",
-        },
-      )
     case "mcpServer/elicitation/request":
-      return buildCodexAppServerMcpElicitationResponse(
-        request.params as CodexAppServerMcpElicitationRequestParams,
-        {
-          approved: false,
-          message:
-            "Codex app-server adapter has no MCP elicitation bridge installed.",
-        },
-      )
+      return failClosedServerRequestResponse(request)
     case "account/chatgptAuthTokens/refresh":
     case "attestation/generate":
     case "item/tool/call":
@@ -327,6 +315,54 @@ function defaultServerRequestResponse(
     default:
       throw new Error(
         `Unknown Codex app-server server request method refused by default: ${request.method}.`,
+      )
+  }
+}
+
+function failClosedServerRequestResponse(
+  request: CodexAppServerTransportServerRequest,
+): unknown {
+  switch (request.method) {
+    case "item/commandExecution/requestApproval":
+    case "item/fileChange/requestApproval":
+      return { decision: "decline" }
+    case "item/permissions/requestApproval":
+      return {
+        permissions: {},
+        scope: "turn",
+        strictAutoReview: true,
+      }
+    case "execCommandApproval":
+    case "applyPatchApproval":
+      return { decision: "denied" }
+    case "item/tool/call":
+      return {
+        success: false,
+        contentItems: [
+          { type: "inputText", text: "Codex run is no longer active." },
+        ],
+      }
+    case "item/tool/requestUserInput":
+      return buildCodexAppServerUserInputResponse(
+        request.params as CodexAppServerToolRequestUserInputParams,
+        {
+          approved: false,
+          message: "Codex run is no longer active.",
+        },
+      )
+    case "mcpServer/elicitation/request":
+      return buildCodexAppServerMcpElicitationResponse(
+        request.params as CodexAppServerMcpElicitationRequestParams,
+        {
+          approved: false,
+          message: "Codex run is no longer active.",
+        },
+      )
+    default:
+      // Requests without a protocol-valid denial never produce a successful
+      // adapter response, so the transport emits its existing protocol error.
+      throw new Error(
+        `Codex app-server server request ${request.method} has no fail-closed response.`,
       )
   }
 }
@@ -347,6 +383,7 @@ export function createCodexAppServerAdapter({
   shellEnv,
   resolvedImages = [],
   guardedContract = null,
+  isCurrentRunOwner,
   emit,
   registerPendingQuestion,
   unregisterPendingQuestion,
@@ -357,6 +394,14 @@ export function createCodexAppServerAdapter({
     metadata: CODEX_APP_SERVER_DESKTOP_ADAPTER_METADATA,
 
     async run(request: DesktopRunRequest): Promise<DesktopRunResult> {
+      const runOwnerIsCurrent = (): boolean => {
+        if (request.signal.aborted) return false
+        try {
+          return isCurrentRunOwner ? isCurrentRunOwner() === true : true
+        } catch {
+          return false
+        }
+      }
       emitDesktopRuntimeAdapterStarted(
         request,
         CODEX_APP_SERVER_DESKTOP_ADAPTER_METADATA,
@@ -410,6 +455,9 @@ export function createCodexAppServerAdapter({
               pluginConfig: resolvedPluginConfig,
               mcpServers: request.mcpSessionServers ?? [],
             }))
+      if (isCurrentRunOwner && !runOwnerIsCurrent()) {
+        return { status: "canceled" }
+      }
       const appServerProviderBinding: CodexAppServerProviderBinding = {
         ...providerBinding,
         runtimeEnv: pluginHome.runtimeEnv,
@@ -474,6 +522,7 @@ export function createCodexAppServerAdapter({
         emit && registerPendingQuestion && unregisterPendingQuestion
           ? createCodexAppServerUserInteractionBridge({
               subChatId: request.context.subChatId,
+              isCurrentRunOwner: runOwnerIsCurrent,
               emit: emitRuntimeChunk,
               registerPending: registerPendingQuestion,
               unregisterPending: unregisterPendingQuestion,
@@ -483,6 +532,7 @@ export function createCodexAppServerAdapter({
       const approvalBridge = createCodexAppServerApprovalBridge({
         subChatId: request.context.subChatId,
         permission,
+        isCurrentRunOwner: runOwnerIsCurrent,
         controlledEditEnabled: controlledEditToolEnabled,
         guardedContract,
         emit: emit ? emitRuntimeChunk : undefined,
@@ -491,6 +541,16 @@ export function createCodexAppServerAdapter({
         timeoutMs: userInputTimeoutMs,
         secretHints: runtimeSecretHints,
         onGuardEvent: (event) => {
+          if (
+            event.type === "scope-expansion-request" &&
+            (!guardedContract ||
+              !registerActiveGuardedScopeExpansionRequest({
+                contract: guardedContract,
+                event,
+              }))
+          ) {
+            return
+          }
           emitRuntimeChunk({ type: "guard-event", event })
         },
         onObservedToolDecision: (event) => {
@@ -726,7 +786,15 @@ export function createCodexAppServerAdapter({
             response = defaultServerRequestResponse(serverRequest)
             return response
           },
-        }).then(() => response)
+        }).then(
+          (): CodexAppServerTransportServerRequestResponse => ({
+            result: response,
+            failClosedResult: failClosedServerRequestResponse(serverRequest),
+            isResponseStillAuthorized: () =>
+              runOwnerIsCurrent() &&
+              (!guardedContract || isActiveGuardedContract(guardedContract)),
+          }),
+        )
       })
 
       let abortHandled = false
@@ -753,7 +821,7 @@ export function createCodexAppServerAdapter({
         method: Parameters<CodexAppServerTransport["request"]>[0],
         params: unknown,
       ): Promise<unknown> => {
-        if (request.signal.aborted) {
+        if (!runOwnerIsCurrent()) {
           return Promise.reject(new Error("Codex app-server run canceled."))
         }
         if (transportExitError) return Promise.reject(transportExitError)
@@ -948,7 +1016,7 @@ export function createCodexAppServerAdapter({
           error instanceof Error ? error.message : String(error),
         )
         runResult = {
-          status: request.signal.aborted ? "canceled" : "failed",
+          status: runOwnerIsCurrent() ? "failed" : "canceled",
           sessionId: runtimeMapper.getSessionId(),
           error: {
             message,

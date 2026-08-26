@@ -1,6 +1,10 @@
-import { describe, expect, mock, test } from "bun:test"
+import { afterEach, describe, expect, mock, test } from "bun:test"
 import { randomBytes } from "node:crypto"
 import { eq } from "drizzle-orm"
+import {
+  clearClaudeActiveSessionsForTest,
+  setActiveClaudeSession,
+} from "../src/main/lib/claude/active-sessions"
 import { finalizeClaudeAgentSdkStreamError } from "../src/main/lib/claude/agent-sdk-stream-error-finalization"
 import { chats, projects, subChats } from "../src/main/lib/db/schema"
 import { EXACT_SECRET_REDACTION_MARKER } from "../src/shared/secret-redaction-policy"
@@ -35,6 +39,8 @@ function seedChat(db: ReturnType<typeof createAgentJobTestDb>) {
 }
 
 function baseInput(db: ReturnType<typeof createAgentJobTestDb>) {
+  const controller = new AbortController()
+  setActiveClaudeSession("sub-1", { controller, runId: "run-1" })
   return {
     streamError: new Error("process exited with code 1"),
     stderrLines: ["stderr detail"],
@@ -43,6 +49,7 @@ function baseInput(db: ReturnType<typeof createAgentJobTestDb>) {
     db,
     chatId: "chat-1",
     subChatId: "sub-1",
+    activeSessionSignal: controller.signal,
     messagesToSave: [{ id: "user-1", role: "user" }],
     parts: [] as Array<Record<string, any>>,
     metadata: { sessionId: "session-1" },
@@ -60,13 +67,16 @@ function baseInput(db: ReturnType<typeof createAgentJobTestDb>) {
     lastChunkType: "text-delta",
     emit: mock(() => {}),
     complete: mock(() => {}),
-    getContract: () => null,
     deleteContract: () => undefined,
     log: mock(() => {}),
   }
 }
 
 describe("Claude Agent SDK stream error finalization", () => {
+  afterEach(() => {
+    clearClaudeActiveSessionsForTest()
+  })
+
   test("emits stream diagnostics and persists partial assistant output", async () => {
     const db = createAgentJobTestDb()
     seedChat(db)
@@ -182,5 +192,32 @@ describe("Claude Agent SDK stream error finalization", () => {
     expect(JSON.stringify(input.emit.mock.calls)).toContain(
       EXACT_SECRET_REDACTION_MARKER,
     )
+  })
+
+  test("does not clear or persist stale error output after a same-run-id replacement", async () => {
+    const db = createAgentJobTestDb()
+    seedChat(db)
+    const input = {
+      ...baseInput(db),
+      streamError: new Error("stream ended"),
+      stderrLines: ["No conversation found with session ID session-1"],
+      currentText: "stale partial answer",
+      aborted: true,
+    }
+    const replacementController = new AbortController()
+    setActiveClaudeSession("sub-1", {
+      controller: replacementController,
+      runId: "run-1",
+    })
+
+    await finalizeClaudeAgentSdkStreamError(input)
+
+    expect(
+      db.select().from(subChats).where(eq(subChats.id, "sub-1")).get(),
+    ).toMatchObject({
+      sessionId: "old-session",
+      streamId: "stream-1",
+      messages: JSON.stringify([{ id: "existing", role: "user" }]),
+    })
   })
 })

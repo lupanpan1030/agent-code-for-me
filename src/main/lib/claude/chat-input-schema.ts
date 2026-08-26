@@ -37,7 +37,6 @@ export const claudeChatInputSchema = z
     cwd: z.string().optional(),
     projectPath: z.string().optional(),
     mode: z.enum(["plan", "agent"]).default("agent"),
-    sessionId: z.string().optional(),
     model: z.string().optional(),
     modelSource: z.string().optional(),
     maxThinkingTokens: z.number().optional(),
@@ -48,6 +47,7 @@ export const claudeChatInputSchema = z
     enableTasks: z.boolean().optional(),
     scopeContract: agentScopeContractInputSchema.optional(),
   })
+  .strict()
   .superRefine((input, ctx) => {
     const isFirstPartyModelSource =
       !input.offlineModeEnabled &&

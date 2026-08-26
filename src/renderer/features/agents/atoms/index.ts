@@ -7,6 +7,11 @@ import type {
 } from "../../../../shared/agent-scope-contracts"
 import type { ChatImageAttachmentSendInput } from "../../../../shared/chat-attachments"
 import type {
+  ClaudeChatModelSource,
+  CodexChatModelSource,
+  CodexChatThinkingLevel,
+} from "../../../../shared/chat-session-binding"
+import type {
   LongTextAttachment,
   LongTextAttachmentPart,
 } from "../../../../shared/long-text-attachments"
@@ -160,16 +165,8 @@ export const lastSelectedModelIdAtom = atomWithStorage<string>(
   { getOnInit: true },
 )
 
-export type ProviderProfileSource = `provider-profile:${string}`
-export type ClaudeModelSource =
-  | "auto"
-  | "claude-oauth"
-  | "custom-provider"
-  | ProviderProfileSource
-export type CodexModelSource =
-  | "chatgpt"
-  | "openai-api-key"
-  | ProviderProfileSource
+export type ClaudeModelSource = ClaudeChatModelSource | "auto"
+export type CodexModelSource = CodexChatModelSource
 
 export const lastSelectedClaudeModelSourceAtom =
   atomWithStorage<ClaudeModelSource>(
@@ -178,6 +175,20 @@ export const lastSelectedClaudeModelSourceAtom =
     undefined,
     { getOnInit: true },
   )
+
+export type ClaudeNewChatSelection = {
+  modelSource: ClaudeModelSource
+  modelId: string
+}
+
+/** Updates the two persisted Claude new-chat defaults in one Jotai write. */
+export const setLastSelectedClaudeSelectionAtom = atom(
+  null,
+  (_get, set, selection: ClaudeNewChatSelection) => {
+    set(lastSelectedClaudeModelSourceAtom, selection.modelSource)
+    set(lastSelectedModelIdAtom, selection.modelId)
+  },
+)
 
 export const lastSelectedCodexModelSourceAtom =
   atomWithStorage<CodexModelSource>(
@@ -194,7 +205,7 @@ export const lastSelectedCodexModelIdAtom = atomWithStorage<string>(
   { getOnInit: true },
 )
 
-export type CodexThinkingPreference = "low" | "medium" | "high" | "xhigh"
+export type CodexThinkingPreference = CodexChatThinkingLevel
 
 export const lastSelectedCodexThinkingAtom =
   atomWithStorage<CodexThinkingPreference>(
@@ -204,155 +215,20 @@ export const lastSelectedCodexThinkingAtom =
     { getOnInit: true },
   )
 
-// Storage for per-subChat Claude model selection.
-// Falls back to lastSelectedModelIdAtom when sub-chat has no explicit selection yet.
-const subChatModelIdsStorageAtom = atomWithStorage<Record<string, string>>(
-  "agents:subChatModelIds",
-  {},
-  undefined,
-  { getOnInit: true },
-)
+export type CodexNewChatSelection = {
+  modelSource: CodexModelSource
+  modelId: string
+  thinkingLevel: CodexThinkingPreference
+}
 
-export const subChatModelIdAtomFamily = atomFamily((subChatId: string) =>
-  atom(
-    (get) => {
-      if (!subChatId) return get(lastSelectedModelIdAtom)
-      return (
-        get(subChatModelIdsStorageAtom)[subChatId] ??
-        get(lastSelectedModelIdAtom)
-      )
-    },
-    (get, set, newModelId: string) => {
-      if (!subChatId) {
-        set(lastSelectedModelIdAtom, newModelId)
-        return
-      }
-      const current = get(subChatModelIdsStorageAtom)
-      if (current[subChatId] === newModelId) return
-      set(subChatModelIdsStorageAtom, { ...current, [subChatId]: newModelId })
-    },
-  ),
-)
-
-const subChatClaudeModelSourcesStorageAtom = atomWithStorage<
-  Record<string, ClaudeModelSource>
->("agents:subChatClaudeModelSources", {}, undefined, { getOnInit: true })
-
-export const subChatClaudeModelSourceAtomFamily = atomFamily(
-  (subChatId: string) =>
-    atom(
-      (get) => {
-        if (!subChatId) return get(lastSelectedClaudeModelSourceAtom)
-        return (
-          get(subChatClaudeModelSourcesStorageAtom)[subChatId] ??
-          get(lastSelectedClaudeModelSourceAtom)
-        )
-      },
-      (get, set, newModelSource: ClaudeModelSource) => {
-        if (!subChatId) {
-          set(lastSelectedClaudeModelSourceAtom, newModelSource)
-          return
-        }
-        const current = get(subChatClaudeModelSourcesStorageAtom)
-        if (current[subChatId] === newModelSource) return
-        set(subChatClaudeModelSourcesStorageAtom, {
-          ...current,
-          [subChatId]: newModelSource,
-        })
-      },
-    ),
-)
-
-const subChatCodexModelSourcesStorageAtom = atomWithStorage<
-  Record<string, CodexModelSource>
->("agents:subChatCodexModelSources", {}, undefined, { getOnInit: true })
-
-export const subChatCodexModelSourceAtomFamily = atomFamily(
-  (subChatId: string) =>
-    atom(
-      (get) => {
-        if (!subChatId) return get(lastSelectedCodexModelSourceAtom)
-        return (
-          get(subChatCodexModelSourcesStorageAtom)[subChatId] ??
-          get(lastSelectedCodexModelSourceAtom)
-        )
-      },
-      (get, set, newModelSource: CodexModelSource) => {
-        if (!subChatId) {
-          set(lastSelectedCodexModelSourceAtom, newModelSource)
-          return
-        }
-        const current = get(subChatCodexModelSourcesStorageAtom)
-        if (current[subChatId] === newModelSource) return
-        set(subChatCodexModelSourcesStorageAtom, {
-          ...current,
-          [subChatId]: newModelSource,
-        })
-      },
-    ),
-)
-
-// Storage for per-subChat Codex model selection.
-// Falls back to lastSelectedCodexModelIdAtom when sub-chat has no explicit selection yet.
-const subChatCodexModelIdsStorageAtom = atomWithStorage<Record<string, string>>(
-  "agents:subChatCodexModelIds",
-  {},
-  undefined,
-  { getOnInit: true },
-)
-
-export const subChatCodexModelIdAtomFamily = atomFamily((subChatId: string) =>
-  atom(
-    (get) => {
-      if (!subChatId) return get(lastSelectedCodexModelIdAtom)
-      return (
-        get(subChatCodexModelIdsStorageAtom)[subChatId] ??
-        get(lastSelectedCodexModelIdAtom)
-      )
-    },
-    (get, set, newModelId: string) => {
-      if (!subChatId) {
-        set(lastSelectedCodexModelIdAtom, newModelId)
-        return
-      }
-      const current = get(subChatCodexModelIdsStorageAtom)
-      if (current[subChatId] === newModelId) return
-      set(subChatCodexModelIdsStorageAtom, {
-        ...current,
-        [subChatId]: newModelId,
-      })
-    },
-  ),
-)
-
-// Storage for per-subChat Codex thinking level.
-// Falls back to lastSelectedCodexThinkingAtom when sub-chat has no explicit selection yet.
-const subChatCodexThinkingStorageAtom = atomWithStorage<
-  Record<string, CodexThinkingPreference>
->("agents:subChatCodexThinking", {}, undefined, { getOnInit: true })
-
-export const subChatCodexThinkingAtomFamily = atomFamily((subChatId: string) =>
-  atom(
-    (get) => {
-      if (!subChatId) return get(lastSelectedCodexThinkingAtom)
-      return (
-        get(subChatCodexThinkingStorageAtom)[subChatId] ??
-        get(lastSelectedCodexThinkingAtom)
-      )
-    },
-    (get, set, newThinking: CodexThinkingPreference) => {
-      if (!subChatId) {
-        set(lastSelectedCodexThinkingAtom, newThinking)
-        return
-      }
-      const current = get(subChatCodexThinkingStorageAtom)
-      if (current[subChatId] === newThinking) return
-      set(subChatCodexThinkingStorageAtom, {
-        ...current,
-        [subChatId]: newThinking,
-      })
-    },
-  ),
+/** Updates the three persisted Codex new-chat defaults in one Jotai write. */
+export const setLastSelectedCodexSelectionAtom = atom(
+  null,
+  (_get, set, selection: CodexNewChatSelection) => {
+    set(lastSelectedCodexModelSourceAtom, selection.modelSource)
+    set(lastSelectedCodexModelIdAtom, selection.modelId)
+    set(lastSelectedCodexThinkingAtom, selection.thinkingLevel)
+  },
 )
 
 // Storage for all sub-chat modes (persisted per subChatId)
@@ -737,14 +613,25 @@ export const pendingConflictResolutionMessageAtom = atom<{
 
 // Pending auth retry - stores failed message when auth-error occurs
 // After successful OAuth flow, this triggers automatic retry of the message
-export type PendingAuthRetryMessage = {
+type PendingAuthRetryMessageBase = {
   subChatId: string // Required: only retry in the correct chat
-  provider: "claude-code" | "codex"
+  bindingIdentity: string // Exact non-secret binding tuple that owned the failed request
   prompt: string
   images?: ChatImageAttachmentSendInput[]
   longTextAttachments?: LongTextAttachmentPart[]
   readyToRetry: boolean // Only retry when this is true (set by modal on OAuth success)
 }
+export type PendingAuthRetryMessage = PendingAuthRetryMessageBase &
+  (
+    | {
+        provider: "claude-code"
+        requiredCodexAuthMethod?: never
+      }
+    | {
+        provider: "codex"
+        requiredCodexAuthMethod: "chatgpt" | "api_key"
+      }
+  )
 export const pendingAuthRetryMessageAtom = atom<PendingAuthRetryMessage | null>(
   null,
 )
@@ -852,6 +739,7 @@ export const QUESTIONS_TIMED_OUT_MESSAGE = "Timed out"
 export type PendingUserQuestion = {
   subChatId: string
   parentChatId: string
+  approvalId: string
   toolUseId: string
   questions: Array<{
     question: string
@@ -883,13 +771,20 @@ export const pendingPlanApprovalsAtom = atom<Map<string, string>>(new Map())
 // Contains subChatId to approve, null when no pending approval
 export const pendingBuildPlanSubChatIdAtom = atom<string | null>(null)
 
-// Store AskUserQuestion results by toolUseId for real-time updates
-// Map<toolUseId, result>
+// Store AskUserQuestion results by the runtime-event owner's scoped
+// (subChatId, toolUseId) key for real-time updates.
 export const askUserQuestionResultsAtom = atom<Map<string, unknown>>(new Map())
+
+// Exact renderer owner for each main-minted approval identity.
+// Map<approvalId, scoped (subChatId, toolUseId) key>
+export const askUserQuestionApprovalIdsAtom = atom<Map<string, string>>(
+  new Map(),
+)
 
 export type PendingScopeExpansionRequest = {
   subChatId: string
   parentChatId: string
+  requestId: string
   toolUseId: string
   contractId: string
   path?: string

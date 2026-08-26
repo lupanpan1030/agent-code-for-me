@@ -10,6 +10,8 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import { eq } from "drizzle-orm"
 import { app, dialog } from "electron"
+import { createProviderProfileChatSessionBindingWrite } from "../src/shared/chat-session-binding"
+import { createCodexAppServerSmokeBindingTuple } from "./lib/codex-app-server-smoke-binding"
 
 type DbModule = typeof import("../src/main/lib/db")
 type RuntimeChunk = {
@@ -264,9 +266,6 @@ async function main() {
     profileId,
   })
   const { createAppRouter } = await import("../src/main/lib/trpc/routers")
-  const { providerProfileSource } = await import(
-    "../src/shared/provider-profile-types"
-  )
   const { stageLongTextAttachment } = await import(
     "../src/main/lib/long-text-attachments"
   )
@@ -287,6 +286,20 @@ async function main() {
   const db = getDatabase()
   const profile = await assertProviderProfile({ dbModule, profileId })
   const model = readArg("model", profile.defaultModel)
+  if (model !== profile.defaultModel) {
+    throw new Error(
+      `Quick chat smoke model must match the Provider Profile default (${profile.defaultModel}).`,
+    )
+  }
+  const claudeBinding = createProviderProfileChatSessionBindingWrite({
+    runtime: "claude-code",
+    profile: { id: profile.id, defaultModel: model },
+  })
+  const codexBindingTuple = createCodexAppServerSmokeBindingTuple({
+    authMode: "provider",
+    providerProfileId: profile.id,
+    modelId: model,
+  })
   const caller = createAppRouter(() => null).createCaller({
     getWindow: () => null,
   })
@@ -296,10 +309,7 @@ async function main() {
   const claudeQuickChat = await caller.chats.create({
     projectId: null,
     name: `Claude quick chat smoke ${smokeId}`,
-    provider: "claude-code",
-    model,
-    modelSource: providerProfileSource(profile.id),
-    providerProfileId: profile.id,
+    binding: claudeBinding,
     mode: "agent",
     initialMessage: "claude quick chat smoke seed",
     useWorktree: false,
@@ -312,10 +322,7 @@ async function main() {
   const quickChat = await caller.chats.create({
     projectId: null,
     name: `Quick chat smoke ${smokeId}`,
-    provider: "codex",
-    model,
-    modelSource: providerProfileSource(profile.id),
-    providerProfileId: profile.id,
+    binding: codexBindingTuple.binding,
     mode: "agent",
     initialMessage: "quick chat smoke seed",
     useWorktree: false,
@@ -349,8 +356,7 @@ async function main() {
     prompt,
     cwd: folderlessCwd,
     mode: "agent",
-    model,
-    providerProfileId: profile.id,
+    ...codexBindingTuple.request,
     forceNewSession: true,
     images: [],
     longTextAttachments: [
@@ -579,10 +585,7 @@ async function main() {
   const quickDelete = await caller.chats.create({
     projectId: null,
     name: `Quick delete smoke ${smokeId}`,
-    provider: "codex",
-    model,
-    modelSource: providerProfileSource(profile.id),
-    providerProfileId: profile.id,
+    binding: codexBindingTuple.binding,
     mode: "agent",
     initialMessage: "quick delete smoke seed",
     useWorktree: false,
@@ -604,10 +607,7 @@ async function main() {
   const archiveWorkspace = await caller.chats.create({
     projectId,
     name: `Archive workspace smoke ${smokeId}`,
-    provider: "codex",
-    model,
-    modelSource: providerProfileSource(profile.id),
-    providerProfileId: profile.id,
+    binding: codexBindingTuple.binding,
     mode: "agent",
     initialMessage: "archive workspace smoke seed",
     useWorktree: false,
@@ -622,10 +622,7 @@ async function main() {
   const deleteWorkspace = await caller.chats.create({
     projectId,
     name: `Delete workspace smoke ${smokeId}`,
-    provider: "codex",
-    model,
-    modelSource: providerProfileSource(profile.id),
-    providerProfileId: profile.id,
+    binding: codexBindingTuple.binding,
     mode: "agent",
     initialMessage: "delete workspace smoke seed",
     useWorktree: false,
@@ -642,10 +639,7 @@ async function main() {
   const sidebarQuickChat = await caller.chats.create({
     projectId: null,
     name: `Sidebar quick chat smoke ${smokeId}`,
-    provider: "codex",
-    model,
-    modelSource: providerProfileSource(profile.id),
-    providerProfileId: profile.id,
+    binding: codexBindingTuple.binding,
     mode: "agent",
     initialMessage: "sidebar quick chat smoke seed",
     useWorktree: false,

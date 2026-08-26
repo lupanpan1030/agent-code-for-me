@@ -6,6 +6,7 @@ import {
 import type { DesktopRunProviderBinding } from "../agent-runtime/desktop-run-request"
 import {
   getProviderGatewayEndpoint,
+  type ProviderGatewayModelResolution,
   revokeProviderGatewayToken,
 } from "../provider-profiles/gateway"
 import {
@@ -39,6 +40,10 @@ export type CodexDesktopRunProviderBindingDependencies = {
   getProviderGatewayEndpoint: (
     providerId: string,
     kind: "responses",
+    options?: {
+      modelResolution?: ProviderGatewayModelResolution
+      codexChatBoundModelId?: string
+    },
   ) => Promise<ProviderGatewayEndpoint>
   revokeProviderGatewayToken: (token: string) => boolean
   readCodexApiKey: () => string | null
@@ -74,6 +79,8 @@ export type ResolveCodexDesktopRunProviderBindingInput = {
   providerProfileId?: string
   codexAuthMethod?: "chatgpt" | "api_key"
   requestedModel?: string
+  /** DB-admitted Provider Profile modelId without the reserved `/none`. */
+  providerProfileBoundModelId?: string
   signal: AbortSignal
   emit: (chunk: Record<string, unknown>) => unknown
   complete: () => void
@@ -175,9 +182,20 @@ export function createCodexDesktopRunProviderBindingStage(options?: {
         return { ok: false }
       }
       providerUpstreamToken = profile.token || null
+      const providerProfileBoundModelId =
+        input.providerProfileBoundModelId?.trim()
+      if (!providerProfileBoundModelId) {
+        throw new Error(
+          "Codex Provider Profile startup requires the admitted chat model snapshot.",
+        )
+      }
       const gateway = await dependencies.getProviderGatewayEndpoint(
         profile.id,
         "responses",
+        {
+          modelResolution: "codex-chat-binding",
+          codexChatBoundModelId: providerProfileBoundModelId,
+        },
       )
       providerGatewayToken = gateway.token
       providerGatewayTokenRevoked = false
@@ -262,7 +280,10 @@ export function createCodexDesktopRunProviderBindingStage(options?: {
       }
     } else {
       const integration = await dependencies.getCodexIntegrationStatus()
-      if (!integration.isConnected) {
+      // A durable ChatGPT binding must not silently run through a CLI session
+      // authenticated with an API key. The user can explicitly rebind the chat
+      // to openai-api-key instead; this path fails closed.
+      if (integration.state !== "connected_chatgpt") {
         const blocker = createCodexRuntimeBlocker({
           id: "login",
           label: "Codex login",
@@ -288,14 +309,16 @@ export function createCodexDesktopRunProviderBindingStage(options?: {
     }
 
     const selectedModelId = resolveCodexSelectedModelId({
-      requestedModel: input.requestedModel,
+      requestedModel:
+        input.requestedModel ?? providerProfile?.defaultModel ?? undefined,
       hasAppManagedApiKey: Boolean(appManagedApiKey),
     })
     const appServerSelectedModelId = !providerProfile
       ? normalizeCodexAppServerModelId(selectedModelId)
       : selectedModelId
-    const metadataModel =
-      providerProfile?.defaultModel ?? appServerSelectedModelId
+    // A Provider Profile supplies credentials and protocol routing; an explicit
+    // chat binding remains the model truth even if the profile default changes.
+    const metadataModel = appServerSelectedModelId
     const authMode = providerProfile
       ? "provider-profile"
       : appManagedApiKey

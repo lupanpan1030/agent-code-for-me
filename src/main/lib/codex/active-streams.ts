@@ -25,12 +25,12 @@ export function deleteActiveCodexStream(subChatId: string): boolean {
   return activeCodexStreams.delete(subChatId)
 }
 
-export function deleteActiveCodexStreamIfRun(
+export function deleteActiveCodexStreamIfOwner(
   subChatId: string,
-  runId: string,
+  owner: ActiveCodexStream,
 ): boolean {
   const stream = activeCodexStreams.get(subChatId)
-  if (stream?.runId !== runId) return false
+  if (stream !== owner) return false
   activeCodexStreams.delete(subChatId)
   return true
 }
