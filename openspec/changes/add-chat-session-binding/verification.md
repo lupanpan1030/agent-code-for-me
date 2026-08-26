@@ -269,9 +269,11 @@ remaining overlapping-drain P1 in both Engines: B could replace A and settle fir
 single current-owner registry while A still drained. Exact rollback-only blockers now remain in
 the canonical fence owner through each supervised lifecycle, so B releases only B and A still
 blocks rollback without blocking or authorizing B.
-The remediation is awaiting a new staged-tree pin plus two clean re-audits; source-SHA freeze,
-exact-SHA `check:full`, and the required independent review remain pending. No exact-source
-technical verdict is claimed by this plan.
+The remediated candidate was frozen as staged tree
+`506d51c742f07d327417092108ddd706ff2294ee`. Two fresh-context internal audits left that pin
+unchanged and reported no actionable P0-P3 finding. The tree was then committed as source SHA
+`1d019f8d4fab38829ad0e3108e9569b260ab9302`; the exact-source receipt and Codex verdict are
+recorded below. The independent Claude Code review remains pending and is not asserted here.
 
 ## Staged-tree audit remediation (pin `acf33bd7`; candidate invalidated)
 
@@ -470,7 +472,47 @@ used as the exact-source closeout receipt.
 
 ## Exact-source verdict
 
-- Frozen source SHA: pending.
-- Codex verdict: pending.
+- Frozen source SHA: `1d019f8d4fab38829ad0e3108e9569b260ab9302`.
+- Frozen source tree: `506d51c742f07d327417092108ddd706ff2294ee`; it exactly matches the
+  independently audited staged-tree pin.
+- Verified at: `2026-08-26 23:18:37 NZST (+1200)`.
+- Before and after the exact-source gates, the implementation worktree was clean and `HEAD`
+  still resolved to the frozen source SHA. Local `main` remained fixed at
+  `0dee7dc0f31b6b9c44516cbce81b1f63243a4a94`.
+- Fresh-context internal functional audit on the frozen tree: no actionable P0-P3 finding;
+  **96/96** concurrency/maintenance/rollback/persistence/cleanup/registry tests and **248/248**
+  binding/renderer/approval/auth/gateway/final-child-write tests passed; architecture guard
+  passed. Pre/post tree pins were identical and the audit made no file or index change.
+- Fresh-context internal security audit on the frozen tree: no actionable P0-P3 finding;
+  focused matrix **250 passed / 0 failed / 1,259 expectations across 24 files**, including both
+  Engines' same-external-Run-ID A/B overlap with B settling before A, unsubscribe/bulk-clear,
+  process restart/reset, exact checkpoint OID, final native child-write authority, renderer
+  close/reopen, gateway scope, and redaction. Architecture, TypeScript, OpenSpec strict, and
+  cached-diff checks passed; the pre/post tree pins were identical.
+- `bun run check:full` exact-SHA receipt: **exit 0**.
+  - changed-worktree lint: passed (the committed worktree had no changed supported file);
+  - architecture guard: passed;
+  - retired-runtime residue: passed (**1,609 files scanned / 10 allowlisted**);
+  - TypeScript: passed;
+  - tests: **1,897 passed / 0 failed / 9,230 expectations across 302 files**;
+  - OpenSpec all/strict: **55 passed / 0 failed**;
+  - Electron/Vite production build: passed;
+  - patch whitespace check: passed.
+- Exact-source runtime-script smoke: both Bun Node-target bundles externalizing Electron passed,
+  each with **1,069 modules**. Outputs written outside the worktree were **5,675,290 bytes**
+  (`smoke-codex-app-server-desktop`) and **5,675,564 bytes**
+  (`smoke-quick-chat-project-sidebar`).
+- Exact-source headless/public-contract isolation against base `0dee7dc0`: **exit 0** for
+  `src/main/lib/headless/provider-binding.ts`, `src/main/lib/headless/local-job-api.ts`,
+  `src/shared/local-job-api.ts`, and `docs/local-job-api-v1.schema.json`; residue search found
+  zero `subChatBindings` / `sub_chat_bindings` references in the headless/Local Job surfaces.
+- Desktop GUI smoke remains unavailable on this host because Electron cannot load
+  `libnspr4.so`. No GUI scenario is claimed; task 7.4 remains visibly unchecked for Owner risk
+  handling during acceptance.
+- Codex verdict: **`IMPLEMENTATION_VERIFIED`** for
+  `1d019f8d4fab38829ad0e3108e9569b260ab9302`. The five Owner-authorized maintenance/checkpoint
+  constraints and Provider Profile A/TICKET-116 boundary are implemented and covered, and no
+  actionable P0-P3 implementation finding remains. This verdict is exact-source only; any
+  subsequent source change invalidates it.
 - Claude Code independent verdict: pending.
 - Local merge / Owner acceptance / archive: pending.

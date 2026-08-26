@@ -280,7 +280,7 @@
       ref/OID; DB throw preserves the prior row and retracts only the exact published ref;
       unavailable/missing/wrong OID fails before destructive work; and the worktree/history is
       unchanged. Reassert `updateSubChatMessages` is absent from the router surface.
-- [ ] 7.9 Run the post-audit targeted matrix for: final Codex child-write owner loss (same/different
+- [x] 7.9 Run the post-audit targeted matrix for: final Codex child-write owner loss (same/different
       external Run ID, cancel/unsubscribe, command/file/permissions); cross-chat same contract ID;
       renderer A→B approval continuation for both receipt values; mutation→close→receipt→reopen;
       Profile/first-party auth-error teardown; Profile A→B `/models`; and forged native session
@@ -297,7 +297,7 @@
 
 ## 8. Closeout
 
-- [ ] 8.1 Commit the integrated source, run `bun run check:full` on the exact source SHA, and
+- [x] 8.1 Commit the integrated source, run `bun run check:full` on the exact source SHA, and
       bind the SHA + receipt into `verification.md`.
 - [ ] 8.2 Record `IMPLEMENTATION_VERIFIED` (Codex) and fresh-context `REVIEW_APPROVED`
       (Claude) for the same source SHA; any code change after either mark invalidates both. The
