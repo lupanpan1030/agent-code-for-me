@@ -25,6 +25,9 @@ describe("OpenSpec proof evidence gates", () => {
     expect(packageJson.scripts["mcp-registry:proof:evidence"]).toBe(
       "node scripts/check-mcp-registry-proof-evidence.mjs",
     )
+    expect(packageJson.scripts["runtime-control:smoke:evidence"]).toBe(
+      "node scripts/check-runtime-control-smoke-evidence.mjs",
+    )
     expect(packageJson.scripts.test).toBe("bun test --isolate tests")
     expect(packageJson.scripts.check).toContain("bun run test")
   })
@@ -78,5 +81,30 @@ describe("OpenSpec proof evidence gates", () => {
     expect(source).toContain("statusAllowsCheckedTask")
     expect(source).toContain("checked && !statusAllowsCheckedTask")
     expect(source).toContain("!checked && statusAllowsCheckedTask")
+  })
+
+  test("Runtime control desktop smoke evidence gate stays enforced", () => {
+    const result = runEvidenceGate(
+      "scripts/check-runtime-control-smoke-evidence.mjs",
+    )
+
+    expect(result.status).toBe(0)
+    expect(result.stderr).toBe("")
+    expect(result.stdout).toContain("[runtime-control-smoke] evidence status:")
+    expect(result.stdout).toContain("[runtime-control-smoke] task 6.6:")
+  })
+
+  test("Runtime control gate keeps evidence and task-state safeguards", () => {
+    const source = read("scripts/check-runtime-control-smoke-evidence.mjs")
+
+    expect(source).toContain('join(changeDir, "smoke-evidence.md")')
+    expect(source).toContain('join(changeDir, "tasks.md")')
+    expect(source).toContain("Provider call authorization: required")
+    expect(source).toContain('"claude-plan"')
+    expect(source).toContain('"claude-guard"')
+    expect(source).toContain("historicalCodexScenarioPrefix")
+    expect(source).toContain("unsupported status")
+    expect(source).toContain("task66Checked && notPassed.length > 0")
+    expect(source).toContain("!task66Checked && notPassed.length === 0")
   })
 })

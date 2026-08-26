@@ -17,10 +17,11 @@ documentation-only, and that its debt-control machinery has one-way gaps:
   enforced only by behavior tests (`runtime-stream-event-mapper.test.ts`,
   `runtime-redaction.test.ts`). Nothing stops a second event→persisted mapping from growing
   inside `trpc/routers/` or a runtime adapter.
-- `routers/claude.ts` (518 lines) and `routers/codex.ts` (1,334 lines) are *temporary*
-  canonical owners "until service extraction is completed" (`docs/OWNERSHIP_MAP.md`,
-  "Claude/Codex Desktop Chat Runtime"). The tRPC Route Boundary section is prose only; there
-  is no mechanism that stops business logic from re-accreting while extraction is in flight.
+- `routers/claude.ts` (518 draft-time lines) is a *temporary* canonical owner until service
+  extraction is completed. After Foundation 1a, `routers/codex.ts` is instead the canonical
+  orchestration boundary over extracted run-stage owners, but its still-large surface also
+  lacks a mechanical no-growth rule. The tRPC Route Boundary section is prose only; there is
+  no mechanism that stops business logic from re-accreting into either route.
 - The runtime-core import-boundary guard (`assertRuntimeCoreImportBoundary`,
   `scripts/check-architecture-guards.mjs`, `RUNTIME_CORE_DIRECTORIES` near L175) covers five
   directories; `src/main/lib/codex/`, `lib/claude/`, `lib/runtime-mcp-config/`,
@@ -65,16 +66,21 @@ behavior changes.
      allowlist (today: `headless/completion-runner.ts`, `headless/job-runner.ts`,
      `headless/cli-dispatcher.ts`, `desktop-agent-jobs.ts`,
      `agent-runtime/stream-event-mapper.ts`).
-2. **Temporary-owner route ratchet** — new `assertTemporaryOwnerRouteRatchet`: a
+2. **Route surface ratchets** — new `assertRouteSurfaceRatchets`: a
    machine-readable baseline (new `scripts/architecture-baselines.json`, section
-   `temporaryOwnerRoutes`) records line count and the exact named-export set of
+   `routeSurfaceRatchets`) records line count and the exact named-export set of
    `trpc/routers/claude.ts` (hint: 518 lines; `clearClaudeCaches`,
    `getAllMcpConfigHandler`, `claudeRouter`) and `trpc/routers/codex.ts` (hint: 1,334
    lines; `getAllCodexMcpConfigHandler`, `hasActiveCodexStreams`, `abortAllCodexStreams`,
    `codexRouter`). Above-baseline line count or any export not in the baseline set fails;
    below-baseline fails with a "tighten the baseline to N" message so the checked-in number
-   always equals reality. The ratchet retires (replaced by plain import-boundary coverage)
-   when OWNERSHIP_MAP's temporary-owner clauses are retired.
+   always equals reality. The shared mechanism has two deliberately different governance
+   meanings:
+   - `claude.ts` remains a **temporary-owner ratchet** and retires with the approved change
+     that removes its temporary-owner clause.
+   - `codex.ts` is an **orchestration-boundary no-growth ratchet**, not a temporary-owner
+     marker. It retires only through an explicit Owner decision, or in the same approved
+     change that structurally decomposes the route in a later phase such as Job Kernel.
 3. **Import-boundary expansion + direction check + wrapper registry** — extend
    `assertRuntimeCoreImportBoundary`:
    - Add `src/main/lib/codex/`, `lib/claude/`, `lib/runtime-mcp-config/`,
@@ -97,9 +103,12 @@ behavior changes.
      (`src/main/index.ts`, `src/main/windows/main.ts`) are covered by 1a's negative
      source-text assertions, not by this guard.
    - The documented reach-through wrapper list becomes machine-readable: section
-     `reachThroughWrappers` (today: `electron-app`, `db`, `secure-storage`,
-     `provider-token`, `local-only`, `claude-credentials`, `codex/cli-path`,
-     `codex/runtime-status`, `utility-chat-completion`). The guard performs **one-hop**
+   `reachThroughWrappers` (Owner-authorized first freeze: `electron-app`, `db`, `secure-storage`,
+   `provider-token`, `local-only`, `claude-credentials`, `codex/cli-path`,
+   `codex/runtime-status`, `utility-chat-completion`, `chat-attachments`, `mcp-auth`,
+   `skills/registry`). The last three were discovered by the exact post-1a/1b one-hop scan
+   and are one-time bootstrap additions authorized by the Owner on 2026-08-27; after this
+   first freeze the registry may only shrink. The guard performs **one-hop**
      detection: a module outside the guarded directories that both (a) is imported by a
      guarded directory and (b) itself directly imports a banned category must appear in
      the registry, or the guard fails. The guard also asserts the OWNERSHIP_MAP prose list
@@ -147,6 +156,11 @@ behavior changes.
   into (`trpc/routers/agent-utils`, `trpc/routers/claude-settings`, `trpc/routers/debug`) —
   logged as Yellow follow-ups; some may already be cleared by 1a/1b, in which case the
   regenerated baselines are simply smaller.
+- Clearing the three newly frozen one-hop wrappers: direct Electron ownership in
+  `src/main/lib/chat-attachments.ts` (TICKET-119), Electron plus router reach-through in
+  `src/main/lib/mcp-auth.ts` (TICKET-120), and direct Electron ownership in
+  `src/main/lib/skills/registry.ts` (TICKET-121). Each has a dedicated Yellow contraction
+  path; none is implemented in 1c.
 - Capability consent / dangerous-router-input elimination — owned by the blocked
   `update-trpc-capability-boundary` change; this change does not touch the
   `assertNoUnresolvedDangerousRouterInput` allowlist.
@@ -161,7 +175,7 @@ behavior changes.
 | Logic | Canonical owner |
 | --- | --- |
 | All architecture guard assertions (items 1–3) | `scripts/check-architecture-guards.mjs` (existing single guard owner; no second guard script) |
-| Architecture ratchet baselines (routes, import-boundary violations, reverse-direction imports, wrapper registry) | `scripts/architecture-baselines.json` (new; read only by the guard script; updated only via the guard's `--update-architecture-baselines` mode) |
+| Architecture ratchet baselines (route surfaces, import-boundary violations, reverse-direction imports, wrapper registry) | `scripts/architecture-baselines.json` (new; read only by the guard script; updated only via the guard's `--update-architecture-baselines` mode) |
 | Lint ratchet logic | `scripts/run-biome-changed.mjs` (existing lint gate owner) |
 | Lint baseline data | `lint-baseline.json` (new; read only by `run-biome-changed.mjs`; written only via `--update-lint-baseline`) |
 | Residue gate | `scripts/check-retired-runtime-residue.mjs` via the existing `retired-runtime:check` script (invocation unchanged; gains a self-lock, not a copy) |
@@ -219,10 +233,12 @@ JSON baselines are repo-tracked source artifacts, not runtime data.
   (Interactive Runs change); acting on knip findings; scheduling mechanical lint batches;
   migrating 1b's (`add-chat-session-binding`) inline binding-atom allowlist in
   `check-architecture-guards.mjs` into the centralized `architecture-baselines.json`
-  registry.
+  registry; clearing `chat-attachments` / `mcp-auth` / `skills/registry` one-hop wrapper
+  debt under TICKET-119 / TICKET-120 / TICKET-121.
 - **Red (stop and ask Owner)**: raising any baseline number or adding any entry to
   `importBoundaryViolations`, `reverseDirectionImports`, `reachThroughWrappers`, or a
-  route's export set; changing `check` / `check:full` composition beyond the scoped
+  route's export set **after the Owner-authorized first 12-wrapper freeze**; changing
+  `check` / `check:full` composition beyond the scoped
   additions; touching the dangerous-router-input allowlist; weakening or deleting any
   existing guard; anything that alters product behavior, schema semantics, public
   contracts, or security boundaries.
@@ -233,7 +249,7 @@ JSON baselines are repo-tracked source artifacts, not runtime data.
   (directory expansion, frozen-baseline semantics, direction rule, wrapper registry; also
   corrects the existing four-vs-five directory drift: the live guard already enforces
   `model-catalog`), ADDED `Canonical Runtime Event Mapping Single Path`, ADDED
-  `Temporary Route Owner Surface Ratchet`. The orphan-guard wiring, residue-gate self-lock,
+  `Route Surface Growth Ratchets`. The orphan-guard wiring, residue-gate self-lock,
   knip step, and lint ratchet are delivery tooling with no owning capability spec and carry
   no delta. Because deltas exist, archive normally (no `--skip-specs`).
 - Affected code: `scripts/check-architecture-guards.mjs`,
@@ -242,8 +258,10 @@ JSON baselines are repo-tracked source artifacts, not runtime data.
   `.github/workflows/ci.yml` (debt-report step; the main-job `retired-runtime:check` step
   already exists),
   `tests/proof-evidence-gates.test.ts`, `tests/run-biome-changed.test.mjs`,
-  `docs/OWNERSHIP_MAP.md` (registry pointers). No `src/` product code is modified.
-- Conflicts: none with the active changes (`add-cross-workspace-conflicts`'s diff-parser
-  ownership guard is a test, untouched; `update-trpc-capability-boundary` is blocked and
-  its allowlist is untouched). 1a/1b land first; their extractions only shrink the
-  baselines this change freezes.
+  `docs/OWNERSHIP_MAP.md` (Runtime Core registry pointers, neutral tRPC route-ratchet
+  pointer, and the distinct Claude/Codex desktop-route containment and retirement rules).
+  No unrelated OWNERSHIP_MAP section or `src/` product code is modified.
+- Proposal-time conflicts: none. The then-active `add-cross-workspace-conflicts` change
+  used a separate diff-parser ownership test and is now archived;
+  `update-trpc-capability-boundary` remains blocked and its allowlist is untouched. 1a/1b
+  landed first, and their extractions only shrink the baselines this change freezes.

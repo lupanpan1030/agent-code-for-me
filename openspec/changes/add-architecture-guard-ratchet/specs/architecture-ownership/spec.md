@@ -39,32 +39,44 @@ function SHALL be limited to a frozen allowlist that may only shrink.
   detects a duplicate definition and a disallowed raw-write import
 - **AND** the guard run fails closed if the expected findings do not match
 
-### Requirement: Temporary Route Owner Surface Ratchet
+### Requirement: Route Surface Growth Ratchets
 
-While `docs/OWNERSHIP_MAP.md` designates `src/main/lib/trpc/routers/claude.ts` and
-`src/main/lib/trpc/routers/codex.ts` as temporary canonical owners pending service
-extraction, the architecture guard check SHALL enforce a machine-readable ratchet baseline
-over each route file's line count and exact named-export set. A measured line count above
-the baseline, or an export absent from the baseline set, SHALL fail the check. A measured
-line count below the baseline SHALL also fail with an instruction to tighten the baseline,
-so the recorded baseline always equals reality. Baseline raises SHALL require an explicit
-hand edit carrying a recorded reason. When an approved change retires a route's
-temporary-owner clause, the same change SHALL remove that route's ratchet entry and place
-the route under ordinary import-boundary and route-role enforcement.
+The architecture guard check SHALL enforce a machine-readable ratchet baseline over the
+line count and exact named-export set of `src/main/lib/trpc/routers/claude.ts` and
+`src/main/lib/trpc/routers/codex.ts`. A measured line count above the baseline, or an export
+absent from the baseline set, SHALL fail the check. A measured line count below the baseline
+SHALL also fail with an instruction to tighten the baseline, so the recorded baseline always
+equals reality. Baseline raises SHALL require an explicit hand edit carrying a recorded
+reason.
 
-#### Scenario: Temporary owner route grows
+The shared mechanism SHALL preserve distinct ownership meanings. The Claude route SHALL be
+identified as a temporary-owner containment ratchet and SHALL retire in the approved change
+that removes its temporary-owner clause after extraction. The Codex route SHALL be identified
+as an orchestration-boundary no-growth ratchet and SHALL NOT be described as a temporary
+owner. Its ratchet SHALL retire only through an explicit Owner decision, or in the same
+approved change that structurally decomposes the route in a later phase such as Job Kernel.
+
+#### Scenario: Ratcheted route grows
 
 - **WHEN** `claude.ts` or `codex.ts` exceeds its baseline line count or adds an export not
   in its baseline set
 - **THEN** the architecture guard check fails, naming the route, the measured value, and
   the baseline value
 
-#### Scenario: Temporary owner route shrinks
+#### Scenario: Ratcheted route shrinks
 
 - **WHEN** extraction moves logic out of a ratcheted route and its measured line count
   falls below the baseline
 - **THEN** the architecture guard check fails with the exact lower value to record
 - **AND** the same change tightens the baseline to that value
+
+#### Scenario: Codex orchestration ratchet retirement
+
+- **WHEN** the Codex route remains the canonical orchestration boundary after service
+  extraction
+- **THEN** removal of an old temporary-owner clause does not retire its no-growth ratchet
+- **AND** retirement requires an explicit Owner decision or accompanies an approved
+  structural decomposition of that route
 
 ## MODIFIED Requirements
 
@@ -102,7 +114,10 @@ registry read by the architecture guard check, and the ownership map's documente
 list SHALL name exactly the registry entries. The guard SHALL detect one-hop reach-through
 growth: a module outside the guarded directories that is imported by a guarded directory
 and itself directly imports a banned category SHALL appear in the registry, or the check
-fails. Transitive reach beyond one hop through wrapper modules remains allowed at this
+fails. Modules under `src/main/lib/` SHALL use extensionless paths relative to that
+directory as registry names; repository-local modules outside it SHALL use extensionless
+repository-relative paths, so shared modules cannot bypass the rule. Transitive reach
+beyond one hop through wrapper modules remains allowed at this
 stage and deferred by design; a direct import from a guarded directory into a banned
 category still fails.
 

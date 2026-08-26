@@ -90,6 +90,10 @@ jobs:
         continue-on-error: true
         run: bun run lint:all
 
+      - name: Dead code report
+        continue-on-error: true
+        run: bun run debt:knip
+
       - name: Dependency audit report
         continue-on-error: true
         run: bun audit

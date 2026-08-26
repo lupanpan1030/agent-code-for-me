@@ -95,3 +95,15 @@ Foundation 1b 中只登记；需要新的设计、Owner 批准和独立变更。
 | [TICKET-116](TICKET-116-provider-profile-codex-reasoning-effort.md) | Provider Profile Codex reasoning effort 与逐协议翻译 | 🟡 Yellow（能力/协议） | 待设计 / 未授权实施 |
 | [TICKET-117](TICKET-117-provider-helper-default-protocol-eligibility.md) | Provider helper 默认项的协议能力一致性 | 🟡 Yellow（能力/一致性） | 待设计 / 未授权实施 |
 | [TICKET-118](TICKET-118-first-party-chat-model-admission-authority.md) | 一方聊天模型准入与 catalog 权威 | 🟡 Yellow（架构/能力） | 待设计 / 未授权实施 |
+
+## 第六批 — Architecture Guard Ratchet 收缩路径（2026-08-27）
+
+来源：approved OpenSpec `add-architecture-guard-ratchet` 的 post-1a/1b 精确 one-hop
+扫描。Owner 授权将三项真实既有 wrapper 纳入首次 12 项 registry 冻结；以下工单分别提供
+删除对应 registry 项的收缩路径。Foundation 1c 只冻结和登记，不授权修改产品代码。
+
+| 工单 | 标题 | 级别 | 状态 |
+|------|------|------|------|
+| [TICKET-119](TICKET-119-chat-attachments-electron-boundary.md) | Chat attachments 移除 Electron reach-through | 🟡 Yellow（架构） | 待设计 / 未授权实施 |
+| [TICKET-120](TICKET-120-mcp-auth-boundary-extraction.md) | MCP auth 移除 Electron 与 router reach-through | 🟡 Yellow（架构/安全边界） | 待设计 / 未授权实施 |
+| [TICKET-121](TICKET-121-skill-registry-electron-boundary.md) | Skill registry 移除 Electron reach-through | 🟡 Yellow（架构） | 待设计 / 未授权实施 |

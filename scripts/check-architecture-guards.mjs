@@ -1,8 +1,16 @@
 #!/usr/bin/env node
 
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs"
+import { spawnSync } from "node:child_process"
+import {
+  existsSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
+import { load as parseYaml } from "js-yaml"
 import ts from "typescript"
 
 const repoRoot = path.resolve(
@@ -10,6 +18,11 @@ const repoRoot = path.resolve(
   "..",
 )
 const failures = []
+const updateArchitectureBaselines = process.argv.includes(
+  "--update-architecture-baselines",
+)
+const ARCHITECTURE_BASELINE_PATH = "scripts/architecture-baselines.json"
+const OWNERSHIP_MAP_PATH = "docs/OWNERSHIP_MAP.md"
 
 function relative(filePath) {
   return path.relative(repoRoot, filePath).replaceAll(path.sep, "/")
@@ -42,6 +55,7 @@ function unwrapExpression(expression) {
     (ts.isAsExpression(current) ||
       ts.isSatisfiesExpression(current) ||
       ts.isTypeAssertionExpression(current) ||
+      ts.isNonNullExpression(current) ||
       ts.isParenthesizedExpression(current))
   ) {
     current = current.expression
@@ -178,6 +192,11 @@ const RUNTIME_CORE_DIRECTORIES = [
   "src/main/lib/agent-guard",
   "src/main/lib/provider-profiles",
   "src/main/lib/model-catalog",
+  "src/main/lib/codex",
+  "src/main/lib/claude",
+  "src/main/lib/runtime-mcp-config",
+  "src/main/lib/runtime-capability-projection",
+  "src/main/lib/agent-workbench",
 ]
 const RUNTIME_CORE_SOURCE_EXTENSIONS = [
   ".ts",
@@ -435,7 +454,7 @@ function runtimeCoreLoaderCallSyntax(expression, loaderBindings) {
   return null
 }
 
-function collectRuntimeCoreImportBoundaryFindings(filePath, content) {
+function collectDependencyReferences(filePath, content) {
   const sourceFile = ts.createSourceFile(
     filePath,
     content,
@@ -447,10 +466,7 @@ function collectRuntimeCoreImportBoundaryFindings(filePath, content) {
 
   function addFinding(specifier, syntax) {
     if (specifier === null) return
-    const category = runtimeCoreImportCategory(filePath, specifier)
-    if (category) {
-      findings.push({ filePath, specifier, syntax, category })
-    }
+    findings.push({ filePath, specifier, syntax })
   }
 
   function visit(node) {
@@ -500,8 +516,28 @@ function collectRuntimeCoreImportBoundaryFindings(filePath, content) {
   return findings
 }
 
+function collectRuntimeCoreImportBoundaryFindings(filePath, content) {
+  return collectDependencyReferences(filePath, content).flatMap((finding) => {
+    const category = runtimeCoreImportCategory(
+      finding.filePath,
+      finding.specifier,
+    )
+    return category ? [{ ...finding, category }] : []
+  })
+}
+
 function assertRuntimeCoreImportBoundarySelfTest() {
   const fixtures = [
+    {
+      name: "expanded Codex directory Electron import",
+      filePath: "src/main/lib/codex/__architecture_boundary_fixture__.ts",
+      content: 'import { app } from "electron"',
+      expected: {
+        specifier: "electron",
+        syntax: "import declaration",
+        category: "Electron",
+      },
+    },
     {
       name: "side-effect Electron import",
       filePath:
@@ -728,9 +764,30 @@ function assertRuntimeCoreImportBoundarySelfTest() {
   }
 }
 
-function assertRuntimeCoreImportBoundary() {
-  assertRuntimeCoreImportBoundarySelfTest()
+function compareCodePoints(left, right) {
+  return left < right ? -1 : left > right ? 1 : 0
+}
 
+function sortedUnique(values) {
+  return [...new Set(values)].sort(compareCodePoints)
+}
+
+function findingKey(finding, fields) {
+  return fields.map((field) => finding[field]).join("\u0000")
+}
+
+function sortFindings(findings, fields) {
+  const byKey = new Map()
+  for (const finding of findings) {
+    byKey.set(findingKey(finding, fields), finding)
+  }
+  return [...byKey.values()].sort((left, right) =>
+    compareCodePoints(findingKey(left, fields), findingKey(right, fields)),
+  )
+}
+
+function collectCurrentImportBoundaryViolations() {
+  const findings = []
   for (const runtimeCoreDirectory of RUNTIME_CORE_DIRECTORIES) {
     for (const absolutePath of walkFiles(
       runtimeCoreDirectory,
@@ -738,18 +795,1163 @@ function assertRuntimeCoreImportBoundary() {
     )) {
       const filePath = relative(absolutePath)
       const content = readFileSync(absolutePath, "utf8")
-      const findings = collectRuntimeCoreImportBoundaryFindings(
-        filePath,
-        content,
+      findings.push(
+        ...collectRuntimeCoreImportBoundaryFindings(filePath, content).map(
+          ({ category, specifier }) => ({
+            file: filePath,
+            specifier,
+            category,
+          }),
+        ),
       )
+    }
+  }
+  return sortFindings(findings, ["file", "specifier", "category"])
+}
 
-      for (const finding of findings) {
+function collectReverseDirectionImportFindings(filePath, content) {
+  const routerDirectory = path.join(repoRoot, "src/main/lib/trpc/routers")
+  return collectDependencyReferences(filePath, content).flatMap((finding) => {
+    const resolvedTarget = resolveLocalImport(filePath, finding.specifier)
+    return resolvedTarget && isPathInside(resolvedTarget, routerDirectory)
+      ? [{ file: filePath, specifier: finding.specifier }]
+      : []
+  })
+}
+
+function collectCurrentReverseDirectionImports() {
+  const findings = []
+  for (const absolutePath of walkFiles(
+    "src/main/lib",
+    RUNTIME_CORE_SOURCE_EXTENSIONS,
+  )) {
+    const filePath = relative(absolutePath)
+    if (filePath.startsWith("src/main/lib/trpc/")) continue
+    findings.push(
+      ...collectReverseDirectionImportFindings(
+        filePath,
+        readFileSync(absolutePath, "utf8"),
+      ),
+    )
+  }
+  return sortFindings(findings, ["file", "specifier"])
+}
+
+function collectBindingNames(name, result) {
+  if (ts.isIdentifier(name)) {
+    result.add(name.text)
+    return
+  }
+  if (ts.isObjectBindingPattern(name) || ts.isArrayBindingPattern(name)) {
+    for (const element of name.elements) {
+      if (ts.isBindingElement(element))
+        collectBindingNames(element.name, result)
+    }
+  }
+}
+
+function hasModifier(node, kind) {
+  return Boolean(node.modifiers?.some((modifier) => modifier.kind === kind))
+}
+
+function collectNamedExports(filePath, content) {
+  const sourceFile = ts.createSourceFile(
+    filePath,
+    content,
+    ts.ScriptTarget.Latest,
+    true,
+  )
+  const exports = new Set()
+
+  for (const statement of sourceFile.statements) {
+    if (ts.isExportDeclaration(statement)) {
+      if (!statement.exportClause) {
+        exports.add("*")
+      } else if (ts.isNamedExports(statement.exportClause)) {
+        for (const element of statement.exportClause.elements) {
+          exports.add(element.name.text)
+        }
+      } else if (ts.isNamespaceExport(statement.exportClause)) {
+        exports.add(statement.exportClause.name.text)
+      }
+      continue
+    }
+
+    if (
+      !hasModifier(statement, ts.SyntaxKind.ExportKeyword) ||
+      hasModifier(statement, ts.SyntaxKind.DefaultKeyword)
+    ) {
+      continue
+    }
+
+    if (ts.isVariableStatement(statement)) {
+      for (const declaration of statement.declarationList.declarations) {
+        collectBindingNames(declaration.name, exports)
+      }
+    } else if (
+      (ts.isFunctionDeclaration(statement) ||
+        ts.isClassDeclaration(statement) ||
+        ts.isInterfaceDeclaration(statement) ||
+        ts.isTypeAliasDeclaration(statement) ||
+        ts.isEnumDeclaration(statement) ||
+        ts.isModuleDeclaration(statement) ||
+        ts.isImportEqualsDeclaration(statement)) &&
+      statement.name
+    ) {
+      exports.add(statement.name.text)
+    }
+  }
+
+  return [...exports].sort(compareCodePoints)
+}
+
+function countNewlines(content) {
+  return content.split("\n").length - 1
+}
+
+const ROUTE_SURFACE_TARGETS = [
+  {
+    file: "src/main/lib/trpc/routers/claude.ts",
+    governance: "temporary-owner containment",
+    retirement:
+      "retire only with the approved extraction that removes the Claude temporary-owner clause",
+  },
+  {
+    file: "src/main/lib/trpc/routers/codex.ts",
+    governance: "orchestration-boundary no-growth containment",
+    retirement:
+      "retire only by explicit Owner decision or in the same approved structural-decomposition change (for example Job Kernel)",
+  },
+]
+
+function measureRouteSurfaces() {
+  return Object.fromEntries(
+    ROUTE_SURFACE_TARGETS.map(({ file }) => {
+      const content = readText(file)
+      return [
+        file,
+        {
+          lines: countNewlines(content),
+          exports: collectNamedExports(file, content),
+        },
+      ]
+    }),
+  )
+}
+
+function routeSurfaceMessages(file, measured, baseline, target) {
+  const messages = []
+  const note = baseline.raiseNote
+    ? ` Recorded raiseNote: ${baseline.raiseNote}`
+    : ""
+  if (measured.lines > baseline.lines) {
+    messages.push(
+      `${file} ${target.governance} grew to ${measured.lines} lines (baseline ${baseline.lines}). ${target.retirement}; a baseline raise is Red and requires an explicit Owner-approved hand edit.${note}`,
+    )
+  } else if (measured.lines < baseline.lines) {
+    messages.push(
+      `${file} ${target.governance} shrank to ${measured.lines} lines (baseline ${baseline.lines}); tighten routeSurfaceRatchets.${JSON.stringify(file)}.lines to ${measured.lines}.`,
+    )
+  }
+
+  const baselineExports = new Set(baseline.exports)
+  const measuredExports = new Set(measured.exports)
+  const added = measured.exports.filter((name) => !baselineExports.has(name))
+  const removed = baseline.exports.filter((name) => !measuredExports.has(name))
+  if (added.length > 0) {
+    messages.push(
+      `${file} ${target.governance} added named export(s) ${added.join(", ")} outside its ratchet; ${target.retirement}.${note}`,
+    )
+  }
+  if (removed.length > 0) {
+    messages.push(
+      `${file} removed named export(s) ${removed.join(", ")}; tighten routeSurfaceRatchets.${JSON.stringify(file)}.exports to ${JSON.stringify(measured.exports)}.`,
+    )
+  }
+  return messages
+}
+
+function resolveSourceModuleFile(filePath, specifier) {
+  const unresolved = resolveLocalImport(filePath, specifier)
+  if (!unresolved) return null
+
+  const extension = path.extname(unresolved)
+  const bases = [unresolved]
+  if ([".js", ".jsx", ".mjs", ".cjs"].includes(extension)) {
+    bases.push(unresolved.slice(0, -extension.length))
+  }
+  const candidates = []
+  for (const base of bases) {
+    candidates.push(base)
+    for (const sourceExtension of RUNTIME_CORE_SOURCE_EXTENSIONS) {
+      candidates.push(`${base}${sourceExtension}`)
+      candidates.push(path.join(base, `index${sourceExtension}`))
+    }
+  }
+
+  for (const candidate of candidates) {
+    if (existsSync(candidate) && statSync(candidate).isFile()) return candidate
+  }
+  return null
+}
+
+function wrapperRegistryName(absolutePath) {
+  const libDirectory = path.join(repoRoot, "src/main/lib")
+  if (!isPathInside(absolutePath, repoRoot)) return null
+  const repositoryPath = relative(absolutePath)
+  let name = isPathInside(absolutePath, libDirectory)
+    ? repositoryPath.slice("src/main/lib/".length)
+    : repositoryPath
+  for (const extension of RUNTIME_CORE_SOURCE_EXTENSIONS) {
+    if (name.endsWith(extension)) {
+      name = name.slice(0, -extension.length)
+      break
+    }
+  }
+  if (name.endsWith("/index")) name = name.slice(0, -"/index".length)
+  return name
+}
+
+function reachThroughFindingForResolvedModule(
+  importerFile,
+  specifier,
+  resolvedModule,
+  moduleContent,
+) {
+  const guardedDirectories = RUNTIME_CORE_DIRECTORIES.map((directory) =>
+    path.join(repoRoot, directory),
+  )
+  if (
+    guardedDirectories.some((directory) =>
+      isPathInside(resolvedModule, directory),
+    )
+  ) {
+    return null
+  }
+
+  const wrapper = wrapperRegistryName(resolvedModule)
+  if (!wrapper) return null
+  const bannedImports = collectRuntimeCoreImportBoundaryFindings(
+    relative(resolvedModule),
+    moduleContent,
+  )
+  if (bannedImports.length === 0) return null
+  return {
+    importer: importerFile,
+    specifier,
+    wrapper,
+    categories: sortedUnique(bannedImports.map((finding) => finding.category)),
+  }
+}
+
+function collectCurrentReachThroughFindings() {
+  const findings = []
+  for (const runtimeCoreDirectory of RUNTIME_CORE_DIRECTORIES) {
+    for (const absolutePath of walkFiles(
+      runtimeCoreDirectory,
+      RUNTIME_CORE_SOURCE_EXTENSIONS,
+    )) {
+      const importerFile = relative(absolutePath)
+      const importerContent = readFileSync(absolutePath, "utf8")
+      for (const dependency of collectDependencyReferences(
+        importerFile,
+        importerContent,
+      )) {
+        if (runtimeCoreImportCategory(importerFile, dependency.specifier)) {
+          continue
+        }
+        const resolvedModule = resolveSourceModuleFile(
+          importerFile,
+          dependency.specifier,
+        )
+        if (!resolvedModule) continue
+        const finding = reachThroughFindingForResolvedModule(
+          importerFile,
+          dependency.specifier,
+          resolvedModule,
+          readFileSync(resolvedModule, "utf8"),
+        )
+        if (finding) findings.push(finding)
+      }
+    }
+  }
+
+  const byWrapper = new Map()
+  for (const finding of findings) {
+    if (!byWrapper.has(finding.wrapper)) byWrapper.set(finding.wrapper, finding)
+  }
+  return [...byWrapper.values()].sort((left, right) =>
+    compareCodePoints(left.wrapper, right.wrapper),
+  )
+}
+
+const WRAPPER_DOC_START =
+  "<!-- architecture-guard:reach-through-wrappers:start -->"
+const WRAPPER_DOC_END = "<!-- architecture-guard:reach-through-wrappers:end -->"
+// Bootstrap authority only. Once the generated registry is committed, the
+// committed baseline (not this seed or the documentation mirror) is the
+// authoritative upper bound for every update.
+const OWNER_AUTHORIZED_INITIAL_REACH_THROUGH_WRAPPERS = [
+  "chat-attachments",
+  "claude-credentials",
+  "codex/cli-path",
+  "codex/runtime-status",
+  "db",
+  "electron-app",
+  "local-only",
+  "mcp-auth",
+  "provider-token",
+  "secure-storage",
+  "skills/registry",
+  "utility-chat-completion",
+]
+
+function parseDocumentedReachThroughWrappers(content) {
+  if (
+    content.split(WRAPPER_DOC_START).length !== 2 ||
+    content.split(WRAPPER_DOC_END).length !== 2
+  ) {
+    return null
+  }
+  const start = content.indexOf(WRAPPER_DOC_START)
+  const end = content.indexOf(WRAPPER_DOC_END)
+  if (start === -1 || end === -1 || end <= start) return null
+  const block = content.slice(start + WRAPPER_DOC_START.length, end)
+  const wrappers = [...block.matchAll(/^\s*-\s+`([^`]+)`\s*$/gm)].map(
+    (match) => match[1],
+  )
+  return wrappers.length === new Set(wrappers).size ? wrappers : null
+}
+
+function sameStringSet(left, right) {
+  return (
+    JSON.stringify(sortedUnique(left)) === JSON.stringify(sortedUnique(right))
+  )
+}
+
+function unregisteredReachThroughFindings(findings, registry) {
+  const registered = new Set(registry)
+  return findings.filter((finding) => !registered.has(finding.wrapper))
+}
+
+function exactObjectKeys(value, expected, label) {
+  const actual = value && typeof value === "object" ? Object.keys(value) : []
+  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+    fail(
+      `${label} must contain exactly these ordered keys: ${expected.join(", ")}.`,
+    )
+    return false
+  }
+  return true
+}
+
+function validateArchitectureBaselineShape(baseline, label) {
+  if (!baseline || typeof baseline !== "object" || Array.isArray(baseline)) {
+    fail(`${label} must be a JSON object.`)
+    return false
+  }
+  let valid = exactObjectKeys(
+    baseline,
+    [
+      "_meta",
+      "routeSurfaceRatchets",
+      "importBoundaryViolations",
+      "reverseDirectionImports",
+      "reachThroughWrappers",
+    ],
+    label,
+  )
+  const canonicalMeta = architectureBaselineMeta()
+  if (
+    !exactObjectKeys(
+      baseline._meta,
+      Object.keys(canonicalMeta),
+      `${label}._meta`,
+    ) ||
+    JSON.stringify(baseline._meta) !== JSON.stringify(canonicalMeta)
+  ) {
+    fail(
+      `${label}._meta must equal the canonical generated-only/only-shrink policy.`,
+    )
+    valid = false
+  }
+
+  const routeFiles = ROUTE_SURFACE_TARGETS.map((target) => target.file)
+  if (
+    !exactObjectKeys(
+      baseline.routeSurfaceRatchets,
+      routeFiles,
+      `${label}.routeSurfaceRatchets`,
+    )
+  ) {
+    valid = false
+  }
+  for (const file of routeFiles) {
+    const entry = baseline.routeSurfaceRatchets?.[file]
+    const expectedKeys = entry?.raiseNote
+      ? ["lines", "exports", "raiseNote"]
+      : ["lines", "exports"]
+    if (
+      !exactObjectKeys(
+        entry,
+        expectedKeys,
+        `${label}.routeSurfaceRatchets.${file}`,
+      ) ||
+      !Number.isInteger(entry?.lines) ||
+      entry.lines < 0 ||
+      !Array.isArray(entry.exports) ||
+      !entry.exports.every((name) => typeof name === "string") ||
+      JSON.stringify(entry.exports) !==
+        JSON.stringify(sortedUnique(entry.exports)) ||
+      ("raiseNote" in entry &&
+        (typeof entry.raiseNote !== "string" || !entry.raiseNote.trim()))
+    ) {
+      fail(`${label}.routeSurfaceRatchets.${file} has malformed ratchet data.`)
+      valid = false
+    }
+  }
+
+  if (!Array.isArray(baseline.importBoundaryViolations)) {
+    fail(`${label}.importBoundaryViolations must be an array.`)
+    valid = false
+  } else {
+    for (const [
+      index,
+      finding,
+    ] of baseline.importBoundaryViolations.entries()) {
+      if (
+        !exactObjectKeys(
+          finding,
+          ["file", "specifier", "category"],
+          `${label}.importBoundaryViolations[${index}]`,
+        ) ||
+        ![finding.file, finding.specifier, finding.category].every(
+          (value) => typeof value === "string" && value.length > 0,
+        ) ||
+        !["Electron", "tRPC", "renderer", "preload"].includes(finding.category)
+      ) {
+        fail(`${label}.importBoundaryViolations[${index}] is malformed.`)
+        valid = false
+      }
+    }
+    const keys = baseline.importBoundaryViolations.map((finding) =>
+      findingKey(finding, ["file", "specifier", "category"]),
+    )
+    if (JSON.stringify(keys) !== JSON.stringify(sortedUnique(keys))) {
+      fail(
+        `${label}.importBoundaryViolations must be unique and code-point sorted.`,
+      )
+      valid = false
+    }
+  }
+  if (!Array.isArray(baseline.reverseDirectionImports)) {
+    fail(`${label}.reverseDirectionImports must be an array.`)
+    valid = false
+  } else {
+    for (const [index, finding] of baseline.reverseDirectionImports.entries()) {
+      if (
+        !exactObjectKeys(
+          finding,
+          ["file", "specifier"],
+          `${label}.reverseDirectionImports[${index}]`,
+        ) ||
+        ![finding.file, finding.specifier].every(
+          (value) => typeof value === "string" && value.length > 0,
+        )
+      ) {
+        fail(`${label}.reverseDirectionImports[${index}] is malformed.`)
+        valid = false
+      }
+    }
+    const keys = baseline.reverseDirectionImports.map((finding) =>
+      findingKey(finding, ["file", "specifier"]),
+    )
+    if (JSON.stringify(keys) !== JSON.stringify(sortedUnique(keys))) {
+      fail(
+        `${label}.reverseDirectionImports must be unique and code-point sorted.`,
+      )
+      valid = false
+    }
+  }
+  if (
+    !Array.isArray(baseline.reachThroughWrappers) ||
+    !baseline.reachThroughWrappers.every(
+      (wrapper) => typeof wrapper === "string" && wrapper.length > 0,
+    )
+  ) {
+    fail(`${label}.reachThroughWrappers must contain non-empty strings only.`)
+    valid = false
+  } else if (
+    JSON.stringify(baseline.reachThroughWrappers) !==
+    JSON.stringify(sortedUnique(baseline.reachThroughWrappers))
+  ) {
+    fail(`${label}.reachThroughWrappers must be unique and code-point sorted.`)
+    valid = false
+  }
+  return valid
+}
+
+function parseArchitectureBaselineContent(content, label) {
+  try {
+    const baseline = JSON.parse(content)
+    return validateArchitectureBaselineShape(baseline, label) ? baseline : null
+  } catch (error) {
+    fail(
+      `${label} must be valid JSON: ${error instanceof Error ? error.message : String(error)}.`,
+    )
+    return null
+  }
+}
+
+function parseArchitectureBaselines() {
+  const content = readText(ARCHITECTURE_BASELINE_PATH)
+  return content
+    ? parseArchitectureBaselineContent(content, ARCHITECTURE_BASELINE_PATH)
+    : null
+}
+
+function readCommittedArchitectureBaselines() {
+  const result = spawnSync(
+    "git",
+    ["show", `HEAD:${ARCHITECTURE_BASELINE_PATH}`],
+    { cwd: repoRoot, encoding: "utf8" },
+  )
+  if (result.status === 0) {
+    return parseArchitectureBaselineContent(
+      result.stdout,
+      `committed HEAD:${ARCHITECTURE_BASELINE_PATH}`,
+    )
+  }
+  const stderr = String(result.stderr ?? "")
+  if (
+    result.status === 128 &&
+    (stderr.includes("does not exist in") ||
+      stderr.includes("exists on disk, but not in"))
+  ) {
+    return null
+  }
+  fail(
+    `Cannot read the authoritative committed ${ARCHITECTURE_BASELINE_PATH}: ${stderr.trim() || `git exited ${result.status}`}.`,
+  )
+  return null
+}
+
+function collectBootstrapSourceChanges() {
+  const commands = [
+    ["diff", "--name-only", "--diff-filter=ACMRD", "HEAD", "--", "src"],
+    ["ls-files", "--others", "--exclude-standard", "--", "src"],
+  ]
+  const changes = new Set()
+  for (const args of commands) {
+    const result = spawnSync("git", args, {
+      cwd: repoRoot,
+      encoding: "utf8",
+    })
+    if (result.error) {
+      fail(
+        `Cannot verify architecture-baseline bootstrap source state: ${result.error.message}.`,
+      )
+      continue
+    }
+    if (result.status !== 0) {
+      fail(
+        `Cannot verify architecture-baseline bootstrap source state: git ${args.join(" ")} exited ${result.status}.`,
+      )
+      continue
+    }
+    for (const file of result.stdout.split("\n").filter(Boolean)) {
+      changes.add(file)
+    }
+  }
+  return [...changes].sort(compareCodePoints)
+}
+
+function assertCanonicalFindingOrder(findings, fields, label) {
+  const keys = findings.map((finding) => findingKey(finding, fields))
+  if (JSON.stringify(keys) !== JSON.stringify(sortedUnique(keys))) {
+    fail(`${label} must be unique and deterministically sorted.`)
+  }
+}
+
+function frozenFindingSetMessages(current, baseline, fields, label) {
+  const currentByKey = new Map(
+    current.map((finding) => [findingKey(finding, fields), finding]),
+  )
+  const baselineByKey = new Map(
+    baseline.map((finding) => [findingKey(finding, fields), finding]),
+  )
+  const messages = []
+  for (const [key, finding] of currentByKey) {
+    if (!baselineByKey.has(key)) {
+      messages.push(
+        `${label} has an unbaselined finding ${JSON.stringify(finding)}.`,
+      )
+    }
+  }
+  for (const [key, finding] of baselineByKey) {
+    if (!currentByKey.has(key)) {
+      messages.push(
+        `${label} baseline entry ${JSON.stringify(finding)} is stale; delete it to tighten the baseline.`,
+      )
+    }
+  }
+  return messages
+}
+
+function assertRouteSurfaceRatchets(baseline) {
+  const measured = measureRouteSurfaces()
+  const expectedFiles = ROUTE_SURFACE_TARGETS.map((target) => target.file)
+  const baselineFiles = Object.keys(baseline.routeSurfaceRatchets).sort(
+    compareCodePoints,
+  )
+  if (
+    JSON.stringify([...expectedFiles].sort(compareCodePoints)) !==
+    JSON.stringify(baselineFiles)
+  ) {
+    fail(
+      `${ARCHITECTURE_BASELINE_PATH} routeSurfaceRatchets must name exactly ${expectedFiles.join(", ")}.`,
+    )
+    return
+  }
+
+  for (const target of ROUTE_SURFACE_TARGETS) {
+    const entry = baseline.routeSurfaceRatchets[target.file]
+    if (
+      !entry ||
+      !Number.isInteger(entry.lines) ||
+      !Array.isArray(entry.exports)
+    ) {
+      fail(`${target.file} has an invalid routeSurfaceRatchets entry.`)
+      continue
+    }
+    if (
+      JSON.stringify(entry.exports) !==
+      JSON.stringify(sortedUnique(entry.exports))
+    ) {
+      fail(
+        `${target.file} routeSurfaceRatchets exports must be unique and sorted.`,
+      )
+    }
+    for (const message of routeSurfaceMessages(
+      target.file,
+      measured[target.file],
+      entry,
+      target,
+    )) {
+      fail(message)
+    }
+  }
+}
+
+function assertRuntimeCoreImportBoundary(baseline) {
+  assertRuntimeCoreImportBoundarySelfTest()
+  assertCanonicalFindingOrder(
+    baseline.importBoundaryViolations,
+    ["file", "specifier", "category"],
+    `${ARCHITECTURE_BASELINE_PATH} importBoundaryViolations`,
+  )
+  const current = collectCurrentImportBoundaryViolations()
+  for (const message of frozenFindingSetMessages(
+    current,
+    baseline.importBoundaryViolations,
+    ["file", "specifier", "category"],
+    "Runtime Core Import Boundary",
+  )) {
+    fail(`${message} See ${RUNTIME_CORE_OWNERSHIP_SECTION}.`)
+  }
+}
+
+function assertReverseDirectionImports(baseline) {
+  assertCanonicalFindingOrder(
+    baseline.reverseDirectionImports,
+    ["file", "specifier"],
+    `${ARCHITECTURE_BASELINE_PATH} reverseDirectionImports`,
+  )
+  const current = collectCurrentReverseDirectionImports()
+  for (const message of frozenFindingSetMessages(
+    current,
+    baseline.reverseDirectionImports,
+    ["file", "specifier"],
+    "lib-to-tRPC-router reverse-direction check",
+  )) {
+    fail(`${message} See ${RUNTIME_CORE_OWNERSHIP_SECTION}.`)
+  }
+}
+
+function assertReachThroughWrapperRegistry(baseline) {
+  const registry = sortedUnique(baseline.reachThroughWrappers)
+  if (
+    registry.length !== baseline.reachThroughWrappers.length ||
+    JSON.stringify(registry) !== JSON.stringify(baseline.reachThroughWrappers)
+  ) {
+    fail(
+      `${ARCHITECTURE_BASELINE_PATH} reachThroughWrappers must be unique and sorted.`,
+    )
+  }
+
+  const documented = parseDocumentedReachThroughWrappers(
+    readText(OWNERSHIP_MAP_PATH),
+  )
+  if (!documented) {
+    fail(
+      `${OWNERSHIP_MAP_PATH} must contain one unique wrapper registry mirror block.`,
+    )
+  } else if (!sameStringSet(documented, registry)) {
+    fail(
+      `${OWNERSHIP_MAP_PATH} wrapper mirror must name exactly the canonical reachThroughWrappers registry.`,
+    )
+  }
+
+  for (const finding of unregisteredReachThroughFindings(
+    collectCurrentReachThroughFindings(),
+    registry,
+  )) {
+    fail(
+      `${finding.importer} reaches banned ${finding.categories.join("/")} ownership through unregistered one-hop wrapper ${finding.wrapper} (${JSON.stringify(finding.specifier)}); adding a registry entry is Red and requires explicit Owner approval.`,
+    )
+  }
+}
+
+function assertArchitectureRatchetSelfTests() {
+  if (
+    JSON.stringify(sortedUnique(["z", "ä", "a", "Z"])) !==
+    JSON.stringify(["Z", "a", "z", "ä"])
+  ) {
+    fail(
+      "Architecture baseline sorting self-test must use deterministic code-point order.",
+    )
+  }
+
+  const ciSelfTest = parseYaml(`
+jobs:
+  test-typecheck-build:
+    steps:
+      - run: bun run architecture:check
+      - run: bun run retired-runtime:check-disabled
+      - run: bun run retired-runtime:check
+        continue-on-error: true
+  conditional-main:
+    steps:
+      - run: bun run retired-runtime:check
+        if: false
+  nonblocking-job:
+    continue-on-error: true
+    steps:
+      - run: bun run retired-runtime:check
+  conditional-job:
+    if: false
+    steps:
+      - run: bun run retired-runtime:check
+  debt-report:
+    steps:
+      - run: bun run retired-runtime:check
+# run: bun run retired-runtime:check
+`)
+  if (
+    !shellConjunctionRunsExactCommand(
+      "bun run lint && bun run retired-runtime:check && bun run test",
+      "bun run retired-runtime:check",
+    ) ||
+    shellConjunctionRunsExactCommand(
+      "bun run lint && bun run retired-runtime:check-disabled",
+      "bun run retired-runtime:check",
+    ) ||
+    !workflowJobRunsExactBlockingCommand(
+      ciSelfTest,
+      "test-typecheck-build",
+      "bun run architecture:check",
+    ) ||
+    workflowJobRunsExactBlockingCommand(
+      ciSelfTest,
+      "test-typecheck-build",
+      "bun run retired-runtime:check",
+    ) ||
+    workflowJobRunsExactBlockingCommand(
+      ciSelfTest,
+      "conditional-main",
+      "bun run retired-runtime:check",
+    ) ||
+    workflowJobRunsExactBlockingCommand(
+      ciSelfTest,
+      "nonblocking-job",
+      "bun run retired-runtime:check",
+    ) ||
+    workflowJobRunsExactBlockingCommand(
+      ciSelfTest,
+      "conditional-job",
+      "bun run retired-runtime:check",
+    )
+  ) {
+    fail(
+      "Architecture self-lock self-test must require exact package stages and exact commands in the blocking CI job.",
+    )
+  }
+
+  const routeTarget = ROUTE_SURFACE_TARGETS[0]
+  const exactRoute = { lines: 1, exports: ["fixture"] }
+  if (
+    routeSurfaceMessages(routeTarget.file, exactRoute, exactRoute, routeTarget)
+      .length !== 0 ||
+    !routeSurfaceMessages(
+      routeTarget.file,
+      { lines: 2, exports: ["fixture"] },
+      exactRoute,
+      routeTarget,
+    ).some((message) => message.includes("grew to 2 lines")) ||
+    !routeSurfaceMessages(
+      routeTarget.file,
+      { lines: 0, exports: ["fixture"] },
+      exactRoute,
+      routeTarget,
+    ).some((message) => message.includes("tighten")) ||
+    !routeSurfaceMessages(
+      routeTarget.file,
+      { lines: 1, exports: ["fixture", "newExport"] },
+      exactRoute,
+      routeTarget,
+    ).some((message) => message.includes("newExport"))
+  ) {
+    fail(
+      "Route surface ratchet self-test must cover exact, above, below, and unlisted-export cases.",
+    )
+  }
+
+  const baselined = [
+    { file: "fixture.ts", specifier: "electron", category: "Electron" },
+  ]
+  if (
+    frozenFindingSetMessages(
+      baselined,
+      baselined,
+      ["file", "specifier", "category"],
+      "fixture",
+    ).length !== 0 ||
+    !frozenFindingSetMessages(
+      [
+        ...baselined,
+        { file: "new.ts", specifier: "electron", category: "Electron" },
+      ],
+      baselined,
+      ["file", "specifier", "category"],
+      "fixture",
+    ).some((message) => message.includes("unbaselined"))
+  ) {
+    fail(
+      "Architecture finding-baseline self-test must pass frozen findings and reject growth.",
+    )
+  }
+
+  const reverse = collectReverseDirectionImportFindings(
+    "src/main/lib/__architecture_reverse_fixture__.ts",
+    'import type { appRouter } from "./trpc/routers/index"',
+  )
+  if (reverse.length !== 1 || reverse[0].specifier !== "./trpc/routers/index") {
+    fail(
+      "Reverse-direction import self-test must detect a lib-to-router type import.",
+    )
+  }
+
+  const wrapperPath = path.join(repoRoot, "src/main/lib/fixture-wrapper.ts")
+  const wrapperFinding = reachThroughFindingForResolvedModule(
+    "src/main/lib/headless/__architecture_wrapper_fixture__.ts",
+    "../fixture-wrapper",
+    wrapperPath,
+    'import { app } from "electron"',
+  )
+  if (!wrapperFinding) {
+    fail(
+      "Reach-through wrapper self-test must detect an unlisted one-hop wrapper.",
+    )
+  } else if (
+    wrapperFinding.wrapper !== "fixture-wrapper" ||
+    unregisteredReachThroughFindings([wrapperFinding], ["known-wrapper"])
+      .length !== 1
+  ) {
+    fail(
+      "Reach-through wrapper self-test must detect an unlisted one-hop wrapper.",
+    )
+  }
+
+  const sharedWrapperFinding = reachThroughFindingForResolvedModule(
+    "src/main/lib/claude/__architecture_shared_wrapper_fixture__.ts",
+    "../../../shared/fixture-wrapper",
+    path.join(repoRoot, "src/shared/fixture-wrapper.ts"),
+    'import { app } from "electron"',
+  )
+  if (sharedWrapperFinding?.wrapper !== "src/shared/fixture-wrapper") {
+    fail(
+      "Reach-through wrapper self-test must detect repository-local wrappers outside src/main/lib with a canonical repository-relative name.",
+    )
+  }
+
+  const documented = parseDocumentedReachThroughWrappers(
+    `${WRAPPER_DOC_START}\n- \`one\`\n- \`two\`\n${WRAPPER_DOC_END}`,
+  )
+  if (!documented || sameStringSet(documented, ["one", "three"])) {
+    fail("Wrapper documentation self-test must expose registry mismatches.")
+  }
+  const duplicatedDocumentation = parseDocumentedReachThroughWrappers(
+    `${WRAPPER_DOC_START}\n- \`one\`\n${WRAPPER_DOC_END}\n${WRAPPER_DOC_START}\n- \`one\`\n${WRAPPER_DOC_END}`,
+  )
+  if (duplicatedDocumentation) {
+    fail("Wrapper documentation self-test must reject duplicate mirror blocks.")
+  }
+  const authoritativeRoutes = Object.fromEntries(
+    ROUTE_SURFACE_TARGETS.map(({ file }) => [
+      file,
+      { lines: 10, exports: ["existing"] },
+    ]),
+  )
+  const authoritative = {
+    routeSurfaceRatchets: authoritativeRoutes,
+    importBoundaryViolations: [],
+    reverseDirectionImports: [],
+    reachThroughWrappers: ["existing-wrapper"],
+  }
+  const raisedRoutes = Object.fromEntries(
+    ROUTE_SURFACE_TARGETS.map(({ file }) => [
+      file,
+      { lines: 11, exports: ["added", "existing"] },
+    ]),
+  )
+  const handRaised = {
+    routeSurfaceRatchets: raisedRoutes,
+    importBoundaryViolations: [
+      { file: "new.ts", specifier: "electron", category: "Electron" },
+    ],
+    reverseDirectionImports: [
+      { file: "new.ts", specifier: "./trpc/routers/new" },
+    ],
+    reachThroughWrappers: ["existing-wrapper", "new-wrapper"],
+  }
+  const raiseMessages = architectureBaselineRaiseMessages(
+    handRaised,
+    authoritative,
+    "fixture",
+  )
+  const shrinking = {
+    routeSurfaceRatchets: Object.fromEntries(
+      ROUTE_SURFACE_TARGETS.map(({ file }) => [
+        file,
+        { lines: 9, exports: [] },
+      ]),
+    ),
+    importBoundaryViolations: [],
+    reverseDirectionImports: [],
+    reachThroughWrappers: [],
+  }
+  if (
+    !raiseMessages.some((message) => message.includes("raises")) ||
+    !raiseMessages.some((message) => message.includes("export")) ||
+    !raiseMessages.some((message) =>
+      message.includes("importBoundaryViolations"),
+    ) ||
+    !raiseMessages.some((message) =>
+      message.includes("reverseDirectionImports"),
+    ) ||
+    !raiseMessages.some((message) => message.includes("new-wrapper")) ||
+    architectureBaselineRaiseMessages(shrinking, authoritative, "fixture")
+      .length !== 0
+  ) {
+    fail(
+      "Architecture update self-test must reject every raise/addition while allowing only-shrink candidates.",
+    )
+  }
+}
+
+function architectureBaselineMeta() {
+  return {
+    generatedBy:
+      "node scripts/check-architecture-guards.mjs --update-architecture-baselines",
+    onlyShrink:
+      "Generated counts and entries may only decrease. Any raise or new entry requires an explicit Owner-approved hand edit with its reason recorded in the implementing change.",
+    routeSemantics:
+      "routeSurfaceRatchets is a neutral data schema; Claude is temporary-owner containment and Codex is orchestration-boundary no-growth containment as defined by docs/OWNERSHIP_MAP.md.",
+    reachThroughWrapperBootstrap:
+      "The first 12-entry registry was Owner-authorized on 2026-08-27. After that freeze, entries may only be deleted.",
+  }
+}
+
+function baselineGrowth(current, baseline, fields) {
+  const allowed = new Set(
+    baseline.map((finding) => findingKey(finding, fields)),
+  )
+  return current.filter((finding) => !allowed.has(findingKey(finding, fields)))
+}
+
+function architectureBaselineRaiseMessages(candidate, authoritative, label) {
+  const messages = []
+  for (const target of ROUTE_SURFACE_TARGETS) {
+    const nextEntry = candidate.routeSurfaceRatchets[target.file]
+    const oldEntry = authoritative.routeSurfaceRatchets[target.file]
+    if (nextEntry.lines > oldEntry.lines) {
+      messages.push(
+        `${label} raises ${target.file} from ${oldEntry.lines} to ${nextEntry.lines} lines`,
+      )
+    }
+    const oldExports = new Set(oldEntry.exports)
+    const addedExports = nextEntry.exports.filter(
+      (name) => !oldExports.has(name),
+    )
+    if (addedExports.length > 0) {
+      messages.push(
+        `${label} adds ${target.file} export(s) ${addedExports.join(", ")}`,
+      )
+    }
+  }
+  for (const finding of baselineGrowth(
+    candidate.importBoundaryViolations,
+    authoritative.importBoundaryViolations,
+    ["file", "specifier", "category"],
+  )) {
+    messages.push(
+      `${label} adds importBoundaryViolations entry ${JSON.stringify(finding)}`,
+    )
+  }
+  for (const finding of baselineGrowth(
+    candidate.reverseDirectionImports,
+    authoritative.reverseDirectionImports,
+    ["file", "specifier"],
+  )) {
+    messages.push(
+      `${label} adds reverseDirectionImports entry ${JSON.stringify(finding)}`,
+    )
+  }
+  const oldWrappers = new Set(authoritative.reachThroughWrappers)
+  for (const wrapper of candidate.reachThroughWrappers) {
+    if (!oldWrappers.has(wrapper)) {
+      messages.push(`${label} adds reachThroughWrappers entry ${wrapper}`)
+    }
+  }
+  return messages
+}
+
+function formatGeneratedArchitectureBaseline() {
+  const biomeEntry = path.join(
+    repoRoot,
+    "node_modules/@biomejs/biome/bin/biome",
+  )
+  if (!existsSync(biomeEntry)) {
+    fail(
+      `Cannot format generated ${ARCHITECTURE_BASELINE_PATH}: ${relative(biomeEntry)} is missing.`,
+    )
+    return
+  }
+  const result = spawnSync(
+    process.execPath,
+    [biomeEntry, "format", "--write", ARCHITECTURE_BASELINE_PATH],
+    { cwd: repoRoot, encoding: "utf8" },
+  )
+  if (result.status !== 0) {
+    fail(
+      `Cannot format generated ${ARCHITECTURE_BASELINE_PATH}: ${String(result.stderr || result.stdout).trim() || `Biome exited ${result.status}`}.`,
+    )
+  }
+}
+
+function updateArchitectureBaselineRegistry() {
+  assertRuntimeCoreImportBoundarySelfTest()
+  assertArchitectureRatchetSelfTests()
+
+  const documentedWrappers = parseDocumentedReachThroughWrappers(
+    readText(OWNERSHIP_MAP_PATH),
+  )
+  if (!documentedWrappers) {
+    fail(
+      `${OWNERSHIP_MAP_PATH} must contain a unique wrapper mirror block before baseline generation.`,
+    )
+    return
+  }
+  const nextWrappers = sortedUnique(documentedWrappers)
+  const workingBaseline = existsSync(
+    path.join(repoRoot, ARCHITECTURE_BASELINE_PATH),
+  )
+    ? parseArchitectureBaselines()
+    : null
+  const authoritativeBaseline = readCommittedArchitectureBaselines()
+  const comparisonBaseline = authoritativeBaseline ?? workingBaseline
+  if (
+    !authoritativeBaseline &&
+    JSON.stringify(nextWrappers) !==
+      JSON.stringify(OWNER_AUTHORIZED_INITIAL_REACH_THROUGH_WRAPPERS)
+  ) {
+    fail(
+      `The first reachThroughWrappers freeze must equal the exact Owner-authorized 12-entry bootstrap ${JSON.stringify(OWNER_AUTHORIZED_INITIAL_REACH_THROUGH_WRAPPERS)}.`,
+    )
+  }
+  if (!authoritativeBaseline) {
+    const bootstrapSourceChanges = collectBootstrapSourceChanges()
+    if (bootstrapSourceChanges.length > 0) {
+      fail(
+        `Architecture baseline bootstrap refuses source-tree changes before the first baseline commit: ${bootstrapSourceChanges.join(", ")}. Foundation 1c does not authorize src/ product changes.`,
+      )
+    }
+  }
+
+  const routeSurfaces = measureRouteSurfaces()
+  const importBoundaryViolations = collectCurrentImportBoundaryViolations()
+  const reverseDirectionImports = collectCurrentReverseDirectionImports()
+
+  const routeSurfaceRatchets = Object.fromEntries(
+    ROUTE_SURFACE_TARGETS.map(({ file }) => {
+      const entry = { ...routeSurfaces[file] }
+      const raiseNote =
+        comparisonBaseline?.routeSurfaceRatchets?.[file]?.raiseNote
+      if (raiseNote) entry.raiseNote = raiseNote
+      return [file, entry]
+    }),
+  )
+  const nextBaseline = {
+    _meta: architectureBaselineMeta(),
+    routeSurfaceRatchets,
+    importBoundaryViolations,
+    reverseDirectionImports,
+    reachThroughWrappers: nextWrappers,
+  }
+
+  if (authoritativeBaseline) {
+    if (workingBaseline) {
+      for (const message of architectureBaselineRaiseMessages(
+        workingBaseline,
+        authoritativeBaseline,
+        "Working baseline hand edit",
+      )) {
         fail(
-          `${finding.filePath} directly imports banned ${finding.category} dependency ${JSON.stringify(finding.specifier)} via ${finding.syntax}; see ${RUNTIME_CORE_OWNERSHIP_SECTION}.`,
+          `Update refused: ${message}; raises/additions require explicit Owner handling outside update mode.`,
         )
       }
     }
   }
+  if (comparisonBaseline) {
+    for (const message of architectureBaselineRaiseMessages(
+      nextBaseline,
+      comparisonBaseline,
+      authoritativeBaseline
+        ? "Measured baseline"
+        : "Bootstrap measured baseline",
+    )) {
+      fail(
+        `Update refused: ${message}; raises/additions require an Owner-approved hand edit outside update mode.`,
+      )
+    }
+  }
+
+  const wrapperSet = new Set(nextWrappers)
+  for (const finding of collectCurrentReachThroughFindings()) {
+    if (!wrapperSet.has(finding.wrapper)) {
+      fail(
+        `Update refused: detected unregistered one-hop wrapper ${finding.wrapper}; adding it is Red and requires explicit Owner approval.`,
+      )
+    }
+  }
+  if (failures.length > 0) return
+  writeFileSync(
+    path.join(repoRoot, ARCHITECTURE_BASELINE_PATH),
+    `${JSON.stringify(nextBaseline, null, 2)}\n`,
+  )
+  formatGeneratedArchitectureBaseline()
+  if (failures.length > 0) return
+  console.log(`Updated ${ARCHITECTURE_BASELINE_PATH}.`)
 }
 
 const DANGEROUS_ROUTER_INPUT_FIELDS = new Set([
@@ -1450,15 +2652,96 @@ function assertPackageScripts() {
       "package.json scripts.architecture:check must run scripts/check-architecture-guards.mjs.",
     )
   }
-  if (!String(scripts.check ?? "").includes("bun run architecture:check")) {
+  if (
+    !shellConjunctionRunsExactCommand(
+      scripts.check,
+      "bun run architecture:check",
+    )
+  ) {
     fail("package.json scripts.check must include bun run architecture:check.")
+  }
+  if (
+    scripts["retired-runtime:check"] !==
+    "node scripts/check-retired-runtime-residue.mjs"
+  ) {
+    fail(
+      "package.json scripts.retired-runtime:check must run scripts/check-retired-runtime-residue.mjs.",
+    )
+  }
+  if (
+    !shellConjunctionRunsExactCommand(
+      scripts.check,
+      "bun run retired-runtime:check",
+    )
+  ) {
+    fail(
+      "package.json scripts.check must include bun run retired-runtime:check.",
+    )
   }
 }
 
+function shellConjunctionRunsExactCommand(script, command) {
+  return String(script ?? "")
+    .split("&&")
+    .some((stage) => stage.trim() === command)
+}
+
+function workflowJobRunsExactBlockingCommand(workflow, jobId, command) {
+  const job = workflow?.jobs?.[jobId]
+  const steps = job?.steps
+  return (
+    job &&
+    typeof job === "object" &&
+    (job["continue-on-error"] === undefined ||
+      job["continue-on-error"] === false) &&
+    job.if === undefined &&
+    Array.isArray(steps) &&
+    steps.some(
+      (step) =>
+        step &&
+        typeof step === "object" &&
+        typeof step.run === "string" &&
+        step.run.trim() === command &&
+        (step["continue-on-error"] === undefined ||
+          step["continue-on-error"] === false) &&
+        step.if === undefined,
+    )
+  )
+}
+
 function assertCiRunsArchitectureCheck() {
-  const ci = readText(".github/workflows/ci.yml")
-  if (!/\brun:\s*bun run architecture:check\b/.test(ci)) {
-    fail("GitHub CI must run bun run architecture:check.")
+  const ciSource = readText(".github/workflows/ci.yml")
+  let ci
+  try {
+    ci = parseYaml(ciSource)
+  } catch (error) {
+    fail(
+      `.github/workflows/ci.yml must be valid YAML: ${error instanceof Error ? error.message : String(error)}.`,
+    )
+    return
+  }
+  const mainJob = "test-typecheck-build"
+  if (
+    !workflowJobRunsExactBlockingCommand(
+      ci,
+      mainJob,
+      "bun run architecture:check",
+    )
+  ) {
+    fail(
+      `GitHub CI job ${mainJob} must run the exact blocking, unconditional command bun run architecture:check.`,
+    )
+  }
+  if (
+    !workflowJobRunsExactBlockingCommand(
+      ci,
+      mainJob,
+      "bun run retired-runtime:check",
+    )
+  ) {
+    fail(
+      `GitHub CI job ${mainJob} must run the exact blocking, unconditional command bun run retired-runtime:check.`,
+    )
   }
 }
 
@@ -1556,6 +2839,488 @@ function assertGuardDecisionSingleOwner() {
     fail(
       `decideClaudeToolUse must be exported only from ${owner}; found ${exports.join(", ") || "none"}.`,
     )
+  }
+}
+
+const RUNTIME_EVENT_SYMBOL_OWNERS = new Map([
+  ["createRunEvent", "src/main/lib/agent-runtime/runtime-events.ts"],
+  [
+    "mapDesktopStreamChunkToRunEvents",
+    "src/main/lib/agent-runtime/stream-event-mapper.ts",
+  ],
+  [
+    "createDesktopStreamEventMapper",
+    "src/main/lib/agent-runtime/stream-event-mapper.ts",
+  ],
+  [
+    "appendRunEventsToAgentJob",
+    "src/main/lib/agent-runtime/stream-event-mapper.ts",
+  ],
+  [
+    "redactRendererDiagnosticChunk",
+    "src/main/lib/agent-runtime/stream-event-mapper.ts",
+  ],
+  [
+    "redactRendererRuntimeChunk",
+    "src/main/lib/agent-runtime/stream-event-mapper.ts",
+  ],
+  [
+    "createRuntimeRendererChunkEmitter",
+    "src/main/lib/agent-runtime/stream-event-mapper.ts",
+  ],
+  ["createAgentJobRunEvent", "src/main/lib/agent-runtime/job-event-bridge.ts"],
+  ["redactRuntimePayload", "src/main/lib/agent-runtime/redaction.ts"],
+  ["redactExactSecretHints", "src/main/lib/agent-runtime/redaction.ts"],
+])
+const JOB_EVENT_STORE_OWNER = "src/main/lib/headless/job-store.ts"
+const APPEND_AGENT_JOB_EVENT_IMPORTERS = [
+  "src/main/lib/agent-runtime/stream-event-mapper.ts",
+  "src/main/lib/desktop-agent-jobs.ts",
+  "src/main/lib/headless/cli-dispatcher.ts",
+  "src/main/lib/headless/completion-runner.ts",
+  "src/main/lib/headless/job-runner.ts",
+]
+const RUNTIME_EVENT_OWNERSHIP_SECTION =
+  'docs/OWNERSHIP_MAP.md "Runtime Events, Trace, And Redaction"'
+
+function collectTrackedSymbolFacts(filePath, content, trackedSymbols) {
+  const sourceFile = ts.createSourceFile(
+    filePath,
+    content,
+    ts.ScriptTarget.Latest,
+    true,
+  )
+  const definitions = new Set()
+  const exports = new Set()
+
+  function recordBinding(name, destination) {
+    const names = new Set()
+    collectBindingNames(name, names)
+    for (const candidate of names) {
+      if (trackedSymbols.has(candidate)) destination.add(candidate)
+    }
+  }
+
+  function visit(node) {
+    if (ts.isVariableDeclaration(node)) {
+      recordBinding(node.name, definitions)
+      const statement = node.parent?.parent
+      if (
+        statement &&
+        ts.isVariableStatement(statement) &&
+        hasModifier(statement, ts.SyntaxKind.ExportKeyword)
+      ) {
+        recordBinding(node.name, exports)
+      }
+    } else if (
+      (ts.isFunctionDeclaration(node) ||
+        ts.isClassDeclaration(node) ||
+        ts.isEnumDeclaration(node)) &&
+      node.name &&
+      trackedSymbols.has(node.name.text)
+    ) {
+      definitions.add(node.name.text)
+      if (hasModifier(node, ts.SyntaxKind.ExportKeyword)) {
+        exports.add(node.name.text)
+      }
+    } else if (
+      ts.isExportDeclaration(node) &&
+      node.exportClause &&
+      ts.isNamedExports(node.exportClause)
+    ) {
+      for (const element of node.exportClause.elements) {
+        const localName = element.propertyName?.text ?? element.name.text
+        if (
+          trackedSymbols.has(localName) ||
+          trackedSymbols.has(element.name.text)
+        ) {
+          const symbol = trackedSymbols.has(element.name.text)
+            ? element.name.text
+            : localName
+          definitions.add(symbol)
+          exports.add(symbol)
+        }
+      }
+    }
+    ts.forEachChild(node, visit)
+  }
+
+  visit(sourceFile)
+  return { definitions, exports }
+}
+
+function collectActualExportNamesForSymbol(filePath, content, symbol) {
+  const sourceFile = ts.createSourceFile(
+    filePath,
+    content,
+    ts.ScriptTarget.Latest,
+    true,
+  )
+  const aliases = new Set([symbol])
+  const aliasCandidates = []
+  for (const statement of sourceFile.statements) {
+    if (!ts.isVariableStatement(statement)) continue
+    for (const declaration of statement.declarationList.declarations) {
+      const initializer = unwrapExpression(declaration.initializer)
+      if (
+        ts.isIdentifier(declaration.name) &&
+        initializer &&
+        ts.isIdentifier(initializer)
+      ) {
+        aliasCandidates.push({
+          alias: declaration.name.text,
+          target: initializer.text,
+        })
+      }
+    }
+  }
+  let changed = true
+  while (changed) {
+    changed = false
+    for (const candidate of aliasCandidates) {
+      if (aliases.has(candidate.target) && !aliases.has(candidate.alias)) {
+        aliases.add(candidate.alias)
+        changed = true
+      }
+    }
+  }
+
+  const names = []
+
+  for (const statement of sourceFile.statements) {
+    if (
+      ts.isExportDeclaration(statement) &&
+      statement.exportClause &&
+      ts.isNamedExports(statement.exportClause)
+    ) {
+      for (const element of statement.exportClause.elements) {
+        const localName = element.propertyName?.text ?? element.name.text
+        if (aliases.has(localName)) names.push(element.name.text)
+      }
+      continue
+    }
+
+    if (
+      ts.isExportAssignment(statement) &&
+      !statement.isExportEquals &&
+      ts.isIdentifier(unwrapExpression(statement.expression)) &&
+      aliases.has(unwrapExpression(statement.expression).text)
+    ) {
+      names.push("default")
+      continue
+    }
+
+    if (!hasModifier(statement, ts.SyntaxKind.ExportKeyword)) continue
+    if (
+      (ts.isFunctionDeclaration(statement) ||
+        ts.isClassDeclaration(statement) ||
+        ts.isEnumDeclaration(statement)) &&
+      statement.name?.text === symbol
+    ) {
+      names.push(
+        hasModifier(statement, ts.SyntaxKind.DefaultKeyword)
+          ? "default"
+          : symbol,
+      )
+    } else if (ts.isVariableStatement(statement)) {
+      for (const declaration of statement.declarationList.declarations) {
+        const bindings = new Set()
+        collectBindingNames(declaration.name, bindings)
+        for (const binding of bindings) {
+          if (aliases.has(binding)) names.push(binding)
+        }
+      }
+    }
+  }
+
+  return sortedUnique(names)
+}
+
+function stripSourceExtension(filePath) {
+  for (const extension of RUNTIME_CORE_SOURCE_EXTENSIONS) {
+    if (filePath.endsWith(extension))
+      return filePath.slice(0, -extension.length)
+  }
+  return filePath
+}
+
+function moduleSpecifierTargetsFile(fromFile, specifier, targetFile) {
+  const resolved = resolveLocalImport(fromFile, specifier)
+  if (!resolved) return false
+  const normalizedResolved = stripSourceExtension(path.normalize(resolved))
+  const normalizedTarget = stripSourceExtension(
+    path.normalize(path.join(repoRoot, targetFile)),
+  )
+  return (
+    normalizedResolved === normalizedTarget ||
+    path.join(normalizedResolved, "index") === normalizedTarget
+  )
+}
+
+function reexportsWholeModuleFrom(filePath, content, targetFile) {
+  const sourceFile = ts.createSourceFile(
+    filePath,
+    content,
+    ts.ScriptTarget.Latest,
+    true,
+  )
+  return sourceFile.statements.some(
+    (statement) =>
+      ts.isExportDeclaration(statement) &&
+      statement.moduleSpecifier &&
+      (!statement.exportClause ||
+        ts.isNamespaceExport(statement.exportClause)) &&
+      moduleSpecifierTargetsFile(
+        filePath,
+        stringLiteralValue(statement.moduleSpecifier) ?? "",
+        targetFile,
+      ),
+  )
+}
+
+function importsNamedSymbolFrom(filePath, content, targetFile, symbol) {
+  const importsTarget = collectDependencyReferences(filePath, content).some(
+    (dependency) =>
+      moduleSpecifierTargetsFile(filePath, dependency.specifier, targetFile),
+  )
+  if (!importsTarget) return false
+
+  const sourceFile = ts.createSourceFile(
+    filePath,
+    content,
+    ts.ScriptTarget.Latest,
+    true,
+  )
+  let found = false
+  function visit(node) {
+    if (ts.isIdentifier(node) && node.text === symbol) {
+      found = true
+    } else if (
+      ts.isElementAccessExpression(node) &&
+      stringLiteralValue(node.argumentExpression) === symbol
+    ) {
+      found = true
+    }
+    if (!found) ts.forEachChild(node, visit)
+  }
+  visit(sourceFile)
+  return found
+}
+
+function assertRuntimeEventSinglePathSelfTest() {
+  const duplicate = collectTrackedSymbolFacts(
+    "src/main/lib/duplicate.ts",
+    "export function createRunEvent() {}",
+    new Set(RUNTIME_EVENT_SYMBOL_OWNERS.keys()),
+  )
+  const rawImport = importsNamedSymbolFrom(
+    "src/main/lib/disallowed.ts",
+    'import { appendAgentJobEvent } from "./headless/job-store"',
+    JOB_EVENT_STORE_OWNER,
+    "appendAgentJobEvent",
+  )
+  const clean = collectTrackedSymbolFacts(
+    "src/main/lib/clean.ts",
+    'import { createAgentJobRunEvent as bridge } from "./agent-runtime/job-event-bridge"; void bridge',
+    new Set(RUNTIME_EVENT_SYMBOL_OWNERS.keys()),
+  )
+  const privateOwner = collectTrackedSymbolFacts(
+    "src/main/lib/private-owner.ts",
+    "function createRunEvent() {}",
+    new Set(RUNTIME_EVENT_SYMBOL_OWNERS.keys()),
+  )
+  const secondaryReexport = collectTrackedSymbolFacts(
+    "src/main/lib/secondary.ts",
+    'export { createRunEvent } from "./agent-runtime/runtime-events"',
+    new Set(RUNTIME_EVENT_SYMBOL_OWNERS.keys()),
+  )
+  const rawImportFixtures = [
+    'import { appendAgentJobEvent } from "./headless/job-store"',
+    'import * as store from "./headless/job-store"; store.appendAgentJobEvent',
+    'const store = await import("./headless/job-store"); store.appendAgentJobEvent',
+    'import store = require("./headless/job-store"); store.appendAgentJobEvent',
+    'const { appendAgentJobEvent } = require("./headless/job-store")',
+    'const store = module.require("./headless/job-store"); store["appendAgentJobEvent"]',
+    'import { createRequire } from "node:module"; const load = createRequire(import.meta.url); const store = load("./headless/job-store"); store.appendAgentJobEvent',
+  ]
+  const detectsEveryRawImportSyntax = rawImportFixtures.every((content) =>
+    importsNamedSymbolFrom(
+      "src/main/lib/disallowed.ts",
+      content,
+      JOB_EVENT_STORE_OWNER,
+      "appendAgentJobEvent",
+    ),
+  )
+  const ignoresOtherJobStoreImports = !importsNamedSymbolFrom(
+    "src/main/lib/clean-job-store-import.ts",
+    'import { getAgentJob } from "./headless/job-store"; const example = "appendAgentJobEvent"; void getAgentJob; void example',
+    JOB_EVENT_STORE_OWNER,
+    "appendAgentJobEvent",
+  )
+  const aliasedAppendExports = collectActualExportNamesForSymbol(
+    JOB_EVENT_STORE_OWNER,
+    "const rawWrite = appendAgentJobEvent; export const rawWriteAgain = rawWrite; export { appendAgentJobEvent, rawWrite }; export default rawWriteAgain",
+    "appendAgentJobEvent",
+  )
+  const defaultInsertExport = collectActualExportNamesForSymbol(
+    JOB_EVENT_STORE_OWNER,
+    "export const rawInsert = insertAgentJobEventRecord; export default rawInsert",
+    "insertAgentJobEventRecord",
+  )
+  if (
+    !duplicate.definitions.has("createRunEvent") ||
+    !duplicate.exports.has("createRunEvent") ||
+    !rawImport ||
+    clean.definitions.size !== 0 ||
+    clean.exports.size !== 0 ||
+    !privateOwner.definitions.has("createRunEvent") ||
+    privateOwner.exports.has("createRunEvent") ||
+    !secondaryReexport.exports.has("createRunEvent") ||
+    !detectsEveryRawImportSyntax ||
+    !ignoresOtherJobStoreImports ||
+    JSON.stringify(aliasedAppendExports) !==
+      JSON.stringify([
+        "appendAgentJobEvent",
+        "default",
+        "rawWrite",
+        "rawWriteAgain",
+      ]) ||
+    JSON.stringify(defaultInsertExport) !==
+      JSON.stringify(["default", "rawInsert"])
+  ) {
+    fail(
+      "Canonical runtime-event single-path self-test must detect duplicate definitions and raw-write imports while accepting a bridge consumer.",
+    )
+  }
+}
+
+function assertRuntimeEventSinglePath() {
+  assertRuntimeEventSinglePathSelfTest()
+  const tracked = new Set([
+    ...RUNTIME_EVENT_SYMBOL_OWNERS.keys(),
+    "appendAgentJobEvent",
+    "insertAgentJobEventRecord",
+  ])
+  const definitionSites = new Map(
+    [...RUNTIME_EVENT_SYMBOL_OWNERS.keys()].map((symbol) => [symbol, []]),
+  )
+  const exportSites = new Map(
+    [...RUNTIME_EVENT_SYMBOL_OWNERS.keys()].map((symbol) => [symbol, []]),
+  )
+  const exportedAppendSites = []
+  let canonicalAppendExportNames = []
+  let canonicalInsertExportNames = []
+  const exportedInsertSites = []
+  const directImporters = []
+
+  for (const absolutePath of walkFiles("src", RUNTIME_CORE_SOURCE_EXTENSIONS)) {
+    const filePath = relative(absolutePath)
+    const content = readFileSync(absolutePath, "utf8")
+    const facts = collectTrackedSymbolFacts(filePath, content, tracked)
+    for (const [symbol, owner] of RUNTIME_EVENT_SYMBOL_OWNERS) {
+      if (
+        facts.definitions.has(symbol) ||
+        reexportsWholeModuleFrom(filePath, content, owner)
+      )
+        definitionSites.get(symbol).push(filePath)
+      if (
+        facts.exports.has(symbol) ||
+        reexportsWholeModuleFrom(filePath, content, owner)
+      )
+        exportSites.get(symbol).push(filePath)
+    }
+    if (
+      facts.exports.has("appendAgentJobEvent") ||
+      reexportsWholeModuleFrom(filePath, content, JOB_EVENT_STORE_OWNER)
+    )
+      exportedAppendSites.push(filePath)
+    if (filePath === JOB_EVENT_STORE_OWNER) {
+      canonicalAppendExportNames = collectActualExportNamesForSymbol(
+        filePath,
+        content,
+        "appendAgentJobEvent",
+      )
+      canonicalInsertExportNames = collectActualExportNamesForSymbol(
+        filePath,
+        content,
+        "insertAgentJobEventRecord",
+      )
+    }
+    if (facts.exports.has("insertAgentJobEventRecord"))
+      exportedInsertSites.push(filePath)
+    if (
+      filePath !== JOB_EVENT_STORE_OWNER &&
+      importsNamedSymbolFrom(
+        filePath,
+        content,
+        JOB_EVENT_STORE_OWNER,
+        "appendAgentJobEvent",
+      )
+    ) {
+      directImporters.push(filePath)
+    }
+  }
+
+  for (const [symbol, owner] of RUNTIME_EVENT_SYMBOL_OWNERS) {
+    const sites = sortedUnique(definitionSites.get(symbol))
+    if (sites.length !== 1 || sites[0] !== owner) {
+      fail(
+        `${symbol} must be defined or re-exported only from ${owner}; found ${sites.join(", ") || "none"}. See ${RUNTIME_EVENT_OWNERSHIP_SECTION}.`,
+      )
+    }
+    const publicSites = sortedUnique(exportSites.get(symbol))
+    if (publicSites.length !== 1 || publicSites[0] !== owner) {
+      fail(
+        `${symbol} must remain publicly exported only from ${owner}; found ${publicSites.join(", ") || "none"}. See ${RUNTIME_EVENT_OWNERSHIP_SECTION}.`,
+      )
+    }
+  }
+  if (
+    exportedAppendSites.length !== 1 ||
+    exportedAppendSites[0] !== JOB_EVENT_STORE_OWNER
+  ) {
+    fail(
+      `appendAgentJobEvent must be exported only from ${JOB_EVENT_STORE_OWNER}; found ${exportedAppendSites.join(", ") || "none"}.`,
+    )
+  }
+  if (
+    JSON.stringify(canonicalAppendExportNames) !==
+    JSON.stringify(["appendAgentJobEvent"])
+  ) {
+    fail(
+      `appendAgentJobEvent must not gain an alias or default export in ${JOB_EVENT_STORE_OWNER}; found export names ${canonicalAppendExportNames.join(", ") || "none"}.`,
+    )
+  }
+  if (exportedInsertSites.length > 0) {
+    fail(
+      `insertAgentJobEventRecord must remain module-private in ${JOB_EVENT_STORE_OWNER}; exported from ${exportedInsertSites.join(", ")}.`,
+    )
+  }
+  if (canonicalInsertExportNames.length > 0) {
+    fail(
+      `insertAgentJobEventRecord must remain module-private in ${JOB_EVENT_STORE_OWNER}; found export names ${canonicalInsertExportNames.join(", ")}.`,
+    )
+  }
+
+  const measuredImporters = sortedUnique(directImporters)
+  const expectedImporters = [...APPEND_AGENT_JOB_EVENT_IMPORTERS].sort(
+    compareCodePoints,
+  )
+  if (JSON.stringify(measuredImporters) !== JSON.stringify(expectedImporters)) {
+    fail(
+      `appendAgentJobEvent direct importers must match the frozen only-shrink allowlist. Expected ${expectedImporters.join(", ")}; found ${measuredImporters.join(", ") || "none"}. Routes and runtime adapters must consume appendRunEventsToAgentJob/createAgentJobRunEvent instead.`,
+    )
+  }
+  for (const filePath of measuredImporters) {
+    if (
+      filePath.startsWith("src/main/lib/trpc/routers/") ||
+      filePath.startsWith("src/main/lib/codex/") ||
+      filePath.startsWith("src/main/lib/claude/")
+    ) {
+      fail(
+        `${filePath} must not import appendAgentJobEvent directly; consume appendRunEventsToAgentJob/createAgentJobRunEvent instead.`,
+      )
+    }
   }
 }
 
@@ -1911,8 +3676,7 @@ function assertChatSessionBindingGuardSelfTest() {
   }
   if (
     !hasCodexBoundModelCatalogPath({
-      router:
-        "providerProfileBoundModelId: bindingAdmission.binding.modelId",
+      router: "providerProfileBoundModelId: bindingAdmission.binding.modelId",
       providerBinding: "codexChatBoundModelId: providerProfileBoundModelId",
       gateway: "tokenScope.codexChatBoundModelId",
     }) ||
@@ -1988,9 +3752,7 @@ function assertChatSessionBindingSingleOwner() {
     }
   }
 
-  const subChatRouter = readText(
-    "src/main/lib/trpc/routers/chats-sub-chats.ts",
-  )
+  const subChatRouter = readText("src/main/lib/trpc/routers/chats-sub-chats.ts")
   if (/\bupdateSubChatSession\b/.test(subChatRouter)) {
     fail(
       "The retired updateSubChatSession route must not coexist with main-owned native session provenance.",
@@ -2001,9 +3763,7 @@ function assertChatSessionBindingSingleOwner() {
   const codexProviderBinding = readText(
     "src/main/lib/codex/desktop-run-provider-binding.ts",
   )
-  const providerGateway = readText(
-    "src/main/lib/provider-profiles/gateway.ts",
-  )
+  const providerGateway = readText("src/main/lib/provider-profiles/gateway.ts")
   if (
     !hasCodexBoundModelCatalogPath({
       router: codexRouter,
@@ -2023,7 +3783,10 @@ const CHAT_MAINTENANCE_FENCE_OWNER =
 function assertChatMaintenanceFenceSingleOwner() {
   const owner = readText(CHAT_MAINTENANCE_FENCE_OWNER)
   const forbiddenOwnerDependencies = [
-    [/(?:from|import\()\s*["'][^"']*(?:\/db(?:\/|["'])|db\/schema)/, "database"],
+    [
+      /(?:from|import\()\s*["'][^"']*(?:\/db(?:\/|["'])|db\/schema)/,
+      "database",
+    ],
     [/(?:from|import\()\s*["'][^"']*(?:agent-jobs|job-store)/, "agent job"],
     [/(?:from|import\()\s*["'][^"']*chat-session-binding/, "binding row"],
   ]
@@ -2059,9 +3822,7 @@ function assertChatMaintenanceFenceSingleOwner() {
     }
   }
 
-  const subChatRouter = readText(
-    "src/main/lib/trpc/routers/chats-sub-chats.ts",
-  )
+  const subChatRouter = readText("src/main/lib/trpc/routers/chats-sub-chats.ts")
   if (/\bupdateSubChatMessages\b/.test(subChatRouter)) {
     fail(
       "The retired updateSubChatMessages route must not coexist with canonical rollback.",
@@ -2092,9 +3853,7 @@ function assertChatMaintenanceFenceSingleOwner() {
       "releaseDesktopRunAdmissionWithMaintenanceFence",
     ]) {
       if (!runtimeRouterSource.includes(symbol)) {
-        fail(
-          `${runtimeRouter} must use ${symbol} from the maintenance owner.`,
-        )
+        fail(`${runtimeRouter} must use ${symbol} from the maintenance owner.`)
       }
     }
   }
@@ -2231,19 +3990,31 @@ function assertCanonicalVocabularyI18n() {
   assertDictionaryValuesExclude(dictionaryEntries, retiredAgentTerms, "Agent")
 }
 
-assertOwnershipDocs()
-assertPackageScripts()
-assertCiRunsArchitectureCheck()
-assertRuntimeCapabilitySingleOwner()
-assertGuardDecisionSingleOwner()
-assertRuntimeEventStateOwner()
-assertChatMessageModelOwner()
-assertChatSessionBindingSingleOwner()
-assertChatMaintenanceFenceSingleOwner()
-assertNoUnresolvedDangerousRouterInput()
-assertRuntimeCoreImportBoundary()
-assertNoDeadSettingsState()
-assertCanonicalVocabularyI18n()
+if (updateArchitectureBaselines) {
+  updateArchitectureBaselineRegistry()
+} else {
+  const architectureBaselines = parseArchitectureBaselines()
+  assertOwnershipDocs()
+  assertPackageScripts()
+  assertCiRunsArchitectureCheck()
+  assertRuntimeCapabilitySingleOwner()
+  assertGuardDecisionSingleOwner()
+  assertRuntimeEventSinglePath()
+  assertRuntimeEventStateOwner()
+  assertChatMessageModelOwner()
+  assertChatSessionBindingSingleOwner()
+  assertChatMaintenanceFenceSingleOwner()
+  assertNoUnresolvedDangerousRouterInput()
+  assertArchitectureRatchetSelfTests()
+  if (architectureBaselines) {
+    assertRouteSurfaceRatchets(architectureBaselines)
+    assertRuntimeCoreImportBoundary(architectureBaselines)
+    assertReverseDirectionImports(architectureBaselines)
+    assertReachThroughWrapperRegistry(architectureBaselines)
+  }
+  assertNoDeadSettingsState()
+  assertCanonicalVocabularyI18n()
+}
 
 if (failures.length > 0) {
   console.error("Architecture guard failed:")

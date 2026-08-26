@@ -329,6 +329,10 @@ or UI helper.
 - Canonical owner: `src/main/lib/trpc/routers/claude.ts` until service
   extraction is completed by an approved OpenSpec change
 - Primary SDK surface: `@anthropic-ai/claude-agent-sdk`
+- Containment: `scripts/architecture-baselines.json` records the route's
+  temporary-owner line-count and named-export ratchet. Growth fails
+  `architecture:check`; the ratchet retires with the approved extraction that
+  removes this temporary-owner clause.
 - Rule: the bundled Claude Code CLI is an install/runtime asset, not a second
   desktop chat implementation.
 
@@ -354,6 +358,11 @@ or UI helper.
   wiring, and ordered orchestration of the lib owners. It must not own durable
   desktop-run state, persistence, provider-token lifecycle, or adapter
   construction.
+- Containment: `scripts/architecture-baselines.json` records an
+  **orchestration-boundary no-growth ratchet** over the route's line count and
+  named exports. This is not a temporary-owner marker. It retires only through
+  an explicit Owner decision, or in the same approved change that structurally
+  decomposes the route (for example, Job Kernel).
 - Rule: `codex exec` remains the headless/batch fallback and must not become a
   second desktop chat implementation. App-shell and runtime-core code consume
   the lib owners directly and never reverse-import the router.
@@ -385,6 +394,11 @@ or UI helper.
   - `src/main/lib/agent-guard/`
   - `src/main/lib/provider-profiles/`
   - `src/main/lib/model-catalog/`
+  - `src/main/lib/codex/`
+  - `src/main/lib/claude/`
+  - `src/main/lib/runtime-mcp-config/`
+  - `src/main/lib/runtime-capability-projection/`
+  - `src/main/lib/agent-workbench/`
 - Rule: source files in these directories must not directly import:
   - Electron (`electron` or any `electron/*` subpath)
   - tRPC packages (`@trpc/*`, `trpc-electron`, or any
@@ -393,26 +407,57 @@ or UI helper.
   - renderer code, including modules that resolve under `src/renderer/` and
     the `@/` renderer alias
   - preload code that resolves under `src/preload/`
+- Machine-readable violation baselines:
+  `scripts/architecture-baselines.json#importBoundaryViolations` and
+  `#reverseDirectionImports`. Findings outside those frozen sets fail; stale
+  entries fail with a tightening instruction. Baselines may only shrink unless
+  the Owner explicitly authorizes a reviewed hand edit.
 - Dependency direction: tRPC routers import durable behavior and shared state
-  from main-process lib owners; main-process lib owners, including the guarded
-  runtime-core directories, never import those behaviors from router modules.
+  from main-process lib owners. Every file under `src/main/lib/` outside
+  `src/main/lib/trpc/` is checked against imports resolving under
+  `src/main/lib/trpc/routers/`; pre-existing findings are frozen in the
+  reverse-direction baseline and new findings fail.
 - Local API provider reads are owned by
   `src/main/lib/local-api-provider-config.ts`. That owner may materialize the
   decrypted runtime token for main-process consumers; its tRPC router returns
   metadata only and imports the owner, never the reverse.
-- The guard currently enforces direct imports only. Transitive reach through
-  wrapper modules is allowed at this stage and deferred by design.
-  Representative, non-exhaustive wrappers include `electron-app`, `db`,
-  `secure-storage`, `provider-token`, `local-only`, `claude-credentials`,
-  `codex/cli-path`, `codex/runtime-status`, and `utility-chat-completion`.
-  This list documents known reach-throughs; it is not an allowlist, and a
-  direct import from a guarded directory into a banned category still fails.
+- The guard enforces direct imports and one-hop wrapper growth. A module outside
+  the guarded directories that is imported by guarded code and directly
+  imports a banned category must be in the canonical
+  `scripts/architecture-baselines.json#reachThroughWrappers` registry. Full
+  transitive closure remains deferred by design. Modules under `src/main/lib/`
+  use extensionless paths relative to that directory as registry names; any
+  repository-local wrapper outside it uses an extensionless repository-relative
+  path. The list below is an exact,
+  guard-asserted documentation mirror of that machine registry, not a second
+  source of truth. Its first 12 entries were Owner-authorized on 2026-08-27;
+  after that freeze the registry may only shrink.
+  <!-- architecture-guard:reach-through-wrappers:start -->
+  - `electron-app`
+  - `db`
+  - `secure-storage`
+  - `provider-token`
+  - `local-only`
+  - `claude-credentials`
+  - `codex/cli-path`
+  - `codex/runtime-status`
+  - `utility-chat-completion`
+  - `chat-attachments`
+  - `mcp-auth`
+  - `skills/registry`
+  <!-- architecture-guard:reach-through-wrappers:end -->
+  A direct import from a guarded directory into a banned category still fails.
 
 ## tRPC Route Boundary
 
 - Canonical owner: the service or shared library named in this map
 - Route role: input validation, authorization/status wrapping, and transport
   envelope handling
+- Machine-readable containment:
+  `scripts/architecture-baselines.json#routeSurfaceRatchets` stores the neutral
+  per-route line-count and exact named-export data. Guard diagnostics apply the
+  route-specific governance meaning: Claude is temporary-owner containment;
+  Codex is orchestration-boundary no-growth containment.
 - Rule: new long-lived business logic should not be added directly to large
   runtime routes unless the route is explicitly listed as the temporary owner.
   When a service is introduced, route-local duplicate logic must be deleted in

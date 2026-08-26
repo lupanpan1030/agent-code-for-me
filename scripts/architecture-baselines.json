@@ -1,0 +1,99 @@
+{
+  "_meta": {
+    "generatedBy": "node scripts/check-architecture-guards.mjs --update-architecture-baselines",
+    "onlyShrink": "Generated counts and entries may only decrease. Any raise or new entry requires an explicit Owner-approved hand edit with its reason recorded in the implementing change.",
+    "routeSemantics": "routeSurfaceRatchets is a neutral data schema; Claude is temporary-owner containment and Codex is orchestration-boundary no-growth containment as defined by docs/OWNERSHIP_MAP.md.",
+    "reachThroughWrapperBootstrap": "The first 12-entry registry was Owner-authorized on 2026-08-27. After that freeze, entries may only be deleted."
+  },
+  "routeSurfaceRatchets": {
+    "src/main/lib/trpc/routers/claude.ts": {
+      "lines": 658,
+      "exports": ["claudeRouter", "clearClaudeCaches", "getAllMcpConfigHandler"]
+    },
+    "src/main/lib/trpc/routers/codex.ts": {
+      "lines": 957,
+      "exports": ["codexRouter"]
+    }
+  },
+  "importBoundaryViolations": [
+    {
+      "file": "src/main/lib/claude/agent-sdk-config-dir.ts",
+      "specifier": "../trpc/routers/claude-settings",
+      "category": "tRPC"
+    },
+    {
+      "file": "src/main/lib/claude/agent-sdk-file-change-notification.ts",
+      "specifier": "electron",
+      "category": "Electron"
+    },
+    {
+      "file": "src/main/lib/claude/agent-sdk-runtime-startup.ts",
+      "specifier": "electron",
+      "category": "Electron"
+    },
+    {
+      "file": "src/main/lib/claude/env.ts",
+      "specifier": "electron",
+      "category": "Electron"
+    },
+    {
+      "file": "src/main/lib/claude/raw-logger.ts",
+      "specifier": "electron",
+      "category": "Electron"
+    },
+    {
+      "file": "src/main/lib/runtime-mcp-config/claude.ts",
+      "specifier": "../trpc/routers/claude-settings",
+      "category": "tRPC"
+    },
+    {
+      "file": "src/main/lib/runtime-mcp-config/mcp-command-trust.ts",
+      "specifier": "electron",
+      "category": "Electron"
+    }
+  ],
+  "reverseDirectionImports": [
+    {
+      "file": "src/main/lib/agent-builder/claude-native-agents.ts",
+      "specifier": "../trpc/routers/agent-utils"
+    },
+    {
+      "file": "src/main/lib/agent-builder/claude-native-agents.ts",
+      "specifier": "../trpc/routers/claude-settings"
+    },
+    {
+      "file": "src/main/lib/agent-builder/read-model.ts",
+      "specifier": "../trpc/routers/agent-utils"
+    },
+    {
+      "file": "src/main/lib/claude/agent-sdk-config-dir.ts",
+      "specifier": "../trpc/routers/claude-settings"
+    },
+    {
+      "file": "src/main/lib/mcp-auth.ts",
+      "specifier": "./trpc/routers/claude-settings"
+    },
+    {
+      "file": "src/main/lib/ollama/network-detector.ts",
+      "specifier": "../trpc/routers/debug"
+    },
+    {
+      "file": "src/main/lib/runtime-mcp-config/claude.ts",
+      "specifier": "../trpc/routers/claude-settings"
+    }
+  ],
+  "reachThroughWrappers": [
+    "chat-attachments",
+    "claude-credentials",
+    "codex/cli-path",
+    "codex/runtime-status",
+    "db",
+    "electron-app",
+    "local-only",
+    "mcp-auth",
+    "provider-token",
+    "secure-storage",
+    "skills/registry",
+    "utility-chat-completion"
+  ]
+}

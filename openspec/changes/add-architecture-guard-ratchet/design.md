@@ -18,7 +18,7 @@ violations are frozen, not fixed.
 
 ## Goals / Non-Goals
 
-- Goals: make the event single-path rule, the temporary-owner containment rule, the
+- Goals: make the event single-path rule, the route-surface containment rules, the
   lib→routers direction rule, and W4.3 "touched files get cleaner" machine-enforced;
   eliminate the two orphan guards and self-lock the already-wired residue gate; make every
   ratchet baseline a reviewable, checked-in artifact whose growth is impossible without a
@@ -29,7 +29,7 @@ violations are frozen, not fixed.
 ## Decisions
 
 - **Decision 1 — one baseline registry file for architecture ratchets.**
-  `scripts/architecture-baselines.json` holds four sections (`temporaryOwnerRoutes`,
+  `scripts/architecture-baselines.json` holds four sections (`routeSurfaceRatchets`,
   `importBoundaryViolations`, `reverseDirectionImports`, `reachThroughWrappers`) and is
   read only by `check-architecture-guards.mjs`. Updates happen only through the guard's
   `--update-architecture-baselines` mode, which refuses to *raise* anything — raises
@@ -49,12 +49,18 @@ violations are frozen, not fixed.
   honest without making small bugfixes impossible.
   - Alternative considered: tolerance bands (e.g. +2%) — rejected: slack is exactly the
     silent-growth channel this change exists to close.
-- **Decision 3 — export-surface as a frozen name set, not a count.** A count of exports
+- **Decision 3 — route ratchets share mechanics but not ownership semantics.** A count of exports
   lets one export be swapped for another invisibly. The baseline stores the exact named
   exports (hint: `claude.ts` → `clearClaudeCaches`, `getAllMcpConfigHandler`,
   `claudeRouter`; `codex.ts` → `getAllCodexMcpConfigHandler`, `hasActiveCodexStreams`,
   `abortAllCodexStreams`, `codexRouter`); any export outside the set fails. Removing an
-  export requires tightening the set.
+  export requires tightening the set. `claude.ts` remains governed as a temporary owner;
+  its ratchet leaves with the approved extraction that removes that clause. Foundation 1a
+  already made `codex.ts` an orchestration boundary over extracted run-stage owners, so its
+  retained ratchet is explicitly an **orchestration-boundary no-growth ratchet**, never a
+  claim that the route is still a temporary owner. The Codex ratchet retires only by an
+  explicit Owner decision or in the same approved change that structurally decomposes the
+  route in a later phase such as Job Kernel.
 - **Decision 4 — event single-path guard asserts structure, not semantics.** The guard
   enforces (a) single definition sites for the event-pipeline exports, (b)
   `appendAgentJobEvent` exported only from `src/main/lib/headless/job-store.ts` and
@@ -71,7 +77,18 @@ violations are frozen, not fixed.
   (the only way reach-through grows) while keeping the deferred-closure posture that
   OWNERSHIP_MAP documents. The guard additionally asserts the OWNERSHIP_MAP prose list
   and the registry name the same set, so the documented list can no longer drift.
-  `db` resolves to `src/main/lib/db/` (directory owner), the rest to single modules.
+  Registry names for modules inside `src/main/lib/` are extensionless paths relative to
+  that directory (preserving the approved 12 names); any future repository-local wrapper
+  outside it uses its extensionless repository-relative path. This keeps `src/shared/**`
+  and other local modules inside the same one-hop rule without expanding to transitive
+  closure.
+  `db` resolves to `src/main/lib/db/` (directory owner), the rest to single modules. The
+  exact post-1a/1b scan found three active one-hop wrappers beyond the draft nine:
+  `chat-attachments` (Electron), `mcp-auth` (Electron plus a tRPC router), and
+  `skills/registry` (Electron). The Owner authorized those three as one-time bootstrap
+  additions on 2026-08-27, producing a first registry of 12 entries. After that freeze the
+  only legal direction is contraction. TICKET-119, TICKET-120, and TICKET-121 respectively
+  provide explicit Yellow deletion paths; 1c does not edit their product code.
 - **Decision 6 — direction check is repo-wide over `src/main/lib/**` with its own frozen
   baseline.** Known violations at draft time (7 occurrences in 6 files):
   `mcp-auth.ts:25` (`claude-settings`), `claude/agent-sdk-config-dir.ts:79` (dynamic
@@ -125,6 +142,10 @@ violations are frozen, not fixed.
   refactor makes a touched file's count fluctuate) → the tighten-or-fail message names the
   one-line baseline edit; the `raiseNote` hatch exists for routes; W7 marks raises Red so
   friction surfaces to the Owner instead of being absorbed silently.
+- **Different route-retirement semantics** → guard and OWNERSHIP_MAP text name Claude as
+  temporary and Codex as an orchestration boundary; a generic “temporary clause removed”
+  rule is forbidden for Codex. Its no-growth ratchet remains until the Owner explicitly
+  retires it or a structural decomposition owns its removal.
 - **Baseline staleness vs 1a/1b churn** → hard sequencing: baselines are generated after
   1a/1b merge (task 1.2); the guard self-test does not depend on baseline contents.
 - **One-hop wrapper detection false positives** (a guarded dir imports a lib module that
