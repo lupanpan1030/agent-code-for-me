@@ -115,7 +115,27 @@ proposal values were not copied into either checked-in baseline:
 
 ## Exact-source verification
 
-Pending implementation freeze. `IMPLEMENTATION_VERIFIED` is not yet claimed.
+- Frozen implementation source SHA:
+  `74a2a93a54549ed48cee897a11e4860f73c69a0d`.
+- The worktree was clean before and after the exact-source gate. Local `main` remained at
+  `ce916a86a6f2559890e4fc2990b42d9ca49c8b15`.
+- `bun run check:full` at the frozen source SHA: **exit 0**.
+  - committed-tree lint: passed (no changed supported files);
+  - architecture guard: passed;
+  - retired-runtime residue: passed (**1,611 files scanned / 10 allowlisted**);
+  - TypeScript: passed;
+  - tests: **1,916 passed / 0 failed / 9,291 expectations across 302 files**;
+  - OpenSpec all/strict: **55 passed / 0 failed**;
+  - Electron/Vite main, preload, and renderer production builds: passed;
+  - patch whitespace check: passed.
+- Codex verdict: **`IMPLEMENTATION_VERIFIED`** for
+  `74a2a93a54549ed48cee897a11e4860f73c69a0d`. The Owner-amended Codex/Claude route
+  meanings, exact 12-entry first wrapper freeze, only-shrink architecture and lint
+  baselines, event-owner guard, residue/CI self-lock, and three Yellow contraction tickets
+  are implemented and verified. No product-code cleanup or existing-debt repair was folded
+  into 1c. This verdict is exact-source only; any later source change invalidates it.
+- Fresh-context Claude `REVIEW_APPROVED`: pending for the exact source SHA above.
+- Owner acceptance: pending after both technical verdicts exist.
 
 ## Incremental implementation receipts
 
@@ -229,6 +249,6 @@ freeze.
 
 ## Independent review and Owner acceptance
 
-Pending exact-SHA fresh-context Claude review and later Owner acceptance. No merge, archive,
-push, remote PR mutation, remote merge, release, or other remote operation is authorized at
-this stage.
+Codex `IMPLEMENTATION_VERIFIED` is recorded for the frozen source SHA. Fresh-context Claude
+`REVIEW_APPROVED` and later Owner acceptance remain pending. No merge, archive, push, remote
+PR mutation, remote merge, release, or other remote operation is authorized at this stage.

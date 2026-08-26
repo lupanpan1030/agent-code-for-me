@@ -152,7 +152,7 @@
 
 ## 9. Closeout (repo standard)
 
-- [ ] 9.1 Bind the exact source SHA and the full `bun run check:full` receipt into
+- [x] 9.1 Bind the exact source SHA and the full `bun run check:full` receipt into
       `verification.md`.
 - [ ] 9.2 Record IMPLEMENTATION_VERIFIED (Codex) and fresh-context REVIEW_APPROVED
       (Claude) in `verification.md` for that same SHA.
