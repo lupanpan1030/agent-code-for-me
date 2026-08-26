@@ -243,14 +243,70 @@ and the reverse imports from `src/main/index.ts` and `src/main/windows/main.ts`.
   missing `libnss3.so`, `libnssutil3.so`, `libsmime3.so`, and `libasound.so.2`. The native
   module rebuild completed, then the same loader failure recurred for `better-sqlite3` and
   `node-pty`. No end-to-end GUI scenario is claimed. This environment limitation does not
-  alter the exact-source automated receipt, but task 8.2 remains visibly unchecked for a
-  GUI-capable host/fresh reviewer to assess.
+  alter the exact-source automated receipt. Task 8.2 remained visibly unchecked through
+  exact-source review; the later Owner gate accepted the risk and registered TICKET-114
+  instead of claiming the GUI scenarios passed.
 - Codex verdict: **IMPLEMENTATION_VERIFIED** for the frozen source SHA, with the explicit
   task 8.2 environment limitation above. No P0/P1/P2 implementation finding remains; all
   reviewer P3 coverage findings were closed before the source freeze.
-- Claude Code independent verdict: pending.
-- Owner acceptance: pending.
-- Local merge/archive: pending.
+- Claude Code independent verdict: **REVIEW_APPROVED** for the frozen source SHA; the two
+  fresh-context review receipts are recorded below.
+- Owner acceptance: **ACCEPTED** on 2026-08-26 after the local post-merge gate, including
+  explicit acceptance of the disclosed GUI-smoke gap as a recorded residual risk.
+- Local merge: completed by fast-forward at `13e3777a0a39724f171eb2e563dae4774d0b0926`;
+  the post-merge gate passed. Local archive remains pending at this checkpoint.
+
+## Local integration, post-merge gate, and Owner acceptance (2026-08-26)
+
+- Reviewed implementation source: `6bf928bf00051ab1e9513b67162280677134d972`.
+- Evidence-only commits: Codex verification
+  `240aed1ba09a368a3f4e9f5e0ce160b261d95789` and Claude review
+  `13e3777a0a39724f171eb2e563dae4774d0b0926`.
+- Local integration: `main` was fast-forwarded from
+  `a974dd47667b790a5a7aacdaa194fa453c29a20a` to
+  `13e3777a0a39724f171eb2e563dae4774d0b0926`, with no conflict and no merge commit.
+  The range from the reviewed source to the local integration endpoint changes only this
+  change's `tasks.md` and `verification.md`; it contains no product-code change.
+- Post-merge gate: `bun run check:full` passed at the unchanged local-main SHA
+  `13e3777a0a39724f171eb2e563dae4774d0b0926`: changed-line lint, architecture guard,
+  retired-runtime residue guard (**1,577 files scanned / 10 allowlisted**), TypeScript,
+  production Electron/Vite build, and patch whitespace check all passed; tests reported
+  **1,679 passed / 0 failed / 8,115 expectations across 286 files**; OpenSpec all/strict
+  validation reported **56 passed / 0 failed**. Only the already-recorded non-failing
+  Vite/Browserslist warnings remained.
+- Owner decision received verbatim on 2026-08-26:
+  **`ACCEPTED refactor-codex-desktop-service-extraction`**.
+- The Owner explicitly accepted the missing Electron GUI smoke as a disclosed residual
+  risk. No GUI scenario is retroactively claimed as run or passed. The required rerun on
+  a GUI-capable machine is registered as
+  `docs/tickets/TICKET-114-codex-desktop-extraction-gui-smoke.md`.
+- Final change verdict: **`IMPLEMENTATION_VERIFIED` + `REVIEW_APPROVED` + `ACCEPTED`**,
+  all referring to the unchanged product source at the frozen SHA. The review's
+  non-blocking observations remain recorded below for later triage.
+- Archive state at this checkpoint: pending local archive and post-archive strict
+  validation.
+- Push, remote PR mutation, remote merge, release, and every other remote operation:
+  **not authorized and not performed**.
+
+## Archive receipt (2026-08-26)
+
+- `bun x openspec archive refactor-codex-desktop-service-extraction --skip-specs --yes`
+  exited 0 and moved this change to
+  `openspec/changes/archive/2026-08-26-refactor-codex-desktop-service-extraction/`.
+- The archive intentionally skipped spec updates because this accepted change is an internal,
+  behavior-preserving ownership refactor with no spec delta. The archived `.openspec.yaml`
+  continues to declare `skip_specs: true`.
+- Task 9.5 was checked only after the archive command completed. The command's pre-move warning
+  about one incomplete task referred to that not-yet-executed archive step, not to missing
+  implementation or acceptance work.
+- `bun x openspec validate --all --strict --no-interactive` passed **55/55** after the
+  archive. `bun x openspec validate --archived --strict --no-interactive` marks this entry
+  `✓`; its archive-wide aggregate is **103 passed / 6 failed across 109 entries** because
+  six older archived entries contain pre-existing incomplete task checkboxes. None of the
+  failures is this change.
+- Final archive state: **Owner `ACCEPTED`; locally archived**. The GUI-capable desktop-smoke
+  follow-up remains tracked in `docs/tickets/TICKET-114-codex-desktop-extraction-gui-smoke.md`.
+- No push, remote PR mutation, remote merge, release, or other remote operation was performed.
 
 ## Independent review — fresh-context Claude Code (2026-08-26)
 

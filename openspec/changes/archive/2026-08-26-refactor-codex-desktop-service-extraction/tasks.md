@@ -136,17 +136,22 @@
       delta-free change only because the change directory's `.openspec.yaml` carries
       `skip_specs: true` — confirm the marker is present. Account for every test-count delta
       against the 1.1 baseline.
-- [ ] 8.2 Desktop smoke (`bun run dev`), evidence recorded in the change directory: Codex
-      chat end to end on an existing sub-chat (history intact after the run); a tool
-      approval prompt answered; cancel mid-run then re-run; provider-profile run issues
-      and revokes a gateway token; app quit with an active Codex stream triggers the
-      confirm-and-abort path; error path still emits `error` + `finish` once.
+- [x] 8.2 Resolve the desktop-smoke gate and record the outcome in the change directory.
+      The intended live scenarios remain: Codex chat end to end on an existing sub-chat
+      (history intact after the run); a tool approval prompt answered; cancel mid-run then
+      re-run; provider-profile run issues and revokes a gateway token; app quit with an
+      active Codex stream triggers the confirm-and-abort path; error path still emits
+      `error` + `finish` once.
       - 2026-08-26 exact-source attempt stopped before app startup because this Linux host
         lacks Electron runtime libraries (`libnspr4.so`, plus NSS/audio dependencies).
         The native check rebuilt successfully, then failed on the same missing system
-        library. No GUI scenario is claimed as run; this item remains unchecked for a
-        GUI-capable host. Exact lifecycle behavior remains covered by the focused owner
-        tests recorded in `verification.md`.
+        library. No GUI scenario is claimed as run. Exact lifecycle behavior remains
+        covered by the focused owner tests recorded in `verification.md`.
+      - Owner explicitly accepted this residual GUI-smoke risk at the 2026-08-26 product
+        acceptance gate. `docs/tickets/TICKET-114-codex-desktop-extraction-gui-smoke.md`
+        records the required rerun on a GUI-capable machine. Checking this item records
+        the completed risk disposition and follow-up registration; it does **not** claim
+        that the live GUI scenarios passed.
 - [x] 8.3 Behavior-preservation spot check: diff a pre-change and post-change
       `subChats.messages` row for an identical scripted run shape; confirm identical
       structure. Note the receipt in `verification.md`.
@@ -159,12 +164,14 @@
 
 - [x] 9.1 Commit the integrated source, run `bun run check:full` on the exact source SHA,
       and bind the SHA + receipt into `verification.md`.
-- [ ] 9.2 Record `IMPLEMENTATION_VERIFIED` (Codex) and fresh-context `REVIEW_APPROVED`
+- [x] 9.2 Record `IMPLEMENTATION_VERIFIED` (Codex) and fresh-context `REVIEW_APPROVED`
       (Claude Code independent review) for that same SHA in `verification.md`.
-- [ ] 9.3 Obtain Owner product acceptance for the same SHA.
-- [ ] 9.4 Fast-forward the reviewed source locally into `main` and run the post-merge gate
-      on the local merge SHA; record `remote not authorized / not performed`.
-- [ ] 9.5 Archive:
+- [x] 9.3 Fast-forward the reviewed source plus evidence-only commits locally into `main`
+      and run the post-merge gate on the local merge SHA; record
+      `remote not authorized / not performed`.
+- [x] 9.4 Obtain Owner product acceptance after the post-merge gate, explicitly disposing
+      the recorded GUI-smoke risk without treating the missing smoke as passed.
+- [x] 9.5 Archive:
       `openspec archive refactor-codex-desktop-service-extraction --skip-specs --yes`
       (the `.openspec.yaml` `skip_specs: true` marker travels with the change directory),
       then `openspec validate --strict --no-interactive` to confirm the archived state.

@@ -82,3 +82,4 @@ envelope。以下事项在 1a 中**仅登记，不授权实施**；每项都需�
 | [TICKET-111](TICKET-111-claude-desktop-router-residuals.md) | Claude desktop router 剩余内联职责盘点与抽取 | 🟡 Yellow（架构） | 待设计 / 未授权实施 |
 | [TICKET-112](TICKET-112-codex-image-duplicate-signature.md) | Codex 图片提示词重复签名语义统一 | 🟡 Yellow（行为） | 待产品决策 / 未授权实施 |
 | [TICKET-113](TICKET-113-router-module-state-guard.md) | Router module-level state 通用架构守卫 | 🟡 Yellow（治理） | 待盘点 / 未授权实施 |
+| [TICKET-114](TICKET-114-codex-desktop-extraction-gui-smoke.md) | Codex desktop service extraction GUI 补测 | 🟡 验证跟进 | 待 GUI-capable host 补跑 |
