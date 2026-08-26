@@ -4,17 +4,37 @@ This ledger records execution state only. Current product truth remains in
 `openspec/specs/` plus the checked-out code; future direction remains in the
 ratified strategy and interoperability contract.
 
-Updated: 2026-08-26 (Pacific/Auckland)
+Updated: 2026-08-27 (Pacific/Auckland)
 
 | Change | State | Concrete next gate |
 | --- | --- | --- |
-| `add-chat-session-binding` | Approved (Foundation 1b; Owner `APPROVED` 2026-08-26, revised: per-sub-chat binding atoms deleted in-change) | Start W1 implementation from the locally archived 1a closeout; use a dedicated branch/worktree and delete all five per-chat binding atom groups in-change. |
-| `add-architecture-guard-ratchet` | Approved (Foundation 1c; Owner `APPROVED` 2026-08-26) | Implementation sequenced after 1a/1b so baselines capture the post-extraction tree. |
-| `refactor-engine-vocabulary-residue` | Approved (Foundation 1d; Owner `APPROVED` 2026-08-26) | Implementation sequenced after 1b (anchors re-verified against the post-1b tree). |
+| `add-architecture-guard-ratchet` | Approved (Foundation 1c; Owner `APPROVED` 2026-08-26) | Start W1 from the post-1a/1b locally archived `main` in a dedicated branch/worktree; regenerate every baseline before source edits. |
+| `refactor-engine-vocabulary-residue` | Approved (Foundation 1d; Owner `APPROVED` 2026-08-26) | Implementation remains sequenced after 1c; re-verify all anchors against that later tree. |
 | `update-trpc-capability-boundary` | Blocked pending rebaseline | Separate already-shipped Phase 1/CSP/Mermaid/MCP guarantees from unfinished renderer/browser and capability/audit work; validate and archive only implemented truth, then create bounded follow-ups. |
 
 Parked proposals are indexed in [`deferred/README.md`](deferred/README.md) and
 do not appear in the active list.
+
+## Locally archived 2026-08-27
+
+### Foundation 1b
+
+`add-chat-session-binding` received Codex `IMPLEMENTATION_VERIFIED` and fresh-context Claude Code
+`REVIEW_APPROVED` for source `1d019f8d4fab38829ad0e3108e9569b260ab9302`. Local `main` was
+fast-forwarded from the archived 1a closeout to evidence head
+`1d4e004b30e573ebf95235fd7baa725780d659e8`, where `bun run check:full` passed with **1,897
+tests / 0 failures / 9,230 expectations** and OpenSpec **55/55**. The Owner then gave explicit
+`ACCEPTED add-chat-session-binding`, including acceptance of the disclosed GUI-smoke gap as a
+residual risk without treating it as passed. The standard archive applied the accepted delta and
+created the living `chat-session-binding` spec:
+
+- [`2026-08-27-add-chat-session-binding`](changes/archive/2026-08-27-add-chat-session-binding/)
+- Living spec: [`chat-session-binding`](specs/chat-session-binding/spec.md)
+- GUI follow-up shared with 1a: [`TICKET-114`](../docs/tickets/TICKET-114-codex-desktop-extraction-gui-smoke.md)
+
+Current changes/specs pass strict validation **55/55**. Archived-task validation marks this entry
+passed; the archive-wide aggregate is **104/110** because six older archived entries retain
+pre-existing incomplete task checkboxes. No remote operation was authorized or performed.
 
 ## Locally archived 2026-08-26
 
@@ -45,7 +65,7 @@ post-merge gate at `2a41522c01e5bb7e55014218c087e814a28be583`, received explicit
 - [`2026-08-26-add-remote-model-catalog`](changes/archive/2026-08-26-add-remote-model-catalog/)
 - [`2026-08-26-add-local-job-api-runtime-readiness`](changes/archive/2026-08-26-add-local-job-api-runtime-readiness/)
 
-All five entries archived locally on 2026-08-26 pass the archived-task validator, and current
-changes/specs pass strict validation 55/55. The repository-wide historical archive audit is now
-103/109 because six older archived entries already contain incomplete task checkboxes; that
-pre-existing archive debt was not rewritten as part of this closeout.
+At the 2026-08-26 checkpoint, all five entries archived that day passed the archived-task
+validator and current changes/specs passed strict validation 55/55. The repository-wide archive
+audit was then 103/109 because six older archived entries already contained incomplete task
+checkboxes; that pre-existing archive debt was not rewritten as part of either closeout.

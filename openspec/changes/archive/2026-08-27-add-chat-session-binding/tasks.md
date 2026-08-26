@@ -251,11 +251,20 @@
       in `src/shared/agent-chat-provider.ts`, `src/main/lib/chat-session-binding.ts`, and
       tests; `subChatProviderOverrides` and the five deleted binding atom family identifiers
       return zero hits in `src/`.
-- [ ] 7.4 Desktop smoke (record in `verification.md`): create one Claude chat and one Codex
-      chat; send a message in each; change the Codex chat's model and thinking level; quit,
-      clear renderer localStorage, relaunch; both chats reopen with correct runtime/model
-      binding and continue successfully; empty-chat runtime switch still works; changing a
-      new-chat default does not rebind either existing chat.
+- [x] 7.4 Resolve the desktop-smoke gate and record the outcome in `verification.md`.
+      The intended live scenarios remain: create one Claude chat and one Codex chat; send a
+      message in each; change the Codex chat's model and thinking level; quit, clear renderer
+      localStorage, relaunch; confirm both chats reopen with the correct runtime/model binding
+      and continue successfully; confirm empty-chat runtime switch still works; and confirm a
+      new-chat default change does not rebind either existing chat.
+      - The exact-source attempt could not reach app startup because this Linux host cannot load
+        Electron's `libnspr4.so` dependency. No GUI scenario is claimed as run or passed; the
+        exact lifecycle and persistence paths remain covered by the automated receipts in
+        `verification.md`.
+      - Owner explicitly accepted this disclosed residual risk at the 2026-08-27 product
+        acceptance gate. `docs/tickets/TICKET-114-codex-desktop-extraction-gui-smoke.md`
+        carries the GUI-capable-host rerun checklist for both Foundation 1a and 1b. Checking
+        this item records completed risk disposition and follow-up registration only.
 - [x] 7.5 Confirm the untouched-surface scope guards held: the `sub_chats.sessionId` schema field
       remains native provenance while its renderer mutation/input path is retired;
       `agent_jobs.runtime`/`providerProfileId` untouched; no Local Job API surface
@@ -299,14 +308,14 @@
 
 - [x] 8.1 Commit the integrated source, run `bun run check:full` on the exact source SHA, and
       bind the SHA + receipt into `verification.md`.
-- [ ] 8.2 Record `IMPLEMENTATION_VERIFIED` (Codex) and fresh-context `REVIEW_APPROVED`
+- [x] 8.2 Record `IMPLEMENTATION_VERIFIED` (Codex) and fresh-context `REVIEW_APPROVED`
       (Claude) for the same source SHA; any code change after either mark invalidates both. The
       fresh-context review checklist MUST explicitly reconcile all five Owner constraints:
       process-local/no-DB scope; rollback-vs-final-claim-only BUSY semantics; canonical owner +
       mandatory Phase 5 absorption/deletion; retired `updateSubChatMessages` + exact checkpoint
       OID; and the complete verification matrix.
-- [ ] 8.3 Record Owner product acceptance.
-- [ ] 8.4 Local fast-forward merge into `main`; run the post-merge gate on the merge SHA;
+- [x] 8.3 Record Owner product acceptance.
+- [x] 8.4 Local fast-forward merge into `main`; run the post-merge gate on the merge SHA;
       record `remote not authorized / not performed`.
-- [ ] 8.5 `openspec archive add-chat-session-binding --yes` (specs apply: this change carries
+- [x] 8.5 `openspec archive add-chat-session-binding --yes` (specs apply: this change carries
       a `chat-session-binding` delta, so do NOT pass `--skip-specs`); validate the archive.

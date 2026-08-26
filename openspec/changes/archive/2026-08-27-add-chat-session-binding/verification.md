@@ -507,15 +507,70 @@ used as the exact-source closeout receipt.
   `src/shared/local-job-api.ts`, and `docs/local-job-api-v1.schema.json`; residue search found
   zero `subChatBindings` / `sub_chat_bindings` references in the headless/Local Job surfaces.
 - Desktop GUI smoke remains unavailable on this host because Electron cannot load
-  `libnspr4.so`. No GUI scenario is claimed; task 7.4 remains visibly unchecked for Owner risk
-  handling during acceptance.
+  `libnspr4.so`. No GUI scenario is claimed. Owner accepted this disclosed residual risk on
+  2026-08-27, and task 7.4 is closed only as a risk-disposition/follow-up-registration item.
 - Codex verdict: **`IMPLEMENTATION_VERIFIED`** for
   `1d019f8d4fab38829ad0e3108e9569b260ab9302`. The five Owner-authorized maintenance/checkpoint
   constraints and Provider Profile A/TICKET-116 boundary are implemented and covered, and no
   actionable P0-P3 implementation finding remains. This verdict is exact-source only; any
   subsequent source change invalidates it.
-- Claude Code independent verdict: pending.
-- Local merge / Owner acceptance / archive: pending.
+- Claude Code independent verdict: **`REVIEW_APPROVED`** for the frozen source SHA; both
+  fresh-context review receipts are recorded below and report zero P0/P1/P2 findings.
+- Owner acceptance: **`ACCEPTED add-chat-session-binding`** on 2026-08-27 after the local
+  post-merge gate, including explicit acceptance of the disclosed GUI-smoke gap as a residual
+  risk without claiming the GUI scenarios passed.
+- Local merge: completed by fast-forward at
+  `1d4e004b30e573ebf95235fd7baa725780d659e8`; the post-merge gate passed. Local archive remains
+  pending at this checkpoint.
+
+## Local integration, post-merge gate, and Owner acceptance (2026-08-27)
+
+- Reviewed implementation source: `1d019f8d4fab38829ad0e3108e9569b260ab9302`.
+- Evidence-only commits: Codex verification
+  `e10e31ca95d5d3ea8e14b7f5a57d65691320eb46` and Claude review
+  `1d4e004b30e573ebf95235fd7baa725780d659e8`.
+- Local integration: `main` was fast-forwarded from
+  `0dee7dc0f31b6b9c44516cbce81b1f63243a4a94` to
+  `1d4e004b30e573ebf95235fd7baa725780d659e8`, with no conflict and no merge commit. The range
+  from the reviewed source to the integration endpoint changes only this change's `tasks.md`
+  and `verification.md`; it contains no product-code change.
+- Post-merge gate: `bun run check:full` passed at the unchanged local-main SHA
+  `1d4e004b30e573ebf95235fd7baa725780d659e8`: architecture guard, retired-runtime residue guard
+  (**1,609 files scanned / 10 allowlisted**), TypeScript, Electron/Vite production build, and
+  patch whitespace check all passed; tests reported **1,897 passed / 0 failed / 9,230
+  expectations across 302 files**; OpenSpec all/strict validation reported **55 passed / 0
+  failed**. Only the already-recorded non-failing Vite/Browserslist warnings remained.
+- Owner decision received verbatim on 2026-08-27:
+  **`ACCEPTED add-chat-session-binding`**.
+- The Owner explicitly accepted the missing Electron GUI smoke as a disclosed residual risk.
+  No GUI scenario is retroactively claimed as run or passed. The required rerun on a
+  GUI-capable machine is consolidated into
+  `docs/tickets/TICKET-114-codex-desktop-extraction-gui-smoke.md` alongside the 1a track.
+- Final change verdict: **`IMPLEMENTATION_VERIFIED` + `REVIEW_APPROVED` + `ACCEPTED`**, all
+  referring to the unchanged product source at the frozen SHA. The four non-blocking P3 review
+  observations remain recorded below for later triage.
+- Archive state at this checkpoint: pending local archive and post-archive strict validation.
+- Push, remote PR mutation, remote merge, release, and every other remote operation:
+  **not authorized and not performed**.
+
+## Archive receipt (2026-08-27)
+
+- `./node_modules/.bin/openspec archive add-chat-session-binding --yes` exited 0 and moved this
+  change to `openspec/changes/archive/2026-08-27-add-chat-session-binding/`.
+- The archive applied the accepted delta to the living product truth by creating
+  `openspec/specs/chat-session-binding/spec.md` with **7 added requirements**. This was not a
+  tooling-only archive, so `--skip-specs` was intentionally not used.
+- Task 8.5 was checked only after the archive command completed. The command's pre-move warning
+  about one incomplete task referred only to that not-yet-executed archive step, not to missing
+  implementation, review, acceptance, or verification work.
+- `bun run spec:validate` passed **55/55** after the archive. Archived-task strict validation
+  marks `2026-08-27-add-chat-session-binding` **passed**; its archive-wide aggregate is **104
+  passed / 6 failed across 110 entries** because six older archived entries contain pre-existing
+  incomplete task checkboxes. None of those failures is this change.
+- Final archive state: **Owner `ACCEPTED`; locally archived**. The GUI-capable desktop-smoke
+  follow-up remains tracked in
+  `docs/tickets/TICKET-114-codex-desktop-extraction-gui-smoke.md` for both Foundation 1a and 1b.
+- No push, remote PR mutation, remote merge, release, or other remote operation was performed.
 
 ## Independent review — fresh-context Claude Code (2026-08-26)
 
