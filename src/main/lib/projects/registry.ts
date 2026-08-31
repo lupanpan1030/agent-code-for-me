@@ -1,4 +1,4 @@
-import { existsSync, realpathSync, statSync } from "node:fs"
+import { existsSync, readFileSync, realpathSync, statSync } from "node:fs"
 import {
   basename,
   dirname,
@@ -148,6 +148,88 @@ function canonicalPathWithExistingAncestor(
 function isPathInside(parentPath: string, childPath: string): boolean {
   const rel = relative(parentPath, childPath)
   return rel === "" || (!!rel && !rel.startsWith("..") && !isAbsolute(rel))
+}
+
+function findGitMarker(path: string): string | null {
+  let current = path
+  while (true) {
+    const marker = join(current, ".git")
+    if (existsSync(marker)) return marker
+    const parent = dirname(current)
+    if (parent === current) return null
+    current = parent
+  }
+}
+
+type GitWorktreeIdentity = {
+  commonDirectory: string
+  worktreeRoot: string
+  primary: boolean
+}
+
+function readGitPathFile(path: string, prefix?: string): string | null {
+  const raw = readFileSync(path, "utf8").trim()
+  const value = prefix
+    ? new RegExp(`^${prefix}:\\s*(.+)$`, "i").exec(raw)?.[1]
+    : raw
+  if (!value) return null
+  return isAbsolute(value) ? value : resolve(dirname(path), value)
+}
+
+function gitWorktreeIdentity(path: string): GitWorktreeIdentity | null {
+  const marker = findGitMarker(path)
+  if (!marker) return null
+  try {
+    const primary = statSync(marker).isDirectory()
+    const gitDirectory = primary ? marker : readGitPathFile(marker, "gitdir")
+    if (!gitDirectory) return null
+    const commonDirectoryFile = join(gitDirectory, "commondir")
+    const commonDirectory = existsSync(commonDirectoryFile)
+      ? readGitPathFile(commonDirectoryFile)
+      : gitDirectory
+    if (!commonDirectory) return null
+    return {
+      commonDirectory: canonicalExistingDirectory(
+        commonDirectory,
+        "Git common directory",
+      ),
+      worktreeRoot: dirname(marker),
+      primary,
+    }
+  } catch {
+    return null
+  }
+}
+
+function samePath(left: string, right: string): boolean {
+  return isPathInside(left, right) && isPathInside(right, left)
+}
+
+function projectPathInRelatedWorktree(input: {
+  projectPath: string
+  projectIdentity: GitWorktreeIdentity
+  cwd: string
+  cwdIdentity: GitWorktreeIdentity
+}): string | null {
+  if (
+    !samePath(
+      input.projectIdentity.commonDirectory,
+      input.cwdIdentity.commonDirectory,
+    )
+  )
+    return null
+
+  const projectRelativePath = relative(
+    input.projectIdentity.worktreeRoot,
+    input.projectPath,
+  )
+  if (projectRelativePath.startsWith("..") || isAbsolute(projectRelativePath))
+    return null
+  const projectedPath = join(
+    input.cwdIdentity.worktreeRoot,
+    projectRelativePath,
+  )
+  return isPathInside(projectedPath, input.cwd) ? projectedPath : null
 }
 
 function getProject(
@@ -331,7 +413,22 @@ export function getProjectRegistrationForCwd(input: {
       project.path,
       "Registered project path",
     )
-    if (!isPathInside(projectReal, cwdReal)) {
+    const directlyInside = isPathInside(projectReal, cwdReal)
+    let relatedWorktreePath: string | null = null
+    if (!directlyInside) {
+      const projectGitIdentity = gitWorktreeIdentity(projectReal)
+      const cwdGitIdentity = gitWorktreeIdentity(cwdReal)
+      relatedWorktreePath =
+        projectGitIdentity && cwdGitIdentity
+          ? projectPathInRelatedWorktree({
+              projectPath: projectReal,
+              projectIdentity: projectGitIdentity,
+              cwd: cwdReal,
+              cwdIdentity: cwdGitIdentity,
+            })
+          : null
+    }
+    if (!directlyInside && !relatedWorktreePath) {
       throw new ProjectRegistrationError(
         `${label} must be inside the registered project path`,
         {
@@ -349,16 +446,63 @@ export function getProjectRegistrationForCwd(input: {
     }
   }
 
+  let bestMatch: {
+    project: Project
+    projectPath: string
+  } | null = null
   for (const project of input.db.select().from(projects).all()) {
     if (project.removedAt && !input.includeRemoved) continue
     const projectReal = canonicalProjectPath(project)
     if (!projectReal) continue
-    if (isPathInside(projectReal, cwdReal)) {
+    if (
+      isPathInside(projectReal, cwdReal) &&
+      (!bestMatch || projectReal.length > bestMatch.projectPath.length)
+    ) {
+      bestMatch = { project, projectPath: projectReal }
+    }
+  }
+
+  if (bestMatch) {
+    return {
+      registered: true,
+      cwd: cwdReal,
+      project: bestMatch.project,
+      projectPath: bestMatch.projectPath,
+    }
+  }
+
+  const cwdGitIdentity = gitWorktreeIdentity(cwdReal)
+  if (cwdGitIdentity) {
+    let bestWorktreeMatch: {
+      project: Project
+      projectPath: string
+      projectedPath: string
+    } | null = null
+    for (const project of input.db.select().from(projects).all()) {
+      if (project.removedAt && !input.includeRemoved) continue
+      const projectReal = canonicalProjectPath(project)
+      if (!projectReal) continue
+      const projectGitIdentity = gitWorktreeIdentity(projectReal)
+      if (!projectGitIdentity?.primary) continue
+      const projectedPath = projectPathInRelatedWorktree({
+        projectPath: projectReal,
+        projectIdentity: projectGitIdentity,
+        cwd: cwdReal,
+        cwdIdentity: cwdGitIdentity,
+      })
+      if (!projectedPath) continue
+      if (
+        !bestWorktreeMatch ||
+        projectedPath.length > bestWorktreeMatch.projectedPath.length
+      )
+        bestWorktreeMatch = { project, projectPath: projectReal, projectedPath }
+    }
+    if (bestWorktreeMatch) {
       return {
         registered: true,
         cwd: cwdReal,
-        project,
-        projectPath: projectReal,
+        project: bestWorktreeMatch.project,
+        projectPath: bestWorktreeMatch.projectPath,
       }
     }
   }

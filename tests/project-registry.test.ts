@@ -1,13 +1,15 @@
 import { describe, expect, test } from "bun:test"
+import { execFileSync } from "node:child_process"
 import {
   mkdirSync,
   mkdtempSync,
   realpathSync,
   rmSync,
   symlinkSync,
+  writeFileSync,
 } from "node:fs"
-import { join } from "node:path"
 import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { chats, projects, subChats } from "../src/main/lib/db/schema"
 import { createAgentJob } from "../src/main/lib/headless/job-store"
 import {
@@ -159,6 +161,139 @@ describe("project registry", () => {
       }
     })
   })
+
+  test("selects the most specific registered project for nested paths", async () => {
+    await withTempDir(async (root) => {
+      const db = createAgentJobTestDb()
+      const nestedProjectPath = join(root, "nested-project")
+      const workspacePath = join(nestedProjectPath, "workspace")
+      mkdirSync(workspacePath, { recursive: true })
+
+      const parent = await registerProjectForPath({ db, path: root })
+      const nested = await registerProjectForPath({
+        db,
+        path: nestedProjectPath,
+      })
+
+      expect(
+        getProjectRegistrationForCwd({
+          db,
+          cwd: workspacePath,
+        }),
+      ).toMatchObject({
+        registered: true,
+        project: {
+          id: nested.project.id,
+        },
+        projectPath: realpathSync(nestedProjectPath),
+      })
+      expect(nested.project.id).not.toBe(parent.project.id)
+    })
+  })
+
+  test("maps a linked worktree back to its registered project", async () => {
+    await withTempDir(async (root) => {
+      const db = createAgentJobTestDb()
+      const projectPath = join(root, "project")
+      const worktreePath = join(root, "linked-worktree")
+      const nestedProjectPath = join(projectPath, "packages", "app")
+      const linkedNestedCwd = join(worktreePath, "packages", "app")
+      mkdirSync(nestedProjectPath, { recursive: true })
+      writeFileSync(join(nestedProjectPath, "README.md"), "nested project\n")
+      execFileSync("git", ["init", "-b", "main"], {
+        cwd: projectPath,
+        stdio: "ignore",
+      })
+      execFileSync("git", ["add", "."], {
+        cwd: projectPath,
+        stdio: "ignore",
+      })
+      execFileSync(
+        "git",
+        [
+          "-c",
+          "user.email=registry@test.invalid",
+          "-c",
+          "user.name=Registry Test",
+          "commit",
+          "-m",
+          "initial",
+        ],
+        { cwd: projectPath, stdio: "ignore" },
+      )
+      execFileSync(
+        "git",
+        ["worktree", "add", "-b", "linked-test", worktreePath],
+        { cwd: projectPath, stdio: "ignore" },
+      )
+      const registeredRoot = await registerProjectForPath({
+        db,
+        path: projectPath,
+      })
+      const registeredNested = await registerProjectForPath({
+        db,
+        path: nestedProjectPath,
+      })
+
+      expect(
+        getProjectRegistrationForCwd({
+          db,
+          cwd: worktreePath,
+        }),
+      ).toMatchObject({
+        registered: true,
+        project: {
+          id: registeredRoot.project.id,
+        },
+        projectPath: realpathSync(projectPath),
+      })
+      expect(
+        getProjectRegistrationForCwd({
+          db,
+          cwd: worktreePath,
+          projectId: registeredRoot.project.id,
+        }),
+      ).toMatchObject({
+        registered: true,
+        project: {
+          id: registeredRoot.project.id,
+        },
+        projectPath: realpathSync(projectPath),
+      })
+      expect(
+        getProjectRegistrationForCwd({
+          db,
+          cwd: linkedNestedCwd,
+        }),
+      ).toMatchObject({
+        registered: true,
+        project: {
+          id: registeredNested.project.id,
+        },
+        projectPath: realpathSync(nestedProjectPath),
+      })
+      expect(
+        getProjectRegistrationForCwd({
+          db,
+          cwd: linkedNestedCwd,
+          projectId: registeredNested.project.id,
+        }),
+      ).toMatchObject({
+        registered: true,
+        project: {
+          id: registeredNested.project.id,
+        },
+        projectPath: realpathSync(nestedProjectPath),
+      })
+      expect(() =>
+        getProjectRegistrationForCwd({
+          db,
+          cwd: worktreePath,
+          projectId: registeredNested.project.id,
+        }),
+      ).toThrow("registered project path")
+    })
+  }, 20_000)
 
   test("unregister refuses active jobs unless forced", async () => {
     await withTempDir(async (root) => {
