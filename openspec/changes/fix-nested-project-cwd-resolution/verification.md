@@ -9,7 +9,8 @@
 - Reviewed source SHA: `1cce15b4e37aac3afb32a2621ea89f4d8be69e95`
 - Codex implementation verdict: **IMPLEMENTATION_VERIFIED** for
   `1cce15b4e37aac3afb32a2621ea89f4d8be69e95`
-- Claude Code review verdict: pending
+- Claude Code review verdict: **REVIEW_APPROVED** (dual fresh-context, 2026-09-02;
+  see Independent Review below)
 - Date / operator: 2026-09-02 / Codex
 - OS / arch: Linux x64
 - App version: repository source at base SHA above
@@ -117,10 +118,61 @@ recorded below, but they do not satisfy the Claude Code gate.
   pathological mounts may affect availability, and post-registration symlink
   rebinding remains an existing risk outside this diff.
 
+### Fresh-context Claude Code review (2026-09-02)
+
+- Reviewed source SHA: `1cce15b4e37aac3afb32a2621ea89f4d8be69e95`; verified at branch HEAD
+  `9ff5e33e` after independently confirming the delta is docs-only (STATUS/tasks/verification).
+- Two independent fresh-context review agents (correctness/regression lens and
+  security-adversarial lens), each in an isolated detached worktree at `9ff5e33e` created from
+  the main repository and removed after review; the Codex implementation worktree was never
+  modified. Isolation receipts were audited for cross-agent interference (a known failure mode
+  from the 1c review earlier the same day): none found; all load-bearing numbers cross-check
+  between the two reviewers and the Codex receipts.
+
+**Both reviews: `REVIEW_APPROVED` for source SHA
+`1cce15b4e37aac3afb32a2621ea89f4d8be69e95`. No P0, P1, or P2 findings.**
+
+Key confirmations, independently reproduced:
+
+- The commit touches only the implicit resolver loop in
+  `src/main/lib/projects/registry.ts` (+ its test); eligibility (removedAt filter,
+  `canonicalProjectPath`, `isPathInside`) is unchanged and the explicit `projectId` branch is
+  byte-identical. Deepest-canonical-ancestor selection is provably well-defined: all eligible
+  candidates are ancestors of the same canonical cwd and form a chain; duplicate canonical
+  roots are deduplicated at registration.
+- Forbidden-half smuggling check: zero `.git` / `gitdir` / `commondir` / worktree /
+  target-directory self-assertion logic anywhere in the diff (token grep hits appear only in
+  the prohibition wording of the OpenSpec docs), and the diff leaves no extension point a
+  future `add-linked-worktree-admission` change could silently reuse.
+- Trust-boundary direction: strictly "same eligible set, more specific winner"; adversarial
+  probes (all 6 registration-order permutations, cwd == nested root, trailing-slash/relative
+  cwd, `/a/bc` vs `/a/b` prefix confusion, symlink escape fail-closed, removed/deleted-deepest
+  fallback, unrelated-root no-widening, duplicate-root dedupe) all pass at the frozen SHA.
+- Consumer closure: all implicit-resolution consumers (Local Job API status/create/retry,
+  headless CLI run, ACP, schedules) receive a strict tightening; existing jobs keep their
+  stored `projectId` (no retroactive rebinding).
+- Receipts re-measured independently: registry tests 8/0/38; targeted consumer suites
+  67/0/313; `bun run check:full` exit 0 with tests 1,898/0/9,233 across 302 files, residue
+  1,611/10, OpenSpec 56/0; strict change validation valid.
+
+Non-blocking P3 notes (informational): ① `includeRemoved` status-vs-attribution corner —
+`api projects status` can deterministically report a removed nested project while run
+attribution binds the active outer project (pre-existing divergence made deterministic; worth
+a consumer-impact doc line or follow-up decision); ② suggested committed test cases for
+removed-deepest fallback / cwd==nested-root / deleted-directory-deepest (validated by review
+probes, not yet pinned in the suite); ③ deepest-root selection silently falls back to the
+next-deepest ancestor when the deepest root fails canonicalization (no widening; diagnostic
+could be added); ④ implicit resolution now always scans the full project table (constant-factor
+availability note on pathological mounts, matching Codex residual #3).
+
+Gate status: the fresh-context review gate is complete for the exact frozen source SHA. Owner
+product acceptance remains the only open gate; this is a technical verdict only and authorizes
+no merge, archive, push, or remote operation.
+
 ## Integration And Remote Authority
 
-- Local merge into `main`: **not performed; blocked on the required Claude Code
-  verdict and Owner `ACCEPTED`**.
+- Local merge into `main`: **not performed; the Claude Code verdict is recorded above, so
+  this is now blocked only on Owner `ACCEPTED`**.
 - Archive: not performed.
 - Push / remote merge / release: **not authorized / not performed**.
 - Authorized external action already performed: GitHub PR #18 received
