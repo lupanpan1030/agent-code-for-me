@@ -482,11 +482,15 @@ remote PR mutation, remote merge, release, or other remote operation is authoriz
   evidence-only documentation commit (`git diff 9a80a755 1fd37d03 --stat`: tasks.md +
   verification.md only).
 - Two independent fresh-context review agents (mechanism-adversarial lens and
-  governance-consistency lens), each in its own isolated detached worktree at `1fd37d03`
-  (created from the main repository, removed after review; the Codex implementation worktree
-  was never modified). The coordination session additionally hand-reproduced both superseding
-  P1 scenarios in the implementation worktree before dispatch and restored the scene
-  (baseline file SHA-256 re-verified against the recorded hash).
+  governance-consistency lens) reviewed `1fd37d03`. Their initial scratch paths collided;
+  concurrent mutation was detected and observations from that shared-state window were excluded.
+  The mechanism reviewer moved to a new private detached worktree and reran the load-bearing
+  probes; the governance reviewer reset to pristine `1fd37d03` and reran/completed its
+  load-bearing checks after the collision ended. Both temporary worktrees were removed after
+  review, and neither reviewer modified the Codex implementation worktree. The coordination
+  session additionally hand-reproduced both superseding P1 scenarios in the implementation
+  worktree before dispatch and restored the scene (baseline file SHA-256 re-verified against the
+  recorded hash).
 
 ### Verdicts
 

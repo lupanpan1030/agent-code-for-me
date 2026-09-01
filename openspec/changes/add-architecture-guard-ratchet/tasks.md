@@ -170,12 +170,12 @@
 
 - [x] 9.1 Bind the exact source SHA and the full `bun run check:full` receipt into
       `verification.md`.
-- [ ] 9.2 Record IMPLEMENTATION_VERIFIED (Codex) and fresh-context REVIEW_APPROVED
+- [x] 9.2 Record IMPLEMENTATION_VERIFIED (Codex) and fresh-context REVIEW_APPROVED
       (Claude) in `verification.md` for that same SHA.
 - [ ] 9.3 Record Owner acceptance.
 - [ ] 9.4 Local fast-forward merge into `main`; run the post-merge gate
       (`bun run check:full`) on the local merge SHA and record the receipt.
-- [ ] 9.5 Record `remote not authorized / not performed` for push, remote PR mutation,
+- [x] 9.5 Record `remote not authorized / not performed` for push, remote PR mutation,
       remote merge, and release.
 - [ ] 9.6 `openspec archive add-architecture-guard-ratchet --yes` (spec deltas apply to
       `architecture-ownership`; do not pass `--skip-specs`), then
