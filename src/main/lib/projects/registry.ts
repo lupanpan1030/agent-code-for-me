@@ -349,17 +349,26 @@ export function getProjectRegistrationForCwd(input: {
     }
   }
 
+  let bestMatch: { project: Project; projectPath: string } | null = null
+
   for (const project of input.db.select().from(projects).all()) {
     if (project.removedAt && !input.includeRemoved) continue
     const projectReal = canonicalProjectPath(project)
     if (!projectReal) continue
-    if (isPathInside(projectReal, cwdReal)) {
-      return {
-        registered: true,
-        cwd: cwdReal,
-        project,
-        projectPath: projectReal,
-      }
+    if (
+      isPathInside(projectReal, cwdReal) &&
+      (!bestMatch || projectReal.length > bestMatch.projectPath.length)
+    ) {
+      bestMatch = { project, projectPath: projectReal }
+    }
+  }
+
+  if (bestMatch) {
+    return {
+      registered: true,
+      cwd: cwdReal,
+      project: bestMatch.project,
+      projectPath: bestMatch.projectPath,
     }
   }
 

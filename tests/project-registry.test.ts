@@ -160,6 +160,48 @@ describe("project registry", () => {
     })
   })
 
+  test("resolves nested registered roots to the most specific project", async () => {
+    await withTempDir(async (root) => {
+      const db = createAgentJobTestDb()
+      const outerPath = join(root, "outer")
+      const middlePath = join(outerPath, "packages")
+      const deepestPath = join(middlePath, "app")
+      const workspacePath = join(deepestPath, "workspace")
+      const unrelatedLongPath = join(
+        root,
+        "unrelated-project-root-with-a-much-longer-canonical-path",
+      )
+      mkdirSync(workspacePath, { recursive: true })
+      mkdirSync(unrelatedLongPath)
+
+      const outer = await registerProjectForPath({ db, path: outerPath })
+      const deepest = await registerProjectForPath({ db, path: deepestPath })
+      await registerProjectForPath({ db, path: unrelatedLongPath })
+      await registerProjectForPath({ db, path: middlePath })
+
+      expect(
+        getProjectRegistrationForCwd({ db, cwd: workspacePath }),
+      ).toMatchObject({
+        registered: true,
+        cwd: realpathSync(workspacePath),
+        project: { id: deepest.project.id },
+        projectPath: realpathSync(deepestPath),
+      })
+      expect(
+        getProjectRegistrationForCwd({
+          db,
+          cwd: workspacePath,
+          projectId: outer.project.id,
+        }),
+      ).toMatchObject({
+        registered: true,
+        project: { id: outer.project.id },
+        projectPath: realpathSync(outerPath),
+      })
+      expect(db.select().from(projects).all()).toHaveLength(4)
+    })
+  })
+
   test("unregister refuses active jobs unless forced", async () => {
     await withTempDir(async (root) => {
       const db = createAgentJobTestDb()
