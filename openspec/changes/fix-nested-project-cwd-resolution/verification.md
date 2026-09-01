@@ -6,8 +6,9 @@
 - Branch: `codex/fix-nested-project-cwd-resolution`
 - Worktree: `/home/chen/projects/locus-fix-deepest-registered-project-resolution`
 - Implementer / Integrator: Codex / pending Owner acceptance
-- Reviewed source SHA: pending
-- Codex implementation verdict: pending
+- Reviewed source SHA: `1cce15b4e37aac3afb32a2621ea89f4d8be69e95`
+- Codex implementation verdict: **IMPLEMENTATION_VERIFIED** for
+  `1cce15b4e37aac3afb32a2621ea89f4d8be69e95`
 - Claude Code review verdict: pending
 - Date / operator: 2026-09-02 / Codex
 - OS / arch: Linux x64
@@ -43,10 +44,28 @@ Pre-freeze receipts on the integrated worktree:
 - `bun run spec:validate`: **56 passed / 0 failed**.
 - `git diff --check`: exit 0.
 
-The following exact-source receipt remains pending until the source commit is
-frozen:
+Exact-source receipts on frozen source SHA
+`1cce15b4e37aac3afb32a2621ea89f4d8be69e95`:
 
-- `bun run check:full` on the exact frozen source SHA.
+- `git rev-parse HEAD` before and after verification: exact frozen source SHA.
+- Worktree status before and after verification: clean.
+- `bun test tests/project-registry.test.ts`: **8 pass / 0 fail / 38
+  expectations**.
+- `bun run check:full`: **exit 0**.
+  - changed-line lint: passed;
+  - architecture guard: passed;
+  - retired-runtime residue: **1,611 files scanned / 10 allowlisted**;
+  - TypeScript: passed;
+  - tests: **1,898 passed / 0 failed / 9,233 expectations across 302
+    files**;
+  - strict OpenSpec: **56 passed / 0 failed**;
+  - main, preload, and renderer production builds: passed;
+  - patch whitespace/diff check: passed.
+- An exact-SHA standalone `bun test --isolate tests` rerun confirmed the same
+  **1,898 / 0 / 9,233 / 302-file** result.
+
+Codex verdict: **IMPLEMENTATION_VERIFIED**. The implementation satisfies the
+approved R2 scope and automated acceptance criteria at the frozen source SHA.
 
 ## Scope Audit
 
@@ -62,12 +81,46 @@ The pre-freeze source diff proves:
 ## Independent Review
 
 Fresh-context Claude Code review is pending and must bind to the exact frozen
-source SHA. A Codex reviewer cannot substitute for or be labeled as Claude Code.
+source SHA. The bundled Claude Code binary is present at version `2.1.177`, but
+`claude auth status` returned `loggedIn: false`, `authMethod: none`; therefore no
+Claude verdict is asserted. A Codex reviewer cannot substitute for or be labeled
+as Claude Code.
+
+Two read-only fresh-context Codex supplemental reviews (correctness/compliance
+and security) were dispatched against the frozen source SHA. Their results are
+recorded below, but they do not satisfy the Claude Code gate.
+
+### Supplemental correctness/compliance review
+
+- Verdict: **SUPPLEMENTAL_REVIEW_APPROVED** for
+  `1cce15b4e37aac3afb32a2621ea89f4d8be69e95`.
+- Findings: no P0, P1, P2, or P3 findings; no open code/spec blocker.
+- Confirmed that the implicit resolver only compares canonical path length after
+  existing eligibility checks, the explicit `projectId` branch is unchanged,
+  and the source diff contains no Git/worktree admission logic.
+- Independent receipts: targeted registry test **8 / 0 / 38**, strict change
+  validation passed, and `git diff --check` passed.
+
+### Supplemental security review
+
+- Verdict: **SUPPLEMENTAL_SECURITY_APPROVED** for
+  `1cce15b4e37aac3afb32a2621ea89f4d8be69e95`.
+- Findings: no P0, P1, P2, or confirmed P3 security finding; no blocking fix.
+- Confirmed canonicalization, path-segment containment, removed-state filtering,
+  and explicit identity semantics remain intact, with no `.git`, gitfile,
+  `commondir`, or worktree discovery/admission added.
+- Extra read-only probes covered all 24 outer/middle/deepest/unrelated
+  registration orders, removed-project behavior, cwd symlink canonicalization,
+  and rejection of a cwd symlink resolving outside a registered root.
+- Non-blocking inherited gaps: no separate Windows path-family run, legacy
+  duplicate canonical roots retain first-row identity, synchronous realpath on
+  pathological mounts may affect availability, and post-registration symlink
+  rebinding remains an existing risk outside this diff.
 
 ## Integration And Remote Authority
 
-- Local merge into `main`: **not performed; blocked on technical verdicts and
-  Owner `ACCEPTED`**.
+- Local merge into `main`: **not performed; blocked on the required Claude Code
+  verdict and Owner `ACCEPTED`**.
 - Archive: not performed.
 - Push / remote merge / release: **not authorized / not performed**.
 - Authorized external action already performed: GitHub PR #18 received

@@ -21,13 +21,13 @@
 
 ## 3. Verification and review
 
-- [ ] 3.1 Run targeted project-registry tests, TypeScript/architecture checks,
+- [x] 3.1 Run targeted project-registry tests, TypeScript/architecture checks,
       strict OpenSpec validation, `git diff --check`, and `bun run check:full`.
-- [ ] 3.2 Freeze a local source commit and record the exact source/base SHA plus
+- [x] 3.2 Freeze a local source commit and record the exact source/base SHA plus
       actual receipts in `verification.md`; record Codex `IMPLEMENTATION_VERIFIED`.
 - [ ] 3.3 Obtain fresh-context, read-only Claude Code review of the same exact
       source SHA and record findings plus `REVIEW_APPROVED` or
       `CHANGES_REQUESTED`.
-- [ ] 3.4 Stop before local integration. Owner `ACCEPTED`, local merge,
+- [x] 3.4 Stop before local integration. Owner `ACCEPTED`, local merge,
       post-merge validation, archive, push, remote merge, and release remain
       pending or unauthorized as applicable.

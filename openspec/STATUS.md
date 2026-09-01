@@ -8,7 +8,7 @@ Updated: 2026-09-02 (Pacific/Auckland)
 
 | Change | State | Concrete next gate |
 | --- | --- | --- |
-| `fix-nested-project-cwd-resolution` | Approved / Implementing (R2; Owner `APPROVED` 2026-09-02) | Replace implicit first-match selection in the existing registry owner, freeze and fully verify one local source SHA, obtain fresh-context Claude Code review of that SHA, then stop for Owner `ACCEPTED`; do not merge `main` or push. |
+| `fix-nested-project-cwd-resolution` | Verification / Acceptance (R2; source `1cce15b4`, Codex `IMPLEMENTATION_VERIFIED`) | Obtain fresh-context Claude Code review of exact source `1cce15b4e37aac3afb32a2621ea89f4d8be69e95`, then stop for Owner `ACCEPTED`; do not merge `main` or push. |
 | `add-architecture-guard-ratchet` | Approved (Foundation 1c; Owner `APPROVED` 2026-08-26) | Start W1 from the post-1a/1b locally archived `main` in a dedicated branch/worktree; regenerate every baseline before source edits. |
 | `refactor-engine-vocabulary-residue` | Approved (Foundation 1d; Owner `APPROVED` 2026-08-26) | Implementation remains sequenced after 1c; re-verify all anchors against that later tree. |
 | `update-trpc-capability-boundary` | Blocked pending rebaseline | Separate already-shipped Phase 1/CSP/Mermaid/MCP guarantees from unfinished renderer/browser and capability/audit work; validate and archive only implemented truth, then create bounded follow-ups. |
