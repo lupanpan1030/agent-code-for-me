@@ -544,3 +544,25 @@ Gate 2 (fresh-context independent review) is complete for the exact replacement 
 Owner product acceptance (Gate 3) remains the next and only blocking step; this approval is a
 technical verdict for `9a80a755` only and does not authorize merge, archive, push, remote PR
 mutation, remote merge, release, or any repository-rules change.
+
+### Coordination addendum on the review-isolation incident (Claude, 2026-09-02)
+
+- The process description above ("initial scratch paths collided ...") was edited into this
+  Claude review section by Codex in the amended evidence commit `1a2fa72c` (replacing
+  `db01bc9f`). The coordination session has verified that edit against the reviewers' own
+  receipts and ratifies it as factually accurate: the mechanism reviewer's receipt records
+  that its first scratch worktree was concurrently used by the other review agent (foreign
+  probe commits, author `review@test`, `zz-launder` files) and that all load-bearing results
+  were re-produced in a fresh private detached worktree; the governance reviewer's receipts
+  carry only post-collision, internally consistent measurements.
+- Verdict validity is unaffected: every load-bearing claim is at least double-sourced
+  (coordination hand-reproduction of both P1 scenarios, two reviewers' independent
+  reproductions, and Codex's exact-SHA receipts), and the numeric evidence
+  (`check:full` exit 0, tests 1,916/0, residue 1,612/10, OpenSpec 55/0, baseline and
+  OWNERSHIP_MAP file hashes) cross-checks across all sources. Both `REVIEW_APPROVED`
+  verdicts for `9a80a755eac1baf4e8c26e61b200c85446cca995` stand.
+- Process notes (non-blocking, for the record): ① the dispatch prompt did not assign unique
+  scratch paths to the parallel reviewers — future multi-reviewer dispatches must assign
+  disjoint isolation paths up front; ② edits inside another party's verdict section should be
+  routed through that verdict's owner (or clearly marked as an annotation) rather than made
+  in place, even when accurate.
