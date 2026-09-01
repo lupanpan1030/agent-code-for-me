@@ -415,3 +415,60 @@ pre-freeze SHA-256 values:
   (**1,612 files scanned / 10 allowlisted**); TypeScript passed; tests **1,916 passed / 0
   failed / 9,291 expectations across 302 files**.
 - Remote operations: not authorized / not performed. No merge or archive is authorized.
+
+## Replacement exact-SHA implementation verification (2026-09-02)
+
+### Frozen source identity
+
+- Replacement source SHA: `9a80a755eac1baf4e8c26e61b200c85446cca995`
+  (`fix(architecture): close ratchet fail-open gaps`).
+- Source tree SHA: `6346622d4186ade34111d8b2e16380af87f79d23`.
+- Parent / formal superseding-review record: `8ca11c18655287bd1ebc53c22414ff45b7b11991`.
+- Superseded implementation comparison point: `74a2a93a54549ed48cee897a11e4860f73c69a0d`.
+- `git show --stat 9a80a755`: **11 files changed / 478 insertions / 40 deletions**.
+- `git diff 74a2a93a..9a80a755 -- src drizzle`: empty. The repair contains no
+  product-code, schema, or migration changes.
+- Exact-source worktree was clean before and after verification.
+- Environment: Linux `6.18.33.2-microsoft-standard-WSL2` x86_64, Node
+  `v24.19.0`, Bun `1.3.14`.
+
+### Exact-source receipts
+
+All commands below ran with `HEAD` exactly at the replacement source SHA above, before this
+evidence-only documentation update:
+
+- `bun run architecture:check`: exit **0** (`Architecture guard passed.`). This clean-SHA run
+  exercised the previous-baseline-history comparison against the original 12-entry committed
+  baseline.
+- `DIFF_BASE_SHA=74a2a93a54549ed48cee897a11e4860f73c69a0d bun run
+  architecture:check`: exit **0**, explicitly exercising the CI-base comparison against the
+  original committed baseline.
+- `bun test --isolate tests/proof-evidence-gates.test.ts
+  tests/run-biome-changed.test.mjs`: **32 passed / 0 failed / 103 expectations**.
+- `./node_modules/.bin/openspec validate add-architecture-guard-ratchet --strict
+  --no-interactive`: valid.
+- Required `bun run check:full`: exit **0**:
+  - changed-file lint, architecture guard, retired-runtime residue, TypeScript, tests,
+    OpenSpec validation, production build, and patch-whitespace check all passed;
+  - retired-runtime residue: **1,612 files scanned / 10 allowlisted**;
+  - tests: **1,916 passed / 0 failed / 9,291 expectations across 302 files**;
+  - OpenSpec: **55 passed / 0 failed**;
+  - Electron/Vite main, preload, and renderer production builds completed successfully;
+  - patch-whitespace check exited **0**.
+
+An independent Codex repair review also reproduced the committed-growth case in an isolated
+copy: after committing a synchronized `codex.ts` line-count and baseline raise, the clean normal
+guard exited **1** against the previous baseline-changing commit. It found no remaining P0, P1,
+or P2 in the remediation delta.
+
+### Technical verdict and remaining gate
+
+**Codex verdict: `IMPLEMENTATION_VERIFIED` for source SHA
+`9a80a755eac1baf4e8c26e61b200c85446cca995`.** The two superseding-review P1s are closed, their
+negative receipts are recorded above, the P2 is Yellow-only TICKET-122, and the exact-source full
+gate is green.
+
+This verdict does not revive `2bc77adb`; its `REVIEW_APPROVED` remains superseded and invalid.
+The required fresh-context Claude incremental re-review and full guard rerun for the replacement
+source SHA remain pending. Owner acceptance therefore remains blocked. No merge, archive, push,
+remote PR mutation, remote merge, release, or other remote operation is authorized or performed.
