@@ -291,3 +291,48 @@ Owner-ruling invariants A1–A4 all verified directly in the diff and by grep ac
 Ran the guard scripts live in the worktree (read-only except for throwaway probe files, all removed and confirmed via `git status --porcelain` clean afterward): `node scripts/check-architecture-guards.mjs` passes cleanly on the unmodified tree. Empirically probed and confirmed guard soundness for: (1) a new direct Electron import in a guarded directory — caught; (2) a new one-hop wrapper reaching Electron — caught with an exact \"unregistered one-hop wrapper\" message; (3) a two-hop wrapper chain (guarded file → wrapper A → wrapper B → electron) — NOT caught, confirming the documented one-hop-only deferral is real but is explicitly acknowledged in design.md/proposal.md/OWNERSHIP_MAP.md, not silent; (4) a brand-new sibling file under src/main/lib/trpc/routers/ with unbounded new logic that never touches claude.ts/codex.ts — NOT caught by any ratchet, since route-surface ratchets are scoped to exactly those two named files; (5) self-lock: adding `continue-on-error: true` to the Architecture guards CI step is caught immediately by assertCiRunsArchitectureCheck's exact-match, no-continue-on-error, no-if requirement. Ran `bun test tests/proof-evidence-gates.test.ts tests/run-biome-changed.test.mjs` — 32/32 pass. Confirmed the lint ratchet's below-baseline (shrink) and above-baseline (raise) cases both force a hard failure (no silent drift in either direction), that route-surface baseline comparisons are exact-equal (not ≤) forcing tighten-on-shrink, and that the CI-side authoritative-baseline comparison for the lint ratchet is pinned to the real GitHub PR base SHA (github.event.pull_request.base.sha), not an attacker-controllable value.
 
 Findings above are P2/P3 only — real, empirically-confirmed evasion paths, but each is either an explicitly documented non-goal (two-hop wrapper closure) or a narrow, Owner-approved scope limitation (route-surface ratchet covers only two named files) rather than a defect introduced by 1c. No P0/P1 issues found; all four Owner-ruling invariants (A1–A4) verified as implemented exactly as specified.
+
+## Superseding review record — fresh-context Claude Code (2026-09-02, coordination session f227cc27)
+
+- The `REVIEW_APPROVED` entry above (commit `2bc77adb`, dispatched from the prior coordination
+  session 633a3e4a) is **SUPERSEDED** for source SHA
+  `74a2a93a54549ed48cee897a11e4860f73c69a0d`.
+- A concurrently dispatched second dual fresh-context review (correctness + security lenses)
+  returned **`CHANGES_REQUESTED` / `CHANGES_REQUESTED`** with two P1 findings. The coordinating
+  session then reproduced both P1s by hand in this worktree (all probe mutations reverted;
+  `git status --porcelain` clean and the guard re-run green afterwards):
+  - **P1-1 — violates Owner ruling R2 ("after the first freeze the registry may only shrink")**:
+    adding a 13th entry to `scripts/architecture-baselines.json#reachThroughWrappers` together
+    with the matching `docs/OWNERSHIP_MAP.md` mirror line passes
+    `node scripts/check-architecture-guards.mjs` with exit 0. The shrink-only comparison
+    (`architectureBaselineRaiseMessages`) runs only in the opt-in
+    `--update-architecture-baselines` mode; the blocking path has no committed-baseline diff and
+    no stale-entry check for this section (unlike the symmetric `importBoundaryViolations` /
+    `reverseDirectionImports` frozen-set checks). The superseded record's claim that registry
+    growth hard-fails is falsified by this repro.
+  - **P1-2 — fail-open**: truncating `scripts/architecture-baselines.json` to an empty file makes
+    `parseArchitectureBaselines()` return null without `fail()`, and the caller
+    (`if (architectureBaselines) { ... }`) silently skips all four ratchet assertions — the guard
+    prints `Architecture guard passed.` with the route ratchets, import-boundary freeze,
+    reverse-direction freeze, and wrapper registry all inactive.
+- Non-blocking findings carried forward: P2 route-surface ratchet does not cover brand-new
+  sibling router files (found independently by BOTH review rounds — recommend a Yellow follow-up
+  widening coverage to `src/main/lib/trpc/routers/`); P2 direct `agentJobEvents` table-write
+  bypass of the event single-path guard (disclosed Decision-4 non-goal); P3 non-literal import
+  specifiers undetected (inherited AST-infra limitation); P3 biome rule-downgrade legitimately
+  shrinks the lint baseline (disclosed).
+- **Verdict of record for `74a2a93a54549ed48cee897a11e4860f73c69a0d`: `CHANGES_REQUESTED`.**
+  Required before re-freeze:
+  1. `parseArchitectureBaselines()` fails closed on empty/whitespace/invalid baseline content
+     (or the four asserts fail loudly on a null baseline).
+  2. `assertReachThroughWrapperRegistry()` gains the symmetric stale-entry check — a registry
+     entry with no matching live one-hop finding fails the blocking gate — mirroring
+     `frozenFindingSetMessages`.
+  3. Shrink-only enforcement for the architecture baselines is wired into the normal blocking
+     check path (committed-baseline comparison or equivalent), not only the opt-in update mode.
+  4. Negative self-test fixtures plus verification.md receipts covering both repro scenarios
+     (registry padding with doc mirror; empty baseline file).
+- A new frozen source SHA is required after the fixes; the follow-up review will target the
+  delta plus a full guard re-run. Owner acceptance must not proceed on the superseded record.
+  No merge, archive, push, remote PR mutation, remote merge, release, or other remote operation
+  is authorized.
