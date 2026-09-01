@@ -472,3 +472,71 @@ This verdict does not revive `2bc77adb`; its `REVIEW_APPROVED` remains supersede
 The required fresh-context Claude incremental re-review and full guard rerun for the replacement
 source SHA remain pending. Owner acceptance therefore remains blocked. No merge, archive, push,
 remote PR mutation, remote merge, release, or other remote operation is authorized or performed.
+
+## Fresh-context Claude incremental re-review (2026-09-02)
+
+### Binding and process
+
+- Reviewed source SHA: `9a80a755eac1baf4e8c26e61b200c85446cca995`; verified at branch HEAD
+  `1fd37d03555402e706febd50ed4f3091cfc6b554` after independently confirming the delta is the
+  evidence-only documentation commit (`git diff 9a80a755 1fd37d03 --stat`: tasks.md +
+  verification.md only).
+- Two independent fresh-context review agents (mechanism-adversarial lens and
+  governance-consistency lens), each in its own isolated detached worktree at `1fd37d03`
+  (created from the main repository, removed after review; the Codex implementation worktree
+  was never modified). The coordination session additionally hand-reproduced both superseding
+  P1 scenarios in the implementation worktree before dispatch and restored the scene
+  (baseline file SHA-256 re-verified against the recorded hash).
+
+### Verdicts
+
+**Both reviews: `REVIEW_APPROVED` for source SHA
+`9a80a755eac1baf4e8c26e61b200c85446cca995`. No P0, P1, or P2 findings.**
+
+Key confirmations, each independently reproduced:
+
+- Fix ① fail-closed parsing: empty, whitespace-only, invalid-JSON, and deleted
+  `scripts/architecture-baselines.json` all exit 1 with explicit failure messages.
+- Fix ② symmetric stale-entry check: registry padding is blocked even with a synchronized
+  `OWNERSHIP_MAP.md` mirror edit; asymmetric (JSON-only / mirror-only) edits also fail.
+- Fix ③ only-shrink in the normal blocking path: additions fail against the committed HEAD
+  baseline, against the previous committed baseline, and (in CI) against the self-locked
+  `DIFF_BASE_SHA` PR-base/push-before comparison; committed-growth on top of the freeze also
+  fails. Coverage extends to routeSurfaceRatchets, importBoundaryViolations,
+  reverseDirectionImports, lint baseline, `_meta` policy text, and schema shape.
+- Fix ④ negative fixtures: the parser self-test is proven live (removing the production
+  empty-content check trips it); verification.md negative receipts match reality.
+- The 12→7 `reachThroughWrappers` contraction is proven mandatory, not discretionary: each of
+  the five removed entries (provider-token, claude-credentials, codex/cli-path,
+  codex/runtime-status, utility-chat-completion), when re-added with mirror sync, fails as
+  stale — no live one-hop finding exists for any of them.
+- Scope isolation: `git diff 74a2a93a..9a80a755 -- src drizzle` empty; all 11 changed files
+  are guard/CI/docs/openspec/ticket surfaces. TICKET-122 is Yellow-only registration.
+- Evidence re-measured independently at `1fd37d03`: `bun run check:full` exit 0; tests
+  1,916 passed / 0 failed; retired-runtime residue 1,612 scanned / 10 allowlisted; OpenSpec
+  55 passed / 0 failed; `openspec validate add-architecture-guard-ratchet --strict` valid.
+
+### Non-blocking P3 notes (informational; no action required for 1c acceptance)
+
+1. Local multi-commit baseline laundering: `previousArchitectureBaselineRevision()` compares
+   only the single most-recent prior baseline-touching commit, so a growth commit followed by
+   a formatting-only (or otherwise legal) baseline-touching commit passes a plain local guard
+   run. The CI `DIFF_BASE_SHA` comparison (self-locked in ci.yml for both PR and push events)
+   catches it; local-only gap. Possible hardening: merge-base comparison or byte-canonical
+   baseline enforcement in the normal path.
+2. The stale-wrapper self-test exercises the `staleReachThroughWrappers()` helper, not the
+   blocking call-site wiring in `assertReachThroughWrapperRegistry()`; defense-in-depth gap
+   for accidental regressions only (the shipped enforcement empirically works).
+3. `docs/OWNERSHIP_MAP.md` wording "Its first 12 entries were Owner-authorized" now sits above
+   a 7-entry mirror list; intent is recoverable from `_meta.reachThroughWrapperBootstrap` but
+   the sentence reads as a contradiction on first pass.
+4. `allowMissingFile` for the `DIFF_BASE_SHA` baseline comparison is unconditional in code
+   while the spec delta words it as bootstrap-only; practically inert today (the current main
+   base is exactly the authorized bootstrap case).
+
+### Gate status
+
+Gate 2 (fresh-context independent review) is complete for the exact replacement source SHA.
+Owner product acceptance (Gate 3) remains the next and only blocking step; this approval is a
+technical verdict for `9a80a755` only and does not authorize merge, archive, push, remote PR
+mutation, remote merge, release, or any repository-rules change.
