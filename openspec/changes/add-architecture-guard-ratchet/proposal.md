@@ -114,6 +114,11 @@ behavior changes.
      the registry, or the guard fails. The guard also asserts the OWNERSHIP_MAP prose list
      names exactly the registry entries, so doc and machine truth cannot drift. Full
      transitive closure stays deferred by design (unchanged posture).
+   - The normal blocking path parses the architecture baseline fail-closed and compares
+     every section with the committed baseline using the only-shrink rule. Wrapper drift
+     is symmetric: both an unregistered live one-hop finding and a registered wrapper with
+     no corresponding live finding fail, so a synchronized OWNERSHIP_MAP padding entry
+     cannot authorize registry growth.
 4. **Wire the orphan guards and self-lock the residue gate**:
    - `scripts/check-retired-runtime-residue.mjs` is already wired as `retired-runtime:check`
      (blocking `check` chain + CI main-job step); the remaining gap is the self-lock: the
@@ -207,7 +212,8 @@ JSON baselines are repo-tracked source artifacts, not runtime data.
 
 - `bun run architecture:check` — new guards ship with self-test fixtures in the same style
   as `assertRuntimeCoreImportBoundary`'s synthetic-fixture self-test (fail-closed if
-  expected findings don't match).
+  expected findings don't match), including required-content parsing and stale-wrapper
+  registry fixtures.
 - `tests/run-biome-changed.test.mjs` — extended for baseline ratchet pass/fail/tighten
   paths.
 - `tests/proof-evidence-gates.test.ts` — extended for the runtime-control evidence gate.
@@ -216,7 +222,10 @@ JSON baselines are repo-tracked source artifacts, not runtime data.
   knip step.
 - `bun run check:full` receipt bound to the source SHA in `verification.md` (closeout).
 - Negative proof: temporarily reverting one baseline entry of each kind locally must turn
-  the corresponding guard red (recorded in `verification.md`, not committed).
+  the corresponding guard red (recorded in `verification.md`, not committed). The
+  superseding-review repair additionally proves that an empty/blank/invalid architecture
+  baseline and a synchronized padding wrapper/doc entry replaying the original
+  thirteenth-entry violation class both fail the normal blocking path.
 
 ## W7 autonomy envelope
 

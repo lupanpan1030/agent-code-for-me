@@ -410,8 +410,10 @@ or UI helper.
 - Machine-readable violation baselines:
   `scripts/architecture-baselines.json#importBoundaryViolations` and
   `#reverseDirectionImports`. Findings outside those frozen sets fail; stale
-  entries fail with a tightening instruction. Baselines may only shrink unless
-  the Owner explicitly authorizes a reviewed hand edit.
+  entries fail with a tightening instruction. The normal guard compares the
+  file with committed `HEAD`, its previous changed version, and the CI diff
+  base, so baselines may only shrink unless the Owner explicitly authorizes a
+  reviewed guard/spec change.
 - Dependency direction: tRPC routers import durable behavior and shared state
   from main-process lib owners. Every file under `src/main/lib/` outside
   `src/main/lib/trpc/` is checked against imports resolving under
@@ -428,7 +430,8 @@ or UI helper.
   transitive closure remains deferred by design. Modules under `src/main/lib/`
   use extensionless paths relative to that directory as registry names; any
   repository-local wrapper outside it uses an extensionless repository-relative
-  path. The list below is an exact,
+  path. An entry without a corresponding live one-hop finding is stale and fails
+  with a tightening instruction. The list below is an exact,
   guard-asserted documentation mirror of that machine registry, not a second
   source of truth. Its first 12 entries were Owner-authorized on 2026-08-27;
   after that freeze the registry may only shrink.
@@ -436,12 +439,7 @@ or UI helper.
   - `electron-app`
   - `db`
   - `secure-storage`
-  - `provider-token`
   - `local-only`
-  - `claude-credentials`
-  - `codex/cli-path`
-  - `codex/runtime-status`
-  - `utility-chat-completion`
   - `chat-attachments`
   - `mcp-auth`
   - `skills/registry`

@@ -107,3 +107,14 @@ Foundation 1b 中只登记；需要新的设计、Owner 批准和独立变更。
 | [TICKET-119](TICKET-119-chat-attachments-electron-boundary.md) | Chat attachments 移除 Electron reach-through | 🟡 Yellow（架构） | 待设计 / 未授权实施 |
 | [TICKET-120](TICKET-120-mcp-auth-boundary-extraction.md) | MCP auth 移除 Electron 与 router reach-through | 🟡 Yellow（架构/安全边界） | 待设计 / 未授权实施 |
 | [TICKET-121](TICKET-121-skill-registry-electron-boundary.md) | Skill registry 移除 Electron reach-through | 🟡 Yellow（架构） | 待设计 / 未授权实施 |
+
+## 第七批 — Architecture Guard Ratchet 评审 Yellow 后续（2026-09-02）
+
+来源：Foundation 1c 两轮 fresh-context 评审共同发现的 P2。新建
+`src/main/lib/trpc/routers/` 兄弟路由文件可绕过只覆盖 `claude.ts` / `codex.ts`
+的 route-surface ratchet。本项在 Foundation 1c 中只登记，不实施；须另行完成目录级
+registry / 新路由准入设计、OpenSpec 批准和 Owner 授权。
+
+| 工单 | 标题 | 级别 | 状态 |
+|------|------|------|------|
+| [TICKET-122](TICKET-122-router-sibling-route-surface-ratchet.md) | Router 兄弟文件的目录级 surface ratchet / 准入设计 | 🟡 Yellow（架构治理） | 待设计 / 未授权实施 |

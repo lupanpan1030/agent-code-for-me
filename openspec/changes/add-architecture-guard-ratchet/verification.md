@@ -336,3 +336,82 @@ Findings above are P2/P3 only — real, empirically-confirmed evasion paths, but
   delta plus a full guard re-run. Owner acceptance must not proceed on the superseded record.
   No merge, archive, push, remote PR mutation, remote merge, release, or other remote operation
   is authorized.
+
+## P1 remediation and re-freeze preparation (2026-09-02)
+
+This section records the repair and pre-freeze negative evidence. The exact replacement source
+SHA, `bun run check:full`, and Codex verdict are recorded only after the repair tree is committed;
+the historical `74a2a93a` verdict remains `CHANGES_REQUESTED`, and `2bc77adb` remains superseded.
+
+### Repair
+
+- `parseArchitectureBaselines()` now routes empty and whitespace-only content through the
+  required parser, which records a blocking failure before returning `null`. Malformed JSON and
+  invalid canonical shape also remain blocking. A null parse result can no longer produce a
+  successful guard run.
+- The normal (non-`--update`) path runs the same
+  `architectureBaselineRaiseMessages()` only-shrink comparison against committed `HEAD`, the
+  previous commit that changed `scripts/architecture-baselines.json`, and `DIFF_BASE_SHA` when
+  supplied. The prior-changed revision keeps the comparison effective at the clean replacement
+  source SHA and after evidence-only commits. CI supplies the exact pull-request base / push-before
+  SHA and the guard self-locks that step environment. An unreadable revision fails closed; the
+  current pre-bootstrap `main` base may omit the file because Foundation 1c is its authorized
+  introduction.
+- `assertReachThroughWrapperRegistry()` now collects live findings once and checks both
+  directions: live finding without registry entry, and registry entry without a live finding.
+  The latter fails as stale even when `docs/OWNERSHIP_MAP.md` mirrors the padded name.
+- Enabling the symmetric check exposed five already-stale bootstrap names:
+  `claude-credentials`, `codex/cli-path`, `codex/runtime-status`, `provider-token`, and
+  `utility-chat-completion`. The generated registry and its documentation mirror tightened from
+  12 to the **7 live entries** (`chat-attachments`, `db`, `electron-app`, `local-only`,
+  `mcp-auth`, `secure-storage`, `skills/registry`). No `src/` product code changed.
+- Built-in synthetic fixtures cover empty, whitespace-only, and malformed baseline content plus
+  a registry entry without a live one-hop finding.
+- The sibling-router P2 found by both review rounds is registered as Yellow
+  [TICKET-122](../../../docs/tickets/TICKET-122-router-sibling-route-surface-ratchet.md), marked
+  design-pending / implementation-not-authorized. Foundation 1c does not widen route coverage.
+
+### Superseding-review negative receipts
+
+Both probes were applied locally to the repaired working tree, observed red, and reverted with
+`apply_patch`; neither probe is committed.
+
+1. **Synchronized padding wrapper/doc entry (replay of the original thirteenth-entry violation
+   class):** added `zz-review-padding` to
+   `scripts/architecture-baselines.json#reachThroughWrappers` and the OWNERSHIP_MAP mirror, then
+   ran `node scripts/check-architecture-guards.mjs`. Exit **1** reported both independent
+   blockers:
+   - `Working architecture baseline against committed HEAD
+     8ca11c18655287bd1ebc53c22414ff45b7b11991 adds reachThroughWrappers entry
+     zz-review-padding; architecture baselines may only shrink relative to the committed
+     baseline.`
+   - `reachThroughWrappers baseline entry "zz-review-padding" is stale; delete it to tighten
+     the baseline.`
+2. **Empty/whitespace-only baseline:** replaced the baseline document with a single blank line,
+   then ran the same normal guard command. Exit **1** reported
+   `scripts/architecture-baselines.json must contain non-empty JSON content.` It did not print
+   `Architecture guard passed.`
+
+After each restoration, `bun run architecture:check` exited **0**. Current post-restoration,
+pre-freeze SHA-256 values:
+
+- `scripts/architecture-baselines.json`:
+  `52147726abcf446a7e0580a90bec2e17f01c8c2daed57a624f0ae3bf8e6abdca`;
+- `docs/OWNERSHIP_MAP.md`:
+  `31ff2955b87a9bc79ba2923ccd8aa624ff9298e01dddbcdce11575dbe6aeb658`.
+
+`git diff --check` passed after restoration. No probe file or padding entry remains.
+
+### Pre-freeze targeted receipts
+
+- `bun run architecture:check`: exit **0** (`Architecture guard passed.`).
+- `bun run lint`: exit **0**.
+- `bun test --isolate tests/proof-evidence-gates.test.ts
+  tests/run-biome-changed.test.mjs`: **32 passed / 0 failed / 103 expectations**.
+- `./node_modules/.bin/openspec validate add-architecture-guard-ratchet --strict
+  --no-interactive`: valid.
+- `bun run spec:validate`: **55 passed / 0 failed**.
+- `bun run check`: exit **0**; architecture and lint passed; retired-runtime residue passed
+  (**1,612 files scanned / 10 allowlisted**); TypeScript passed; tests **1,916 passed / 0
+  failed / 9,291 expectations across 302 files**.
+- Remote operations: not authorized / not performed. No merge or archive is authorized.

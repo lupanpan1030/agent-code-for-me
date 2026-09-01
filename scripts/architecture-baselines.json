@@ -84,16 +84,11 @@
   ],
   "reachThroughWrappers": [
     "chat-attachments",
-    "claude-credentials",
-    "codex/cli-path",
-    "codex/runtime-status",
     "db",
     "electron-app",
     "local-only",
     "mcp-auth",
-    "provider-token",
     "secure-storage",
-    "skills/registry",
-    "utility-chat-completion"
+    "skills/registry"
   ]
 }

@@ -28,10 +28,12 @@
       `skills/registry` — re-verified against the
       post-1a/1b OWNERSHIP_MAP). Header comment states entries may only be deleted and
       names the Owner-edit rule for raises; the authorized 12-entry first freeze is the
-      bootstrap, not permission for any later addition.
+      bootstrap, not permission for any later addition. The normal-path follow-up in 8.6
+      additionally requires an explicit Owner-approved guard/spec change for a later raise.
 - [x] 2.2 Add `--update-architecture-baselines` to `scripts/check-architecture-guards.mjs`:
       regenerates deterministic sorted output and refuses to raise any number or add any
-      violation/wrapper entry (prints the hand-edit instruction instead).
+      violation/wrapper entry (prints the Owner-approved guard/spec-change instruction
+      instead).
 - [x] 2.3 Generate the baselines at the implementation SHA via the update mode; commit the
       generated file unedited.
 
@@ -149,10 +151,24 @@
 - [x] 8.4 Confirm scope guards held: `git diff --stat` shows no `src/` product-code edits,
       no drizzle/schema changes, no edits to the dangerous-router-input allowlist, and no
       baseline entry added or raised relative to the generated output.
+- [x] 8.5 Superseding-review repair: make architecture-baseline parsing fail closed for
+      empty, whitespace-only, invalid JSON, and invalid shape; run all four ratchets only
+      from a valid document.
+- [x] 8.6 Add the symmetric reach-through stale-entry check and wire the normal blocking
+      path to compare the working architecture baseline with committed `HEAD`, its previous
+      changed version, and the self-locked CI diff base using the existing only-shrink
+      comparison. Mechanically remove any now-stale registry/doc entries; do not change
+      product code.
+- [x] 8.7 Add fail-closed parser and stale-wrapper synthetic fixtures. Reproduce and record
+      both superseding-review negatives: a synchronized padding wrapper/doc entry replaying
+      the original thirteenth-entry violation class and an empty baseline file must each
+      make `architecture:check` exit nonzero; restore all probes and rerun green.
+- [x] 8.8 Register the sibling-router route-ratchet gap as Yellow TICKET-122. Do not
+      implement directory-level route coverage in Foundation 1c.
 
 ## 9. Closeout (repo standard)
 
-- [x] 9.1 Bind the exact source SHA and the full `bun run check:full` receipt into
+- [ ] 9.1 Bind the exact source SHA and the full `bun run check:full` receipt into
       `verification.md`.
 - [ ] 9.2 Record IMPLEMENTATION_VERIFIED (Codex) and fresh-context REVIEW_APPROVED
       (Claude) in `verification.md` for that same SHA.

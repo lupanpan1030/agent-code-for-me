@@ -23,6 +23,10 @@ const updateArchitectureBaselines = process.argv.includes(
 )
 const ARCHITECTURE_BASELINE_PATH = "scripts/architecture-baselines.json"
 const OWNERSHIP_MAP_PATH = "docs/OWNERSHIP_MAP.md"
+const CI_DIFF_BASE_SHA_EXPRESSION = [
+  "$",
+  "{{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}",
+].join("")
 
 function relative(filePath) {
   return path.relative(repoRoot, filePath).replaceAll(path.sep, "/")
@@ -946,7 +950,7 @@ function routeSurfaceMessages(file, measured, baseline, target) {
     : ""
   if (measured.lines > baseline.lines) {
     messages.push(
-      `${file} ${target.governance} grew to ${measured.lines} lines (baseline ${baseline.lines}). ${target.retirement}; a baseline raise is Red and requires an explicit Owner-approved hand edit.${note}`,
+      `${file} ${target.governance} grew to ${measured.lines} lines (baseline ${baseline.lines}). ${target.retirement}; a baseline raise is Red and requires an explicit Owner-approved guard/spec change plus the recorded baseline edit.${note}`,
     )
   } else if (measured.lines < baseline.lines) {
     messages.push(
@@ -1134,6 +1138,11 @@ function unregisteredReachThroughFindings(findings, registry) {
   return findings.filter((finding) => !registered.has(finding.wrapper))
 }
 
+function staleReachThroughWrappers(findings, registry) {
+  const currentWrappers = new Set(findings.map((finding) => finding.wrapper))
+  return registry.filter((wrapper) => !currentWrappers.has(wrapper))
+}
+
 function exactObjectKeys(value, expected, label) {
   const actual = value && typeof value === "object" ? Object.keys(value) : []
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
@@ -1291,12 +1300,20 @@ function validateArchitectureBaselineShape(baseline, label) {
   return valid
 }
 
-function parseArchitectureBaselineContent(content, label) {
+function parseArchitectureBaselineContent(
+  content,
+  label,
+  reportFailure = fail,
+) {
+  if (typeof content !== "string" || content.trim().length === 0) {
+    reportFailure(`${label} must contain non-empty JSON content.`)
+    return null
+  }
   try {
     const baseline = JSON.parse(content)
     return validateArchitectureBaselineShape(baseline, label) ? baseline : null
   } catch (error) {
-    fail(
+    reportFailure(
       `${label} must be valid JSON: ${error instanceof Error ? error.message : String(error)}.`,
     )
     return null
@@ -1305,22 +1322,37 @@ function parseArchitectureBaselineContent(content, label) {
 
 function parseArchitectureBaselines() {
   const content = readText(ARCHITECTURE_BASELINE_PATH)
-  return content
-    ? parseArchitectureBaselineContent(content, ARCHITECTURE_BASELINE_PATH)
-    : null
+  return parseArchitectureBaselineContent(content, ARCHITECTURE_BASELINE_PATH)
 }
 
-function readCommittedArchitectureBaselines() {
+function readCommittedArchitectureBaselines(
+  reference,
+  label,
+  { allowMissingFile = false } = {},
+) {
+  const commit = spawnSync(
+    "git",
+    ["rev-parse", "--verify", `${reference}^{commit}`],
+    { cwd: repoRoot, encoding: "utf8" },
+  )
+  if (commit.status !== 0) {
+    fail(
+      `Cannot resolve ${label} (${reference}) as a committed architecture-baseline reference: ${String(commit.stderr ?? "").trim() || `git exited ${commit.status}`}.`,
+    )
+    return null
+  }
+  const commitSha = commit.stdout.trim()
   const result = spawnSync(
     "git",
-    ["show", `HEAD:${ARCHITECTURE_BASELINE_PATH}`],
+    ["show", `${commitSha}:${ARCHITECTURE_BASELINE_PATH}`],
     { cwd: repoRoot, encoding: "utf8" },
   )
   if (result.status === 0) {
-    return parseArchitectureBaselineContent(
+    const baseline = parseArchitectureBaselineContent(
       result.stdout,
-      `committed HEAD:${ARCHITECTURE_BASELINE_PATH}`,
+      `${label}:${ARCHITECTURE_BASELINE_PATH}`,
     )
+    return baseline ? { baseline, commitSha, label } : null
   }
   const stderr = String(result.stderr ?? "")
   if (
@@ -1328,12 +1360,35 @@ function readCommittedArchitectureBaselines() {
     (stderr.includes("does not exist in") ||
       stderr.includes("exists on disk, but not in"))
   ) {
+    if (allowMissingFile) return { baseline: null, commitSha, label }
+    fail(
+      `${label}:${ARCHITECTURE_BASELINE_PATH} is missing; the normal architecture guard requires a committed baseline.`,
+    )
     return null
   }
   fail(
-    `Cannot read the authoritative committed ${ARCHITECTURE_BASELINE_PATH}: ${stderr.trim() || `git exited ${result.status}`}.`,
+    `Cannot read ${label}:${ARCHITECTURE_BASELINE_PATH}: ${stderr.trim() || `git exited ${result.status}`}.`,
   )
   return null
+}
+
+function previousArchitectureBaselineRevision() {
+  const result = spawnSync(
+    "git",
+    ["log", "--format=%H", "--", ARCHITECTURE_BASELINE_PATH],
+    { cwd: repoRoot, encoding: "utf8" },
+  )
+  if (result.status !== 0) {
+    fail(
+      `Cannot inspect committed ${ARCHITECTURE_BASELINE_PATH} history: ${String(result.stderr ?? "").trim() || `git exited ${result.status}`}.`,
+    )
+    return null
+  }
+  const revisions = result.stdout
+    .split(/\r?\n/u)
+    .map((revision) => revision.trim())
+    .filter(Boolean)
+  return revisions.length > 1 ? revisions[1] : null
 }
 
 function collectBootstrapSourceChanges() {
@@ -1502,12 +1557,19 @@ function assertReachThroughWrapperRegistry(baseline) {
     )
   }
 
+  const currentFindings = collectCurrentReachThroughFindings()
   for (const finding of unregisteredReachThroughFindings(
-    collectCurrentReachThroughFindings(),
+    currentFindings,
     registry,
   )) {
     fail(
       `${finding.importer} reaches banned ${finding.categories.join("/")} ownership through unregistered one-hop wrapper ${finding.wrapper} (${JSON.stringify(finding.specifier)}); adding a registry entry is Red and requires explicit Owner approval.`,
+    )
+  }
+
+  for (const wrapper of staleReachThroughWrappers(currentFindings, registry)) {
+    fail(
+      `${ARCHITECTURE_BASELINE_PATH} reachThroughWrappers baseline entry ${JSON.stringify(wrapper)} is stale; delete it to tighten the baseline.`,
     )
   }
 }
@@ -1522,11 +1584,36 @@ function assertArchitectureRatchetSelfTests() {
     )
   }
 
+  for (const [content, expectedMessage] of [
+    ["", "non-empty JSON content"],
+    [" \n\t", "non-empty JSON content"],
+    ["{not-json", "valid JSON"],
+  ]) {
+    const parserFailures = []
+    const parsed = parseArchitectureBaselineContent(
+      content,
+      "architecture baseline parser fixture",
+      (message) => parserFailures.push(message),
+    )
+    if (
+      parsed !== null ||
+      parserFailures.length !== 1 ||
+      !parserFailures[0].includes(expectedMessage)
+    ) {
+      fail(
+        "Architecture baseline parser self-test must fail closed on empty, whitespace-only, and invalid content.",
+      )
+      break
+    }
+  }
+
   const ciSelfTest = parseYaml(`
 jobs:
   test-typecheck-build:
     steps:
       - run: bun run architecture:check
+        env:
+          DIFF_BASE_SHA: ${JSON.stringify(CI_DIFF_BASE_SHA_EXPRESSION)}
       - run: bun run retired-runtime:check-disabled
       - run: bun run retired-runtime:check
         continue-on-error: true
@@ -1560,6 +1647,20 @@ jobs:
       ciSelfTest,
       "test-typecheck-build",
       "bun run architecture:check",
+    ) ||
+    !workflowJobRunsExactBlockingCommandWithEnv(
+      ciSelfTest,
+      "test-typecheck-build",
+      "bun run architecture:check",
+      "DIFF_BASE_SHA",
+      CI_DIFF_BASE_SHA_EXPRESSION,
+    ) ||
+    workflowJobRunsExactBlockingCommandWithEnv(
+      ciSelfTest,
+      "test-typecheck-build",
+      "bun run architecture:check",
+      "DIFF_BASE_SHA",
+      "wrong-base",
     ) ||
     workflowJobRunsExactBlockingCommand(
       ciSelfTest,
@@ -1672,6 +1773,19 @@ jobs:
     )
   }
 
+  const staleWrapperEntries = staleReachThroughWrappers(
+    [{ wrapper: wrapperFinding?.wrapper ?? "fixture-wrapper" }],
+    ["fixture-wrapper", "stale-wrapper"],
+  )
+  if (
+    staleWrapperEntries.length !== 1 ||
+    staleWrapperEntries[0] !== "stale-wrapper"
+  ) {
+    fail(
+      "Reach-through wrapper registry self-test must reject entries without a live one-hop finding.",
+    )
+  }
+
   const sharedWrapperFinding = reachThroughFindingForResolvedModule(
     "src/main/lib/claude/__architecture_shared_wrapper_fixture__.ts",
     "../../../shared/fixture-wrapper",
@@ -1729,6 +1843,13 @@ jobs:
     authoritative,
     "fixture",
   )
+  const blockingRaiseFailures = []
+  assertArchitectureBaselineOnlyShrinks(
+    handRaised,
+    authoritative,
+    "blocking fixture",
+    (message) => blockingRaiseFailures.push(message),
+  )
   const shrinking = {
     routeSurfaceRatchets: Object.fromEntries(
       ROUTE_SURFACE_TARGETS.map(({ file }) => [
@@ -1750,6 +1871,11 @@ jobs:
       message.includes("reverseDirectionImports"),
     ) ||
     !raiseMessages.some((message) => message.includes("new-wrapper")) ||
+    !blockingRaiseFailures.some(
+      (message) =>
+        message.includes("new-wrapper") &&
+        message.includes("committed baseline"),
+    ) ||
     architectureBaselineRaiseMessages(shrinking, authoritative, "fixture")
       .length !== 0
   ) {
@@ -1826,6 +1952,23 @@ function architectureBaselineRaiseMessages(candidate, authoritative, label) {
   return messages
 }
 
+function assertArchitectureBaselineOnlyShrinks(
+  candidate,
+  authoritative,
+  label,
+  reportFailure = fail,
+) {
+  for (const message of architectureBaselineRaiseMessages(
+    candidate,
+    authoritative,
+    label,
+  )) {
+    reportFailure(
+      `${message}; architecture baselines may only shrink relative to the committed baseline.`,
+    )
+  }
+}
+
 function formatGeneratedArchitectureBaseline() {
   const biomeEntry = path.join(
     repoRoot,
@@ -1868,7 +2011,12 @@ function updateArchitectureBaselineRegistry() {
   )
     ? parseArchitectureBaselines()
     : null
-  const authoritativeBaseline = readCommittedArchitectureBaselines()
+  const authoritativeBaselineSnapshot = readCommittedArchitectureBaselines(
+    "HEAD",
+    "committed HEAD",
+    { allowMissingFile: true },
+  )
+  const authoritativeBaseline = authoritativeBaselineSnapshot?.baseline ?? null
   const comparisonBaseline = authoritativeBaseline ?? workingBaseline
   if (
     !authoritativeBaseline &&
@@ -1931,7 +2079,7 @@ function updateArchitectureBaselineRegistry() {
         : "Bootstrap measured baseline",
     )) {
       fail(
-        `Update refused: ${message}; raises/additions require an Owner-approved hand edit outside update mode.`,
+        `Update refused: ${message}; raises/additions require an explicit Owner-approved guard/spec change plus a recorded baseline edit outside update mode.`,
       )
     }
   }
@@ -2709,6 +2857,36 @@ function workflowJobRunsExactBlockingCommand(workflow, jobId, command) {
   )
 }
 
+function workflowJobRunsExactBlockingCommandWithEnv(
+  workflow,
+  jobId,
+  command,
+  envName,
+  envValue,
+) {
+  const job = workflow?.jobs?.[jobId]
+  const steps = job?.steps
+  return (
+    job &&
+    typeof job === "object" &&
+    (job["continue-on-error"] === undefined ||
+      job["continue-on-error"] === false) &&
+    job.if === undefined &&
+    Array.isArray(steps) &&
+    steps.some(
+      (step) =>
+        step &&
+        typeof step === "object" &&
+        typeof step.run === "string" &&
+        step.run.trim() === command &&
+        (step["continue-on-error"] === undefined ||
+          step["continue-on-error"] === false) &&
+        step.if === undefined &&
+        step.env?.[envName] === envValue,
+    )
+  )
+}
+
 function assertCiRunsArchitectureCheck() {
   const ciSource = readText(".github/workflows/ci.yml")
   let ci
@@ -2730,6 +2908,19 @@ function assertCiRunsArchitectureCheck() {
   ) {
     fail(
       `GitHub CI job ${mainJob} must run the exact blocking, unconditional command bun run architecture:check.`,
+    )
+  }
+  if (
+    !workflowJobRunsExactBlockingCommandWithEnv(
+      ci,
+      mainJob,
+      "bun run architecture:check",
+      "DIFF_BASE_SHA",
+      CI_DIFF_BASE_SHA_EXPRESSION,
+    )
+  ) {
+    fail(
+      `GitHub CI job ${mainJob} architecture:check step must set DIFF_BASE_SHA to the exact pull-request base/push-before expression.`,
     )
   }
   if (
@@ -3994,6 +4185,26 @@ if (updateArchitectureBaselines) {
   updateArchitectureBaselineRegistry()
 } else {
   const architectureBaselines = parseArchitectureBaselines()
+  const committedArchitectureBaselines = [
+    readCommittedArchitectureBaselines("HEAD", "committed HEAD"),
+  ]
+  const previousBaselineRevision = previousArchitectureBaselineRevision()
+  if (previousBaselineRevision) {
+    committedArchitectureBaselines.push(
+      readCommittedArchitectureBaselines(
+        previousBaselineRevision,
+        "previous committed architecture baseline",
+      ),
+    )
+  }
+  const diffBaseSha = process.env.DIFF_BASE_SHA?.trim()
+  if (diffBaseSha) {
+    committedArchitectureBaselines.push(
+      readCommittedArchitectureBaselines(diffBaseSha, "configured diff base", {
+        allowMissingFile: true,
+      }),
+    )
+  }
   assertOwnershipDocs()
   assertPackageScripts()
   assertCiRunsArchitectureCheck()
@@ -4006,6 +4217,20 @@ if (updateArchitectureBaselines) {
   assertChatMaintenanceFenceSingleOwner()
   assertNoUnresolvedDangerousRouterInput()
   assertArchitectureRatchetSelfTests()
+  if (architectureBaselines) {
+    const comparedBaselineContents = new Set()
+    for (const committed of committedArchitectureBaselines) {
+      if (!committed?.baseline) continue
+      const contentKey = JSON.stringify(committed.baseline)
+      if (comparedBaselineContents.has(contentKey)) continue
+      comparedBaselineContents.add(contentKey)
+      assertArchitectureBaselineOnlyShrinks(
+        architectureBaselines,
+        committed.baseline,
+        `Working architecture baseline against ${committed.label} ${committed.commitSha}`,
+      )
+    }
+  }
   if (architectureBaselines) {
     assertRouteSurfaceRatchets(architectureBaselines)
     assertRuntimeCoreImportBoundary(architectureBaselines)

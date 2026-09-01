@@ -47,7 +47,7 @@ line count and exact named-export set of `src/main/lib/trpc/routers/claude.ts` a
 absent from the baseline set, SHALL fail the check. A measured line count below the baseline
 SHALL also fail with an instruction to tighten the baseline, so the recorded baseline always
 equals reality. Baseline raises SHALL require an explicit hand edit carrying a recorded
-reason.
+reason plus an Owner-approved guard/spec change that authorizes the exception.
 
 The shared mechanism SHALL preserve distinct ownership meanings. The Claude route SHALL be
 identified as a temporary-owner containment ratchet and SHALL retire in the approved change
@@ -114,12 +114,26 @@ registry read by the architecture guard check, and the ownership map's documente
 list SHALL name exactly the registry entries. The guard SHALL detect one-hop reach-through
 growth: a module outside the guarded directories that is imported by a guarded directory
 and itself directly imports a banned category SHALL appear in the registry, or the check
-fails. Modules under `src/main/lib/` SHALL use extensionless paths relative to that
+fails. A registry entry without a corresponding live one-hop finding SHALL also fail as
+stale and SHALL be deleted, so the registry and live finding set remain symmetric. Modules
+under `src/main/lib/` SHALL use extensionless paths relative to that
 directory as registry names; repository-local modules outside it SHALL use extensionless
 repository-relative paths, so shared modules cannot bypass the rule. Transitive reach
 beyond one hop through wrapper modules remains allowed at this
 stage and deferred by design; a direct import from a guarded directory into a banned
 category still fails.
+
+The checked-in architecture-baseline document SHALL be present, non-empty, valid JSON, and
+valid against its complete canonical shape. Empty, whitespace-only, malformed, or invalid
+baseline content SHALL fail the architecture check and SHALL NOT silently skip any ratchet.
+During the normal blocking path, the working baseline SHALL be compared with the committed
+`HEAD` baseline, the previous commit that changed the baseline, and the CI diff-base
+baseline when present through the same only-shrink comparison used by update mode; a new
+entry, export, or raised route count SHALL fail at a clean committed SHA and after a later
+evidence-only commit, before the baseline can authorize growth. The CI diff-base revision
+SHALL be self-locked and unreadable revisions or invalid committed baselines SHALL fail
+closed. A diff base without this file MAY be accepted only for the authorized initial
+bootstrap.
 
 #### Scenario: Guarded directory adds a banned direct import
 
@@ -155,6 +169,21 @@ category still fails.
   banned category it reaches
 - **AND** the guard also fails if the ownership map's documented wrapper list and the
   registry do not name the same set
+
+#### Scenario: Reach-through registry contains a stale entry
+
+- **WHEN** the reach-through registry names a wrapper that has no corresponding live
+  one-hop finding, even if the ownership-map mirror contains the same name
+- **THEN** the architecture guard check fails with an instruction to delete the stale
+  registry entry
+
+#### Scenario: Architecture baseline content is unavailable or invalid
+
+- **WHEN** the architecture-baseline file is missing, empty, whitespace-only, malformed,
+  or invalid against the canonical shape
+- **THEN** the architecture guard check fails closed
+- **AND** it does not report success after skipping the route, import, direction, or
+  reach-through assertions
 
 #### Scenario: Main-process lib code needs provider configuration reads
 

@@ -43,6 +43,8 @@ jobs:
         run: bun run lint
 
       - name: Architecture guards
+        env:
+          DIFF_BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
         run: bun run architecture:check
 
       - name: Retired runtime residue

@@ -33,7 +33,16 @@ violations are frozen, not fixed.
   `importBoundaryViolations`, `reverseDirectionImports`, `reachThroughWrappers`) and is
   read only by `check-architecture-guards.mjs`. Updates happen only through the guard's
   `--update-architecture-baselines` mode, which refuses to *raise* anything — raises
-  require a hand edit, which is Red per the W7 envelope and unmissable in review.
+  require an explicit Owner-approved guard/spec change plus the recorded baseline edit,
+  which is Red per the W7 envelope and unmissable in review.
+  The normal blocking path also requires non-empty, valid baseline content and applies
+  the same only-shrink comparison against committed `HEAD`, the previous commit that
+  changed the baseline document, and the CI diff base when present. The CI base input is
+  self-locked to the pull-request base / push-before SHA. A missing baseline at that base
+  is allowed only for the already-authorized initial bootstrap; an unreadable revision or
+  invalid committed document fails closed. This keeps the check effective at a clean
+  committed SHA and after a later evidence-only commit. Parse failure is itself blocking;
+  it never disables the four ratchet assertions by returning an unreported null value.
   - Alternative considered: one JSON per guard — rejected, four tiny files invite drift
     and each needs its own self-lock.
   - Alternative considered: baselines inlined in the guard script (like the dangerous-input
@@ -45,7 +54,8 @@ violations are frozen, not fixed.
   to record, so the checked-in baseline always equals reality (no silent slack to grow
   back into). For the route line-count ratchet only, a genuine in-route fix may need to add
   lines: the baseline file supports an explicit `raiseNote` (reason + date) on a route
-  entry; the guard prints it and still requires the hand edit (Red). This keeps the ratchet
+  entry; the guard prints it and still requires the Red guard/spec authorization plus
+  baseline edit. This keeps the ratchet
   honest without making small bugfixes impossible.
   - Alternative considered: tolerance bands (e.g. +2%) — rejected: slack is exactly the
     silent-growth channel this change exists to close.
@@ -89,6 +99,11 @@ violations are frozen, not fixed.
   additions on 2026-08-27, producing a first registry of 12 entries. After that freeze the
   only legal direction is contraction. TICKET-119, TICKET-120, and TICKET-121 respectively
   provide explicit Yellow deletion paths; 1c does not edit their product code.
+  The registry is symmetric with the live one-hop finding set: an unregistered live
+  wrapper fails, and a registry entry with no corresponding live finding also fails as
+  stale and must be deleted. This prevents a matching documentation-mirror edit from
+  padding the registry. Enabling that check tightened five already-stale bootstrap entries
+  from the generated baseline without changing product code.
 - **Decision 6 — direction check is repo-wide over `src/main/lib/**` with its own frozen
   baseline.** Known violations at draft time (7 occurrences in 6 files):
   `mcp-auth.ts:25` (`claude-settings`), `claude/agent-sdk-config-dir.ts:79` (dynamic
@@ -140,8 +155,9 @@ violations are frozen, not fixed.
 
 - **Ratchet friction on legitimate edits** (a bugfix inside `codex.ts` adds lines; a
   refactor makes a touched file's count fluctuate) → the tighten-or-fail message names the
-  one-line baseline edit; the `raiseNote` hatch exists for routes; W7 marks raises Red so
-  friction surfaces to the Owner instead of being absorbed silently.
+  required baseline edit; the `raiseNote` hatch exists for routes; W7 marks raises Red and
+  the normal guard requires an approved guard/spec change, so friction surfaces to the
+  Owner instead of being absorbed silently.
 - **Different route-retirement semantics** → guard and OWNERSHIP_MAP text name Claude as
   temporary and Codex as an orchestration boundary; a generic “temporary clause removed”
   rule is forbidden for Codex. Its no-growth ratchet remains until the Owner explicitly
@@ -155,7 +171,9 @@ violations are frozen, not fixed.
 - **knip noise** → non-blocking by design; triage is a Yellow follow-up.
 - **Self-test coverage for new guards** → each new assertion ships synthetic
   pass/fail fixtures in the same fail-closed style as the existing import-boundary
-  self-test; a guard that cannot prove it detects its own violation class fails the run.
+  self-test; baseline parsing fixtures cover empty, whitespace-only, and invalid content,
+  and wrapper fixtures cover a registry entry without a live one-hop finding. A guard that
+  cannot prove it detects its own violation class fails the run.
 
 ## Migration Plan
 
