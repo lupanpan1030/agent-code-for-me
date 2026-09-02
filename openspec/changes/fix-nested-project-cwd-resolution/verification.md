@@ -5,7 +5,7 @@
 - Base SHA: `ce916a86a6f2559890e4fc2990b42d9ca49c8b15`
 - Branch: `codex/fix-nested-project-cwd-resolution`
 - Worktree: `/home/chen/projects/locus-fix-deepest-registered-project-resolution`
-- Implementer / Integrator: Codex / pending Owner acceptance
+- Implementer / Integrator: Codex / Owner `ACCEPTED` 2026-09-02 (see Owner acceptance)
 - Reviewed source SHA: `1cce15b4e37aac3afb32a2621ea89f4d8be69e95`
 - Codex implementation verdict: **IMPLEMENTATION_VERIFIED** for
   `1cce15b4e37aac3afb32a2621ea89f4d8be69e95`
@@ -19,7 +19,8 @@
 ## Approval And Scope
 
 - Owner implementation approval: explicit task instruction dated 2026-09-02.
-- Owner product acceptance: **pending**.
+- Owner product acceptance: **`ACCEPTED` 2026-09-02** (recorded in the Owner acceptance
+  section below, bound to source SHA `1cce15b4`).
 - Authorized implementation: implicit nested registered-root selection only.
 - Forbidden implementation: `.git`, `gitdir`, `commondir`, remote, linked
   worktree, or any target-directory self-asserted admission.
@@ -177,3 +178,12 @@ no merge, archive, push, or remote operation.
 - Push / remote merge / release: **not authorized / not performed**.
 - Authorized external action already performed: GitHub PR #18 received
   `CHANGES_REQUESTED`; no remote code mutation or merge occurred.
+
+## Owner acceptance (2026-09-02)
+
+**Owner `ACCEPTED`** recorded via the coordination session on 2026-09-02 for source SHA
+`1cce15b4e37aac3afb32a2621ea89f4d8be69e95`, with the evidence chain through `d5c18969`
+(dual `REVIEW_APPROVED`). Closeout is now authorized: local merge into `main` (after the
+1c closeout; see merge-strategy note in the closeout instruction), post-merge
+`bun run check:full` on the merge SHA, and `openspec archive`. The Owner-authorized remote
+push of `main` is recorded in the 1c verification file and applies after both closeouts.
