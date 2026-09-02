@@ -3,10 +3,11 @@
 ## Scope and authority
 
 - Owner approved D1-D6 on 2026-09-02.
-- This closeout is documentation/spec-only. It changes only
+- The pre-archive rebaseline is documentation/spec-only and changes only
   `openspec/changes/update-trpc-capability-boundary/**` before the archive gate.
-- No product code, public API, shared STATUS/TICKET ledger, remote branch, pull request, release,
-  or repository rule is changed. No push or other remote operation is authorized.
+- After normal archive, task 5.6 authorizes only the mechanical STATUS/TICKET and archived-receipt
+  closeout. No product code, public API, remote branch, pull request, release, or repository rule
+  is changed. No push or other remote operation is authorized.
 - The change must not be archived until a fresh Claude multi-perspective review and Owner
   `ACCEPTED` are recorded against the frozen source SHA.
 - Owner D3 is resolved with the no-GUI branch: packaged production CSP smoke and development
@@ -150,8 +151,8 @@ Therefore:
 - historical 4.4 packaged production CSP smoke: no retained receipt; not rerun; not certified;
 - historical 4.5 development CSP/HMR smoke: no retained receipt; not rerun; not certified;
 - Owner-directed future destination: TICKET-114 GUI rerun checklist;
-- scope truth: TICKET-114 is not edited in this phase, so the destination remains pending routing,
-  not a claim that the shared ticket already contains these entries.
+- phase-bound scope truth: TICKET-114 was not edited during rebaseline drafting and review. The
+  post-archive closeout now adds both still-unchecked rerun entries without treating either as passed.
 
 ## Frozen-source implementation verification
 
@@ -229,17 +230,25 @@ review. Evidence-only edits may record receipts without altering the frozen sour
 
 ## Archive receipt
 
-Status: **NOT RUN**. The targeted wording-diff review and Owner gate are satisfied; the normal
-local archive and mechanical closeout are authorized but not yet executed in this record.
+Status: **PASS — LOCALLY ARCHIVED 2026-09-02**.
 
-Expected normal-archive invariants (not current results):
-
-- archive command omits `--skip-specs`;
-- the living `runtime-security-baseline` becomes 15 requirements / 35 scenarios;
-- because Foundation 1d archived first, active changes become 0/0, living specs remain 52/52,
-  and `--all` becomes 52/52 if no follow-up is created;
-- archived audit becomes 108 passed / 6 failed / 114 total, with this change passing;
-- only the post-acceptance mechanical closeout may update `openspec/STATUS.md` and archived tasks.
+- Archive input: clean local `main` at `f8f03e9cfd6596e6c851558fe4f2647fefa2f1a5`.
+- Command: `bun x openspec archive update-trpc-capability-boundary --yes`; `--skip-specs` was not
+  used. The command exited 0, reported the two expected still-open mechanical closeout items,
+  applied `+ 6 added` to `runtime-security-baseline`, and created
+  `openspec/changes/archive/2026-09-02-update-trpc-capability-boundary`.
+- Mechanical archive commit: `41a1dfbdbe431b16e0d08e3b7322390b3ddd4501`.
+- Living result: 15 requirements / 35 scenarios; strict target-spec validation passes; file
+  SHA-256 `1df9e94cce51d83c0499f30f33ffb657700d2b92825b978ce7781d54b8df60f5`.
+- Final aggregate after Foundation 1d archived first: no active changes; living specs
+  **52 passed / 0 failed / 52**, strict all **52/52**, and archived audit's expected nonzero exit
+  is **108 passed / 6 failed / 114**, with this archive passing and only the six pre-existing
+  incomplete-task debts remaining.
+- Historical CSP smoke 4.4/4.5 remains unreceipted and uncertified. TICKET-114 now lists separate
+  packaged-production and development-CSP/HMR reruns; neither item is checked or treated as passed.
+- Follow-up A may now be drafted and scheduled independently. Follow-up B remains sequenced after
+  Foundation 1d (now complete) and the Amadeus continuation slice.
+- Push, remote merge, release, and every other remote operation were not authorized or performed.
 
 ## Fresh-context Claude multi-view review (2026-09-02, per Owner D4)
 

@@ -8,7 +8,6 @@ Updated: 2026-09-02 (Pacific/Auckland)
 
 | Change | State | Concrete next gate |
 | --- | --- | --- |
-| `update-trpc-capability-boundary` | Blocked pending rebaseline | Separate already-shipped Phase 1/CSP/Mermaid/MCP guarantees from unfinished renderer/browser and capability/audit work; validate and archive only implemented truth, then create bounded follow-ups. |
 
 Parked proposals are indexed in [`deferred/README.md`](deferred/README.md) and
 do not appear in the active list.
@@ -78,6 +77,33 @@ failure is retained as audit history, but it is no longer the current delivery s
 Owner completed the required GitHub authorization, the authorized push succeeded on 2026-09-02.
 `git ls-remote origin refs/heads/main` confirmed final remote `main` at
 `a4ea92301f80716926926c9cbbba389c2d57e8cd`, exactly matching the pushed local `main` SHA.
+
+### tRPC capability boundary rebaseline
+
+`update-trpc-capability-boundary` was rebaselined as a documentation-only archive of already
+implemented truth. Three fresh-context Claude review lenses approved source
+`f89c7ee4a104c79d4c362972be8cac9c982dbc68` (recorded in `08021f29`), then the bounded wording
+successor `38ef174cd8423c05874aebdfbd9f921fad1c5a7a` passed exact-SHA verification and targeted
+`REVIEW_APPROVED` at `c9f8c69c`. The Owner explicitly replied `rebaseline ACCEPTED` on
+2026-09-02 for that same frozen source.
+
+Accepted evidence head `e5d35de5c8943254dafeb85e7e395ac5c90b12aa` merged without conflict into
+the post-1d local tree as `a86f5ba301c5743f8a15ca8b7bd86baec07613ba`. `bun run check:full` on
+that exact merge SHA passed with **1,928 tests / 0 failures / 9,350 expectations across 304
+files**, and pre-archive OpenSpec passed **53/53**. The normal archive (without `--skip-specs`)
+was recorded mechanically in `41a1dfbdbe431b16e0d08e3b7322390b3ddd4501`, adding six requirements
+to the living `runtime-security-baseline` for a final 15 requirements / 35 scenarios:
+
+- [`2026-09-02-update-trpc-capability-boundary`](changes/archive/2026-09-02-update-trpc-capability-boundary/)
+- Living spec: [`runtime-security-baseline`](specs/runtime-security-baseline/spec.md)
+- Unreceipted CSP GUI reruns: [`TICKET-114`](../docs/tickets/TICKET-114-codex-desktop-extraction-gui-smoke.md)
+
+Because Foundation 1d archived first, final strict validation has no active changes, living specs
+pass **52/52**, strict all passes **52/52**, and the archive audit is **108 passed / 6 failed /
+114 total** with this entry passing. Historical CSP tasks 4.4/4.5 remain no-receipt,
+uncertified statements; TICKET-114 carries their two unchecked reruns. Follow-up A may now be
+drafted independently, while follow-up B remains sequenced after the Amadeus continuation slice.
+No push or other remote operation was authorized or performed for this closeout.
 
 ## Locally archived 2026-08-27
 

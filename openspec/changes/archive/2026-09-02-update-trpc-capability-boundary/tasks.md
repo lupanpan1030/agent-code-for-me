@@ -42,7 +42,7 @@
 
 - Historical statement 4.4: packaged production CSP smoke was marked complete in the old task list, but no receipt exists. It is not rerun or certified by this rebaseline.
 - Historical statement 4.5: development CSP/HMR smoke was marked complete in the old task list, but no receipt exists. It is not rerun or certified by this rebaseline.
-- Owner-directed destination for both unreceipted smoke checks: add them to the future TICKET-114 GUI rerun checklist. This phase does not edit that shared ticket, so it does not claim that the ticket has already been updated.
+- Owner-directed destination for both unreceipted smoke checks: add them to the TICKET-114 GUI rerun checklist. During rebaseline drafting and review this shared ticket was not edited; post-archive task 5.6 now routes both still-unreceipted checks there without claiming completion.
 
 ## 5. Rebaseline Closeout
 
@@ -52,8 +52,8 @@
 - [x] 5.3 Obtain three fresh-context Claude review lenses against frozen source `f89c7ee4a104c79d4c362972be8cac9c982dbc68`; all returned `REVIEW_APPROVED`, recorded in `08021f29`.
 - [x] 5.3a Obtain targeted review of only the post-review wording-touch-up diff; `REVIEW_APPROVED` for `38ef174cd8423c05874aebdfbd9f921fad1c5a7a` is recorded in `c9f8c69cf0ec3ea715d9c46e3e72ee36e2181668`, without rerunning the full multi-view review.
 - [x] 5.4 Record the Owner's 2026-09-02 `rebaseline ACCEPTED` for reviewed frozen source `38ef174cd8423c05874aebdfbd9f921fad1c5a7a`.
-- [ ] 5.5 After 5.2a, 5.3, 5.3a, and 5.4 only, archive normally with `bun x openspec archive update-trpc-capability-boundary --yes` (never `--skip-specs`) and verify the six requirements merge as 15 requirements / 35 scenarios in the living spec.
-- [ ] 5.6 Perform post-archive mechanical closeout against the post-1d archive baseline: confirm active changes `0/0`, living specs `52/52`, all `52/52`, and archived `108 passed / 6 failed / 114 total` with this entry passing; then update `openspec/STATUS.md`, the archived task/verification receipts, and TICKET-114 with the packaged-production and development-CSP/HMR smoke rerun items.
+- [x] 5.5 Archive normally with `bun x openspec archive update-trpc-capability-boundary --yes` (never `--skip-specs`) from `f8f03e9cfd6596e6c851558fe4f2647fefa2f1a5`; mechanical archive commit `41a1dfbdbe431b16e0d08e3b7322390b3ddd4501` merges all six requirements as 15 requirements / 35 scenarios in the living spec.
+- [x] 5.6 Complete post-archive mechanical closeout against the post-1d archive baseline: active changes `0/0`, living specs `52/52`, all `52/52`, and archived `108 passed / 6 failed / 114 total` with this entry passing; update `openspec/STATUS.md`, this archived task/verification receipt, and TICKET-114 with the still-pending packaged-production and development-CSP/HMR smoke rerun items.
 
 ## Descoped - Routing Records, Not Completed Tasks
 
