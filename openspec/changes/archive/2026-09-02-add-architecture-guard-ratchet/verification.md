@@ -600,3 +600,28 @@ exact post-closeout `main` SHA. No other remote operation is authorized.
 - Normal OpenSpec archive (with spec application) is the next local closeout action. The
   Owner-authorized one-time push remains deferred until both this change and
   `fix-nested-project-cwd-resolution` are archived and the final exact `main` SHA is green.
+
+## Remote push receipt (2026-09-02)
+
+**push authorized by Owner 2026-09-02, performed for
+`291a472949e2e110109935b315de3db2aeaf9999`.**
+
+- The target was the exact #18 archive commit and final pre-push local `main` SHA. Its clean-tree
+  `bun run check:full` exited **0** before the push attempt:
+  - retired-runtime residue: **1,607 files scanned / 10 allowlisted**;
+  - tests: **1,917 passed / 0 failed / 9,294 expectations across 302 files**;
+  - OpenSpec: **54 passed / 0 failed**;
+  - changed-file lint, architecture guard, TypeScript, all production builds, and
+    patch-whitespace check passed.
+- The online pre-push gate found `origin/main` at
+  `fb797b6a9bee4eae5c099280549a328ea3cdfd6f`, matching the local tracking ref and verified as
+  an ancestor of the target SHA.
+- The single authorized command `git push origin main` was attempted exactly once and exited
+  **1**. GitHub rejected `main -> main` with `GH013`: the current OAuth App credential is not
+  permitted to create or update `.github/workflows/ci.yml` without `workflow` scope.
+- A read-only post-attempt `git ls-remote` confirmed remote `refs/heads/main` remained
+  `fb797b6a9bee4eae5c099280549a328ea3cdfd6f`; no remote ref was updated.
+- No retry was attempted, no credentials or repository rules were changed, and no remote PR,
+  remote merge, release, tag, or other remote mutation was performed. This failure receipt is
+  committed locally after the rejected one-time attempt and is therefore not part of the
+  attempted target SHA.

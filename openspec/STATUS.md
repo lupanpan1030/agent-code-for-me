@@ -51,8 +51,12 @@ The standard archive applied the accepted delta to the living `project-lifecycle
 - [`2026-09-02-fix-nested-project-cwd-resolution`](changes/archive/2026-09-02-fix-nested-project-cwd-resolution/)
 - Living spec: [`project-lifecycle`](specs/project-lifecycle/spec.md)
 
-Both accepted closeouts are now locally archived. The one-time Owner-authorized `main` push is
-still pending the final exact-SHA full gate; no remote operation has yet been performed.
+Both accepted closeouts are now locally archived. The final exact-SHA full gate passed at
+`291a472949e2e110109935b315de3db2aeaf9999`, but the single Owner-authorized
+`git push origin main` attempt was rejected by GitHub with `GH013` because the current OAuth App
+credential lacks `workflow` scope for the included `.github/workflows/ci.yml` update. A
+post-attempt read-only check confirmed `origin/main` remained
+`fb797b6a9bee4eae5c099280549a328ea3cdfd6f`. No retry or other remote mutation was performed.
 
 ## Locally archived 2026-08-27
 
