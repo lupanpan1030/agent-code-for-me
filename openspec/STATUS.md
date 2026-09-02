@@ -8,6 +8,7 @@ Updated: 2026-09-02 (Pacific/Auckland)
 
 | Change | State | Concrete next gate |
 | --- | --- | --- |
+| `fix-nested-project-cwd-resolution` | Integrated locally / post-merge validation (Owner `ACCEPTED` 2026-09-02; reviewed source `1cce15b4`, evidence head `44c437f4`) | Run `bun run check:full` on this authorized `--no-ff` merge SHA; if green, archive normally, update this ledger, then include it in the one-time Owner-authorized `main` push. |
 | `refactor-engine-vocabulary-residue` | Approved (Foundation 1d; Owner `APPROVED` 2026-08-26) | Implementation remains sequenced after 1c; re-verify all anchors against that later tree. |
 | `update-trpc-capability-boundary` | Blocked pending rebaseline | Separate already-shipped Phase 1/CSP/Mermaid/MCP guarantees from unfinished renderer/browser and capability/audit work; validate and archive only implemented truth, then create bounded follow-ups. |
 
