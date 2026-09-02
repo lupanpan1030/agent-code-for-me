@@ -198,7 +198,8 @@ targeted/full test logs did not represent test failures; both commands exited 0.
 
 - Fresh Claude multi-perspective review bound to `f89c7ee4`: **REVIEW_APPROVED x3**; detailed
   record follows below and is committed in `08021f29`.
-- Owner-authorized wording-only successor: **PENDING NEW FREEZE AND TARGETED DIFF REVIEW**.
+- Owner-authorized wording-only successor `38ef174cd8423c05874aebdfbd9f921fad1c5a7a`:
+  **FROZEN AND RE-VERIFIED; TARGETED DIFF REVIEW PENDING**.
 - Owner `ACCEPTED` bound to the reviewed successor SHA: **PENDING**.
 - Archive authorization: **NOT GRANTED**.
 
@@ -271,11 +272,28 @@ archive. No merge, archive, push, or remote operation is authorized by this reco
 - Scope: the single required R2 self-containment fix plus the five bundled P3 disclosures/
   corrections recorded above; task bookkeeping additionally separates completed full review from
   the pending targeted diff review.
-- New frozen wording source SHA/tree/time: **PENDING**.
-- Targeted review diff: `08021f29..NEW_FREEZE` (**PENDING**).
-- Exact-SHA re-verification receipt: **PENDING**.
+- New frozen wording source SHA: `38ef174cd8423c05874aebdfbd9f921fad1c5a7a`.
+- Frozen tree: `1a1fe718e9d9a254025264df9bab38b39d90f00a`.
+- Source commit time: `2026-09-02T19:05:04+12:00`.
+- Receipt window ended: `2026-09-02T19:08:19+12:00` (Pacific/Auckland, WSL2).
+- Targeted review diff: `08021f29b44889c3c3d4f7c2763532392cca1ba6..38ef174cd8423c05874aebdfbd9f921fad1c5a7a`
+  (**PENDING REVIEW**); the range contains only `design.md`, the runtime-security-baseline delta,
+  `tasks.md`, and `verification.md`, and `git diff --check` passes.
+- Exact-SHA re-verification receipt: **PASS**. Before and after all commands, `HEAD` was exactly
+  `38ef174cd8423c05874aebdfbd9f921fad1c5a7a` and the worktree was clean.
 - Targeted Claude wording-diff verdict: **PENDING**.
 - Owner `ACCEPTED`: **PENDING**.
+
+| Successor receipt | Result |
+| --- | --- |
+| Expanded 18-file targeted suite | exit 0; **117 pass / 0 fail / 476 expectations** across 18 files |
+| `bun run architecture:check` | exit 0; `Architecture guard passed.` |
+| `bun run check:full` | exit 0; full chain completed, including **1917 pass / 0 fail / 9294 expectations** across 302 files, strict all validation, production build, and patch-whitespace diff check |
+| Strict target validation | exit 0; `Change 'update-trpc-capability-boundary' is valid` |
+| Strict active-change validation | exit 0; **2 passed / 0 failed / 2 items** |
+| Strict living-spec validation | exit 0; **52 passed / 0 failed / 52 items** |
+| Strict all validation | exit 0; **54 passed / 0 failed / 54 items** |
+| Strict archived audit | expected exit 1; **106 passed / 6 failed / 112 items**, unchanged pre-existing task debts |
 
 The original `f89c7ee4` implementation receipts and three-view review record remain unchanged
 above. This section records only the wording-only successor and must not relabel old receipts as

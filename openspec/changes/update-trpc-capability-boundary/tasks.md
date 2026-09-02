@@ -48,7 +48,7 @@
 
 - [x] 5.1 Refresh every implementation claim, code anchor, line reference, targeted-test inventory, and OpenSpec aggregate against `d77a4b48`; narrow the delta/proposal/design/tasks to current implementation truth and add `verification.md`.
 - [x] 5.2 Create frozen docs-only source `f89c7ee4a104c79d4c362972be8cac9c982dbc68`; on that exact SHA run the expanded 18-file targeted suite, `bun run architecture:check`, `bun run check:full`, and strict OpenSpec validation; record the receipts in an evidence-only commit.
-- [ ] 5.2a Freeze the Owner-authorized wording-only successor to review record `08021f29` and record its exact-SHA re-verification receipts without rewriting the `f89c7ee4` history.
+- [x] 5.2a Freeze the Owner-authorized wording-only successor to review record `08021f29` as `38ef174cd8423c05874aebdfbd9f921fad1c5a7a` and record its exact-SHA re-verification receipts without rewriting the `f89c7ee4` history.
 - [x] 5.3 Obtain three fresh-context Claude review lenses against frozen source `f89c7ee4a104c79d4c362972be8cac9c982dbc68`; all returned `REVIEW_APPROVED`, recorded in `08021f29`.
 - [ ] 5.3a Obtain targeted review of only the post-review wording-touch-up diff against its new frozen SHA; do not rerun the full multi-view review.
 - [ ] 5.4 Record Owner `ACCEPTED` for the reviewed frozen source SHA.
