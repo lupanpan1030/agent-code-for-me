@@ -250,6 +250,29 @@ Status: **PASS — LOCALLY ARCHIVED 2026-09-02**.
   Foundation 1d (now complete) and the Amadeus continuation slice.
 - Push, remote merge, release, and every other remote operation were not authorized or performed.
 
+## Post-archive exact-SHA verification
+
+Status: **PASS**.
+
+- Closeout source SHA/tree: `c61ffb70987759663d0b2579d9033adb35942a64` /
+  `a6f897a20d5c6dac5d7bcd31429ed5e428a7cea0`.
+- Source commit time: `2026-09-02T23:24:45+12:00`; receipt window ended
+  `2026-09-03T03:29:22+12:00` (Pacific/Auckland, WSL2).
+- Before and after verification, `HEAD` remained the exact closeout source SHA and the worktree
+  was clean.
+- `bun run check:full`: exit 0. Changed-file lint had no supported source files; the architecture
+  guard passed; retired-runtime residue passed with 1,600 files scanned / 10 allowlisted; TypeScript
+  passed; the full isolated suite passed **1,928 tests / 0 failures / 9,350 expectations across 304
+  files**; strict OpenSpec validation, production build, and patch-whitespace check all passed.
+- A same-SHA isolated test rerun retained the exact **1,928 / 0 / 9,350 across 304 files** result.
+- Strict post-archive validation: no active changes; living specs **52/52**; all **52/52**; archived
+  audit expected exit 1 at **108 passed / 6 failed / 114 total**, with this archive passing and only
+  the six pre-existing debts failing.
+- Living `runtime-security-baseline`: 15 requirements / 35 scenarios; SHA-256
+  `1df9e94cce51d83c0499f30f33ffb657700d2b92825b978ce7781d54b8df60f5`.
+- No GUI CSP smoke was run or inferred. Both TICKET-114 entries remain unchecked. No push or other
+  remote operation was performed.
+
 ## Fresh-context Claude multi-view review (2026-09-02, per Owner D4)
 
 - Reviewed frozen source SHA: `f89c7ee4a104c79d4c362972be8cac9c982dbc68`; receipts read at
