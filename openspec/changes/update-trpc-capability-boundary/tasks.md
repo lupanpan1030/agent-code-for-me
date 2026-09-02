@@ -47,7 +47,7 @@
 ## 5. Rebaseline Closeout
 
 - [x] 5.1 Refresh every implementation claim, code anchor, line reference, targeted-test inventory, and OpenSpec aggregate against `d77a4b48`; narrow the delta/proposal/design/tasks to current implementation truth and add `verification.md`.
-- [ ] 5.2 Create a frozen docs-only source commit; on that exact SHA run the expanded 18-file targeted suite, `bun run architecture:check`, `bun run check:full`, and strict OpenSpec validation; then record receipts in an evidence-only commit.
+- [x] 5.2 Create frozen docs-only source `f89c7ee4a104c79d4c362972be8cac9c982dbc68`; on that exact SHA run the expanded 18-file targeted suite, `bun run architecture:check`, `bun run check:full`, and strict OpenSpec validation; record the receipts in an evidence-only commit.
 - [ ] 5.3 Obtain fresh Claude multi-perspective review against the same frozen source SHA.
 - [ ] 5.4 Record Owner `ACCEPTED` for the reviewed frozen source SHA.
 - [ ] 5.5 After 5.3 and 5.4 only, archive normally with `bun x openspec archive update-trpc-capability-boundary --yes` (never `--skip-specs`) and verify the six requirements merge as 15 requirements / 35 scenarios in the living spec.

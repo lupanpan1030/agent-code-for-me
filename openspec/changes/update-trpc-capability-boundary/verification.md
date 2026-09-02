@@ -155,12 +155,16 @@ Therefore:
 
 ## Frozen-source implementation verification
 
-Status before source commit: **PENDING**.
+Status: **PASS**.
 
-- Frozen docs-only source SHA: `PENDING`
+- Frozen docs-only source SHA: `f89c7ee4a104c79d4c362972be8cac9c982dbc68`
+- Frozen tree: `1570c453c4d7a6bb33ccc76e822c0da92545d806`
+- Source commit time: `2026-09-02T18:31:08+12:00`
 - Branch: `codex/update-trpc-capability-boundary-rebaseline`
-- Source commit worktree before/after checks: `PENDING`
-- Receipt timestamp/environment: `PENDING`
+- Receipt window ended: `2026-09-02T18:33:53+12:00` (Pacific/Auckland, WSL2)
+- Source commit worktree before tests: clean.
+- Source commit worktree after all receipts: clean; `HEAD` still exactly the frozen SHA; both
+  unstaged and staged diffs were empty.
 
 Commands that must run on the exact frozen source SHA:
 
@@ -174,7 +178,21 @@ Commands that must run on the exact frozen source SHA:
 8. `bun x openspec validate --archived --strict --no-interactive` (expected aggregate exit 1 from
    the six pre-existing debts; this is an audit receipt, not a green aggregate gate).
 
-Exact-source results: **PENDING**.
+### Exact-source results
+
+| Receipt | Result |
+| --- | --- |
+| Expanded 18-file targeted suite | exit 0; **117 pass / 0 fail / 476 expectations** across 18 files |
+| `bun run architecture:check` | exit 0; `Architecture guard passed.` |
+| `bun run check:full` | exit 0; full chain completed: changed-file lint, architecture guard, retired-runtime residue, TypeScript, full isolated tests, spec validation, production build, and patch-whitespace diff check |
+| Strict target validation | exit 0; `Change 'update-trpc-capability-boundary' is valid` |
+| Strict active-change validation | exit 0; **2 passed / 0 failed / 2 items** |
+| Strict living-spec validation | exit 0; **52 passed / 0 failed / 52 items** |
+| Strict all validation | exit 0; **54 passed / 0 failed / 54 items** |
+| Strict archived audit | expected exit 1; **106 passed / 6 failed / 112 items**, with exactly the six pre-existing task debts listed above |
+
+No product/source file changed during verification. Expected rejection-path stack traces in the
+targeted/full test logs did not represent test failures; both commands exited 0.
 
 ## Independent review and Owner gate
 
