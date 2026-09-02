@@ -1,21 +1,21 @@
 ## ADDED Requirements
 
 ### Requirement: Dangerous Router Inputs And Privileged Operation Clusters Are Inventoried
-The system SHALL maintain a procedure-keyed field allowlist for findings produced from the architecture guard's enumerated dangerous renderer-input fields and SHALL maintain a reviewed operation-cluster inventory for privileged renderer routes not represented by those fields.
+The system SHALL maintain a procedure-keyed field allowlist for findings produced from the architecture guard's enumerated dangerous renderer-input fields. A reviewed operation-cluster snapshot SHALL document privileged renderer routes not represented by those fields; that snapshot is preserved only as historical evidence in the archived design and has no separate living carrier or ongoing completeness guarantee until `add-trpc-capability-consent-audit` establishes one.
 
 #### Scenario: Source guard detects an enumerated dangerous field
 - **WHEN** the source guard detects `absolutePath`, `baseUrl`, `command`, `cwd`, `dirPath`, `env`, `filePath`, `headers`, `path`, `projectPath`, `token`, or `url` as a supported top-level tRPC input field
 - **THEN** architecture checks SHALL require a matching procedure entry that allowlists every detected enumerated field or fail before merge.
 
-### Requirement: Hardened Renderer Filesystem Sinks Apply Registered-Root Boundaries
-The renderer-reachable file, component, terminal-directory, and project-scoped configuration routes hardened by this change SHALL apply their implemented registered-root boundary before the privileged effect: file reads and directory listing SHALL reject real-path escape, file search SHALL omit symlinks, file watch SHALL require a registered root, rename/delete SHALL reject lexical out-of-root, traversal, null-byte, and invalid replacement targets, and component/configuration writes SHALL require registered project or component roots.
+### Requirement: Enumerated Renderer Filesystem Sinks Apply Registered-Root Boundaries
+The renderer-reachable route families governed by this requirement are the file read, search, watch, rename, and delete routes; project-scoped command, agent, and skill routes; `terminal.listDirectory`; and project-scoped Claude MCP and MCP-registry configuration writes. They SHALL apply these registered-root boundaries before privileged effects: file reads and `terminal.listDirectory` SHALL reject real-path escape; file search SHALL omit symlinks; file watch SHALL require a registered root; rename/delete SHALL reject lexical out-of-root, traversal, null-byte, and invalid replacement targets; and the enumerated component/configuration writes SHALL require registered project or component roots.
 
-#### Scenario: Renderer supplies forged project path to a hardened route
-- **WHEN** one of the hardened routes receives a project path or cwd that does not resolve to the registered project, chat worktree, or terminal workspace for the request
+#### Scenario: Renderer supplies forged project path to an enumerated route
+- **WHEN** one of the enumerated route families receives a project path or cwd that does not resolve to the registered project, chat worktree, or terminal workspace for the request
 - **THEN** the main process SHALL reject the request before the requested privileged filesystem or process effect.
 
 #### Scenario: Strict target path contains traversal or a read/list symlink escape
-- **WHEN** a target path governed by the strict path-boundary helper contains traversal or a null byte, or a hardened read/list target resolves through a symlink outside the approved root
+- **WHEN** a target path governed by the strict path-boundary helper contains traversal or a null byte, or an enumerated read/list target resolves through a symlink outside the approved root
 - **THEN** the main process SHALL reject the request before reading, writing, watching, opening, or deleting the target.
 
 #### Scenario: File search or watch uses an unregistered root
@@ -62,13 +62,14 @@ Renderer-reachable MCP configuration writes that would persist a stdio command f
 #### Scenario: MCP stdio command fingerprint is already approved
 - **WHEN** an MCP stdio command write has the same approved fingerprint for runtime, server name, scope, command, args, env, env-var references, and cwd
 - **THEN** the main process SHALL allow the write without showing another confirmation.
+- **AND** `projectPath` is intentionally excluded from the fingerprint, so an otherwise identical approved stdio command is reused across projects without another confirmation.
 
 #### Scenario: Runtime sees unapproved MCP stdio command
 - **WHEN** Claude or Codex runtime materialization encounters a stdio MCP command without an approved fingerprint
 - **THEN** the main process SHALL omit that command from runtime startup materialization and SHALL NOT pass it to a stdio MCP transport for spawn.
 
 ### Requirement: Untrusted Renderer Content Uses Reviewed Rendering Boundaries
-The renderer SHALL treat repository content, chat markdown, tool output, and MCP output as untrusted: markdown raw HTML SHALL pass through the configured sanitizer and hardener before insertion, active or scriptable content SHALL NOT pass through, files containing React `dangerouslySetInnerHTML` SHALL be limited to the reviewed file list enforced by a source guard, Mermaid SVG SHALL be sanitized, tool subtitles SHALL render as text, and the renderer CSP SHALL block inline and remote script execution in production.
+The renderer SHALL treat repository content, chat markdown, tool output, and MCP output as untrusted: markdown raw HTML SHALL pass through the configured sanitizer and hardener before insertion, active or scriptable content SHALL NOT pass through, files containing React `dangerouslySetInnerHTML` SHALL be limited to the reviewed file list enforced by a source guard, Mermaid SVG SHALL be sanitized, tool subtitles SHALL render as text, and the renderer CSP SHALL block inline and remote script execution in production. At this baseline, the markdown sanitizer guarantee depends on Streamdown 2.1.0's default `rehype-raw` -> `rehype-sanitize` -> `rehype-harden` chain; no retained in-repository malicious-HTML regression test directly exercises that guarantee, and `add-renderer-untrusted-content-hardening` owns the gap.
 
 #### Scenario: Markdown active HTML and highlighted HTML sinks
 - **WHEN** chat, repository, MCP, or tool-output markdown contains raw HTML or a renderer inserts syntax-highlighted HTML into the privileged app document

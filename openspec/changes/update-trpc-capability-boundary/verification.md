@@ -82,7 +82,7 @@ this change itself must appear as passing while the same six old debts remain.
 | Registered roots and path containment | project/chat/file roots `src/main/lib/fs/registered-roots.ts:50-144`; component roots `:146-231`; lexical boundary `src/main/lib/fs/path-boundary.ts:35-62` | `registered-roots` 9; `trpc-path-boundaries` 9; `claude-component-boundaries` 4; `project-registry` 8 |
 | Runtime cwd | `src/main/lib/agent-runtime/preflight.ts:162-170`; Claude resolves/ignores renderer cwd at `src/main/lib/trpc/routers/claude.ts:120-123`; Codex verifies/rejects mismatch at `src/main/lib/trpc/routers/codex.ts:513-518` | `agent-runtime-preflight` 9; `codex-desktop-run-preflight` 5; `desktop-run-binding-admission-order` 6; `codex-desktop-service-boundary` 3 |
 | Terminal boundary | `src/main/lib/trpc/routers/terminal.ts:25-55,157-167`; `src/main/lib/terminal/trusted-session-input.ts:17-105` | `terminal-create-session-boundary` 11 |
-| GitHub clone | `src/main/lib/projects/github-clone.ts:52-119`; route `src/main/lib/trpc/routers/projects.ts:249-276` | `github-clone-boundary` 3 |
+| GitHub clone | `src/main/lib/projects/github-clone.ts:52-117`; route `src/main/lib/trpc/routers/projects.ts:249-276` | `github-clone-boundary` 3 |
 | MCP/provider validation and stdio trust | normalization/fingerprint/approval `src/main/lib/runtime-mcp-config/mcp-command-trust.ts:42-157`; dialog/write gate `:216-262` | `mcp-config-boundaries` 7; `local-api-provider-config-security` 3; `mcp-registry-service` 12; `runtime-mcp-config-service` 14 |
 | Renderer CSP | `src/main/windows/renderer-csp.ts:12-29,39-61,70-107`; install `src/main/windows/main.ts:482-487` | `renderer-csp-policy` 7 |
 | Mermaid, subtitle, and HTML sinks | `src/renderer/lib/security/mermaid-svg-sanitizer.ts:1-99`; `src/renderer/components/mermaid-block.tsx:146,257,481,558`; `src/renderer/features/agents/ui/agent-tool-call.tsx:33-58`; sink guard `tests/renderer-html-sinks.test.ts:27-68` | `renderer-mermaid-xss` 2; `renderer-agent-tool-call-xss` 2; `renderer-html-sinks` 3 |
@@ -196,18 +196,22 @@ targeted/full test logs did not represent test failures; both commands exited 0.
 
 ## Independent review and Owner gate
 
-- Fresh Claude multi-perspective review bound to frozen source SHA: **PENDING**.
-- Owner `ACCEPTED` bound to frozen source SHA: **PENDING**.
+- Fresh Claude multi-perspective review bound to `f89c7ee4`: **REVIEW_APPROVED x3**; detailed
+  record follows below and is committed in `08021f29`.
+- Owner-authorized wording-only successor: **PENDING NEW FREEZE AND TARGETED DIFF REVIEW**.
+- Owner `ACCEPTED` bound to the reviewed successor SHA: **PENDING**.
 - Archive authorization: **NOT GRANTED**.
 
-Any source edit after the frozen SHA invalidates the targeted, architecture, full-check, and
-independent-review verdicts. Evidence-only edits may record receipts but must not alter the frozen
-source package being reviewed.
+The three full review verdicts remain historical evidence for `f89c7ee4`. Per Owner direction, the
+bounded wording-only successor receives exact-SHA re-verification and targeted review of only
+`08021f29..NEW_FREEZE`; it does not rerun the three full review lenses. Any product-code edit or
+additional substantive spec change exceeds that exception and requires fresh full verification and
+review. Evidence-only edits may record receipts without altering the frozen source under review.
 
 ## Archive receipt
 
-Status: **NOT RUN**. This task intentionally stops before archive until both review gates above are
-satisfied.
+Status: **NOT RUN**. This task intentionally stops before archive until the targeted wording-diff
+review and Owner gate above are satisfied.
 
 Expected normal-archive invariants (not current results):
 
@@ -260,3 +264,19 @@ anachronism; node-pty reproduction caveat) are recorded here and need no pre-arc
 Gate status: technical review complete for `f89c7ee4`; a wording touch-up + re-freeze +
 targeted delta re-verification (scope: the touch-up diff only) precede Owner `ACCEPTED` and
 archive. No merge, archive, push, or remote operation is authorized by this record.
+
+## Post-review wording touch-up re-freeze
+
+- Touch-up baseline: review-record commit `08021f29b44889c3c3d4f7c2763532392cca1ba6`.
+- Scope: the single required R2 self-containment fix plus the five bundled P3 disclosures/
+  corrections recorded above; task bookkeeping additionally separates completed full review from
+  the pending targeted diff review.
+- New frozen wording source SHA/tree/time: **PENDING**.
+- Targeted review diff: `08021f29..NEW_FREEZE` (**PENDING**).
+- Exact-SHA re-verification receipt: **PENDING**.
+- Targeted Claude wording-diff verdict: **PENDING**.
+- Owner `ACCEPTED`: **PENDING**.
+
+The original `f89c7ee4` implementation receipts and three-view review record remain unchanged
+above. This section records only the wording-only successor and must not relabel old receipts as
+having run on the successor.

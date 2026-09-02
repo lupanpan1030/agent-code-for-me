@@ -36,15 +36,17 @@ Threat model:
 
 The scan was refreshed across all 41 router modules (excluding the index), the 33 mounted
 namespaces, and the `changes` git router. The table is a reviewed operation-cluster inventory, not
-a procedure-complete capability taxonomy. The dangerous-input source guard is a separate
-mechanical control over 12 exact schema field names.
+a procedure-complete capability taxonomy. After archive, this design preserves that cluster
+inventory only as historical evidence; no living artifact maintains it until the
+`add-trpc-capability-consent-audit` follow-up establishes one. The dangerous-input source guard is a
+separate mechanical control over 12 exact schema field names.
 
 | Severity | Procedure clusters | Main-process effect | Rebaseline status |
 | --- | --- | --- | --- |
 | Critical | `terminal.createOrAttach/write/signal/kill/listDirectory` | Starts and controls a PTY or reads a workspace directory. | Startup cwd/intents and directory roots are hardened. `terminal.write` remains a bare public procedure accepting arbitrary string data at `src/main/lib/trpc/routers/terminal.ts:46-55`; the PTY sink is `src/main/lib/terminal/manager.ts:122-130`. |
 | Critical | `claude.chat`, `codex.chat` | Starts runtimes able to read/write files and execute tools. | Execution cwd is resolved through `src/main/lib/agent-runtime/preflight.ts:162-170` (Claude call at `src/main/lib/trpc/routers/claude.ts:120-123`). Renderer `projectPath` still participates in runtime MCP lookup and is not certified by this change. The former experimental `agentRuntime.chat` no longer exists. |
 | Critical | Claude/Codex/MCP-registry configuration writers | Persists stdio commands, arguments, environment, bearer tokens, or HTTP URLs for later runtime use. | Structured input/root checks exist for the covered writes. Stdio commands additionally use the Runtime MCP Config-owned native-consent gate and fail-closed materialization. |
-| High | `projects.cloneFromGitHub` | Clones and registers a GitHub repository. | `src/main/lib/projects/github-clone.ts:52-119` parses owner/repository identity, constructs a canonical URL, and invokes `git clone` through argv with `--`. |
+| High | `projects.cloneFromGitHub` | Clones and registers a GitHub repository. | `src/main/lib/projects/github-clone.ts:52-117` parses owner/repository identity, constructs a canonical URL, and invokes `git clone` through argv with `--`. |
 | High | `external.openInFinder/openInApp/openFileInEditor/openExternal` | Opens paths, apps, editors, or URLs with OS privilege. | Still a capability/consent follow-up surface. Some calls accept renderer paths/cwd, so the archive delta must not generalize registered-root coverage to every renderer route. |
 | High | `files` read/search/watch/rename/delete and project-scoped command/agent/skill routes | Reads, watches, writes, renames, or deletes filesystem content and runtime instruction files. | Covered routes validate registered project/chat/worktree and component roots through `src/main/lib/fs/registered-roots.ts:50-231` and `src/main/lib/fs/path-boundary.ts`; adversarial route tests are retained. |
 | High | Plugin/native activation and controlled-setting routes | Enables local plugin code paths, installs candidates, changes settings, or mutates caches. | Existing review gates are useful precedent; unified capability metadata/audit is not implemented. |
@@ -74,7 +76,7 @@ than claiming the 1c ratchet already covers it.
 
 ### Registered roots and path-like inputs
 
-The archive delta covers only the route groups hardened by this change. Reads and directory
+R2 explicitly enumerates the only route families certified by the archive delta. Reads and directory
 listing use real-path checks and reject symlink escape; search omits symlinks; watch validates the
 registered root; rename/delete enforce lexical containment, traversal/null-byte rejection, and
 replacement-name validation; project-scoped command/agent/skill and covered MCP/provider writes

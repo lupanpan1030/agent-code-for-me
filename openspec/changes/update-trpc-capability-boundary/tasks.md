@@ -17,7 +17,7 @@
 - [x] 1.4 Make Claude and Codex runtime execution cwd resolve from `chatId`/`subChatId` server-side and reject or ignore forged renderer cwd. The former experimental `agentRuntime.chat` was removed and is not an implemented route claim.
 - [x] 1.5 Make terminal `createOrAttach` and `listDirectory` resolve cwd/root from registered workspace or chat state.
 - [x] 1.5a Remove raw terminal startup `cwd`/`initialCommands` authority: map only whitelisted `initialCommandIntents` to app-owned commands.
-- [x] 1.6 Validate registered project roots and structured command/url/env input for the covered MCP/provider configuration writes without weakening MCP stdio native consent.
+- [x] 1.6 Validate registered project roots for the covered project-scoped Claude MCP/MCP-registry writes and structured command/url/env input without weakening MCP stdio native consent.
 - [x] 1.7 Replace shell-string GitHub clone with constrained owner/repository parsing and argv execution using `git clone --`.
 - [x] 1.8 Add adversarial coverage for registered-root, traversal, read/list symlink, forged-cwd, terminal-intent, GitHub-clone, MCP/provider, and nested-project boundaries.
 - [x] 1.8a Cover forged terminal cwd/scope, legacy raw `initialCommands`, arbitrary strings masquerading as intents, whitelisted `gh auth login`, shell metacharacters, Git option injection, and argv clone execution.
@@ -48,10 +48,12 @@
 
 - [x] 5.1 Refresh every implementation claim, code anchor, line reference, targeted-test inventory, and OpenSpec aggregate against `d77a4b48`; narrow the delta/proposal/design/tasks to current implementation truth and add `verification.md`.
 - [x] 5.2 Create frozen docs-only source `f89c7ee4a104c79d4c362972be8cac9c982dbc68`; on that exact SHA run the expanded 18-file targeted suite, `bun run architecture:check`, `bun run check:full`, and strict OpenSpec validation; record the receipts in an evidence-only commit.
-- [ ] 5.3 Obtain fresh Claude multi-perspective review against the same frozen source SHA.
+- [ ] 5.2a Freeze the Owner-authorized wording-only successor to review record `08021f29` and record its exact-SHA re-verification receipts without rewriting the `f89c7ee4` history.
+- [x] 5.3 Obtain three fresh-context Claude review lenses against frozen source `f89c7ee4a104c79d4c362972be8cac9c982dbc68`; all returned `REVIEW_APPROVED`, recorded in `08021f29`.
+- [ ] 5.3a Obtain targeted review of only the post-review wording-touch-up diff against its new frozen SHA; do not rerun the full multi-view review.
 - [ ] 5.4 Record Owner `ACCEPTED` for the reviewed frozen source SHA.
-- [ ] 5.5 After 5.3 and 5.4 only, archive normally with `bun x openspec archive update-trpc-capability-boundary --yes` (never `--skip-specs`) and verify the six requirements merge as 15 requirements / 35 scenarios in the living spec.
-- [ ] 5.6 Perform post-archive mechanical closeout: confirm active changes `1/1`, living specs `52/52`, all `53/53`, and archived `107 passed / 6 failed / 113 total` with this entry passing; then update `openspec/STATUS.md` and the archived task/verification receipts.
+- [ ] 5.5 After 5.2a, 5.3, 5.3a, and 5.4 only, archive normally with `bun x openspec archive update-trpc-capability-boundary --yes` (never `--skip-specs`) and verify the six requirements merge as 15 requirements / 35 scenarios in the living spec.
+- [ ] 5.6 Perform post-archive mechanical closeout: confirm active changes `1/1`, living specs `52/52`, all `53/53`, and archived `107 passed / 6 failed / 113 total` with this entry passing; then update `openspec/STATUS.md`, the archived task/verification receipts, and TICKET-114 with the packaged-production and development-CSP/HMR smoke rerun items.
 
 ## Descoped - Routing Records, Not Completed Tasks
 
