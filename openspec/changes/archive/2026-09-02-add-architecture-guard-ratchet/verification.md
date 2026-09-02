@@ -577,3 +577,26 @@ merge SHA, and `openspec archive`. The Owner has additionally authorized a one-t
 push of local `main` to `origin/main` after closeout of this change and
 `fix-nested-project-cwd-resolution` completes; the push must be recorded here against the
 exact post-closeout `main` SHA. No other remote operation is authorized.
+
+## Post-merge closeout (2026-09-02)
+
+- Preconditions were rechecked before integration: branch
+  `codex/add-architecture-guard-ratchet` was clean at
+  `c52a422aed75841cd85f51149da9956d92045ff2`; local `main` was clean at
+  `ce916a86a6f2559890e4fc2990b42d9ca49c8b15`.
+- Local integration used exactly
+  `git merge --ff-only codex/add-architecture-guard-ratchet`; it completed without conflict
+  and advanced `main` to merge/integration SHA
+  `c52a422aed75841cd85f51149da9956d92045ff2`.
+- Required post-merge gate at that exact SHA: `bun run check:full`, exit **0**.
+  - changed-file lint, architecture guard, retired-runtime residue, TypeScript, tests,
+    strict OpenSpec validation, production build, and patch-whitespace check all passed;
+  - retired-runtime residue: **1,612 files scanned / 10 allowlisted**;
+  - tests: **1,916 passed / 0 failed / 9,291 expectations across 302 files**;
+  - OpenSpec: **55 passed / 0 failed**;
+  - Electron/Vite main, preload, and renderer production builds completed successfully;
+  - patch-whitespace check exited **0**.
+- `git status --short` was empty immediately after the gate.
+- Normal OpenSpec archive (with spec application) is the next local closeout action. The
+  Owner-authorized one-time push remains deferred until both this change and
+  `fix-nested-project-cwd-resolution` are archived and the final exact `main` SHA is green.

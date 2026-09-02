@@ -4,16 +4,38 @@ This ledger records execution state only. Current product truth remains in
 `openspec/specs/` plus the checked-out code; future direction remains in the
 ratified strategy and interoperability contract.
 
-Updated: 2026-08-27 (Pacific/Auckland)
+Updated: 2026-09-02 (Pacific/Auckland)
 
 | Change | State | Concrete next gate |
 | --- | --- | --- |
-| `add-architecture-guard-ratchet` | Approved (Foundation 1c; Owner `APPROVED` 2026-08-26) | Start W1 from the post-1a/1b locally archived `main` in a dedicated branch/worktree; regenerate every baseline before source edits. |
 | `refactor-engine-vocabulary-residue` | Approved (Foundation 1d; Owner `APPROVED` 2026-08-26) | Implementation remains sequenced after 1c; re-verify all anchors against that later tree. |
 | `update-trpc-capability-boundary` | Blocked pending rebaseline | Separate already-shipped Phase 1/CSP/Mermaid/MCP guarantees from unfinished renderer/browser and capability/audit work; validate and archive only implemented truth, then create bounded follow-ups. |
 
 Parked proposals are indexed in [`deferred/README.md`](deferred/README.md) and
 do not appear in the active list.
+
+## Locally archived 2026-09-02
+
+### Foundation 1c
+
+`add-architecture-guard-ratchet` received Codex `IMPLEMENTATION_VERIFIED` and two independent
+fresh-context Claude `REVIEW_APPROVED` verdicts for source
+`9a80a755eac1baf4e8c26e61b200c85446cca995`. The Owner explicitly `ACCEPTED` the change on
+2026-09-02. Its clean evidence branch head
+`c52a422aed75841cd85f51149da9956d92045ff2` was fast-forwarded into local `main`, and the
+post-merge `bun run check:full` at that exact SHA passed with **1,916 tests / 0 failures /
+9,291 expectations across 302 files**, retired-runtime residue **1,612 scanned / 10
+allowlisted**, and OpenSpec **55/55**. The standard archive applied the accepted delta to the
+living `architecture-ownership` spec:
+
+- [`2026-09-02-add-architecture-guard-ratchet`](changes/archive/2026-09-02-add-architecture-guard-ratchet/)
+- Living spec: [`architecture-ownership`](specs/architecture-ownership/spec.md)
+- Yellow sibling-route follow-up: [`TICKET-122`](../docs/tickets/TICKET-122-route-ratchet-sibling-file-coverage.md)
+
+Foundation 1d (`refactor-engine-vocabulary-residue`) is now unblocked for W1 from the archived
+1c tree. The Owner-authorized one-time `main` push remains deferred until the accepted
+`fix-nested-project-cwd-resolution` closeout is also archived and the final exact SHA is green;
+no remote operation has yet been performed.
 
 ## Locally archived 2026-08-27
 

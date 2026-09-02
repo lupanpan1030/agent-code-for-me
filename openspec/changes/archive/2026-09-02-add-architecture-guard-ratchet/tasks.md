@@ -172,11 +172,11 @@
       `verification.md`.
 - [x] 9.2 Record IMPLEMENTATION_VERIFIED (Codex) and fresh-context REVIEW_APPROVED
       (Claude) in `verification.md` for that same SHA.
-- [ ] 9.3 Record Owner acceptance.
-- [ ] 9.4 Local fast-forward merge into `main`; run the post-merge gate
+- [x] 9.3 Record Owner acceptance.
+- [x] 9.4 Local fast-forward merge into `main`; run the post-merge gate
       (`bun run check:full`) on the local merge SHA and record the receipt.
 - [x] 9.5 Record `remote not authorized / not performed` for push, remote PR mutation,
       remote merge, and release.
-- [ ] 9.6 `openspec archive add-architecture-guard-ratchet --yes` (spec deltas apply to
+- [x] 9.6 `openspec archive add-architecture-guard-ratchet --yes` (spec deltas apply to
       `architecture-ownership`; do not pass `--skip-specs`), then
       `openspec validate --strict --no-interactive` to confirm the archived state.
