@@ -221,3 +221,21 @@ push of `main` is recorded in the 1c verification file and applies after both cl
 - Normal OpenSpec archive with the `project-lifecycle` delta applied is the next local action.
   The Owner-authorized one-time `main` push remains deferred until the archive commit and final
   exact-SHA gate are green.
+
+## Remote push success receipt (2026-09-02)
+
+**Performed personally by Owner 2026-09-02 after completing the required GitHub authorization.**
+
+- The first authorized attempt and its GH013 rejection are retained in the Foundation 1c
+  verification record. That credential lacked the `workflow` scope needed to update
+  `.github/workflows/ci.yml`.
+- After the Owner completed the required GitHub authorization, the authorized
+  `git push origin main` exited **0** and advanced remote `main` from
+  `fb797b6a9bee4eae5c099280549a328ea3cdfd6f` to
+  `a4ea92301f80716926926c9cbbba389c2d57e8cd`.
+- A read-only `git ls-remote origin refs/heads/main` confirmed final remote `main` at
+  `a4ea92301f80716926926c9cbbba389c2d57e8cd`, exactly matching the pushed local `main` SHA.
+- This successful receipt supersedes the earlier GH013 rejection as the current delivery state.
+  The historical failure remains recorded for auditability.
+- This receipt is a later local documentation commit and is therefore not part of the already
+  pushed remote SHA. It authorizes no additional push or remote operation.

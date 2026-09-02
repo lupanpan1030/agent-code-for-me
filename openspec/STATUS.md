@@ -52,11 +52,13 @@ The standard archive applied the accepted delta to the living `project-lifecycle
 - Living spec: [`project-lifecycle`](specs/project-lifecycle/spec.md)
 
 Both accepted closeouts are now locally archived. The final exact-SHA full gate passed at
-`291a472949e2e110109935b315de3db2aeaf9999`, but the single Owner-authorized
-`git push origin main` attempt was rejected by GitHub with `GH013` because the current OAuth App
-credential lacks `workflow` scope for the included `.github/workflows/ci.yml` update. A
-post-attempt read-only check confirmed `origin/main` remained
-`fb797b6a9bee4eae5c099280549a328ea3cdfd6f`. No retry or other remote mutation was performed.
+`291a472949e2e110109935b315de3db2aeaf9999`. The first Owner-authorized
+`git push origin main` attempt was rejected by GitHub with `GH013` because the then-current OAuth
+App credential lacked `workflow` scope for the included `.github/workflows/ci.yml` update. That
+failure is retained as audit history, but it is no longer the current delivery state: after the
+Owner completed the required GitHub authorization, the authorized push succeeded on 2026-09-02.
+`git ls-remote origin refs/heads/main` confirmed final remote `main` at
+`a4ea92301f80716926926c9cbbba389c2d57e8cd`, exactly matching the pushed local `main` SHA.
 
 ## Locally archived 2026-08-27
 

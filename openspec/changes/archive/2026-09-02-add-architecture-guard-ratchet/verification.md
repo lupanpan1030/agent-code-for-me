@@ -625,3 +625,21 @@ exact post-closeout `main` SHA. No other remote operation is authorized.
   remote merge, release, tag, or other remote mutation was performed. This failure receipt is
   committed locally after the rejected one-time attempt and is therefore not part of the
   attempted target SHA.
+
+### Superseding successful push receipt (2026-09-02)
+
+**Performed personally by Owner 2026-09-02 after completing the required GitHub authorization.**
+
+- The Owner-authorized credential refresh added the required `workflow` scope; the stored token
+  then reported `gist`, `read:org`, `repo`, and `workflow` scopes.
+- The subsequent authorized `git push origin main` exited **0** and advanced remote `main` from
+  `fb797b6a9bee4eae5c099280549a328ea3cdfd6f` to
+  `a4ea92301f80716926926c9cbbba389c2d57e8cd`. GitHub reported that the Owner bypassed the
+  pull-request and expected-status-check rules for this direct push.
+- A read-only `git ls-remote origin refs/heads/main` after the successful push returned
+  `a4ea92301f80716926926c9cbbba389c2d57e8cd`, matching the pushed local `main` SHA exactly.
+- This successful receipt supersedes the GH013 failure as the current remote-delivery state; the
+  failed attempt above remains only as immutable audit history.
+- This receipt is necessarily recorded in a later local documentation commit and is not itself
+  included in the already-pushed remote SHA. No further push or remote mutation is authorized by
+  this documentation update.
