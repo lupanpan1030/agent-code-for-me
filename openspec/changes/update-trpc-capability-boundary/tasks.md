@@ -50,8 +50,8 @@
 - [x] 5.2 Create frozen docs-only source `f89c7ee4a104c79d4c362972be8cac9c982dbc68`; on that exact SHA run the expanded 18-file targeted suite, `bun run architecture:check`, `bun run check:full`, and strict OpenSpec validation; record the receipts in an evidence-only commit.
 - [x] 5.2a Freeze the Owner-authorized wording-only successor to review record `08021f29` as `38ef174cd8423c05874aebdfbd9f921fad1c5a7a` and record its exact-SHA re-verification receipts without rewriting the `f89c7ee4` history.
 - [x] 5.3 Obtain three fresh-context Claude review lenses against frozen source `f89c7ee4a104c79d4c362972be8cac9c982dbc68`; all returned `REVIEW_APPROVED`, recorded in `08021f29`.
-- [ ] 5.3a Obtain targeted review of only the post-review wording-touch-up diff against its new frozen SHA; do not rerun the full multi-view review.
-- [ ] 5.4 Record Owner `ACCEPTED` for the reviewed frozen source SHA.
+- [x] 5.3a Obtain targeted review of only the post-review wording-touch-up diff; `REVIEW_APPROVED` for `38ef174cd8423c05874aebdfbd9f921fad1c5a7a` is recorded in `c9f8c69cf0ec3ea715d9c46e3e72ee36e2181668`, without rerunning the full multi-view review.
+- [x] 5.4 Record the Owner's 2026-09-02 `rebaseline ACCEPTED` for reviewed frozen source `38ef174cd8423c05874aebdfbd9f921fad1c5a7a`.
 - [ ] 5.5 After 5.2a, 5.3, 5.3a, and 5.4 only, archive normally with `bun x openspec archive update-trpc-capability-boundary --yes` (never `--skip-specs`) and verify the six requirements merge as 15 requirements / 35 scenarios in the living spec.
 - [ ] 5.6 Perform post-archive mechanical closeout: confirm active changes `1/1`, living specs `52/52`, all `53/53`, and archived `107 passed / 6 failed / 113 total` with this entry passing; then update `openspec/STATUS.md`, the archived task/verification receipts, and TICKET-114 with the packaged-production and development-CSP/HMR smoke rerun items.
 

@@ -199,20 +199,21 @@ targeted/full test logs did not represent test failures; both commands exited 0.
 - Fresh Claude multi-perspective review bound to `f89c7ee4`: **REVIEW_APPROVED x3**; detailed
   record follows below and is committed in `08021f29`.
 - Owner-authorized wording-only successor `38ef174cd8423c05874aebdfbd9f921fad1c5a7a`:
-  **FROZEN AND RE-VERIFIED; TARGETED DIFF REVIEW PENDING**.
-- Owner `ACCEPTED` bound to the reviewed successor SHA: **PENDING**.
-- Archive authorization: **NOT GRANTED**.
+  **FROZEN AND RE-VERIFIED; TARGETED DIFF REVIEW APPROVED** in `c9f8c69c`.
+- Owner `ACCEPTED` bound to the reviewed successor SHA: **ACCEPTED 2026-09-02**.
+- Archive authorization: **GRANTED FOR NORMAL LOCAL ARCHIVE AND MECHANICAL CLOSEOUT**; no
+  remote action is authorized.
 
 The three full review verdicts remain historical evidence for `f89c7ee4`. Per Owner direction, the
 bounded wording-only successor receives exact-SHA re-verification and targeted review of only
-`08021f29..NEW_FREEZE`; it does not rerun the three full review lenses. Any product-code edit or
+`08021f29..38ef174c`; it does not rerun the three full review lenses. Any product-code edit or
 additional substantive spec change exceeds that exception and requires fresh full verification and
 review. Evidence-only edits may record receipts without altering the frozen source under review.
 
 ## Archive receipt
 
-Status: **NOT RUN**. This task intentionally stops before archive until the targeted wording-diff
-review and Owner gate above are satisfied.
+Status: **NOT RUN**. The targeted wording-diff review and Owner gate are satisfied; the normal
+local archive and mechanical closeout are authorized but not yet executed in this record.
 
 Expected normal-archive invariants (not current results):
 
@@ -277,12 +278,12 @@ archive. No merge, archive, push, or remote operation is authorized by this reco
 - Source commit time: `2026-09-02T19:05:04+12:00`.
 - Receipt window ended: `2026-09-02T19:08:19+12:00` (Pacific/Auckland, WSL2).
 - Targeted review diff: `08021f29b44889c3c3d4f7c2763532392cca1ba6..38ef174cd8423c05874aebdfbd9f921fad1c5a7a`
-  (**PENDING REVIEW**); the range contains only `design.md`, the runtime-security-baseline delta,
+  (**REVIEW_APPROVED**, recorded in `c9f8c69cf0ec3ea715d9c46e3e72ee36e2181668`); the range contains only `design.md`, the runtime-security-baseline delta,
   `tasks.md`, and `verification.md`, and `git diff --check` passes.
 - Exact-SHA re-verification receipt: **PASS**. Before and after all commands, `HEAD` was exactly
   `38ef174cd8423c05874aebdfbd9f921fad1c5a7a` and the worktree was clean.
-- Targeted Claude wording-diff verdict: **PENDING**.
-- Owner `ACCEPTED`: **PENDING**.
+- Targeted Claude wording-diff verdict: **REVIEW_APPROVED** for the exact frozen source SHA.
+- Owner `ACCEPTED`: **ACCEPTED 2026-09-02** for the exact frozen source SHA.
 
 | Successor receipt | Result |
 | --- | --- |
@@ -316,5 +317,7 @@ having run on the successor.
   directory; worktree clean.
 
 **Targeted re-verification: APPROVED for `38ef174cd8423c05874aebdfbd9f921fad1c5a7a`.**
-Owner `ACCEPTED` (task 5.4) is now the only gate before archive (5.5) and mechanical
-closeout (5.6). No merge, archive, push, or remote operation is authorized by this record.
+The Owner then replied `rebaseline ACCEPTED` on 2026-09-02, explicitly accepting the same frozen
+source after reading the targeted review record. Tasks 5.3a and 5.4 are therefore complete, and the
+normal local archive (5.5) plus mechanical closeout (5.6) are authorized. Push, remote merge,
+release, and every other remote operation remain unauthorized.
