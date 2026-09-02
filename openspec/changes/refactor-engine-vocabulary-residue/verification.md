@@ -112,7 +112,8 @@
   legacy-config read priority, and affected chat pipelines: **152 passed / 0 failed /
   1,034 expectations across 17 files**.
 - `bun run ts:check`: passed. `bun run architecture:check`: passed.
-  `bun run retired-runtime:check`: **1,614 files scanned / 10 allowlisted**.
+  `bun run retired-runtime:check`: passed; the frozen-source gate reports
+  **1,611 files scanned / 10 allowlisted**.
 - `bun run spec:validate`: **54 passed / 0 failed** across all changes and specs.
 - Architecture-guard negative proof: temporarily replacing the direct derivation with
   `agentChatProviders = [CONTRACT_RUNTIME_IDS[0], "codex"] as const` made
@@ -138,9 +139,26 @@
 
 ## Exact-source verification
 
-- Frozen implementation source SHA: pending.
-- `bun run check:full` exact-source receipt: pending.
-- Codex verdict: pending.
+- Frozen implementation source SHA:
+  `911c01320b6b417d4ff6cf2305863a1d56a5522a` (direct child of the required base;
+  commit `refactor: retire residual engine vocabulary`).
+- `bun run check:full` at that exact clean source SHA exited **0** on 2026-09-02:
+  - architecture guard: passed;
+  - retired-runtime residue: **1,611 files scanned / 10 allowlisted**;
+  - TypeScript: passed;
+  - tests: **1,928 passed / 0 failed / 9,350 expectations across 304 files**;
+  - baseline delta: **+11 tests**, exactly matching the addition ledger above, and
+    **+2 test files**;
+  - OpenSpec all/strict: **54 passed / 0 failed**;
+  - Electron/Vite main, preload, and renderer production builds: passed;
+  - patch whitespace check: passed.
+- The clean-SHA gate's changed-file lint stage correctly reported no uncommitted files;
+  immediately before freezing, `bun run lint` checked the implementation diff and passed
+  with only pre-existing diagnostics outside changed lines ignored by the repository
+  baseline mechanism.
+- Codex verdict for the frozen source SHA: **IMPLEMENTATION_VERIFIED**. This verdict covers
+  the implementation and automated/source-level acceptance evidence; the explicitly
+  disclosed host-blocked packaged/GUI scenarios below are not represented as passed.
 - Fresh-context independent review: pending coordinator dispatch.
 - Owner acceptance: pending; no merge or archive is authorized in this task.
 

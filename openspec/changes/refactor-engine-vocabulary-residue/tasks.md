@@ -138,7 +138,7 @@
 
 ## 8. Verification
 
-- [ ] 8.1 `bun run check:full` green; compare test counts against the 1.3 baseline and account for
+- [x] 8.1 `bun run check:full` green; compare test counts against the 1.3 baseline and account for
       every added test.
 - [x] 8.2 Negative residue greps (excluding `openspec/changes/archive/**`): zero hits for
       `ACPChatTransport`, `acp-chat-transport`, `locus-acp-stdio`, `NewChatAgent`, and the
@@ -157,13 +157,13 @@
 
 ## 9. Closeout (repo standard)
 
-- [ ] 9.1 Bind the exact source SHA and the final `bun run check:full` receipt into
+- [x] 9.1 Bind the exact source SHA and the final `bun run check:full` receipt into
       `verification.md`.
 - [ ] 9.2 Record `IMPLEMENTATION_VERIFIED` (Codex) and fresh-context `REVIEW_APPROVED` (Claude)
       for the same SHA in `verification.md`.
 - [ ] 9.3 Owner product acceptance recorded.
 - [ ] 9.4 Local fast-forward merge; run the post-merge gate (`bun run check:full` on merged main).
-- [ ] 9.5 Note in `verification.md`: remote push / remote PR mutation / remote merge **not
+- [x] 9.5 Note in `verification.md`: remote push / remote PR mutation / remote merge **not
       authorized / not performed**.
 - [ ] 9.6 `openspec archive refactor-engine-vocabulary-residue --yes` (this change HAS spec
       deltas — do not pass `--skip-specs`), then
