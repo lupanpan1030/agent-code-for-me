@@ -1,110 +1,202 @@
 # Design: tRPC capability and trust boundary
 
+> Rebaseline note (2026-09-02): this design began as a broader threat analysis. All code anchors
+> below were refreshed against `d77a4b48e8d60cdaf20b8ae02d5df9482239e24a`. The archive delta
+> certifies only the implemented slices identified below. Remaining renderer hardening and
+> capability middleware are routing context for follow-ups, not claims of completion.
+
 ## Context
-Current evidence:
-- tRPC context is only `{ getWindow }` and exposes `publicProcedure` plus a logging middleware hook in `src/main/lib/trpc/index.ts:8`.
-- `src/preload/index.ts:6` calls `exposeElectronTRPC()`, exposing the whole app router to the renderer.
-- `src/main/lib/trpc/routers/index.ts:42` mounts 32 routers; the folder contains 41 router files. The mounted `changes` router is composed from `src/main/lib/git/**`.
-- `src/main/windows/main.ts:493` has `sandbox: false` for electron-trpc and `webviewTag: true` at `:495`.
-- Renderer CSP initially allowed `unsafe-inline`, `unsafe-eval`, and remote scripts from `https://unpkg.com` in `src/renderer/index.html:6`. The emergency Phase 2 renderer XSS slice removes broad JavaScript `unsafe-eval` and the remote script origin; `wasm-unsafe-eval` remains for Shiki/Oniguruma WebAssembly syntax highlighting. The follow-up Phase 2 CSP hardening moves the startup theme and global error handler boot scripts to static `self` scripts and installs a main-process CSP response header: production no longer allows `script-src 'unsafe-inline'`, while development keeps the Vite HMR inline and localhost allowances only for the dev app document.
+
+Current evidence at the rebaseline SHA:
+
+- tRPC `Context` contains only `getWindow` at `src/main/lib/trpc/index.ts:8-10`;
+  `publicProcedure` is defined at `:32` and `loggedProcedure` at `:49`.
+- `src/preload/index.ts:6` calls `exposeElectronTRPC()`, exposing the app router to the renderer.
+- `createAppRouter` is at `src/main/lib/trpc/routers/index.ts:41-77`. The directory contains 42
+  TypeScript files (41 router modules plus `index.ts`) and the app router mounts 33 namespaces,
+  including the `changes` git router.
+- The main window keeps `sandbox: false`, `webviewTag: true`, and `partition: "persist:main"` at
+  `src/main/windows/main.ts:469-472`; the tRPC context is created at `:498-500`.
+- The renderer CSP owner is `src/main/windows/renderer-csp.ts:12-29,39-61,70-107`, installed at
+  `src/main/windows/main.ts:482-487`. Production permits `self` plus the documented
+  `wasm-unsafe-eval` exception, but not inline JavaScript, ordinary `unsafe-eval`, or remote
+  script origins. Development alone receives the Vite HMR allowances.
 
 Threat model:
+
 - This is a local Electron app, not a remote multi-user API.
-- The attacker is untrusted local content that influences renderer behavior: malicious repository files, `CLAUDE.md`/markdown, chat/tool output, MCP output, or previewed web content.
-- The renderer is the confused deputy. If untrusted content can run or steer renderer code, it can call public tRPC procedures and ask the main process to use local privileges.
-- Therefore the target is to limit renderer-reachable main-process effects and reduce the chance that untrusted content controls renderer code. It is not to add a user login token to tRPC context.
+- The attacker is untrusted local content that influences renderer behavior: malicious repository
+  files, markdown, chat/tool/MCP output, or previewed web content.
+- The renderer is a confused deputy. If untrusted content can run or steer renderer code, it can
+  invoke public tRPC procedures and ask the main process to use local privileges.
+- A renderer-held login token would not create an independent security principal. The useful
+  boundary is main-process validation of privileged effects and isolation of untrusted content.
 
-## Dangerous Procedure Inventory
-This inventory was produced by scanning all 41 files under `src/main/lib/trpc/routers/`, the 32 mounted routers in `src/main/lib/trpc/routers/index.ts`, and the mounted `changes` git router under `src/main/lib/git/**`.
+## Renderer-Reachable Privileged-Operation Inventory
 
-| Severity | Procedures | Main-process effect | Current boundary notes |
-|---|---|---|---|
-| Critical | `terminal.createOrAttach` (`terminal.ts:15`), `terminal.write` (`terminal.ts:46`), `terminal.signal` (`terminal.ts:72`), `terminal.kill` (`terminal.ts:86`) | Starts and controls a PTY; `terminal.write` still sends arbitrary bytes to the terminal. | Emergency 0b hardening made `createOrAttach` derive cwd from registered chat/workspace state and map only main-owned initial command intents. `terminal.write`/signal/kill still need Phase 3 capability/consent. |
-| Critical | `claude.chat` (`claude.ts:58`), `codex.chat` (`codex.ts:439`) | Starts runtimes that can read/write files and execute tools; accepts renderer prompt, mode, cwd/projectPath, attachments, and optional scope contract. | Runtime preflight exists for desktop runs, but route inputs still present a broad privileged start surface. |
-| Critical | MCP config writes: `claude.addMcpServer/updateMcpServer/setMcpBearerToken` (`claude.ts:395`, `:420`, `:455`), `codex.addMcpServer` (`codex.ts:371`), `mcpRegistry.install` (`mcp-registry.ts:141`) | Persists stdio commands, args, env, bearer tokens, or HTTP URLs for later runtime tool execution. | P1 fixed OAuth token storage; command/url capability admission remains structural. |
-| High | `projects.cloneFromGitHub` (`projects.ts:249`) | Clones a GitHub repository and registers it as a project. | Emergency 0b hardening constrains renderer input to parsed GitHub `owner/repo` identity and executes `git clone` through argv, not a shell string. |
-| High | `external.openInFinder/openInApp/openFileInEditor/openExternal` (`external.ts:131`, `:139`, `:189`, `:232`) | Opens arbitrary paths, launches local apps, or opens arbitrary URLs with OS privileges. | Needs registered path or explicit user gesture token; URL handling belongs to allowlist/consent policy. |
-| High | `files.search/watchChanges/renameFile/deleteFile` (`files.ts:388`, `:568`, `:654`, `:680`) | Reads directory trees, watches paths, renames, or trashes filesystem paths. | Phase 1 files subset now reuses registered project/chat worktree roots and `path-boundary`; rename/delete require `projectPath` and reject targets outside that root. |
-| High | `skills.create/update/delete` (`skills.ts:333`, `:399`, `:432`) and `agents.create/update/delete` (`agents.ts:99`, `:167`, `:251`) | Writes/removes user or project `.claude` runtime instruction files based on renderer `cwd` or path. | Project-scoped writes should resolve from registered project/chat, not raw `cwd`. |
-| High | `commands.list/create` (`commands.ts:1103`, `:1185`) | Reads/writes command files under user or project command roots based on renderer `projectPath`. | P1 hardened get/update/delete; list/create should converge on the same resolver. |
-| High | `plugins.setDeveloperMode/chooseDeveloperSourceDirectory/removeDeveloperSource/previewRuntimePluginWriteAction/executeRuntimePluginWriteAction/installStoreCandidate/confirmDeveloperTrust/setRuntimeNativeEnabled/setControlledSetting/clearCache` (`plugins.ts:863`, `:892`, `:916`, `:951`, `:970`, `:999`, `:1272`, `:1318`, `:1502`, `:1604`) | Enables local plugin code paths, marketplace installs, runtime-native activation, settings writes, and cache mutation. | Existing plugin review gates are good precedent; route capability metadata should make the privileged surface auditable. |
-| High | `changes` git mutations: staging/delete/discard (`staging.ts:17` to `:123`), commit/push/pull/sync/forcePush/merge/rebase/PR (`git-operations.ts:149` to `:614`), branch create/delete/fetch (`branches.ts:66` to `:262`) | Mutates repository state, deletes untracked files, pushes to remote, and opens PR URLs. | Most use `assertRegisteredWorktree` or `secureFs`; still dangerous operations that should be tagged and audited. |
-| High | Provider/credential writes: `providerProfiles.saveProfile/deleteProfile/setDefault/testProfile` (`provider-profiles.ts:56`), `localApiProviderConfig.save/clear` (`local-api-provider-config.ts:118`), `claudeProviderConfig.save/clear/importLegacy` (`claude-provider-config.ts:26`), `codex.saveCodexApiKey/removeCodexApiKey/logout/startLogin` (`codex.ts:210`), `claudeCode.submitLocalLoginCode/importToken/importSystemToken/disconnect` (`claude-code.ts:322`, `:420`, `:456`, `:479`), `anthropicAccounts.add/remove` (`anthropic-accounts.ts:230`, `:318`) | Persists or removes secrets, provider endpoints, account state, or starts local auth flows. | Secrets stay main-side, but renderer reachability still needs operation classification and consent for imports/removals. |
-| Medium | `terminal.listDirectory` (`terminal.ts:157`) and `projects.create` (`projects.ts:135`) | Reads arbitrary directory names or registers arbitrary local paths from renderer input. | Prefer dialog-originated or registered-entity roots. |
-| Medium | `debug.clearChats/clearAllData/logout/openUserDataFolder/setOfflineSimulation` (`debug.ts:71`, `:83`, `:96`, `:106`, `:123`) | Destructive DB/admin/debug actions. | Should be dev-gated and capability-tagged. |
-| Medium | `githubWorkflow.importTaskFromUrl/createDraftPullRequest/postPullRequestComment/replyToReviewThread/markReadyForReview/requestReviewers` (`github-workflow.ts:46` to `:137`) | Imports remote task URL or performs GitHub write-back. | Some write-back schemas require confirmation; route capabilities should make that requirement uniform. |
-| Medium | `agentJobs.cancel/retry` (`agent-jobs.ts:78`, `:100`), `agentSchedules.pause/resume/delete/runNow` (`agent-schedules.ts:41`, `:49`, `:57`, `:65`), `appUpdates.download/quitAndInstall/check` (`app-updates.ts:64`, `:68`, `:72`) | Cancels/retries work, fires scheduled jobs, downloads or applies updates. | Not raw path sinks, but privileged effects. |
+The scan was refreshed across all 41 router modules (excluding the index), the 33 mounted
+namespaces, and the `changes` git router. The table is a reviewed operation-cluster inventory, not
+a procedure-complete capability taxonomy. After archive, this design preserves that cluster
+inventory only as historical evidence; no living artifact maintains it until the
+`add-trpc-capability-consent-audit` follow-up establishes one. The dangerous-input source guard is a
+separate mechanical control over 12 exact schema field names.
 
-Already-good patterns to reuse:
-- `files.ts:138` resolves file read roots through registered projects or chat worktrees.
-- `src/main/lib/fs/path-boundary.ts` centralizes path containment.
-- `src/main/lib/git/security/secure-fs.ts` and `assertRegisteredWorktree` protect many `changes` routes.
-- `src/main/lib/git/worktree-setup-trust.ts` shows the approval/fingerprint pattern for repository-provided commands.
-- Phase 3 MCP stdio command writes now use `src/main/lib/runtime-mcp-config/mcp-command-trust.ts` as the Runtime MCP Config-owned trust gate: Claude, Codex, and registry writers request native main-process confirmation before persisting stdio commands, record only approved command fingerprints, and runtime materialization omits unapproved stdio commands.
+| Severity | Procedure clusters | Main-process effect | Rebaseline status |
+| --- | --- | --- | --- |
+| Critical | `terminal.createOrAttach/write/signal/kill/listDirectory` | Starts and controls a PTY or reads a workspace directory. | Startup cwd/intents and directory roots are hardened. `terminal.write` remains a bare public procedure accepting arbitrary string data at `src/main/lib/trpc/routers/terminal.ts:46-55`; the PTY sink is `src/main/lib/terminal/manager.ts:122-130`. |
+| Critical | `claude.chat`, `codex.chat` | Starts runtimes able to read/write files and execute tools. | Execution cwd is resolved through `src/main/lib/agent-runtime/preflight.ts:162-170` (Claude call at `src/main/lib/trpc/routers/claude.ts:120-123`). Renderer `projectPath` still participates in runtime MCP lookup and is not certified by this change. The former experimental `agentRuntime.chat` no longer exists. |
+| Critical | Claude/Codex/MCP-registry configuration writers | Persists stdio commands, arguments, environment, bearer tokens, or HTTP URLs for later runtime use. | Structured input/root checks exist for the covered writes. Stdio commands additionally use the Runtime MCP Config-owned native-consent gate and fail-closed materialization. |
+| High | `projects.cloneFromGitHub` | Clones and registers a GitHub repository. | `src/main/lib/projects/github-clone.ts:52-117` parses owner/repository identity, constructs a canonical URL, and invokes `git clone` through argv with `--`. |
+| High | `external.openInFinder/openInApp/openFileInEditor/openExternal` | Opens paths, apps, editors, or URLs with OS privilege. | Still a capability/consent follow-up surface. Some calls accept renderer paths/cwd, so the archive delta must not generalize registered-root coverage to every renderer route. |
+| High | `files` read/search/watch/rename/delete and project-scoped command/agent/skill routes | Reads, watches, writes, renames, or deletes filesystem content and runtime instruction files. | Covered routes validate registered project/chat/worktree and component roots through `src/main/lib/fs/registered-roots.ts:50-231` and `src/main/lib/fs/path-boundary.ts`; adversarial route tests are retained. |
+| High | Plugin/native activation and controlled-setting routes | Enables local plugin code paths, installs candidates, changes settings, or mutates caches. | Existing review gates are useful precedent; unified capability metadata/audit is not implemented. |
+| High | `changes` staging, branch, commit, push/pull/sync/force-push/merge/rebase/PR routes | Mutates repository state, deletes untracked files, and writes to remotes. | Many operations use registered-worktree and secure-fs controls, but operation-level capability classification remains follow-up work. |
+| High | Provider/account/auth configuration routes | Persists or removes secrets, endpoints, accounts, or local auth state. | Secrets remain main-side; unified capability decisions and audit remain follow-up work. |
+| High | `projects.delete/deleteHistory`, `chats.delete`, `worktreeConfig.approveAndRunSetup`, runtime scope-expansion decisions | Deletes project/chat history and worktrees, executes approved setup commands, or changes runtime scope. | Current anchors include `src/main/lib/trpc/routers/projects.ts:166`, `chats-crud.ts:463`, `worktree-config.ts:107`, and `claude.ts:545`. These effects are not fully represented by dangerous field names and remain part of follow-up B's procedure-level classification. |
+| Medium | GitHub workflow writes, agent job/schedule controls, app update controls, debug/admin mutations | Writes remote review state, controls jobs, installs updates, or destructively changes local data. | Privileged effects remain candidates for the follow-up capability inventory. |
 
-## Options
+The dangerous-input guard lives in `scripts/check-architecture-guards.mjs`:
 
-### Option A: Input Trust Convergence
-Make renderer inputs identify server-known entities, not raw authority. Routes should resolve `chatId`, `projectId`, `subChatId`, `paneId`, or opaque attachment/local refs to canonical paths and state in the main process. Any remaining path-like field must pass `path-boundary` and registered-root checks.
+- field set: `:2105-2118`;
+- allowlist: `:2120-2517`, 50 declared entries at this baseline;
+- self-test: `:2732-2756`;
+- `assertNoUnresolvedDangerousRouterInput`: `:2758-2790`;
+- package-chain assertion: `:2792-2810`;
+- main invocation: `:4218`.
 
-Pros:
-- Directly blocks the sinks that turn renderer control into filesystem or process authority.
-- Builds on P1 and git `secureFs` patterns already tested in this repository.
-- Incremental and reviewable per router.
+The enumerated fields are exactly `absolutePath`, `baseUrl`, `command`, `cwd`, `dirPath`, `env`,
+`filePath`, `headers`, `path`, `projectPath`, `token`, and `url`. Nested, passthrough, aliased, or
+effectful no-input procedures can fall outside this detector. The 50 declarations also include one
+stale `agent-runtime.ts:chat` entry. The current guard rejects an unlisted finding or extra
+enumerated fields, but does not prove that allowlist entries remain live or mechanically enforce
+only-shrink behavior. The future capability change must start from this exact limitation rather
+than claiming the 1c ratchet already covers it.
 
-Cons:
-- Requires renderer call-site updates where today routes pass `cwd`, `projectPath`, `absolutePath`, or display paths.
-- Does not by itself reduce XSS/untrusted-content risk; it limits the blast radius once renderer code is influenced.
+## Certified Implementation Boundary
 
-### Option B: Capability and Consent Middleware
-Introduce typed tRPC procedure wrappers or metadata helpers that classify operations such as `filesystem.read`, `filesystem.write`, `shell.execute`, `runtime.start`, `config.secret.write`, `external.open`, `network.write`, and `debug.destroy`. Dangerous classes go through explicit confirmation, audit, and kill-switch logic.
+### Registered roots and path-like inputs
 
-Pros:
-- Creates a reviewable inventory and ongoing architecture guard.
-- Gives users a consumption gate for high-risk operations even in a single-renderer app.
-- Can reuse the worktree setup trust style for fingerprinted commands and config writes.
+R2 explicitly enumerates the only route families certified by the archive delta. Reads and directory
+listing use real-path checks and reject symlink escape; search omits symlinks; watch validates the
+registered root; rename/delete enforce lexical containment, traversal/null-byte rejection, and
+replacement-name validation; project-scoped command/agent/skill and covered MCP/provider writes
+validate registered roots. It does not claim that every renderer-reachable path/cwd sink has been
+converted; the `external` examples above are a known counterexample. It also does not claim that
+rename/delete reject a parent-directory symlink that lexically remains inside the root: that is a
+known TICKET-101/path-boundary security residual requiring product-code work.
 
-Cons:
-- In a single renderer with no separate principals, this is not a true multi-subject authorization boundary.
-- If applied before sink hardening, it may give a false sense of safety while raw paths and commands still exist.
-- Consent prompts can become noisy without careful grouping and remembered decisions.
+### Runtime and terminal starts
 
-### Option C: Renderer Hardening
-Reduce the chance that untrusted content can drive renderer code: strict CSP, removal of broad `unsafe-eval` where possible, sanitization of markdown/HTML/SVG output, sandboxed iframes/webviews for previews, and navigation/permission controls for local browser surfaces.
+Claude and Codex execution cwd is resolved from server-side chat/sub-chat state; a forged
+renderer cwd is rejected or ignored in favor of that server value. Terminal creation derives cwd
+from registered chat/workspace state and maps only
+main-owned startup intent IDs. `terminal.listDirectory` resolves a registered chat root. The old
+requirement language about all runtime `projectPath`, permission context, and project-scoped
+configuration being server-derived was broader than the implementation and is removed.
 
-Pros:
-- Attacks the upstream precondition instead of only hardening sinks.
-- Protects every renderer-exposed bridge, including future routes.
-- Separates untrusted preview/browser content from the privileged app renderer.
+### MCP stdio native consent
 
-Cons:
-- Potentially disruptive to dev tooling, syntax highlighting, Mermaid rendering, local browser preview, and electron-trpc assumptions.
-- Requires real desktop smoke tests because browser security settings are easy to misread from unit tests alone.
+`src/main/lib/runtime-mcp-config/mcp-command-trust.ts:42-119` owns normalization and the command
+fingerprint, `:128-157` checks approvals, `:216-242` owns the native dialog, and `:244-262`
+enforces approval before writes. Claude/Codex runtime materialization omits unapproved stdio
+commands. This is the only operation-level native-consent requirement certified here; it is not
+a general tRPC capability framework.
 
-## Recommendation
-Use a phased plan:
-1. Do Option A first. It directly closes the most exploitable sinks and follows already-validated local patterns.
-2. Do Option C next. It reduces the upstream chance that untrusted content can steer the privileged renderer.
-3. Add Option B as structural coverage. It gives audit, kill-switches, and explicit consumption gates, but should not replace sink hardening.
+### Renderer content and CSP
 
-Do not start with "add authentication to tRPC Context." In this local Electron model, a renderer token or user session in context would be reachable by the same renderer code we are trying to constrain. Context can later carry window/session metadata, capability decision state, or trusted user-gesture IDs, but the first security boundary must be main-process validation of privileged effects.
+- Chat markdown uses Streamdown 2.1.0. Its default rehype raw/sanitize/harden chain preserves a
+  safe HTML subset but removes active/scriptable content. Therefore the delta says raw HTML is
+  sanitized/hardened before insertion, not that every raw HTML element is discarded.
+- `tests/renderer-html-sinks.test.ts:27-42` mechanically limits files containing
+  `dangerouslySetInnerHTML` to an exact five-file list; it does not count or individually approve
+  every insertion within an allowed file. Lines `:53-68` record four Shiki-backed files. The chat
+  Shiki insertion remains at `src/renderer/components/chat-markdown-renderer.tsx:137`. This source
+  guard does not itself test Streamdown's sanitizer behavior and does not scan direct DOM
+  `.innerHTML` assignments. The mentions editor restores its own undo/redo HTML state through
+  `.innerHTML` at `src/renderer/features/agents/mentions/agents-mentions-editor.tsx:991,1019`;
+  follow-up A must enumerate that surface without assuming it is exploitable.
+- Mermaid strict mode and DOMPurify live in
+  `src/renderer/lib/security/mermaid-svg-sanitizer.ts:1-99`, with use at
+  `src/renderer/components/mermaid-block.tsx:146,257,481,558`.
+- Tool subtitles render as React text at
+  `src/renderer/features/agents/ui/agent-tool-call.tsx:33-58`.
+- Production/development CSP separation is owned by the files cited in Context.
 
-## Impact on APIs and Preload
-- Phase 1 should keep `exposeElectronTRPC()` and route names stable where possible.
-- Inputs should change where raw authority is passed:
-  - Runtime start routes should derive cwd/project path from `chatId`/`subChatId`.
-  - Project-scoped files, commands, agents, skills, MCP, terminal, and local-browser paths should derive from registered `projectId`/`chatId` roots or explicit dialog-selected tokens.
-  - External path openings should require registered paths or a short-lived main-issued user-gesture token.
-- Phase 2 may change renderer CSP and webview/iframe settings but should not change tRPC schemas.
-- Phase 3 may replace `publicProcedure` imports with capability-specific wrappers or metadata, but can preserve caller shape unless consent is required.
+## Descoped Boundaries
+
+### Follow-up A: renderer untrusted-content hardening
+
+The renderer sink inventory must include both React `dangerouslySetInnerHTML` and direct DOM HTML
+assignments. The current five-file guard covers only the former. Follow-up A must add direct
+Streamdown malicious-HTML/dangerous-URL regression coverage and decide how direct DOM sinks are
+reviewed or guarded.
+
+The local-browser surface is partially hardened already:
+
+- the main app frame has `setWindowOpenHandler` and navigation/redirect guards at
+  `src/main/windows/main.ts:573-607`;
+- the local browser uses a per-chat non-persistent partition at
+  `src/renderer/features/agents/ui/local-browser-workbench.tsx:89-92,449-464`;
+- it applies `will-navigate` and localhost/file-root URL policy at `:157-213`, backed by
+  `src/shared/local-browser-workbench.ts:64,110-184` and existing tests.
+
+Missing proof/control includes session permission handlers, `will-attach-webview`/
+`did-attach-webview`, guest `window.open` policy, explicit preview preload/bridge isolation, audit
+of active `executeJavaScript` uses such as `local-browser-workbench.tsx:111-119`, and reproducible
+desktop smoke. Current chat export is text-only (`json`, `markdown`, or `text`); no HTML export
+preview surface was found, so follow-up A must re-enumerate sinks rather than assume one exists.
+
+### Follow-up B: tRPC capability, consent, and audit
+
+No unified dangerous-operation capability wrapper/meta, consent decision layer, audit owner, or
+kill-switch exists. The tRPC context and `terminal.write` anchors above are the current proof.
+Follow-up B owns taxonomy, wrappers, non-MCP consent, audit, kill-switches, terminal input
+capability, and evolution of the dangerous-input guard. It must be drafted after Foundation 1d
+and the Amadeus continuation slice, using the post-1c guard structure.
+
+## Options and Decision
+
+The original design considered three complementary options:
+
+1. Input trust convergence: resolve renderer inputs through server-known entities and registered
+   roots. The implemented, bounded Phase 1 slices are certified here.
+2. Renderer hardening: reduce the chance that untrusted content drives the privileged renderer.
+   CSP, markdown/Mermaid/subtitle, and sink-guard slices are certified here; guest/webview and
+   desktop-smoke work moves to follow-up A.
+3. Capability and consent middleware: classify privileged operations and enforce consent/audit/
+   kill-switch decisions. Only MCP stdio native consent is certified here; the general model moves
+   to follow-up B.
+
+Authentication in the tRPC context is not the selected boundary. In this local Electron threat
+model, the renderer we are constraining would also hold that token.
+
+## Impact on APIs and Delivery
+
+The rebaseline edits only OpenSpec documents. It does not change preload exposure, route schemas,
+runtime behavior, renderer behavior, persistence, or public/versioned contracts. Normal archive
+will merge the six narrowed ADDED requirements into `runtime-security-baseline`; no
+`--skip-specs` archive is allowed.
 
 ## Verification Strategy
-- Add adversarial tRPC tests for every Phase 1 sink class: absolute path, `..`, symlink escape, unregistered root, forged `chatId/projectId`, raw command string, and forged cwd.
-- Add architecture guard that fails new router procedures taking fields named `path`, `cwd`, `command`, `url`, `token`, `env`, `headers`, or `absolutePath` unless they use an approved resolver or capability wrapper.
-- Add renderer smoke tests for CSP/webview/markdown behavior in Phase 2.
-- Add middleware tests proving dangerous procedures are tagged and consent/audit is enforced in Phase 3.
 
-## Open Questions
-- Whether terminal creation should require an explicit interactive user gesture every time, or whether a registered chat/workspace terminal can grant a remembered pane capability.
-- Whether global user-level writes under `~/.claude` should remain renderer-callable after consent, or move behind Settings-only workflows with stronger confirmation.
-- Whether plugin and MCP command writes share one command fingerprint trust store or keep separate owners with a common capability interface.
+- Bind the expanded 18-file targeted suite, `bun run architecture:check`, `bun run check:full`,
+  and strict OpenSpec validation to one frozen docs-only source SHA.
+- Record that the existing HTML-sink test proves the reviewed five-file inventory, not a
+  per-insertion inventory, direct-DOM inventory, or direct Streamdown raw-HTML rendering behavior.
+- Do not claim packaged/dev CSP smoke: this WSL2 host has no usable GUI session and the historical
+  4.4/4.5 checkmarks have no receipt. Record the Owner-directed TICKET-114 destination without
+  editing that shared ticket in this phase.
+- Require fresh Claude multi-perspective review of the same frozen SHA and Owner `ACCEPTED` before
+  archive. Verification receipts alone do not authorize archive.
+
+## Open Questions for Follow-ups
+
+- Whether terminal input requires a per-action user gesture or a remembered pane capability.
+- Whether global writes under the runtime configuration roots remain renderer-callable after
+  consent or move behind Settings-only workflows.
+- Whether plugin and MCP command approvals keep separate owners behind a common capability
+  interface.
+- Whether remembered MCP stdio approvals must bind canonical project identity and what revocation
+  semantics apply. The current normalized hash intentionally excludes `projectPath`, even though
+  the prompt can display it.
+- How follow-up A proves guest bridge isolation without breaking the electron-trpc main window.
