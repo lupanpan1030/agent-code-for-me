@@ -108,9 +108,15 @@
       `docs/ideas/locus-product-direction-harness-strategy.zh-CN.md`) get a dated status note
       rather than silent edits; the two text SVGs (`docs/assets/locus-agent-platform{,.zh-CN}.svg`)
       get a plain text-label edit, or a Yellow follow-up if layout breaks.
-- [ ] 6.5 Smoke: pipe an initialize request into `locus jobs-stdio`; response advertises
+- [x] 6.5 Smoke: pipe an initialize request into `locus jobs-stdio`; response advertises
       `"locus-jobs-stdio.v1"`; `locus acp` exits with the standard unknown-command error.
       Record both transcripts in `verification.md`.
+      - The source dispatcher and actual POSIX shim transcripts passed; the packaged and
+        generated Windows wrapper contracts passed their platform-appropriate tests.
+      - Exact packaged Electron execution remained host-blocked by the missing
+        `libnspr4.so`. Owner accepted this disclosed residual risk on 2026-09-02. Checking
+        this item records completed risk disposition; it does not claim an Electron-packaged
+        invocation ran on this host.
 
 ## 7. Worktree path single owner + `.1code` write demotion
 
@@ -147,24 +153,29 @@
       `codex/ask-user-question.ts`, `local-only.ts`, `oauth.ts`, `agent-guard/contract.ts`, and
       `git/worktree-config.ts` have no diff; `grep -rn "tool-acp\." src/shared/` still returns the
       persisted part types.
-- [ ] 8.4 Desktop smoke (`bun run dev`), recorded in `verification.md`: engine picker offers
+- [x] 8.4 Desktop smoke (`bun run dev`), recorded in `verification.md`: engine picker offers
       exactly Claude Code and Codex (no Cursor row); a Codex chat streams end-to-end through
       `CodexAppServerChatTransport`; an old chat whose messages carry `metadata.provider` routes
       to the correct engine; worktree settings tab loads an existing `.1code` config read-only;
       changed-files tracking and the info-section worktree affordances still work in a managed
       worktree.
+      - The exact-source attempt stopped before app startup because this Linux host cannot load
+        Electron's `libnspr4.so`. No GUI scenario is claimed as run or passed; automated source,
+        transport, metadata, worktree, and settings receipts are recorded in `verification.md`.
+      - Owner accepted this disclosed residual risk on 2026-09-02. Checking this item records
+        completed risk disposition only.
 - [x] 8.5 `openspec validate --strict --no-interactive` across all changes and specs.
 
 ## 9. Closeout (repo standard)
 
 - [x] 9.1 Bind the exact source SHA and the final `bun run check:full` receipt into
       `verification.md`.
-- [ ] 9.2 Record `IMPLEMENTATION_VERIFIED` (Codex) and fresh-context `REVIEW_APPROVED` (Claude)
+- [x] 9.2 Record `IMPLEMENTATION_VERIFIED` (Codex) and fresh-context `REVIEW_APPROVED` (Claude)
       for the same SHA in `verification.md`.
-- [ ] 9.3 Owner product acceptance recorded.
-- [ ] 9.4 Local fast-forward merge; run the post-merge gate (`bun run check:full` on merged main).
+- [x] 9.3 Owner product acceptance recorded.
+- [x] 9.4 Local fast-forward merge; run the post-merge gate (`bun run check:full` on merged main).
 - [x] 9.5 Note in `verification.md`: remote push / remote PR mutation / remote merge **not
       authorized / not performed**.
-- [ ] 9.6 `openspec archive refactor-engine-vocabulary-residue --yes` (this change HAS spec
+- [x] 9.6 `openspec archive refactor-engine-vocabulary-residue --yes` (this change HAS spec
       deltas — do not pass `--skip-specs`), then
       `openspec validate --strict --no-interactive` to confirm the archived change passes.

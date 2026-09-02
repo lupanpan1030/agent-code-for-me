@@ -5,7 +5,9 @@ Keep local-first renderer surfaces free of leftover web-SaaS team and billing
 vocabulary when the app has no corresponding team or payment system. This spec
 protects onboarding provider/auth selection compatibility while preventing inert
 multi-tenant state from being persisted or threaded through chat UI paths.
+
 ## Requirements
+
 ### Requirement: Onboarding provider/auth selection uses provider vocabulary
 
 The onboarding provider/auth selector MUST be named for what it does — selecting a
@@ -52,3 +54,22 @@ the chat-data adapter MUST NOT expose team-keyed parameters it ignores, and iner
 - **WHEN** the team scaffolding is removed
 - **THEN** the agent chat list still loads identically, because the adapter already
   queried `trpc.chats.list` unconditionally and ignored `teamId`/`enabled`
+
+### Requirement: Legacy fork worktree config is read-only compatibility
+
+The application MUST NOT offer the legacy fork path `.1code/worktree.json` as a worktree-config
+save target. It MUST continue reading existing `.1code/worktree.json` (and `.cursor/worktrees.json`)
+files through the established detection priority so no user configuration is lost.
+
+#### Scenario: Save targets exclude the legacy fork path
+
+- **WHEN** the worktree settings tab offers config save targets
+- **THEN** `.1code/worktree.json` is not among them
+- **AND** `.locus/worktree.json` remains the primary target
+
+#### Scenario: Existing legacy config still loads
+
+- **WHEN** a project contains only a `.1code/worktree.json` config
+- **THEN** worktree config detection still reads it via the unchanged priority
+  (custom > `.locus/worktree.json` > `.cursor/worktrees.json` > `.1code/worktree.json`)
+- **AND** the UI shows its source without offering to write back to it

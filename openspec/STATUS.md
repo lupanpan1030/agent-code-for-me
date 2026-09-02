@@ -8,13 +8,35 @@ Updated: 2026-09-02 (Pacific/Auckland)
 
 | Change | State | Concrete next gate |
 | --- | --- | --- |
-| `refactor-engine-vocabulary-residue` | Approved (Foundation 1d; Owner `APPROVED` 2026-08-26) | Implementation remains sequenced after 1c; re-verify all anchors against that later tree. |
 | `update-trpc-capability-boundary` | Blocked pending rebaseline | Separate already-shipped Phase 1/CSP/Mermaid/MCP guarantees from unfinished renderer/browser and capability/audit work; validate and archive only implemented truth, then create bounded follow-ups. |
 
 Parked proposals are indexed in [`deferred/README.md`](deferred/README.md) and
 do not appear in the active list.
 
 ## Locally archived 2026-09-02
+
+### Foundation 1d — Foundation Stabilization 4/4 complete
+
+`refactor-engine-vocabulary-residue` received Codex `IMPLEMENTATION_VERIFIED` and two
+independent fresh-context Claude `REVIEW_APPROVED` verdicts for source
+`911c01320b6b417d4ff6cf2305863a1d56a5522a`, with zero P0/P1/P2 findings. The Owner
+explicitly `ACCEPTED` the change on 2026-09-02, including disposition of the disclosed
+host-blocked packaged/GUI smoke risk without treating those scenarios as passed. Its clean
+accepted evidence head `6f107d610ae2dbc4f423fcf3573f340e707a5331` was fast-forwarded into
+local `main`. The post-merge `bun run check:full` at that exact merge SHA passed with
+**1,928 tests / 0 failures / 9,350 expectations across 304 files**, retired-runtime
+residue **1,611 scanned / 10 allowlisted**, and pre-archive OpenSpec **54/54**.
+
+The standard archive applied the accepted deltas to all three living specs, and the
+post-archive strict validation passed **53/53**:
+
+- [`2026-09-02-refactor-engine-vocabulary-residue`](changes/archive/2026-09-02-refactor-engine-vocabulary-residue/)
+- Living spec: [`agent-protocol-interfaces`](specs/agent-protocol-interfaces/spec.md)
+- Living spec: [`canonical-entity-vocabulary`](specs/canonical-entity-vocabulary/spec.md)
+- Living spec: [`fork-residue-hygiene`](specs/fork-residue-hygiene/spec.md)
+
+This closes Foundation Stabilization **4/4**. No push or other remote operation was
+authorized or performed.
 
 ### Foundation 1c
 
@@ -31,9 +53,6 @@ living `architecture-ownership` spec:
 - [`2026-09-02-add-architecture-guard-ratchet`](changes/archive/2026-09-02-add-architecture-guard-ratchet/)
 - Living spec: [`architecture-ownership`](specs/architecture-ownership/spec.md)
 - Yellow sibling-route follow-up: [`TICKET-122`](../docs/tickets/TICKET-122-route-ratchet-sibling-file-coverage.md)
-
-Foundation 1d (`refactor-engine-vocabulary-residue`) is now unblocked for W1 from the archived
-1c tree.
 
 ### Nested registered cwd resolution (#18 safe half)
 

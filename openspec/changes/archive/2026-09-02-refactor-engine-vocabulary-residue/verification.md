@@ -159,8 +159,10 @@
 - Codex verdict for the frozen source SHA: **IMPLEMENTATION_VERIFIED**. This verdict covers
   the implementation and automated/source-level acceptance evidence; the explicitly
   disclosed host-blocked packaged/GUI scenarios below are not represented as passed.
-- Fresh-context independent review: pending coordinator dispatch.
-- Owner acceptance: pending; no merge or archive is authorized in this task.
+- Fresh-context independent review: two independent `REVIEW_APPROVED` verdicts are recorded
+  below for the same frozen source SHA.
+- Owner acceptance: `ACCEPTED` on 2026-09-02; the evidence and closeout authority are
+  recorded below.
 
 ## Manual / packaged smoke
 
@@ -183,10 +185,9 @@
 
 ## Authority boundary
 
-No local merge, OpenSpec archive, push, remote PR mutation, remote merge, tag, publish,
-release, or repository-rule change is authorized or performed. This handoff stops after
-the exact implementation SHA and Codex `IMPLEMENTATION_VERIFIED` receipt, for the
-coordinator to dispatch dual fresh-context review.
+The Owner-authorized local fast-forward merge and standard OpenSpec archive are recorded
+below. No push, remote PR mutation, remote merge, tag, publish, release, or repository-rule
+change was authorized or performed.
 
 ## Fresh-context Claude review (2026-09-02)
 
@@ -218,9 +219,9 @@ proposal's repo-wide wording; ⑥ installed Windows wrapper routes fewer command
 packaged shim (pre-existing asymmetry, out of approved scope); ⑦ node-pty/Electron
 reproduction caveat on --ignore-scripts hosts (TICKET-114 pattern).
 
-Gate status: fresh-context review complete for the exact source SHA. Owner product
-acceptance is the only open gate; no merge, archive, push, or remote operation is
-authorized by this record.
+Gate status at review time: fresh-context review was complete for the exact source SHA;
+the subsequent Owner acceptance, local merge, and archive closeout are recorded below.
+No push or other remote operation was authorized by the review record.
 
 ## Owner acceptance (2026-09-02)
 
@@ -230,3 +231,36 @@ authorized by this record.
 fast-forward merge into `main`, post-merge `bun run check:full` on the merge SHA, and
 `openspec archive`. This completes Foundation Stabilization 4/4 upon archive. No push or
 other remote operation is authorized by this record.
+
+## Local main merge and post-merge gate (2026-09-02)
+
+- Pre-merge confirmation: branch `codex/refactor-engine-vocabulary-residue` and its
+  dedicated worktree were clean at accepted evidence HEAD
+  `6f107d610ae2dbc4f423fcf3573f340e707a5331`; local `main` was its direct ancestor.
+- The primary worktree was clean on
+  `codex/update-trpc-capability-boundary-rebaseline`, then explicitly switched to `main`.
+  `git merge --ff-only codex/refactor-engine-vocabulary-residue` advanced local `main`
+  from `d77a4b48e8d60cdaf20b8ae02d5df9482239e24a` to merge SHA
+  `6f107d610ae2dbc4f423fcf3573f340e707a5331` without a merge commit or conflict.
+- `bun run check:full` at that exact clean merge SHA exited **0**:
+  - architecture guard: passed;
+  - retired-runtime residue: **1,611 files scanned / 10 allowlisted**;
+  - TypeScript: passed;
+  - tests: **1,928 passed / 0 failed / 9,350 expectations across 304 files**;
+  - OpenSpec all/strict before archive: **54 passed / 0 failed**;
+  - Electron/Vite main, preload, and renderer production builds: passed;
+  - patch whitespace check: passed.
+- No push or other remote operation was performed. The primary worktree remains on
+  `main`.
+
+## Standard archive closeout (2026-09-02)
+
+- `openspec archive refactor-engine-vocabulary-residue --yes` completed without
+  `--skip-specs` and moved the change to
+  `openspec/changes/archive/2026-09-02-refactor-engine-vocabulary-residue/`.
+- The archiver applied the accepted deltas to the living
+  `agent-protocol-interfaces`, `canonical-entity-vocabulary`, and
+  `fork-residue-hygiene` specs: **3 requirements added / 1 retired**.
+- Post-archive `openspec validate --all --strict --no-interactive` passed:
+  **53 passed / 0 failed**.
+- Foundation Stabilization is complete **4/4**. No remote operation was performed.
