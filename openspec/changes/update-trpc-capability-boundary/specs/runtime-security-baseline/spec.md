@@ -1,20 +1,21 @@
 ## ADDED Requirements
-### Requirement: Renderer-Reachable Privileged Procedures Are Inventoried
-The system SHALL maintain an auditable inventory of renderer-reachable tRPC procedures that can cause main-process filesystem access, process execution, external navigation, network writes, credential writes, runtime startup, plugin/native activation, git mutations, or destructive data changes.
 
-#### Scenario: New dangerous route is added
-- **WHEN** a tRPC router procedure accepts dangerous input such as `path`, `cwd`, `command`, `url`, `token`, `env`, `headers`, or `absolutePath`
-- **THEN** the procedure SHALL be classified in the privileged-operation inventory or rejected by an architecture guard before merge.
+### Requirement: Dangerous Router Inputs And Privileged Operation Clusters Are Inventoried
+The system SHALL maintain a procedure-keyed field allowlist for findings produced from the architecture guard's enumerated dangerous renderer-input fields and SHALL maintain a reviewed operation-cluster inventory for privileged renderer routes not represented by those fields.
 
-### Requirement: Renderer Inputs Do Not Carry Raw Filesystem Authority
-Renderer-reachable procedures SHALL resolve filesystem targets from registered main-process entities, opaque local references, or dialog-issued tokens before reading, writing, watching, renaming, deleting, or passing paths to local processes.
+#### Scenario: Source guard detects an enumerated dangerous field
+- **WHEN** the source guard detects `absolutePath`, `baseUrl`, `command`, `cwd`, `dirPath`, `env`, `filePath`, `headers`, `path`, `projectPath`, `token`, or `url` as a supported top-level tRPC input field
+- **THEN** architecture checks SHALL require a matching procedure entry that allowlists every detected enumerated field or fail before merge.
 
-#### Scenario: Renderer supplies forged project path
-- **WHEN** a renderer-reachable route receives a project path or cwd that does not resolve to the registered project, chat worktree, terminal workspace, or dialog token for the request
-- **THEN** the main process SHALL reject the request before touching the filesystem or starting a process.
+### Requirement: Hardened Renderer Filesystem Sinks Apply Registered-Root Boundaries
+The renderer-reachable file, component, terminal-directory, and project-scoped configuration routes hardened by this change SHALL apply their implemented registered-root boundary before the privileged effect: file reads and directory listing SHALL reject real-path escape, file search SHALL omit symlinks, file watch SHALL require a registered root, rename/delete SHALL reject lexical out-of-root, traversal, null-byte, and invalid replacement targets, and component/configuration writes SHALL require registered project or component roots.
 
-#### Scenario: Renderer supplies path traversal
-- **WHEN** a renderer-reachable route receives a path containing traversal, a null byte, or a symlink escape outside the approved root
+#### Scenario: Renderer supplies forged project path to a hardened route
+- **WHEN** one of the hardened routes receives a project path or cwd that does not resolve to the registered project, chat worktree, or terminal workspace for the request
+- **THEN** the main process SHALL reject the request before the requested privileged filesystem or process effect.
+
+#### Scenario: Strict target path contains traversal or a read/list symlink escape
+- **WHEN** a target path governed by the strict path-boundary helper contains traversal or a null byte, or a hardened read/list target resolves through a symlink outside the approved root
 - **THEN** the main process SHALL reject the request before reading, writing, watching, opening, or deleting the target.
 
 #### Scenario: File search or watch uses an unregistered root
@@ -22,14 +23,14 @@ Renderer-reachable procedures SHALL resolve filesystem targets from registered m
 - **THEN** the main process SHALL reject the request before scanning or watching the directory.
 
 #### Scenario: File rename or delete targets a path outside the registered root
-- **WHEN** a renderer asks the file rename or delete route to operate on an absolute path outside the supplied registered project or chat worktree root
+- **WHEN** a renderer asks the file rename or delete route to operate on a lexical absolute path outside the supplied registered project or chat worktree root
 - **THEN** the main process SHALL reject the request before renaming or deleting the target.
 
-### Requirement: Runtime And Shell Starts Use Server-Resolved Context
-Renderer-reachable runtime and terminal start procedures SHALL derive cwd, project path, runtime permission context, and project-scoped configuration from server-side chat, sub-chat, project, or workspace records.
+### Requirement: Runtime And Terminal Starts Use Server-Resolved Working Directories
+Renderer-reachable Claude and Codex runtime starts SHALL resolve their execution cwd from server-side chat or sub-chat records, and terminal starts SHALL resolve cwd and startup command intents from registered server-side chat or workspace state.
 
 #### Scenario: Runtime chat request forges cwd
-- **WHEN** a renderer starts a Claude, Codex, or experimental runtime chat with a cwd that differs from the server-side chat or sub-chat worktree
+- **WHEN** a renderer starts a Claude or Codex runtime chat with a cwd that differs from the server-side chat or sub-chat worktree
 - **THEN** the main process SHALL reject or ignore the forged cwd and SHALL NOT start the runtime in the attacker-selected directory.
 
 #### Scenario: Terminal request includes initial commands
@@ -39,10 +40,6 @@ Renderer-reachable runtime and terminal start procedures SHALL derive cwd, proje
 #### Scenario: Terminal request forges cwd
 - **WHEN** a renderer requests a terminal session with a cwd or scope that differs from the server-side chat or workspace record
 - **THEN** the main process SHALL reject the forged request and SHALL NOT start the PTY in the attacker-selected directory.
-
-#### Scenario: Terminal writes arbitrary input
-- **WHEN** a renderer writes arbitrary terminal input to an existing PTY
-- **THEN** the main process SHALL require a future approved terminal input capability before writing to the PTY.
 
 ### Requirement: GitHub Clone Uses Constrained Repository Identity
 Renderer-reachable GitHub clone procedures SHALL parse renderer input into a GitHub owner/repository identity and SHALL execute Git through argv without shell interpretation.
@@ -55,16 +52,8 @@ Renderer-reachable GitHub clone procedures SHALL parse renderer input into a Git
 - **WHEN** a renderer submits a valid GitHub repository identity
 - **THEN** the main process SHALL construct the canonical `https://github.com/<owner>/<repo>.git` clone URL and SHALL invoke `git clone` with argv, not a shell string.
 
-### Requirement: Dangerous Operations Require Capability Decisions
-Renderer-reachable procedures that perform shell execution, arbitrary file writes or deletes, external app or URL opens, plugin/native activation, MCP command writes, credential imports/removals, remote git writes, update install, or destructive debug actions SHALL declare a capability class and pass a capability decision before performing the side effect.
-
-#### Scenario: Dangerous operation lacks capability metadata
-- **WHEN** a dangerous tRPC procedure is implemented with a bare public procedure and no capability classification
-- **THEN** architecture checks SHALL fail before merge.
-
-#### Scenario: Capability decision denies operation
-- **WHEN** a dangerous operation is denied by user consent, policy, local-only mode, safe mode, or a kill-switch
-- **THEN** the main process SHALL skip the side effect and return a bounded denial result.
+### Requirement: MCP Stdio Command Writes Require Native Consent
+Renderer-reachable MCP configuration writes that would persist a stdio command for later runtime execution SHALL require native main-process confirmation, SHALL remember approvals by command fingerprint, and runtime materialization SHALL fail closed for unapproved stdio commands.
 
 #### Scenario: MCP stdio command write is not approved
 - **WHEN** a renderer-reachable MCP add, update, or registry install request would persist a stdio `command`, `args`, `env`, env-var reference, or cwd for later runtime execution
@@ -78,12 +67,12 @@ Renderer-reachable procedures that perform shell execution, arbitrary file write
 - **WHEN** Claude or Codex runtime materialization encounters a stdio MCP command without an approved fingerprint
 - **THEN** the main process SHALL omit that command from runtime startup materialization and SHALL NOT pass it to a stdio MCP transport for spawn.
 
-### Requirement: Untrusted Renderer Content Is Isolated From Privileged Bridges
-The renderer SHALL treat repository content, chat markdown, tool output, MCP output, and previewed web pages as untrusted and SHALL prevent them from directly executing privileged app JavaScript or calling the tRPC bridge.
+### Requirement: Untrusted Renderer Content Uses Reviewed Rendering Boundaries
+The renderer SHALL treat repository content, chat markdown, tool output, and MCP output as untrusted: markdown raw HTML SHALL pass through the configured sanitizer and hardener before insertion, active or scriptable content SHALL NOT pass through, files containing React `dangerouslySetInnerHTML` SHALL be limited to the reviewed file list enforced by a source guard, Mermaid SVG SHALL be sanitized, tool subtitles SHALL render as text, and the renderer CSP SHALL block inline and remote script execution in production.
 
-#### Scenario: Untrusted markdown contains active content
-- **WHEN** chat, repository, MCP, or tool-output markdown renders active HTML, SVG, scriptable links, or code-highlighted HTML
-- **THEN** the renderer SHALL sanitize or sandbox the content before insertion into the privileged app document.
+#### Scenario: Markdown active HTML and highlighted HTML sinks
+- **WHEN** chat, repository, MCP, or tool-output markdown contains raw HTML or a renderer inserts syntax-highlighted HTML into the privileged app document
+- **THEN** markdown HTML SHALL be sanitized and hardened so scriptable elements, event-handler attributes, and dangerous URLs do not pass through, and renderer files containing `dangerouslySetInnerHTML` SHALL be limited to the reviewed five-file list enforced by a source guard test.
 
 #### Scenario: Mermaid diagram contains scriptable content
 - **WHEN** chat, repository, MCP, or tool-output markdown renders a Mermaid diagram containing `click`, `javascript:` URLs, script tags, event handler attributes, or foreign-object content
@@ -100,7 +89,3 @@ The renderer SHALL treat repository content, chat markdown, tool output, MCP out
 #### Scenario: Development renderer CSP permits Vite HMR
 - **WHEN** the development renderer CSP is evaluated for the privileged app document
 - **THEN** any inline-script or localhost connection allowance SHALL be scoped to development Vite HMR and SHALL NOT be present in the production renderer CSP.
-
-#### Scenario: Previewed web page attempts bridge access
-- **WHEN** a local browser preview or webview page executes JavaScript
-- **THEN** that page SHALL NOT receive the privileged tRPC bridge or desktop API bridge and SHALL be constrained by navigation and permission policy.

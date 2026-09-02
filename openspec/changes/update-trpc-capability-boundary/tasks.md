@@ -1,42 +1,75 @@
+> 2026-09-02 rebaseline at `d77a4b48`: this change archives only the implemented slices below.
+> Checkbox items assert completed work. Descoped or unreceipted work is recorded as ordinary
+> routing text and is not made complete by changing a checkbox.
+
 ## 0. Proposal Gate
-- [x] 0.1 Inspect tRPC context, preload bridge, mounted routers, and current runtime-security-baseline spec.
-- [x] 0.2 Inventory dangerous renderer-reachable procedures across all router files and the mounted git `changes` router.
+
+- [x] 0.1 Inspect tRPC context, preload bridge, mounted routers, and the current runtime-security-baseline spec.
+- [x] 0.2 Scan all 41 router modules (excluding the index), 33 mounted namespaces, and the mounted git `changes` router; record reviewed privileged-operation clusters and the dangerous-input guard's procedure-keyed field-allowlist boundary.
 - [x] 0.3 Write proposal, design, tasks, and runtime-security-baseline delta.
-- [x] 0.4 Receive emergency approval for the Phase 2 renderer XSS slice; broader Phase 1/2/3 rollout remains pending.
+- [x] 0.4 Receive emergency approval for the renderer XSS slice; the broader rollout remained pending.
 
-## 1. Phase 1 - Input Trust Convergence
-- [x] 1.1 Add or extend shared main-process resolvers for registered project roots, chat worktree roots, command roots, agent roots, skill roots, terminal workspace cwd, and dialog-selected path tokens.
-- [x] 1.2 Update `files` routes so search, watch, rename, and delete use registered roots or dialog-issued tokens; keep existing read hardening intact.
-- [x] 1.3 Update `commands`, `agents`, and `skills` project-scoped routes so renderer input uses registered project/chat identity instead of raw `projectPath` or `cwd`.
-- [x] 1.4 Update runtime start routes (`claude.chat`, `codex.chat`, `agentRuntime.chat`) so cwd/projectPath are derived from `chatId`/`subChatId` server-side and forged renderer cwd is rejected.
-- [x] 1.5 Update terminal routes so `createOrAttach` and `listDirectory` resolve cwd from registered workspace/chat state or a dialog token before spawning/reading.
-- [x] 1.5a Emergency command sink subset: update `terminal.createOrAttach` so renderer input no longer carries raw `cwd` or `initialCommands`; the main process resolves cwd from the registered chat/workspace and maps only whitelisted `initialCommandIntents` to app-owned commands.
-- [x] 1.6 Update MCP and provider route inputs so project-scoped config writes resolve project roots server-side and command/url/env inputs receive explicit validation.
-- [x] 1.7 Replace shell-string git clone in `projects.cloneFromGitHub` with argv-based execution and constrained GitHub repo identity.
-- [x] 1.8 Add adversarial tests for absolute paths, traversal, symlink escapes, forged cwd/projectPath, raw command/config writes, and unregistered roots.
-- [x] 1.8a Emergency command sink subset tests: cover forged terminal cwd/scope, legacy raw `initialCommands` payloads, arbitrary command strings masquerading as intents, whitelisted `gh auth login`, GitHub clone shell metacharacters, Git clone option injection, and argv clone execution.
-- [x] 1.8b Files sink subset tests: cover unregistered search/watch roots, rename/delete targets outside registered roots, and rename replacement names containing traversal or path separators.
-- [x] 1.9 Add an architecture guard for new dangerous router input fields without an approved resolver.
+## 1. Phase 1 - Implemented Input Trust Slices
 
-## 2. Phase 2 - Renderer Hardening
-- [x] 2.1 Audit renderer CSP requirements and remove broad `unsafe-eval`/remote script allowances where feasible.
-- [x] 2.1a Remove production `script-src 'unsafe-inline'` by externalizing startup theme/error scripts, installing a main-process dev/prod CSP header, and keeping Vite HMR allowances dev-only.
-- [ ] 2.2 Sanitize or sandbox markdown, highlighted HTML, Mermaid SVG, MCP/tool output, and chat export previews before rendering.
-- [ ] 2.3 Harden local browser/webview navigation, permissions, partitions, and JavaScript execution surfaces.
-- [ ] 2.4 Add desktop smoke coverage for markdown, diagrams, syntax highlighting, local browser preview, and tRPC bridge startup.
-- [x] 2.5 Emergency R0a renderer XSS slice: prove subtitle and Mermaid exploitability, switch Mermaid to strict mode, sanitize Mermaid SVG with DOMPurify, render `AgentToolCall` subtitles as text, guard remaining Shiki-backed HTML sinks, and add CSP/adversarial tests.
+- [x] 1.1 Add shared main-process owners for registered project roots, chat worktree roots, command/agent/skill roots, terminal workspace cwd, and path containment.
+- [x] 1.2 Harden covered `files` routes: reads reject real-path symlink escapes, search skips symlink entries, watch requires a registered root, and rename/delete reject lexical out-of-root, traversal, null-byte, or invalid replacement targets.
+- [x] 1.3 Harden project-scoped `commands`, `agents`, and `skills` routes so renderer-supplied project/cwd values must resolve to registered roots.
+- [x] 1.4 Make Claude and Codex runtime execution cwd resolve from `chatId`/`subChatId` server-side and reject or ignore forged renderer cwd. The former experimental `agentRuntime.chat` was removed and is not an implemented route claim.
+- [x] 1.5 Make terminal `createOrAttach` and `listDirectory` resolve cwd/root from registered workspace or chat state.
+- [x] 1.5a Remove raw terminal startup `cwd`/`initialCommands` authority: map only whitelisted `initialCommandIntents` to app-owned commands.
+- [x] 1.6 Validate registered project roots and structured command/url/env input for the covered MCP/provider configuration writes without weakening MCP stdio native consent.
+- [x] 1.7 Replace shell-string GitHub clone with constrained owner/repository parsing and argv execution using `git clone --`.
+- [x] 1.8 Add adversarial coverage for registered-root, traversal, read/list symlink, forged-cwd, terminal-intent, GitHub-clone, MCP/provider, and nested-project boundaries.
+- [x] 1.8a Cover forged terminal cwd/scope, legacy raw `initialCommands`, arbitrary strings masquerading as intents, whitelisted `gh auth login`, shell metacharacters, Git option injection, and argv clone execution.
+- [x] 1.8b Cover unregistered file search/watch roots, lexical rename/delete targets outside a registered root, and invalid rename replacements.
+- [x] 1.9 Add the dangerous-router-input architecture guard for its 12 enumerated schema field names, with a procedure-keyed field allowlist plus self-test/package-chain checks.
 
-## 3. Phase 3 - Capability Middleware, Consent, and Audit
-- [ ] 3.1 Define a typed capability taxonomy for filesystem, shell, runtime, MCP, plugin, credential, network, external-open, git-write, and debug-destroy procedures.
-- [ ] 3.2 Introduce tRPC procedure wrappers or metadata that require every dangerous procedure to declare its capability class.
-- [ ] 3.3 Implement explicit consent gates for shell execution, arbitrary file writes/deletes, external app/URL opens, plugin/native activation, MCP command writes, and destructive debug/admin actions.
-- [x] 3.3a MCP stdio command writes: require main-process native consent before persisting Claude/Codex/registry stdio command configs, remember approved command fingerprints, and fail closed when runtime materialization sees an unapproved stdio command.
-- [ ] 3.4 Add an audit log and runtime kill-switch for dangerous capability classes.
-- [ ] 3.5 Add tests and architecture guards proving dangerous procedures cannot be added as bare `publicProcedure`.
+## 2. Phase 2 - Implemented Renderer Slices
 
-## 4. Closeout
-- [x] 4.1 Run `bun run check`.
-- [x] 4.2 Run `openspec validate update-trpc-capability-boundary --strict --no-interactive`.
-- [x] 4.3 Update `PROJECT-MAP.md` with implemented commit references after each phase.
-- [x] 4.4 Run packaged desktop CSP smoke for Phase 2 production `unsafe-inline` removal.
-- [x] 4.5 Run dev desktop CSP/HMR smoke for Phase 2 production `unsafe-inline` removal.
+- [x] 2.1 Remove broad JavaScript `unsafe-eval` and remote script origins from the privileged renderer CSP while retaining the documented WebAssembly exception.
+- [x] 2.1a Remove production `script-src 'unsafe-inline'`, externalize boot scripts, install the main-process CSP header, and keep Vite HMR allowances development-only.
+- [x] 2.5 Use Streamdown sanitization/hardening for markdown HTML, constrain files containing `dangerouslySetInnerHTML` to the reviewed five-file list, use Mermaid strict mode plus DOMPurify, render tool subtitles as text, and add the retained CSP/XSS/source-guard tests.
+
+## 3. Phase 3 - Implemented MCP Stdio Slice
+
+- [x] 3.3a Require main-process native consent before persisting Claude/Codex/registry stdio command configs, remember normalized command fingerprints, and fail closed when runtime materialization encounters an unapproved stdio command.
+
+## 4. Historical Closeout Evidence
+
+- [x] 4.1 Historical implemented slices ran the then-current `bun run check` gate.
+- [x] 4.2 Historical implemented slices passed strict target-change validation.
+- [x] 4.3 Historical R0a/R0b/R0c and MCP stdio implementation records exist in `PROJECT-MAP.md`; that shared map is not the refreshed code-anchor authority for this rebaseline.
+
+- Historical statement 4.4: packaged production CSP smoke was marked complete in the old task list, but no receipt exists. It is not rerun or certified by this rebaseline.
+- Historical statement 4.5: development CSP/HMR smoke was marked complete in the old task list, but no receipt exists. It is not rerun or certified by this rebaseline.
+- Owner-directed destination for both unreceipted smoke checks: add them to the future TICKET-114 GUI rerun checklist. This phase does not edit that shared ticket, so it does not claim that the ticket has already been updated.
+
+## 5. Rebaseline Closeout
+
+- [x] 5.1 Refresh every implementation claim, code anchor, line reference, targeted-test inventory, and OpenSpec aggregate against `d77a4b48`; narrow the delta/proposal/design/tasks to current implementation truth and add `verification.md`.
+- [ ] 5.2 Create a frozen docs-only source commit; on that exact SHA run the expanded 18-file targeted suite, `bun run architecture:check`, `bun run check:full`, and strict OpenSpec validation; then record receipts in an evidence-only commit.
+- [ ] 5.3 Obtain fresh Claude multi-perspective review against the same frozen source SHA.
+- [ ] 5.4 Record Owner `ACCEPTED` for the reviewed frozen source SHA.
+- [ ] 5.5 After 5.3 and 5.4 only, archive normally with `bun x openspec archive update-trpc-capability-boundary --yes` (never `--skip-specs`) and verify the six requirements merge as 15 requirements / 35 scenarios in the living spec.
+- [ ] 5.6 Perform post-archive mechanical closeout: confirm active changes `1/1`, living specs `52/52`, all `53/53`, and archived `107 passed / 6 failed / 113 total` with this entry passing; then update `openspec/STATUS.md` and the archived task/verification receipts.
+
+## Descoped - Routing Records, Not Completed Tasks
+
+- Original 2.2 remaining untrusted-content sink sanitization/sandboxing -> follow-up A `add-renderer-untrusted-content-hardening`.
+- Direct Streamdown malicious-raw-HTML/dangerous-URL renderer regression coverage and direct DOM HTML-sink enumeration -> follow-up A; the current source guard is file-level and scans only React `dangerouslySetInnerHTML`, not `.innerHTML` assignments such as the mentions-editor undo/redo restores.
+- Original 2.3 webview/local-browser hardening -> follow-up A. Existing URL/navigation policy and per-chat partition are retained; remaining work is permission policy, guest/preload/bridge isolation proof, guest window-open and JavaScript-surface audit.
+- Original 2.4 renderer desktop smoke -> follow-up A, including the Owner-directed TICKET-114 CSP reruns.
+- Original R6 preview/webview bridge-access scenario -> follow-up A.
+- Original 3.1 capability taxonomy -> follow-up B `add-trpc-capability-consent-audit`.
+- Original 3.2 typed procedure wrappers/capability metadata -> follow-up B.
+- Original 3.3 consent gates other than MCP stdio 3.3a -> follow-up B.
+- Original 3.4 capability audit log and kill-switch -> follow-up B.
+- Original 3.5 bare-dangerous-`publicProcedure` guard and tests -> follow-up B.
+- Original R3 `terminal.write` arbitrary-input capability scenario -> follow-up B.
+- Inherited renderer-selected runtime MCP `projectPath` lookup is excluded from the narrowed R3 certification and remains with the TICKET-101/104 lineage and the Amadeus continuation slice.
+- Parent-directory symlink escape for `files.renameFile/deleteFile` is excluded from narrowed R2: current writes enforce lexical containment only. It remains a TICKET-101/path-boundary security residual and requires a separately owned product-code fix.
+- Whether remembered MCP stdio approvals bind canonical project identity and how they are revoked -> follow-up B; the current command fingerprint intentionally excludes `projectPath`.
+
+Follow-up A may be drafted only after this archive and is independently scheduled. Follow-up B
+waits until Foundation 1d and the Amadeus continuation slice. Neither follow-up is created or
+implemented by this change.
