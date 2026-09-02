@@ -25,9 +25,23 @@
       strict OpenSpec validation, `git diff --check`, and `bun run check:full`.
 - [x] 3.2 Freeze a local source commit and record the exact source/base SHA plus
       actual receipts in `verification.md`; record Codex `IMPLEMENTATION_VERIFIED`.
-- [ ] 3.3 Obtain fresh-context, read-only Claude Code review of the same exact
+- [x] 3.3 Obtain fresh-context, read-only Claude Code review of the same exact
       source SHA and record findings plus `REVIEW_APPROVED` or
       `CHANGES_REQUESTED`.
 - [x] 3.4 Stop before local integration. Owner `ACCEPTED`, local merge,
       post-merge validation, archive, push, remote merge, and release remain
       pending or unauthorized as applicable.
+
+## 4. Accepted closeout
+
+- [x] 4.1 Record Owner `ACCEPTED` for source SHA `1cce15b4` and supersede the
+      historical stop point in 3.4 only for the explicitly authorized local
+      integration, archive, and one-time coordinated `main` push.
+- [x] 4.2 Merge evidence head `44c437f4` into the post-1c `main` with `--no-ff`,
+      resolve only the authorized `openspec/STATUS.md` evidence-ledger conflict,
+      preserve the reviewed source SHA in history, and pass `bun run check:full`
+      on the exact merge SHA.
+- [x] 4.3 Archive normally with
+      `openspec archive fix-nested-project-cwd-resolution --yes` (apply the
+      `project-lifecycle` delta; do not use `--skip-specs`), update
+      `openspec/STATUS.md`, and strictly validate the archived state.

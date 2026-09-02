@@ -8,7 +8,6 @@ Updated: 2026-09-02 (Pacific/Auckland)
 
 | Change | State | Concrete next gate |
 | --- | --- | --- |
-| `fix-nested-project-cwd-resolution` | Integrated locally / post-merge validation (Owner `ACCEPTED` 2026-09-02; reviewed source `1cce15b4`, evidence head `44c437f4`) | Run `bun run check:full` on this authorized `--no-ff` merge SHA; if green, archive normally, update this ledger, then include it in the one-time Owner-authorized `main` push. |
 | `refactor-engine-vocabulary-residue` | Approved (Foundation 1d; Owner `APPROVED` 2026-08-26) | Implementation remains sequenced after 1c; re-verify all anchors against that later tree. |
 | `update-trpc-capability-boundary` | Blocked pending rebaseline | Separate already-shipped Phase 1/CSP/Mermaid/MCP guarantees from unfinished renderer/browser and capability/audit work; validate and archive only implemented truth, then create bounded follow-ups. |
 
@@ -34,9 +33,26 @@ living `architecture-ownership` spec:
 - Yellow sibling-route follow-up: [`TICKET-122`](../docs/tickets/TICKET-122-route-ratchet-sibling-file-coverage.md)
 
 Foundation 1d (`refactor-engine-vocabulary-residue`) is now unblocked for W1 from the archived
-1c tree. The Owner-authorized one-time `main` push remains deferred until the accepted
-`fix-nested-project-cwd-resolution` closeout is also archived and the final exact SHA is green;
-no remote operation has yet been performed.
+1c tree.
+
+### Nested registered cwd resolution (#18 safe half)
+
+`fix-nested-project-cwd-resolution` received Codex `IMPLEMENTATION_VERIFIED` and two independent
+fresh-context Claude `REVIEW_APPROVED` verdicts for source
+`1cce15b4e37aac3afb32a2621ea89f4d8be69e95`, followed by Owner `ACCEPTED` on 2026-09-02.
+Evidence head `44c437f4c94b4b21e02f098abb650430d19f8383` was merged with `--no-ff` into the
+post-1c tree as `29981d24aa9d05e22dc8534441ef73f04eed579a`, preserving the reviewed source in
+history. The sole conflict was the `openspec/STATUS.md` evidence ledger and was resolved as the
+Owner-authorized single-file union; no other file was manually changed. `bun run check:full` at
+the exact merge SHA passed with **1,917 tests / 0 failures / 9,294 expectations across 302
+files**, retired-runtime residue **1,613 scanned / 10 allowlisted**, and OpenSpec **55/55**.
+The standard archive applied the accepted delta to the living `project-lifecycle` spec:
+
+- [`2026-09-02-fix-nested-project-cwd-resolution`](changes/archive/2026-09-02-fix-nested-project-cwd-resolution/)
+- Living spec: [`project-lifecycle`](specs/project-lifecycle/spec.md)
+
+Both accepted closeouts are now locally archived. The one-time Owner-authorized `main` push is
+still pending the final exact-SHA full gate; no remote operation has yet been performed.
 
 ## Locally archived 2026-08-27
 

@@ -187,3 +187,37 @@ no merge, archive, push, or remote operation.
 1c closeout; see merge-strategy note in the closeout instruction), post-merge
 `bun run check:full` on the merge SHA, and `openspec archive`. The Owner-authorized remote
 push of `main` is recorded in the 1c verification file and applies after both closeouts.
+
+## Post-merge closeout (2026-09-02)
+
+- Preconditions were rechecked immediately before integration: local `main` was clean at the
+  1c archive commit `a189f37e0869ed431d5ccd6a73553dc3ca0341d8`; branch
+  `codex/fix-nested-project-cwd-resolution` and its linked worktree were clean at evidence head
+  `44c437f4c94b4b21e02f098abb650430d19f8383`.
+- Integration used `git merge --no-ff codex/fix-nested-project-cwd-resolution`. The only
+  unmerged path reported by both Git and `git diff --name-only --diff-filter=U` was
+  `openspec/STATUS.md`; no source, test, spec-delta, or other evidence file conflicted.
+- The authorized conflict resolution was a single-file union based on the post-1c `main`
+  ledger: it preserved the complete Foundation 1c archived entry, discarded the incoming
+  branch's stale Foundation 1c active row, and added the #18 row updated to Owner `ACCEPTED`
+  2026-09-02 / locally integrated / post-merge validation. No other file was manually edited.
+  Before committing, the staged registry source, test, and #18 OpenSpec payload compared
+  byte-for-byte equal to evidence head `44c437f4`.
+- Authorized no-ff merge SHA:
+  `29981d24aa9d05e22dc8534441ef73f04eed579a`.
+  - first parent: `a189f37e0869ed431d5ccd6a73553dc3ca0341d8`;
+  - second parent: `44c437f4c94b4b21e02f098abb650430d19f8383`;
+  - reviewed source `1cce15b4e37aac3afb32a2621ea89f4d8be69e95` remains an ancestor.
+- Required post-merge `bun run check:full` at that exact clean SHA: exit **0**.
+  - changed-file lint, architecture guard, retired-runtime residue, TypeScript, tests,
+    strict OpenSpec validation, production build, and patch-whitespace check all passed;
+  - retired-runtime residue: **1,613 files scanned / 10 allowlisted**;
+  - tests: **1,917 passed / 0 failed / 9,294 expectations across 302 files**;
+  - OpenSpec: **55 passed / 0 failed**;
+  - Electron/Vite main, preload, and renderer production builds completed successfully;
+  - patch-whitespace check exited **0**.
+- A supporting clean-tree test recount reproduced **1,917 / 0 / 9,294 / 302**, and strict
+  OpenSpec validation reproduced **55/55**. `git status --porcelain` was empty after the gate.
+- Normal OpenSpec archive with the `project-lifecycle` delta applied is the next local action.
+  The Owner-authorized one-time `main` push remains deferred until the archive commit and final
+  exact-SHA gate are green.
