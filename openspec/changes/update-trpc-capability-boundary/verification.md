@@ -210,6 +210,23 @@ bounded wording-only successor receives exact-SHA re-verification and targeted r
 additional substantive spec change exceeds that exception and requires fresh full verification and
 review. Evidence-only edits may record receipts without altering the frozen source under review.
 
+## Local integration and pre-archive gate
+
+- Main integration base after the independently completed Foundation 1d archive:
+  `2450318c1f80079369cb34244c2246cb00286c29`.
+- Accepted rebaseline evidence head: `e5d35de5c8943254dafeb85e7e395ac5c90b12aa`.
+- Local merge SHA/tree: `a86f5ba301c5743f8a15ca8b7bd86baec07613ba` /
+  `c38548aa5dc63d6c13cf4c5023f1738ccbfc52d0`.
+- Merge result: no conflict; the first-parent diff contains only the five
+  `openspec/changes/update-trpc-capability-boundary/**` documents, with the reviewed six
+  requirements / 18 scenarios unchanged.
+- Exact-merge `bun run check:full`: exit 0; **1928 pass / 0 fail / 9350 expectations** across
+  304 files, architecture and retired-runtime guards passed, strict OpenSpec validation passed
+  **53/53**, the production build completed, and patch-whitespace diff check passed.
+- Receipt window ended: `2026-09-02T19:43:39+12:00` (Pacific/Auckland, WSL2); `HEAD` remained the
+  exact merge SHA and the worktree was clean.
+- Remote action: not authorized and not performed.
+
 ## Archive receipt
 
 Status: **NOT RUN**. The targeted wording-diff review and Owner gate are satisfied; the normal
@@ -219,8 +236,9 @@ Expected normal-archive invariants (not current results):
 
 - archive command omits `--skip-specs`;
 - the living `runtime-security-baseline` becomes 15 requirements / 35 scenarios;
-- active changes validate 1/1, living specs 52/52, and `--all` 53/53 if no follow-up is created;
-- archived audit becomes 107 passed / 6 failed / 113 total, with this change passing;
+- because Foundation 1d archived first, active changes become 0/0, living specs remain 52/52,
+  and `--all` becomes 52/52 if no follow-up is created;
+- archived audit becomes 108 passed / 6 failed / 114 total, with this change passing;
 - only the post-acceptance mechanical closeout may update `openspec/STATUS.md` and archived tasks.
 
 ## Fresh-context Claude multi-view review (2026-09-02, per Owner D4)

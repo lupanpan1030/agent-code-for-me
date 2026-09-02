@@ -53,7 +53,7 @@
 - [x] 5.3a Obtain targeted review of only the post-review wording-touch-up diff; `REVIEW_APPROVED` for `38ef174cd8423c05874aebdfbd9f921fad1c5a7a` is recorded in `c9f8c69cf0ec3ea715d9c46e3e72ee36e2181668`, without rerunning the full multi-view review.
 - [x] 5.4 Record the Owner's 2026-09-02 `rebaseline ACCEPTED` for reviewed frozen source `38ef174cd8423c05874aebdfbd9f921fad1c5a7a`.
 - [ ] 5.5 After 5.2a, 5.3, 5.3a, and 5.4 only, archive normally with `bun x openspec archive update-trpc-capability-boundary --yes` (never `--skip-specs`) and verify the six requirements merge as 15 requirements / 35 scenarios in the living spec.
-- [ ] 5.6 Perform post-archive mechanical closeout: confirm active changes `1/1`, living specs `52/52`, all `53/53`, and archived `107 passed / 6 failed / 113 total` with this entry passing; then update `openspec/STATUS.md`, the archived task/verification receipts, and TICKET-114 with the packaged-production and development-CSP/HMR smoke rerun items.
+- [ ] 5.6 Perform post-archive mechanical closeout against the post-1d archive baseline: confirm active changes `0/0`, living specs `52/52`, all `52/52`, and archived `108 passed / 6 failed / 114 total` with this entry passing; then update `openspec/STATUS.md`, the archived task/verification receipts, and TICKET-114 with the packaged-production and development-CSP/HMR smoke rerun items.
 
 ## Descoped - Routing Records, Not Completed Tasks
 
