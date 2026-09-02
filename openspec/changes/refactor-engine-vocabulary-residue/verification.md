@@ -221,3 +221,12 @@ reproduction caveat on --ignore-scripts hosts (TICKET-114 pattern).
 Gate status: fresh-context review complete for the exact source SHA. Owner product
 acceptance is the only open gate; no merge, archive, push, or remote operation is
 authorized by this record.
+
+## Owner acceptance (2026-09-02)
+
+**Owner `ACCEPTED`** recorded via the coordination session on 2026-09-02 for source SHA
+`911c01320b6b417d4ff6cf2305863a1d56a5522a`, with the evidence chain through `89efd7dd`
+(dual `REVIEW_APPROVED`, zero P0/P1/P2). Gates 4-6 closeout is now authorized: local
+fast-forward merge into `main`, post-merge `bun run check:full` on the merge SHA, and
+`openspec archive`. This completes Foundation Stabilization 4/4 upon archive. No push or
+other remote operation is authorized by this record.
