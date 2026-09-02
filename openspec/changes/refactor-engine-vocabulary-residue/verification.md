@@ -187,3 +187,37 @@ No local merge, OpenSpec archive, push, remote PR mutation, remote merge, tag, p
 release, or repository-rule change is authorized or performed. This handoff stops after
 the exact implementation SHA and Codex `IMPLEMENTATION_VERIFIED` receipt, for the
 coordinator to dispatch dual fresh-context review.
+
+## Fresh-context Claude review (2026-09-02)
+
+- Reviewed source SHA: `911c01320b6b417d4ff6cf2305863a1d56a5522a`; evidence commit
+  `8fd48269` independently confirmed docs-only.
+- Two independent fresh-context lenses (rename-completeness/correctness and
+  consumer-impact/trust-boundary), each in a uniquely-assigned isolated detached worktree
+  (1d-review-a/b, removed after review; Codex worktree untouched).
+
+**Both lenses: `REVIEW_APPROVED` for `911c0132`. No P0/P1/P2.**
+
+Key confirmations (independently reproduced): `check:full` exit 0 with exactly
+1,928/0/9,350/304 and OpenSpec 54/54; dual-enum single truth via reference derivation with a
+live guard-mutation negative proof; old-format persisted metadata parses unchanged
+(zero-migration claim proven by probe tests); `jobs-stdio` handshake and explicit `acp`
+rejection (exit 2) verified live on POSIX shim, packaged `locus.cmd`, generated Windows
+wrapper, and dispatcher; independent C7 sweep found zero real external `locus acp`
+consumers; worktree parsing single owner with all five former copies importing it; `.1code`
+read-only demotion with the programmatic-write Yellow honestly scoped; excluded rebaseline
+directory and keep-list zero-diff; +11 tests reconciled file-by-file.
+
+Non-blocking P3 notes (informational): ① test filename `agent-chat-provider-routing.test.ts`
+retains retired vocabulary (cosmetic); ② `resolveProjectPathFromWorktree` strictly narrower
+on two unreachable legacy edge inputs (corrections; Yellow-logged fixture gap stands);
+③ `.cursor` save target now offered unconditionally (gate removal matches task acceptance
+text; disclosure noted); ④ `acp` rejection message carries no `jobs-stdio` migration hint;
+⑤ engine-id single-owner guard inspects the three derived files, narrower than the
+proposal's repo-wide wording; ⑥ installed Windows wrapper routes fewer commands than the
+packaged shim (pre-existing asymmetry, out of approved scope); ⑦ node-pty/Electron
+reproduction caveat on --ignore-scripts hosts (TICKET-114 pattern).
+
+Gate status: fresh-context review complete for the exact source SHA. Owner product
+acceptance is the only open gate; no merge, archive, push, or remote operation is
+authorized by this record.
