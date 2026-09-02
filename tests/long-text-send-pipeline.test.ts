@@ -166,8 +166,8 @@ describe("long text send pipeline", () => {
       "src/renderer/features/agents/lib/ipc-chat-transport.ts",
       "utf8",
     )
-    const acp = readFileSync(
-      "src/renderer/features/agents/lib/acp-chat-transport.ts",
+    const codexAppServerTransport = readFileSync(
+      "src/renderer/features/agents/lib/codex-app-server-chat-transport.ts",
       "utf8",
     )
     const authRetry = readFileSync(
@@ -189,8 +189,10 @@ describe("long text send pipeline", () => {
     )
     expect(ipc).toContain("extractLongTextAttachments(lastUser)")
     expect(ipc).toContain("{ longTextAttachments }")
-    expect(acp).toContain("extractLongTextAttachments(lastUser)")
-    expect(acp).toContain("{ longTextAttachments }")
+    expect(codexAppServerTransport).toContain(
+      "extractLongTextAttachments(lastUser)",
+    )
+    expect(codexAppServerTransport).toContain("{ longTextAttachments }")
     expect(authRetry).toContain("longTextAttachments")
   })
 })

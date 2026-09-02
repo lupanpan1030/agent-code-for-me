@@ -1,7 +1,13 @@
 import { useSetAtom } from "jotai"
 import { useCallback, useEffect, useRef, useState } from "react"
-import { subChatFilesAtom, subChatToChatMapAtom, type SubChatFileChange } from "../atoms"
+import { parseManagedWorktreeRelativePath } from "../../../../shared/worktree-path"
+import {
+  type SubChatFileChange,
+  subChatFilesAtom,
+  subChatToChatMapAtom,
+} from "../atoms"
 import { isSuccessfulFileChangeToolPart } from "../utils/git-activity"
+
 // import { REPO_ROOT_PATH } from "@/lib/codesandbox-constants"
 const REPO_ROOT_PATH = "/workspace" // Desktop mock
 
@@ -54,12 +60,8 @@ export function useChangedFilesTracking(
       }
     }
 
-    // Handle worktree paths: /Users/.../.21st/worktrees/{chatId}/{subChatId}/relativePath
-    // Extract everything after the subChatId directory
-    const worktreeMatch = filePath.match(/\.21st\/worktrees\/[^/]+\/[^/]+\/(.+)$/)
-    if (worktreeMatch) {
-      return worktreeMatch[1]
-    }
+    const worktreeRelativePath = parseManagedWorktreeRelativePath(filePath)
+    if (worktreeRelativePath) return worktreeRelativePath
 
     // Heuristic: find common root directories
     if (filePath.startsWith("/")) {

@@ -29,7 +29,7 @@ type ActiveProtocolJob = {
   streamPromise: Promise<void>
 }
 
-export type RunAcpStdioServerOptions = {
+export type RunJobsStdioServerOptions = {
   db: AgentJobDatabase
   stdin?: Readable
   stdout?: Writer
@@ -38,27 +38,33 @@ export type RunAcpStdioServerOptions = {
   runner?: AgentTaskRunner | null
 }
 
-const ACP_PROTOCOL_VERSION = "locus-acp-stdio.v1"
-export const ACP_MAX_FRAME_BYTES = 1024 * 1024
+export const JOBS_STDIO_PROTOCOL_VERSION = "locus-jobs-stdio.v1"
+export const JOBS_STDIO_MAX_FRAME_BYTES = 1024 * 1024
 
 const jsonRpcIdSchema = z.union([z.string(), z.number(), z.null()])
-const requestSchema = z.object({
-  jsonrpc: z.literal("2.0"),
-  id: jsonRpcIdSchema.optional(),
-  method: z.string().min(1),
-  params: z.unknown().optional(),
-}).strict()
+const requestSchema = z
+  .object({
+    jsonrpc: z.literal("2.0"),
+    id: jsonRpcIdSchema.optional(),
+    method: z.string().min(1),
+    params: z.unknown().optional(),
+  })
+  .strict()
 
-const jobRunParamsSchema = z.object({
-  runtime: z.enum(CONTRACT_RUNTIME_IDS),
-  mode: z.enum(AGENT_JOB_MODES).default("agent"),
-  cwd: z.string().min(1),
-  prompt: z.string().min(1),
-}).strict()
+const jobRunParamsSchema = z
+  .object({
+    runtime: z.enum(CONTRACT_RUNTIME_IDS),
+    mode: z.enum(AGENT_JOB_MODES).default("agent"),
+    cwd: z.string().min(1),
+    prompt: z.string().min(1),
+  })
+  .strict()
 
-const jobCancelParamsSchema = z.object({
-  jobId: z.string().min(1),
-}).strict()
+const jobCancelParamsSchema = z
+  .object({
+    jobId: z.string().min(1),
+  })
+  .strict()
 
 type JsonRpcRequest = z.infer<typeof requestSchema>
 
@@ -126,7 +132,11 @@ function findForbiddenSecretPath(
   }
   if (Array.isArray(value)) {
     for (let index = 0; index < value.length; index += 1) {
-      const found = findForbiddenSecretPath(value[index], `${path}[${index}]`, depth + 1)
+      const found = findForbiddenSecretPath(
+        value[index],
+        `${path}[${index}]`,
+        depth + 1,
+      )
       if (found) return found
     }
     return null
@@ -135,7 +145,9 @@ function findForbiddenSecretPath(
     for (const [key, item] of Object.entries(value)) {
       if (/^env$/i.test(key)) return `${path}.${key}`
       if (
-        /token|authorization|api[-_]?key|secret|password|credential/i.test(key) &&
+        /token|authorization|api[-_]?key|secret|password|credential/i.test(
+          key,
+        ) &&
         item !== null &&
         item !== undefined &&
         item !== ""
@@ -158,13 +170,17 @@ function assertNoProtocolSecrets(params: unknown): void {
   }
 }
 
-async function* readJsonLines(stream: Readable | undefined): AsyncGenerator<string> {
+async function* readJsonLines(
+  stream: Readable | undefined,
+): AsyncGenerator<string> {
   if (!stream) return
   let buffer = ""
   for await (const chunk of stream) {
     buffer += Buffer.isBuffer(chunk) ? chunk.toString("utf-8") : String(chunk)
-    if (Buffer.byteLength(buffer, "utf-8") > ACP_MAX_FRAME_BYTES) {
-      throw new Error(`ACP frame exceeds ${ACP_MAX_FRAME_BYTES} byte limit`)
+    if (Buffer.byteLength(buffer, "utf-8") > JOBS_STDIO_MAX_FRAME_BYTES) {
+      throw new Error(
+        `Jobs stdio frame exceeds ${JOBS_STDIO_MAX_FRAME_BYTES} byte limit`,
+      )
     }
     let newlineIndex = buffer.indexOf("\n")
     while (newlineIndex >= 0) {
@@ -179,7 +195,7 @@ async function* readJsonLines(stream: Readable | undefined): AsyncGenerator<stri
 }
 
 async function streamJobEvents(
-  options: RunAcpStdioServerOptions,
+  options: RunJobsStdioServerOptions,
   jobId: string,
   runPromise: Promise<unknown>,
   signal?: AbortSignal,
@@ -212,8 +228,12 @@ async function streamJobEvents(
   }
 
   if (runError) {
-    const message = runError instanceof Error ? runError.message : String(runError)
-    writeStderr(options.stderr, `[ACP] Job ${jobId} failed to stream: ${message}`)
+    const message =
+      runError instanceof Error ? runError.message : String(runError)
+    writeStderr(
+      options.stderr,
+      `[jobs-stdio] Job ${jobId} failed to stream: ${message}`,
+    )
     writeJsonLine(
       options.stdout,
       notification("job/error", {
@@ -224,11 +244,14 @@ async function streamJobEvents(
   }
 }
 
-function handleInitialize(id: JsonRpcId, options: RunAcpStdioServerOptions): void {
+function handleInitialize(
+  id: JsonRpcId,
+  options: RunJobsStdioServerOptions,
+): void {
   writeJsonLine(
     options.stdout,
     response(id, {
-      protocolVersion: ACP_PROTOCOL_VERSION,
+      protocolVersion: JOBS_STDIO_PROTOCOL_VERSION,
       serverInfo: {
         name: "Locus",
       },
@@ -245,7 +268,7 @@ function handleInitialize(id: JsonRpcId, options: RunAcpStdioServerOptions): voi
 function handleJobRun(
   id: JsonRpcId,
   request: JsonRpcRequest,
-  options: RunAcpStdioServerOptions,
+  options: RunJobsStdioServerOptions,
   activeJobs: Map<string, ActiveProtocolJob>,
 ): void {
   assertNoProtocolSecrets(request.params)
@@ -264,7 +287,7 @@ function handleJobRun(
     prompt: params.prompt,
     input: {
       prompt: params.prompt,
-      protocol: ACP_PROTOCOL_VERSION,
+      protocol: JOBS_STDIO_PROTOCOL_VERSION,
     },
     projectId: project.id,
   })
@@ -299,7 +322,7 @@ function handleJobRun(
 function handleJobCancel(
   id: JsonRpcId,
   request: JsonRpcRequest,
-  options: RunAcpStdioServerOptions,
+  options: RunJobsStdioServerOptions,
   activeJobs: Map<string, ActiveProtocolJob>,
 ): void {
   const params = jobCancelParamsSchema.parse(request.params ?? {})
@@ -310,7 +333,7 @@ function handleJobCancel(
       errorResponse(
         id,
         -32602,
-        "Protocol jobs can only be canceled by the ACP session that created them.",
+        "Protocol jobs can only be canceled by the jobs-stdio session that created them.",
       ),
     )
     return
@@ -321,7 +344,7 @@ function handleJobCancel(
 }
 
 function cancelActiveProtocolJobs(
-  options: RunAcpStdioServerOptions,
+  options: RunJobsStdioServerOptions,
   activeJobs: Map<string, ActiveProtocolJob>,
 ): void {
   for (const job of activeJobs.values()) {
@@ -355,7 +378,7 @@ async function stopActiveProtocolStreams(
 
 function handleRequest(
   request: JsonRpcRequest,
-  options: RunAcpStdioServerOptions,
+  options: RunJobsStdioServerOptions,
   activeJobs: Map<string, ActiveProtocolJob>,
 ): boolean {
   const id = request.id ?? null
@@ -383,14 +406,14 @@ function handleRequest(
     return false
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    writeStderr(options.stderr, `[ACP] Request failed: ${message}`)
+    writeStderr(options.stderr, `[jobs-stdio] Request failed: ${message}`)
     writeJsonLine(options.stdout, errorResponse(id, -32602, message))
     return false
   }
 }
 
-export async function runAcpStdioServer(
-  options: RunAcpStdioServerOptions,
+export async function runJobsStdioServer(
+  options: RunJobsStdioServerOptions,
 ): Promise<number> {
   const activeJobs = new Map<string, ActiveProtocolJob>()
   let shouldShutdown = false
@@ -400,14 +423,22 @@ export async function runAcpStdioServer(
       try {
         parsed = JSON.parse(line)
       } catch {
-        writeJsonLine(options.stdout, errorResponse(null, -32700, "Parse error"))
+        writeJsonLine(
+          options.stdout,
+          errorResponse(null, -32700, "Parse error"),
+        )
         continue
       }
       const requestResult = requestSchema.safeParse(parsed)
       if (!requestResult.success) {
         writeJsonLine(
           options.stdout,
-          errorResponse(null, -32600, "Invalid request", requestResult.error.flatten()),
+          errorResponse(
+            null,
+            -32600,
+            "Invalid request",
+            requestResult.error.flatten(),
+          ),
         )
         continue
       }
@@ -421,7 +452,7 @@ export async function runAcpStdioServer(
     return HEADLESS_EXIT_CODES.success
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    writeStderr(options.stderr, `[ACP] ${message}`)
+    writeStderr(options.stderr, `[jobs-stdio] ${message}`)
     writeJsonLine(options.stdout, errorResponse(null, -32600, message))
     cancelActiveProtocolJobs(options, activeJobs)
     await drainActiveProtocolJobs(activeJobs, 250)

@@ -67,12 +67,10 @@ type ProjectListProject = {
   gitProvider?: string | null
 }
 
-type ProjectSelection =
-  | {
-      kind: "active" | "removed"
-      id: string
-    }
-  | null
+type ProjectSelection = {
+  kind: "active" | "removed"
+  id: string
+} | null
 
 function projectSelectionKey(selection: ProjectSelection): string | null {
   return selection ? `${selection.kind}:${selection.id}` : null
@@ -155,6 +153,9 @@ function ProjectDetail({ projectId }: { projectId: string }) {
 
   // Save mutation (auto-save, no toast on success — only on error)
   const saveMutation = trpc.worktreeConfig.save.useMutation({
+    onSuccess: async () => {
+      await refetchConfig()
+    },
     onError: (err) => {
       toast.error(
         t("settings.projects.toast.failedToSave", { message: err.message }),
@@ -276,9 +277,7 @@ function ProjectDetail({ projectId }: { projectId: string }) {
   }, [projectName, projectId, renameMutation])
 
   // Local state
-  const [saveTarget, setSaveTarget] = useState<"locus" | "cursor" | "1code">(
-    "locus",
-  )
+  const [saveTarget, setSaveTarget] = useState<"locus" | "cursor">("locus")
   const [commands, setCommands] = useState<string[]>([""])
   const [unixCommands, setUnixCommands] = useState<string[]>([])
   const [windowsCommands, setWindowsCommands] = useState<string[]>([])
@@ -291,12 +290,7 @@ function ProjectDetail({ projectId }: { projectId: string }) {
   // Sync from server data
   useEffect(() => {
     if (configData) {
-      const newSaveTarget =
-        configData.source === "cursor"
-          ? "cursor"
-          : configData.source === "1code"
-            ? "1code"
-            : "locus"
+      const newSaveTarget = configData.source === "cursor" ? "cursor" : "locus"
       setSaveTarget(newSaveTarget)
 
       let newCommands: string[] = [""]
@@ -417,20 +411,16 @@ function ProjectDetail({ projectId }: { projectId: string }) {
     setter([...list, ""])
   }
 
-  const cursorExists = configData?.available?.cursor?.exists ?? false
-  const legacyOnecodeExists = configData?.available?.onecode?.exists ?? false
   const selectedConfigPath =
-    saveTarget === "locus"
-      ? ".locus/worktree.json"
-      : saveTarget === "cursor"
-        ? ".cursor/worktrees.json"
-        : ".1code/worktree.json"
+    saveTarget === "locus" ? ".locus/worktree.json" : ".cursor/worktrees.json"
   const selectedConfigLabel =
     saveTarget === "locus"
       ? t("settings.projects.configFileAppDefaultLabel")
-      : saveTarget === "cursor"
-        ? t("settings.projects.configFileCursorLabel")
-        : t("settings.projects.configFileLegacyOnecodeLabel")
+      : t("settings.projects.configFileCursorLabel")
+  const isLegacyReadSource = configData?.source === "1code"
+  const statusConfigPath = isLegacyReadSource
+    ? ".1code/worktree.json"
+    : selectedConfigPath
   const currentConfigState = JSON.stringify({
     commands,
     unixCommands,
@@ -445,9 +435,13 @@ function ProjectDetail({ projectId }: { projectId: string }) {
       ? t("settings.projects.saveStatusUnsaved")
       : saveMutation.isError
         ? t("settings.projects.saveStatusFailed")
-        : t("settings.projects.saveStatusSavedTo", {
-            target: selectedConfigLabel,
-          })
+        : isLegacyReadSource
+          ? t("settings.projects.saveStatusLoadedFrom", {
+              target: t("settings.projects.configFileLegacyOnecodeLabel"),
+            })
+          : t("settings.projects.saveStatusSavedTo", {
+              target: selectedConfigLabel,
+            })
 
   const openInFinderMutation = trpc.external.openInFinder.useMutation()
 
@@ -667,7 +661,7 @@ function ProjectDetail({ projectId }: { projectId: string }) {
                   "min-w-0 max-w-full truncate text-sm text-muted-foreground",
                   saveMutation.isError && "text-destructive",
                 )}
-                title={`${saveStatusLabel} (${selectedConfigPath})`}
+                title={`${saveStatusLabel} (${statusConfigPath})`}
               >
                 {saveStatusLabel}
               </span>
@@ -705,11 +699,20 @@ function ProjectDetail({ projectId }: { projectId: string }) {
                 <p className="text-sm text-muted-foreground">
                   {t("settings.projects.configFileDescription")}
                 </p>
+                {isLegacyReadSource && (
+                  <p
+                    data-config-source="1code"
+                    className="mt-1 text-xs text-muted-foreground"
+                  >
+                    {t("settings.projects.configFileLegacyOnecodeLabel")}:{" "}
+                    <span className="font-mono">.1code/worktree.json</span>
+                  </p>
+                )}
               </div>
               <Select
                 value={saveTarget}
                 onValueChange={(v) => {
-                  setSaveTarget(v as "locus" | "cursor" | "1code")
+                  setSaveTarget(v as "locus" | "cursor")
                   pendingSaveRef.current = true
                 }}
               >
@@ -730,32 +733,15 @@ function ProjectDetail({ projectId }: { projectId: string }) {
                       .locus/worktree.json
                     </span>
                   </SelectItem>
-                  {cursorExists && (
-                    <SelectItem value="cursor">
-                      <span>
-                        {t("settings.projects.configFileCursorLabel")}
-                      </span>
-                      <span
-                        data-desc
-                        className="font-mono text-xs text-muted-foreground"
-                      >
-                        .cursor/worktrees.json
-                      </span>
-                    </SelectItem>
-                  )}
-                  {(legacyOnecodeExists || saveTarget === "1code") && (
-                    <SelectItem value="1code">
-                      <span>
-                        {t("settings.projects.configFileLegacyOnecodeLabel")}
-                      </span>
-                      <span
-                        data-desc
-                        className="font-mono text-xs text-muted-foreground"
-                      >
-                        .1code/worktree.json
-                      </span>
-                    </SelectItem>
-                  )}
+                  <SelectItem value="cursor">
+                    <span>{t("settings.projects.configFileCursorLabel")}</span>
+                    <span
+                      data-desc
+                      className="font-mono text-xs text-muted-foreground"
+                    >
+                      .cursor/worktrees.json
+                    </span>
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -1263,7 +1249,8 @@ export function AgentsProjectsTab() {
   const { containerRef: listRef, onKeyDown: listKeyDown } = useListKeyboardNav({
     items: allProjectIds,
     selectedItem: selectedProjectKey,
-    onSelect: (key) => setSelectedProjectSelection(parseProjectSelectionKey(key)),
+    onSelect: (key) =>
+      setSelectedProjectSelection(parseProjectSelectionKey(key)),
   })
 
   const firstAvailableSelection = useMemo<ProjectSelection>(() => {
@@ -1307,7 +1294,9 @@ export function AgentsProjectsTab() {
             (project) => project.id === selectedProjectSelection.id,
           )
     if (!selectionStillExists) {
-      setSelectedProjectSelection(firstAvailableSelection?.id ? firstAvailableSelection : null)
+      setSelectedProjectSelection(
+        firstAvailableSelection?.id ? firstAvailableSelection : null,
+      )
     }
   }, [
     projects,

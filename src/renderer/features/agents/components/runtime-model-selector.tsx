@@ -1,7 +1,7 @@
 "use client"
 
 import type { ComponentProps } from "react"
-import type { AgentChatProvider } from "../../../../shared/agent-chat-provider"
+import type { ChatEngineId } from "../../../../shared/chat-engine-id"
 import { AgentModelSelector } from "./agent-model-selector"
 
 type AgentModelSelectorProps = ComponentProps<typeof AgentModelSelector>
@@ -19,7 +19,7 @@ export function RuntimeModelSelector({
   claude,
   codex,
 }: {
-  selectedEngineId: AgentChatProvider
+  selectedEngineId: ChatEngineId
   disabled?: boolean
   selectedModelLabel: string
   modelOpen: boolean

@@ -39,7 +39,7 @@ queue 里，Locus 就有意义。
 | 本地 schedule | 已实现，并已在 macOS 本地 smoke |
 | `locus api` Local Job API v1 | 已实现，并已在 macOS 本地 smoke |
 | runtime execution core 收敛 | OpenSpec 下进行中；durable job/API core 已共享，selector/event/policy 收敛仍是跟踪中的工作 |
-| 最小 `locus acp` stdio job 入口 | 实验性 |
+| `locus jobs-stdio` Locus 自有 stdio job 入口 | 实验性；不是 ACP |
 | Windows packaged 实机 smoke | 已明确延期；不阻塞当前本地平台工作 |
 | 完整 ACP parity | 未实现 |
 | hosted/cloud agents 或 hosted scheduler | 未实现 |

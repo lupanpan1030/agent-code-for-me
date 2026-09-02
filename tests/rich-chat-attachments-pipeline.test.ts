@@ -117,8 +117,8 @@ describe("rich chat attachment send pipeline", () => {
       "src/renderer/features/agents/lib/ipc-chat-transport.ts",
       "utf8",
     )
-    const acp = readFileSync(
-      "src/renderer/features/agents/lib/acp-chat-transport.ts",
+    const codexAppServerTransport = readFileSync(
+      "src/renderer/features/agents/lib/codex-app-server-chat-transport.ts",
       "utf8",
     )
     const authRetry = readFileSync(
@@ -141,7 +141,9 @@ describe("rich chat attachment send pipeline", () => {
     expect(codexPersistence).toContain("buildCodexUserParts(")
     expect(codexChatHistory).toContain("buildCodexUserParts(")
     expect(ipc).toContain("normalizeChatImageAttachmentPart(part)")
-    expect(acp).toContain("normalizeChatImageAttachmentPart(part)")
+    expect(codexAppServerTransport).toContain(
+      "normalizeChatImageAttachmentPart(part)",
+    )
     expect(authRetry).toContain('type: "attachment-image"')
 
     const normalizeSourceIndex = ipc.indexOf(

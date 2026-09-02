@@ -40,7 +40,7 @@
 
   <rect class="panel" x="844" y="130" width="212" height="96" rx="14"/>
   <text class="label" x="890" y="168">协议入口</text>
-  <text class="small" x="885" y="196">最小 locus acp</text>
+  <text class="small" x="885" y="196">locus jobs-stdio</text>
 
   <path class="arrow" d="M153 226 V286"/>
   <path class="arrow" d="M343 226 V286"/>

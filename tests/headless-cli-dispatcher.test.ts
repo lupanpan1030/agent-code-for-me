@@ -2549,7 +2549,7 @@ describe("headless CLI dispatcher", () => {
     expect(stderr.value()).toContain("registered project")
   })
 
-  test("runs minimal ACP stdio with JSON-only stdout and protocol jobs", async () => {
+  test("runs jobs-stdio with JSON-only stdout and protocol jobs", async () => {
     const db = createAgentJobTestDb()
     seedCurrentProject(db)
     const stdout = writer()
@@ -2569,7 +2569,7 @@ describe("headless CLI dispatcher", () => {
           runtime: "codex",
           mode: "agent",
           cwd: ".",
-          prompt: "ACP smoke",
+          prompt: "Jobs stdio smoke",
         },
       },
       {
@@ -2584,7 +2584,7 @@ describe("headless CLI dispatcher", () => {
 
     const code = await runHeadlessCliCommand({
       db,
-      argv: ["Locus", HEADLESS_CLI_MARKER, "acp"],
+      argv: ["Locus", HEADLESS_CLI_MARKER, "jobs-stdio"],
       stdin: Readable.from([`${input}\n`]),
       stdout: stdout.stream,
       stderr: stderr.stream,
@@ -2595,6 +2595,9 @@ describe("headless CLI dispatcher", () => {
     expect(stderr.value()).toBe("")
     const lines = parseJsonLines(stdout.value())
     expect(lines.every((line) => line.jsonrpc === "2.0")).toBe(true)
+    expect(lines.find((line) => line.id === 1)?.result.protocolVersion).toBe(
+      "locus-jobs-stdio.v1",
+    )
     expect(
       lines.find((line) => line.id === 1)?.result.capabilities,
     ).toMatchObject({
@@ -2618,9 +2621,12 @@ describe("headless CLI dispatcher", () => {
     expect(jobs).toHaveLength(1)
     expect(jobs[0].cwd).toBe(realpathSync(process.cwd()))
     expect(jobs[0].status).toBe("succeeded")
+    expect(JSON.parse(jobs[0].inputJson ?? "{}").protocol).toBe(
+      "locus-jobs-stdio.v1",
+    )
   })
 
-  test("ACP shutdown detaches a non-cooperative runner without fabricating a terminal job", async () => {
+  test("jobs-stdio shutdown detaches a non-cooperative runner without fabricating a terminal job", async () => {
     const db = createAgentJobTestDb()
     seedCurrentProject(db)
     const stdout = writer()
@@ -2634,7 +2640,7 @@ describe("headless CLI dispatcher", () => {
           runtime: "codex",
           mode: "agent",
           cwd: process.cwd(),
-          prompt: "Long ACP job",
+          prompt: "Long jobs-stdio job",
         },
       },
       {
@@ -2650,7 +2656,7 @@ describe("headless CLI dispatcher", () => {
     const result = await Promise.race([
       runHeadlessCliCommand({
         db,
-        argv: ["Locus", HEADLESS_CLI_MARKER, "acp"],
+        argv: ["Locus", HEADLESS_CLI_MARKER, "jobs-stdio"],
         stdin: Readable.from([`${input}\n`]),
         stdout: stdout.stream,
         stderr: stderr.stream,
@@ -2697,7 +2703,7 @@ describe("headless CLI dispatcher", () => {
     expect(getAgentJob(db, jobs[0].id)?.cancelRequestedAt).toBeInstanceOf(Date)
   })
 
-  test("ACP cancel is limited to jobs created by the current stdio session", async () => {
+  test("jobs-stdio cancel is limited to jobs created by the current stdio session", async () => {
     const db = createAgentJobTestDb()
     seedCurrentProject(db)
     const daemonJob = createAgentJob(db, {
@@ -2731,7 +2737,7 @@ describe("headless CLI dispatcher", () => {
 
     const code = await runHeadlessCliCommand({
       db,
-      argv: ["Locus", HEADLESS_CLI_MARKER, "acp"],
+      argv: ["Locus", HEADLESS_CLI_MARKER, "jobs-stdio"],
       stdin: Readable.from([`${input}\n`]),
       stdout: stdout.stream,
       stderr: stderr.stream,
@@ -2750,7 +2756,7 @@ describe("headless CLI dispatcher", () => {
     })
   })
 
-  test("rejects ACP provider secrets and raw env without creating jobs", async () => {
+  test("rejects jobs-stdio provider secrets and raw env without creating jobs", async () => {
     const db = createAgentJobTestDb()
     seedCurrentProject(db)
     const stdout = writer()
@@ -2781,7 +2787,7 @@ describe("headless CLI dispatcher", () => {
 
     const code = await runHeadlessCliCommand({
       db,
-      argv: ["Locus", HEADLESS_CLI_MARKER, "acp"],
+      argv: ["Locus", HEADLESS_CLI_MARKER, "jobs-stdio"],
       stdin: Readable.from([`${input}\n`]),
       stdout: stdout.stream,
       stderr: stderr.stream,

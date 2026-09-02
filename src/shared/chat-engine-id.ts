@@ -1,18 +1,25 @@
-export const agentChatProviders = ["claude-code", "codex"] as const
+import {
+  type AgentRuntimeContractId,
+  CONTRACT_RUNTIME_IDS,
+} from "./agent-runtime-capabilities"
 
-export type AgentChatProvider = (typeof agentChatProviders)[number]
+export const agentChatProviders = CONTRACT_RUNTIME_IDS
+
+export type ChatEngineId = AgentRuntimeContractId
 
 export type AgentChatMessageMetadata = {
   model?: string
-  provider?: AgentChatProvider
+  provider?: ChatEngineId
   modelSource?: string
   providerProfileId?: string
 }
 
-export function normalizeAgentChatProvider(
+export function normalizeChatEngineId(
   provider: string | null | undefined,
-): AgentChatProvider | null {
-  return provider === "claude-code" || provider === "codex" ? provider : null
+): ChatEngineId | null {
+  return agentChatProviders.includes(provider as ChatEngineId)
+    ? (provider as ChatEngineId)
+    : null
 }
 
 export function normalizeAgentChatMetadataModel(model: unknown): string | null {
@@ -21,7 +28,7 @@ export function normalizeAgentChatMetadataModel(model: unknown): string | null {
 
 export function buildAgentChatMessageMetadata(input: {
   model?: string | null
-  provider?: AgentChatProvider | null
+  provider?: ChatEngineId | null
   modelSource?: string | null
   providerProfileId?: string | null
 }): AgentChatMessageMetadata | undefined {
@@ -32,7 +39,7 @@ export function buildAgentChatMessageMetadata(input: {
     metadata.model = model
   }
 
-  const provider = normalizeAgentChatProvider(input.provider)
+  const provider = normalizeChatEngineId(input.provider)
   if (provider) {
     metadata.provider = provider
   }
@@ -48,16 +55,16 @@ export function buildAgentChatMessageMetadata(input: {
   return Object.keys(metadata).length > 0 ? metadata : undefined
 }
 
-export function inferAgentChatProviderFromMessages(
+export function inferChatEngineIdFromMessages(
   messages: unknown[],
-): AgentChatProvider {
+): ChatEngineId {
   for (const message of messages) {
     if (typeof message !== "object" || message === null) continue
 
     const metadata = (message as { metadata?: unknown }).metadata
     if (typeof metadata !== "object" || metadata === null) continue
 
-    const provider = normalizeAgentChatProvider(
+    const provider = normalizeChatEngineId(
       (metadata as { provider?: unknown }).provider as string | undefined,
     )
     if (provider) return provider

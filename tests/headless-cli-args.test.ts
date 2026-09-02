@@ -579,15 +579,25 @@ describe("headless CLI args", () => {
     }
   })
 
-  test("parses acp stdio command", () => {
+  test("parses jobs-stdio command and rejects the retired acp alias", () => {
     expect(
-      parseHeadlessCliArgv(["Locus", HEADLESS_CLI_MARKER, "acp"]),
+      parseHeadlessCliArgv(["Locus", HEADLESS_CLI_MARKER, "jobs-stdio"]),
     ).toMatchObject({
       ok: true,
       command: {
-        kind: "acp",
+        kind: "jobs-stdio",
       },
     })
+
+    const retiredCommand = parseHeadlessCliArgv([
+      "Locus",
+      HEADLESS_CLI_MARKER,
+      "acp",
+    ])
+    expect(retiredCommand).toMatchObject({ ok: false, code: 2 })
+    if (!retiredCommand.ok) {
+      expect(retiredCommand.message).toContain("Unknown command: acp")
+    }
   })
 
   test("rejects invalid provider selector flags", () => {

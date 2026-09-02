@@ -26,8 +26,8 @@ hub as the main positioning.
 The current codebase already has enough foundation to stop expanding sideways:
 
 - the engine set is a closed two: Claude Code and Codex, with capability manifests and run gates
-- the Codex desktop/chat adapter is app-server-only; ACP remains only as the Locus-owned
-  `locus acp` stdio surface, not as a Codex desktop adapter
+- the Codex desktop/chat adapter is app-server-only; the Locus-owned
+  `locus jobs-stdio` JSON-RPC job surface is not ACP or a Codex desktop adapter
 - local job infrastructure exists for `locus run`, `locus jobs`, daemon, schedules, API runs,
   status, events, cancel, retry, and heartbeat
 - provider profiles and the provider gateway model third-party or local model backends without
@@ -106,7 +106,7 @@ honest path, hunk, and committed-tree evidence
 existing per-Workspace diff/review surface
 Claude Code and Codex as the closed engine set
 Codex app-server for desktop/chat
-Locus-owned `locus acp` stdio surface
+Locus-owned `locus jobs-stdio` JSON-RPC job surface (not ACP)
 Workspace isolation as the next separately approved slice
 ```
 

@@ -54,7 +54,7 @@ function tr(key: TranslationKey, values?: Record<string, string | number>) {
   })
 }
 
-type ACPChatTransportConfig = {
+type CodexAppServerChatTransportConfig = {
   chatId: string
   subChatId: string
   binding: ChatSessionBinding
@@ -75,7 +75,7 @@ type ImageAttachment = {
   sha256?: string
 }
 
-// When a sub-chat hits auth-error, force one fresh Codex ACP session on next send.
+// When a sub-chat hits auth-error, force one fresh Codex app-server session on next send.
 const forceFreshSessionSubChats = new Set<string>()
 
 async function getStoredCodexCredentials(): Promise<{
@@ -117,11 +117,11 @@ async function resolveCodexCredentialsForAuthError(): Promise<{
   }
 }
 
-export class ACPChatTransport implements ChatTransport<UIMessage> {
+export class CodexAppServerChatTransport implements ChatTransport<UIMessage> {
   private readonly authRetryTransportGeneration: AuthRetryTransportGeneration
   private activeRunOwner: { unsubscribe: () => void } | null = null
 
-  constructor(private config: ACPChatTransportConfig) {
+  constructor(private config: CodexAppServerChatTransportConfig) {
     this.authRetryTransportGeneration = registerAuthRetryTransportGeneration(
       config.subChatId,
       config.binding,

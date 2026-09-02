@@ -14,7 +14,7 @@
 | Goal | Consequence in the design |
 | --- | --- |
 | **Local-first & auditable** | All state lives in a local SQLite DB; every agent run emits an append-only event log. No hosted backend in the default build (`LOCUS_LOCAL_ONLY=true`). |
-| **Runtime-neutral common core** | `RuntimeRegistry` exposes capability truth for the closed Engine set: Claude Code and Codex. ACP is a Locus-owned stdio protocol surface over jobs, not a third Engine. |
+| **Runtime-neutral common core** | `RuntimeRegistry` exposes capability truth for the closed Engine set: Claude Code and Codex. `locus jobs-stdio` is a Locus-owned JSON-RPC surface over jobs, not ACP or a third Engine. |
 | **Durable & recoverable** | Jobs are rows, not in-memory promises. A worker writes heartbeats; a recovery pass re-reconciles orphaned jobs on startup. |
 | **One durable job core, many surfaces** | Desktop UI, headless CLI, daemon queue, schedules, and the Local Job API share the durable job store and capability truth. Runtime execution convergence remains in progress. |
 | **Type-safe boundaries** | tRPC gives end-to-end types from main → renderer; the Local Job API is an explicit, versioned JSON contract for *other* local tools. |
@@ -45,7 +45,8 @@ headless plane that can run with no window at all:
 ┌───────────────┴───────────────┐  ┌─────────▼──────────────────────────┐
 │ HEADLESS (no window)          │  │ PERSISTENCE                         │
 │  locus run / jobs / api /     │  │  SQLite @ {userData}/data/agents.db │
-│  daemon / schedules / acp     │  │  Drizzle ORM, auto-migrated on boot │
+│  daemon / schedules /         │  │  Drizzle ORM, auto-migrated on boot │
+│  jobs-stdio                   │  │                                    │
 └───────────────────────────────┘  └─────────────────────────────────────┘
 ```
 
@@ -64,8 +65,8 @@ batch path pending a separately approved convergence change.
 
 ```
 request ──► permission-policy ──► preflight ──► runtime adapter ──► process-runner
-   │            (plan/agent)        (auth,         (Claude/Codex/      (spawn CLI,
-   │                                 model,         ACP stdio)          stream stdout)
+   │            (plan/agent)        (auth,         (Claude/Codex)       (spawn CLI,
+   │                                 model,                            stream stdout)
    │                                 capability)         │
    ▼                                                     ▼
 job-store.createAgentJob ──► startAgentJob ──► append events (seq-ordered) ──► complete
@@ -121,7 +122,7 @@ src/
 │       │   ├── daemon.ts · schedules.ts
 │       │   ├── local-job-api.ts       # Local Job API v1 envelopes/validation
 │       │   ├── cli-args.ts · cli-dispatcher.ts · cli-output.ts
-│       │   ├── acp-stdio.ts           # Experimental ACP stdio surface
+│       │   ├── jobs-stdio.ts          # Experimental Locus job JSON-RPC surface
 │       │   └── adapters/              # Per-runtime adapters
 │       ├── claude/ · codex/ · ollama/ # Runtime integrations
 │       ├── provider-profiles/ · app-agents/ · skills/ · plugins/
@@ -334,8 +335,8 @@ export const agentJobs = sqliteTable("agent_jobs", {
   id: text("id").primaryKey().$defaultFn(() => createId()),
   retryOfJobId: text("retry_of_job_id"),
   attempt: integer("attempt").notNull().default(1),
-  source: text("source").notNull(),            // "desktop" | "cli" | "api" | "schedule"
-  runtime: text("runtime").notNull(),          // "claude-code" | "codex" | "acp"
+  source: text("source").notNull(),            // "desktop" | "cli" | "api" | "daemon" | "schedule" | "protocol"
+  runtime: text("runtime").notNull(),          // "claude-code" | "codex"
   status: text("status").notNull().default("queued"),
   mode: text("mode").notNull().default("agent"),
   cwd: text("cwd").notNull(),
@@ -421,7 +422,7 @@ export function toLocalJobApiResultEnvelope(job: AgentJob, artifacts: FileArtifa
 
 | Stage | Move |
 | --- | --- |
-| **Now (MVP)** | Single SQLite, single daemon, two Engines, local-first; ACP is an experimental Locus protocol surface. |
+| **Now (MVP)** | Single SQLite, single daemon, two Engines, local-first; `locus jobs-stdio` is an experimental Locus-owned job protocol surface, not ACP. |
 | **Concurrency** | Multiple daemon workers already safe via `UNIQUE(jobId, sequence)` + heartbeat/recovery; add a claim query (`status='queued'` → `running` with `workerId`). |
 | **Providers** | Add provider-profile data and diagnostics behind existing Engine capability rules. |
 | **More Engines** | Not a routine extension point; requires an explicit product decision and approved OpenSpec change. |

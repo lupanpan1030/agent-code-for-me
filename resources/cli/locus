@@ -17,12 +17,16 @@ LOCUS_EXE="${LOCUS_HEADLESS_EXECUTABLE:-$CONTENTS_DIR/MacOS/Locus}"
 COMMAND="${1:-open}"
 
 case "$COMMAND" in
-  run|jobs|api|daemon|schedules|schedule|acp|version|--version|-v)
+  run|jobs|api|daemon|schedules|schedule|jobs-stdio|version|--version|-v)
     if [ ! -x "$LOCUS_EXE" ]; then
       echo "Error: Locus executable not found: $LOCUS_EXE" >&2
       exit 1
     fi
     exec "$LOCUS_EXE" --locus-headless-cli "$@"
+    ;;
+  acp)
+    echo "Unknown command: acp" >&2
+    exit 2
     ;;
   open|gui)
     shift

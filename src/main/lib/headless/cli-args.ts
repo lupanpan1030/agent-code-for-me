@@ -161,7 +161,7 @@ export type HeadlessCliCommand =
       output: HeadlessOutputFormat
     }
   | {
-      kind: "acp"
+      kind: "jobs-stdio"
     }
   | {
       kind: "version"
@@ -794,11 +794,11 @@ export function parseHeadlessCliArgv(argv = process.argv): ParsedHeadlessCli {
       throw new Error(`Unknown schedules subcommand: ${subcommand}`)
     }
 
-    if (command === "acp") {
+    if (command === "jobs-stdio") {
       if (args.length > 0) {
         throw new Error(unexpectedArgumentsMessage(args))
       }
-      return { ok: true, command: { kind: "acp" } }
+      return { ok: true, command: { kind: "jobs-stdio" } }
     }
 
     throw new Error(`Unknown command: ${command}`)

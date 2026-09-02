@@ -1,6 +1,6 @@
 import { eq, inArray } from "drizzle-orm"
 import type { drizzle } from "drizzle-orm/better-sqlite3"
-import { inferAgentChatProviderFromMessages } from "../../shared/agent-chat-provider"
+import { inferChatEngineIdFromMessages } from "../../shared/chat-engine-id"
 import {
   type ChatSessionBinding,
   type ChatSessionBindingWriteInput,
@@ -570,7 +570,7 @@ export function backfillSubChatBindings(
   for (const row of chatRows) {
     if (existingSubChatIds.has(row.id)) continue
 
-    const runtime = inferAgentChatProviderFromMessages(
+    const runtime = inferChatEngineIdFromMessages(
       parsePersistedMessages(row.messages),
     )
     const now = new Date()

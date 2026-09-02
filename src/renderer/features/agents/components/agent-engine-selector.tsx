@@ -3,7 +3,7 @@
 import { AnimatePresence, motion } from "motion/react"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
-import type { AgentChatProvider } from "../../../../shared/agent-chat-provider"
+import type { ChatEngineId } from "../../../../shared/chat-engine-id"
 import { Button } from "../../../components/ui/button"
 import { Checkbox } from "../../../components/ui/checkbox"
 import {
@@ -36,7 +36,7 @@ export type ContinueWithProviderSelection = {
 export type AgentEngineOptionStatus = "ready" | "setup-required" | "unavailable"
 
 export type AgentEngineOption = {
-  id: AgentChatProvider
+  id: ChatEngineId
   name: string
   status: AgentEngineOptionStatus
   statusLabel?: string
@@ -183,12 +183,12 @@ export function AgentEngineSelector({
   className,
   contentClassName,
 }: {
-  selectedEngineId: AgentChatProvider
+  selectedEngineId: ChatEngineId
   options: AgentEngineOption[]
   canSwitchInPlace?: boolean
-  onSelectEngine: (engine: AgentChatProvider) => void
-  onContinueWithEngine?: (engine: AgentChatProvider) => void
-  onSetupEngine?: (engine: AgentChatProvider) => void
+  onSelectEngine: (engine: ChatEngineId) => void
+  onContinueWithEngine?: (engine: ChatEngineId) => void
+  onSetupEngine?: (engine: ChatEngineId) => void
   className?: string
   contentClassName?: string
 }) {
@@ -204,7 +204,7 @@ export function AgentEngineSelector({
   }, [])
 
   const continueWithEngine = useCallback(
-    (engine: AgentChatProvider) => {
+    (engine: ChatEngineId) => {
       if (onContinueWithEngine) {
         window.setTimeout(() => onContinueWithEngine(engine), 0)
       }

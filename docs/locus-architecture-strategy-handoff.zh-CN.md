@@ -4,6 +4,11 @@
 
 事实快照：2026-08-20（Pacific/Auckland）
 
+> **术语维护说明（2026-09-02）：** Foundation 1d 将本文所述的 Locus 自有 custom job
+> JSON-RPC current name 更新为 `locus jobs-stdio`，协议版本为 `locus-jobs-stdio.v1`，并将
+> Codex renderer transport 明确命名为 app-server transport。下文只同步这些 current
+> executable/file names；本文仍是 2026-08-20 的未批准事实底稿。
+
 仓库：`lupanpan1030/agent-code-for-me`，产品名 Locus
 
 主要外部参照：AionUi / AionCore / aionrs、Agent Client Protocol、国产 Agent 与模型生态
@@ -86,7 +91,7 @@
 - Desktop 与 Headless 各有相似但不同的执行生命周期；
 - Provider、Model、Runtime、Persona 和 Session 的绑定分散在 DB、消息 metadata、renderer localStorage 与内存 Map 中；
 - `locus api` 是 CLI/JSON 契约，不是 HTTP API 或 SDK；
-- `locus acp` 是自定义 job JSON-RPC，不是标准 ACP session 实现；
+- `locus jobs-stdio` 是自定义 job JSON-RPC，不是标准 ACP session 实现；
 - Agent Builder 目前只是 prompt persona，不是多 Agent 编排器；
 - 没有跨 Agent 的 durable `SessionBinding`、`InteractionRequest` 或 handoff 模型。
 
@@ -229,7 +234,7 @@ flowchart TB
     PRELOAD --> MAIN["Electron Main\n业务 owner + native APIs"]
 
     CLI["resources/cli/locus"] --> EXE["Locus Electron executable\n--locus-headless-cli"]
-    EXE --> HEADLESS["Headless dispatcher\nrun · jobs · api · daemon · schedules · acp"]
+    EXE --> HEADLESS["Headless dispatcher\nrun · jobs · api · daemon · schedules · jobs-stdio"]
 
     MAIN --> DB[("SQLite agents.db")]
     HEADLESS --> DB
@@ -428,7 +433,7 @@ flowchart TD
     DBCHAT[("chats / sub_chats")]
     INFER{"runtime selection\nmetadata or empty-chat override"}
     CT["Claude IPCChatTransport"]
-    XT["Codex ACPChatTransport\nname misleading"]
+    XT["Codex app-server chat transport"]
     CR["claude.chat tRPC"]
     XR["codex.chat tRPC"]
     PREFLIGHT["Desktop preflight\nDB-authoritative cwd"]
@@ -513,7 +518,9 @@ Claude 的 renderer abort 主要依赖 unsubscribe → main cleanup，不像 Cod
 - Codex app-server adapter；
 - approval、cancel、cleanup。
 
-[`acp-chat-transport.ts`](../src/renderer/features/agents/lib/acp-chat-transport.ts) 的名字容易误导：当前它是 `provider: "codex"` 的 Codex app-server tRPC transport，不是通用标准 ACP 多 Agent transport。
+[`codex-app-server-chat-transport.ts`](../src/renderer/features/agents/lib/codex-app-server-chat-transport.ts)
+是 `provider: "codex"` 的 Codex app-server tRPC transport，不是通用标准 ACP 多 Agent
+transport。
 
 ### 9.5 Interaction / approval 的真实状态
 
@@ -781,7 +788,7 @@ flowchart TD
 ```mermaid
 flowchart TD
     CLI["locus run / locus api"]
-    STDIO["locus acp\ncustom stdio JSON-RPC"]
+    STDIO["locus jobs-stdio\ncustom stdio JSON-RPC"]
     CREATE["createAgentJob"]
     STORE[("agent_jobs / agent_job_events")]
     BIND["resolveHeadlessProviderBinding"]
@@ -843,12 +850,12 @@ locus api runs retry ... --json
 
 > Locus 有持久化 Headless Job core 与 CLI/JSON contract；它还没有第三方应用可长期连接的 HTTP/SSE server、正式 SDK 或交互式 session API。
 
-### 13.3 `locus acp` 的真实含义
+### 13.3 `locus jobs-stdio` 的真实含义
 
-[`headless/acp-stdio.ts`](../src/main/lib/headless/acp-stdio.ts) 定义的是自有协议：
+[`headless/jobs-stdio.ts`](../src/main/lib/headless/jobs-stdio.ts) 定义的是自有协议：
 
 ```text
-protocol: locus-acp-stdio.v1
+protocol: locus-jobs-stdio.v1
 methods: initialize / job.run / job.cancel / shutdown
 ```
 
@@ -970,7 +977,7 @@ methods: initialize / job.run / job.cancel / shutdown
 | Durable jobs/events | 已实现 | internal infrastructure |
 | daemon/schedules | 已实现 local version | 非 hosted/OS service |
 | Local Job API | CLI/JSON contract | 不是 HTTP/SDK |
-| `locus acp` | experimental custom stdio | 不是标准 ACP |
+| `locus jobs-stdio` | experimental custom stdio | 不是标准 ACP |
 | Qwen/Kimi/DeepSeek Agent runtime | 当前 checkout 未实现 | Provider preset 不等于 Agent |
 | Dynamic external Agent registry | 未实现 | runtime IDs 静态 |
 | Unified interactive session API | 未实现 | Desktop/Headless 分裂 |
@@ -1024,7 +1031,8 @@ Persona 被叫作 Agent，aggregation UI 被叫作 Builder，容易制造“已�
 
 ### 18.8 Public API 仍只是接口形状
 
-Desktop adapter factory、Headless selector、Local Job API、`locus acp` 都有不错的形状，但都还不是稳定、第三方可注册、可持续维护的 Agent platform contract。
+Desktop adapter factory、Headless selector、Local Job API、`locus jobs-stdio` 都有不错的
+形状，但都还不是稳定、第三方可注册、可持续维护的 Agent platform contract。
 
 ---
 
@@ -1520,7 +1528,7 @@ API/SDK contract、国产 Agent 的角色、AionUi/Cindy/Codex/Claude 的差异�
 - [Codex desktop owner](../src/main/lib/trpc/routers/codex.ts)
 - [Headless adapter selector](../src/main/lib/headless/adapter-selector.ts)
 - [Local Job API contract](../src/shared/local-job-api.ts)
-- [Custom stdio job protocol](../src/main/lib/headless/acp-stdio.ts)
+- [Custom stdio job protocol](../src/main/lib/headless/jobs-stdio.ts)
 - [Provider presets](../src/main/lib/provider-profiles/presets.ts)
 - [Provider gateway](../src/main/lib/provider-profiles/gateway.ts)
 - [Agent persona prompt](../src/main/lib/app-agents/prompt.ts)

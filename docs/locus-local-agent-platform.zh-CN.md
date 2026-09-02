@@ -46,7 +46,7 @@ coding 仍然是第一个强场景，但不是长期唯一场景。其他本地�
 | `locus daemon run` | 消费 daemon 和 schedule job | 已实现，macOS 已 smoke |
 | `locus schedules` | 创建、暂停、恢复、删除、立即运行本地 schedule | 已实现，macOS 已 smoke |
 | `locus api` | 面向下游 consumer 的机器可读 Local Job API v1 | 已实现，macOS 已 smoke |
-| `locus acp` | job-backed run 的最小 stdio 协议入口 | 实验性 |
+| `locus jobs-stdio` | 面向 job-backed run 的 Locus 自有 stdio JSON-RPC | 实验性；不是 ACP |
 
 Windows 源码和 shim 行为有测试覆盖。Windows packaged 实机 smoke 已明确延期，不阻塞
 当前本地平台工作、Local Job API v1 或下游接入。在这项证据完成前，不要把 Windows
@@ -63,9 +63,9 @@ computer-control flows，在用户授权或调用后都可能影响本机。文�
 描述成 project/worktree-aware controls，而不是完整文件系统隔离。
 
 provider credentials 应该在 main process 解析，renderer API 只应该拿到 ID、状态和脱敏
-metadata。job payload、event logs、ACP requests 和下游集成 payload 都不应该携带
-provider secrets。Voice transcription 现在使用 Helper API provider configuration 路径；
-不要重新引入 renderer/env API-key fallback。新的 credential 写入使用 main-process
+metadata。job payload、event logs、jobs-stdio requests 和下游集成 payload 都不应该
+携带 provider secrets。Voice transcription 现在使用 Helper API provider configuration
+路径；不要重新引入 renderer/env API-key fallback。新的 credential 写入使用 main-process
 secure storage；legacy base64 读取只用于兼容，不应该被描述成历史数据已经被追溯加密。
 
 ## 推荐集成方式
@@ -152,10 +152,11 @@ plan/review 模式，修改日历数据前必须显式确认。
 
 ## 协议策略
 
-当前 `locus acp` 是刻意收窄的入口。它证明外部 stdio 请求可以创建本地 job、流式返回
-job events、取消 job，并且在 shutdown 时保持 stdout 结构化。
+当前 `locus jobs-stdio` 是刻意收窄的入口。它证明外部 stdio 请求可以创建本地 job、
+流式返回 job events、取消 job，并且在 shutdown 时保持 stdout 结构化。
 
-它还不是完整 ACP server。完整 ACP parity 应该作为单独项目处理，并明确协议、session、
+这套 Locus 自有 JSON-RPC dialect 不是 Agent Client Protocol（ACP），也不声明 ACP
+兼容。未来的 ACP adapter 或 server 应该作为单独项目处理，并明确协议、session、
 permission、MCP、reconnect 和兼容性测试。
 
 推荐的下游平台边界现在是 Locus 自己拥有的 Local Job API v1。ACP 可以成为这个稳定
@@ -208,7 +209,7 @@ runtime capability truth
 provider compatibility and diagnostics
 MCP state, tool activity, file changes, usage, and run history
 Local Job API 作为支撑自动化基础设施
-minimal ACP stdio job surface
+最小 `locus jobs-stdio` JSON-RPC job surface（不是 ACP）
 macOS local smoke complete; Windows packaged real-machine smoke deferred
 ```
 

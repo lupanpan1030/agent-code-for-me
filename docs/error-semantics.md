@@ -30,7 +30,7 @@ Current errors are emitted from several layers:
   `src/main/lib/headless/process-runner.ts`
 - Renderer transport toasts:
   `src/renderer/features/agents/lib/ipc-chat-transport.ts`,
-  `src/renderer/features/agents/lib/acp-chat-transport.ts`
+  `src/renderer/features/agents/lib/codex-app-server-chat-transport.ts`
 - Existing localized strings:
   `src/renderer/lib/i18n/dictionaries.ts`
 

@@ -10,6 +10,7 @@ import {
   animals,
   uniqueNamesGenerator,
 } from "unique-names-generator"
+import { MANAGED_WORKTREE_PATH_SEGMENTS } from "../../../shared/worktree-path"
 import {
   GIT_DIFF_EXCLUSION_ARGS,
   isGitDiffExcludedPath,
@@ -1014,7 +1015,8 @@ export async function createWorktreeForChat(
 
     branch = generateBranchName()
     const worktreesDir =
-      options?.worktreesDir ?? join(homedir(), ".21st", "worktrees")
+      options?.worktreesDir ??
+      join(homedir(), ...MANAGED_WORKTREE_PATH_SEGMENTS)
     const projectWorktreeDir = join(worktreesDir, projectSlug)
     const folderName = generateWorktreeFolderName(projectWorktreeDir)
     worktreePath = join(projectWorktreeDir, folderName)

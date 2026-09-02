@@ -4,10 +4,6 @@ import * as fs from "fs/promises"
 import * as path from "path"
 import simpleGit from "simple-git"
 import { z } from "zod"
-import {
-  agentChatProviders,
-  buildAgentChatMessageMetadata,
-} from "../../../../shared/agent-chat-provider"
 import { buildAgentRuntimeCapabilityDiagnostic } from "../../../../shared/agent-runtime-capabilities"
 import { splitUnifiedDiffByFile } from "../../../../shared/unified-diff-parser"
 import {

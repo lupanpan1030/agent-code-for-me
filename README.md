@@ -41,7 +41,7 @@ It provides:
 | Local schedules | Implemented and smoked locally on macOS |
 | `locus api` Local Job API v1 | Implemented and smoked locally on macOS |
 | Runtime execution core convergence | In progress under OpenSpec; the durable job/API core is shared, while selector/event/policy convergence remains tracked work |
-| Minimal `locus acp` stdio job surface | Experimental |
+| `locus jobs-stdio` Locus-owned stdio job surface | Experimental; not ACP |
 | Windows packaged real-machine smoke | Deferred; non-blocking for current local platform work |
 | Full ACP parity | Not implemented |
 | Hosted/cloud agents or hosted scheduler | Not implemented |

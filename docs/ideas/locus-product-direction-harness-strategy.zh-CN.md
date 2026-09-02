@@ -2,6 +2,10 @@
 
 > **状态：RATIFIED 2026-08-25 — Locus canonical 产品方向。**
 >
+> **术语维护说明（2026-09-02）：** Foundation 1d 把 Locus 自有的实验性 job JSON-RPC
+> 入口明确命名为 `locus jobs-stdio`（协议版本 `locus-jobs-stdio.v1`），避免误称为
+> Agent Client Protocol。本文仅同步该 current executable name；已确认的产品方向不变。
+>
 > 调研基线：2026-08-25。
 >
 > 本文用于确定产品中心、Harness 边界、外部消费者与 6–12 个月路线。它已经仓库
@@ -76,7 +80,7 @@ Local Job API。
 - renderer live chunks 与 durable job events 仍不是一套 vocabulary；
 - 没有跨 harness 的 continue、resume 和 handoff contract；
 - `locus api` 当前是 CLI/JSON contract；
-- `locus acp` 不是完整的官方 ACP session surface。
+- `locus jobs-stdio` 是 Locus 自有的 job JSON-RPC，不是官方 ACP session surface。
 
 这意味着 Locus 更适合向“多 Harness 控制与会话层”演进，而不是重新发明底层 loop。
 

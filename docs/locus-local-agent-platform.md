@@ -50,7 +50,7 @@ projects:
 | `locus daemon run` | Claim daemon and schedule jobs | Implemented; macOS smoked |
 | `locus schedules` | Create, pause, resume, delete, and run local schedules | Implemented; macOS smoked |
 | `locus api` | Machine-readable Local Job API v1 for downstream consumers | Implemented; macOS smoked |
-| `locus acp` | Minimal stdio protocol for job-backed runs | Experimental |
+| `locus jobs-stdio` | Locus-owned stdio JSON-RPC for job-backed runs | Experimental; not ACP |
 
 Windows source and shim behavior are covered by tests. Packaged Windows
 real-machine smoke is explicitly deferred and non-blocking for current local
@@ -71,11 +71,12 @@ as complete filesystem isolation.
 
 Provider credentials should be resolved in the main process and renderer APIs
 should receive only IDs, status, and redacted metadata. Job payloads, event
-logs, ACP requests, and downstream integration payloads must not carry provider
-secrets. Voice transcription now uses the Helper API provider configuration
-path; do not reintroduce a renderer/env API-key fallback. New credential writes
-use main-process secure storage, while legacy base64 reads remain compatibility
-only and should not be described as retroactive encryption of historical data.
+logs, jobs-stdio requests, and downstream integration payloads must not carry
+provider secrets. Voice transcription now uses the Helper API provider
+configuration path; do not reintroduce a renderer/env API-key fallback. New
+credential writes use main-process secure storage, while legacy base64 reads
+remain compatibility only and should not be described as retroactive encryption
+of historical data.
 
 ## Recommended Integration Model
 
@@ -167,13 +168,14 @@ Do not claim these as implemented:
 
 ## Protocol Strategy
 
-The current `locus acp` surface is intentionally small. It proves that external
-stdio requests can create local jobs, stream job events, cancel jobs, and shut
-down without corrupting structured stdout.
+The current `locus jobs-stdio` surface is intentionally small. It proves that
+external stdio requests can create local jobs, stream job events, cancel jobs,
+and shut down without corrupting structured stdout.
 
-It is not a full ACP server yet. Full ACP parity should be a separate project
-with explicit protocol, session, permission, MCP, reconnect, and compatibility
-tests.
+This Locus-owned JSON-RPC dialect is not the Agent Client Protocol (ACP) and
+does not claim ACP compatibility. A future ACP adapter or server would be a
+separate project with explicit protocol, session, permission, MCP, reconnect,
+and compatibility tests.
 
 The recommended downstream platform boundary is now the Locus-owned Local Job
 API v1. ACP can then become one adapter over that stable local API rather than
@@ -229,7 +231,7 @@ runtime capability truth
 provider compatibility and diagnostics
 MCP state, tool activity, file changes, usage, and run history
 Local Job API as supporting automation infrastructure
-minimal ACP stdio job surface
+minimal `locus jobs-stdio` JSON-RPC job surface (not ACP)
 macOS local smoke complete; Windows packaged real-machine smoke deferred
 ```
 

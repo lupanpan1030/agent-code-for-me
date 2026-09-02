@@ -14,7 +14,7 @@ const STATUS_CONSUMERS = [
   "src/renderer/features/onboarding/components/panels/provider-profile-action.tsx",
   "src/renderer/features/agents/main/new-chat-form.tsx",
   "src/renderer/features/agents/main/chat-input-area.tsx",
-  "src/renderer/features/agents/lib/acp-chat-transport.ts",
+  "src/renderer/features/agents/lib/codex-app-server-chat-transport.ts",
   "src/renderer/components/dialogs/claude-login-modal.tsx",
   "src/renderer/components/dialogs/codex-login-modal.tsx",
   "src/renderer/components/dialogs/settings-tabs/agents-models-tab.tsx",

@@ -9,12 +9,17 @@ or UI helper.
 
 - Canonical owner: `src/shared/agent-runtime-capabilities.ts`
 - Facades: `src/shared/codex-runtime-capabilities.ts`
+- Persisted chat-metadata vocabulary adapter: `src/shared/chat-engine-id.ts`
+- Derived chat consumers: `src/shared/chat-session-binding.ts` and the
+  `metadata.provider` schema in `src/shared/chat-message.ts`
 - Supported runtime IDs: `claude-code` and `codex`; the desktop and contract
   runtime sets currently match.
 - Tests: `tests/agent-runtime-capabilities.test.ts`,
   `tests/codex-runtime-capabilities.test.ts`
 - Rule: runtime-specific files may expose facades, but must not define a second
-  capability ID list or a second manifest truth table.
+  capability ID list, engine ID list, or manifest truth table. Chat metadata
+  keeps its persisted `provider` key, while its Engine ID values and types
+  derive from `CONTRACT_RUNTIME_IDS` through the vocabulary adapter.
 
 ## Runtime Capability Projection
 
@@ -56,7 +61,7 @@ or UI helper.
 
 - Canonical owner: `src/renderer/features/agents/lib/runtime-event-state.ts`
 - Consumers: `src/renderer/features/agents/lib/ipc-chat-transport.ts`,
-  `src/renderer/features/agents/lib/acp-chat-transport.ts`
+  `src/renderer/features/agents/lib/codex-app-server-chat-transport.ts`
 - Rule: transports may subscribe, normalize, and enqueue runtime chunks, but
   shared atom updates for AskUserQuestion and guarded-run events must go through
   the owner.
@@ -196,6 +201,18 @@ or UI helper.
   project and setup command fingerprint. Routes and renderer code may display
   or submit approval decisions, but must not derive their own trust state or
   start setup command execution directly.
+
+## Managed Worktree Path Parsing
+
+- Canonical owner: `src/shared/worktree-path.ts`
+- Consumers: renderer tool paths, Git activity and changed-file tracking,
+  details-sidebar worktree affordances, Claude project-config resolution, and
+  main-process worktree base-directory construction.
+- Rule: the managed-worktree marker, separator normalization, structural path
+  parsing, and project-relative extraction belong to this pure shared owner.
+  Main and renderer consumers may apply their own presentation or database
+  lookup fallbacks after parsing, but must not copy the marker regex or infer
+  the managed path structure independently.
 
 ## Unified Git Diff Parsing
 

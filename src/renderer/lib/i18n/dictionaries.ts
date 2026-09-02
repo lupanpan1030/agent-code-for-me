@@ -1020,6 +1020,7 @@ export const en = {
   "settings.projects.saveStatusSaving": "Saving...",
   "settings.projects.saveStatusUnsaved": "Unsaved changes",
   "settings.projects.saveStatusFailed": "Save failed",
+  "settings.projects.saveStatusLoadedFrom": "Loaded from {target}",
   "settings.projects.saveStatusSavedTo": "Saved to {target}",
   "settings.projects.setupCommands": "Initialization commands",
   "settings.projects.setupCommandsDescription":
@@ -4575,6 +4576,7 @@ export const zhCN: Partial<Record<TranslationKey, string>> = {
   "settings.projects.saveStatusSaving": "保存中...",
   "settings.projects.saveStatusUnsaved": "未保存修改",
   "settings.projects.saveStatusFailed": "保存失败",
+  "settings.projects.saveStatusLoadedFrom": "已从{target}加载",
   "settings.projects.saveStatusSavedTo": "已保存到 {target}",
   "settings.projects.setupCommands": "初始化命令",
   "settings.projects.setupCommandsDescription":

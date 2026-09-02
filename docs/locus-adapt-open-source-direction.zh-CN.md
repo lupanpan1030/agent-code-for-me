@@ -6,6 +6,11 @@
 > 2026-08-15 的调研快照；其中 Agent / Provider / Model 分离、Chat-first 和共享核心等底层原则仍可参考，
 > 但不得再引用为当前产品方向。
 
+> **后续合同状态（2026-09-02）：** 经批准的 Foundation 1d consumer sweep 确认该实验性
+> 自有 stdio surface 没有已知外部消费者，Owner 随后确定 current name 为
+> `locus jobs-stdio`、协议版本为 `locus-jobs-stdio.v1`，且不保留旧命令 alias。下文相关
+> 路径与状态按这一后续决定标注；这不追溯批准本文其余 2026-08-15 路线建议。
+
 状态：**方向提案，不是当前已交付能力**
 
 调研快照：2026-08-15
@@ -123,7 +128,7 @@ Locus 可以继续做。它不应靠不断复制 Codex、Claude Code 的通用 C
 | `desktop-run-request.ts`、`desktop-runner.ts` 与现有 Chat transports | 保留交互式 session 的 verified preflight、stream 和审批语义 | 不新增 Qwen/Kimi 专属 renderer transport；所有 Agent 经统一 registry 和事件映射 |
 | Provider profiles、presets、transforms 与 secure storage | 保留 DeepSeek、Qwen/DashScope、Kimi、GLM 等 endpoint 与 secret 基础 | Provider 不再静态声明 `targets: claude/codex`；改为独立对象和 route verification |
 | 现有 Claude `-p` / Codex `exec` batch adapters | 作为基线或 ACP 未覆盖时的 native adapter | 不能继续是 hard-coded 唯一 selector；所有 adapter 经过同一 capability gate |
-| `src/main/lib/headless/acp-stdio.ts` | 可保留旧 v1 compatibility surface，随后迁移 | 当前 `locus-acp-stdio.v1` 不是完整官方 ACP，不能改名后冒充兼容 |
+| `src/main/lib/headless/jobs-stdio.ts` | 保留为实验性的 Locus-owned job JSON-RPC surface | `locus-jobs-stdio.v1` 不是官方 ACP，也不得冒充 ACP 兼容 |
 | Provider diagnostics UI、Workbench job trace、Debug 系统信息 | 抽成 Providers、Runs、Doctor 的显示层 | 诊断规则和 receipt owner 必须在共享 AdaptCore/main-process service，不得只存在 renderer/tRPC |
 | 归档的 Qwen ACP 实验与测试模式 | 复用 allow/deny/cancel/orphan canary 的测试思想 | 不恢复旧 Qwen desktop runtime 或不安全的 permission/plan 映射 |
 
@@ -398,7 +403,8 @@ locus adapt receipt <job-id> --json
 - 使用官方 ACP TypeScript SDK stable v1；
 - Locus 作为 ACP client 管理外部 Agent；
 - 若 Locus 自身作为一个组合 Agent 暴露给 IDE，使用正式 ACP server contract；
-- 不把当前私有 `locus-acp-stdio.v1` 直接重命名；必须经过协议兼容测试和迁移说明。
+- 2026-09-02 后续 Owner 决策已将自有 surface 定名为 `locus-jobs-stdio.v1`，不保留命令
+  alias；它继续与正式 ACP contract 分离，不以改名暗示 ACP 兼容。
 
 ### v0.3：按真实下游需求决定 HTTP/SSE
 
@@ -612,7 +618,7 @@ refactor-locus-adapt-core
 Proposal 必须明确：
 
 - 当前 Workbench 定位文档何时被替换；
-- 私有 `locus-acp-stdio.v1` 如何兼容/迁移/删除；
+- Locus-owned `locus-jobs-stdio.v1` 与未来正式 ACP surface 如何保持版本和语义隔离；
 - Claude/Codex native adapters 的保留条件；
 - capability manifest 的 canonical owner；
 - Chat 保持默认、一等交互面，以及 Interactive Session 与 Batch Job 的共享/分离边界；

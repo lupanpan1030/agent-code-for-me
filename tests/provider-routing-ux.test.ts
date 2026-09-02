@@ -63,10 +63,10 @@ describe("provider routing UX source guards", () => {
     "utf8",
   )
   const chatsRouterSource = readChatsRouterSource()
-  const acpChatTransportSource = readFileSync(
+  const codexAppServerChatTransportSource = readFileSync(
     join(
       process.cwd(),
-      "src/renderer/features/agents/lib/acp-chat-transport.ts",
+      "src/renderer/features/agents/lib/codex-app-server-chat-transport.ts",
     ),
     "utf8",
   )
@@ -222,14 +222,16 @@ describe("provider routing UX source guards", () => {
     expect(chatsRouterSource).toContain("buildAgentChatMessageMetadata")
     expect(chatsRouterSource).toContain("provider: bindingInput.runtime")
     expect(chatsRouterSource).not.toContain("input.provider")
-    expect(acpChatTransportSource).toContain("this.config.binding.modelId")
-    expect(acpChatTransportSource).toContain(
+    expect(codexAppServerChatTransportSource).toContain(
+      "this.config.binding.modelId",
+    )
+    expect(codexAppServerChatTransportSource).toContain(
       "this.config.binding.providerProfileId",
     )
-    expect(acpChatTransportSource).not.toContain(
+    expect(codexAppServerChatTransportSource).not.toContain(
       "normalizeAgentChatMetadataModel",
     )
-    expect(acpChatTransportSource).toContain(
+    expect(codexAppServerChatTransportSource).toContain(
       "composeProviderProfileCodexTransportModel",
     )
     expect(codexDesktopProviderBindingSource).toContain("model: metadataModel")

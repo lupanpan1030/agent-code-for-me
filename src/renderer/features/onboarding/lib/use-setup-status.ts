@@ -122,7 +122,7 @@ export function useSetupStatus(): SetupStatus {
 
 /**
  * Non-React snapshot of Codex connection state, derived from the live owners.
- * Used by {@link file://./acp-chat-transport.ts} which runs outside React and
+ * Used by {@link file://./codex-app-server-chat-transport.ts} which runs outside React and
  * previously read the (now removed) onboarding atoms via appStore.
  */
 export async function getCodexConnectionSnapshot(

@@ -16,7 +16,6 @@ import {
   registerProjectForPath,
   unregisterProjectForPath,
 } from "../projects/registry"
-import { runAcpStdioServer } from "./acp-stdio"
 import type { AgentTaskRunner } from "./agent-runtime-contract"
 import {
   type HeadlessCliCommand,
@@ -56,6 +55,7 @@ import {
   requestCancelAgentJob,
   retryAgentJob,
 } from "./job-store"
+import { runJobsStdioServer } from "./jobs-stdio"
 import {
   closeLocalJobApiArtifactRunDir,
   createLocalJobApiJob,
@@ -1042,10 +1042,10 @@ async function daemonRunCommand(
   }
 }
 
-async function acpCommand(
+async function jobsStdioCommand(
   options: RunHeadlessCliCommandOptions,
 ): Promise<number> {
-  return runAcpStdioServer({
+  return runJobsStdioServer({
     db: options.db,
     stdin: options.stdin,
     stdout: options.stdout,
@@ -1079,7 +1079,7 @@ function helpCommand(options: RunHeadlessCliCommandOptions): number {
       "  locus api runs create --request <path|-> --json",
       "  locus api runs status|result|cancel|retry <id> --json",
       "  locus api runs events <id> [--after <sequence>] [--follow] --jsonl",
-      "  locus acp",
+      "  locus jobs-stdio",
       "  locus --version",
       `  stdin limit: ${HEADLESS_STDIN_MAX_BYTES} bytes`,
       "  locus jobs list",
@@ -1150,8 +1150,8 @@ export async function runHeadlessCliCommand(
     case "schedules-delete":
     case "schedules-run":
       return schedulesMutationCommand(parsed.command, options)
-    case "acp":
-      return acpCommand(options)
+    case "jobs-stdio":
+      return jobsStdioCommand(options)
     case "version":
       return versionCommand(options)
     case "daemon-run":

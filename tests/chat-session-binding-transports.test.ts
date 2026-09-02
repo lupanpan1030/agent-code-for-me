@@ -12,8 +12,8 @@ const ipcTransportSource = readFileSync(
   "src/renderer/features/agents/lib/ipc-chat-transport.ts",
   "utf8",
 )
-const acpTransportSource = readFileSync(
-  "src/renderer/features/agents/lib/acp-chat-transport.ts",
+const codexAppServerTransportSource = readFileSync(
+  "src/renderer/features/agents/lib/codex-app-server-chat-transport.ts",
   "utf8",
 )
 const authRetryHookSource = readFileSync(
@@ -21,15 +21,15 @@ const authRetryHookSource = readFileSync(
   "utf8",
 )
 
-const transportSources = [ipcTransportSource, acpTransportSource]
+const transportSources = [ipcTransportSource, codexAppServerTransportSource]
 
 describe("chat session binding transport injection", () => {
   test("requires the shared binding in both transport configs", () => {
     expect(ipcTransportSource).toMatch(
       /type IPCChatTransportConfig = \{[\s\S]*?binding: ChatSessionBinding/,
     )
-    expect(acpTransportSource).toMatch(
-      /type ACPChatTransportConfig = \{[\s\S]*?binding: ChatSessionBinding/,
+    expect(codexAppServerTransportSource).toMatch(
+      /type CodexAppServerChatTransportConfig = \{[\s\S]*?binding: ChatSessionBinding/,
     )
 
     for (const source of transportSources) {
@@ -43,10 +43,16 @@ describe("chat session binding transport injection", () => {
     expect(ipcTransportSource).toContain("this.config.binding.modelId")
     expect(ipcTransportSource).toContain("this.config.binding.modelSource")
 
-    expect(acpTransportSource).toContain("this.config.binding.modelId")
-    expect(acpTransportSource).toContain("this.config.binding.modelSource")
-    expect(acpTransportSource).toContain("this.config.binding.thinkingLevel")
-    expect(acpTransportSource).toContain(
+    expect(codexAppServerTransportSource).toContain(
+      "this.config.binding.modelId",
+    )
+    expect(codexAppServerTransportSource).toContain(
+      "this.config.binding.modelSource",
+    )
+    expect(codexAppServerTransportSource).toContain(
+      "this.config.binding.thinkingLevel",
+    )
+    expect(codexAppServerTransportSource).toContain(
       "this.config.binding.providerProfileId",
     )
     expect(composeProviderProfileCodexTransportModel("provider-model")).toBe(
@@ -61,8 +67,10 @@ describe("chat session binding transport injection", () => {
     expect(composeProviderProfileCodexTransportModel("vendor/none")).toBe(
       "vendor/none/none",
     )
-    expect(acpTransportSource).not.toContain("normalizeAgentChatMetadataModel")
-    expect(acpTransportSource).not.toContain("metadataModelSource")
+    expect(codexAppServerTransportSource).not.toContain(
+      "normalizeAgentChatMetadataModel",
+    )
+    expect(codexAppServerTransportSource).not.toContain("metadataModelSource")
   })
 
   test("never rewrites a Codex binding source from available credentials", () => {
@@ -70,8 +78,10 @@ describe("chat session binding transport injection", () => {
     expect(resolveCodexAuthMethodForBindingSource("openai-api-key")).toBe(
       "api_key",
     )
-    expect(acpTransportSource).not.toContain("effectiveCodexModelSource")
-    expect(acpTransportSource).not.toContain(
+    expect(codexAppServerTransportSource).not.toContain(
+      "effectiveCodexModelSource",
+    )
+    expect(codexAppServerTransportSource).not.toContain(
       "const codexCredentials = await getStoredCodexCredentials()",
     )
   })
@@ -101,8 +111,8 @@ describe("chat session binding transport injection", () => {
         hasApiKey: false,
       }),
     ).toEqual({ hasBoundCredential: false, kind: "api-key" })
-    expect(acpTransportSource).not.toContain("credentials.hasAny")
-    expect(acpTransportSource).toContain("boundCredential.kind")
+    expect(codexAppServerTransportSource).not.toContain("credentials.hasAny")
+    expect(codexAppServerTransportSource).toContain("boundCredential.kind")
   })
 
   test("retires stale auth retries by exact binding and transport generation", () => {
@@ -116,14 +126,14 @@ describe("chat session binding transport injection", () => {
       expect(source).toContain("releaseAuthRetryTransportGeneration(")
     }
 
-    const codexCredentialProbeIndex = acpTransportSource.indexOf(
+    const codexCredentialProbeIndex = codexAppServerTransportSource.indexOf(
       "await resolveCodexCredentialsForAuthError()",
     )
-    const codexGenerationCheckIndex = acpTransportSource.indexOf(
+    const codexGenerationCheckIndex = codexAppServerTransportSource.indexOf(
       "!isCurrentAuthRetryTransportGeneration(",
       codexCredentialProbeIndex,
     )
-    const codexRetryPublishIndex = acpTransportSource.indexOf(
+    const codexRetryPublishIndex = codexAppServerTransportSource.indexOf(
       "appStore.set(pendingAuthRetryMessageAtom",
       codexGenerationCheckIndex,
     )
@@ -148,27 +158,41 @@ describe("chat session binding transport injection", () => {
   })
 
   test("routes Codex stop and cleanup through the exact subscription owner", () => {
-    expect(acpTransportSource).toContain("private activeRunOwner:")
-    expect(acpTransportSource).toContain("previousRunOwner?.unsubscribe()")
-    expect(acpTransportSource).toContain("this.activeRunOwner === runOwner")
-    expect(acpTransportSource).not.toContain("trpcClient.codex.cancel")
-    expect(acpTransportSource).not.toContain("trpcClient.codex.cleanup")
+    expect(codexAppServerTransportSource).toContain("private activeRunOwner:")
+    expect(codexAppServerTransportSource).toContain(
+      "previousRunOwner?.unsubscribe()",
+    )
+    expect(codexAppServerTransportSource).toContain(
+      "this.activeRunOwner === runOwner",
+    )
+    expect(codexAppServerTransportSource).not.toContain(
+      "trpcClient.codex.cancel",
+    )
+    expect(codexAppServerTransportSource).not.toContain(
+      "trpcClient.codex.cleanup",
+    )
   })
 
   test("unsubscribes the exact Codex subscription for first-party and Profile auth errors", () => {
-    expect(acpTransportSource.match(/failAuthErrorStream\(/g)).toHaveLength(2)
-    expect(acpTransportSource).toContain("failCodexAuthErrorStream({")
-    expect(acpTransportSource).toContain("unsubscribe: safeUnsubscribe")
+    expect(
+      codexAppServerTransportSource.match(/failAuthErrorStream\(/g),
+    ).toHaveLength(2)
+    expect(codexAppServerTransportSource).toContain(
+      "failCodexAuthErrorStream({",
+    )
+    expect(codexAppServerTransportSource).toContain(
+      "unsubscribe: safeUnsubscribe",
+    )
 
-    const profileFailure = acpTransportSource.slice(
-      acpTransportSource.indexOf("if (providerProfileId) {"),
-      acpTransportSource.indexOf("void (async () => {"),
+    const profileFailure = codexAppServerTransportSource.slice(
+      codexAppServerTransportSource.indexOf("if (providerProfileId) {"),
+      codexAppServerTransportSource.indexOf("void (async () => {"),
     )
     expect(profileFailure).toContain("failAuthErrorStream(error)")
 
-    const firstPartyFailure = acpTransportSource.slice(
-      acpTransportSource.indexOf("void (async () => {"),
-      acpTransportSource.indexOf('if (chunk.type === "error")'),
+    const firstPartyFailure = codexAppServerTransportSource.slice(
+      codexAppServerTransportSource.indexOf("void (async () => {"),
+      codexAppServerTransportSource.indexOf('if (chunk.type === "error")'),
     )
     expect(firstPartyFailure).toContain("failAuthErrorStream(")
   })

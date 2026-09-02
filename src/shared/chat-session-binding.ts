@@ -1,10 +1,14 @@
 import {
+  type AgentRuntimeContractId,
+  CONTRACT_RUNTIME_IDS,
+} from "./agent-runtime-capabilities"
+import {
   PROVIDER_PROFILE_SOURCE_PREFIX,
   parseProviderProfileSource,
   providerProfileSource,
 } from "./provider-profile-types"
 
-export const CHAT_SESSION_BINDING_RUNTIMES = ["claude-code", "codex"] as const
+export const CHAT_SESSION_BINDING_RUNTIMES = CONTRACT_RUNTIME_IDS
 
 export const CLAUDE_CHAT_MODEL_SOURCES = [
   "claude-oauth",
@@ -20,8 +24,7 @@ export const CODEX_CHAT_THINKING_LEVELS = [
   "xhigh",
 ] as const
 
-export type ChatSessionBindingRuntime =
-  (typeof CHAT_SESSION_BINDING_RUNTIMES)[number]
+export type ChatSessionBindingRuntime = AgentRuntimeContractId
 export type ClaudeChatModelSource =
   | (typeof CLAUDE_CHAT_MODEL_SOURCES)[number]
   | `provider-profile:${string}`

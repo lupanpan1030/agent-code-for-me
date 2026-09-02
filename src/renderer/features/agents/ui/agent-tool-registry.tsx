@@ -14,6 +14,8 @@ import {
   Terminal,
   XCircle,
 } from "lucide-react"
+import type { TranslationKey } from "@/lib/i18n"
+import { parseManagedWorktreeRelativePath } from "../../../../shared/worktree-path"
 import {
   CustomTerminalIcon,
   EyeIcon,
@@ -24,7 +26,6 @@ import {
   SparklesIcon,
   WriteFileIcon,
 } from "../../../components/ui/icons"
-import type { TranslationKey } from "@/lib/i18n"
 
 type Translate = (
   key: TranslationKey,
@@ -94,11 +95,8 @@ export function getDisplayPath(filePath: string, projectPath?: string): string {
       return filePath.slice(prefix.length)
     }
   }
-  // Handle worktree paths: /.21st/worktrees/{chatId}/{subChatId}/relativePath
-  const worktreeMatch = filePath.match(/\.21st\/worktrees\/[^/]+\/[^/]+\/(.+)$/)
-  if (worktreeMatch) {
-    return worktreeMatch[1]
-  }
+  const worktreeRelativePath = parseManagedWorktreeRelativePath(filePath)
+  if (worktreeRelativePath) return worktreeRelativePath
   // Handle claude-sessions paths: .../claude-sessions/{sessionId}/{folder}/{file}
   const sessionMatch = filePath.match(/claude-sessions\/[^/]+\/(.+)$/)
   if (sessionMatch) {

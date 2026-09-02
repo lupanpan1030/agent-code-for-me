@@ -111,7 +111,10 @@ import {
   isProviderProfileSource,
   parseProviderProfileSource,
 } from "../../../../shared/provider-profile-types"
-import type { AgentChatProvider } from "../../../../shared/agent-chat-provider"
+import {
+  agentChatProviders,
+  type ChatEngineId,
+} from "../../../../shared/chat-engine-id"
 import {
   createProviderProfileChatSessionBindingWrite,
   normalizeChatSessionBindingWrite,
@@ -196,21 +199,19 @@ function useAvailableModels(baseModels: ClaudeCatalogModel[]) {
   }
 }
 
-// Agent providers
-type NewChatAgent = {
-  id: AgentChatProvider | "cursor"
+// Chat engines
+type NewChatEngine = {
+  id: ChatEngineId
   name: string
   hasModels?: boolean
-  disabled?: boolean
 }
 
-const agents: NewChatAgent[] = [
+const engines = [
   { id: "claude-code", name: "Claude Code", hasModels: true },
-  { id: "cursor", name: "Cursor CLI", disabled: true },
   { id: "codex", name: "OpenAI Codex" },
-]
-function isAgentChatProvider(id: string): id is AgentChatProvider {
-  return id === "claude-code" || id === "codex"
+] satisfies readonly NewChatEngine[]
+function isChatEngineId(id: string): id is ChatEngineId {
+  return agentChatProviders.includes(id as ChatEngineId)
 }
 
 interface NewChatFormProps {
@@ -273,7 +274,7 @@ export function NewChatForm({
   const isFolderlessQuickChat = !validatedProject
   const { data: runtimeCapabilityManifests } =
     useRuntimeCapabilityManifestStore()
-  const quickChatAllowedProviderIds = useMemo(() => {
+  const quickChatAllowedEngineIds = useMemo(() => {
     if (!isFolderlessQuickChat) return undefined
     if (!runtimeCapabilityManifests) return []
 
@@ -286,7 +287,7 @@ export function NewChatForm({
         ),
       )
       .map((manifest) => manifest.runtimeId)
-      .filter(isAgentChatProvider)
+      .filter(isChatEngineId)
   }, [isFolderlessQuickChat, runtimeCapabilityManifests])
   const quickChatRuntimeGateLoaded =
     !isFolderlessQuickChat || runtimeCapabilityManifests !== undefined
@@ -317,7 +318,7 @@ export function NewChatForm({
     () => projectAgentIdAtomFamily(validatedProject?.id ?? ""),
     [validatedProject?.id],
   )
-  const [lastSelectedAgentId, setLastSelectedAgentId] =
+  const [lastSelectedEngineId, setLastSelectedEngineId] =
     useAtom(projectAgentIdAtom)
   const [lastSelectedModelId] = useAtom(lastSelectedModelIdAtom)
   const setLastSelectedClaudeSelection = useSetAtom(
@@ -456,88 +457,71 @@ export function NewChatForm({
     if (!match) return null
     return `${match[1]}/${match[2].replace(/\.git$/, "")}`
   }
-  const selectableAgents = agents
-  const enabledAgents = useMemo(
+  const enabledEngines = useMemo(
     () =>
-      selectableAgents.filter((agent) => {
-        if (agent.disabled) return false
-        if (!quickChatAllowedProviderIds) return true
-        if (!isAgentChatProvider(agent.id)) return false
-        return quickChatAllowedProviderIds.includes(agent.id)
+      engines.filter((engine) => {
+        if (!quickChatAllowedEngineIds) return true
+        return quickChatAllowedEngineIds.includes(engine.id)
       }),
-    [quickChatAllowedProviderIds, selectableAgents],
+    [quickChatAllowedEngineIds],
   )
-  const fallbackAgent = enabledAgents[0] ?? agents[0]!
-  const [selectedAgent, setSelectedAgent] = useState(
+  const fallbackEngine = enabledEngines[0] ?? engines[0]
+  const [selectedEngine, setSelectedEngine] = useState<NewChatEngine>(
     () =>
-      enabledAgents.find((agent) => agent.id === lastSelectedAgentId) ||
-      fallbackAgent,
+      enabledEngines.find((engine) => engine.id === lastSelectedEngineId) ||
+      fallbackEngine,
   )
 
   useEffect(() => {
-    const nextAgent =
-      enabledAgents.find((agent) => agent.id === lastSelectedAgentId) ||
-      fallbackAgent
+    const nextEngine =
+      enabledEngines.find((engine) => engine.id === lastSelectedEngineId) ||
+      fallbackEngine
 
-    if (nextAgent && nextAgent.id !== selectedAgent.id) {
-      setSelectedAgent(nextAgent)
+    if (nextEngine && nextEngine.id !== selectedEngine.id) {
+      setSelectedEngine(nextEngine)
     }
-  }, [enabledAgents, fallbackAgent, lastSelectedAgentId, selectedAgent.id])
-  const selectedAgentIsRuntimeAllowed = useMemo(
+  }, [enabledEngines, fallbackEngine, lastSelectedEngineId, selectedEngine.id])
+  const selectedEngineIsRuntimeAllowed = useMemo(
     () =>
-      isAgentChatProvider(selectedAgent.id) &&
-      enabledAgents.some((agent) => agent.id === selectedAgent.id),
-    [enabledAgents, selectedAgent.id],
+      enabledEngines.some((engine) => engine.id === selectedEngine.id),
+    [enabledEngines, selectedEngine.id],
   )
-  const chatAgentOptions = useMemo(
-    () =>
-      selectableAgents.filter(
-        (
-          agent,
-        ): agent is NewChatAgent & {
-          id: AgentChatProvider
-        } => isAgentChatProvider(agent.id),
-      ),
-    [selectableAgents],
-  )
-  const isAgentOptionDisabled = useCallback(
-    (agent: NewChatAgent) => {
-      if (agent.disabled) return true
-      if (!quickChatAllowedProviderIds) return false
-      if (!isAgentChatProvider(agent.id)) return true
-      return !quickChatAllowedProviderIds.includes(agent.id)
+  const isEngineOptionDisabled = useCallback(
+    (engine: NewChatEngine) => {
+      if (!quickChatAllowedEngineIds) return false
+      return !quickChatAllowedEngineIds.includes(engine.id)
     },
-    [quickChatAllowedProviderIds],
+    [quickChatAllowedEngineIds],
   )
-  const handleAgentSelect = useCallback(
-    (agent: NewChatAgent) => {
-      if (!isAgentChatProvider(agent.id) || isAgentOptionDisabled(agent)) {
+  const selectEngine = useCallback(
+    (engine: NewChatEngine) => {
+      if (isEngineOptionDisabled(engine)) {
         return
       }
-      setSelectedAgent(agent)
-      setLastSelectedAgentId(agent.id)
+      setSelectedEngine(engine)
+      setLastSelectedEngineId(engine.id)
     },
-    [isAgentOptionDisabled, setLastSelectedAgentId],
+    [isEngineOptionDisabled, setLastSelectedEngineId],
   )
   const engineOptions = useMemo<AgentEngineOption[]>(
     () =>
-      chatAgentOptions.map((agent) => {
-        const unavailable = isAgentOptionDisabled(agent)
+      engines.map((engine) => {
+        const unavailable = isEngineOptionDisabled(engine)
         return {
-          id: agent.id,
-          name: agent.name,
+          id: engine.id,
+          name: engine.name,
           status: unavailable ? "unavailable" : "ready",
         }
       }),
-    [chatAgentOptions, isAgentOptionDisabled],
+    [isEngineOptionDisabled],
   )
   const handleEngineSelect = useCallback(
-    (engine: AgentChatProvider) => {
-      const agent = chatAgentOptions.find((option) => option.id === engine)
-      if (!agent) return
-      handleAgentSelect(agent)
+    (engineId: ChatEngineId) => {
+      const engine = engines.find((option) => option.id === engineId)
+      if (!engine) return
+      selectEngine(engine)
     },
-    [chatAgentOptions, handleAgentSelect],
+    [selectEngine],
   )
   // Get available models (with offline support)
   const { claudeModels, codexModels } = useModelCatalogStore()
@@ -689,7 +673,7 @@ export function NewChatForm({
   ])
 
   const selectedChatModel = useMemo(() => {
-    if (selectedAgent.id === "codex") {
+    if (selectedEngine.id === "codex") {
       const selectedProfileId = parseProviderProfileSource(
         lastSelectedCodexModelSource,
       )
@@ -708,45 +692,41 @@ export function NewChatForm({
   }, [
     lastSelectedCodexModelSource,
     providerProfiles,
-    selectedAgent.id,
+    selectedEngine.id,
     selectedClaudeProviderProfile,
     selectedCodexModel.id,
     selectedCodexThinking,
     selectedModel?.id,
   ])
-  const selectedRuntimeProvider: AgentChatProvider = isAgentChatProvider(
-    selectedAgent.id,
-  )
-    ? selectedAgent.id
-    : "claude-code"
+  const selectedEngineId = selectedEngine.id
   const selectedChatBinding = useMemo(() => {
     const selectedProviderProfile =
-      selectedRuntimeProvider === "codex"
+      selectedEngineId === "codex"
         ? selectedCodexProviderProfile
         : selectedClaudeProviderProfile
     if (selectedProviderProfile) {
       return createProviderProfileChatSessionBindingWrite({
-        runtime: selectedRuntimeProvider,
+        runtime: selectedEngineId,
         profile: selectedProviderProfile,
       })
     }
 
     return normalizeChatSessionBindingWrite({
-      runtime: selectedRuntimeProvider,
+      runtime: selectedEngineId,
       providerProfileId:
-        selectedRuntimeProvider === "codex"
+        selectedEngineId === "codex"
           ? selectedCodexProfileId
           : selectedClaudeProfileId,
       modelId:
-        selectedRuntimeProvider === "codex"
+        selectedEngineId === "codex"
           ? selectedCodexModel.id
           : selectedChatModel,
       modelSource:
-        selectedRuntimeProvider === "codex"
+        selectedEngineId === "codex"
           ? lastSelectedCodexModelSource
           : effectiveClaudeModelSource,
       thinkingLevel:
-        selectedRuntimeProvider === "codex" ? selectedCodexThinking : null,
+        selectedEngineId === "codex" ? selectedCodexThinking : null,
     })
   }, [
     effectiveClaudeModelSource,
@@ -758,7 +738,7 @@ export function NewChatForm({
     selectedCodexProviderProfile,
     selectedCodexProfileId,
     selectedCodexThinking,
-    selectedRuntimeProvider,
+    selectedEngineId,
   ])
 
   // Determine current Ollama model (selected or recommended)
@@ -767,7 +747,7 @@ export function NewChatForm({
     availableModels.recommendedModel ||
     availableModels.ollamaModels[0]
   const selectedModelLabel = useMemo(() => {
-    if (selectedAgent.id === "codex") {
+    if (selectedEngine.id === "codex") {
       const selectedProfileId = parseProviderProfileSource(
         lastSelectedCodexModelSource,
       )
@@ -794,7 +774,7 @@ export function NewChatForm({
 
     return selectedModel.displayLabel
   }, [
-    selectedAgent.id,
+    selectedEngine.id,
     providerProfiles,
     selectedCodexModel.displayLabel,
     availableModels.isOffline,
@@ -904,13 +884,13 @@ export function NewChatForm({
   const imageModelVision = useMemo(
     () =>
       resolveChatImageModelVision({
-        provider: selectedRuntimeProvider,
+        provider: selectedEngineId,
         modelSource:
-          selectedRuntimeProvider === "claude-code"
+          selectedEngineId === "claude-code"
             ? effectiveClaudeModelSource
             : lastSelectedCodexModelSource,
         providerProfileId:
-          selectedRuntimeProvider === "claude-code"
+          selectedEngineId === "claude-code"
             ? selectedClaudeProfileId
             : selectedCodexProfileId,
         providerProfiles,
@@ -921,15 +901,15 @@ export function NewChatForm({
       providerProfiles,
       selectedClaudeProfileId,
       selectedCodexProfileId,
-      selectedRuntimeProvider,
+      selectedEngineId,
     ],
   )
   const imageAttachmentCapability = useMemo(
     () =>
       getChatImageAttachmentCapability({
-        provider: selectedRuntimeProvider,
+        provider: selectedEngineId,
         offlineModeEnabled:
-          selectedAgent.id === "claude-code" &&
+          selectedEngine.id === "claude-code" &&
           availableModels.isOffline &&
           availableModels.hasOllama,
         modelVision: imageModelVision,
@@ -938,8 +918,8 @@ export function NewChatForm({
       availableModels.hasOllama,
       availableModels.isOffline,
       imageModelVision,
-      selectedAgent.id,
-      selectedRuntimeProvider,
+      selectedEngine.id,
+      selectedEngineId,
     ],
   )
   const imageAttachmentBlocked =
@@ -1408,7 +1388,7 @@ export function NewChatForm({
     }
     if (
       isFolderlessQuickChat &&
-      (!quickChatRuntimeGateLoaded || !selectedAgentIsRuntimeAllowed)
+      (!quickChatRuntimeGateLoaded || !selectedEngineIsRuntimeAllowed)
     ) {
       toast.error(t("quickChat.providerUnavailable"))
       return
@@ -1422,7 +1402,7 @@ export function NewChatForm({
       return
     }
     if (
-      selectedAgent.id === "claude-code" &&
+      selectedEngine.id === "claude-code" &&
       selectedClaudeModelSource === "custom-provider" &&
       !claudeSourceNormalization
     ) {
@@ -1430,7 +1410,7 @@ export function NewChatForm({
       return
     }
     if (
-      selectedAgent.id === "claude-code" &&
+      selectedEngine.id === "claude-code" &&
       claudeSourceNormalization &&
       !claudeSourceNormalization.ok
     ) {
@@ -1474,7 +1454,7 @@ export function NewChatForm({
     projectForChat,
     isFolderlessQuickChat,
     quickChatRuntimeGateLoaded,
-    selectedAgentIsRuntimeAllowed,
+    selectedEngineIsRuntimeAllowed,
     createChatMutation,
     hasContent,
     selectedBranch,
@@ -1484,8 +1464,8 @@ export function NewChatForm({
     files,
     pastedTexts,
     selectedChatModel,
-    selectedAgent.id,
-    selectedRuntimeProvider,
+    selectedEngine.id,
+    selectedEngineId,
     selectedChatBinding,
     lastSelectedCodexModelSource,
     effectiveClaudeModelSource,
@@ -2294,14 +2274,14 @@ export function NewChatForm({
                     )}
 
                     <AgentEngineSelector
-                      selectedEngineId={selectedRuntimeProvider}
+                      selectedEngineId={selectedEngineId}
                       options={engineOptions}
                       onSelectEngine={handleEngineSelect}
                     />
 
                     <div className="group/model-controls flex min-w-0 flex-1 items-center gap-0.5">
                       <RuntimeModelSelector
-                        selectedEngineId={selectedRuntimeProvider}
+                        selectedEngineId={selectedEngineId}
                         modelOpen={isModelDropdownOpen}
                         onModelOpenChange={setIsModelDropdownOpen}
                         selectedModelLabel={selectedModelLabel}
@@ -2490,7 +2470,7 @@ export function NewChatForm({
                               imageAttachmentBlocked ||
                               (isFolderlessQuickChat &&
                                 (!quickChatRuntimeGateLoaded ||
-                                  !selectedAgentIsRuntimeAllowed)),
+                                  !selectedEngineIsRuntimeAllowed)),
                           )}
                           onClick={handleSend}
                           mode={effectiveMode}

@@ -47,6 +47,7 @@ import {
   shouldShowNoFailedGitHubChecks,
   type GitHubWorkflowStatusUiReason,
 } from "../../../../shared/github-workflow-ui-state"
+import { isManagedWorktreePath } from "../../../../shared/worktree-path"
 import { EDITOR_ICONS } from "@/lib/editor-icons"
 import { useI18n } from "@/lib/i18n"
 import { pendingGitHubContextMessageAtom } from "../../agents/atoms"
@@ -469,7 +470,7 @@ export const InfoSection = memo(function InfoSection({
           currentPrContext?.status === "unavailable"
         ? currentPrContext.branch
         : undefined)
-  const isWorktree = !!worktreePath && worktreePath.includes(".21st/worktrees")
+  const isWorktree = !!worktreePath && isManagedWorktreePath(worktreePath)
   const terminalScopeKey = useMemo(() => {
     if (!worktreePath) return `ws:${chatId}`
     return isWorktree ? `ws:${chatId}` : `path:${worktreePath}`
@@ -1400,7 +1401,7 @@ export const InfoSection = memo(function InfoSection({
           tooltip={t("details.openInFinder")}
         />
       )}
-      {/* Open in Editor - only for actual git worktrees (under ~/.21st/worktrees/) */}
+      {/* Open in Editor - only for app-managed git worktrees. */}
       {isWorktree && (
         <div className="flex items-center min-h-[28px]">
           <div className="flex items-center gap-1.5 w-[100px] flex-shrink-0">

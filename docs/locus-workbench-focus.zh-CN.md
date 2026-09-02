@@ -24,8 +24,8 @@ runtime hub。
 当前代码已经有足够底座，不需要继续横向发散：
 
 - engine 集合封闭为两个：Claude Code 和 Codex，并已有 capability manifest 和 run gate
-- Codex desktop/chat adapter 只使用 app-server；ACP 仅保留为 Locus 自有的 `locus acp`
-  stdio surface，不是 Codex desktop adapter
+- Codex desktop/chat adapter 只使用 app-server；Locus 自有的 `locus jobs-stdio`
+  JSON-RPC job surface 不是 ACP，也不是 Codex desktop adapter
 - local job 层已经支持 `locus run`、`locus jobs`、daemon、schedule、API run、status、
   event、cancel、retry 和 heartbeat
 - provider profile 和 provider gateway 已能表达第三方或本地模型后端，并避免把 provider
@@ -103,7 +103,7 @@ Locus 是一个用于在真实 Git 仓库上安全并行运行 coding agent 的�
 现有 per-Workspace diff/review surface
 Claude Code 和 Codex 是封闭的 engine 集合
 Codex app-server 用于 desktop/chat
-Locus 自有的 `locus acp` stdio surface
+Locus 自有的 `locus jobs-stdio` JSON-RPC job surface（不是 ACP）
 Workspace 隔离是下一个需单独获批的切片
 ```
 

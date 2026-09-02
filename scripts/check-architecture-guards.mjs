@@ -2943,6 +2943,7 @@ function assertOwnershipDocs() {
     "## Renderer Chat Message Model And Hydration",
     "## Chat Session Binding",
     "## Chat Maintenance Fence",
+    "## Managed Worktree Path Parsing",
     "## Guard Decisions",
     "## Provider Credentials",
     "## Claude Desktop Chat Runtime",
@@ -3003,6 +3004,64 @@ function assertRuntimeCapabilitySingleOwner() {
   if (/\bcapability\(\s*\{/.test(codexFacade)) {
     fail(
       "src/shared/codex-runtime-capabilities.ts must remain a facade, not a second capability manifest.",
+    )
+  }
+}
+
+function assertEngineIdSingleOwner() {
+  const owner = "src/shared/agent-runtime-capabilities.ts"
+  const metadataAdapter = "src/shared/chat-engine-id.ts"
+  const bindingVocabulary = "src/shared/chat-session-binding.ts"
+  const messageModel = "src/shared/chat-message.ts"
+  const content = readText(metadataAdapter)
+
+  if (
+    !content.includes("CONTRACT_RUNTIME_IDS") ||
+    !content.includes('from "./agent-runtime-capabilities"')
+  ) {
+    fail(
+      `${metadataAdapter} must import engine identity from CONTRACT_RUNTIME_IDS in ${owner}. See docs/OWNERSHIP_MAP.md.`,
+    )
+  }
+  if (!content.includes("agentChatProviders = CONTRACT_RUNTIME_IDS")) {
+    fail(
+      `${metadataAdapter} must derive agentChatProviders from CONTRACT_RUNTIME_IDS in ${owner}. See docs/OWNERSHIP_MAP.md.`,
+    )
+  }
+  if (!content.includes("ChatEngineId = AgentRuntimeContractId")) {
+    fail(
+      `${metadataAdapter} must derive ChatEngineId from AgentRuntimeContractId in ${owner}. See docs/OWNERSHIP_MAP.md.`,
+    )
+  }
+  if (
+    /\[[^\]]*["'](?:claude-code|codex)["'][^\]]*\]\s*as\s+const/s.test(content)
+  ) {
+    fail(
+      `${metadataAdapter} must not declare an independent engine-id enum; derive it from CONTRACT_RUNTIME_IDS in ${owner}. See docs/OWNERSHIP_MAP.md.`,
+    )
+  }
+
+  const bindingContent = readText(bindingVocabulary)
+  if (
+    !bindingContent.includes(
+      "CHAT_SESSION_BINDING_RUNTIMES = CONTRACT_RUNTIME_IDS",
+    ) ||
+    !bindingContent.includes(
+      "ChatSessionBindingRuntime = AgentRuntimeContractId",
+    )
+  ) {
+    fail(
+      `${bindingVocabulary} must derive its Engine IDs and type from CONTRACT_RUNTIME_IDS in ${owner}. See docs/OWNERSHIP_MAP.md.`,
+    )
+  }
+
+  const messageContent = readText(messageModel)
+  if (
+    !messageContent.includes("agentChatProviders") ||
+    !messageContent.includes("provider: z.enum(agentChatProviders)")
+  ) {
+    fail(
+      `${messageModel} must validate persisted provider values through the chat Engine adapter derived from ${owner}. See docs/OWNERSHIP_MAP.md.`,
     )
   }
 }
@@ -3594,7 +3653,7 @@ const CHAT_SESSION_BINDING_OWNER = "src/main/lib/chat-session-binding.ts"
 const CHAT_SESSION_BINDING_SCHEMA = "src/main/lib/db/schema/index.ts"
 const CHAT_SESSION_BINDING_TRANSPORTS = [
   "src/renderer/features/agents/lib/ipc-chat-transport.ts",
-  "src/renderer/features/agents/lib/acp-chat-transport.ts",
+  "src/renderer/features/agents/lib/codex-app-server-chat-transport.ts",
 ]
 const CHAT_SESSION_BINDING_INPUT_SCHEMAS = [
   "src/main/lib/claude/chat-input-schema.ts",
@@ -3615,7 +3674,7 @@ const CHAT_SESSION_BINDING_TABLE_OWNERS = new Set([
 ])
 const CHAT_SESSION_BINDING_INFERENCE_OWNERS = new Set([
   CHAT_SESSION_BINDING_OWNER,
-  "src/shared/agent-chat-provider.ts",
+  "src/shared/chat-engine-id.ts",
 ])
 
 function retiredChatBindingAtomFamiliesIn(content) {
@@ -3627,7 +3686,7 @@ function retiredChatBindingAtomFamiliesIn(content) {
 function hasDisallowedChatBindingInference(filePath, content) {
   return (
     !CHAT_SESSION_BINDING_INFERENCE_OWNERS.has(filePath) &&
-    /\binferAgentChatProviderFromMessages\b/.test(content)
+    /\binferChatEngineIdFromMessages\b/.test(content)
   )
 }
 
@@ -3818,11 +3877,11 @@ function assertChatSessionBindingGuardSelfTest() {
   if (
     !hasDisallowedChatBindingInference(
       "src/renderer/fixture.ts",
-      "inferAgentChatProviderFromMessages(messages)",
+      "inferChatEngineIdFromMessages(messages)",
     ) ||
     hasDisallowedChatBindingInference(
       CHAT_SESSION_BINDING_OWNER,
-      "inferAgentChatProviderFromMessages(messages)",
+      "inferChatEngineIdFromMessages(messages)",
     )
   ) {
     fail(
@@ -4209,6 +4268,7 @@ if (updateArchitectureBaselines) {
   assertPackageScripts()
   assertCiRunsArchitectureCheck()
   assertRuntimeCapabilitySingleOwner()
+  assertEngineIdSingleOwner()
   assertGuardDecisionSingleOwner()
   assertRuntimeEventSinglePath()
   assertRuntimeEventStateOwner()

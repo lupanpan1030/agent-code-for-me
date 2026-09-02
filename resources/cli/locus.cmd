@@ -15,10 +15,11 @@ if "%COMMAND%"=="api" goto headless
 if "%COMMAND%"=="daemon" goto headless
 if "%COMMAND%"=="schedules" goto headless
 if "%COMMAND%"=="schedule" goto headless
-if "%COMMAND%"=="acp" goto headless
+if "%COMMAND%"=="jobs-stdio" goto headless
 if "%COMMAND%"=="version" goto headless
 if "%COMMAND%"=="--version" goto headless
 if "%COMMAND%"=="-v" goto headless
+if "%COMMAND%"=="acp" goto retired_acp
 if "%COMMAND%"=="open" goto gui_open
 if "%COMMAND%"=="gui" goto gui_open
 goto gui_default
@@ -30,6 +31,10 @@ if not exist "%LOCUS_EXE%" (
 )
 "%LOCUS_EXE%" --locus-headless-cli %*
 exit /b %ERRORLEVEL%
+
+:retired_acp
+echo Unknown command: acp 1>&2
+exit /b 2
 
 :gui_open
 shift

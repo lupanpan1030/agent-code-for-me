@@ -70,4 +70,21 @@ describe("git activity changed-file extraction", () => {
     expect(parts.some(isSuccessfulFileChangeToolPart)).toBe(false)
     expect(extractChangedFiles(parts)).toEqual([])
   })
+
+  test("normalizes a Windows managed-worktree display path", () => {
+    const parts = [
+      {
+        type: "tool-Write",
+        state: "result",
+        input: {
+          file_path:
+            "C:\\Users\\ethan\\.21st\\worktrees\\repo\\branch\\src\\new.ts",
+          content: "content",
+        },
+        output: { type: "create" },
+      },
+    ]
+
+    expect(extractChangedFiles(parts)[0]?.displayPath).toBe("src/new.ts")
+  })
 })

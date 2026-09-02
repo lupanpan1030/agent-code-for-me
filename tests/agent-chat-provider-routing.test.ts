@@ -1,13 +1,33 @@
 import { describe, expect, test } from "bun:test"
+import { CONTRACT_RUNTIME_IDS } from "../src/shared/agent-runtime-capabilities"
 import {
   agentChatProviders,
   buildAgentChatMessageMetadata,
-  inferAgentChatProviderFromMessages,
+  inferChatEngineIdFromMessages,
   normalizeAgentChatMetadataModel,
-} from "../src/shared/agent-chat-provider"
+  normalizeChatEngineId,
+} from "../src/shared/chat-engine-id"
+import { chatMessageMetadataSchema } from "../src/shared/chat-message"
+import { CHAT_SESSION_BINDING_RUNTIMES } from "../src/shared/chat-session-binding"
 import { providerProfileSource } from "../src/shared/provider-profile-types"
 
-describe("agent chat provider routing metadata", () => {
+describe("chat engine routing metadata", () => {
+  test("derives supported Engine IDs directly from the runtime contract", () => {
+    expect(agentChatProviders).toBe(CONTRACT_RUNTIME_IDS)
+    expect(CHAT_SESSION_BINDING_RUNTIMES).toBe(CONTRACT_RUNTIME_IDS)
+    expect(normalizeChatEngineId("claude-code")).toBe("claude-code")
+    expect(normalizeChatEngineId("codex")).toBe("codex")
+    expect(normalizeChatEngineId("skunkworks")).toBeNull()
+    for (const provider of CONTRACT_RUNTIME_IDS) {
+      expect(chatMessageMetadataSchema.safeParse({ provider }).success).toBe(
+        true,
+      )
+    }
+    expect(
+      chatMessageMetadataSchema.safeParse({ provider: "skunkworks" }).success,
+    ).toBe(false)
+  })
+
   test("persists explicit Codex provider metadata for provider-profile models", () => {
     const metadata = buildAgentChatMessageMetadata({
       model: "deepseek-v4-flash",
@@ -22,15 +42,15 @@ describe("agent chat provider routing metadata", () => {
       modelSource: "provider-profile:profile-deepseek",
       providerProfileId: "profile-deepseek",
     })
-    expect(inferAgentChatProviderFromMessages([{ metadata }])).toBe("codex")
+    expect(inferChatEngineIdFromMessages([{ metadata }])).toBe("codex")
   })
 
   test("keeps legacy model-name inference as a fallback only", () => {
     expect(
-      inferAgentChatProviderFromMessages([{ metadata: { model: "gpt-5.5" } }]),
+      inferChatEngineIdFromMessages([{ metadata: { model: "gpt-5.5" } }]),
     ).toBe("codex")
     expect(
-      inferAgentChatProviderFromMessages([
+      inferChatEngineIdFromMessages([
         { metadata: { model: "deepseek-v4-flash" } },
       ]),
     ).toBe("claude-code")
@@ -56,7 +76,7 @@ describe("agent chat provider routing metadata", () => {
     ]
 
     for (const message of legacyOrUnknownMessages) {
-      const provider = inferAgentChatProviderFromMessages([message])
+      const provider = inferChatEngineIdFromMessages([message])
       expect(provider).toBe("claude-code")
       expect(agentChatProviders).toContain(provider)
     }
@@ -64,7 +84,7 @@ describe("agent chat provider routing metadata", () => {
 
   test("explicit provider metadata wins over model-name inference", () => {
     expect(
-      inferAgentChatProviderFromMessages([
+      inferChatEngineIdFromMessages([
         { metadata: { model: "gpt-5.5", provider: "claude-code" } },
       ]),
     ).toBe("claude-code")

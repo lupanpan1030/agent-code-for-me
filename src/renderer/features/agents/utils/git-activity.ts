@@ -1,3 +1,5 @@
+import { parseManagedWorktreeRelativePath } from "../../../../shared/worktree-path"
+
 export interface GitCommitInfo {
   type: "commit"
   message: string
@@ -187,11 +189,8 @@ function toRelativePath(filePath: string, projectPath?: string): string {
     const relative = filePath.slice(projectPath.length)
     return relative.startsWith("/") ? relative.slice(1) : relative
   }
-  // Handle worktree paths: /Users/.../.21st/worktrees/{chatId}/{subChatId}/relativePath
-  const worktreeMatch = filePath.match(/\.21st\/worktrees\/[^/]+\/[^/]+\/(.+)$/)
-  if (worktreeMatch) {
-    return worktreeMatch[1]!
-  }
+  const worktreeRelativePath = parseManagedWorktreeRelativePath(filePath)
+  if (worktreeRelativePath) return worktreeRelativePath
   return filePath.split("/").pop() || filePath
 }
 

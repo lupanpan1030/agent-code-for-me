@@ -1,10 +1,10 @@
 import { useAtom } from "jotai"
 import { useEffect } from "react"
-import type { AgentChatProvider } from "../../../../shared/agent-chat-provider"
 import {
   type ChatImageAttachmentPart,
   isSupportedChatImageMediaType,
 } from "../../../../shared/chat-attachments"
+import type { ChatEngineId } from "../../../../shared/chat-engine-id"
 import type { ChatSessionBinding } from "../../../../shared/chat-session-binding"
 import type { LongTextAttachmentPart } from "../../../../shared/long-text-attachments"
 import { pendingAuthRetryMessageAtom } from "../atoms"
@@ -32,7 +32,7 @@ export function useAuthRetry({
   sendMessage,
 }: {
   subChatId: string
-  provider: AgentChatProvider
+  provider: ChatEngineId
   binding: ChatSessionBinding
   isStreaming: boolean
   sendMessage: SendAuthRetryMessage

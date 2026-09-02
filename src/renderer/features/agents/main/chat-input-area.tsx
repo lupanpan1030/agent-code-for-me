@@ -5,13 +5,13 @@ import { ChevronDown, RefreshCw } from "lucide-react"
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import { toast } from "sonner"
-import type { AgentChatProvider } from "../../../../shared/agent-chat-provider"
 import type { AgentScopeContract } from "../../../../shared/agent-scope-contracts"
 import {
   getChatImageAttachmentCapability,
   resolveChatImageModelVision,
 } from "../../../../shared/chat-attachment-capabilities"
 import type { ChatImageAttachmentSource } from "../../../../shared/chat-attachments"
+import type { ChatEngineId } from "../../../../shared/chat-engine-id"
 import {
   type ChatSessionBinding,
   type ChatSessionBindingWriteInput,
@@ -275,7 +275,7 @@ export interface ChatInputAreaProps {
   ) => Promise<void>
   // Callback to continue chat with a different provider (creates new sub-chat with history)
   onContinueWithProvider?: (
-    provider: AgentChatProvider,
+    provider: ChatEngineId,
     selection?: ContinueWithProviderSelection,
   ) => void
   // Whether this sub-chat tab is the active/visible one (prevents window-level hotkeys in background tabs)
@@ -1385,9 +1385,7 @@ export const ChatInputArea = memo(function ChatInputArea({
     } else {
       // Invoke synchronously so the parent captures uncontrolled input and
       // attachments before the pending update can remount this component.
-      void runPendingSubmit((context) =>
-        onSend(waitForBindingUpdate, context),
-      )
+      void runPendingSubmit((context) => onSend(waitForBindingUpdate, context))
     }
   }, [
     editorRef,
@@ -1900,9 +1898,7 @@ export const ChatInputArea = memo(function ChatInputArea({
         await onSendFromQueue(firstQueueItemId, context)
       })
     } else {
-      void runPendingSubmit((context) =>
-        onSend(waitForBindingUpdate, context),
-      )
+      void runPendingSubmit((context) => onSend(waitForBindingUpdate, context))
     }
   }, [
     blockInvalidClaudeModelSource,

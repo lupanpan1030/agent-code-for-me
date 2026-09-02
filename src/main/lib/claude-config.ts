@@ -8,6 +8,12 @@ import * as os from "node:os"
 import * as path from "node:path"
 import { Mutex } from "async-mutex"
 import { eq } from "drizzle-orm"
+import {
+  isManagedWorktreePath,
+  MANAGED_WORKTREE_PATH_SEGMENTS,
+  normalizeManagedWorktreePath,
+  parseManagedWorktreePath,
+} from "../../shared/worktree-path"
 import { getDatabase } from "./db"
 import { chats, projects } from "./db/schema"
 
@@ -313,8 +319,7 @@ export function removeMcpServerConfig(
 
 /**
  * Resolve original project path from a worktree path.
- * Supports legacy (~/.21st/worktrees/{projectId}/{chatId}/) and
- * new format (~/.21st/worktrees/{projectName}/{worktreeFolder}/).
+ * Supports legacy project-id/chat-id and current project-slug/folder layouts.
  *
  * @param pathToResolve - Either a worktree path or regular project path
  * @returns The original project path, or the input if not a worktree, or null if resolution fails
@@ -322,28 +327,20 @@ export function removeMcpServerConfig(
 export function resolveProjectPathFromWorktree(
   pathToResolve: string,
 ): string | null {
-  const worktreeMarker = path.join(".21st", "worktrees")
-
-  // Normalize for cross-platform (handle both / and \ separators)
-  const normalizedPath = pathToResolve.replace(/\\/g, "/")
-  const normalizedMarker = worktreeMarker.replace(/\\/g, "/")
-
-  if (!normalizedPath.includes(normalizedMarker)) {
-    // Not a worktree path, return as-is
-    return pathToResolve
+  const parsedWorktreePath = parseManagedWorktreePath(pathToResolve)
+  if (!parsedWorktreePath) {
+    return isManagedWorktreePath(pathToResolve) ? null : pathToResolve
   }
 
   try {
-    // Extract segments from path structure
-    // Path format: /Users/.../.21st/worktrees/{projectSlug}/{worktreeFolder}
-    const worktreeBase = path.join(os.homedir(), ".21st", "worktrees")
-    const normalizedBase = worktreeBase.replace(/\\/g, "/")
-    const relativePath = normalizedPath
-      .replace(normalizedBase, "")
-      .replace(/^\//, "")
-
-    const parts = relativePath.split("/")
-    if (parts.length < 1 || !parts[0]) {
+    const worktreeBase = path.join(
+      os.homedir(),
+      ...MANAGED_WORKTREE_PATH_SEGMENTS,
+    )
+    if (
+      parsedWorktreePath.managedRootPath !==
+      normalizeManagedWorktreePath(worktreeBase)
+    ) {
       return null
     }
 
@@ -353,7 +350,7 @@ export function resolveProjectPathFromWorktree(
     const projectById = db
       .select({ path: projects.path })
       .from(projects)
-      .where(eq(projects.id, parts[0]))
+      .where(eq(projects.id, parsedWorktreePath.projectDirectory))
       .get()
 
     if (projectById) {
@@ -362,24 +359,26 @@ export function resolveProjectPathFromWorktree(
 
     // Strategy 2: New format - folder name is the project name.
     // Look up via chats.worktreePath which stores the full path.
-    if (parts.length >= 2) {
-      const expectedWorktreePath = path.join(worktreeBase, parts[0], parts[1])
-      const chat = db
-        .select({ projectId: chats.projectId })
-        .from(chats)
-        .where(eq(chats.worktreePath, expectedWorktreePath))
+    const expectedWorktreePath = path.join(
+      worktreeBase,
+      parsedWorktreePath.projectDirectory,
+      parsedWorktreePath.worktreeDirectory,
+    )
+    const chat = db
+      .select({ projectId: chats.projectId })
+      .from(chats)
+      .where(eq(chats.worktreePath, expectedWorktreePath))
+      .get()
+
+    if (chat?.projectId) {
+      const project = db
+        .select({ path: projects.path })
+        .from(projects)
+        .where(eq(projects.id, chat.projectId))
         .get()
 
-      if (chat?.projectId) {
-        const project = db
-          .select({ path: projects.path })
-          .from(projects)
-          .where(eq(projects.id, chat.projectId))
-          .get()
-
-        if (project) {
-          return project.path
-        }
+      if (project) {
+        return project.path
       }
     }
 

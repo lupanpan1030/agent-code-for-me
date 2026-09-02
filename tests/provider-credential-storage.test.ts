@@ -115,7 +115,7 @@ describe("provider credential storage hardening", () => {
     const transportSource = readFileSync(
       join(
         process.cwd(),
-        "src/renderer/features/agents/lib/acp-chat-transport.ts",
+        "src/renderer/features/agents/lib/codex-app-server-chat-transport.ts",
       ),
       "utf-8",
     )

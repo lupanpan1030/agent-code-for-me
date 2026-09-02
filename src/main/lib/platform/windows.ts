@@ -13,6 +13,49 @@ import type {
   EnvironmentConfig,
 } from "./types"
 
+export function buildWindowsCliWrapper(executablePath: string): string {
+  return [
+    "@echo off",
+    `set "LOCUS_HEADLESS_EXECUTABLE=${executablePath}"`,
+    'set "COMMAND=%~1"',
+    'if "%COMMAND%"=="" set "COMMAND=open"',
+    'if "%COMMAND%"=="run" goto headless',
+    'if "%COMMAND%"=="jobs" goto headless',
+    'if "%COMMAND%"=="jobs-stdio" goto headless',
+    'if "%COMMAND%"=="acp" goto retired_acp',
+    'if "%COMMAND%"=="open" goto gui_open',
+    'if "%COMMAND%"=="gui" goto gui_open',
+    "goto gui_default",
+    "",
+    ":headless",
+    '"%LOCUS_HEADLESS_EXECUTABLE%" --locus-headless-cli %*',
+    "exit /b %ERRORLEVEL%",
+    "",
+    ":retired_acp",
+    "echo Unknown command: acp 1>&2",
+    "exit /b 2",
+    "",
+    ":gui_open",
+    "shift",
+    'set "DIR=%~1"',
+    'if "%DIR%"=="" set "DIR=%CD%"',
+    "goto gui",
+    "",
+    ":gui_default",
+    'set "DIR=%~1"',
+    'if "%DIR%"=="" set "DIR=%CD%"',
+    "",
+    ":gui",
+    'for %%I in ("%DIR%") do set "ABS_DIR=%%~fI"',
+    'if not exist "%ABS_DIR%\\" (',
+    "  echo Error: Invalid directory 1>&2",
+    "  exit /b 1",
+    ")",
+    'start "" "%LOCUS_HEADLESS_EXECUTABLE%" "%ABS_DIR%"',
+    "",
+  ].join("\r\n")
+}
+
 export class WindowsPlatformProvider extends BasePlatformProvider {
   readonly platform = "win32" as const
   readonly displayName = "Windows"
@@ -106,45 +149,8 @@ export class WindowsPlatformProvider extends BasePlatformProvider {
     return "en_US.UTF-8"
   }
 
-  private buildCliWrapper(executablePath: string): string {
-    return [
-      "@echo off",
-      `set "LOCUS_HEADLESS_EXECUTABLE=${executablePath}"`,
-      'set "COMMAND=%~1"',
-      'if "%COMMAND%"=="" set "COMMAND=open"',
-      'if "%COMMAND%"=="run" goto headless',
-      'if "%COMMAND%"=="jobs" goto headless',
-      'if "%COMMAND%"=="open" goto gui_open',
-      'if "%COMMAND%"=="gui" goto gui_open',
-      "goto gui_default",
-      "",
-      ":headless",
-      '"%LOCUS_HEADLESS_EXECUTABLE%" --locus-headless-cli %*',
-      "exit /b %ERRORLEVEL%",
-      "",
-      ":gui_open",
-      "shift",
-      'set "DIR=%~1"',
-      'if "%DIR%"=="" set "DIR=%CD%"',
-      "goto gui",
-      "",
-      ":gui_default",
-      'set "DIR=%~1"',
-      'if "%DIR%"=="" set "DIR=%CD%"',
-      "",
-      ":gui",
-      'for %%I in ("%DIR%") do set "ABS_DIR=%%~fI"',
-      'if not exist "%ABS_DIR%\\" (',
-      "  echo Error: Invalid directory 1>&2",
-      "  exit /b 1",
-      ")",
-      'start "" "%LOCUS_HEADLESS_EXECUTABLE%" "%ABS_DIR%"',
-      "",
-    ].join("\r\n")
-  }
-
   async installCli(
-    sourcePath: string
+    sourcePath: string,
   ): Promise<{ success: boolean; error?: string; pathHint?: string }> {
     const cliConfig = this.getCliConfig()
     const installPath = cliConfig.installPath
@@ -157,7 +163,11 @@ export class WindowsPlatformProvider extends BasePlatformProvider {
     try {
       // Create directory and write a wrapper pinned to this app executable.
       await mkdir(installDir, { recursive: true })
-      await writeFile(installPath, this.buildCliWrapper(process.execPath), "utf-8")
+      await writeFile(
+        installPath,
+        buildWindowsCliWrapper(process.execPath),
+        "utf-8",
+      )
 
       const legacyInstallPath = path.join(installDir, "1code.cmd")
       const legacySourcePath = path.join(path.dirname(sourcePath), "1code.cmd")
@@ -178,7 +188,7 @@ export class WindowsPlatformProvider extends BasePlatformProvider {
       console.log("[CLI] Installed locus command to", installPath)
       console.log(
         "[CLI] To use from terminal, add to PATH:",
-        `$env:Path += ";${installDir}"`
+        `$env:Path += ";${installDir}"`,
       )
 
       return {

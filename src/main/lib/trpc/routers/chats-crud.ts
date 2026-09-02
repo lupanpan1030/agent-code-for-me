@@ -1,6 +1,6 @@
 import { and, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm"
 import { z } from "zod"
-import { buildAgentChatMessageMetadata } from "../../../../shared/agent-chat-provider"
+import { buildAgentChatMessageMetadata } from "../../../../shared/chat-engine-id"
 import { agentUserMessagePartSchema } from "../../../../shared/chat-message"
 import { normalizeChatSessionBindingWrite } from "../../../../shared/chat-session-binding"
 import {

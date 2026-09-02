@@ -198,8 +198,8 @@ describe("agent guard runtime pipeline", () => {
       "utf8",
     )
     const codexErrors = readFileSync("src/main/lib/codex/errors.ts", "utf8")
-    const acp = readFileSync(
-      "src/renderer/features/agents/lib/acp-chat-transport.ts",
+    const codexAppServerTransport = readFileSync(
+      "src/renderer/features/agents/lib/codex-app-server-chat-transport.ts",
       "utf8",
     )
     const runtimeEventState = readFileSync(
@@ -207,11 +207,13 @@ describe("agent guard runtime pipeline", () => {
       "utf8",
     )
 
-    expect(acp).toContain("approvedGuardedRunContractsAtom")
-    expect(acp).toContain("scopeContract")
-    expect(acp).toContain("applyRuntimeEventStateChunk")
+    expect(codexAppServerTransport).toContain("approvedGuardedRunContractsAtom")
+    expect(codexAppServerTransport).toContain("scopeContract")
+    expect(codexAppServerTransport).toContain("applyRuntimeEventStateChunk")
     expect(runtimeEventState).toContain('chunk.type === "guard-event"')
-    expect(acp).toContain('chunk.type === "capability-error"')
+    expect(codexAppServerTransport).toContain(
+      'chunk.type === "capability-error"',
+    )
     expect(codex).toContain("codexChatInputSchema")
     expect(codexChatInputSchema).toContain(
       "scopeContract: agentScopeContractInputSchema.optional()",
@@ -256,8 +258,8 @@ describe("agent guard runtime pipeline", () => {
       "src/main/lib/codex/runtime-status.ts",
       "utf8",
     )
-    const acp = readFileSync(
-      "src/renderer/features/agents/lib/acp-chat-transport.ts",
+    const codexAppServerTransport = readFileSync(
+      "src/renderer/features/agents/lib/codex-app-server-chat-transport.ts",
       "utf8",
     )
 
@@ -288,7 +290,7 @@ describe("agent guard runtime pipeline", () => {
     expect(codexRuntimeStatus).toContain('id: "provider-profile"')
     expect(codexRuntimeStatus).toContain('id: "mcp"')
     expect(codexRuntimeStatus).toContain('id: "local-only"')
-    expect(acp).toContain('chunk.type === "runtime-status"')
+    expect(codexAppServerTransport).toContain('chunk.type === "runtime-status"')
   })
 
   test("Codex rollback and fork controls fail closed instead of using Claude session semantics", () => {

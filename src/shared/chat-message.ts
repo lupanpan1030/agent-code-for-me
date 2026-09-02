@@ -8,11 +8,14 @@ import type {
   UIMessage,
 } from "ai"
 import { z } from "zod"
-import type { AgentChatMessageMetadata } from "./agent-chat-provider"
 import {
   type ChatImageAttachmentPart,
   supportedChatImageMediaTypes,
 } from "./chat-attachments"
+import {
+  type AgentChatMessageMetadata,
+  agentChatProviders,
+} from "./chat-engine-id"
 import {
   type LongTextAttachmentPart,
   longTextAttachmentKinds,
@@ -389,7 +392,7 @@ export const renderableMessagePartSchema = z.union([
 export const chatMessageMetadataSchema = z
   .object({
     model: z.string().optional(),
-    provider: z.enum(["claude-code", "codex"]).optional(),
+    provider: z.enum(agentChatProviders).optional(),
     modelSource: z.string().optional(),
     providerProfileId: z.string().optional(),
     sessionId: z.string().optional(),

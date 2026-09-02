@@ -60,7 +60,7 @@ describe("renderer chat session binding owner", () => {
     expect(activeChatSource).toContain("binding={binding}")
     const transportConstructors = [
       ...activeChatSource.matchAll(
-        /new (?:ACPChatTransport|IPCChatTransport)\(\{/g,
+        /new (?:CodexAppServerChatTransport|IPCChatTransport)\(\{/g,
       ),
     ]
     expect(transportConstructors).toHaveLength(4)
@@ -71,10 +71,10 @@ describe("renderer chat session binding owner", () => {
       )
       expect(constructorSource).toMatch(/binding(?:,|: newSubChat\.binding)/)
     }
-    expect(activeChatSource).not.toContain("inferAgentChatProviderFromMessages")
+    expect(activeChatSource).not.toContain("inferChatEngineIdFromMessages")
     expect(activeChatSource).not.toContain("subChatProviderOverrides")
     expect(activeChatSource).not.toMatch(
-      /instanceof (?:ACPChatTransport|IPCChatTransport)/,
+      /instanceof (?:CodexAppServerChatTransport|IPCChatTransport)/,
     )
     expect(
       activeChatSource.match(/key=\{getChatViewInstanceKey\(chat\)\}/g),
