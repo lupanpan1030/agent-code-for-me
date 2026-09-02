@@ -298,3 +298,23 @@ archive. No merge, archive, push, or remote operation is authorized by this reco
 The original `f89c7ee4` implementation receipts and three-view review record remain unchanged
 above. This section records only the wording-only successor and must not relabel old receipts as
 having run on the successor.
+
+## Targeted touch-up re-verification (2026-09-02, task 5.3a)
+
+- Scope reviewed: `08021f29..38ef174c` (wording touch-up only), receipts at `d27b4a47`
+  (independently confirmed: tasks 5.2a checkbox + receipts only).
+- Performed by the coordination session per the multi-view review's pre-declared protocol
+  (targeted diff review; full multi-view review not rerun).
+- Verified item-by-item: the P2 (R2 change-relative wording) is resolved by a renamed,
+  self-contained requirement enumerating the exact governed route families, with scenarios
+  updated and no over-inclusion (terminal sessions and global Codex/provider config remain
+  outside R2); all five bundled P3s landed (anchor `:52-117`; task 5.6 TICKET-114 routing;
+  R5 cross-project fingerprint disclosure; R6 Streamdown-chain dependency and missing
+  regression-test disclosure with follow-up A ownership; R1 historical-evidence status for
+  the operation-cluster inventory). Task-ledger split 5.2a/5.3/5.3a is accurate and does not
+  rewrite `f89c7ee4` history. Diff containment confirmed: zero changes outside the change
+  directory; worktree clean.
+
+**Targeted re-verification: APPROVED for `38ef174cd8423c05874aebdfbd9f921fad1c5a7a`.**
+Owner `ACCEPTED` (task 5.4) is now the only gate before archive (5.5) and mechanical
+closeout (5.6). No merge, archive, push, or remote operation is authorized by this record.
