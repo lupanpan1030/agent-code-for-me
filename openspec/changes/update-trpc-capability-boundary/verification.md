@@ -216,3 +216,47 @@ Expected normal-archive invariants (not current results):
 - active changes validate 1/1, living specs 52/52, and `--all` 53/53 if no follow-up is created;
 - archived audit becomes 107 passed / 6 failed / 113 total, with this change passing;
 - only the post-acceptance mechanical closeout may update `openspec/STATUS.md` and archived tasks.
+
+## Fresh-context Claude multi-view review (2026-09-02, per Owner D4)
+
+- Reviewed frozen source SHA: `f89c7ee4a104c79d4c362972be8cac9c982dbc68`; receipts read at
+  evidence commit `d8ff2d1b` (independently confirmed docs-only / evidence-only).
+- Three independent fresh-context lenses, each in its own uniquely-assigned isolated detached
+  worktree (rb-review-a/b/c; removed after review; main worktree untouched):
+  delta-vs-reality, governance/receipts, and overclaim-hunter.
+
+**All three lenses: `REVIEW_APPROVED` for `f89c7ee4`. No P0/P1.**
+
+Key confirmations (each independently reproduced): all 6 requirements / 18 scenarios traced
+to implementation and adversarial tests at exact file:line anchors; every self-reported
+receipt reproduced exactly (18-file suite 117/0/476; architecture guard pass; openspec
+target/changes/specs/all green; archived audit 106/6/112 with precisely the six pre-existing
+debts; build and diff:check green; full `check:full` blocked only by the documented
+TICKET-114 host limitation — node-pty/Electron natives); D1–D6 each implemented to the
+Owner's wording, including honest non-checkbox handling of unreceipted 4.4/4.5; descoped
+items each routed exactly once to follow-up A/B or residuals with no truth silently dropped;
+~40 spot-checked anchors accurate except one 2-line end-anchor drift.
+
+**One P2, fix required before archive** (coordination decision — the archived text must not
+carry change-relative wording into the living spec):
+
+- R2's "hardened by this change" becomes a dangling reference after verbatim merge into
+  `openspec/specs/runtime-security-baseline/spec.md`; that phrase is the load-bearing
+  exclusion for renderer path/cwd sinks that are NOT hardened. Fix: replace with an explicit,
+  self-contained enumeration (or reference to the scenario list) of the hardened route
+  families.
+
+P3 notes to bundle into the same touch-up (all one-line disclosures/corrections):
+① `github-clone.ts:52-119` end-anchor → `:52-117`; ② task 5.6 closeout enumeration should
+include the TICKET-114 CSP-smoke routing update; ③ R5: add one sentence disclosing that the
+approval fingerprint intentionally excludes `projectPath` (approved stdio commands re-approve
+across projects); ④ R6: add one sentence noting the sanitizer guarantee rests on Streamdown
+2.1.0's default chain with no retained in-repo malicious-HTML regression test (registered for
+follow-up A); ⑤ R1: name a living home (or explicit non-home disclosure) for the reviewed
+operation-cluster inventory after design.md archives. Remaining P3s (overlapping
+registered-root requirements post-archive → follow-up B consolidation; task 0.2 provenance
+anachronism; node-pty reproduction caveat) are recorded here and need no pre-archive action.
+
+Gate status: technical review complete for `f89c7ee4`; a wording touch-up + re-freeze +
+targeted delta re-verification (scope: the touch-up diff only) precede Owner `ACCEPTED` and
+archive. No merge, archive, push, or remote operation is authorized by this record.
