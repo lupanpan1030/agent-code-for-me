@@ -566,3 +566,14 @@ mutation, remote merge, release, or any repository-rules change.
   disjoint isolation paths up front; ② edits inside another party's verdict section should be
   routed through that verdict's owner (or clearly marked as an annotation) rather than made
   in place, even when accurate.
+
+## Owner acceptance (2026-09-02)
+
+**Owner `ACCEPTED`** recorded via the coordination session on 2026-09-02 for source SHA
+`9a80a755eac1baf4e8c26e61b200c85446cca995`, with the full evidence chain through
+`7e908b2f` (dual `REVIEW_APPROVED`, incident addendum). Gates 4-6 closeout is now
+authorized: local fast-forward merge into `main`, post-merge `bun run check:full` on the
+merge SHA, and `openspec archive`. The Owner has additionally authorized a one-time remote
+push of local `main` to `origin/main` after closeout of this change and
+`fix-nested-project-cwd-resolution` completes; the push must be recorded here against the
+exact post-closeout `main` SHA. No other remote operation is authorized.
