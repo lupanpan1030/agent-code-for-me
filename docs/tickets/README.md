@@ -44,8 +44,10 @@
 本批工单不再是待办，保留仅作记录。Phase 1 的收敛成果（服务端从注册实体解析 cwd、拒绝渲染层伪造）
 是 **worktree-per-run + cwd 租约** 工作的现成基础，见 [../ideas/cross-engine-delegation.md](../ideas/cross-engine-delegation.md) P1-2。
 
-Phase 2（渲染层 markdown/webview 隔离）与 Phase 3（capability 中间件/consent/audit）仍未拆工单，
-对应 openspec `update-trpc-capability-boundary` 剩余的 8 条任务。
+Phase 2（渲染层 markdown/webview 隔离）已由归档后的 follow-up Draft OpenSpec
+`add-renderer-untrusted-content-hardening` 承接（尚未 Owner `APPROVED`，不得实施）；Phase 3
+（capability 中间件/consent/audit）的 follow-up B 尚未创建。原
+`update-trpc-capability-boundary` 已按实装真相归档，不再承载“剩余 8 条任务”。
 
 ## 第三批 — 并行安全（2026-08-12 路线图梳理产出）
 

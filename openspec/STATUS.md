@@ -8,6 +8,7 @@ Updated: 2026-09-07 (Pacific/Auckland)
 
 | Change | State | Concrete next gate |
 | --- | --- | --- |
+| `add-renderer-untrusted-content-hardening` | Draft (R3; three drafting lenses clear; implementation not approved) | Owner decides the eight explicit approval questions and either gives exact-scope `APPROVED` or requests revision; no product source edit before then. |
 
 Parked proposals are indexed in [`deferred/README.md`](deferred/README.md) and
 do not appear in the active list.
@@ -177,9 +178,10 @@ to the living `runtime-security-baseline` for a final 15 requirements / 35 scena
 Because Foundation 1d archived first, final strict validation has no active changes, living specs
 pass **52/52**, strict all passes **52/52**, and the archive audit is **108 passed / 6 failed /
 114 total** with this entry passing. Historical CSP tasks 4.4/4.5 remain no-receipt,
-uncertified statements; TICKET-114 carries their two unchecked reruns. Follow-up A may now be
-drafted independently, while follow-up B remains sequenced after the Amadeus continuation slice.
-No push or other remote operation was authorized or performed for this closeout.
+uncertified statements; TICKET-114 carries their two unchecked reruns. Follow-up A is now tracked
+above as Draft `add-renderer-untrusted-content-hardening`, while follow-up B remains sequenced after
+the Amadeus continuation slice. No push or other remote operation was authorized or performed for
+this closeout.
 
 ## Locally archived 2026-08-27
 
