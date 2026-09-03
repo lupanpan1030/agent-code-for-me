@@ -503,7 +503,7 @@ index 111..222 100644
       }))
 
     try {
-      runGit(repo, ["init"])
+      runGit(repo, ["init", "--quiet", "-b", "main"])
       runGit(repo, ["config", "user.email", "lint-svg@example.invalid"])
       runGit(repo, ["config", "user.name", "Lint SVG Test"])
       mkdirSync(join(repo, "src"), { recursive: true })
@@ -556,7 +556,7 @@ index 111..222 100644
     })
 
     try {
-      runGit(repo, ["init"])
+      runGit(repo, ["init", "--quiet", "-b", "main"])
       runGit(repo, ["config", "user.email", "lint-git@example.invalid"])
       runGit(repo, ["config", "user.name", "Lint Git Test"])
       mkdirSync(join(repo, "src"), { recursive: true })
@@ -627,7 +627,7 @@ index 111..222 100644
       }))
 
     try {
-      runGit(repo, ["init"])
+      runGit(repo, ["init", "--quiet", "-b", "main"])
       runGit(repo, ["config", "user.email", "lint-ratchet@example.invalid"])
       runGit(repo, ["config", "user.name", "Lint Ratchet Test"])
       mkdirSync(join(repo, "src"), { recursive: true })

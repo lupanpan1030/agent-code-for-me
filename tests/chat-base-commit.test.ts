@@ -158,7 +158,7 @@ describe("ensureChatBaseCommit", () => {
     const db = createAgentJobTestDb()
     const repositoryPath = mkdtempSync(join(tmpdir(), "locus-remote-base-"))
     temporaryRoots.push(repositoryPath)
-    git(repositoryPath, ["init", "--quiet"])
+    git(repositoryPath, ["init", "--quiet", "-b", "main"])
     git(repositoryPath, ["config", "user.email", "test@example.com"])
     git(repositoryPath, ["config", "user.name", "Test User"])
     git(repositoryPath, ["commit", "--quiet", "--allow-empty", "-m", "base"])

@@ -44,7 +44,7 @@ function gitOutput(cwd: string, args: string[]): string {
 function createRepository(name: string): string {
   const repositoryPath = join(testRoot, name)
   mkdirSync(join(repositoryPath, "src"), { recursive: true })
-  git(repositoryPath, ["init", "--quiet"])
+  git(repositoryPath, ["init", "--quiet", "-b", "main"])
   git(repositoryPath, ["config", "user.email", "test@example.com"])
   git(repositoryPath, ["config", "user.name", "Test User"])
   writeFileSync(

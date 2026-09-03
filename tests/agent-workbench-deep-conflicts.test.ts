@@ -645,7 +645,9 @@ describe("agent workbench deep conflicts", () => {
     const root = mkdtempSync(join(tmpdir(), "locus-merge-tree-immutable-sha-"))
     try {
       mkdirSync(join(root, "src"), { recursive: true })
-      execFileSync("git", ["init", "--quiet"], { cwd: root })
+      execFileSync("git", ["init", "--quiet", "-b", "main"], {
+        cwd: root,
+      })
       execFileSync("git", ["config", "user.email", "test@example.com"], {
         cwd: root,
       })

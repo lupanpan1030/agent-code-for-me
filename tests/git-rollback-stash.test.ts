@@ -16,7 +16,7 @@ async function createRepo(): Promise<string> {
   const cwd = await mkdtemp(join(tmpdir(), "locus-rollback-draft-test-"))
   temporaryRepos.push(cwd)
   const git = simpleGit(cwd)
-  await git.init()
+  await git.init(["--quiet", "-b", "main"])
   await git.addConfig("user.name", "Locus Test")
   await git.addConfig("user.email", "locus-test@example.invalid")
   await writeFile(join(cwd, "state.txt"), "baseline\n")
