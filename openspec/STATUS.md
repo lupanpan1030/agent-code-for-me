@@ -8,7 +8,7 @@ Updated: 2026-09-07 (Pacific/Auckland)
 
 | Change | State | Concrete next gate |
 | --- | --- | --- |
-| `add-renderer-untrusted-content-hardening` | Draft (R3; three drafting lenses clear; implementation not approved) | Owner decides the eight explicit approval questions and either gives exact-scope `APPROVED` or requests revision; no product source edit before then. |
+| `add-renderer-untrusted-content-hardening` | APPROVED (eight defaults) — pre-implementation touch-up in progress | next gate: targeted re-review of P1/P2 fixes, then 0.4 rebase; Approval Question 9 PENDING Owner decision (morning 2026-09-06), followed by 0.5 strict + exact-package confirmation before source edits. |
 
 Parked proposals are indexed in [`deferred/README.md`](deferred/README.md) and
 do not appear in the active list.

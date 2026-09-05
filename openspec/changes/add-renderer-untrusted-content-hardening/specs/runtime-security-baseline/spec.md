@@ -15,54 +15,142 @@ through safe DOM construction rather than replaying untrusted HTML. Mermaid SVG
 SHALL remain sanitized, tool subtitles SHALL render as text, and the renderer
 CSP SHALL block inline and remote script execution in production.
 
+Retained behavior suites SHALL share the rendered-DOM oracle specified by the
+`renderer-html-policy.ts` owner in design D2, with explicit profiles for markdown,
+highlighted code, Mermaid SVG, and the editor. Within each untrusted-content
+subtree the oracle SHALL reject script/iframe/object/embed/frame/base/meta/link/
+style/foreignObject, animation (`animate*`/`set`), and MathML `maction` elements;
+`on*` attributes; `srcdoc`; and executable, encoded, or disallowed URL schemes in
+`href`, `src`, `xlink:href`, `action`, `formaction`, `poster`, or `data`.
+`javascript:`, `data:`, `vbscript:`, `file:`, and `blob:` URL values SHALL be
+rejected in these untrusted subtrees. URL decisions SHALL use parsed DOM values
+and the attribute's context: reviewed HTTP(S) links/images, `mailto:` links,
+reviewed relative links resolved against the trusted base, and same-SVG local
+fragment references are permitted only by the corresponding explicit profile.
+Safe formatting and approved diagram styling SHALL have positive controls;
+app-owned styling is distinct from attacker-controlled `<style>` content.
+
 #### Scenario: Markdown active HTML and highlighted HTML sinks
 
 - **WHEN** chat, repository, MCP, or tool-output markdown in either app render
   mode contains scripts, active HTML/SVG/MathML, event-handler attributes,
   executable URLs, or a malformed/incomplete variant of those payloads
-- **THEN** the rendered privileged app DOM SHALL contain no executable form of
-  the payload
+- **THEN** the rendered privileged app DOM SHALL satisfy the shared
+  rendered-DOM oracle for its reviewed content profile
 - **AND** retained behavior tests SHALL also prove that the reviewed safe
   formatting subset still renders
+- **AND** both app markdown modes SHALL use the same explicit raw/sanitize/
+  harden chain, whose sanitizer schema derives from `rehype-sanitize`'s
+  `defaultSchema` and whose hardener options are non-wildcard; parity fixtures
+  SHALL cover the remark configuration as well as the replacing rehype chain
+- **AND** the wrapper's `code`/`pre` overrides SHALL keep Streamdown's built-in
+  Mermaid renderer dormant, proven by the absence of its `aria-label="Mermaid
+  chart"` element; custom-scheme and relative-link fixtures SHALL exercise the
+  reviewed `openExternalUrl` click boundary
+
+#### Scenario: The app markdown pipeline throws while rendering untrusted content
+
+- **WHEN** a parser or plugin throws in either app Streamdown mount
+- **THEN** the shared app-owned markdown error boundary SHALL render the source
+  as escaped text without unmounting the surrounding chat view
+- **AND** a forced-throw behavior fixture SHALL prove the fallback satisfies
+  the shared rendered-DOM oracle
 
 #### Scenario: A raw-markup insertion is introduced or changed
 
 - **WHEN** renderer source adds or changes `dangerouslySetInnerHTML`, a
   value-bearing direct DOM HTML assignment, `insertAdjacentHTML`, `srcDoc`,
-  `document.write`, a contextual fragment, or an equivalent raw-markup sink
+  `document.write`, a contextual fragment, an equivalent raw-markup sink,
+  dynamic script creation/`script.src`, remote `import()`, or `importScripts`
 - **THEN** the renderer source guard SHALL require an exact insertion-point
   entry naming its reviewed producer and adversarial behavior test or fail
   before merge
 - **AND** adding a sink inside an already reviewed file SHALL NOT bypass the
   guard
+- **AND** the guard SHALL scan all of `src/renderer`, including `public/` and
+  `.ts`/`.tsx`/`.html`/`.js`/`.jsx`/`.mjs`/`.cjs` files, with negative fixtures
+  for the scanned classes and a rule flagging new Shiki-API shims or Vite aliases
+  into DOM-producing dependencies
 
 #### Scenario: Highlighted HTML reaches a raw insertion sink
 
 - **WHEN** untrusted chat, repository, MCP, tool, or message-JSON code is
   converted to highlighted HTML
 - **THEN** markup-breaking source characters SHALL remain non-executable at the
-  insertion boundary
+  insertion boundary under the shared rendered-DOM oracle
 - **AND** a generator exception, output-shape mismatch, or extraction failure
   SHALL NOT fall back to inserting the original source as HTML
 
-#### Scenario: Mentions editor pastes or restores content
+#### Scenario: Dependency diff rendering is covered if Approval Question 9 includes it
 
-- **WHEN** the mentions editor receives mixed or HTML-only clipboard data or
-  restores an undo/redo entry containing attacker-controlled markup
+Approval Question 9 status: **PENDING Owner decision (morning 2026-09-06)**.
+This conditional scenario becomes applicable only if the Owner selects (a) for
+the `@pierre/diffs` path, including the coordinator's recommended compromise
+(`@pierre/diffs` under (a), Monaco/xterm as explicit residuals under (b)). If the
+Owner selects (b) for `@pierre/diffs`, this scenario SHALL be deleted before the
+exact implementation package is confirmed. No option is selected by this text.
+
+- **WHEN** the Owner includes the diff path in the reviewed-producer contract
+  and repository content renders through `<FileDiff>` or `<PatchDiff>` via the
+  Locus-owned `pierre-diffs-shiki-shim.ts` and its Vite aliases
+- **THEN** black-box hostile filename, hunk-header, line-content, and patch-text
+  fixtures SHALL exercise that actual path and apply the shared rendered-DOM
+  oracle to its resulting DOM, including Shadow DOM
+- **AND** `@pierre/diffs` and its resolved Shiki 3 subtree SHALL be pinned to
+  exact reviewed versions, with the fixtures and design D10 row serving as a
+  required upgrade gate; Shadow DOM SHALL NOT be treated as a script/CSP
+  boundary
+
+#### Scenario: Mentions editor receives browser rich content or restores content
+
+- **WHEN** the mentions editor receives clipboard/drop data, any browser
+  rich-content insertion input type, or an undo/redo entry containing
+  attacker-controlled markup
 - **THEN** the editor itself SHALL prevent browser rich-content insertion,
-  consume only explicit plain text from mixed data, and reject HTML-only data
+  consume only explicit `text/plain` through the safe builder or reject it,
+  and reject HTML-only clipboard/drop data
+- **AND** one component-owned `beforeinput` allowlist SHALL admit only
+  `insertText`, `insertCompositionText`, `insertParagraph`/`insertLineBreak`,
+  `deleteContent*`, and canonical `historyUndo`/`historyRedo` operations
+  with their browser default prevented; all other input types,
+  including `insertFromPaste`, `insertFromDrop`, `insertLink`,
+  `insertReplacementText`, and `format*`, SHALL be prevented and handled only
+  by the explicit safe insertion path if supported
+- **AND** component-owned paste/drop/drag-over gates SHALL prevent browser
+  defaults independently of optional parent handlers; typed attachment/image
+  delegation SHALL remain an explicit callback
 - **AND** undo/redo SHALL retain lossless canonical text/atomic-mention runs and
   logical selection state, rebuilding with safe DOM construction rather than a
   value-bearing `.innerHTML` restore
+- **AND** synthetic clipboard/drop/input fixtures SHALL prove default
+  prevention, unchanged DOM for HTML-only input, safe-builder insertion for
+  plain text, and only text nodes, `<br>`, and reviewed mention spans under the
+  editor oracle; native rich-paste/drop rejection and undo/redo SHALL be proven
+  separately in GUI track 5.1 because happy-dom does not implement native
+  contentEditable editing or `execCommand`
 
 #### Scenario: Mermaid diagram contains scriptable content
 
 - **WHEN** chat, repository, MCP, or tool-output markdown renders a Mermaid
   diagram containing `click`, `javascript:` URLs, script tags, event-handler
-  attributes, or foreign-object content
-- **THEN** the renderer SHALL use Mermaid strict mode
+  attributes, foreign-object content, hostile `themeCSS` (`position:fixed`,
+  `background:url(...)`, or `@import`), or a stray SVG `<style>` element
+- **THEN** the renderer SHALL use Mermaid strict mode as the load-bearing
+  control while Mermaid transiently mounts content under `document.body`
+- **AND** the source/configuration boundary SHALL suppress or reject attacker
+  themeCSS/theme overrides before that transient mount, failing closed when
+  suppression cannot be proved
 - **AND** it SHALL sanitize the resulting SVG before insertion into either the
-  inline or fullscreen privileged app document
+  inline or fullscreen privileged app document, removing untrusted `<style>`
+  content and applying only reviewed app-owned diagram CSS
+- **AND** an end-to-end fixture using pinned Mermaid through MermaidBlock's
+  actual render path SHALL prove that the shared rendered-DOM oracle holds for
+  returned/sanitized SVG and that nothing executable remains under
+  `document.body` after rendering; the identical sanitized output SHALL reach
+  both inline and fullscreen sinks
+- **AND** DOMPurify SHALL remain the load-bearing sanitizer before the
+  defensive DOMParser attribute pass; a parser-error pass-through SHALL NOT
+  bypass or reorder that preceding sanitization
 
 #### Scenario: Tool subtitle contains HTML
 
@@ -80,6 +168,9 @@ CSP SHALL block inline and remote script execution in production.
   remote script origins
 - **AND** any remaining WebAssembly compilation exception SHALL be documented
   with the code that blocks removal
+- **AND** HTTPS markdown-image requests from the app document remain an
+  explicit IP/timing-beacon egress residual; production script restrictions
+  SHALL NOT be represented as blocking those image requests
 
 #### Scenario: Development renderer CSP permits Vite HMR
 
@@ -105,6 +196,13 @@ diagnostic execution, and lifecycle cleanup; renderer policy SHALL be defense
 in depth only. This requirement is not a guest network-egress sandbox:
 page-controlled fetch, form, WebSocket, image/ping, frame, and other subresource
 traffic can still reach remote or other loopback services.
+That accepted residual includes Locus's state-protected MCP auth callback on
+`localhost:21321` (`21322` in development), its per-endpoint Bearer-protected
+provider gateway on a random `127.0.0.1` port, the state-protected OAuth callback
+on `127.0.0.1:8914`, and development Vite/HMR. Presence probing or nuisance
+requests SHALL NOT be described as authenticated access; a controlled auth/
+gateway probe SHALL demonstrate rejection without state changes. Codex
+app-server uses stdio rather than an additional loopback listener.
 
 #### Scenario: Renderer attempts an unsafe or unregistered guest attachment
 
@@ -118,16 +216,31 @@ traffic can still reach remote or other loopback services.
   arguments, no nested webviews, Node integration off in frames and workers,
   context isolation/web security/sandbox on, insecure content off, and the
   exact issued non-persistent partition
+- **AND** `will-attach-webview` SHALL explicitly force sandbox and context
+  isolation, independent of the embedder's `sandbox:false`; the issued guest
+  Session SHALL have no registered preload scripts
+- **AND** the first-request fixture SHALL prove Session-gate installation
+  precedes any guest request; `did-attach-webview` handlers are installed after
+  navigation starts and SHALL NOT substitute for that preinstalled gate
 
 #### Scenario: Renderer requests or replays a preview admission
 
 - **WHEN** the privileged renderer requests a preview, supplies filesystem or
   webContents authority, races two attachments, or reuses an issued partition
-- **THEN** main SHALL derive the embedder from the IPC event, require it to own
-  the registered chat, ignore caller-provided authority, and bind one exact
+- **THEN** main SHALL derive the live app-window sender from the IPC event,
+  atomically call `windowManager.claimChat(chatId, senderWindow.id)`, and deny
+  with a bounded reason if another live window owns the chat; a same-window
+  claim SHALL be idempotent
+- **AND** authorization SHALL derive from that live app-window sender and the
+  DB-registered chat/worktree resolved by main; the claim is an ownership
+  cross-check, not independent filesystem authority
+- **AND** main SHALL ignore caller-provided authority and bind one exact
   initial URL to a short-TTL single-consume partition admission
 - **AND** the partition capability SHALL be count-bounded, never reused or
   persisted, and absent from URLs, guest arguments/data, diagnostics, and logs
+- **AND** every `<webview>` element mount, including a React remount or
+  StrictMode double-mount, SHALL request a new generation and admission;
+  renderer retries SHALL NOT reuse a consumed admission
 
 #### Scenario: Preview JavaScript probes privileged capabilities
 
@@ -143,9 +256,22 @@ traffic can still reach remote or other loopback services.
 - **WHEN** initial load, a link/location change, a programmatic load, or an HTTP
   redirect targets credentials, a remote host, another local origin or port,
   an unsupported scheme, or any other target outside the exact admitted origin
-- **THEN** a Session request gate installed before the partition was exposed to
-  the renderer SHALL block it before commit, including `loadURL`, back/forward,
-  and every redirect request
+- **THEN** for requests observable by `webRequest`, a Session request gate
+  installed before the partition was exposed to the renderer SHALL block it
+  before commit, including main-owned `loadURL`, back/forward, and every
+  redirect request; runtime fixtures SHALL observe direct `file:` cancellation
+  across main-frame, subframe, XHR, script, and image positions and each
+  redirect hop, including a redirect to another loopback port
+- **AND** the renderer SHALL retain no `<webview>.loadURL` escape hatch;
+  non-network top-level schemes SHALL instead be governed by the main guest's
+  navigation listeners, explicit `openExternal` permission denial, and
+  committed-URL postconditions, without claiming `webRequest` observes them
+- **AND** `about:blank` SHALL be permitted only as a browser-created initial
+  empty document proven to inherit the current admission, and a same-origin
+  `blob:` document only when its creator origin is proven to match that exact
+  admission; unknown/cross-origin blob, `data:`, `javascript:`, and other
+  non-admitted commits SHALL fail closed, with runtime evidence required for
+  the inherited-origin cases
 - **AND** an unexpected disallowed committed postcondition SHALL destroy the
   guest and record only a bounded diagnostic rather than rely on renderer
   rollback
@@ -158,33 +284,49 @@ traffic can still reach remote or other loopback services.
 - **THEN** the guest SHALL NOT load direct `file://` content; main SHALL resolve
   the owning chat worktree and map an admitted target to a Session-local
   fixed-origin preview protocol
+- **AND** main SHALL realpath-canonicalize the DB-registered root and require
+  matching directory `dev`/`ino` identities from the registered path's `lstat`,
+  the canonical path, and the opened anchor, re-verifying the binding before
+  use; a terminal symlink or any mismatch SHALL fail closed, while a symlinked
+  prefix is usable only when the canonical identity checks succeed
 - **AND** the protocol SHALL traverse without following symlinks and serve the
   same verified regular-file descriptor it opened, rejecting the preview before
   path/symlink retargeting can load bytes from outside the registered root
 - **AND** file preview SHALL fail closed on a platform/filesystem without that
   proven safe-read primitive rather than use a path-only fallback
+- **AND** with the existing descriptor owner, file preview SHALL ship disabled
+  on `win32`, a packaged release target, until an approved Yellow
+  handle-relative backend extension provides that primitive
 - **AND** this containment guarantee SHALL NOT be represented as an immutable
   snapshot of an admitted inode that another process can modify concurrently
 
 #### Scenario: Preview attempts to open another window
 
 - **WHEN** guest content invokes `window.open`, follows a `_blank` target, or
-  otherwise requests a new window
+  otherwise requests a new window, including `locus://`, supported legacy
+  Locus schemes, `mailto:`, or `vscode://` targets
 - **THEN** the guest window-open policy SHALL deny the request
 - **AND** it SHALL create no BrowserWindow and SHALL NOT launch the target in an
   external application
+- **AND** guest `openExternal` permission SHALL be explicitly denied; top-level
+  links, `location.href`, and `_blank` probes for those schemes SHALL cause no
+  OS handler launch or `mcp-import:preview` push, while the app-window
+  `shell.openExternal` path remains separately governed
 
 #### Scenario: Preview requests permission, capture, or download
 
 - **WHEN** guest content requests media, clipboard read, geolocation,
-  notification, fullscreen/lock, filesystem, device, display-media, an unknown
-  permission, or a download
+  notification, fullscreen/lock, filesystem, device, display-media,
+  `openExternal` for an external-scheme navigation, an unknown permission, or a
+  download
 - **THEN** guest permission-check and permission-request policy SHALL
   consistently deny the request, device-permission policy and HID/serial/USB/
   Bluetooth selection SHALL prevent Electron default handling and invoke its
   rejecting callback, display selection SHALL return no stream without a
   system-picker bypass, and the download SHALL be cancelled
 - **AND** no operating-system prompt or file write SHALL occur
+- **AND** external-protocol probes SHALL cause no OS handler launch or
+  `mcp-import:preview` push
 
 #### Scenario: Two previews use guest storage
 
@@ -205,16 +347,25 @@ traffic can still reach remote or other loopback services.
   events, or the workbench requests click tracking, a DOM summary, or selected
   element context
 - **THEN** it SHALL invoke only a named fixed repository-owned script with no
-  untrusted string interpolation for active probes
+  untrusted string interpolation and `userGesture:false` for active probes;
+  the selection probe SHALL belong to that same closed shared script set
 - **AND** main SHALL capture the admitted guest's diagnostic events from its
   `webContents` after attachment; the renderer SHALL NOT directly subscribe to
-  raw `<webview>` console/load-failure/title/navigation payloads
-- **AND** raw event and probe results SHALL remain in main until they are bound
-  to the current guest/navigation, minimized, stripped of URL credentials/
-  query/fragment, secret-redacted, normalized, and bounded before renderer state
+  raw `<webview>` console/load-failure/title/navigation payloads, including
+  `will-navigate` or any event carrying page-controlled URL, title, or text;
+  renderer lifecycle signals SHALL be URL-free
+- **AND** main-owned event/probe processing SHALL bind results to the current
+  guest/navigation, minimize them, strip URL credentials/query/fragment,
+  secret-redact, normalize, and bound them before publishing the safe
+  projection to renderer state; console levels SHALL use an explicit mapping
+  from Electron's `info`/`warning`/`error`/`debug` levels to the shared contract
 - **AND** only the final visible redacted report SHALL be eligible for explicit
   user insertion into chat; raw page values and exact-secret hints SHALL NOT
-  enter the renderer, chat, or security logs
+  enter app listeners/state, chat text, security logs, or verification receipt
+  media
+- **AND** tests SHALL assert those app-consumption and retention boundaries;
+  Electron's own dispatch to the `<webview>` element is not claimed to be
+  suppressed
 
 #### Scenario: Trusted app requests its existing microphone behavior
 

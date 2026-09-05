@@ -1,16 +1,21 @@
 # Change: Harden untrusted renderer content and local-browser guests
 
-> Status: **DRAFT (R3) — NOT APPROVED FOR IMPLEMENTATION**. This package is
-> rebased on local `main` at
-> `30c72ad3c26dd952410c6e38678faf43d8c55895` (2026-09-04). It authorizes no
-> product-code edit. Implementation requires an exact-scope Owner `APPROVED`
-> verdict after feasibility and independent security review.
+> Status: **DIRECTION+IMPLEMENTATION APPROVED (eight defaults) 2026-09-05 — source edit still gated on 0.2/0.3/0.4/0.5**.
+> Owner accepted the eight recommended defaults late on 2026-09-05, conditional
+> on the feasibility/R3 reviews, implementation-start rebase, strict validation,
+> and exact-package confirmation. Feasibility 0.2 is `REVIEW_APPROVED` at
+> `2292d36a`; R3 0.3 is `CHANGES_REQUESTED` and awaits targeted re-review.
+> Approval Question 9 is **PENDING Owner decision (morning 2026-09-06)**; the
+> coordination recommendation is not approval. This documentation touch-up
+> authorizes no source edit. Current base remains local `main` at
+> `30c72ad3c26dd952410c6e38678faf43d8c55895` (2026-09-04).
 >
 > Baseline note (2026-09-05): local `main` has advanced to
 > `d923119c090ef8a252ef084bb1453b4b937d563d`. The intervening
 > `30c72ad3..d923119c` changes are tests/documentation only; the cited product
 > anchors were checked and remain current. Task 0.4 still requires a fresh
-> implementation-start rebase and anchor/conflict audit before approval.
+> implementation-start rebase and anchor/conflict audit before exact-package
+> confirmation. No rebase is performed by this documentation dispatch.
 
 ## Why
 
@@ -32,10 +37,19 @@ DOM snapshot, and normal callers install a plain-text paste handler. However,
 an HTML-only clipboard currently leaves the browser's default contentEditable
 insertion available. This Draft does not claim a demonstrated exploit; it
 requires eliminating both the unreviewed restore and default-paste paths.
-Shiki is the shared producer for four raw HTML consumers, and its wrapper
-currently falls back to unescaped source text if its `<code>` extraction no
-longer matches. That is a fail-open dependency-shape risk, not a claim that the
-locked Shiki version is currently exploitable.
+`highlightCode()` is the Shiki HTML-string producer used by the four
+inventoried non-Mermaid raw consumers; its wrapper currently falls back to
+unescaped source text if `<code>` extraction no longer matches, and
+`chat-markdown-renderer.tsx` also has a local `escapeHtml` plaintext fallback.
+This is not the complete producer inventory: repository diffs use
+`@pierre/diffs` through the Locus-owned `pierre-diffs-shiki-shim.ts` and Vite
+aliases (live text-node `createPlainHast`; exported but render-uncalled
+`codeToHtml` plus private `escapeHtml`), while Monaco files and xterm PTY output
+have dependency-internal DOM writers. `diff-view-highlighter.ts#getAST` is a
+zero-caller dormant adapter, not the live diff producer. These are
+coverage/dependency-shape risks, not demonstrated current exploits. Question 9
+records their coverage choice without weakening the eight approved defaults;
+Shadow DOM is not a script/CSP boundary.
 
 The Local Browser Workbench also has meaningful defenses already: it normalizes
 local-only top-level URLs in the renderer, rolls back rejected navigation, and
@@ -58,7 +72,11 @@ minimization/redaction owner.
   inventory. Every value-bearing `dangerouslySetInnerHTML`, `.innerHTML`,
   `.outerHTML`, `insertAdjacentHTML`, `srcDoc`, `document.write`, contextual
   fragment, or equivalent raw-markup sink must name one reviewed producer and
-  have adversarial behavior coverage. A whole-file exemption is insufficient.
+  have adversarial behavior coverage. Scan renderer public JavaScript and
+  dynamic-script/remote-import classes too; remove the remote
+  react-scan loader. A whole-file exemption is insufficient. Classify
+  dependency-internal producers and new Shiki shim/Vite aliases explicitly,
+  with Question 9's selected behavior coverage and pin/upgrade gates.
 - Exercise the app's real static and streaming Streamdown render paths with
   malicious raw HTML, mixed HTML/SVG/MathML, event attributes, and executable
   URLs while also proving that the intended safe formatting subset survives.
@@ -71,14 +89,17 @@ minimization/redaction owner.
 - Remove the mentions editor's raw-HTML undo/redo state in favor of canonical
   text/mention runs plus logical selection state rebuilt with text nodes and
   reviewed element construction. Make the editor itself prevent browser rich
-  paste: mixed clipboard input consumes only its plain-text member, while an
-  HTML-only paste is rejected. Cover lossless spacing, atomic mention
+  insertion from paste, drop, and other `beforeinput` sources: the component
+  owns the allowlist/default prevention, consumes only plain text through the
+  safe builder, and rejects HTML-only data. Cover lossless spacing, atomic mention
   selection, undo, redo, and clipboard behavior without assuming the current
   path is exploitable.
 - Preserve the existing Mermaid strict-mode plus sanitizer owner, React-text
   tool subtitles, and production/development CSP guarantees. This change adds
-  missing behavior proof; it does not replace those specialized owners with a
-  second sanitizer path.
+  missing behavior proof and Mermaid CSS/transient-render coverage, including
+  app-owned diagram styles and a shared rendered-DOM oracle. DOMPurify protects
+  returned SVG; strict mode protects Mermaid's transient pre-sanitizer mount;
+  the DOMParser pass is defense in depth. Specialized owners remain canonical.
 
 ### Main-owned local-browser guest boundary
 
@@ -150,9 +171,21 @@ desktop bridge.
   `src/renderer/lib/security/renderer-html-policy.ts`.
 - Mermaid-specific SVG adapter remains
   `src/renderer/lib/security/mermaid-svg-sanitizer.ts` under that policy.
-- Shiki production remains centralized in
-  `src/renderer/lib/themes/shiki-theme-loader.ts`; callers must not add local
-  extraction, escaping, or sanitizer variants.
+- Shiki HTML strings for the four inventoried Locus-owned non-Mermaid raw
+  insertions converge on `src/renderer/lib/themes/shiki-theme-loader.ts`.
+  Remove or route caller-local extraction/escape fallbacks, including
+  `chat-markdown-renderer.tsx#escapeHtml`, through the renderer HTML-policy
+  owner. The Vite-aliased `src/renderer/lib/vendor/pierre-diffs-shiki-shim.ts`
+  is a separately inventoried Shiki-API producer whose reviewed-producer versus
+  residual classification is gated on Question 9; explicitly dispose of its
+  `escapeHtml`/`codeToHtml` branch and the dormant
+  `src/renderer/lib/themes/diff-view-highlighter.ts#getAST` adapter. No claim
+  of repository-wide sole/centralized Shiki production is made.
+- Markdown fallback: one app-owned error boundary around both Streamdown
+  mounts in `chat-markdown-renderer.tsx`, using escaped source text on failure.
+- Executable-URL click sink: `src/main/lib/local-only.ts#openExternalUrl`,
+  reached through the existing preload/tRPC entry points, retains its reviewed
+  allowlist separately from guest `openExternal` permission denial.
 - Exact renderer sink source guard remains
   `tests/renderer-html-sinks.test.ts`, executed through the normal test suite.
 - Electron local-browser guest policy: proposed
@@ -164,7 +197,15 @@ desktop bridge.
   file open/same-descriptor streaming rather than creating a second descriptor
   backend or copying its rules.
 
-Implementation must add these owners to `docs/OWNERSHIP_MAP.md` and remove or
+- Diagnostic shape/minimization adapter: proposed
+  `src/shared/local-browser-diagnostics-policy.ts`, composed in main with
+  `src/main/lib/agent-runtime/redaction.ts`. The shared adapter must not import
+  main-process code or duplicate secret matching; the main redaction owner
+  retains secret access and matching authority.
+
+Implementation must add new and reused registered-root, stable-directory,
+window-policy/ownership, shared local-browser, and diagnostic composition owners
+to `docs/OWNERSHIP_MAP.md` and remove or
 replace the superseded renderer-side partition and raw-HTML restore paths in the
 same change. It must not leave old and new business paths live together.
 
@@ -193,11 +234,19 @@ same change. It must not leave old and new business paths live together.
   app voice recording remain functional. Direct guest `file://` loading is
   replaced by the broker; a platform/filesystem without the approved
   race-resistant read primitive retains HTTP(S) preview but disables file
-  preview with a bounded explanation.
+  preview with a bounded explanation. Specifically, the current descriptor
+  owner has **no win32 backend**, so file preview ships disabled on Windows (a
+  packaged release target) until a separately approved Yellow handle-relative
+  backend extension lands. HTTP(S) preview remains available. The broker must
+  realpath-canonicalize DB-registered roots and reverify registered-leaf,
+  canonical-path, and opened-anchor dev/ino identity; symlink leaves and
+  mismatches fail closed, while a canonicalized symlinked parent prefix is
+  permitted only after identity checks.
 
 ## Explicit Non-Goals
 
-- No product implementation while this package is Draft, and no remote push,
+- No product implementation before gates 0.3/0.4/0.5 and Question 9 close;
+  no remote push,
   PR mutation, merge, release, or repository-rule change.
 - No tRPC capability taxonomy, procedure wrapper, consent memory, audit log,
   kill-switch, `terminal.write` policy, or dangerous-router allowlist evolution;
@@ -216,8 +265,19 @@ same change. It must not leave old and new business paths live together.
   Top-level navigation is exact-origin confined, but page-controlled fetch,
   form, WebSocket, image/ping, frame, and other subresource traffic may still
   reach remote hosts or other loopback services. That residual network/CSRF
-  risk requires explicit Owner acceptance; a network-egress firewall is a
-  separate scope decision.
+  risk is accepted under default 4; a network-egress firewall is a separate
+  scope decision. Locus's own listeners are included: MCP callback localhost
+  21321 (dev 21322) requires pending-flow random state, the random-port provider
+  gateway requires Bearer authentication, OAuth 127.0.0.1:8914 checks state;
+  Vite/HMR remains reachable in development. No authentication bypass is
+  claimed; controlled no-state/token probes must cause no state change.
+- App-document remote HTTPS markdown images can disclose IP/timing as beacons.
+  Record this separately from guest egress; it is not script execution or a
+  claim that sanitizer tests prevent network requests.
+- Dependency-internal Monaco/xterm DOM hardening is a proposed explicit
+  residual under Question 9(b) or the coordination recommendation, with a
+  Yellow ticket to be created under task 2.11. Option (a) includes their
+  reviewed-producer tests instead. No disposition is selected here.
 - No nonexistent chat HTML-export preview work. Current exports are text-based;
   future HTML preview would require its own reviewed sink before it ships.
 
@@ -237,14 +297,17 @@ same change. It must not leave old and new business paths live together.
 
 ## Approval Gate
 
-Before any source edit, this Draft requires:
+Owner approved defaults 1–8 on 2026-09-05; that approval remains conditional.
+Before any source edit, this package still requires:
 
 1. strict OpenSpec validation and a fresh feasibility review of the proposed
    renderer-output and main guest-policy owners;
 2. independent fresh-context R3 review of attach timing, preload isolation,
    permissions, registered file roots, redirects, popup/download behavior,
    partition lifecycle, and testability on supported Electron hosts;
-3. resolution of every Red/open decision recorded in `design.md`, including
-   explicit disposition of file-preview platform support and residual guest
-   network egress; and
-4. explicit Owner `APPROVED` for the exact rebaselined scope.
+3. resolution of Approval Question 9 (PENDING Owner decision, morning
+   2026-09-06) and targeted re-review of finding 1/P2 fixes, with all P3
+   touch-ups checked in that pass; and
+4. task 0.4 implementation-start rebase followed by task 0.5 strict validation
+   and Owner confirmation of the exact package. This does not reopen the eight
+   defaults or substitute historical receipts for review of the revised SHA.
