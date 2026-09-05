@@ -219,11 +219,26 @@ or UI helper.
   local refs, and leave existing stored `baseBranch` values authoritative.
 - Adjacent exclusions: GitHub workflow discovery remains owned by
   `src/main/lib/github-workflow/gh-cli.ts:resolveGitDefaultBranch`; explicit
-  `origin/HEAD` synchronization remains owned by
-  `src/main/lib/git/worktree.ts:refreshDefaultBranch`; remote fetch and
+  `origin/HEAD` synchronization is implemented by the currently unreferenced
+  `src/main/lib/git/worktree.ts:refreshDefaultBranch` (its `hasOriginRemote`
+  dependency and `fetchDefaultBranch` are also pre-existing dead-helper cleanup
+  candidates); remote fetch and
   merge/rebase policy remains owned by
-  `src/main/lib/git/git-operations.ts:mergeFromDefault`. These paths do not
-  implement or replace the repository resolver policy.
+  `src/main/lib/git/git-operations.ts:mergeFromDefault`.
+  `src/main/lib/git/worktree.ts:606` (`detectBaseBranch`) is a currently
+  unreferenced base-detection heuristic over `origin/*`, not a default-branch
+  resolver. Guard strengthening and these dead helpers are tracked in
+  [TICKET-123](tickets/TICKET-123-default-branch-guard-cleanup-hermetic-tests.md).
+  Existing fallback/presentation heuristics in
+  `src/main/lib/git/file-contents.ts:80`,
+  `src/main/lib/trpc/routers/chats-pr.ts:75`,
+  `src/main/lib/trpc/routers/status.ts:35`,
+  `src/renderer/features/details-sidebar/sections/changes-widget.tsx:309-312`,
+  `src/renderer/features/agents/ui/sub-chat-status-card.tsx:82`, and the
+  `createWorktree` default `origin/main` start point in
+  `src/main/lib/git/worktree.ts:227-231` remain outside this four-consumer
+  migration. They do not inspect local refs or implement/replace the repository
+  resolver policy; this change does not migrate them.
 
 ## Managed Worktree Path Parsing
 

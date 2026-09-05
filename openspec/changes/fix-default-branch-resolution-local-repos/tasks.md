@@ -30,8 +30,12 @@
       branch is used as a local worktree start ref while the private tRPC output
       remains `defaultBranch: string`.
 - [x] 2.6 Add the canonical owner and consumer rule to
-      `docs/OWNERSHIP_MAP.md`, plus a focused guard/source audit proving the four
-      consumers contain no second precedence policy.
+      `docs/OWNERSHIP_MAP.md`, plus a focused guard/source audit proving both
+      legacy helper definitions are deleted, each consumer file has exactly
+      two resolver calls (four total), and the resolver has one definition
+      owner. Broader shape-targeted guard coverage, dead-helper cleanup, and
+      hermetic adapter tests are registered as the separate Yellow follow-up
+      [TICKET-123](../../../docs/tickets/TICKET-123-default-branch-guard-cleanup-hermetic-tests.md).
 
 ## 3. Regression coverage
 
@@ -64,13 +68,16 @@
       Agent Workbench tests, including the no-origin `master` regression.
 - [x] 4.2 Run `git diff --check`,
       `bun x openspec validate fix-default-branch-resolution-local-repos --strict --no-interactive`,
-      and `bun run check:full`.
+      and `bun run check:full`: Codex 沙箱 exit 1（EROFS）→ 统筹独立复跑 exit 0
+      at `e1f8a7f9` (coordination session, dispatch `impl-default-branch-green`;
+      receipt and acceptance authority recorded in `verification.md`).
 - [x] 4.3 Freeze the implementation source SHA and record exact commands,
       counts, exit codes, and Codex `IMPLEMENTATION_VERIFIED` in
       `verification.md`.
-- [ ] 4.4 Obtain fresh-context, read-only Claude Code review on that same exact
-      source SHA and record `REVIEW_APPROVED` or `CHANGES_REQUESTED` with all
-      findings.
+- [x] 4.4 Obtain fresh-context, read-only Claude Code review on that same exact
+      source SHA and record `REVIEW_APPROVED` with all findings in
+      `verification.md` §4.4: zero P0/P1, three P2 dispositions recorded, nine
+      P3 notes retained; evidence/acceptance SHA `e1f8a7f9`, source `7d26fec7`.
 - [ ] 4.5 Stop for explicit Owner `ACCEPTED`. Local integration, archive, push,
       remote PR mutation/merge, release, and repository-rule changes remain
       pending or unauthorized until separately approved.

@@ -90,9 +90,11 @@ Add `src/main/lib/git/default-branch.ts` with the sole exported
 `resolveDefaultBranch` policy. The implementation change removes the private
 branches helper and the exported worktree helper while migrating all four
 direct callers in the same source commit. `docs/OWNERSHIP_MAP.md` records the
-new owner and consumers. A focused architecture assertion or equivalent source
-audit prevents a second local default-branch precedence list from being added
-to those consumers.
+new owner and consumers. The delivered source guard proves deletion of both
+`getDefaultBranch` helpers, exactly two resolver calls in each consumer file,
+and one resolver definition owner. It does not prove the absence of every
+possible inline precedence policy; shape-targeted strengthening is registered
+in [TICKET-123](../../../docs/tickets/TICKET-123-default-branch-guard-cleanup-hermetic-tests.md).
 
 This is an extraction-and-replacement, not a compatibility layer. No alias or
 deprecated helper remains after migration.
@@ -130,6 +132,14 @@ point must be the local branch name, not `origin/<name>`. Explicit
 `selectedBaseBranch` plus `branchType` input remains authoritative and is not
 reinterpreted.
 
+`branchType` is honored only alongside an explicit `selectedBaseBranch`;
+auto-resolved bases derive their start ref from resolver provenance. A lone
+`branchType: "local"` therefore no longer overrides an origin-backed automatic
+result to start at the local branch. This edge is unreachable from current
+renderer callers but is permitted by the private tRPC inputs. The legacy
+override is not restored, preserving the qualified local-ref handling that
+closes branch/tag short-name ambiguity.
+
 ### Decision 4: Remote observation profiles are explicit and behavior-preserving
 
 The owner accepts an explicit observation profile rather than hiding network
@@ -142,10 +152,12 @@ an implementation detail; their required behavior is:
 | Orphan cleanup | cached `origin/HEAD`; otherwise `main` because this path supplies no cached remote-branch list | Never performs `ls-remote` or fetch |
 | Worktree creation / clean-diff fallback | cached `origin/HEAD`; otherwise first available cached `main`, `master`, `develop`, or `trunk` in that order; otherwise the existing `ls-remote --symref origin HEAD` lookup; otherwise `main` | Retains the existing network-allowed fallback |
 
-The no-origin profile is the one intentional behavior change and always uses
-the local precedence from Decision 2 without network work. The compatibility
-profiles above are centralized in the same owner; callers select their bounded
-fact/IO context but do not implement branch precedence themselves.
+The no-origin profile intentionally adopts the local precedence from Decision
+2 without network work. The remote resolver profiles in the table retain their
+result order and network budgets; the additional consumer behavior change is
+the lone-`branchType` edge recorded in Decision 3. The compatibility profiles
+are centralized in the same owner; callers select their bounded fact/IO context
+but do not implement branch precedence themselves.
 
 This proposal does not use consolidation as authorization to redesign remote
 candidate names, change their order, or add network work to polling/cleanup
@@ -220,8 +232,12 @@ product's no-origin master behavior.
 6. Stop for Owner acceptance. Integration, archive, push, and release require
    their own authorization.
 
-Rollback is a source revert. There is no schema migration, data rewrite, remote
-operation, or compatibility path to unwind.
+Rollback the reviewed pilot as one unit: revert `e1f8a7f9` (evidence docs),
+`7d26fec7` (implementation), and `30451539` (RED tests) together, or do not
+integrate the branch. Include any later documentation-only review/disposition
+commits in that rollback. Reverting only the implementation leaves 12 RED tests
+failing; `lint-baseline.json` reverts with `7d26fec7`. There is no schema
+migration, data rewrite, remote operation, or compatibility path to unwind.
 
 ## Consumer And Data Impact
 
