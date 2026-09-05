@@ -201,13 +201,17 @@ traffic can still reach remote or other loopback services.
 
 #### Scenario: Host captures guest diagnostics
 
-- **WHEN** the workbench requests click tracking, a DOM summary, or selected
-  element context from an admitted guest
+- **WHEN** an admitted guest emits console, load-failure, title, or navigation
+  events, or the workbench requests click tracking, a DOM summary, or selected
+  element context
 - **THEN** it SHALL invoke only a named fixed repository-owned script with no
-  untrusted string interpolation
-- **AND** raw results SHALL remain in main until they are bound to the current
-  guest/navigation, minimized, stripped of URL credentials/query/fragment,
-  secret-redacted, normalized, and bounded before renderer state
+  untrusted string interpolation for active probes
+- **AND** main SHALL capture the admitted guest's diagnostic events from its
+  `webContents` after attachment; the renderer SHALL NOT directly subscribe to
+  raw `<webview>` console/load-failure/title/navigation payloads
+- **AND** raw event and probe results SHALL remain in main until they are bound
+  to the current guest/navigation, minimized, stripped of URL credentials/
+  query/fragment, secret-redacted, normalized, and bounded before renderer state
 - **AND** only the final visible redacted report SHALL be eligible for explicit
   user insertion into chat; raw page values and exact-secret hints SHALL NOT
   enter the renderer, chat, or security logs

@@ -151,11 +151,16 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       deny-all policy.
 - [ ] 4.7 Replace arbitrary `executeJavaScript(string)` access in the workbench
       with the closed named set of app-owned diagnostic probes executed through
-      main; bind results to current guest/navigation identity. Before data enters
-      renderer state, strip URL credentials/query/fragment, minimize fields,
-      redact recognized and available exact secrets, then apply type/count/
-      length bounds. Show the final text before explicit chat insertion and log
-      no raw page value or partition capability.
+      main. Remove renderer `<webview>` listeners for raw `console-message`,
+      `did-fail-load` / provisional failure, `page-title-updated`,
+      `did-navigate`, and in-page navigation payloads; after
+      `did-attach-webview`, capture their equivalents from the admitted guest
+      `webContents` in main. Bind probe and event results to the current guest/
+      navigation identity. Before any diagnostic value enters renderer state,
+      strip URL credentials/query/fragment, minimize fields, redact recognized
+      and available exact secrets, then apply type/count/length bounds. Show the
+      final text before explicit chat insertion and log no raw page value or
+      partition capability; leave no renderer raw-event fallback.
 - [ ] 4.8 Add focused unit/integration fixtures for unsafe attach preferences,
       bridge probes, initial/link/location/`loadURL`/back/forward/redirect
       requests, direct `file:` in main/subframe/XHR/script/image positions,
@@ -202,8 +207,12 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       `git diff --check` on one frozen implementation SHA.
 - [ ] 6.3 Confirm the source diff removes superseded raw-HTML restore, raw Shiki
       fallback, browser rich-HTML paste, renderer partition authority/URL-key
-      remount, direct guest `file:` loading, and duplicate guest-policy paths;
-      confirm it does not touch follow-up B or Foundation 1c guard ownership.
+      remount, direct guest `file:` loading, renderer subscriptions to raw
+      guest console/load-failure/title/navigation payloads, and duplicate
+      guest-policy paths. Confirm the only diagnostic event path is the
+      main-owned post-`did-attach-webview` guest `webContents` relay after
+      minimization/redaction/bounds, with no renderer fallback; confirm it does
+      not touch follow-up B or Foundation 1c guard ownership.
 - [ ] 6.4 Record Codex `IMPLEMENTATION_VERIFIED` and independent fresh-context
       correctness plus R3 security `REVIEW_APPROVED` verdicts for that same
       frozen source SHA.

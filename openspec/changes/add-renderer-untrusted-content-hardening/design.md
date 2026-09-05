@@ -10,6 +10,13 @@ The evidence baseline is local `main` at
 scope history, but several of its implementation statements are now stale. The
 following table is the current-main baseline that this Draft uses.
 
+As of 2026-09-05, local `main` is
+`d923119c090ef8a252ef084bb1453b4b937d563d`. The range
+`30c72ad3..d923119c` changes only tests and documentation; the product anchors
+below were rechecked and remain current. This note does not satisfy task 0.4:
+implementation still requires rebasing every source/test anchor and
+active-change conflict onto the implementation-start SHA.
+
 | Surface | Implemented baseline | Remaining gap owned here |
 | --- | --- | --- |
 | Markdown | Static and streaming `Streamdown` mounts are at `src/renderer/components/chat-markdown-renderer.tsx:460-469,693-700`. `bun.lock` resolves Streamdown 2.1.0 and its default raw/sanitize/harden chain; `package.json` declares the wider `^2.0.1` range. | No retained malicious-HTML or executable-URL render test covers either app path; dependency behavior is carrying a security statement without a local upgrade gate. |
@@ -112,9 +119,11 @@ preferences or an app preload.
 6. Missing registration, unknown state, invalid URL/root, handler-installation
    failure, or teardown race disables or destroys the guest rather than falling
    back to the current renderer-only policy.
-7. Page-controlled diagnostic bytes do not enter privileged renderer state,
-   chat, security logs, or receipts before main-owned minimization, redaction,
-   and bounds have run.
+7. Page-controlled diagnostic bytes, including raw `console-message`,
+   `did-fail-load`, `page-title-updated`, and `did-navigate` family payloads,
+   do not enter privileged renderer state, chat, security logs, or receipts
+   before main-owned minimization, redaction, and bounds have run. The renderer
+   does not directly subscribe to those raw `<webview>` events.
 
 ## Decisions
 
@@ -360,6 +369,19 @@ hints, if supplied by main, never cross into the renderer. Security logs and
 receipts contain only reason codes and redacted origins, never the partition
 capability, raw URL, console/DOM text, or probe result.
 
+Electron dispatches `console-message`, `did-fail-load` (including provisional
+load failure), `page-title-updated`, `did-navigate`, and in-page navigation
+events directly from a `<webview>` element to its embedder renderer. The
+workbench currently listens to those raw events and writes their page-controlled
+fields into renderer state. Implementation removes those renderer listeners.
+After `did-attach-webview`, the main guest-policy owner listens on the admitted
+guest `webContents`, binds every event to the current guest/navigation
+generation, and runs the same minimization/redaction/bounds policy before a
+narrow internal projection reaches renderer state. URLs in that projection
+omit credentials, query, and fragment. The renderer may keep lifecycle-only
+element signals that carry no page-controlled diagnostic value, but it cannot
+reconstruct or recover the raw event payload from them.
+
 The workbench shows the final minimized/redacted report for user inspection.
 Only the existing explicit insert action can copy that final text into chat;
 the raw result is neither stored in renderer state nor automatically sent.
@@ -479,8 +501,12 @@ There is no database migration. Introduce characterization tests first, then
 the reviewed-content owner, then the main guest owner and renderer projection.
 Remove superseded whole-file exemptions, raw-code fallback, raw-HTML undo state,
 default rich-HTML paste, renderer-derived partition authority/URL-key remount,
-direct guest `file://` loading, and duplicate guest policy in the same
-implementation.
+direct guest `file://` loading, renderer listeners for raw
+`console-message`, `did-fail-load`, `page-title-updated`, `did-navigate`, and
+in-page navigation diagnostic payloads, and duplicate guest policy in the same
+implementation. Replace those raw event paths with the sole main-owned
+post-`did-attach-webview` guest `webContents` relay after
+minimization/redaction/bounds; do not leave a renderer fallback listener.
 
 If the content policy cannot initialize, render escaped text or a bounded error.
 If guest admission or any mandatory handler cannot initialize, keep the Local

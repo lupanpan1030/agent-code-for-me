@@ -2,8 +2,9 @@
 
 > Status: **DRAFT — PROPOSAL VALIDATION ONLY**. Product implementation is not
 > authorized and has not been run. Nothing in this file is an
-> `IMPLEMENTATION_VERIFIED`, `REVIEW_APPROVED`, Owner `APPROVED`, or Owner
-> `ACCEPTED` verdict.
+> `IMPLEMENTATION_VERIFIED`, implementation `REVIEW_APPROVED`, Owner
+> `APPROVED`, or Owner `ACCEPTED` verdict. The final ledger records a
+> fresh-context `REVIEW_APPROVED` verdict for this Draft package only.
 
 ## Draft Baseline
 
@@ -11,6 +12,10 @@
 - Product/document baseline: local `main`
   `30c72ad3c26dd952410c6e38678faf43d8c55895` (the only delta from the audited
   product source was an `openspec/STATUS.md` push-receipt line).
+- Baseline update checked 2026-09-05: local `main` is
+  `d923119c090ef8a252ef084bb1453b4b937d563d`; `30c72ad3..d923119c` changes only
+  tests/documentation. The cited product anchors remain current, while task
+  0.4 still requires implementation-start rebase and re-anchoring.
 - Draft branch: `codex/add-renderer-untrusted-content-hardening`.
 - Draft worktree:
   `/home/chen/projects/locus-add-renderer-untrusted-content-hardening-draft`.
@@ -134,8 +139,8 @@ implementation:
 
 | Command | Result |
 | --- | --- |
-| `/home/chen/projects/agent-code-for-me/node_modules/.bin/openspec validate add-renderer-untrusted-content-hardening --strict --no-interactive` | PASS — target valid |
-| `/home/chen/projects/agent-code-for-me/node_modules/.bin/openspec show add-renderer-untrusted-content-hardening --json --deltas-only` | PASS — 3 deltas: `local-browser-workbench` MODIFIED (5 scenarios), `runtime-security-baseline` MODIFIED (8) + ADDED (10) |
+| `bun x openspec validate add-renderer-untrusted-content-hardening --strict --no-interactive` | PASS — target valid on 2026-09-05 using the repository-pinned dependency through the temporary worktree `node_modules` link |
+| `/home/chen/projects/agent-code-for-me/node_modules/.bin/openspec show add-renderer-untrusted-content-hardening --json --deltas-only` | PASS — 4 deltas: `local-browser-workbench` MODIFIED (5 scenarios) + MODIFIED Browser Diagnostics Capture (4), `runtime-security-baseline` MODIFIED (8) + ADDED (10) |
 | `/home/chen/projects/agent-code-for-me/node_modules/.bin/openspec validate --specs --strict --no-interactive` | PASS — 52 / 52 living specs |
 | `/home/chen/projects/agent-code-for-me/node_modules/.bin/openspec validate --all --strict --no-interactive` | PASS — 53 / 53 change + living specs |
 | `bun run check:full` | PASS — docs-only lint, architecture, retired-runtime (1,607 scanned / 10 allowlisted), TypeScript, 1,928 tests / 0 failures / 9,350 expectations across 304 files, OpenSpec 53 / 53, build, and patch-whitespace gate |
@@ -148,23 +153,22 @@ use the repository-pinned `@fission-ai/openspec` 1.10.0 binary. The temporary
 `node_modules` symlink used to run the isolated worktree gate was removed after
 each run.
 
-## Draft Review Receipt
+## Drafting Self-Review
 
-Three independent read-only drafting lenses reviewed the post-fix package. The
-labels below approve proposal quality only; none is an implementation verdict:
+The author applied three read-only drafting lenses to the post-fix package.
+These are drafting self-review notes, not independent receipts and not an
+implementation verdict:
 
-- Security: **APPROVED-for-Draft**, no remaining P0/P1/P2. It specifically
-  rechecked programmatic navigation, file TOCTOU, diagnostics redaction,
-  network residuals, admission/lifecycle, effective preferences/permissions,
-  and A/B/1c ownership.
-- OpenSpec consistency: **APPROVED-for-Draft**, no remaining finding. It
-  confirmed all old MODIFIED scenarios remain, all three deltas parse, the
-  unsupported-platform file branch has living ownership, and development plus
-  packaged GUI matrices match.
-- Feasibility: **APPROVED-for-Draft**, no remaining finding. It rechecked
-  Electron event/selector contracts, single-guest admission timing, the
-  lossless mentions model, direct dependency ownership, and extension of the
-  existing descriptor owner without an immutable-snapshot overclaim.
+- Security lens rechecked programmatic navigation, file TOCTOU, diagnostics
+  redaction, network residuals, admission/lifecycle, effective preferences/
+  permissions, and A/B/1c ownership.
+- OpenSpec-consistency lens checked preservation of the old MODIFIED scenarios,
+  delta parsing, living ownership for unsupported file-preview platforms, and
+  matching development/packaged GUI matrices.
+- Feasibility lens checked Electron event/selector contracts, single-guest
+  admission timing, the lossless mentions model, direct dependency ownership,
+  and extension of the existing descriptor owner without an immutable-snapshot
+  overclaim.
 
 All 44 implementation/closeout task checkboxes remain open.
 
@@ -220,9 +224,10 @@ single successful track cannot stand in for another track.
 ## Verdict Ledger
 
 - Draft OpenSpec validation: PASS (proposal structure only).
-- Draft feasibility lens: APPROVED-for-Draft; not implementation approval.
-- Independent fresh-context R3 drafting security lens: APPROVED-for-Draft; not
-  implementation `REVIEW_APPROVED`.
+- Drafting feasibility/security/consistency self-review: completed; not an
+  independent receipt and not implementation approval.
+- Independent fresh-context Draft review: `REVIEW_APPROVED` on 2026-09-05; not
+  implementation `REVIEW_APPROVED` and not Owner approval.
 - Owner `APPROVED` to implement: **PENDING — implementation prohibited**.
 - Codex `IMPLEMENTATION_VERIFIED`: NOT APPLICABLE / NOT RUN.
 - Independent implementation `REVIEW_APPROVED`: NOT APPLICABLE / NOT RUN.
@@ -230,3 +235,17 @@ single successful track cannot stand in for another track.
 - Archive: prohibited before implementation verification, independent review,
   GUI evidence, and Owner `ACCEPTED`.
 - Remote operations: none authorized; no push or remote mutation performed.
+
+## Review Record — 2026-09-05
+
+- Review mode: fresh-context.
+- Scope: documentation-only Draft package at branch head before this review
+  touch-up; product implementation was not reviewed or authorized.
+- Findings: P2 required raw `<webview>` console/load-failure/title/navigation
+  events to move behind main-owned post-attach minimization/redaction before
+  renderer delivery; P3 required traceable review wording and the advanced-main
+  baseline note while retaining task 0.4.
+- Disposition: addressed in D9, Security Invariant 7, tasks 4.7/6.3, the
+  migration deletion list, the `Browser Diagnostics Capture` MODIFIED delta,
+  and this verification ledger.
+- Verdict: **REVIEW_APPROVED** (Draft quality only; fresh-context; 2026-09-05).

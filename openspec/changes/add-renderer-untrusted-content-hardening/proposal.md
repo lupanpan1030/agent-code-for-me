@@ -5,6 +5,12 @@
 > `30c72ad3c26dd952410c6e38678faf43d8c55895` (2026-09-04). It authorizes no
 > product-code edit. Implementation requires an exact-scope Owner `APPROVED`
 > verdict after feasibility and independent security review.
+>
+> Baseline note (2026-09-05): local `main` has advanced to
+> `d923119c090ef8a252ef084bb1453b4b937d563d`. The intervening
+> `30c72ad3..d923119c` changes are tests/documentation only; the cited product
+> anchors were checked and remain current. Task 0.4 still requires a fresh
+> implementation-start rebase and anchor/conflict audit before approval.
 
 ## Why
 

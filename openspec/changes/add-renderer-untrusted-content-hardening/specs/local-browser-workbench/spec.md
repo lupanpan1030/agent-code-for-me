@@ -52,3 +52,50 @@ services.
   a clear bounded reason
 - **AND** it SHALL NOT fall back to direct guest `file://` loading or a
   containment-check-then-path-open flow
+
+### Requirement: Browser Diagnostics Capture
+
+The system SHALL capture bounded local page diagnostics from the preview.
+Page-controlled diagnostic event payloads and probe results SHALL remain in the
+main process until they are bound to the current admitted guest/navigation,
+minimized, secret-redacted, and bounded. URLs exposed in renderer diagnostics
+SHALL omit credentials, query, and fragment. The renderer SHALL receive only
+the resulting safe projection and SHALL NOT directly subscribe to raw guest
+console, load-failure, title, or navigation event payloads.
+
+#### Scenario: Console errors occur
+
+- **WHEN** the preview emits console errors or warnings
+- **THEN** main SHALL capture them from the admitted guest `webContents` after
+  attachment, minimize and redact the level/text/source/line projection, and
+  only then deliver recent messages to renderer state
+- **AND** the workbench SHALL bound the retained list and SHALL NOT listen to
+  the raw `<webview>` `console-message` payload in the renderer
+
+#### Scenario: Network or load failure occurs
+
+- **WHEN** the preview reports a provisional or committed load failure
+- **THEN** main SHALL capture the guest failure, remove URL credentials, query,
+  and fragment, minimize and redact its reason/code fields, and only then
+  deliver the failure projection to renderer diagnostics
+- **AND** the renderer SHALL NOT receive the raw `<webview>` failure event
+
+#### Scenario: Guest title or navigation changes
+
+- **WHEN** the preview updates its page title or completes top-level or in-page
+  navigation
+- **THEN** main SHALL capture the admitted guest event, bind it to the current
+  navigation generation, minimize/redact/bound the title and URL, and remove
+  URL credentials, query, and fragment before renderer delivery
+- **AND** the renderer SHALL NOT directly listen for raw `<webview>`
+  `page-title-updated`, `did-navigate`, or `did-navigate-in-page` payloads
+
+#### Scenario: User captures page context
+
+- **WHEN** the user clicks capture diagnostics
+- **THEN** main SHALL run only the named fixed capture operations against the
+  current admitted guest and SHALL reject stale guest/navigation results
+- **AND** it SHALL capture a screenshot if available only after applying the
+  approved identity, type, dimension, and byte bounds
+- **AND** it SHALL minimize, secret-redact, and bound the DOM summary before
+  returning it to local renderer state for review
