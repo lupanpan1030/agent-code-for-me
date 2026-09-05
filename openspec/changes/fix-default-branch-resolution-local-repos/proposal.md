@@ -1,7 +1,13 @@
 # Change: Resolve default branches for local-only repositories
 
-> Status: **DRAFT — 待 Owner APPROVED**. This change is proposal-only; it does
-> not authorize product-code implementation, integration, push, or release.
+> Status: **APPROVED FOR IMPLEMENTATION — Owner 2026-09-05** (draft `85e348a2`;
+> exact scope as written; implemented on its own lane in parallel with the
+> linked-worktree admission work because the file sets are disjoint; merge stays
+> serial). Process pilot: **test-first** — a fresh-context test author writes the
+> regression tests from the spec scenarios and records them RED on the base SHA
+> before implementation; the implementer then turns them GREEN; review confirms the
+> tests were not weakened. Integration, push, and release still require the normal
+> gates.
 
 ## Why
 
