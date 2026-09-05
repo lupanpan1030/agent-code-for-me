@@ -109,7 +109,7 @@
     "src/main/lib/codex/provider-runtime-binding.ts": 1,
     "src/main/lib/codex/usage-metadata.ts": 5,
     "src/main/lib/desktop-agent-jobs.ts": 2,
-    "src/main/lib/git/branches.ts": 4,
+    "src/main/lib/git/branches.ts": 2,
     "src/main/lib/git/cache/git-cache.ts": 1,
     "src/main/lib/git/cache/index.ts": 2,
     "src/main/lib/git/dictionaries/landscapes.ts": 1,
