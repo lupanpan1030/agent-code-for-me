@@ -202,6 +202,29 @@ or UI helper.
   or submit approval decisions, but must not derive their own trust state or
   start setup command execution directly.
 
+## Repository Default Branch Resolution
+
+- Canonical owner: `src/main/lib/git/default-branch.ts`
+- Direct consumers: `changes.getBranches` and `cleanupOrphanedBranches` in
+  `src/main/lib/git/branches.ts`; `createWorktreeForChat` and
+  `getWorktreeDiff` in `src/main/lib/git/worktree.ts`
+- Rule: repository default-branch precedence and local/remote/fallback
+  provenance live only in the canonical owner. Without a configured `origin`,
+  an existing local `main` wins, then local `master`, then an attached current
+  branch backed by a local ref; the compatibility fallback is `main` and must
+  not be reported as an existing ref. Branch listing and orphan cleanup use
+  cached/local observations only. Worktree creation and clean-diff fallback
+  retain the legacy network-allowed `origin` observation profile. Consumers
+  must preserve explicit branch choices, use auto-detected local results as
+  local refs, and leave existing stored `baseBranch` values authoritative.
+- Adjacent exclusions: GitHub workflow discovery remains owned by
+  `src/main/lib/github-workflow/gh-cli.ts:resolveGitDefaultBranch`; explicit
+  `origin/HEAD` synchronization remains owned by
+  `src/main/lib/git/worktree.ts:refreshDefaultBranch`; remote fetch and
+  merge/rebase policy remains owned by
+  `src/main/lib/git/git-operations.ts:mergeFromDefault`. These paths do not
+  implement or replace the repository resolver policy.
+
 ## Managed Worktree Path Parsing
 
 - Canonical owner: `src/shared/worktree-path.ts`

@@ -2,70 +2,70 @@
 
 ## 1. Governance and baseline
 
-- [ ] 1.1 Obtain explicit Owner `APPROVED` for the R2 proposal before changing
+- [x] 1.1 Obtain explicit Owner `APPROVED` for the R2 proposal before changing
       product code.
-- [ ] 1.2 Confirm the implementation branch/worktree, exact base SHA, clean
+- [x] 1.2 Confirm the implementation branch/worktree, exact base SHA, clean
       baseline, relevant living specs, canonical owner, four direct call sites,
       and active-change overlap.
-- [ ] 1.3 Record the no-public-consumer-impact decision, no-migration posture,
+- [x] 1.3 Record the no-public-consumer-impact decision, no-migration posture,
       explicit non-goals, rollback, and local/remote observation budgets.
 
 ## 2. Canonical resolver and atomic migration
 
-- [ ] 2.1 Add the sole main-process default-branch owner at
+- [x] 2.1 Add the sole main-process default-branch owner at
       `src/main/lib/git/default-branch.ts`, with explicit observation budget and
       local/remote/fallback result provenance.
-- [ ] 2.2 Implement no-origin precedence as existing local `main`, otherwise
+- [x] 2.2 Implement no-origin precedence as existing local `main`, otherwise
       existing local `master`, otherwise attached current `HEAD`; retain the
       documented degenerate compatibility fallback without claiming it is an
       existing ref.
-- [ ] 2.3 Characterize and preserve the three remote observation profiles from
+- [x] 2.3 Characterize and preserve the three remote observation profiles from
       `design.md`—branch listing, orphan cleanup, and worktree/clean diff—and
       prove the local-only path performs no network work.
-- [ ] 2.4 Atomically migrate `changes.getBranches`,
+- [x] 2.4 Atomically migrate `changes.getBranches`,
       `cleanupOrphanedBranches`, `createWorktreeForChat`, and
       `getWorktreeDiff`; delete both previous `getDefaultBranch` helpers in the
       same change.
-- [ ] 2.5 Preserve explicit branch overrides and ensure an auto-detected local
+- [x] 2.5 Preserve explicit branch overrides and ensure an auto-detected local
       branch is used as a local worktree start ref while the private tRPC output
       remains `defaultBranch: string`.
-- [ ] 2.6 Add the canonical owner and consumer rule to
+- [x] 2.6 Add the canonical owner and consumer rule to
       `docs/OWNERSHIP_MAP.md`, plus a focused guard/source audit proving the four
       consumers contain no second precedence policy.
 
 ## 3. Regression coverage
 
-- [ ] 3.1 Add resolver tests proving `main` wins over `master` and current,
+- [x] 3.1 Add resolver tests proving `main` wins over `master` and current,
       `master` wins when `main` is absent, and attached current `HEAD` wins only
       when neither known local name exists.
-- [ ] 3.2 Cover detached/unborn compatibility fallback, configured-origin
+- [x] 3.2 Cover detached/unborn compatibility fallback, configured-origin
       classification, the exact remote compatibility matrix in `design.md`,
       and cached-only paths that must not invoke network lookup.
-- [ ] 3.3 Cover all four consumers: renderer-facing branch output, protected
+- [x] 3.3 Cover all four consumers: renderer-facing branch output, protected
       cleanup default, local auto-detected worktree start/fork metadata, and
       clean-worktree diff baseline; preserve explicit overrides and
       `onlyUncommitted` early-return behavior.
-- [ ] 3.4 Add a no-origin fixture initialized with
+- [x] 3.4 Add a no-origin fixture initialized with
       `git init --quiet -b master`; source both Workspace `baseBranch` values
       from the canonical resolver, create divergent committed heads from one
       fork, and leave no status-visible overlap.
-- [ ] 3.5 Prove the fixture remains deep-check eligible, backfills the same fork
+- [x] 3.5 Prove the fixture remains deep-check eligible, backfills the same fork
       commit, reports hunk reason `head-commits-differ` rather than
       `base-commit-missing`, and reaches a merge trial labeled
       `committed-changes-only`.
-- [ ] 3.6 Prove GitHub-only default-branch discovery, explicit `origin/HEAD`
+- [x] 3.6 Prove GitHub-only default-branch discovery, explicit `origin/HEAD`
       refresh, remote merge/rebase, branch deletion rules, and existing
       explicit stored `baseBranch` values are not changed by this
       implementation.
 
 ## 4. Verification, review, and stop gate
 
-- [ ] 4.1 Run focused resolver, Git branches/worktree, chat base-commit, and
+- [x] 4.1 Run focused resolver, Git branches/worktree, chat base-commit, and
       Agent Workbench tests, including the no-origin `master` regression.
-- [ ] 4.2 Run `git diff --check`,
+- [x] 4.2 Run `git diff --check`,
       `bun x openspec validate fix-default-branch-resolution-local-repos --strict --no-interactive`,
       and `bun run check:full`.
-- [ ] 4.3 Freeze the implementation source SHA and record exact commands,
+- [x] 4.3 Freeze the implementation source SHA and record exact commands,
       counts, exit codes, and Codex `IMPLEMENTATION_VERIFIED` in
       `verification.md`.
 - [ ] 4.4 Obtain fresh-context, read-only Claude Code review on that same exact
