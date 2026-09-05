@@ -168,7 +168,7 @@ turn 成功。
 | corrupt | 隔离副本 rollout 截断到 128 bytes：`-32603 failed to read thread ... rollout ... is empty` | 实测事实 `[CODEX-06]` |
 | expired | TTL、archived/deleted 与真实清理均未覆盖 | 未测 |
 | completed thread 跨版本 | 0.149→0.139 与 0.139→0.149 均 resume 成功，保留 final、turn ID、usage、creator version，且 rollout 摘要未变 | 实测事实 `[CODEX-07]` |
-| failed thread 磁盘重建 | 0.139 active turn 原终态是 failed + 401 error；A/B 停止后，第三个 0.139 process resume 却重建为 completed/error null | 实测事实 `[CODEX-08]`；损失发生层次未测 |
+| failed thread 磁盘重建 | 0.139 active turn 原终态是 failed + 401 error；A/B 停止后，第三个 0.139 process resume 却重建为 completed/error null。fresh-context 评审复现进一步确认 rollout 只写入 `event_msg/task_complete`，没有 failed/error 记录 | 实测事实 `[CODEX-08]`；评审复现（2026-09-05）将损失定位到 rollout 写入层 |
 | schema 跨版本 | `thread/resume` 顶层参数键相同，但 response `Thread` schema 已变化，例如 0.149 新增 required `projectId` | 静态事实 `[CODEX-SCHEMA]` |
 | auth 与 resume | 移除隔离 auth 后 resume 仍成功，之后 websocket prewarm 才报 401 | 实测事实 `[CODEX-02]` |
 
@@ -185,8 +185,11 @@ shutdown，也不是 SIGKILL、掉电或 OS 重启。completed-turn 的双向样
 彼此的两个特定 rollout；它不构成普遍 forward/backward compatibility 保证。
 
 failed-turn 的 0.139→0.139 control 已复现相同语义丢失；此前 0.139→0.149 样本不能把它归因于
-版本差异。rollout 在第三进程 resume 前后摘要不变且可重读，因此本轮没有观察到文件损坏；究竟是
-serializer、loader 还是 response projection 丢失 failed/error 仍为未测。
+版本差异。rollout 在第三进程 resume 前后摘要不变且可重读，因此本轮没有观察到文件损坏。
+2026-09-05 fresh-context 评审复现检查了实际 rollout：磁盘只记录 `event_msg/task_complete`，
+没有 failed/error 记录，因而损失已实测定位到 rollout 写入层，而非 loader 或 response
+projection。Phase 3 conformance fixture 应直接覆盖 rollout 写入，确认 failed/error 终态在
+重启前已持久化。
 
 0.139 experimental `thread/resume` schema 另有 `history` / `path` 变体，可不按 stable
 `threadId` 解析。本轮和当前 Locus adapter 都只覆盖 stable `threadId` surface；experimental 两种
@@ -262,12 +265,13 @@ Phase 3 应保留 native diagnostic 和实际 probe context，使用 `native_res
 ### 5.1 枚举口径与指纹
 
 `[EVENT-01]` 在 repo 固定的官方 Codex 0.139.0 binary 上分别生成 stable 与 experimental
-JSON schema/TypeScript protocol surface。stable 与 experimental 在本节关注的三组 union 上相同：
+JSON schema/TypeScript protocol surface。stable 与 experimental 在本节关注的三组 union 上相同。
+`generate-json-schema` 产生的 `v2.schemas.json` 非确定，因此 schema-stable/schema-experimental
+manifest SHA 只是单次观测、不可复现，不列为可验证指纹。下表只保留可复现的 TypeScript
+manifest：
 
 | 生成物 | 文件数 | path-independent manifest SHA-256 |
 | --- | ---: | --- |
-| `schema-stable` | 258 | `45db1083b2a954e11bf489e660820df1ff456b81fd35b5a2de2b52ae12702543` |
-| `schema-experimental` | 316 | `9142dce27ada2a901389285fcfb2d338f49a089e6cf0ddd056441c24dc1aed74` |
 | `ts-stable` | 554 | `1bf3f0d279fada641ebc379147f4034d4dbc1f65a9ca00f41a2793631ce13652` |
 | `ts-experimental` | 614 | `30a3e28b4f193d696297952a80bd694b8cc5c2551a32549bbebb59fe7ba516d1` |
 
@@ -424,9 +428,14 @@ turn/started
 native mapper → canonical mapper 的组合探针，确认 `item/started`、`item/mcpToolCall/progress`、
 `item/completed` 均得到 `[]`。
 
+本节按用户指定的 12 种 Locus v1 事件语义盘点。其中 `job_created`、`job_started` 是
+Locus 在 job/run admission 与启动时生成的生命周期事件，不是 Runtime-native output；因此它们
+不做 Codex native 映射，也不把“无 native 映射”判为事件缺口。下表覆盖其余 10 种语义：
+
 | Locus v1 语义 | Codex 0.139 native 证据 | 当前投影 | 判定与 Phase 3 缺口 |
 | --- | --- | --- | --- |
 | `assistant_delta` | `item/agentMessage/delta`；`item/completed(agentMessage)` 给出权威终态 | delta 已成为 `assistant_delta`；native thread/turn identity 未进入 durable payload；final item 被丢弃 | **部分覆盖**。ledger 必须用 final snapshot 对账、检测丢 delta，且不能重复拼接文本 |
+| `reasoning_delta` | `item/reasoning/textDelta`、`item/reasoning/summaryTextDelta`；`item/completed(reasoning)` 给出权威终态；`item/reasoning/summaryPartAdded` 表示 summary part 边界 | `textDelta` / `summaryTextDelta` 经 `reasoning-delta` chunk 成为 `reasoning_delta`，payload 只保留 `id/delta`，同样丢弃 `threadId/turnId`；`summaryPartAdded` 与 final `item/completed` 均走空投影 | **部分覆盖**。Phase 3 必须为 reasoning 登记 delta+final 对账，保留 native identity/part 边界，检测丢片且避免重复拼接 |
 | `tool_started` | `item/started` + tool-like `ThreadItem` variants | 空投影 | **缺失**。需保存 item identity、tool kind/name、输入可用状态与 redaction provenance |
 | `tool_delta` | `item/commandExecution/outputDelta`、`item/mcpToolCall/progress` 等 | command/MCP 进度为空；file-change delta/patch 被降为 generic `status` | **缺失/错位**。需保留 tool/item correlation 与分片顺序 |
 | `tool_finished` | `item/completed` 携带完整 item、status、result/error/output | 空投影 | **严重缺失**。权威 tool final 不可由“流停了”猜测 |
@@ -492,7 +501,8 @@ native event。Locus 的 canonical `RunEvent.sequence` 才能成为消费 cursor
    identity 和 provenance；与 output event 有关联但不是同一状态机。
 10. **conformance fixtures**：覆盖 delta+final 对账、各 tool lifecycle、retry error、interrupt、usage、
     unknown method、重复/乱序、transport restart、resume snapshot repair，以及 failed/error 经磁盘
-    rehydrate 后仍保持 terminal 语义。
+    rehydrate 后仍保持 terminal 语义；后者必须直接针对 rollout 写入层，验证 failed/error
+    终态在进程重启前已被记录。reasoning 与 assistant 均要有各自的 delta+final 对账 fixture。
 11. **live owner/attach fencing**：native resume-load 成功不得替代 SessionBinding/Run lease。attach
     intent 必须核验 canonical owner、epoch/fencing 和事件订阅连续性；独立 process 返回的离线 view
     只能作为 snapshot repair，不能获得 active Run 写权或消费 live-attach claim。
@@ -509,6 +519,10 @@ native event。Locus 的 canonical `RunEvent.sequence` 才能成为消费 cursor
 - canonical RunEvent envelope/redaction：`src/main/lib/agent-runtime/runtime-events.ts`、
   `src/main/lib/agent-runtime/redaction.ts`
 - durable event vocabulary：`src/shared/agent-jobs.ts`
+- Codex app-server headless canonical-event consumer：
+  `src/main/lib/headless/adapters/codex-app-server.ts`。其 `appendTraceEvent()` 只消费已映射的 canonical
+  `RunEvent`，并丢弃 `completed`（终态由外层 headless request 结算）；它不引入第二条
+  native 映射链。
 
 **静态事实**：Claude 当前 fork-resume one-shot flag 在调用 SDK query 之前，由
 `prepareClaudeChatHistoryForDesktopRun()` 清除并写库。若 native resume/slice 随后被拒绝，handle
@@ -1002,6 +1016,8 @@ A 在 B response 后仍继续输出 401 retry，约 18.4 秒后才给出真实 t
 
 本次 rollout 在 C resume 前后均为 57,111 bytes / 17 lines，SHA-256 都是
 `33cff904715e107e28cba1c373ad09d733dbeeba9af5d140a8fe0f9c0116a4c0`，仍可读取。
+评审于 2026-09-05 fresh context 复现后进一步检查 rollout 内容：磁盘只记录
+`event_msg/task_complete`，没有 failed/error 记录，因而损失发生在 rollout 写入层。
 
 实测事实是 B 的 output 与 A 的后续 output；“B 从 rollout 重建离线 view，而不是 attach A 的
 in-memory Run”是最符合证据的推断。没有证据表明 B 导致 A interrupted，也不推断内部锁机制。
@@ -1024,13 +1040,20 @@ sha256sum "$codex_bin"
 rg -o '"method": "[^"]+"' "$audit_tmp/ts-stable/ServerNotification.ts" | sort -u
 rg -o '"method": "[^"]+"' "$audit_tmp/ts-stable/ServerRequest.ts" | sort -u
 rg -o '"type": "[^"]+"' "$audit_tmp/ts-stable/v2/ThreadItem.ts" | sort -u
-for dir in schema-stable schema-experimental ts-stable ts-experimental; do
+for dir in ts-stable ts-experimental; do
   digest=$(cd "$audit_tmp/$dir" && \
     find . -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum | cut -d ' ' -f1)
   count=$(find "$audit_tmp/$dir" -type f | wc -l)
   printf '%s count=%s manifest_sha256=%s\n' "$dir" "$count" "$digest"
 done
+sha256sum \
+  "$audit_tmp/ts-stable/ServerNotification.ts" \
+  "$audit_tmp/ts-stable/ServerRequest.ts" \
+  "$audit_tmp/ts-stable/v2/ThreadItem.ts"
 ```
+
+schema 输出仍用于枚举和 per-file 对照，但 `v2.schemas.json` 生成非确定，不应把
+schema-stable/schema-experimental 全目录 manifest SHA 当作可复现验收值。
 
 下载的 tar SHA-256 应为
 `12ebf70df41dc831061862912ab5e7eacdd112bb17e8ce9b2098cb3d92180081`，大小
@@ -1054,6 +1077,8 @@ const mapper = create();
 const native = [
   { method: "item/started", params: {} },
   { method: "item/agentMessage/delta", params: { threadId: "th", turnId: "tu", itemId: "msg", delta: "x" } },
+  { method: "item/reasoning/textDelta", params: { threadId: "th", turnId: "tu", itemId: "reason", delta: "r" } },
+  { method: "item/reasoning/summaryPartAdded", params: {} },
   { method: "turn/diff/updated", params: { threadId: "th", turnId: "tu", diff: "d" } },
   { method: "item/fileChange/patchUpdated", params: { threadId: "th", turnId: "tu", itemId: "patch", changes: [] } },
   { method: "item/mcpToolCall/progress", params: {} },
@@ -1072,9 +1097,11 @@ console.log(JSON.stringify(out, null, 2));
 '
 ```
 
-关键输出：`item/started`、`item/mcpToolCall/progress`、`item/completed` 都是空数组；
-`item/agentMessage/delta` 成为 `assistant_delta`；file/diff 成为 `status`；retryable error 的 canonical
-payload 丢失 `willRetry`、code 与 native IDs。
+关键输出：`item/started`、`item/reasoning/summaryPartAdded`、`item/mcpToolCall/progress`、
+`item/completed` 都是空数组；`item/agentMessage/delta` 成为 `assistant_delta`；
+`item/reasoning/textDelta` 经 `reasoning-delta` 成为 `reasoning_delta`，但 canonical payload 丢失
+`threadId/turnId`；file/diff 成为 `status`；retryable error 的 canonical payload 丢失
+`willRetry`、code 与 native IDs。
 
 ## 10. 来源
 
@@ -1087,3 +1114,17 @@ payload 丢失 `willRetry`、code 与 native IDs。
   [Claude Code CLI reference](https://docs.anthropic.com/en/docs/claude-code/cli-usage)
 - [Codex app-server 官方说明](https://developers.openai.com/codex/app-server/)
 - [Codex app-server protocol 源码](https://github.com/openai/codex/tree/main/codex-rs/app-server-protocol)
+
+## 11. 评审记录
+
+**REVIEW_APPROVED**（fresh-context，2026-09-05）。评审独立复现 13 组实测断言与报告一致，
+并要求应用以下修补：
+
+- P2：补齐 Locus v1 盘点中的 `reasoning_delta`，并明示排除 Locus 侧生命周期事件
+  `job_created`、`job_started` 的 native 映射理由。
+- P3-1：移除不可复现的 schema-stable/schema-experimental manifest SHA，只保留 TypeScript
+  manifest 与 per-file 摘要，并标注 `v2.schemas.json` 生成非确定。
+- P3-2：补充 headless Codex app-server consumer owner，说明它只消费 canonical `RunEvent`，
+  不建立第二条 native 映射链。
+- P3-3：将 failed thread 磁盘重建的损失从“层次未测”升级为评审实测，定位到
+  rollout 写入层，并登记 Phase 3 conformance fixture。
