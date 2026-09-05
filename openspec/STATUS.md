@@ -8,6 +8,7 @@ Updated: 2026-09-30 (Pacific/Auckland); previous: 2026-09-09 (Pacific/Auckland)
 
 | Change | State | Concrete next gate |
 | --- | --- | --- |
+| `refactor-canonical-run-event-ledger` | DRAFT — awaiting Owner APPROVED | Owner resolves the five open questions and C7 Red rows 2, 3, 4, 5, 7, and 8 before implementation or test changes begin. |
 
 Parked proposals are indexed in [`deferred/README.md`](deferred/README.md) and
 do not appear in the active list.
