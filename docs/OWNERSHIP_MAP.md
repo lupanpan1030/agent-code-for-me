@@ -228,7 +228,7 @@ or UI helper.
   `src/main/lib/git/worktree.ts:606` (`detectBaseBranch`) is a currently
   unreferenced base-detection heuristic over `origin/*`, not a default-branch
   resolver. Guard strengthening and these dead helpers are tracked in
-  [TICKET-123](tickets/TICKET-123-default-branch-guard-cleanup-hermetic-tests.md).
+  [TICKET-124](tickets/TICKET-124-default-branch-guard-cleanup-hermetic-tests.md).
   Existing fallback/presentation heuristics in
   `src/main/lib/git/file-contents.ts:80`,
   `src/main/lib/trpc/routers/chats-pr.ts:75`,

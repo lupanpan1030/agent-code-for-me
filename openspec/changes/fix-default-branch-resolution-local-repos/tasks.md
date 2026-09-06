@@ -35,7 +35,7 @@
       two resolver calls (four total), and the resolver has one definition
       owner. Broader shape-targeted guard coverage, dead-helper cleanup, and
       hermetic adapter tests are registered as the separate Yellow follow-up
-      [TICKET-123](../../../docs/tickets/TICKET-123-default-branch-guard-cleanup-hermetic-tests.md).
+      [TICKET-124](../../../docs/tickets/TICKET-124-default-branch-guard-cleanup-hermetic-tests.md).
 
 ## 3. Regression coverage
 

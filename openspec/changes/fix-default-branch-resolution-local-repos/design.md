@@ -94,7 +94,7 @@ new owner and consumers. The delivered source guard proves deletion of both
 `getDefaultBranch` helpers, exactly two resolver calls in each consumer file,
 and one resolver definition owner. It does not prove the absence of every
 possible inline precedence policy; shape-targeted strengthening is registered
-in [TICKET-123](../../../docs/tickets/TICKET-123-default-branch-guard-cleanup-hermetic-tests.md).
+in [TICKET-124](../../../docs/tickets/TICKET-124-default-branch-guard-cleanup-hermetic-tests.md).
 
 This is an extraction-and-replacement, not a compatibility layer. No alias or
 deprecated helper remains after migration.

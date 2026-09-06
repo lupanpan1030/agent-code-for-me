@@ -1,4 +1,4 @@
-# TICKET-123 — Default-branch guard, dead-helper cleanup, and hermetic adapter tests
+# TICKET-124 — Default-branch guard, dead-helper cleanup, and hermetic adapter tests
 
 ## Status
 

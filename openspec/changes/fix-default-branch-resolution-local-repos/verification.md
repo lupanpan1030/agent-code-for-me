@@ -123,7 +123,7 @@ below; the exception does not waive the full gate or replace Owner `ACCEPTED`.
   on the clean tree; the explicit-base lint receipt below supplies changed-file
   coverage. This receipt resolves P2#3 and task 4.2's original exit-1 gap.
   Adapter-test home isolation remains a separately registered Yellow follow-up
-  in [TICKET-123](../../../docs/tickets/TICKET-123-default-branch-guard-cleanup-hermetic-tests.md).
+  in [TICKET-124](../../../docs/tickets/TICKET-124-default-branch-guard-cleanup-hermetic-tests.md).
 
 ## Reproducible evidence-head audit commands
 
@@ -169,7 +169,7 @@ The lint ratchet changed only `src/main/lib/git/branches.ts` from 4 to 2 in
   Shape-targeted strengthening, deletion of `detectBaseBranch`, dead
   `refreshDefaultBranch` / `fetchDefaultBranch` / `hasOriginRemote` cleanup,
   and hermetic adapter tests share the single Yellow follow-up
-  [TICKET-123](../../../docs/tickets/TICKET-123-default-branch-guard-cleanup-hermetic-tests.md).
+  [TICKET-124](../../../docs/tickets/TICKET-124-default-branch-guard-cleanup-hermetic-tests.md).
 - Without configured `origin`, tests prove local `main` > local `master` > an
   attached current branch backed by `refs/heads/*` > honest `main` fallback.
   Provenance distinguishes `local`, `remote`, and `fallback`; cached-only local,
@@ -210,7 +210,7 @@ substitute for the required fresh-context Claude Code review.
 
 The recorded consumer behavior change beyond the no-origin precedence is the
 lone-`branchType` edge in Decision 3. Remaining guard-strength and test-isolation
-work is registered separately in TICKET-123; this source SHA is unchanged.
+work is registered separately in TICKET-124; this source SHA is unchanged.
 Owner acceptance remains a separate gate.
 
 ## 4.4 Fresh-context review
@@ -265,10 +265,10 @@ none changes source/tests or records Owner product acceptance.
 | Finding | Recorded disposition |
 | --- | --- |
 | P2#1 | [Design Decision 3](design.md#decision-3-the-internal-result-carries-ref-provenance) and the policy audit above record explicit-pair-only `branchType` semantics and resolver provenance for automatic bases. Decision 4 and the stop-gate summary qualify the earlier blanket preservation claims. The legacy override stays removed. |
-| P2#2 | [OWNERSHIP_MAP adjacent exclusions](../../../docs/OWNERSHIP_MAP.md#repository-default-branch-resolution) inventories dead `detectBaseBranch`; [task 2.6](tasks.md#2-canonical-resolver-and-atomic-migration) and design Decision 1 state the actual guard proof. Shape-targeted strengthening and helper removal are registered in [TICKET-123](../../../docs/tickets/TICKET-123-default-branch-guard-cleanup-hermetic-tests.md). |
-| P2#3 | The coordination session's independent full gate at `e1f8a7f9` is exit 0, 1963 pass / 0 fail, OpenSpec 53 passed / 0 failed; the execution time, log path, and accepting dispatch `impl-default-branch-green` are recorded above, and task 4.2 records both outcomes. Adapter-test isolation joins TICKET-123. |
+| P2#2 | [OWNERSHIP_MAP adjacent exclusions](../../../docs/OWNERSHIP_MAP.md#repository-default-branch-resolution) inventories dead `detectBaseBranch`; [task 2.6](tasks.md#2-canonical-resolver-and-atomic-migration) and design Decision 1 state the actual guard proof. Shape-targeted strengthening and helper removal are registered in [TICKET-124](../../../docs/tickets/TICKET-124-default-branch-guard-cleanup-hermetic-tests.md). |
+| P2#3 | The coordination session's independent full gate at `e1f8a7f9` is exit 0, 1963 pass / 0 fail, OpenSpec 53 passed / 0 failed; the execution time, log path, and accepting dispatch `impl-default-branch-green` are recorded above, and task 4.2 records both outcomes. Adapter-test isolation joins TICKET-124. |
 | P3#4 | Acceptance/review evidence SHA is `e1f8a7f9` (source `7d26fec7` + docs); the evidence-head architecture command and passing output are recorded above. |
-| P3#5 | The ownership map labels the existing dead helpers; `refreshDefaultBranch` / `fetchDefaultBranch` / `hasOriginRemote` cleanup and a caller/knip recheck join TICKET-123. |
+| P3#5 | The ownership map labels the existing dead helpers; `refreshDefaultBranch` / `fetchDefaultBranch` / `hasOriginRemote` cleanup and a caller/knip recheck join TICKET-124. |
 | P3#6 | The ownership map inventories the existing file-contents, chats-pr, status, renderer, and low-level createWorktree fallback exclusions. |
 | P3#7 | No change required for this SHA: the pre-existing bare-simpleGit signal/timeout gap is preserved within the worktree profile, and the no-origin path never reaches the network fallback. |
 | P3#8 | Linked-worktree attached-HEAD behavior is disclosed in Owner acceptance notes below. |
@@ -303,7 +303,7 @@ release, or repository-rule changes.
 
 Parent HEAD is `e1f8a7f95a49905aa078879fa873fb7e8500acee`; this follow-up changes
 only `design.md`, `tasks.md`, this ledger, `docs/OWNERSHIP_MAP.md`, and the new
-Yellow TICKET-123. Source, tests, and `lint-baseline.json` remain frozen.
+Yellow TICKET-124. Source, tests, and `lint-baseline.json` remain frozen.
 
 - `bun x openspec validate fix-default-branch-resolution-local-repos --strict --no-interactive`:
   `Change 'fix-default-branch-resolution-local-repos' is valid`, exit **0**.
