@@ -8,10 +8,68 @@ Updated: 2026-09-07 (Pacific/Auckland)
 
 | Change | State | Concrete next gate |
 | --- | --- | --- |
-| `fix-default-branch-resolution-local-repos` | **ACCEPTED 2026-09-07** — evidence `88bb8029`, source `7d26fec7`; both Owner acceptance notes acknowledged | Coordination-dispatched no-ff merge, post-merge gates, archive, and one main push |
 
 Parked proposals are indexed in [`deferred/README.md`](deferred/README.md) and
 do not appear in the active list.
+
+## Locally archived 2026-09-07
+
+### Default branch resolution for local repositories
+
+Owner **ACCEPTED 2026-09-07** evidence
+`88bb80294e1ccacdec880237b343873868ae8186`, frozen product source
+`7d26fec7579b05d56e5a0ef1e1d66d76a0b91ea6`, with `IMPLEMENTATION_VERIFIED`,
+fresh-context Claude Code `REVIEW_APPROVED`, and the prior coordination gate green.
+Both semantic notes in the change's **Owner acceptance notes** were knowingly accepted.
+Acceptance documentation commit: `f34d08ead74020c7fdb078c7bbf9480d7a6cba11`.
+
+The coordination-dispatched no-ff integration merged that branch into local `main`
+from `61cc6af64d08ea2d7efa5bd1240cdac1dedb9d27` as
+`a50bee6d733613ceb36f2aaaf80d73af1f6ef8f1`. No rebase occurred. Conflict file list:
+**none**; Git automatically merged STATUS and preserved both sides' records.
+The immutable RED test file remains unchanged from `30451539`.
+
+Post-merge gate at exact merge SHA `a50bee6d733613ceb36f2aaaf80d73af1f6ef8f1`:
+
+- `bun run check:full`: **exit 1**, tests **1960 pass / 3 fail / 9495 expectations /
+  306 files**. All three failures are `CodexAppServerShellSnapshotScrubError` in
+  `tests/codex-app-server-adapter.test.ts`: sandbox `EROFS` while scrubbing two
+  entries under `/home/chen/.codex/shell_snapshots`. No other test failed.
+- Dispatch-required fallback `bun test --isolate tests`: **exit 1**, the same
+  **1960 pass / 3 fail / 9495 expectations / 306 files**, solely the same EROFS.
+  This proceeds under the dispatch's explicit sandbox-environment exception;
+  **coordination must independently rerun the full gate**. This is not a green
+  full-gate claim at the merge SHA.
+- Lint, architecture guard, retired-runtime residue (**1611 scanned / 10
+  allowlisted**), and TypeScript passed before the test-stage short circuit.
+  Explicit-base `BIOME_CHANGED_SINCE=61cc6af64d08ea2d7efa5bd1240cdac1dedb9d27 bun run lint`
+  and range `git diff --check 61cc6af6..HEAD` also passed, exit **0**.
+- Short-circuited stages rerun separately: `bun run spec:validate` **53/53**,
+  production main/preload/renderer `bun run build`, and `bun run diff:check`
+  all passed, exit **0**.
+- Local execution logs: `/tmp/default-branch-closeout-checkfull.log`,
+  `/tmp/default-branch-closeout-fallback.log`,
+  `/tmp/default-branch-closeout-spec-pre.log`, and
+  `/tmp/default-branch-closeout-build.log` (ephemeral local logs).
+
+`bun x openspec archive fix-default-branch-resolution-local-repos --yes` completed
+with all tasks checked and created the living
+[`git-default-branch-resolution`](specs/git-default-branch-resolution/spec.md) spec:
+**2 added requirements / 9 scenarios**, covering the canonical resolver and its
+four consumers' local Workspace evidence behavior; no existing requirements changed.
+Archive: [`2026-09-07-fix-default-branch-resolution-local-repos`](changes/archive/2026-09-07-fix-default-branch-resolution-local-repos/).
+
+The requested `bun x openspec validate --strict --no-interactive` returned exit 1
+with `Nothing to validate` because this CLI requires an explicit selection in
+noninteractive mode. Its full-scope form
+`bun x openspec validate --all --strict --no-interactive` passed **53/53, exit 0**;
+log: `/tmp/default-branch-closeout-spec-post.log`.
+
+Rollback the complete integrated product-code + RED-tests + evidence group with
+`git revert -m 1 a50bee6d733613ceb36f2aaaf80d73af1f6ef8f1`, which includes reverting
+`lint-baseline.json`. **Do not revert `7d26fec7` alone**: that leaves the RED tests
+failing. Later archive/push receipt commits are documentation history outside the
+merge parent diff and should be reconciled if rollback is actually dispatched.
 
 ## Locally archived 2026-09-02
 
