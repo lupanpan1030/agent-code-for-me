@@ -1,240 +1,297 @@
-## 1. Governance and Baseline
+# Tasks
 
-- [ ] 1.1 Freeze the approved proposal source SHA and record explicit Owner
-  `APPROVED`, including a disposition (`DIRECT_NEW_STANDARD`, `NEW_VERSION`,
-  `TEMPORARY_FACADE`, `DEFER`, or `REJECT`) for every C7 Red class in proposal rows 2,
-  3, 4, 5, 7, and 8; do not begin implementation while this change remains DRAFT.
-- [ ] 1.2 Record the baseline implementations and archived requirements that produced
-  the current event paths, then capture characterization evidence for desktop,
-  headless, job-store, and Local Job API ordering/terminal behavior without changing
-  the expected new contract.
-- [ ] 1.3 Inventory consumers using the Consumer Impact template: Amadeus, Career Kit,
-  and any additional/unknown callers; classify whether Amadeus's native app-server
-  stream is public or internal and freeze representative fixtures.
-- [ ] 1.4 Update `docs/OWNERSHIP_MAP.md` in the future implementation change to name
-  `run-event-ledger.ts` as per-Run ingestion/order owner, `runtime-events.ts` as
-  envelope owner, `redaction.ts` as algorithm owner, `run-artifacts.ts` as artifact
-  admission owner, and job-store as exact-sequence sink.
-- [ ] 1.5 Have an independent test author translate every delta Scenario into a Bun
-  acceptance test using only the documented seam, record its initial expected failure,
-  and link each test to one Scenario before implementation begins.
+Status: **DRAFT — awaiting Owner APPROVED**. All boxes describe future implementation,
+not work authorized by the current documentation-only dispatch. The source dispatch
+and raw reviews are indexed in verification.md. No product or acceptance-test authoring
+starts until Owner APPROVED and the Consumer Impact decision are recorded.
 
-## 2. Ledger Owner and Identity
+## 1. Governance and baseline
 
-- [ ] 2.1 Add `createCanonicalRunEventLedger` with injected Run identity,
-  deterministic clock, exact RuntimeInstallation/protocol provenance, atomic
-  `durableStore`, retryable projections, and observable `read(afterSequence)` seam;
-  derive/validate high-water sequence from the store and reject any caller-owned
-  initial-sequence authority.
-- [ ] 2.2 Route `job_created`, `job_started`, JSON-RPC response, notification, server
-  request, response-send, request-resolved, snapshot, restart, and transport-exit
-  boundaries through the one per-Run ledger before projection or persistence.
-- [ ] 2.3 Make the ledger-assigned value the internal `RunEvent`, durable job-event,
-  and Local Job API cursor sequence; prove strict increase across restart, remove every
-  independently assigned nested sequence, and preserve the existing optional public
-  `runEventSequence` only as a deprecated equality alias that is never a second cursor.
-- [ ] 2.4 Add optional redacted `payload.runtime.codex.v1` identity with independently
-  preserved `threadId`, `sessionId`, `turnId`, `itemId`, `requestId`, and `callId`;
-  test that thread/session are never substituted.
-- [ ] 2.5 Converge renderer/durable/API attempt identity so event/public `jobId`, when
-  present, equals canonical `runId`; reject mismatch before provider work, and prove a
-  retry creates a new ledger/new `runId` with direct/root/attempt provenance without
-  mutating the source Run.
-- [ ] 2.6 Make atomic exact-sequence durable commit and projection-obligation creation
-  the ingestion acknowledgement/visibility barrier. Serialize pending facts, reconcile
-  failed or unknown commits by stable fact key, retry the same fact/sequence, and resume
-  failed projections from durable cursor without rollback or duplicate API delivery.
-- [ ] 2.7 Apply canonical redaction once before fan-out while retaining run/item/channel
-  state across adjacent fragments, withholding possible exact-secret prefixes and
-  flushing them safely at item/terminal boundaries so renderer, chat, Workbench,
-  headless, persistence, and API projections consume the same sanitized fact.
-- [ ] 2.8 Introduce the implementation-only `canonicalRunEventLedgerV1` selection at
-  Run construction and assert legacy-or-ledger exclusivity; prohibit shadow dual-write.
-- [ ] 2.9 Route Claude desktop stream/output boundaries through the same ledger and
-  replace its raw renderer-emitter path, while leaving Claude query-resume options,
-  chat-history fork flag, and one-shot handle CAS behavior unchanged for Phase 5.
+- [ ] 1.1 Resolve proposal's four Open Questions and R1 (C7 rows 4/5); update the deterministic
+  proposed behavior if the Owner selects a different disposition, then obtain APPROVED.
+  Do not encode the approval's absence as a living runtime scenario.
+- [ ] 1.2 Freeze source SHA, current living requirements, public bare API payload/12 types,
+  dense order, existing one completed, retry job envelope and initial/final artifact behavior.
+  Characterization uses current product readers, not the draft's former desktop wrapper example.
+- [ ] 1.3 Inventory Amadeus's actual v1 dependencies and Career Kit adapter version read-only;
+  record receipt links or unknown separately from Locus fixtures. Record Owner relay
+  2026-09-02 as the source of direct native consumption, outside C7; no external message
+  sending is implied by this task.
+- [ ] 1.4 Materialize the fixture catalog below in tests/fixtures/run-event-ledger/.
+  Each file has fixtureVersion=1, evidenceClass, sourceRefs, provenance and cases/steps;
+  exact notification/request/item shapes are frozen before tests or implementation.
+  Check in the three pinned 0.139 stable TypeScript union surfaces (or a minimal generated
+  closure with manifest identifying all referenced types); verify the trace §5.1 SHA-256s.
+  Vendoring schemas/fixtures is future approved test work, not done by this draft.
+- [ ] 1.5 Independently author at least one Bun test per Scenario before implementation:
+  unique test ID → exactly one capability/Requirement/Scenario; use a table test where
+  one scenario enumerates variants. Expand the verification scenario register with file,
+  test ID, red output, then green output; no test claims several duplicate scenarios.
+  Existing MODIFIED scenario tests may be retained/extended with explicit baseline evidence;
+  new acceptance behavior must demonstrate a meaningful failure, not merely missing imports.
+- [ ] 1.6 Confirm permitted owner inventory, threat boundaries and data stage; agree on
+  active legacy drain and read-only legacy marking, not an undisclosed data reset.
 
-## 3. Item State Machine and Reconciliation
+## 2. Ledger owner and native identity
 
-- [ ] 3.1 Implement item correlation and `started -> delta* -> completed` transitions
-  for assistant, reasoning, and every supported tool item, preserving reasoning part
-  boundaries and native item identity.
-- [ ] 3.2 Reconcile assembled deltas against the authoritative completed snapshot with
-  explicit `matched`, `suffix_repaired`, `missing_local`, `missing_native`, or
-  `mismatch` results and `lossPossible` where applicable.
-- [ ] 3.3 Tolerate missing, duplicate, and out-of-order transitions with bounded state;
-  never guess divergent content or append a completed assistant/reasoning snapshot as
-  another user-visible delta.
-- [ ] 3.4 Replace desktop raw `appServerPersistenceChunks` and blind text-delta joining
-  with the reconciled ledger projection, and derive structured/final output from the
-  same authoritative item state.
-- [ ] 3.5 Map command execution, file change, MCP tool call, dynamic tool call,
-  collaboration-agent tool call, web search, and image generation lifecycle fixtures
-  plus image-view boundaries to one correlated start where supplied, zero or more
-  progress events, and one finish/status transition.
+- [ ] 2.1 Add run-event-ledger.ts and run-event-ledger-host.ts with the design's exported
+  test contract, injected clock/store/projections/artifact owner, runtimeId and memory-only
+  redactionContext.secretHints; host composition receives existing job IDs, does not mint IDs.
+- [ ] 2.2 Ingest native response/notification/request/send/resolved and system facts into one
+  serial batch order; persist observationKey/ordinal fact keys, never assign a native cursor.
+- [ ] 2.3 Implement bare semantic payload persistence with separate metadata; remove the
+  internal persistedPayloadForRunEvent/runEventSequence wrapper and Workbench reader atomically.
+  Do not introduce an internal compatibility alias or change renderer runId/cancel routing.
+- [ ] 2.4 Preserve native identities and exact execution provenance, including a distinct
+  locus-completion variant; move interrupt target state to ledger, retain shared normalization.
+- [ ] 2.5 Add explicit Drizzle migration in drizzle/ and schema/index.ts for ledger_version,
+  provenance/seal metadata, event fact_key/record metadata and projection cursors; verify
+  required-on-v1 fields, uniqueness, dense sequence validation and transaction rollback.
+- [ ] 2.6 Replace job-store append/complete mechanics with appendExactRunEventBatch and
+  committed readers/ack; preserve atomic job-status+terminal transaction, remove nextEventSequence,
+  store redaction and createAgentJobRunEvent. Event records plus cursors are the outbox;
+  no additional unknown-commit API/queue is required.
+- [ ] 2.7 Wire one build-time canonicalRunEventLedgerV1 selector at the host composition
+  entry, initially false; meet all six design activation conditions before true cutover.
+  Add transition-mode structural checks and behavioral single-writer tests, then remove
+  selector/legacy branch/transition allowances before acceptance.
+- [ ] 2.8 Convert desktop Claude/Codex, headless app-server/coarse observers, CLI/protocol,
+  completion, system creation/start/retry, pre-start cancel and recovery entries in the
+  inventory without changing construction/identity/selection policy; terminal call sites
+  submit evidence. Delete job-event-bridge.ts and all its calls in the same change.
+- [ ] 2.9 Migrate all historical jobs to ledger_version=0/legacy_unverified without rewriting
+  their bytes/IDs/sequences; drain old active jobs before cutover and reject new append on
+  legacy records. Exercise both desktop wrapper and API bare history readers.
 
-## 4. Errors, Terminal, Usage, and Artifact
+## 3. Item state and reconciliation
 
-- [ ] 4.1 Preserve sanitized native error code, `willRetry`, native correlation, and
-  exact provenance; classify errors as diagnostic/retryable/fatal-candidate/policy
-  denial rather than treating every error chunk as terminal failure.
-- [ ] 4.2 Make the ledger the only terminal minting owner and atomically persist exactly
-  one `completed` with `succeeded`, `failed`, `canceled`, or `interrupted`; delete
-  adapter pending-terminal state and job finalizers that mint another completion.
-- [ ] 4.3 Implement the Owner-approved completion-truth mapping so denial, rejection,
-  and invalid zero-output runs cannot return unqualified success, while preserving an
-  explicit valid-empty-output exception if approved.
-- [ ] 4.4 Distinguish a definitive exit from a bounded replacement registered by the
-  same in-process Run owner before exit. Bind an approved replacement to the same
-  ledger/Run/installation/protocol before its deadline; otherwise convert exit/expiry/
-  mismatch into one synthetic terminal with exit provenance. Enforce the approved late
-  policy without changing settled outcome or emitting a second terminal.
-- [ ] 4.5 Emit usage as cumulative `kind=snapshot`, retaining normalized total and last
-  observation, deduplicating by native scope/vector, marking reset/discontinuity, and
-  treating the first post-resume snapshot as a baseline rather than a delta.
-- [ ] 4.6 Add canonical artifact candidate admission for regular-file existence, real
-  path/symlink/hardlink safety, allowed scope, run ownership, stability, size/type,
-  SHA-256, and redaction; commit manifest association before the existing
-  `artifact_created` event and before terminal.
-- [ ] 4.7 Keep Local Job API v1 artifact field shapes and its existing event name; make
-  rejected candidates observable as sanitized diagnostics without creating an event or
-  manifest entry. Factor reusable run-directory/atomic-write/stable-file/digest I/O from
-  `headless/local-job-api.ts`, and delete `headless/cli-dispatcher.ts` direct initial
-  event/final registration so no non-owner decides artifact eligibility or manifest state.
+- [ ] 3.1 Implement readItem and committed status/item_reconciliation carriers, including
+  item state, authoritative text/fields, result/loss/missingStart/suppressed count.
+- [ ] 3.2 Implement assistant final reconciliation with missing/late start, duplicate handoff,
+  equal unidentified text, prefix repair and mismatch; replace item materialization, never
+  append final text as another delta or dedupe solely by equal text.
+- [ ] 3.3 Key reasoning by thread/turn/item + text or summary + partIndex; cover content and
+  summary arrays separately, summaryPartAdded and cross-part missing/duplicate inputs.
+- [ ] 3.4 Cover all eight tool variants and six remaining non-tool variants per disposition
+  table; snapshot userMessage does not become assistant output.
+- [ ] 3.5 Repurpose stream-event-mapper.ts to the pure projectRunEventToRendererChunks
+  projection; move coarse input decoding to ledger-ingress.ts; delete raw desktop chunk
+  accumulation and blind text joins in route/history owners.
 
-## 5. Unknown Methods and Stable Status Subtypes
+## 4. Errors, terminal, usage and artifacts
 
-- [ ] 5.1 Replace every native/default `[]` or `null` projection with a ledger
-  observation and prohibit transport, mapper, or adapter branches from silently
-  discarding admitted native input.
-- [ ] 5.2 Implement and table-test stable `status` subtypes for thread lifecycle, turn
-  lifecycle, compaction, reroute, warning, MCP lifecycle, OAuth lifecycle, approval
-  review, interaction boundary, runtime process, repair, unknown native method, and
-  late event.
-- [ ] 5.3 For unknown methods, retain sanitized method/correlation/provenance and
-  payload-shape metadata with `lossPossible=true`, without storing arbitrary raw
-  payload or relying on free-form text as the only discriminator.
-- [ ] 5.4 Update the architecture guard with self-proving violating/clean fixtures that
-  keep `createRunEvent` in `runtime-events.ts` and `redactRuntimePayload`,
-  `redactExactSecretHints`, `createExactSecretStreamRedactor`, and
-  `createExactSecretStreamChannelRedactor` in `redaction.ts`;
-  reject a second ledger/allocator/terminal owner, raw adapter/route writes, unknown
-  empty projection, headless envelope stripping, and legacy mapper/renderer fact or
-  redaction buffers.
+- [ ] 4.1 Preserve error classification/native code/willRetry; make RunTerminalEvent completed-only;
+  remove adapter/mapper lastError/default-success/pending-terminal owners.
+- [ ] 4.2 Implement the exact OutcomeEvidence union/precedence; keep existing output and
+  credential validation owners feeding evidence, with denial/invalid-empty → failed and
+  explicit valid-empty exception. No snapshot-only success or second terminal after cleanup.
+- [ ] 4.3 Route all terminal inventory sites through settle: desktop safe finalizers,
+  headless job-runner success/catch, completion-runner success/catch, both CLI pre-start cancel
+  branches and agent-jobs tRPC queued cancel, and confirmed-dead-worker recovery. Keep stale detection; no new lease/fencing.
+- [ ] 4.4 Every transport exit supplies synthetic interrupted evidence with provenance;
+  no beginTransportReplacement/bindReplacementTransport mechanism. Reopen durable Locus
+  records for recovery; starting a native process again requires a separate existing new Run.
+- [ ] 4.5 Freeze usage/item materialization at terminal ingress; permit only status/late_event
+  after seal, with terminalSequence and observed total/last. Keep result usage asOfSequence;
+  no drain timer or assumption about unmeasured late-native order.
+- [ ] 4.6 Normalize snapshot total/last/baseline/delta once; per-call usage sums unique IDs;
+  retain shared usage-metadata.ts cache arithmetic. Dedupe revisions, mark synthetic decrease.
+- [ ] 4.7 Move artifact validation/preparation into run-artifacts.ts; exact stable-file scope,
+  digest/ownership/media/redaction checks and status/artifact_admission rejections. Remove
+  dispatcher artifact minting and duplicate API file admission implementation.
+- [ ] 4.8 Prepare terminal files from the frozen completed candidate; register final refs
+  before or with completed in one durable commit. Runtime artifact events precede terminal;
+  terminal projection files emit no artifact_created, preserve the finite digest dependency
+  graph and existing public paths. Add preparation/rollback/reopen crash fixtures.
 
-## 6. Provenance and Resume Repair
+## 5. Unknown methods and status subtypes
 
-- [ ] 6.1 Capture an immutable pre-run RuntimeInstallation/protocol snapshot with
-  runtime and adapter IDs, installation ID, executable real path, binary SHA-256,
-  version/build when available, and schema/protocol identity; fail closed if the
-  Owner-approved required identity is unavailable.
-- [ ] 6.2 Bind the exact provenance to every ledger and derived trace record, including
-  synthetic and repair records, while redacting local-secret path material from
-  consumer projections.
-- [ ] 6.3 Implement `repairFromSnapshot` as comparison against durable high-water state,
-  always marking `repair.source=snapshot`, `lossPossible`, source identity, and per-item
-  reconciliation result; never call it replay or expose a native cursor downstream.
-- [ ] 6.4 Continue sequence and permit repair only for an unsettled, pre-authorized,
-  same-Run replacement bound before its deadline. After a definitive exit or durable
-  terminal, missing/malformed/truncated rollout and later snapshots are diagnostics only
-  and cannot fabricate repair or overwrite failed truth.
-- [ ] 6.5 Record server-request ingress, response-send, and resolved facts only; verify
-  that no full Interaction FSM, lease/epoch fencing, async-submit/idempotency, or Claude
-  handle CAS leaks into this change.
+- [ ] 5.1 Replace native default [] with unknown_native_method/lossPossible; malformed known
+  payloads use warning/invalid_native_shape rather than silently disappearing.
+- [ ] 5.2 Freeze and implement design's exhaustive 66 notification / 10 request / 16 item
+  disposition table, including plan/hook/model-verification/review/userMessage, process,
+  realtime/remote-control/windows; observed_deferred does not promote capability support.
+- [ ] 5.3 Project all nine non-v1 internal event types to status with subtype=internal type,
+  preserving payload members, and restricted records to redacted_observation at the same
+  sequence. Every v1 sequence remains dense, so there is no unexplained gap policy.
+- [ ] 5.4 Record request/send/resolved boundaries with request identity and sent/failed result;
+  do not implement/claim Interaction resolution state or duplicate resolved notification ingress.
 
-## 7. Conformance Fixtures (Tests First)
+## 6. Provenance and resume repair
 
-- [ ] 7.1 Add trace-shaped `[EVENT-01]`, `[EVENT-02]`, and `[EVENT-03]` fixtures at
-  `createCanonicalRunEventLedger` and adapter boundaries, including interleaved JSON-RPC
-  response/notification/server-request/response-send/resolved ordering.
-- [ ] 7.2 Add assistant delta+final and reasoning delta/summary-part+final fixtures;
-  assert authoritative completed reconciliation, preserved part identity, no duplicate
-  text, and detectable loss/mismatch.
-- [ ] 7.3 Add each tool lifecycle fixture: command execution, file change, MCP tool,
-  dynamic tool, collaboration-agent tool, web search, and image generation; assert
-  correlation and exactly one finish per admitted completed snapshot. Add image view
-  with its native start/completed boundaries even when it has no delta.
-- [ ] 7.4 Add retry-error-then-success and fatal-error fixtures; assert native code,
-  `willRetry`, diagnostic versus terminal classification, and exactly one final
-  `completed` with correct truth.
-- [ ] 7.5 Add cancellation/interrupt fixtures and assert provider work stops, final
-  status follows the approved mapping, and no second terminal appears.
-- [ ] 7.6 Add repeated, increasing, decreasing, and post-resume usage snapshots; assert
-  total/last values, dedupe key, discontinuity, and baseline semantics.
-- [ ] 7.7 Add a future unknown native method containing secret-like values and a
-  table-driven status-taxonomy fixture; assert a stable sanitized observation rather
-  than `[]` or arbitrary-text-only state.
-- [ ] 7.8 Add missing, duplicate, and out-of-order item transitions plus late events;
-  assert bounded reconciliation, loss markers, immutable completion truth, and no
-  duplicate content or terminal.
-- [ ] 7.9 Add separate unplanned exit, crash, pre-authorized same-Run replacement,
-  replacement timeout/identity mismatch, and no-native-terminal fixtures; assert only a
-  successfully bound replacement continues the exact high-water sequence and repairs
-  before settlement, while every definitive case gets one synthetic terminal with
-  provenance.
-- [ ] 7.10 Add resume snapshot repair with `[CODEX-07]` cross-version completed-item
-  samples; assert snapshot source, loss possibility, reconciliation result, and
-  canonical sequence as the only cursor.
-- [ ] 7.11 Add `[CODEX-06]` missing/malformed/truncated rollout samples; assert precise
-  sanitized diagnostic and no invented snapshot replay.
-- [ ] 7.12 Add `[CODEX-08]` error/failed-rollout persistence and restart; assert the
-  rollout write path persists error and failed terminal before close and rehydrate
-  remains terminal after restart.
-- [ ] 7.13 Add positive artifact fixtures and negative missing/out-of-scope/symlink/
-  hardlink/cross-run/unstable/secret-bearing candidates; assert admission, digest,
-  manifest ownership, redaction, and event absence on rejection.
-- [ ] 7.14 Add assistant, reasoning, tool, and diagnostic fixtures that split each exact
-  provider/gateway secret across adjacent fragments and terminal flush; assert no
-  individual ledger event, reconstructed message, trace, result, artifact metadata, or
-  public envelope exposes the secret or a withheld prefix.
-- [ ] 7.15 Run the same native fixtures through desktop and headless adapters; assert
-  identical canonical sequence/facts, one terminal, renderer/persistence equivalence,
-  CLI/API replayability, and no envelope stripping.
-- [ ] 7.16 Assert `LOCAL_JOB_API_EVENT_TYPES` remains the exact 12-value set, `--after`
-  reads are strictly increasing without loss/duplication, `--follow` exits at public
-  terminal, and all additions are optional/redacted/unknown-safe under the approved
-  late-event disposition.
-- [ ] 7.17 Run Amadeus native assembler/tool/completion/cursor fixtures and Career Kit
-  batch/structured-output/result/artifact fixtures; record pass/fail, consumer version,
-  schema version, and any coordinated migration. Record remaining consumers as
-  `unknown`, not “none”.
-- [ ] 7.18 Retain trace §6.2's unmeasured 66-notification frequency/total-order variants
-  as a named follow-up; do not claim conformance evidence for unexecuted cases.
-- [ ] 7.19 Fault-inject definite pre-commit failure, unknown commit outcome, crash after
-  commit/before fan-out, and individual projection failure; assert no uncommitted
-  acknowledgement/visibility, stable-fact-key same-sequence recovery, durable high-water
-  replay, no overtaking/rollback, and no duplicate API event.
-- [ ] 7.20 Feed matching and mismatched renderer/durable/API `runId`/`jobId` identities
-  plus a retry chain through each Run constructor; assert equality aliases, fail-closed
-  mismatch before provider work, new ledger/ID per retry, and immutable source history.
+- [ ] 6.1 Use immutable runtime installation/version/binary digest and reproducible per-file
+  or TS-manifest schema fingerprints; do not use the non-deterministic v2.schemas.json
+  directory digest or silently depend on an unimplemented Runtime delivery registry.
+- [ ] 6.2 Record Codex correlated successful response equality, independent session identity,
+  durability fields/provenance and neutral native_resume_validated/rejected; preserve -32600/
+  -32603, no expired inference, early status consumption or fabricated thread/started.
+- [ ] 6.3 Record Claude correlated system/init predicate for ordinary/fork/slice without
+  changing query-options/chat-history one-shot CAS; result/exit alone never validate.
+- [ ] 6.4 Repair snapshots with fresh Locus sequence, source=snapshot, lossPossible and
+  reconciliation. Durable failed/error wins over degraded native history; no durable
+  terminal means the snapshot cannot alone settle succeeded or grant live owner authority.
+- [ ] 6.5 Label counter reset, incompatible schema and native resume-not-replay as
+  inference/policy; keep trace §6.2 dynamics and Phase 5 replacement/fencing/CAS follow-ups
+  separate, without a Run identity convergence guard hidden in this slice.
 
-## 8. Verification, Review, and Stop Gates
+## 7. Conformance fixtures (independent author first)
 
-- [ ] 8.1 After all red-first evidence is recorded and implementation is green, run
-  targeted ledger, Codex adapter, desktop/headless parity, job-store, Local Job API,
-  durable fault-injection, identity/retry, architecture-guard, redaction, and artifact
-  tests and attach exact commands/output to `verification.md`.
-- [ ] 8.2 Run `bun run check:full`,
-  `bun x openspec validate refactor-canonical-run-event-ledger --strict --no-interactive`,
-  `git diff --check`, and the repository's secret/residue checks on the frozen source
-  SHA; record honest pass/fail and environment limitations.
-- [ ] 8.3 Prove deletion in the same implementation change: no native default empty
-  projection, adapter/mapper allocator, raw desktop fact buffer, headless envelope/
-  completed suppression, job-store re-sequencing, second terminal writer, thread/session
-  fallback, raw renderer redaction/emitter path, or direct candidate-to-artifact event
-  remains; no non-`run-artifacts.ts` path mints `artifact_created` or owns manifest
-  admission, and exact-owner guards for preserved envelope/redaction algorithms still
-  pass.
-- [ ] 8.4 Remove `canonicalRunEventLedgerV1` and the entire legacy branch after all Run
-  constructors cut over; stop review if the migration gate, shadow write, or any second
-  business path remains.
-- [ ] 8.5 Obtain independent correctness, architecture, consumer-compatibility, and
-  security reviews against the same source SHA; resolve every P0/P1/P2 finding or record
-  an explicit Owner disposition without relabeling an unrun check as passed.
-- [ ] 8.6 **Owner ACCEPTED stop gate:** do not merge, archive, or call the change
-  complete until the Owner explicitly says `ACCEPTED` for the frozen implementation and
-  verification evidence. `APPROVED`, green tests, and `REVIEW_APPROVED` are not
-  substitutes.
-- [ ] 8.7 **Remote-operation stop gate:** no push is authorized by this proposal or
-  tasks file. Do not push or otherwise change a remote without separate explicit Owner
-  authorization; record any later authorized operation independently.
+Fixture root for the future implementing change: `tests/fixtures/run-event-ledger/`.
+The current revision supplies documentation of shapes only, not fake measured captures.
+
+`[EVENT-01]` supplies schema/method inventory; `[EVENT-02]` is a source-search command;
+`[EVENT-03]` supplies nine partial notification inputs (several deliberately malformed).
+None provides response/server-request/send/resolved capture files. `[CODEX-02/06/08]`
+provide response predicates/error values and partial excerpts; `[CODEX-07]` has hashes
+and procedure, **not full response bodies**. Full valid request/item shapes must be
+schema-derived synthetic and labeled accordingly unless a new captured receipt exists.
+
+Every JSON case uses `{fixtureVersion:1,evidenceClass:"synthetic"|"trace-excerpt"|
+"captured",sourceRefs:[...],provenance:{...},cases:[...]}`; JSONL uses one such header
+line followed by `{caseId,port,observationKey,transportId,receivedAt,input,expected}`
+lines. Inputs are native envelopes for native ports and normalized DTOs for host ports;
+expected fields name readItem/readOutcome/readUsage/read/cursor/ack or projection output.
+Runtime fixtures use distinct `th`, `session`, `tu`, `item`, request IDs and the trace's
+pinned installation digest; new captures record source SHA/binary/schema and redaction.
+No fixture asserts that these invented IDs were measured.
+
+Minimal synthetic five-boundary JSONL example (complete native payloads must satisfy the
+pinned referenced schema before freezing; this shape defines the ledger boundary wrapper):
+
+```jsonl
+{"fixtureVersion":1,"evidenceClass":"synthetic","sourceRefs":["trace §5.3","CODEX-02"],"provenance":{"runtimeId":"codex","version":"0.139.0"}}
+{"caseId":"response","port":"ingestResponse","observationKey":"obs-1","transportId":"t1","receivedAt":"2026-09-04T00:00:00.000Z","input":{"request":{"id":2,"method":"thread/resume","params":{"threadId":"th"}},"message":{"id":2,"result":{"thread":{"id":"th","sessionId":"session","ephemeral":false,"path":"/fixture/session.jsonl","cliVersion":"0.139.0","turns":[]}}}},"expected":{"subtype":"native_resume_validated"}}
+{"caseId":"notification","port":"ingestNotification","observationKey":"obs-2","transportId":"t1","receivedAt":"2026-09-04T00:00:00.001Z","input":{"message":{"method":"thread/status/changed","params":{"threadId":"th","status":{"type":"idle"}}}},"expected":{"subtype":"thread_lifecycle"}}
+{"caseId":"request","port":"ingestServerRequest","observationKey":"obs-3","transportId":"t1","receivedAt":"2026-09-04T00:00:00.002Z","input":{"message":{"id":8,"method":"item/tool/requestUserInput","params":{"threadId":"th","turnId":"tu","itemId":"item","questions":[]}}},"expected":{"subtype":"interaction_boundary","boundary":"request"}}
+{"caseId":"send","port":"recordServerResponseSend","observationKey":"obs-4","transportId":"t1","receivedAt":"2026-09-04T00:00:00.003Z","input":{"requestId":8,"result":"sent"},"expected":{"subtype":"interaction_boundary","boundary":"response_send"}}
+{"caseId":"resolved","port":"recordServerRequestResolved","observationKey":"obs-5","transportId":"t1","receivedAt":"2026-09-04T00:00:00.004Z","input":{"requestId":8,"message":{"method":"serverRequest/resolved","params":{"threadId":"th","requestId":8}}},"expected":{"subtype":"interaction_boundary","boundary":"resolved"}}
+```
+
+Response fixture contexts additionally supply expectedSessionId="session" and intent=resume;
+malformed missing-field cases are explicitly marked invalid and assert the rejection path.
+Schema-derived values may need required native fields beyond the excerpt; record those in
+fixtures as synthetic, never attribute the completed body to EVENT-01..03 or CODEX-07.
+
+- [ ] 7.1 `ingress-boundaries.jsonl`, `interaction-boundaries.jsonl`: the five port shapes
+  above, request context with JSON-RPC id, all ten schema-derived request methods,
+  send-failed and resolved variants; assert durable batch order/correlation and no FSM claim.
+- [ ] 7.2 `items-assistant.jsonl`, `items-reasoning.jsonl`: assistant item
+  `{type:"agentMessage",id:"msg",text:"hello"}` with deltas "hel", final "hello";
+  prefix=mismatch "heX", missing-start and duplicate-key variants; reasoning completed
+  `{type:"reasoning",id:"r",content:["analysis"],summary:["short","next"]}` with
+  text/summary delta descriptors carrying channel/partIndex and summaryPartAdded.
+  Freeze normalized snapshot arrays at the decoder seam while also including the exact
+  schema-derived native wrapper; assert the named persisted/readItem reconciliation fields.
+- [ ] 7.3 `items-tools.jsonl`: started/completed `{threadId,turnId,item:{type,id,...}}`
+  for commandExecution/mcpToolCall/dynamicToolCall/collabAgentToolCall/webSearch/imageView/
+  imageGeneration/fileChange, native output/progress variants, missing start and repeated
+  final; record exact expected item fields and suppression count (duplicate-final=1).
+  Include lifecycle fixtures for userMessage, plan, hookPrompt, contextCompaction,
+  enteredReviewMode and exitedReviewMode under native-dispositions.json.
+- [ ] 7.4 `terminal-evidence.json`: use the full OutcomeEvidence shape in design, with
+  retry error {code:"retryable",willRetry:true}, live terminal success/failure, denied,
+  invalid-output, empty disallowed/allowed, credentialsSafe=false, cancel, interrupt,
+  queued cancel and confirmed-dead-worker recovery; assert exact status/reasons/evidenceKeys.
+- [ ] 7.5 `transport-exit.jsonl`: exitCode=1, signal=SIGINT, transportId=t1 before
+  completion, duplicate same-key and second-key exits, late turn/completed; assert one
+  interrupted completed with provenance. A new native process belongs to a separate
+  existing new Run; do not add a same-Run replacement window.
+- [ ] 7.6 `usage.json`, `late-usage.jsonl`: normalized total/last vectors 10→20→duplicate
+  20→25, baseline 100→108→hypothetical 3, two distinct call IDs with vector 10 and a
+  duplicate call revision; late fixture total=20 → turn/completed → total=25,last=5
+  during/after terminal file preparation. Assert delta.totalTokens, asOfSequence, sealed
+  total=20 and payload.observation on late_event; reset/late order is synthetic inference.
+- [ ] 7.7 `native-dispositions.json`, `unknown-method.json`, `codex-decode.json`: arrays
+  `{method|itemVariant,input,expectedType,expectedSubtype,expectedSurface?}` covering
+  exactly 66/10/16 from design, unknown future/example with secret params, malformed known
+  cases, reasoning channel and error/usage vectors; assert no known→unknown fallback.
+- [ ] 7.8 `store-faults.json`: operations `{op:append|deliver|ack|crash|reopen,key,
+  failAt?:beforeCommit|afterCommit|afterDeliver}`, expected rows/highWater/cursors;
+  duplicate observationKey retains fact keys and sequences, no fake native dedupe ID.
+- [ ] 7.9 `resume-codex.jsonl`, `resume-claude.jsonl`: use CODEX-02 predicates, CODEX-06
+  -32600 missing/malformed and -32603 corrupt error responses, CODEX-08 excerpts; synthetic
+  unrelated JSON-RPC id, wrong thread and absent session; Claude correlated queryId,
+  system/init session_id ordinary equality or new UUID fork, invalid/no-init and later
+  auth failure. Assert native_resume_* neutral outcomes and no fabricated thread/started.
+- [ ] 7.10 `snapshot-repair.json`: local assistant prefix "hel", recognized snapshot
+  completed item "hello", source/target provenance and targetTurnId; assert fresh repair
+  sequence/source/loss, item replacement, no terminal success and no native replay cursor.
+- [ ] 7.11 `snapshot-versions.json`: explicitly **synthetic** normalized full fixtures for
+  the two CODEX-07 reported completed outputs/turn/usage/creator-version fields, with pinned
+  per-file schema identities; incompatible schema is a defensive synthetic negative.
+  If full native captures are acquired, freeze them as separate captured evidence, not
+  prerequisite network/provider work for the independent Bun author.
+- [ ] 7.12 `snapshot-failed.json`: commit Locus durable error plus completed(failed) from
+  the live CODEX-08 excerpt, reopen the Locus store, then repair with its degraded
+  `{id:"tu",status:"completed",error:null,durationMs:18439}` snapshot; assert immutable
+  failed outcome and late diagnostic. Also test no-durable-terminal snapshot → no success.
+  There is no Locus rollout writer; the upstream write-layer negative is a runtime limitation.
+- [ ] 7.13 `artifacts.json`, `terminal-artifacts.json`: temporary allowedRunDir, candidate
+  path/ownerRunId/expectedSha256/media, valid file and five rejection variants; frozen
+  terminal candidate/file preparation/commit faults from design's finite dependency graph.
+  Assert SHA-256 bytes, manifest membership, commit visibility, immutable terminal snapshot.
+- [ ] 7.14 `split-secrets.json`: memory-only hints "provider-secret-123" / "gateway-secret-456",
+  split at each boundary across assistant/reasoning/command/tool channels, plus incomplete
+  terminal prefix; assert absence in concatenated records/renderer/result/stderr and safe flush.
+- [ ] 7.15 `identity-provenance.json`, `legacy-store.json`: runtime/locus-completion provenance
+  variants, required-field omissions, distinct native IDs, missing turn for interrupt;
+  historical desktop/API event rows with their original byte strings, missing provenance,
+  no completed or unequal desktop runEventSequence, expected legacy_unverified marking.
+- [ ] 7.16 `public-v1.json`, `public-vocabulary.json`, `public-results.json`,
+  `public-artifacts.json`, `discovery.json`: source=api assistant payload {text:"hello"},
+  source=desktop rejection, after=2/follow/late, all 21 types→12 with exact nine subtype
+  names, redacted status stub, existing six-field envelope, result statuses/artifact refs,
+  job.retryOfJobId/attempt and feature present/absent + experimental extension metadata.
+- [ ] 7.17 `projection.json`, `desktop-projection.json`, `headless-projection.json`,
+  `desktop-request.json`, `normalized-output.json`, `vocabulary.json`, `coarse-process.json`,
+  `architecture-fixtures.json`: precommitted RunEvent inputs and expected surface envelopes,
+  direct schedules-style db.insert(agentJobEvents) violating source, fake ports/spies, validated request DTO and raw sentinel, every existing normalized type,
+  coarse process {kind,text,exitCode} descriptors, and source-file strings with exact
+  expected static symbol/import findings; no fake behavioral assertion by a source scanner.
+- [ ] 7.18 Register harness-conformance follow-up for actual 66-method dynamics, trailing
+  usage/warnings, realtime/remote-control/process/Windows behavior, lost retransmission,
+  in-flight death snapshot and Codex rollout failure persistence. Keep CODEX-08's observed
+  negative result; do not require Locus to make Codex write a failed/error rollout record.
+
+## 8. Verification, review and stop gates
+
+- [ ] 8.1 Run all scenario tests against the frozen source; record red and green evidence
+  plus temporary-SQLite/schema/reopen, artifact and cursor fault injection results.
+- [ ] 8.2 Update docs/local-job-api-v1-consumer-guide.md, its zh-CN counterpart,
+  docs/local-job-api-v1.schema.json and src/shared/local-job-api.ts in the implementing
+  change for feature id, optional native metadata/maturity, exact status dispositions,
+  snapshot usage, diagnostic errors, outcome/exit examples, artifact roles and late reads.
+  Keep v1 requests/12 types unchanged; no unsupported extension-negotiation claim.
+- [ ] 8.3 Audit every inventory row and terminal mint site, including job-event-bridge.ts,
+  createAgentJobRunEvent, system appends, recovery, pre-start cancel, completion and Claude
+  startup/state/job wiring, agent-jobs.ts queued cancel, schedules.ts direct event INSERT
+  and desktop-runner.ts sequence=0 startup event. Update OWNERSHIP_MAP and architecture pins; all five old raw
+  writer allowlist entries disappear, leaving only the host's exact store adapter import.
+- [ ] 8.4 Delete canonicalRunEventLedgerV1/legacy branch/transition guard mode before the
+  final source freeze; re-run static guards and scenario tests. A later source edit
+  invalidates verification and independent review.
+- [ ] 8.5 Run bun run check:full plus exact strict validate and git diff --check; execute
+  Desktop/Workbench Claude+Codex, headless exec/app-server/completion and API create/events/
+  follow/result/retry/artifact smoke in disposable profiles. Record macOS/Windows packaged
+  evidence when available/required; do not claim host-blocked smoke passed. No native
+  conformance inference or fixture substitutes for actual runtime/packaged receipts.
+- [ ] 8.6 Bind Codex IMPLEMENTATION_VERIFIED and fresh-context Claude REVIEW_APPROVED to
+  the same exact implementing source SHA, record consumer-owned E2E status separately,
+  then stop for Owner ACCEPTED; DRAFT verification does not satisfy these product gates.
+- [ ] 8.7 No merge, push, remote PR mutation or release is authorized by this dispatch;
+  future external action requires explicit Owner authorization for its exact scope/SHA.
+
+## Reproducible draft validation
+
+From this worktree, if dependencies are not installed, the existing main checkout's
+pinned OpenSpec 1.10.0 binary can be used without changing package/lock files:
+
+```bash
+PATH=/home/chen/projects/agent-code-for-me/node_modules/.bin:$PATH bun x openspec validate refactor-canonical-run-event-ledger --strict --no-interactive
+git diff --check
+```
+
+A direct equivalent is
+`/home/chen/projects/agent-code-for-me/node_modules/.bin/openspec validate refactor-canonical-run-event-ledger --strict --no-interactive`.
+Exact executions and environment belong in verification.md, not a claim that future
+implementation/scenario smoke has already passed.

@@ -4,312 +4,261 @@ Status: **DRAFT — awaiting Owner APPROVED**
 
 ## Why
 
-The Codex app-server path currently projects only a small subset of native
-notifications, silently drops unknown methods and completed item snapshots, loses
-retry and native correlation metadata, and lets adapters, stream mappers, and job
-persistence allocate or reconstruct separate event and terminal histories. The
-result is not a trustworthy Run record: text can be duplicated when final snapshots
-are added, retry diagnostics can become failures, headless execution strips the
-canonical envelope, and persistence can mint a second `completed` event.
+Codex's native decoder currently handles 11 of the 66 notification methods in the
+pinned protocol, drops completed item snapshots, and loses retry/correlation data.
+Adapter, desktop mapper and job store independently construct event order and terminal
+facts. The public API currently hides these internal chains: it already returns one
+`completed`, dense per-job sequences and bare redacted semantic payloads for API jobs.
+The problem is incomplete evidence and unreliable terminal inference, not a public
+Run/Job identity split.
 
-Phase 3 requires one loss-aware, resumable ledger before async submit or durable
-interaction work builds on the Run abstraction. The factual baseline is the
-[native/resume event gap trace](../../../docs/native-resume-event-gap-trace-2026-09-04.zh-CN.md),
-especially §§0, 6–8; the direction and sequencing come from the
-[Phase 3 strategy](../../../docs/ideas/locus-product-direction-harness-strategy.zh-CN.md)
-§§9 and 12 and the [interoperability contract](../../../docs/ideas/locus-interoperability-contract-v1.zh-CN.md)
-§§4, 7, and 9.
+The [trace](../../../docs/native-resume-event-gap-trace-2026-09-04.zh-CN.md) §§0, 5–8
+is a non-normative factual baseline; [strategy](../../../docs/ideas/locus-product-direction-harness-strategy.zh-CN.md)
+§§9/12 sets Phase 3 direction, and [C2/C5/C7](../../../docs/ideas/locus-interoperability-contract-v1.zh-CN.md)
+constrains the execution, interaction and public boundaries. This revision disposes the
+five raw review reports against `0bd7b2bf2452773d416c7009a208e9590daa679f`; it is not an
+implementation approval or a fresh review approval.
 
 ## What Changes
 
-- Introduce one main-process canonical ledger owner per Run. It ingests JSON-RPC
-  responses, notifications, server requests, response-send/resolved boundaries,
-  snapshot repairs, and transport exits, and assigns the only canonical `sequence`
-  at ingestion. Atomic durable append is the acknowledgement/visibility barrier;
-  projections resume from committed sequence after failure or crash.
-- Converge renderer, durable, event, and Local Job API attempt identity on one
-  canonical `runId`; legacy/public `jobId` is an equal compatibility alias, and each
-  retry creates a new ledger/ID with source-chain provenance.
-- Preserve redacted native identity separately from canonical Run identity, including
-  distinct `threadId` and `sessionId`, and bind every record to exact runtime binary
-  and protocol/schema provenance.
-- Reconcile assistant, reasoning, and tool items with a loss-aware
-  `started -> delta* -> completed` state machine whose completed snapshot is the
-  authoritative comparison point, without appending final text twice.
-- Make errors diagnostic evidence until the ledger settles exactly one terminal
-  `completed`; retain retry metadata, synthesize transport-exit terminals with
-  provenance after an unplanned/expired/mismatched exit, permit only a bounded
-  same-Run replacement registered before exit to repair before settlement, make late
-  events observable, and prevent denial, rejection, or invalid zero-output runs from
-  reporting unqualified success.
-- Define usage events as cumulative snapshots with an explicit last observation,
-  deduplication identity, discontinuity handling, and a resume baseline.
-- Treat native file, diff, image, and path data as artifact candidates. Only the
-  canonical artifact owner may emit the existing `artifact_created` event after
-  scope, ownership, existence, digest, and redaction checks.
-- Map every native method to a ledger fact. Known lifecycle categories use stable
-  `status` subtypes; unknown methods produce a sanitized unknown/loss observation
-  instead of an empty projection.
-- Mark native resume snapshot reconciliation as `repair.source=snapshot`, with
-  loss possibility and reconciliation results; it is never described as replay.
-- Replace the current adapter/mapper/persistence double chains atomically behind an
-  implementation-only per-Run migration gate, then delete the legacy branch and the
-  gate before acceptance.
-- Correct the internal `Normalized Agent Events` specification to include its already
-  existing `artifact_created` event. No second artifact vocabulary is created.
+- Create one ledger in each Run's host process (Electron main or CLI/daemon host),
+  ingest all native and system boundaries, and commit records before projection.
+- Preserve native thread/session/turn/item/request/call identities independently;
+  record correlated resume validation and exact installation/schema provenance.
+- Reconcile assistant, reasoning text/summary parts and tool lifecycles against item
+  snapshots, with explicit item-state and reconciliation readers.
+- **BREAKING — C7 Red R1 (rows 4/5), Owner decision needed:** correct terminal result
+  truth and its CLI exit-code consequences: denial/rejected/invalid-empty output is
+  failed; a retryable diagnostic alone cannot force a successful Run to failed.
+- Keep exactly one terminal, make transport exit a synthetic terminal with provenance,
+  and retain post-terminal usage/warnings as diagnostic-only late observations.
+- Define cumulative usage, resume baseline, native artifact admission, complete status
+  disposition and observable unknown-method loss; correct the existing internal enum
+  omission of `artifact_created` without adding a second artifact event.
+- Preserve the v1 envelope, bare payload paths, 12 types and dense sequence domain;
+  add optional metadata and the `canonical-run-ledger` discovery feature.
+- Replace all old event writers/terminal minting call sites atomically; explicitly
+  migrate store schema and mark historical rows without inventing historical evidence.
 
 ## Non-goals
 
-- The complete Interaction state machine and resolution ledger are deferred to
-  `add-durable-agent-interactions`. This change records only server-request ingress,
-  response-send, and resolved boundary facts.
-- Lease, epoch, live-attach fencing, and Claude one-shot handle compare-and-set are
-  deferred to the Phase 5 continuation slice.
-- Async submit, `locus.local-job.v1.1` request gating, and idempotency keys are deferred
-  to the sister change `add-local-job-api-async-submit`.
-- Dynamic frequency and total-order characterization of all 66 Codex notifications is
-  not claimed here; the unmeasured trace §6.2 cases remain follow-up conformance input.
-- This draft does not implement, merge, push, or change product code or tests.
+- Run/Job identity convergence across desktop/headless/scheduler/API constructors and
+  its renderer/cancel protocol or static ID-generator guard: C2 §4.4 follow-up, input
+  to `add-durable-session-bindings` / Phase 5; existing IDs are used as given here.
+- Same-Run transport replacement, lease/epoch/live-attach fencing and Claude one-shot
+  handle CAS: Phase 5 continuation input; no replacement window in this change.
+- Full Interaction FSM/resolution ledger: `add-durable-agent-interactions`; only ingress,
+  response-send and resolved observations are recorded here.
+- Async submit, v1.1 request gating and idempotency keys: `add-local-job-api-async-submit`.
+- Native rollout writing, 66-method dynamic frequency/total order, SIGKILL/OS restart,
+  realtime/remote-control/Windows execution certification: harness conformance follow-up.
+- Runtime delivery/update infrastructure, new native protocol selection or capability
+  promotion; Codex exec remains the existing headless fallback.
 
 ## Canonical Owner, Deletion, Migration, and Verification
 
-| Delivery question | Proposed answer |
+| Deliverable | Proposed disposition |
 | --- | --- |
-| Canonical owner | New `src/main/lib/agent-runtime/run-event-ledger.ts`, one instance per Run, with `runtime-events.ts` as envelope/type owner, `redaction.ts` as redaction-algorithm owner, and new `src/main/lib/agent-runtime/run-artifacts.ts` as the only artifact admission/manifest lifecycle owner. |
-| Old paths deleted in the same implementation change | Native mapper default `[]`; adapter/stream-mapper sequence allocators and terminal state; raw desktop text concatenation; headless envelope stripping and completed suppression; job-store re-sequencing and second terminal minting; thread/session fallback; CLI dispatcher direct `artifact_created` and final manifest registration; any non-owner candidate-to-artifact emission. |
-| Migration gate | An implementation-only `canonicalRunEventLedgerV1` selection at Run construction. A Run uses legacy or ledger, never shadow dual-write. Characterization and commit/crash fault tests land red first, then the atomic cutover occurs, then the legacy branch and gate are removed before acceptance. |
-| Verification consumers | Desktop/Workbench and headless/CLI projections; Local Job API v1; Amadeus native-event fixtures; Career Kit batch/structured-output fixtures; other consumers recorded as `unknown`. |
+| Owner | `agent-runtime/run-event-ledger.ts` owns facts, sequence, state and settlement; `run-event-ledger-host.ts` composes the store and projections; `run-artifacts.ts` owns admission and manifests. Existing `runtime-events.ts`, `redaction.ts`, `shared/usage-metadata.ts` retain types/redaction/vector normalization. |
+| Same-change deletion | Delete `job-event-bridge.ts` / `createAgentJobRunEvent`, the old chunk-to-RunEvent exports and `runEventSequence` wrapper; remove native default empty projection, adapter/mapping sequence and terminal inference, raw desktop text joins, headless completed suppression, job-store sequence/terminal minting and dispatcher artifact minting. [Design owner inventory](design.md#current-owner-to-target-mapping) enumerates all system, recovery, cancel and completion paths. |
+| Migration | `canonicalRunEventLedgerV1` is a build-time implementation gate read only by the host composition module; [design](design.md#migration-plan) defines activation conditions, legacy marking and final deletion. No Run is written by both cores. |
+| Verification consumers | Locus-owned Desktop/Workbench, headless/CLI, public batch and interactive conformance fixtures; separately record Career Kit and Amadeus's own adapter/E2E receipts or `unknown`. |
 
-The exact current-owner-to-target mapping and stop conditions are defined in
-[design.md](design.md). This satisfies the strategy §12 requirement that each split
-declare its owner, deletion point, migration gate, and verification consumer.
+## Consumer Impact
 
-## Consumer Impact (C7 §9.2)
+This section follows all ten fields of the [Consumer Impact template](../../../docs/consumer-impact-template.zh-CN.md).
 
-### Gate status and one-line change
+### 1. Gate status
 
 ```text
-Status: DRAFT (OWNER_DECISION_REQUIRED before implementation)
+Status: OWNER_DECISION_REQUIRED
 OpenSpec change: refactor-canonical-run-event-ledger
-Author / date: Codex draft / 2026-09-06
+Author / date: Codex / 2026-09-07
 Decision owner: Owner
-Implementation blocked until: Owner records §10 decision for every Red row
+Implementation blocked until: Owner fills section 10 for R1 and marks the change APPROVED
 ```
+
+The change itself remains DRAFT. Governance gates live here and in tasks, not in living
+behavior requirements. The deterministic deltas describe the proposed direct-standard
+behavior; choosing another disposition requires revising those deltas before APPROVED.
+
+### 2. One-line change
 
 ```text
-Current: Local Job API v1 may receive an incomplete, independently resequenced Run
-history whose nested renderer identity, terminal, retry, resume, and artifact facts are
-reconstructed downstream.
-Proposed: v1 keeps its envelope and 12 event types but projects one canonical Run
-identity and a complete optional-metadata view of one durably committed ledger with
-stricter completion and artifact truth.
-Why: Consumers need one loss-aware cursor and terminal result that survive restart.
+Current: source=api jobs expose bare redacted payloads, dense per-job sequence, one
+  completed, and existing jobId/retry identity; some native facts and terminal evidence are lost.
+Proposed: preserve that public shape/order domain, add optional evidence, and correct
+  which runs succeed or fail and therefore which CLI exit code is returned.
+Why: callers need trustworthy results and loss-aware observations from one durable owner.
 ```
 
-The public Local Job API v1 event vocabulary remains exactly these 12 values:
-`job_created`, `job_started`, `assistant_delta`, `reasoning_delta`, `tool_started`,
-`tool_delta`, `tool_finished`, `usage_update`, `artifact_created`, `status`, `error`,
-and `completed`. Existing envelope fields remain unchanged; native identity,
-provenance, reconciliation, repair, loss, and status-subtype fields are optional,
-namespaced, redacted payload additions. The pre-existing optional
-`payload.runEventSequence` member is retained as a deprecated alias equal to envelope
-`sequence`, not as a second cursor; deleting it would require a later C7 decision. The
-optional internal `RunEvent.payload.runtime.codex.v1` namespace appears through the
-preserved v1 wrapper at `/payload/payload/runtime/codex/v1`; it is not flattened. The
-following classification applies to every
-item in C7 §9.2 rather than treating the internal refactor as automatically private.
+Public evidence at the reviewed base:
+[getLocalJobApiJobOrThrow / getLocalJobApiEvents](../../../src/main/lib/headless/local-job-api.ts)
+serve only `source === "api"`;
+[createAgentJobRunEvent](../../../src/main/lib/agent-runtime/job-event-bridge.ts)
+sets `runId = jobId` and persists `runEvent.payload` bare;
+[bridge tests](../../../tests/headless-runtime-event-bridge.test.ts) assert both the bare
+`{text:"hello"}` shape and absence of `runEventSequence`.
+The desktop-only `{runId, runtimeId, runEventSequence, redaction, payload}` wrapper in
+[stream-event-mapper.ts](../../../src/main/lib/agent-runtime/stream-event-mapper.ts)
+is C7 §9.1 internal SQLite/renderer projection. Its removal has no public alias or C7
+sunset obligation. The new public extension pointer is **`/payload/runtime/codex/v1`**.
 
-| C7 public-change class | Classification | This change |
+### 3. Affected public boundaries and C7 classification
+
+| C7 §9.2 row | Classification | Consumer-observable change / evidence |
 | --- | --- | --- |
-| 1. Public name deletion or rename | **Non-breaking** | No command, route, field, event type, or public identifier is deleted or renamed. Amadeus native-surface identity still needs the Owner clarification below. |
-| 2. Type, requiredness, default, or validation change | **Owner decision needed — C7 Red** | Completion truth can change status/default outcome for denial, rejection, and invalid zero-output runs. Artifact admission tightens validation. No optional payload member becomes required and nullable public artifact fields stay nullable unless separately approved. |
-| 3. Identity or uniqueness semantics | **Owner decision needed — C7 Red** | C2 requires internal/event/public `jobId` to equal the one canonical `runId`, but current desktop code can expose an independently generated renderer `runId` in the event payload. Retry also becomes a new Run/ledger rather than mutating an attempt. Public envelope `jobId` remains stable, but the observable nested identity must converge. |
-| 4. Lifecycle, terminal, retry, cancel, or status semantics | **Owner decision needed — C7 Red** | Exactly one terminal, diagnostic retry errors, synthetic transport-exit completion, completion truth, and the late-event policy change observable lifecycle semantics. |
-| 5. Ordering, cursor, replay, idempotency, retry, or terminal-read semantics | **Owner decision needed — C7 Red** | Ledger ordering, durable-commit visibility/recovery, complete event projection, delta/final reconciliation, resume repair, usage dedupe, and unknown/loss observations alter the observable event history even though `--after` remains the same opaque cursor contract. |
-| 6. Runtime/provider/model/policy default | **Non-breaking** | Runtime, provider, model, and policy selection defaults do not change. |
-| 7. Security, trust, approval, or access boundary | **Owner decision needed — C7 Red** | Artifact eligibility and redaction are tightened, and denied/rejected execution can no longer be presented as success. Full interaction policy remains out of scope. |
-| 8. Artifact path, reference, digest, retention, or access | **Owner decision needed — C7 Red** | Only verified run-owned artifacts become visible and receive a digest; unverified native candidates no longer qualify. Public manifest shape and retention policy otherwise remain unchanged. |
-| 9. Transport, Host, platform, or deployment support | **Non-breaking** | No public transport, Host requirement, platform, or deployment surface changes. Transport exit is covered under lifecycle semantics above. |
-| 10. Any externally observable behavior | **Non-breaking only under stated constraint** | Stable `status` subtypes and namespaced metadata are optional and unknown-safe. Their increased frequency and the semantics already identified in rows 2, 3, 4, 5, 7, and 8 remain Red and are not hidden in this row. |
+| 1 — deletion/rename | Non-breaking | No public command, field, event or error is deleted/renamed; desktop wrapper removal is internal. |
+| 2 — type/requiredness/nullable/enum/default/validation | Non-breaking | No public input validation/default, required field, nullable field or enum changes; output truth is classified once as R1 under 4/5. |
+| 3 — identity | Non-breaking | `jobId` already identifies the API Run; retry already creates a new job with `job.retryOfJobId` and `job.attempt` ([serializer](../../../src/main/lib/headless/cli-output.ts), [schema](../../../docs/local-job-api-v1.schema.json)); these stay unchanged. |
+| 4 — lifecycle | **Red R1: Owner decision needed** | Existing succeeded/failed/canceled/interrupted vocabulary and synchronous create/retry waiting remain; denial, rejection and invalid-empty completion become failed, and retry-only diagnostics no longer force failed. See 5 for the same decision's result/exit effects. |
+| 5 — ordering/cursor/replay/retry/terminal result | **Red R1 for terminal result only** | Result status and derived create/retry exit codes change for the R1 cases. Additional already-declared event types/optional evidence are additive. Proposed v1 projects EVERY ledger record, including safe status stubs, so sequence remains dense; no sparse-sequence break is taken. |
+| 6 — Runtime/provider/model/policy defaults | Non-breaking | Existing selections, fallback and unsupported/degraded states unchanged. |
+| 7 — trust/access boundary | Non-breaking | Redaction remains inside the existing promised boundary; no new auth, permission, workspace, filesystem or network grant. R1 is not counted again here. |
+| 8 — artifact/ref/digest/retention/access | Non-breaking, additive | Existing run-dir request/events/result/manifest paths, SHA-256 and retention remain; they are already verified today ([fileArtifact](../../../src/main/lib/headless/local-job-api.ts)). Newly admitted native artifacts add entries; no formerly public native candidate is removed. |
+| 9 — transport/Host/platform | Non-breaking | No launch, shutdown, packaging or public transport changes; additional feature advertisement uses existing discovery. |
+| 10 — mandatory new event/enum/extension or unknown handling | Non-breaking | Twelve public types unchanged; `runtime.codex.v1` schemaVersion 1 is optional and experimental; unknown optional fields remain ignorable under the [guide Stability Contract](../../../docs/local-job-api-v1-consumer-guide.md). No new mandatory extension request is introduced. |
 
-The Red rows block implementation approval until the Owner explicitly chooses one of
-C7's compatibility dispositions (`DIRECT_NEW_STANDARD`, `NEW_VERSION`,
-`TEMPORARY_FACADE`, `DEFER`, or `REJECT`) for the affected public behavior. This draft
-recommends keeping the 12-type v1 vocabulary and optional payload shape, but it does not
-make that Owner decision.
+Row 5's rejected sparse alternative is an actual potential public ordering change:
+filtering internal ledger records would make v1 `sequence` sparse relative to today's
+`max+1` store. This draft instead emits a redacted `status` stub for such a record at
+its original sequence; v1 never renumbers and never skips it. A future sparse design
+requires a new R1-independent C7 #5 decision and a consumer-visible gap explanation.
 
-### Affected public boundaries
-
-| Contract / version | Surface | Current behavior | Proposed behavior | Breaking? | Evidence |
+| Contract / version | Surface | Current | Proposed | Breaking? | Evidence |
 | --- | --- | --- | --- | --- | --- |
-| `locus.local-job.v1` | `runs events`, `--after`, `--follow` | Stable envelope/12 types; downstream DB order can be reconstructed from a partial trace | Same envelope/12 types and opaque cursor, but complete canonical order, retry diagnostics, one completion, optional namespaced payload | **Owner decision needed — C7 Red rows 4/5** | Local API and runtime-core delta scenarios |
-| `locus.local-job.v1` | Run/Job identity and retry provenance | Envelope `jobId` is durable while nested renderer `runId` can be independently generated | One attempt has one `runId`; event/public `jobId` is an equal compatibility alias; retry gets a new ledger/ID and source chain | **Owner decision needed — C7 Red row 3** | C2 §4.3–4.5 and identity scenarios |
-| `locus.local-job.v1` | result status, CLI exit/retry interpretation | Missing/error/zero-output paths can default to or be reconstructed as success | Result derives from the ledger's only completion; denial/rejection/invalid missing output is not bare success | **Owner decision needed — C7 Red rows 2/4** | `Run Result and Artifact Manifest` delta |
-| `locus.local-job.v1` | artifact event and manifest | Native evidence can be incomplete and admission is not one canonical lifecycle | Only verified, in-scope, digested, run-owned candidates are emitted/manifested | **Owner decision needed — C7 Red rows 7/8** | Artifact admission scenarios |
-| `locus.local-job.v1` | event payload | Payload internals are open/unknown-safe | Adds only optional redacted native/provenance/repair/reconciliation/subtype fields | **Non-breaking**, conditional on remaining optional | v1 vocabulary scenario |
-| Codex app-server native stream | Amadeus direct consumption | Direct native event consumption is reported by the trace; support status is undocumented | Native facts remain available at ledger ingress, but order/coverage and consumer integration may change | **Unknown; Owner decision needed** | Trace §§5–6 and consumer fixture receipt pending |
-| Commands/endpoints/SDK/request transport | create/read/cancel invocation | Existing synchronous commands and request shapes | No change in this proposal | **Non-breaking** | Negative scope assertion/contract tests pending |
+| `locus.local-job.v1` | runs create/retry, status/result, exit code | Some error/default paths can infer wrong terminal status | Core outcome evidence determines existing statuses; Existing code mapping stays: 0 success, 5 canceled, generic failure/interruption 1; specialized error codes remain 2/3/4/6/7/8 | R1 | [job runner](../../../src/main/lib/headless/job-runner.ts), [exit codes](../../../src/main/lib/headless/job-runner.ts), core terminal delta |
+| same | runs events / --after / --follow | Bare payload, dense sequence, one completed, follow stops at terminal | Same contract; fuller tool/status/error evidence; late diagnostics available on explicit reads | Additive except R1 terminal payload | [public reader](../../../src/main/lib/headless/local-job-api.ts), local-job-api delta |
+| same | artifact manifest/result | Stable verified Locus run-dir files; no public unverified native candidates | Preserve files; append admitted native entries (document roles `native-file`, `native-image`, `native-diff`) | Non-breaking | same artifact owner, core artifact delta |
+| same | discovery / optional payload | features array; ignore unknown fields | Add `canonical-run-ledger`; optional status/usage/error/repair fields and `runtime.codex.v1` | Non-breaking | [Discovery Feature Advertisement](../../specs/local-job-api/spec.md), C7 §9.7–9.9 |
 
-Public error/exit/retry effects follow the result and lifecycle rows above. Runtime,
-provider, model, policy, auth mechanism, packaging, discovery, transport, and launch
-defaults do not change.
+Codex native events consumed directly by Amadeus are Runtime-owned information,
+unchanged by this Locus change and outside C7. They are not an additional public-boundary row.
 
-### Current and proposed envelope examples
+### 4. Current and proposed examples
 
-Current illustrative v1 event:
+Current API-job event (shape characterized by the existing bridge test):
 
 ```json
-{
-  "apiVersion": "locus.local-job.v1",
-  "jobId": "job-example",
-  "sequence": 7,
-  "type": "error",
-  "createdAt": "2026-09-05T00:00:00.000Z",
-  "payload": {
-    "runId": "renderer-run-example",
-    "runtimeId": "codex",
-    "runEventSequence": 3,
-    "redaction": { "status": "not-required", "appliedRules": [] },
-    "payload": { "message": "retrying" }
-  }
-}
+{"apiVersion":"locus.local-job.v1","jobId":"job-example","sequence":3,"type":"assistant_delta","createdAt":"2026-09-04T00:00:00.000Z","payload":{"text":"hello"}}
 ```
 
-Proposed illustrative event with optional additions plus the C7 Red identity/order
-convergence:
+Proposed optional additions, with the original semantic field in place:
 
 ```json
-{
-  "apiVersion": "locus.local-job.v1",
-  "jobId": "job-example",
-  "sequence": 7,
-  "type": "error",
-  "createdAt": "2026-09-05T00:00:00.000Z",
-  "payload": {
-    "runId": "job-example",
-    "runtimeId": "codex",
-    "runEventSequence": 7,
-    "redaction": { "status": "redacted", "appliedRules": ["exact-secret"] },
-    "payload": {
-      "message": "retrying",
-      "willRetry": true,
-      "classification": "retryable",
-      "runtime": { "codex": { "v1": { "turnId": "turn-redacted" } } }
-    }
-  }
-}
+{"apiVersion":"locus.local-job.v1","jobId":"job-example","sequence":3,"type":"assistant_delta","createdAt":"2026-09-04T00:00:00.000Z","payload":{"text":"hello","runtime":{"codex":{"v1":{"schemaVersion":1,"maturity":"experimental","threadId":"th","turnId":"tu","itemId":"msg"}}}}}
 ```
 
-The schema diff does not express the Red semantic changes: which facts now appear,
-their canonical order, when follow stops, how retry/error evidence contributes to the
-sole terminal, how resume snapshots repair rather than replay, and which candidates
-qualify as artifacts. It also does not express the illustrated current identity/order
-gaps: nested `runId` differs from envelope `jobId`, and nested `runEventSequence` differs
-from envelope `sequence`; the proposed event makes both compatibility aliases equal.
+Pure schema diff cannot express R1: a native completed/default-success result with a
+recorded denied request becomes `failed`/exit 1; a retry error followed by a live success
+and valid output becomes `succeeded`/exit 0. `error` remains evidence, `completed` remains
+the sole outcome. An empty output is valid only when the already-admitted internal
+output contract explicitly allows it; the default proposed rule rejects empty output.
+No new public success status/reason enum or request field is proposed.
 
-### Known consumers
+### 5. Known consumers and required changes
 
-| Consumer | Use evidence | Affected call | Required consumer change | Consumer-owned test/E2E |
+| Consumer | Use evidence | Affected calls | Required modification | Consumer-owned test/E2E |
 | --- | --- | --- | --- | --- |
-| Amadeus | Trace §§5–6 says it directly consumes Codex app-server native events | Native event assembler, tool lifecycle, completion, and cursor | `unknown` until Owner classifies the surface; either preserve it or migrate in lockstep | Freeze and run native assembler/tool/completion/cursor fixture |
-| Career Kit | Registered batch/structured-output consumer | Batch result, structured output, exit/retry truth, artifact manifest | Optional fields require no parser change; terminal/artifact behavior may require coordinated expectation changes | Run batch/structured-output/result/artifact fixture |
-| Other consumers | `unknown` | `unknown` | Record discovery; do not infer “none” | TBD from inventory |
+| Career Kit | [adapter](../../../../career-application-kit/app/electron/runtime/locus-adapter.cjs), [contract](../../../../career-application-kit/openspec/specs/locus-runtime-adapter/spec.md), [historical smoke](../../../../career-application-kit/openspec/changes/archive/2026-06-15-add-career-profile-locus-extraction-mvp/smoke-evidence.md); strategy §2.1 | create/status/result, exit/diagnostics and manifest; event-stream dependency not evidenced | Verify fail-closed result validation and updated R1 expectations; keep domain review/apply gate | Current revision receipt `unknown`; historical smoke is not this change's E2E |
+| Amadeus | [strategy §2.2](../../../docs/ideas/locus-product-direction-harness-strategy.zh-CN.md) and its pinned README links; direct native consumption is a **consumer fact from Owner relay, 2026-09-02**, restated by the current dispatch, not a trace conclusion | Locus v1 field/version dependencies `unknown`; direct native path outside Locus C7 | Inventory actual v1 dependencies; evaluate R1 only where Locus is consumed | `unknown`; maintained in Amadeus's repository |
+| Other consumers | `unknown` | `unknown` | Publish upgrade evidence and record discovered dependencies | `unknown` |
 
-Consumer adapters and business E2E remain consumer-owned. Locus owns the neutral
-contract fixtures and records the consumer result/version without absorbing their
-business logic into this change.
+Locus owns neutral batch/structured-output and interactive event/cursor fixtures;
+these are distinct from consumer-owned adapter/E2E tests. Consumer receipts are recorded,
+not invented, and do not automatically become a consumer Owner release veto (C9.1).
 
-### Options and cost
+### 6. Options and costs
 
-| Option | Locus change | Consumer change | Maintenance cost | Risk | Deletion condition |
+| Option | Locus change | Consumer change | Cost | Risk | Deletion condition |
 | --- | --- | --- | --- | --- | --- |
-| `DIRECT_NEW_STANDARD` | Publish the new ledger-backed behavior directly through v1 | Coordinate all affected expectations at cutover | Lowest | Synchronized rollout and undocumented consumers | Not applicable |
-| `NEW_VERSION` | Add a separately approved public version adapter over this ledger | Consumers migrate by version | Medium | Multi-version contract and test matrix | Sunset old version after recorded adoption |
-| `TEMPORARY_FACADE` | Translate the old v1 envelope from this same ledger without changing terminal truth or artifact admission | No or staged parser changes; semantics that cannot be represented safely fail closed | Medium | Facade can linger; some Red behavior still requires coordination/new version | Dated/objective removal after Amadeus/Career Kit migration |
-| `DEFER` | Keep public cutover blocked while internal analysis/tests continue | None yet | Ongoing opportunity cost | Existing trace gaps persist | New Owner decision |
-| `REJECT` | Do not implement this proposal | None | None for migration | Phase 3 prerequisites remain unmet | Not applicable |
+| DIRECT_NEW_STANDARD (proposed) | Correct R1 on v1 with feature discovery and updated guide | Coordinate status/exit expectations | Low | Unknown consumers may have false-success assumptions | N/A |
+| NEW_VERSION | Separate public serializer over this same core, if separately scoped | Version selection/migration | Medium | Cannot preserve false-success semantics in old version under C7 §9.5 | Explicit old-version sunset |
+| TEMPORARY_FACADE | Lossless envelope-only translation over the same core | Parser migration can be staged | Medium | Cannot translate failed to success or run a second terminal state machine; no compatibility solution for R1 | Objective removal condition required |
+| DEFER / REJECT | No affected public implementation | None | Delay | Existing evidence gaps remain | New decision |
 
-Keeping an old mapper, job store, terminal state machine, or artifact lifecycle is not a
-compatibility option.
+New-version/facade choices cannot lawfully preserve the unsafe terminal inference R1
+removes; meaningful R1 choices are direct correction or defer/reject. No option keeps
+an old business core, DB, worker, ledger or artifact lifecycle.
 
-### Temporary facade boundary, if selected
+### 7. Compatibility facade boundary
 
 ```text
-Canonical owner: src/main/lib/agent-runtime/run-event-ledger.ts
-Old contract/version: locus.local-job.v1 observable behavior selected by Owner
-New canonical contract/core: canonical RunEvent ledger and exact-sequence sink
-Allowed translation: parse, validate, losslessly filter optional fields, map an
-  existing type, and serialize while preserving canonical terminal/artifact truth
-Explicitly forbidden business logic/state: sequence allocation, event ledger,
-  item reconciliation, terminal/retry/cancel truth, policy/auth, Runtime dispatch,
-  persistence database, artifact admission, false-success projection, or exposure of
-  an unadmitted artifact; semantics that cannot be represented safely must fail closed
-  or use an Owner-approved new version
-Migration flag or gate: projection-only gate chosen by Owner; never a second Run path
-Deprecation owner/comment: TBD by Owner
-Deletion date or objective removal condition: TBD; must be recorded before rollout
-Architecture guard / contract tests: single-ledger guard plus old/new facade fixtures
+Canonical owner: agent-runtime/run-event-ledger.ts
+Old contract/version: locus.local-job.v1
+New canonical contract/core: same Run ledger
+Allowed translation: none proposed; if selected, parse/validate/serialize only
+Explicitly forbidden business logic/state: persistence, sequence, outcome, retry/cancel,
+  interaction/policy, auth, dispatch, artifact admission; no false-success translation
+Migration flag or gate: N/A unless a lossless public facade is separately specified
+Deprecation owner/comment: N/A; implementation gate is not a public facade
+Deletion date or objective removal condition: must be filled before any facade is approved
+Architecture guard / contract tests: canonical symbol/import pins and facade serializer tests
 ```
 
-### Release, failure recovery, and rollback
+### 8. Release, recovery and rollback
 
 ```text
-Required release order: Owner C7 decision and proposal APPROVED -> independent
-  red-first contract and consumer-neutral conformance fixture authorship with expected
-  failures -> canonical implementation/deletion -> green rerun -> known-consumer
-  verification -> rollout
-Can old consumer call new Locus?: Only as allowed by the selected Owner disposition
-Can new consumer call old Locus?: It must tolerate absent optional fields; it cannot
-  assume corrected completion/artifact semantics without capability/version evidence
-Unsupported-version error: Existing explicit version rejection remains; no silent downgrade
-Downgrade behavior: Never select a weaker second ledger or silently reconstruct truth
-Rollback target: Before legacy deletion, newly created disposable test Runs only; after
-  deletion, a new Owner-approved change/projection, never dual-write
-External data/artifact impact: Do not delete external artifacts; reset only disposable
-  pre-production fixture Runs, marking active pre-cutover Runs interrupted/canceled
-Security impact: Earlier redaction and fail-closed artifact admission tighten the boundary
+Required release order: Owner C7 decision + APPROVED -> independent red tests ->
+  implement/schema/atomic replacement -> green tests/docs/schema -> same-SHA review -> acceptance
+Can old consumer call new Locus?: Proposed direct standard preserves parsing, but R1
+  assumptions must be coordinated; no claim of old false-success compatibility
+Can new consumer call old Locus?: A consumer requiring corrected semantics must check
+  features for canonical-run-ledger and refuse an absent feature before dispatch
+Unsupported-version error: existing exact-version invalid-request rejection; no guessing
+Downgrade behavior: missing required feature/extension is unsupported at consumer
+  preflight, not silently honored; v1 has no required-extension request field
+Rollback target: the pre-cutover build with a separate disposable test profile; never
+  open schema-v1 Runs with the old writer or silently advertise corrected semantics
+External data/artifact impact: no consumer DB or repository reset; no artifact retention
+  change; legacy rows are marked, not rewritten/purged; staged unreferenced files only
+  are recoverable by the run-artifact owner within the admitted run directory
+Security impact: no new grants; native metadata is redacted before durable publication
 ```
 
-### Future Consumer Impact evidence
+### 9. Verification evidence (future implementation)
 
-- [ ] Machine-readable schema/generated type is unchanged or updated consistently with
-  the Owner-selected version/facade.
-- [ ] Common-ledger contract tests and exact 12-type v1 projection tests pass.
-- [ ] Old-contract facade tests pass, if and only if the Owner selects one.
-- [ ] Unsupported version/extension behavior fails closed without silent downgrade.
-- [ ] Consumer-neutral conformance fixtures cover terminal, cursor, repair, and artifact.
-- [ ] Versioned consumer guide, examples, event/error semantics, and schema are updated.
-- [ ] Amadeus and Career Kit adapter/E2E status and exact consumer version are recorded.
-- [ ] Architecture guard proves no old/new business core or second ledger remains.
-- [ ] Packaged/transport smoke is recorded if the selected public boundary requires it.
+- [ ] Same-change consumer guides (English/Chinese), machine-readable schema, shared
+  generated/public types, feature identifier, examples and error semantics agree.
+- [ ] Common-core, dense 12-type v1 and consumer-neutral conformance tests pass.
+- [ ] Unsupported version/capability tests and consumer required-feature/extension
+  preflight tests fail closed; no unsupported Host extension-negotiation claim.
+- [ ] Store cutover, projection cursor recovery, artifact preparation and static owner
+  guards pass; public facade tests apply only if a facade is subsequently specified.
+- [ ] Consumer-owned receipts/version or `unknown` are recorded separately.
+- [ ] Desktop/CLI transport smoke and applicable macOS/Windows packaged evidence are
+  recorded without upgrading untested runtime surfaces.
 
-### Owner decision (unfilled)
+### 10. Owner decision (unfilled)
 
 ```text
-Decision: DIRECT_NEW_STANDARD | NEW_VERSION | TEMPORARY_FACADE | DEFER | REJECT
-Approved exact scope: TBD
-Compatibility obligation: TBD
-Sunset/deletion condition: TBD
-Consumer coordination required: TBD
-Owner: TBD
-Date: TBD
+Decision: pending (DIRECT_NEW_STANDARD | NEW_VERSION | TEMPORARY_FACADE | DEFER | REJECT)
+Approved exact scope: pending — R1 only (C7 rows 4/5)
+Compatibility obligation: pending
+Sunset/deletion condition: pending / N/A for proposed direct standard
+Consumer coordination required: pending
+Owner: pending
+Date: pending
 ```
 
 ## Impact
 
-- Affected living specs: `agent-runtime-core`, `architecture-ownership`,
-  `local-job-api`, `desktop-agent-jobs`, `headless-agent-jobs`, and
-  `codex-runtime-parity`.
-- Planned code owners are listed in design; this draft changes none of them.
-- Security impact: redaction moves before fan-out, native identity is namespaced, and
-  artifacts fail closed until admitted.
-- Delivery impact: tests must be authored from the scenarios and observed failing
-  before implementation, per the 2026-09-05 pilot workflow.
+Six capability deltas are affected: agent-runtime-core, architecture-ownership,
+local-job-api, desktop-agent-jobs, headless-agent-jobs and codex-runtime-parity.
+The implementing slice also migrates Claude desktop event persistence (including SDK
+job/startup/state wiring) to the ledger without changing its resume/CAS workflow,
+and all existing headless/completion/system terminal writers. It does not replace
+Run constructors or expand capability claims. Schema/store and artifact preparation
+are explicit design additions, requiring their own tests within this change.
 
-## Open Questions Requiring Owner Direction
+The red-first pilot is sourced to the original coordinator dispatch dated 2026-09-05
+([verification source index](verification.md#sources)); it is not asserted to be present
+in the ratified workflow document. This turn edits only this draft directory and its
+STATUS row, creates one local commit, and performs no product/test changes, merge or push.
 
-1. Which C7 disposition applies to Red rows 2, 3, 4, 5, 7, and 8: `DIRECT_NEW_STANDARD`, `NEW_VERSION`, `TEMPORARY_FACADE`, `DEFER`, or `REJECT`?
-2. Is Amadeus's direct Codex native-event stream a supported public surface that must be preserved byte/semantically, or an internal consumer to migrate in lockstep?
-3. What exact public status/reason and valid-empty-output exception define completion truth for denial, rejection, and zero-output runs?
-4. Does this change own a minimal immutable `RuntimeInstallation` provenance snapshot, or depend on a separately approved release-manifest owner?
-5. After public `completed`, may sanitized late diagnostics remain readable on explicit subsequent reads, or must the ledger drain all admissible facts before publishing `completed`?
+## Open Questions
+
+1. Owner 是否对 R1（C7 rows 4/5 的终态真相及 exit code）选择 DIRECT_NEW_STANDARD，或选择 DEFER／REJECT？
+2. Owner 是否接受本草案的确定规则：默认空产出失败、显式允许空产出的既有内部请求例外，以及 completed 后 usage 仅作为可读诊断？
+3. Owner 是否接受最小 immutable provenance snapshot 与 schema v1／legacy-unverified 历史标记在本切片内实现，而不等待 Runtime delivery registry？
+4. Owner 是否接受保持 v1 稠密 sequence 的逐记录 status 投影，以及终态 artifact 与 completed 同一 durable commit 登记的方案？

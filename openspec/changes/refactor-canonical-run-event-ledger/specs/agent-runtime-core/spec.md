@@ -1,461 +1,364 @@
 ## MODIFIED Requirements
 
 ### Requirement: Normalized Agent Events
-The system SHALL normalize runtime output through the one run-scoped canonical
-ledger into ordered `RunEvent` records that can be persisted, streamed, and
-later mapped to protocol, CLI, desktop, and Local Job API clients. The ledger
-SHALL assign `sequence` exactly once at ingestion; every downstream sink SHALL
-preserve that value rather than create another event order.
+The system SHALL normalize runtime output into ordered canonical `RunEvent` records
+that can be persisted, streamed, and mapped to protocol, CLI, desktop and Local Job
+API clients through the Run's canonical ledger. The internal envelope SHALL retain
+runId, runtimeId, sequence, type, createdAt, sanitized payload and redaction metadata.
+The fixture names below refer to the file shapes in this change's tasks §7; all readers
+and injection ports are defined in design's Test-facing Contract.
 
 #### Scenario: Event type is emitted
-- **WHEN** a Bun test creates `createCanonicalRunEventLedger` with a recording
-  sink and ingests a fixture containing every supported normalized category
-- **THEN** each emitted type is one of `job_created`, `job_started`,
-  `assistant_delta`, `reasoning_delta`, `tool_started`, `tool_delta`,
-  `tool_finished`, `guard_decision`, `permission_requested`,
-  `scope_expansion_requested`, `question_pending`, `question_result`,
-  `mcp_needs_auth`, `usage_update`, `artifact_created`, `command_started`,
-  `command_output`, `command_finished`, `status`, `error`, or `completed`
-- **AND** each event has a sanitized payload and a ledger-assigned sequence
-- **AND** the recording sink observes strictly increasing sequences with no
-  downstream renumbering
+- **WHEN** the ledger ingests `vocabulary.json` through `ingestRuntimeObservation`
+- **THEN** `read(0)` contains exactly the fixture's 21 allowed internal types:
+  `job_created`, `job_started`, `assistant_delta`, `reasoning_delta`, `tool_started`,
+  `tool_delta`, `tool_finished`, `guard_decision`, `permission_requested`,
+  `scope_expansion_requested`, `question_pending`, `question_result`, `mcp_needs_auth`,
+  `usage_update`, `command_started`, `command_output`, `command_finished`,
+  `artifact_created`, `status`, `error`, and `completed`
+- **AND** each record has sequence and sanitized payload; artifact and terminal inputs
+  in the fixture enter their dedicated owner ports, not raw event minting
 
 #### Scenario: Runtime emits assistant output
-- **WHEN** the ledger test ingests the trace `[EVENT-01..03]`-shaped assistant,
-  reasoning, and structured-content fixture through its public native-ingestion
-  functions
-- **THEN** the recording sink receives ordered assistant-output events with
-  sequence numbers
-- **AND** the reconciled output preserves enough sanitized metadata for desktop
-  and CLI renderers to display the same final content
-- **AND** completed snapshots do not append text that was already represented by
-  deltas
+- **WHEN** `normalized-output.json` supplies assistant, reasoning and structured content
+  through `ingestRuntimeObservation`
+- **THEN** `read(0)` contains ordered assistant/reasoning events preserving content kind
+  and safe metadata that the desktop and CLI projections can display
 
 #### Scenario: Runtime emits tool activity
-- **WHEN** the ledger test ingests a fixture containing the start, progress, and
-  completion boundaries for each supported native tool item lifecycle
-- **THEN** the recording sink receives ordered tool events with tool name,
-  status, and sanitized payload metadata
-- **AND** the fixture's native secrets are absent from every recorded payload
-- **AND** a completion snapshot reconciles, rather than duplicates, preceding
-  tool progress
-
-#### Scenario: Runtime splits an exact secret across adjacent events
-- **WHEN** a Bun test configures exact provider and gateway secret hints, then
-  splits each hint across adjacent assistant, reasoning, tool-output, and
-  terminal-flush fixtures submitted to `createCanonicalRunEventLedger`
-- **THEN** the run/item/channel redaction state withholds each possible secret
-  prefix until it can release or redact it safely
-- **AND** no recording sink, reconstructed message, trace, result, or Local Job
-  API envelope contains the exact secret or a leaked withheld prefix
-- **AND** surrounding non-secret content remains ordered and the sanitized flush
-  completes before the Run's sole `completed` event
+- **WHEN** `normalized-output.json` supplies tool start/progress/final observations
+- **THEN** `read(0)` contains tool_started/tool_delta/tool_finished with name, status
+  and sanitized metadata, and no fixture provider secret is serialized
 
 #### Scenario: Runtime reports completion
-- **WHEN** the ledger test closes success, failure, cancellation, interruption,
-  denial, rejected-output, and zero-output fixtures through the public terminal
-  boundary
-- **THEN** each recorded Run has exactly one `completed` event carrying its
-  truthful final status
-- **AND** `error` events remain diagnostic facts rather than terminal events
-- **AND** no event after `completed` can mutate output, usage, artifacts, or the
-  final status
+- **WHEN** the runner facade passes each existing terminal status in
+  `normalized-output.json` as validated evidence to the ledger
+- **THEN** the facade's returned Run result references the committed completed sequence
+  and final status from `readOutcome()`
+- **AND** every record after that sequence is diagnostic-only
 
 #### Scenario: Event is serialized for CLI
-- **WHEN** the CLI serializer test is given recorded ledger events in
-  `stream-json` mode
-- **THEN** stdout receives one newline-delimited JSON object for each event in
-  the ledger sequence order
-- **AND** non-event diagnostics are written to stderr
-- **AND** the serializer preserves the ledger sequence exactly
+- **WHEN** the CLI stream-json serializer receives a committed event and a separate
+  host diagnostic from `projection.json`
+- **THEN** stdout contains one newline-delimited JSON object for the event and stderr
+  contains the host diagnostic, with no diagnostic text on stdout
 
 #### Scenario: Headless process emits coarse output
-- **WHEN** a headless process-backed adapter feeds a fixture containing assistant
-  text, command lifecycle output, status, retry error, and completion boundaries
-  into `createCanonicalRunEventLedger`
-- **THEN** the recording sink receives ordered `RunEvent` records with sanitized
-  payloads
-- **AND** job persistence receives those same events through the canonical
-  ledger sink instead of a separate unredacted or renumbered event path
-- **AND** the adapter does not strip the canonical envelope or mint a second
-  completion event
+- **WHEN** the coarse ingress port receives `coarse-process.json` assistant, command,
+  status, error and host-result observations
+- **THEN** its returned normalized records preserve the fixture's coarse source and
+  sanitized fields, with no invented native tool/session identity
+- **AND** job persistence receives those records through the ledger store port
 
 #### Scenario: Event compatibility is required
-- **WHEN** compatibility tests project a canonical fixture to CLI, protocol,
-  desktop, and Local Job API v1 consumers
-- **THEN** each surface receives its documented event envelope derived from the
-  same recorded ledger events
-- **AND** Local Job API v1 still exposes only its documented 12 event types and
-  treats the redacted native, provenance, reconciliation, and status fields as
-  optional payload additions
-- **AND** existing v1 consumers do not need to parse raw `RunEvent` internals
+- **WHEN** protocol, CLI and v1 serializers receive the committed `projection.json` record
+- **THEN** each returns its documented envelope with the same canonical sequence
+- **AND** none requires the caller to parse raw native messages or desktop chunks
 
 ### Requirement: Desktop Run Request Contract
-The runtime core SHALL define a desktop-capable run request, event,
-cancellation, and result contract for desktop Claude and Codex adapters that
-extends the shared run request base and routes native event boundaries through
-the one run-scoped canonical ledger.
+The runtime core SHALL define a desktop-capable run request, event, cancellation and
+result contract for Claude and Codex adapters that extends the shared request base.
+Its host composition SHALL inject the ledger ports used for observations and committed
+trace delivery; the request SHALL NOT carry credentials or change ID/cancel authority.
 
 #### Scenario: Adapter receives desktop request
-- **WHEN** a Bun test invokes a desktop runtime adapter with a verified request
-  and an injected `createCanonicalRunEventLedger` recording sink
-- **THEN** it receives a `DesktopRunRequest` containing run identity, verified
-  context, provider binding metadata, permission policy, MCP readiness,
-  attachment references, trace observer, cancellation signal, and session
-  metadata
-- **AND** the request supplies the run-scoped ledger ingestion boundary used by
-  that adapter rather than permitting an adapter-local sequence owner
-- **AND** the request excludes plaintext provider secrets, OAuth tokens, gateway
-  tokens, raw headers, and arbitrary renderer-supplied env
+- **WHEN** `desktop-request.json` is passed through the desktop request factory to a
+  recording adapter
+- **THEN** the adapter receives existing run identity, verified context, provider
+  metadata, permission policy, MCP readiness, attachments, trace observer, signal and
+  session metadata, plus the ledger ingress/committed trace ports
+- **AND** the captured request excludes plaintext provider/OAuth/gateway tokens, raw
+  headers and arbitrary renderer env; exact secret hints enter only the host redactor
 
 #### Scenario: Adapter emits normalized events
-- **WHEN** a runtime-specific `[EVENT-01..03]`-shaped fixture emits assistant,
-  reasoning, tool, guard, permission, question, MCP, usage, status, error,
-  cancellation, or completion information
-- **THEN** the adapter submits each native boundary once to the run-scoped ledger
-  and callers observe ordered `RunEvent` records with sanitized payloads
-- **AND** the adapter does not own a second fact chain, sequence allocator,
-  terminal decision, or persistence mapper
-- **AND** callers do not need runtime-specific stream objects to persist or
-  display the trace
+- **WHEN** a fake desktop adapter submits the event categories in `desktop-request.json`
+  through its injected ports
+- **THEN** its recording trace observer receives committed RunEvent records without
+  runtime-specific stream objects, and the request's original cancellation signal is retained
 
 ## ADDED Requirements
 
 ### Requirement: Canonical Run Event Ledger Ownership
-The main process SHALL create exactly one canonical ledger owner for each Run.
-`createCanonicalRunEventLedger` in
-`src/main/lib/agent-runtime/run-event-ledger.ts` SHALL ingest runtime output and
-system lifecycle facts, assign the canonical `sequence` at the ingestion point,
-apply canonical redaction once, atomically commit each exact-sequence fact and
-its projection obligation before ingestion acknowledgement, and then publish
-the committed fact to injected projections. JSON-RPC responses, notifications, server requests,
-server-response-send boundaries, and server-request-resolved boundaries SHALL
-enter this same owner; transports and business mappers SHALL NOT maintain
-independent fact chains.
+Each Run SHALL have one ledger in its host process. All response, notification, server
+request, response-send, resolved and system observations SHALL enter it. Only that
+ledger SHALL allocate sequence. Its immutable exact-sequence batches SHALL commit before
+acknowledgement or fan-out; sequence SHALL be dense from 1, with no invisible records.
+A retried observation key SHALL return its existing batch. Projection delivery SHALL
+resume using durable acknowledged cursors and be idempotent by Run/sequence.
 
 #### Scenario: All protocol boundaries enter one ledger
-- **WHEN** a Bun test calls the ledger's public response, notification,
-  server-request, server-response-send, and server-request-resolved ingestion
-  functions with an interleaved `[EVENT-01..03]`-shaped fixture
-- **THEN** the recording sink contains one canonical fact for each accepted
-  boundary in the exact order of ledger ingestion
-- **AND** sequences are gap-explainable, strictly increasing integers allocated
-  by that ledger alone
-- **AND** no transport callback or mapper produces a parallel event for the same
-  fact
-
-#### Scenario: One event order crosses all sinks
-- **WHEN** a ledger test attaches recording desktop, headless persistence, CLI,
-  protocol, and Local Job API projection sinks and ingests one mixed Run fixture
-- **THEN** every sink observes the same canonical event identity and sequence
-  before applying only its documented envelope or vocabulary projection
-- **AND** persistence stores the supplied canonical sequence without
-  renumbering it
-- **AND** terminal finalization does not insert another `completed` event
+- **WHEN** `ingress-boundaries.jsonl` is submitted in listed order through the five named
+  boundary ports, including a response, notification, server request, send and resolved
+- **THEN** `read(0)` has one or more records for each boundary in that same batch order,
+  with fact keys `(observationKey, ordinal)` and sequences 1 through the committed count
+- **AND** resubmitting the same observationKey returns the previous records without
+  increasing the committed count or allocating another sequence
 
 #### Scenario: Durable append fails before acknowledgement
-- **WHEN** a Bun table test makes the ledger's public in-memory
-  `durableStore.appendExact` either fail definitely before commit or return an
-  unknown outcome that may have committed, while another native fact is waiting
-- **THEN** ingestion acknowledges neither fact and no renderer, subscriber,
-  result, CLI/API projection, or `read(afterSequence)` call observes the pending
-  record before commit is proven
-- **AND** the ledger blocks the later fact, reconciles the first by its stable
-  internal fact key, and retries the same fact with the same candidate sequence
-- **AND** after recovery the durable reader contains each fact once in order and
-  no different accepted fact ever uses the first fact's canonical sequence
+- **WHEN** `store-faults.json` makes appendExact throw before commit for observation A
+  while B is queued, then retries A with the same key and permits both commits
+- **THEN** during failure `read(0)`, projection deliveries and resolved acknowledgements
+  contain neither A nor B; after recovery they contain A then B at the reserved sequences
+- **AND** the temporary SQLite store has one row per fact key and no partial job mutation
 
 #### Scenario: Process crashes after commit and before projection
-- **WHEN** a Bun fault-injection test commits one ledger record and its projection
-  obligation atomically, crashes before a recording projection acknowledges it,
-  and recreates the ledger over the same durable store and projection cursor
-- **THEN** the committed record remains readable at its original sequence and
-  the restarted projection consumes it from durable state without renumbering
-- **AND** a projection failure or retry does not roll back the record, mutate its
-  payload, or cause the Local Job API reader to return it twice
-- **AND** the next fact receives a strictly greater canonical sequence
+- **WHEN** `store-faults.json` commits A then recreates the ledger over that store before
+  projection ack, with a second variant crashing after deliver but before ack
+- **THEN** cursor(name) resumes the unacknowledged record at its original sequence,
+  the projector upsert contains A once, and ack advances monotonically over its prefix
+- **AND** `read(0)` never duplicates A and the next observation uses the next sequence
+
+#### Scenario: Historical rows remain explicitly unverified
+- **WHEN** the schema migration is applied to `legacy-store.json` containing terminal
+  desktop wrapper rows, bare API rows and an inactive incomplete historical Run
+- **THEN** existing row payload/ID/sequence bytes are unchanged, header.ledger_version
+  is 0, and the read projection exposes historyQuality=legacy_unverified
+- **AND** opening these Runs for ledger append is rejected; no fact keys, provenance
+  or missing completed are fabricated; a new job fixture is version 1 with required metadata
 
 ### Requirement: Native Identity And Runtime Provenance
-Each execution attempt SHALL have one canonical `runId`; an internal/event
-`jobId` or Local Job API v1 `jobId`, when present, SHALL equal that value as a
-compatibility alias. A retry SHALL create a new ledger and new `runId`, retain
-direct/root/attempt provenance, and leave the terminal source Run immutable.
-Each canonical Run trace SHALL bind to one exact runtime installation and SHALL
-carry renderer-safe provenance sufficient to identify its runtime and adapter
-source, installation, resolved executable, executable digest, version or build,
-protocol identity, and schema identity. When the runtime provides native
-identity, the ledger SHALL preserve redacted `threadId`, `sessionId`, `turnId`,
-`itemId`, `requestId`, and `callId` in a versioned payload namespace such as
-`runtime.codex.v1`; missing values SHALL remain absent,
-and thread and session identity SHALL never be substituted for one another.
-
-#### Scenario: Canonical Run and Job identities cannot diverge
-- **WHEN** a Bun table test creates the ledger with matching and mismatched
-  `{runId, jobId}` fixtures through desktop, headless, and Local Job API Run
-  constructors
-- **THEN** a matching fixture emits events whose event/public `jobId` equals
-  canonical `runId`, while a mismatch fails before provider work or event
-  publication
-- **AND** a retry fixture creates a distinct new ledger and `runId` with
-  `retryOfRunId`, `rootRunId`, and deterministic `attempt` provenance
-- **AND** retry does not append events to or mutate the terminal source ledger
+The ledger SHALL preserve available native identities in redacted versioned metadata
+without substituting threadId/sessionId. Each runtime-backed record SHALL refer to its
+immutable installation/version/binary/protocol/schema tuple; provider-only completion
+records SHALL identify their actual Locus execution source. Native context used for
+interrupt SHALL be owned by the ledger and read only by the host adapter.
 
 #### Scenario: Distinct native identities are preserved
-- **WHEN** the ledger test ingests a fixture whose thread, session, turn, item,
-  request, and call IDs are all distinct and include secret-like substrings
-- **THEN** the recorded event's `payload.runtime.codex.v1` object retains each
-  available identity in its correct field after redaction
-- **AND** no `threadId` is copied into `sessionId` or vice versa
-- **AND** raw secret-like fixture values are absent from the serialized event
+- **WHEN** `identity-provenance.json` supplies distinct thread/session/turn/item/request/call
+  values, including exact-secret substrings, to a ledger with secretHints
+- **THEN** `read(0).payload.runtime.codex.v1` preserves each value's redacted field and
+  omits unavailable fields; no thread ID fills a missing session ID
+- **AND** serialized records contain none of the fixture secrets
 
 #### Scenario: Exact runtime provenance follows every event
-- **WHEN** a ledger is created with a fixture RuntimeInstallation ID, binary
-  digest, resolved executable, adapter source, version or build, protocol
-  identity, and schema identity and then emits native and synthetic events
-- **THEN** every recorded event and the trace header refer to that exact immutable
-  provenance tuple
-- **AND** a mismatched or missing required provenance tuple fails ledger
-  admission before a runtime event is published
-- **AND** synthetic events identify their Locus source without obscuring the
-  bound runtime installation
+- **WHEN** runtime and locus-completion variants of `identity-provenance.json` create
+  ledgers and ingest native/system/synthetic observations
+- **THEN** committed record metadata and trace header retain their exact immutable
+  source tuple; the completion variant claims no native binary/installation
+- **AND** a missing binary digest on the runtime variant rejects construction before
+  publication, and schema identity uses the fixture's reproducible per-file fingerprints
+
+#### Scenario: Interrupt target comes from native Run state
+- **WHEN** the adapter reads `readNativeContext()` after thread/turn observations in
+  `identity-provenance.json`, and then repeats with a missing turn ID fixture
+- **THEN** the host-only interrupt request uses the observed threadId and turnId exactly;
+  the missing variant returns no target and cannot substitute sessionId
+
+### Requirement: Stateful Ledger Redaction
+The ledger SHALL apply the canonical redactor before durability and any consumer
+projection, including across adjacent text fragments. Exact hints and withheld raw
+suffixes SHALL remain host memory only; terminal flush SHALL never reveal a secret.
+
+#### Scenario: Runtime splits an exact secret across adjacent events
+- **WHEN** `split-secrets.json` configures exact provider/gateway hints and splits each
+  across adjacent assistant, reasoning, command and tool fragments, then seals the Run
+- **THEN** concatenated serialized durable records, renderer chunks, diagnostics and
+  result contain neither complete hints nor the withheld terminal secret prefix
+- **AND** safe text remains visible, and `redaction.appliedRules` records the applied rule
 
 ### Requirement: Item Lifecycle Reconciliation
-The canonical ledger SHALL reconcile each native item as
-`started -> delta* -> completed`. It SHALL tolerate missing, duplicate, and
-out-of-order boundaries without duplicating assistant or reasoning text, SHALL
-treat a completed snapshot as the authoritative native view, and SHALL expose a
-machine-readable reconciliation result and loss marker whenever the observed
-stream cannot be proven complete. Reconciliation results SHALL use `matched`,
-`suffix_repaired`, `missing_local`, `missing_native`, or `mismatch`.
+The ledger SHALL reduce items through started → delta* → completed using the completed
+snapshot as authoritative for pre-seal materialization. `readItem` SHALL expose item
+state/text/fields and reconciliation result, lossPossible, missingStart and suppressed
+count; committed `status/item_reconciliation` SHALL carry the same data in payload.item
+and payload.reconciliation. Results SHALL be matched, suffix_repaired, missing_local,
+missing_native or mismatch. Reasoning keys SHALL separate text/summary and partIndex.
 
 #### Scenario: Assistant deltas reconcile with final snapshot
-- **WHEN** a ledger test ingests an `[EVENT-01..03]`-shaped assistant item with
-  duplicated deltas, an out-of-order start, and an authoritative completed
-  snapshot
-- **THEN** the materialized assistant output equals the completed snapshot
-  exactly once
-- **AND** the recording sink identifies suppressed duplicates and the
-  reconciliation result without appending the snapshot as another delta
-- **AND** any gap that cannot be reconstructed is marked `lossPossible: true`
+- **WHEN** `items-assistant.jsonl` supplies a missing start, repeated handoff key,
+  out-of-order start and final text "hello", including prefix-only and mismatched variants
+- **THEN** `readItem` is completed with text "hello" once; its persisted reconciliation
+  is suffix_repaired for prefix "hel" and mismatch for "heX"
+- **AND** missingStart/lossPossible are true in missing-start/gap variants; final text
+  is authoritative item state rather than a second appended assistant_delta
 
-#### Scenario: Reasoning deltas reconcile with final snapshot
-- **WHEN** a ledger test ingests a reasoning item whose start is missing, whose
-  deltas overlap, and whose completed snapshot contains the authoritative text
-- **THEN** the materialized reasoning output equals the completed snapshot
-  exactly once
-- **AND** the recorded reconciliation state distinguishes repaired overlap from
-  an unrecoverable gap
-- **AND** the test can assert the final item state is `completed` even though the
-  start boundary was absent
+#### Scenario: Reasoning channels and parts reconcile separately
+- **WHEN** `items-reasoning.jsonl` sends textDelta("analysis"), summaryPartAdded(0),
+  summaryTextDelta(0,"short"), summaryPartAdded(1), summaryTextDelta(1,"next"), plus
+  completed content/summary arrays and duplicate/out-of-order variants
+- **THEN** `readItem` returns distinct completed text/0="analysis", summary/0="short",
+  summary/1="next" with corresponding committed reconciliation fields
+- **AND** no channel concatenates another channel or part, and missing/overlap variants
+  have their explicit fixture result/loss/suppressed counts
 
 #### Scenario: Tool item lifecycle is incomplete or repeated
-- **WHEN** a ledger test ingests duplicate, missing, and out-of-order start,
-  progress, and completion boundaries for native tool item variants
-- **THEN** each native item identity has one reconciled lifecycle and at most one
-  canonical `tool_started` and `tool_finished` transition
-- **AND** authoritative completion fields replace stale progress fields without
-  erasing previously observed diagnostic facts
-- **AND** incomplete lifecycles carry a machine-readable loss or reconciliation
-  marker
+- **WHEN** `items-tools.jsonl` supplies start/progress/final for each of the eight tool
+  variants, and repeated-final/missing-start variants with the same native item key
+- **THEN** `read(0)` has at most one tool_started and tool_finished per item transition,
+  and `readItem` retains authoritative final fields and earlier diagnostic facts
+- **AND** missing-start and duplicate-final cases expose their persisted reconciliation
+  missingStart/lossPossible/suppressedDuplicateCount fields
 
 ### Requirement: Diagnostic Error And Terminal Invariants
-The canonical ledger SHALL preserve a runtime error's `willRetry`, redacted
-native code, native identity, and stable classification as `diagnostic`,
-`retryable`, `fatal_candidate`, or `policy_denial`. An `error` event SHALL be
-diagnostic evidence; each Run SHALL emit exactly one
-terminal `completed` event after its terminal barrier. A definitive transport
-exit without a native terminal fact SHALL create a synthetic terminal candidate
-with explicit provenance. A transport replacement SHALL defer that barrier only
-when the same Run owner registered its attempt/deadline before exit and binds the
-same ledger, Run, installation, and compatible protocol before expiry. A denial,
-rejected output, or zero-output Run SHALL NOT report
-unqualified success unless the admitted request explicitly declares empty
-output valid. Events received after the sealed terminal SHALL be represented
-only by a diagnostic `status` event with subtype `late_event` and SHALL NOT
-change outcome or materialized results.
+The ledger SHALL preserve error classification, willRetry, code and native identity
+without treating every error as terminal. It SHALL emit exactly one completed per
+settled Run. Transport exit SHALL supply a synthetic interrupted terminal with
+provenance; there SHALL be no same-Run transport replacement exception. Outcome SHALL
+be determined by the declared evidence rule: cancel → canceled; interrupt/exit/recovery
+→ interrupted; denial/invalid-output/invalid-empty/credential-check failure/native
+failure → failed; live success or valid host result with valid allowed output → succeeded.
+Snapshot status alone SHALL NOT prove success. All observations after the seal SHALL
+be immutable status/late_event diagnostics and SHALL NOT change outcome or materialization.
 
 #### Scenario: Retry error is followed by success
-- **WHEN** a ledger test ingests a retry-error fixture with native code and
-  `willRetry: true`, followed by successful item completion and a terminal
-  boundary
-- **THEN** the sink records the retry `error` as diagnostic with its redacted
-  code and native identity preserved
-- **AND** the Run has exactly one terminal `completed` event with status
-  `succeeded`
-- **AND** persistence rehydration preserves both the retry fact and the one
-  terminal event
+- **WHEN** `terminal-evidence.json` provides error code="retryable", willRetry=true,
+  then live native success, valid nonempty output and successful post-check
+- **THEN** `read(0)` preserves the error as retryable evidence and has one
+  completed(status=succeeded), also returned by `readOutcome()` after reopening the store
 
-#### Scenario: Failure truth survives rollout persistence
-- **WHEN** table-driven denial, rejected-output, and invalid zero-output fixtures
-  plus the `[CODEX-08]` failed/error rollout-loss fixture enter through the
-  rollout writer and are then rehydrated
-- **THEN** denial, rejected-output, and invalid zero-output outcomes remain
-  non-successful under the Owner-approved completion mapping and retain their
-  corresponding diagnostic evidence
-- **AND** no default-success fallback replaces an unknown or failed terminal
-  status
-- **AND** each rehydrated Run still has exactly one `completed` event
+#### Scenario: Denial rejection and empty output have deterministic outcomes
+- **WHEN** the denial, output-invalid, empty-not-allowed, empty-allowed, credential-failed,
+  cancel and interrupt rows of `terminal-evidence.json` call settle
+- **THEN** `readOutcome().status` is respectively failed, failed, failed, succeeded,
+  failed, canceled and interrupted, with reasons/evidenceKeys and one completed each
+- **AND** a success trigger with missing output evidence does not default to succeeded
 
-#### Scenario: Definitive transport exit synthesizes one terminal
-- **WHEN** a ledger test records an unplanned exit, expired replacement,
-  replacement identity mismatch, or failed replacement bind before any native
-  terminal fact and then submits a duplicate exit and late native completion
-- **THEN** one synthetic `completed` event is recorded with transport-exit and
-  RuntimeInstallation provenance
-- **AND** the duplicate exit does not create another terminal event
-- **AND** the late native completion becomes a `status` event with subtype
-  `late_event` and cannot change the synthetic outcome
+#### Scenario: Transport exit synthesizes one terminal
+- **WHEN** `transport-exit.jsonl` sends exit before live completion, duplicate exit and
+  a subsequent native completed observation
+- **THEN** the store has one completed(status=interrupted) with synthetic.source=transport_exit,
+  transport ID, exit/signal and installation provenance
+- **AND** subsequent observations are status/late_event with terminalSequence and cannot
+  change the interrupted result or create a replacement transport on this Run
 
-#### Scenario: Pre-authorized transport replacement continues the same ledger
-- **WHEN** a Bun test calls `beginTransportReplacement` before the old transport
-  exits, then calls `bindReplacementTransport` with the same Run,
-  RuntimeInstallation, compatible protocol, attempt ID, and a deterministic
-  time before the registered deadline
-- **THEN** the old exit is a `runtime_process` status fact rather than a
-  terminal, and the replacement continues after the durable high-water
-  `sequence`
-- **AND** an incomplete item may enter `repairFromSnapshot` before settlement
-  and then the Run emits exactly one final `completed`
-- **AND** the same table test proves an unplanned, late, mismatched, or failed
-  bind follows the definitive-exit synthetic-terminal scenario instead
+#### Scenario: Pre-start cancel and dead-worker recovery settle through ledger
+- **WHEN** queued and confirmed-dead-worker fixtures in `terminal-evidence.json` use
+  the host ledger's cancel and recovery evidence ports
+- **THEN** each durable job mutation and one completed commit atomically, respectively
+  canceled and interrupted, with synthetic.source=cancel or recovery
+- **AND** repeating recovery does not add a terminal; stale heartbeat without confirmed
+  process death cannot claim a running native owner
+
+#### Scenario: Usage after completed is diagnostic only
+- **WHEN** `late-usage.jsonl` sends total=20, turn/completed and then total=25 with last=5,
+  a warning and a repeated native terminal, including arrival during artifact preparation
+- **THEN** `readUsage().total.totalTokens` remains 20 at its sealed asOfSequence, and
+  each later record is status/late_event with diagnosticOnly=true and terminalSequence
+- **AND** the late usage's payload.observation preserves total=25/last=5, while result,
+  item state, artifact refs and the sole completed remain unchanged
 
 ### Requirement: Usage Snapshot Accounting
-Canonical `usage_update` payloads SHALL use cumulative snapshot semantics. Each
-unique update SHALL identify its deduplication key, cumulative `total` usage
-vector, and native `last` usage vector; identical native updates SHALL not be
-double counted. A resume
-snapshot SHALL establish a baseline rather than replay usage, and a counter
-decrease or incompatible baseline SHALL produce an explicit discontinuity
-instead of a negative increment.
+Canonical usage_update SHALL use cumulative snapshot semantics, retaining total, last,
+baseline, dedupeKey, delta and discontinuity. Duplicate native snapshots/call revisions
+SHALL not double count; per-call runtimes SHALL accumulate distinct calls. The existing
+shared usage normalization owner SHALL remain the only cache-vector arithmetic owner.
 
 #### Scenario: Usage snapshots are accumulated once
-- **WHEN** a ledger test ingests native `total` token fixtures of 10, 20, a
-  duplicate 20 with the same native deduplication identity, and 25, paired with
-  native `last` values of 10, 10, 10, and 5
-- **THEN** recorded unique `usage_update` payloads declare `kind: snapshot` and
-  cumulative `total` values 10, 20, and 25
-- **AND** their preserved native `last` values are 10, 10, and 5
-- **AND** the duplicate snapshot neither emits a second accounting update nor
-  increases the materialized total
+- **WHEN** `usage.json` supplies cumulative totals 10,20,20,25 (duplicate identity for
+  the second 20) with last=10,10,10,5
+- **THEN** unique usage_update payloads have kind=snapshot, total=10,20,25 and last=10,10,5;
+  `readUsage().total.totalTokens` is 25
+- **AND** the per-call variant with two distinct IDs and identical totalTokens=10
+  yields cumulative totalTokens=20, while retransmitting either call does not increase it
 
 #### Scenario: Resume establishes a usage baseline
-- **WHEN** a resumed ledger repairs from a native usage `total` snapshot of 100
-  and then receives cumulative `total` updates of 108 and 3 after a runtime
-  counter reset
-- **THEN** 100 is recorded as a snapshot-repair baseline rather than new token
-  consumption
-- **AND** the update to 108 preserves the native `last` vector and derives a UI
-  delta of 8 from the baseline without changing snapshot semantics
-- **AND** the decrease to 3 records a new baseline with an explicit
-  discontinuity marker and never records a negative increment
+- **WHEN** the defensive synthetic `usage.json` repair baseline=100 is followed by
+  total=108 and a hypothetical decrease to 3
+- **THEN** baseline is not new consumption; the 108 payload has delta.totalTokens=8
+- **AND** the 3 payload has discontinuity=true and a new baseline with no negative delta;
+  the fixture does not claim counter resets were observed in the native trace
 
 ### Requirement: Canonical Artifact Admission
-Native paths, diffs, images, and other runtime outputs SHALL be treated only as
-artifact candidates. The canonical artifact owner SHALL verify existence,
-allowed scope, Run ownership, digest, stable reference, media metadata, and
-redaction before the ledger emits the existing `artifact_created` event. No
-transport, mapper, or terminal finalizer SHALL emit a second artifact fact, and
-accepted final artifacts SHALL be recorded before `completed`.
+Only the artifact owner SHALL validate existence, allowed scope, stable-file digest,
+Run ownership, size/media and redaction and request artifact_created. Runtime candidate
+artifact events SHALL precede completed. Terminal artifact refs SHALL be registered
+before or in the same durable commit as completed; terminal projection files SHALL
+not emit self-referential artifact_created events. Rejection SHALL use the observable
+status/artifact_admission result/reason fields, with no unsafe candidate content.
 
 #### Scenario: Valid artifact candidate is admitted
-- **WHEN** a ledger test submits a temporary in-scope file candidate owned by the
-  fixture Run through the canonical artifact admission port
-- **THEN** the sink records exactly one `artifact_created` event with a verified
-  digest, size, media type, Run ownership, and redacted stable reference
-- **AND** the event precedes the Run's `completed` sequence
-- **AND** no raw native path outside the allowed payload fields is exposed
+- **WHEN** `artifacts.json` creates a temporary in-scope Run-owned file and submits it
+  through admitRunArtifactCandidate, then settles
+- **THEN** `read(0)` has one artifact_created with verified SHA-256/size/media/ref before
+  completed and the same ref in the committed artifact manifest metadata
 
 #### Scenario: Invalid artifact candidate is rejected
-- **WHEN** a ledger test submits missing, out-of-scope, ownership-mismatched,
-  digest-mismatched, and redaction-unsafe candidates
-- **THEN** no `artifact_created` event is recorded for any invalid candidate
-- **AND** the sink receives a sanitized diagnostic describing each admission
-  failure without exposing the rejected path or content
-- **AND** the terminal manifest contains only candidates accepted by the same
-  canonical artifact owner
+- **WHEN** the missing/out-of-scope/wrong-owner/digest-mismatch/unsafe-redaction rows of
+  `artifacts.json` submit candidates
+- **THEN** each has no artifact_created or manifest entry and a committed
+  status/artifact_admission with result=rejected and the matching stable reason
+- **AND** no rejected secret path/content is serialized
 
-### Requirement: Observable Native Methods And Stable Status Taxonomy
-Every ingested native method SHALL produce either a canonical domain event or a
-machine-readable loss or unknown observation; no default mapping SHALL silently
-return an empty event list. `status` payloads SHALL use the stable subtypes
-`thread_lifecycle`, `turn_lifecycle`, `compaction`, `reroute`, `warning`,
-`mcp_lifecycle`, `oauth_lifecycle`, `approval_review`,
-`interaction_boundary`, `runtime_process`, `repair`,
-`unknown_native_method`, and `late_event`. Free-form sanitized text MAY explain
-a status but SHALL NOT replace its subtype. Server request and response-send or
-resolved facts in this change SHALL remain ingestion-boundary observations and
-SHALL NOT claim to implement the durable Interaction state machine.
+#### Scenario: Terminal files and completed become visible together
+- **WHEN** `terminal-artifacts.json` freezes a completed candidate, prepares events/result/
+  manifest files from it, and injects failures before file preparation, before SQL commit,
+  and after commit before projection
+- **THEN** before a successful commit result/events readers expose no candidate terminal
+  or unregistered final refs; a successful commit stores the one completed and verified
+  refs atomically, and reopened readers return that same result
+- **AND** events.jsonl contains the candidate completed exactly once; result references
+  request/events, manifest references request/events/result without self-digest recursion;
+  final files create no artifact_created event and remain unchanged by late diagnostics
+
+### Requirement: Observable Native Methods And Boundary Facts
+Unknown native methods SHALL produce sanitized status/unknown_native_method with
+lossPossible=true, rather than silently disappear. Known methods SHALL use their
+canonical domain event or the stable subtype disposition table. Response/send/resolved
+facts SHALL describe protocol boundaries, not claim durable Interaction state.
 
 #### Scenario: Unknown native method is observed
-- **WHEN** a ledger test ingests an `[EVENT-03]`-shaped future native method with
-  native method identity and a secret-bearing payload
-- **THEN** the sink records a `status` event with subtype
-  `unknown_native_method`, redacted native identity, and a machine-readable
-  `lossPossible: true` marker
-- **AND** the ingestion result is not an empty event list
-- **AND** no secret-bearing payload value appears in the serialized event
-
-#### Scenario: Stable status categories are projected
-- **WHEN** a table-driven Bun test ingests thread and turn lifecycle,
-  compaction, reroute, warning, MCP, OAuth, approval-review, runtime-process,
-  repair, interaction-boundary, and late-event fixtures
-- **THEN** each recorded `status` event carries the exact corresponding stable
-  subtype
-- **AND** Local Job API v1 projects each one through its existing `status` event
-  type without adding a public event type
-- **AND** consumers can branch on subtype without parsing explanatory text
+- **WHEN** `unknown-method.json` provides a future method and secret-bearing params
+- **THEN** `read(0)` contains status/unknown_native_method, sanitized method identity and
+  lossPossible=true, with no raw secret or empty default projection
 
 #### Scenario: Interaction boundary is recorded without a second state machine
-- **WHEN** a ledger test ingests a server request, its response-send boundary,
-  and its resolved boundary with a shared request identity
-- **THEN** the sink records ordered `interaction_boundary` status facts for all
-  three observations
-- **AND** the events preserve the redacted request identity and boundary kind
-- **AND** they contain no assertion that an Interaction record was durably
-  created, leased, or resolved
+- **WHEN** `interaction-boundaries.jsonl` submits request, sent/failed response-send
+  variants and resolved with the same requestId
+- **THEN** read records contain subtype=interaction_boundary and boundary=request,
+  response_send or resolved with request identity and explicit send result
+- **AND** no payload claims a durable Interaction was created/resolved or grants execution
+
+### Requirement: Native Resume Validation Facts
+Native resume validation SHALL use request/query correlation and independent identity
+relations, never generic status, arbitrary session ID, exit or result success. Codex
+SHALL require matching JSON-RPC id and returned/requested thread.id plus independent
+session identity and provenance; Claude SHALL require correlated system/init with
+resume equality or fork's distinct new UUID. Outcomes SHALL be neutral
+native_resume_validated/native_resume_rejected facts, preserving native codes and
+separating native loading from later provider success or live attach.
+
+#### Scenario: Codex response validates the requested native thread
+- **WHEN** `resume-codex.jsonl` sends early status, unrelated response, matching success,
+  wrong-thread, absent-session, -32600 and -32603 variants through ingress
+- **THEN** only the matching success yields status/native_resume_validated, carrying
+  jsonRpcId, requestedThreadId, returnedThreadId, sessionId, ephemeral, redacted path
+  and cliVersion; unrelated response is protocol_response with correlated=false
+- **AND** wrong/missing/error variants yield native_resume_rejected with reason/code;
+  early status remains thread_lifecycle; no variant fabricates thread/started or expired
+
+#### Scenario: Claude correlated init validates resume independently of turn success
+- **WHEN** `resume-claude.jsonl` supplies ordinary/fork correlated system/init and
+  unrelated-init/result-success-is_error/no-init rejection variants
+- **THEN** only correct correlated resume equality or a valid distinct fork UUID yields
+  native_resume_validated; the other terminal rejection cases yield native_resume_rejected
+- **AND** a later auth failure leaves the validation fact unchanged and no one-shot
+  handle state is mutated by the fact recorder
 
 ### Requirement: Resume Snapshot Repair
-Native resume snapshots SHALL be treated as repair evidence, not event replay.
-The ledger SHALL allocate fresh canonical sequences for repair observations,
-mark `repair.source` as `snapshot`, declare `lossPossible`, and expose the
-reconciliation result. Native offsets, item indexes, or protocol cursors SHALL
-NOT become downstream cursors; the Locus ledger sequence SHALL be the only
-consumer cursor.
+Snapshots SHALL be recorded as repair evidence with repair.source=snapshot,
+lossPossible=true, explicit reconciliation and fresh Locus sequences. They SHALL not
+assert native event replay, transfer live ownership, or alone settle Run success.
+Durable terminal truth SHALL be immutable even when native disk history loses failure.
 
 #### Scenario: Resume snapshot repairs an incomplete item
-- **WHEN** an unsettled ledger starts from an incomplete assistant or reasoning
-  trace and submits a native thread or turn snapshot containing an authoritative
-  completed item, either at initial resume or during a pre-authorized bound
-  transport replacement
-- **THEN** the repaired materialized item equals the authoritative snapshot
-  without replaying already emitted deltas
-- **AND** the repair observation has a fresh ledger sequence,
-  `repair.source: snapshot`, `lossPossible: true`, and a reconciliation result
-  of `matched`, `suffix_repaired`, `missing_local`, `missing_native`, or
-  `mismatch`
-- **AND** the native snapshot index is retained only as redacted evidence, not as
-  the public cursor
-- **AND** the same fixture submitted after a definitive exit or durable terminal
-  is diagnostic-only and cannot mutate the materialized item
+- **WHEN** `snapshot-repair.json` supplies local assistant prefix "hel" and a recognized
+  completed item "hello" before the Run seal
+- **THEN** readItem.text becomes "hello" with suffix_repaired and a fresh status/repair
+  sequence carrying repair.source=snapshot and lossPossible=true
+- **AND** readOutcome remains null and native item offsets do not replace the ledger cursor
 
-#### Scenario: Resume snapshot cannot prove continuity
-- **WHEN** the ledger test submits missing, malformed, or truncated rollout
-  fixtures derived from `[CODEX-06]`
-- **THEN** the sink records a sanitized repair diagnostic with
-  `lossPossible: true` and no fabricated per-item reconciliation result
-- **AND** the ledger neither fabricates missing deltas nor reports replay
-  completeness
-- **AND** subsequent readers resume only from the last persisted canonical
-  sequence
+#### Scenario: Durable failure survives degraded native snapshot
+- **WHEN** `snapshot-failed.json` commits a live failed terminal with 401 diagnostic,
+  reopens the Locus store and feeds CODEX-08's sanitized completed/error-null snapshot
+- **THEN** readOutcome and the stored completed stay failed with the original error;
+  the new status/late_event has repair.source=snapshot, diagnosticOnly=true and lossPossible=true
+- **AND** the fixture with no durable terminal cannot settle succeeded from that snapshot;
+  its later transport exit settles interrupted, without a Locus native-rollout-write call
 
-#### Scenario: Cross-version completed snapshot is reconciled
-- **WHEN** the ledger test repairs from both directions of the `[CODEX-07]`
-  cross-version completed-thread fixture with explicit source and target schema
-  identities
-- **THEN** a recognized snapshot schema preserves final output, turn identity,
-  usage evidence, and creator-version provenance with a `matched` or
-  `suffix_repaired` result
-- **AND** an incompatible schema records `mismatch` and `lossPossible: true`
-  instead of guessing
-- **AND** neither outcome changes the canonical ledger sequence into a native
-  cursor
+#### Scenario: Cross-version snapshot reconciliation declares its evidence limits
+- **WHEN** `snapshot-versions.json` feeds the recognized 0.139→0.149 and reverse synthetic
+  shapes derived from CODEX-07's reported fields, plus an incompatible-schema variant
+- **THEN** readItem preserves the recognized final/turn data, usage baseline and source
+  creator version; repair carries source/target reproducible fingerprints
+- **AND** incompatible input records mismatch/lossPossible without guessing item state;
+  all variants use fresh Locus sequence and are labeled synthetic, not captured full responses
