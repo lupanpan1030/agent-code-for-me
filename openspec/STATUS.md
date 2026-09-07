@@ -71,6 +71,20 @@ Rollback the complete integrated product-code + RED-tests + evidence group with
 failing. Later archive/push receipt commits are documentation history outside the
 merge parent diff and should be reconciled if rollback is actually dispatched.
 
+### Default branch slice push receipt
+
+Archive commit: `f416c7b5054cc167d1aa0fb5e1f5ed2bfa21e9c3`.
+
+slice: fix-default-branch-resolution-local-repos (product code 7d26fec7 + red tests 30451539 + docs) pushed 2026-09-07 (coordination-dispatched, Owner ACCEPTED)
+
+This receipt is committed immediately before the dispatch-authorized single
+`git push origin main`; the execution handoff records the actual push result,
+post-push `git ls-remote origin refs/heads/main`, and CI run URL. The authorized
+remote target is only `origin/main`.
+
+Whole-group rollback: `git revert -m 1 a50bee6d733613ceb36f2aaaf80d73af1f6ef8f1`
+(includes `lint-baseline.json` rollback); never revert `7d26fec7` alone.
+
 ## Locally archived 2026-09-02
 
 ### Foundation 1d — Foundation Stabilization 4/4 complete
