@@ -5,7 +5,9 @@ Status: **DRAFT — awaiting Owner APPROVED**
 This is documentation-revision evidence plus a future implementation evidence register.
 No product code, acceptance test or runtime fixture is implemented by this revision.
 Passing document/unchanged-code checks does not mean IMPLEMENTATION_VERIFIED,
-REVIEW_APPROVED or Owner ACCEPTED. A fresh review of the revised source remains pending.
+REVIEW_APPROVED or Owner ACCEPTED. The third re-check below is REVIEW_APPROVED only
+for source 4b6ca640288555ca1d94c546ca6bf9d13e4b7fba; it is not a fresh review verdict
+on this subsequent documentation touch-up commit. Owner answers/APPROVED remain pending.
 
 ## Sources
 
@@ -373,4 +375,75 @@ Reviewed SHA: `9e47e2ddb79e3856d16ba1753d87f1cafd107a8d` (one docs-only commit o
 - **Open Question 4 — dense per-record v1 status projection and terminal-artifact registration in the same durable commit as `completed`.** Recommended default: **accept** (only alternative is a sparse-sequence C7 #5 break; the artifact rule is now implementable), with the status-volume consequence (item 12) stated to consumers.
 - Coordinator item (preset, not an Owner gate): item 4 pointer collision — recommended default `payload.extensions["runtime.codex.v1"]`.
 
-Next gate: revised draft addressing item 1 (and the P2 touch-ups as convenient), then a third fresh review, then Owner APPROVED. Nothing here authorizes push, merge, remote PR or release.```
+Next gate: revised draft addressing item 1 (and the P2 touch-ups as convenient), then a third fresh review, then Owner APPROVED. Nothing here authorizes push, merge, remote PR or release.
+```
+
+## Third Fresh-Context Re-check — 4b6ca640 (prev 9e47e2dd)
+
+Targeted re-check of third revision `4b6ca640288555ca1d94c546ca6bf9d13e4b7fba`: HEAD matched,
+worktree clean, docs-only diff (10 files, +627/-167), `git diff --check` exit 0. Verdict
+**REVIEW_APPROVED** — 0 P0, 0 P1, 2 P2, 5 P3. The second review's P1 (provenance capture
+point/owner) is resolved: the two-stage pending/runtime rule is consistent across design,
+the agent-runtime-core and architecture-ownership deltas, tasks 2.4/2.5/6.1/7.15 and the
+never-started fixtures, with `run-provenance.ts` as a named owner row plus guard pin, and
+red tests are now writable for job_created, queued-cancel, never-started and runtime-backed
+records. All 10 P2 items applied; the 10 P3s disposed; no regression of the 58 first-round
+resolutions (public shape, transport-replacement removal and gate-free living requirements
+all re-verified). Strict validation exit 0 single and `--all` (53 passed, 0 failed);
+56 scenarios = 56 register rows S01–S56. New P2s (non-blocking, fix before implementation):
+(1) design.md:174-176/429-431 make initial `artifact_created` publication wait for execution
+binding, unqualified, while core spec.md:164-165 rejects only *native* candidates — today
+cli-dispatcher.ts:458-472 emits that event before any executable resolution, so the rule
+reorders an already-public event and drops it for never-started runs with no C7 line;
+(2) design.md:168/543 and tasks.md:149/154 name `runtime-executable.ts` (only
+`getRuntimeExecutableStatus`, never called by an adapter on a run path) as the capture seam
+instead of `codex/cli-path.ts:58` and `claude/env.ts:157`. P3s: private
+`persistedPayloadForRunEvent` labelled an export; `runtime_selected`/`runtime_selection_refused`
+emitted pre-binding; retry budget silently 5→3; unreachable `SESSION_EXPIRED` renderer card
+unaudited; `captureRunExecutionProvenance` absent from the guard fixture inventory. R1 and
+the four Open Questions remain Owner decisions. Nothing here authorizes push, merge, remote
+PR, release or Owner product acceptance.
+
+## Third Re-check Touch-up Dispositions — 2 P2 + 5 P3
+
+Input: [targeted re-check report](/home/chen/.claude/projects/-home-chen-projects-agent-code-for-me/f1888632-cd03-49a0-a57d-51704695f29d/handoff/reviews/run-event-ledger-recheck-4b6ca640.md).
+Intake HEAD matched `4b6ca640288555ca1d94c546ca6bf9d13e4b7fba`, with a clean worktree.
+The ledger entry above is copied verbatim from report §6. These are author dispositions
+of its new findings, not a new independent verdict or Owner decision.
+
+| Finding | Disposition | Updated evidence |
+| --- | --- | --- |
+| P2 #1 — initial artifact ordering | Applied: only native candidates wait for binding; admitted non-native initial artifact_created keeps its order before job_started. Never-started runs retain any committed initial event/refs; no event is invented when preparation/admission was not reached or failed. | design two-stage capture and terminal artifact step 3; proposal Consumer Impact C7 rows 5/8 clause; core provenance delta; tasks 7.16 |
+| P2 #2 — provenance capture seam | Applied: capture the actual executable resolved by codex/cli-path.ts:58 resolveBundledCodexCliPath and claude/env.ts:157 getBundledClaudeBinaryPath at their run launch callers; runtime-executable.ts is status/readiness query only. | design two-stage capture and owner row; tasks 6.1 |
+| P3 #1 — private helper called export | Applied: distinguish legacy exports and internal helpers; persistedPayloadForRunEvent is explicitly module-private, with unchanged no-definition/re-export/call-site guard. | architecture-ownership delta; design mapper owner row |
+| P3 #2 — pre-binding selection status | Applied: runtime_selected/runtime_selection_refused are pending-admissible host status; preserve payload.runtime strings, omit runtime.codex.v1 extension before binding, never retrofit committed records. | design pending admission; core provenance and local-job-api deltas; tasks 7.16 |
+| P3 #3 — retry budget 5→3 | Applied: retain three attempts and explicitly identify the deliberate replacement of today's five-attempt EVENT_SEQUENCE_RETRY_LIMIT. | design conflict reconciliation |
+| P3 #4 — unreachable SESSION_EXPIRED card | Applied: audit the union and ipc-chat-transport.ts card in 8.3; replace the path with neutral NATIVE_RESUME_REJECTED / “Session resume rejected”, remove dead category/card, preserve sessionId and avoid expiry/fresh-session claims. | tasks 8.3; existing 6.3 correction remains |
+| P3 #5 — provenance guard fixture | Applied: name captureRunExecutionProvenance clean-owner, duplicate-definition and re-export fixtures plus host-only composition/binding checks. | tasks 7.17 architecture-fixtures.json inventory |
+
+R1 and all four mirrored Open Questions remain unchanged and require Owner answers plus
+APPROVED before implementation. This dispatch creates one local documentation commit;
+no product/test implementation, merge, push, remote PR mutation or release is performed.
+
+## Third Re-check Touch-up Receipts
+
+Date: 2026-09-07 (Pacific/Auckland). Checks cover the documentation tree prepared
+from `4b6ca640288555ca1d94c546ca6bf9d13e4b7fba` for the single local commit titled
+`docs(openspec): apply re-check touch-ups to canonical run event ledger draft`.
+The resulting commit SHA is reported in the handoff; no implementing-source technical
+verdict is claimed. Only eight documentation files change: this change directory and
+its one STATUS row. Product/test files and the four Open Questions are unchanged.
+
+| Check | Command / environment | Result |
+| --- | --- | --- |
+| Single strict validation | /home/chen/projects/agent-code-for-me/node_modules/.bin/openspec validate refactor-canonical-run-event-ledger --strict --no-interactive | Exit 0: `Change 'refactor-canonical-run-event-ledger' is valid` |
+| All strict validation | /home/chen/projects/agent-code-for-me/node_modules/.bin/openspec validate --all --strict --no-interactive | Exit 0: `Totals: 53 passed, 0 failed (53 items)` |
+| Whitespace | git diff --check | Exit 0, no output |
+| Documentation inventory | Scripted scope/STATUS-row check, report §6 exact-text comparison, disposition and scenario counts, Open Questions comparison against intake HEAD | Pass: 8 documentation files, only the target STATUS row, verbatim ledger, 7 dispositions, 56 scenarios, all 4 Open Questions unchanged |
+| Current-code regression gate | bun run check:full using the main checkout's existing node_modules through a temporary symlink, removed after the check | Exit 1: 1925 passed / 3 failed / 9338 expectations / 304 files. Lint, architecture, retired-runtime residue and typecheck passed; the same three unchanged Codex adapter tests recorded above fail during pre-start snapshot scrubbing with EROFS. The aggregate stops at tests, so its build/diff stages did not run; strict validation and git diff --check ran separately. |
+| Product / manual smoke | Not run: documentation-only DRAFT; no approved product implementation | No product, runtime conformance or Owner acceptance claim |
+
+Full aggregate output: `/tmp/run-event-ledger-touchups-check-full.log` (local diagnostic
+receipt). No package/lockfile change, product-code workaround or permission escalation
+was used. The historical REVIEW_APPROVED stays bound exclusively to `4b6ca640`; these
+receipts do not transfer that independent verdict to the touch-up commit.

@@ -14,6 +14,10 @@ The extension SHALL preserve an existing string payload.runtime; it SHALL be add
 to object semantic payloads under payload.extensions["runtime.codex.v1"], with no wrapper
 for non-object payloads. Dense status records can increase event volume; --after SHALL
 remain the cursor for incremental reads, with no bounded per-Run event-count guarantee.
+Pre-binding host status runtime_selected/runtime_selection_refused SHALL be admitted with
+pending provenance and their existing string payload.runtime. Their optional
+payload.extensions["runtime.codex.v1"] SHALL be absent until execution binding; earlier
+records SHALL NOT be retroactively extended when the Run binds.
 
 #### Scenario: Consumer reads events
 - **WHEN** source=api `public-v1.json` records are read by runs events with --after=2
@@ -22,8 +26,9 @@ remain the cursor for incremental reads, with no bounded per-Run event-count gua
   the assistant fixture and optional metadata is at /payload/extensions/runtime.codex.v1
 - **AND** no desktop runId/runEventSequence/redaction/payload wrapper appears, and
   reading again with the last sequence returns only subsequent records
-- **AND** runtime_selected/runtime_selection_refused fixtures retain their original
-  string payload.runtime beside payload.extensions["runtime.codex.v1"]
+- **AND** pre-binding runtime_selected/runtime_selection_refused fixtures retain their
+  original string payload.runtime with no payload.extensions["runtime.codex.v1"], and
+  remain unchanged after binding; runtime-backed fixtures carry the optional extension
 - **AND** a source=desktop fixture is rejected by getLocalJobApiEvents
 
 #### Scenario: Consumer follows events

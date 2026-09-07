@@ -146,12 +146,15 @@ starts until Owner APPROVED and the Consumer Impact decision are recorded.
 ## 6. Provenance and resume repair
 
 - [ ] 6.1 Implement captureRunExecutionProvenance in NEW agent-runtime/run-provenance.ts;
-  reuse runtime-executable.ts path checks without changing selection. Own deterministic
+  capture the actual executable from codex/cli-path.ts:58 resolveBundledCodexCliPath and
+  claude/env.ts:157 getBundledClaudeBinaryPath without changing selection;
+  runtime-executable.ts remains status/readiness query only. Own deterministic
   local installation identity (runtime/source/platform/arch/version/actual binary digest),
   opaque executableRef, actual executable SHA-256 and reproducible sorted per-file schema
   fingerprints/canonical manifest encoding. Freeze repeatability/tamper fixtures; never use
   the non-deterministic v2.schemas.json bundle digest or an unimplemented delivery registry.
-  All adapters call it at executable resolution; host bindExecutionProvenance atomically
+  Wire run launch callers of those resolution entries to captureRunExecutionProvenance;
+  host bindExecutionProvenance atomically
   persists the tuple before runtime execution/publication and seals it for the Run.
   Lifecycle pending jobs remain null, provider completion binds its actual source;
   missing runtime fields or capture-to-launch executable changes fail closed.
@@ -306,8 +309,13 @@ fixtures as synthetic, never attribute the completed body to EVENT-01..03 or COD
   source=desktop rejection, after=2/follow/late, all 21 types→12 with exact nine subtype
   names, redacted status stub, existing six-field envelope, result statuses/artifact refs,
   job.retryOfJobId/attempt and feature present/absent + experimental extension metadata.
-  Preserve runtime_selected/runtime_selection_refused payload.runtime strings while adding
-  payload.extensions["runtime.codex.v1"]. Discovery cases use the actual Locus discovery
+  Preserve runtime_selected/runtime_selection_refused payload.runtime strings while pending,
+  with payload.extensions["runtime.codex.v1"] absent before binding and no retroactive
+  extension after binding; use runtime-backed records to assert the optional extension.
+  Assert admitted non-native initial artifact_created precedes job_started on API create/
+  retry; never-started runs retain any committed initial event, and no event is invented
+  when initial preparation/admission was not reached or failed.
+  Discovery cases use the actual Locus discovery
   reader and generic absent-feature envelope contract, not an invented preflight helper.
   Assert no public job.ledger.historyQuality addition; only internal legacy readers mark it.
 - [ ] 7.17 `projection.json`, `desktop-projection.json`, `headless-projection.json`,
@@ -317,7 +325,9 @@ fixtures as synthetic, never attribute the completed body to EVENT-01..03 or COD
   vocabulary.json cases each have port=ingestRuntimeObservation|admitRunArtifactCandidate|
   settle (artifact/terminal cases must use their owner port); coarse process
   {kind,text,exitCode} descriptors, and source-file strings with exact
-  expected static symbol/import findings; no fake behavioral assertion by a source scanner.
+  expected static symbol/import findings. Include captureRunExecutionProvenance clean-owner,
+  duplicate-definition and re-export fixtures pinning it to agent-runtime/run-provenance.ts,
+  with host-only composition/binding checks; no fake behavioral assertion by a source scanner.
 - [ ] 7.18 Register harness-conformance follow-up for actual 66-method dynamics, trailing
   usage/warnings, realtime/remote-control/process/Windows behavior, lost retransmission,
   in-flight death snapshot and Codex rollout failure persistence. Keep CODEX-08's observed
@@ -340,7 +350,13 @@ fixtures as synthetic, never attribute the completed body to EVENT-01..03 or COD
 - [ ] 8.3 Audit every inventory row and terminal mint site, including job-event-bridge.ts,
   createAgentJobRunEvent, system appends, recovery, pre-start cancel, completion and Claude
   startup/state/job wiring, agent-jobs.ts queued cancel, schedules.ts direct event INSERT
-  and desktop-runner.ts sequence=0 startup event. Update OWNERSHIP_MAP for provenance
+  and desktop-runner.ts sequence=0 startup event. Audit the unreachable SESSION_EXPIRED
+  union member in claude/agent-sdk-errors.ts and the "Session expired" card in
+  src/renderer/features/agents/lib/ipc-chat-transport.ts:157-161: replace this path's
+  presentation with neutral NATIVE_RESUME_REJECTED ("Session resume rejected"), without
+  claiming expiry or instructing an automatic fresh session; remove the dead category/card
+  in the same implementing change and verify the existing sessionId remains intact.
+  Update OWNERSHIP_MAP for provenance
   capture, recovery liveness and Claude neutral diagnostics; explicitly split ownership:
   agent-runtime/run-artifacts.ts validates/prepares/writes files, while the local-job-api
   capability and headless/local-job-api.ts serializers own the v1 paths/roles/schema and

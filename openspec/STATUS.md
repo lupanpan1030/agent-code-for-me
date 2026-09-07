@@ -8,7 +8,7 @@ Updated: 2026-09-30 (Pacific/Auckland); previous: 2026-09-09 (Pacific/Auckland)
 
 | Change | State | Concrete next gate |
 | --- | --- | --- |
-| `refactor-canonical-run-event-ledger` | DRAFT — awaiting Owner APPROVED | Third revision addresses second-review 1 P1 + 10 P2 + 10 P3; next: third fresh review, then Owner resolves four Open Questions and C7 R1 (rows 4/5 terminal truth and exit codes) and marks APPROVED before product or test changes. |
+| `refactor-canonical-run-event-ledger` | DRAFT — third revision re-checked REVIEW_APPROVED; awaiting Owner answers to 4 open questions + APPROVED | Re-check verdict is bound to 4b6ca640288555ca1d94c546ca6bf9d13e4b7fba; its 2 P2 + 5 P3 touch-ups and verbatim review ledger are recorded in verification.md. Owner still resolves C7 R1 (rows 4/5 terminal truth and exit codes) and four Open Questions before product or test changes. |
 
 Parked proposals are indexed in [`deferred/README.md`](deferred/README.md) and
 do not appear in the active list.

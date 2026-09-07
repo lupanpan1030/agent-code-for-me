@@ -11,7 +11,7 @@ The exact store append export appendExactRunEventBatch SHALL exist only in
 headless/job-store.ts, with a private record insert helper; its sole direct importer
 SHALL be agent-runtime/run-event-ledger-host.ts. captureRunExecutionProvenance SHALL
 be defined only in agent-runtime/run-provenance.ts; the ledger host SHALL be the only
-composition path binding its tuple to a Run. The removed legacy exports
+composition path binding its tuple to a Run. The removed legacy exports and internal helpers
 mapDesktopStreamChunkToRunEvents, createDesktopStreamEventMapper,
 appendRunEventsToAgentJob, redactRendererDiagnosticChunk, redactRendererRuntimeChunk,
 createRuntimeRendererChunkEmitter, createRuntimeStreamChunkSecretRedactor,

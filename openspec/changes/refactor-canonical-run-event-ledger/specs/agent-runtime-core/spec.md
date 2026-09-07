@@ -161,7 +161,13 @@ immutable installation/version/binary/protocol/schema tuple; provider-only compl
 records SHALL identify their actual Locus execution source. Lifecycle-only job_created,
 worker-claim job_started, pre-start cancel and never-started recovery/failure records
 SHALL use kind=pending before execution binding, with ledger_provenance_json null and
-no claimed binary. A pending ledger SHALL reject native observations, usage and native
+no claimed binary. Pending admission SHALL also allow host status runtime_selected and
+runtime_selection_refused and admitted non-native initial artifact_created, with no
+runtime.codex.v1 provenance extension before binding. Successful initial artifact
+preparation/admission on API create/retry SHALL preserve artifact_created before job_started;
+never-started runs SHALL retain any committed initial event, without inventing one if
+initial preparation/admission was not reached or failed.
+A pending ledger SHALL reject native observations, usage and native
 artifact candidates. At adapter executable resolution, the provenance owner SHALL
 capture installationId/executableRef/actual version/source/binarySha256 and reproducible
 schema fingerprints and bind them before runtime execution or runtime-backed records.

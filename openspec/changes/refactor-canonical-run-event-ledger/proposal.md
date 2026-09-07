@@ -130,6 +130,13 @@ filtering internal ledger records would make v1 `sequence` sparse relative to to
 its original sequence; v1 never renumbers and never skips it. A future sparse design
 requires a new R1-independent C7 #5 decision and a consumer-visible gap explanation.
 
+C7 rows 5/8: initial non-native `artifact_created` retains its existing order before
+`job_started` on API create/retry after successful initial preparation/admission. A
+never-started run retains any such committed event and prepared result/manifest refs;
+if initial preparation/admission was not reached or failed, no event is invented.
+Only native artifact candidates wait for execution binding; no initial event is moved
+or suppressed solely because the Run remains pending.
+
 | Contract / version | Surface | Current | Proposed | Breaking? | Evidence |
 | --- | --- | --- | --- | --- | --- |
 | `locus.local-job.v1` | runs create/retry, status/result, exit code | Some error/default paths can infer wrong terminal status | Core outcome evidence determines existing statuses; Existing code mapping stays: 0 success, 5 canceled, generic failure/interruption 1; specialized error codes remain 2/3/4/6/7/8 | R1 | [job runner](../../../src/main/lib/headless/job-runner.ts), [exit codes](../../../src/main/lib/headless/job-runner.ts), core terminal delta |
@@ -155,7 +162,9 @@ Proposed optional additions, with the original semantic field in place:
 ```
 
 A status payload can retain `"runtime":"codex"` beside the optional `extensions` object;
-`public-v1.json` includes both runtime_selected and runtime_selection_refused cases.
+`public-v1.json` includes pre-binding runtime_selected and runtime_selection_refused
+cases that preserve that string but omit `extensions["runtime.codex.v1"]`; binding
+does not retroactively add provenance to these committed pending records.
 Dense projection increases the number of status records per Run. Consumers page with
 `--after` and must not assume a bounded event count; consumers filtering to their
 existing non-status event types retain those semantics.

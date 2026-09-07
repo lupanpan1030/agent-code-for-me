@@ -165,15 +165,25 @@ required runtime tuple field is rejected before runtime publication/execution. L
 ledger construction uses `kind:"pending"`; it does not resolve or hash a speculative
 binary. Absent native IDs remain absent and never confer execution authority.
 
-Two-stage capture is owned by **NEW agent-runtime/run-provenance.ts**, using the existing
-runtime-executable.ts path checks without changing selection. Enqueue (`job_created`),
+Two-stage capture is owned by **NEW agent-runtime/run-provenance.ts**, using the actual
+executable selected through `codex/cli-path.ts:58` (`resolveBundledCodexCliPath`) or
+`claude/env.ts:157` (`getBundledClaudeBinaryPath`) at the run launch caller, without
+changing selection. `runtime-executable.ts` remains a status/readiness query only.
+Enqueue (`job_created`),
 worker-claim (`job_started`, a host lifecycle fact, not proof of native execution),
 pre-start cancel and recovery/failure before runtime admission can use pending metadata.
-Only these lifecycle facts and their host status/error/completed settlement are admitted
-while pending; native observations, usage and native artifact candidates are rejected.
-Initial run-dir files can be prepared as lifecycle output; artifact event publication
-waits for execution binding. A never-started terminal exposes its prepared lifecycle
-files through the existing result/manifest contract, with no claimed native artifact.
+These lifecycle facts, their host status/error/completed settlement and admitted non-native
+initial artifact events are allowed while pending. Host status explicitly includes
+`runtime_selected` and `runtime_selection_refused`: their string `payload.runtime` stays
+intact, but `payload.extensions["runtime.codex.v1"]` is absent before execution binding;
+no unbound provenance extension is emitted or retroactively added. Native observations,
+usage and native artifact candidates are rejected while pending; only native artifact
+publication waits for execution binding. Initial run-dir files are lifecycle output:
+when their preparation/admission succeeds, the existing initial `artifact_created`
+still precedes `job_started` on the API create/retry path. A run that never reaches native
+execution retains any such committed initial event and prepared result/manifest refs;
+if it never reaches successful initial preparation/admission, no initial artifact event
+is invented. Neither case claims a native artifact or binary.
 `ledger_provenance_json` remains null until the adapter resolves the executable it will
 use. Before runtime execution/any runtime record, run-provenance captures installationId,
 executableRef, actual version/source, binarySha256 and reproducible schema fingerprints;
@@ -248,7 +258,8 @@ not the store: reload the header and committed records, rebuild state, lookup th
 fact keys, then re-evaluate the original intent. Return a fully committed matching batch
 idempotently; otherwise discard only uncommitted reservations, re-reserve a dense batch
 above the new high-water and resubmit with the same observation/fact identities. Allow
-at most three transaction attempts per call; exhaustion returns a sanitized host
+at most three transaction attempts per call, deliberately replacing today's five-attempt
+`EVENT_SEQUENCE_RETRY_LIMIT` in headless/job-store.ts; exhaustion returns a sanitized host
 `LEDGER_APPEND_CONFLICT` and no success acknowledgment. A definite rollback with no
 competing commit can retry its unchanged sequences. Cross-process order is successful
 commit order; arrival order is guaranteed within each host's serial ingress only.
@@ -426,9 +437,10 @@ commit**, never as a prerequisite that requires completed already publicly visib
    artifacts.json references request/events/result but not its own digest; the returned
    DB/result envelope can additionally reference the manifest with its digest. Final
    events/result/manifest files do **not** emit artifact_created events, so there is no
-   events-file self-hash loop. Initial artifact role/ref semantics remain; publication
-   waits for execution binding under the pending rule. Never-started lifecycle files
-   remain readable through their result/manifest refs without invented runtime events.
+   events-file self-hash loop. Initial artifact role/ref semantics and the existing
+   initial `artifact_created` before `job_started` remain; only native candidate publication
+   waits for execution binding. Never-started runs retain any committed non-native initial
+   artifact event and prepared result/manifest refs under the pending rule above.
 4. Commit the terminal job mutation, exact completed and all admitted manifest refs in
    one SQLite transaction, then publish. Final file preparation failure blocks success;
    record failed outcome with the artifact diagnostic and no unverified refs (a failure
@@ -537,10 +549,10 @@ in the same implementing change; no residual second mapper or terminal owner is 
 | --- | --- |
 | agent-runtime/runtime-events.ts | Keep createRunEvent as pure constructor; RunTerminalEvent becomes completed-only; add internal metadata types, no sequence allocation. |
 | agent-runtime/redaction.ts; shared/usage-metadata.ts | Keep single redaction algorithms and usage normalization respectively; per-Run state composed by ledger. |
-| agent-runtime/stream-event-mapper.ts | Delete old exports mapDesktopStreamChunkToRunEvents, createDesktopStreamEventMapper, appendRunEventsToAgentJob, redactRendererDiagnosticChunk, redactRendererRuntimeChunk, createRuntimeRendererChunkEmitter, createRuntimeStreamChunkSecretRedactor, isDesktopRuntimeFailureChunk, persistedPayloadForRunEvent and their allocators/default-success logic. Repurpose module solely as projectRunEventToRendererChunks (pure forward projection of committed records); move coarse input decode to ledger-ingress.ts, no chunk round trip. |
+| agent-runtime/stream-event-mapper.ts | Delete old exports mapDesktopStreamChunkToRunEvents, createDesktopStreamEventMapper, appendRunEventsToAgentJob, redactRendererDiagnosticChunk, redactRendererRuntimeChunk, createRuntimeRendererChunkEmitter, createRuntimeStreamChunkSecretRedactor, isDesktopRuntimeFailureChunk and the module-private helper persistedPayloadForRunEvent, with their allocators/default-success logic. Repurpose module solely as projectRunEventToRendererChunks (pure forward projection of committed records); move coarse input decode to ledger-ingress.ts, no chunk round trip. |
 | agent-runtime/job-event-bridge.ts / createAgentJobRunEvent | Delete module and old call sites; shared JSON-safe conversion, if needed, folds into runtime-events.ts; job-store no longer calls a redactor/bridge. |
 | NEW agent-runtime/run-event-ledger-host.ts | Compose one ledger with job-store adapter, artifact owner, renderer/history projections; single host entry getOrCreateRunEventLedger(existingJob) for existing lifecycle callers; no ID minting or lease registry. |
-| runtime-executable.ts (existing path checks); NEW agent-runtime/run-provenance.ts | run-provenance owns local installation identity, executableRef/actual binary digest and reproducible schema fingerprints at adapter resolution; host binds and persists the immutable tuple once. Existing path checks/selection remain, no registry or duplicate capture helpers. |
+| codex/cli-path.ts:58 resolveBundledCodexCliPath; claude/env.ts:157 getBundledClaudeBinaryPath; NEW agent-runtime/run-provenance.ts | Run launch callers pass the actual resolved executable to run-provenance, which owns local installation identity, executableRef/actual binary digest and reproducible schema fingerprints; host binds and persists the immutable tuple once. Existing resolution/selection remains; runtime-executable.ts is status/readiness query only, no registry or duplicate capture helpers. |
 | NEW agent-runtime/run-event-ledger.ts; run-artifacts.ts; ledger-ingress.ts | Ledger owns sequence/item/usage/terminal; artifacts owns validation/preparation; ingress stateless decode only. |
 | codex/app-server-stream-events.ts | Stateless decodeCodexNativeBoundary and measured disposition table; no [] default, no thread/session/turn/tokenUsage state, no buildInterruptRequest state. |
 | codex/app-server-adapter.ts | Submit response/notification/request/send/resolved/exit; remove sequence/lastError/pendingTerminalChunk terminal owner, fabricated thread/started on resume and sessionId<-threadId fallback; retain transport request correlation and existing safety cleanup; read interrupt target from ledger. |
