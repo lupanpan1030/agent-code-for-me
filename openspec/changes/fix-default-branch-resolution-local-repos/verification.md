@@ -206,7 +206,7 @@ substitute for the required fresh-context Claude Code review.
 
 - Task 4.4 fresh-context Claude Code review: **REVIEW_APPROVED**; full ledger
   and documentation dispositions follow.
-- Task 4.5 Owner product acceptance: **pending**.
+- Task 4.5 Owner product acceptance: **ACCEPTED 2026-09-07**; see §4.5 below.
 
 The recorded consumer behavior change beyond the no-origin precedence is the
 lone-`branchType` edge in Decision 3. Remaining guard-strength and test-isolation
@@ -293,7 +293,7 @@ none changes source/tests or records Owner product acceptance.
   fall back to project-directory mode when worktree creation cannot resolve
   `main`. This is the approved degenerate-repository scenario.
 
-Task **4.5 remains pending explicit Owner `ACCEPTED`**. The technical verdicts
+Historical disposition state (2026-09-06): task **4.5 was pending explicit Owner `ACCEPTED`**; superseded by §4.5 below. The technical verdicts
 bind source `7d26fec7` with review/acceptance evidence at `e1f8a7f9`; this later
 documentation-only disposition records their evidence and follow-up boundaries.
 It does not authorize integration, archive, push, remote PR mutation/merge,
@@ -308,3 +308,28 @@ Yellow TICKET-124. Source, tests, and `lint-baseline.json` remain frozen.
 - `bun x openspec validate fix-default-branch-resolution-local-repos --strict --no-interactive`:
   `Change 'fix-default-branch-resolution-local-repos' is valid`, exit **0**.
 - `git diff --check`: no output, exit **0**.
+
+## 4.5 Owner ACCEPTED
+
+- Date: **2026-09-07** (Pacific/Auckland).
+- Owner verdict: **ACCEPTED**, as recorded in the coordination-dispatched
+  closeout instruction for this change.
+- Accepted evidence SHA: `88bb80294e1ccacdec880237b343873868ae8186`
+  (`88bb8029`, resolved with `git rev-parse`).
+- Frozen source SHA: `7d26fec7579b05d56e5a0ef1e1d66d76a0b91ea6`;
+  `IMPLEMENTATION_VERIFIED` and fresh-context Claude Code `REVIEW_APPROVED`
+  remain bound to this same source, with the independent coordination gate green.
+- Owner was informed of and accepted both **Owner acceptance notes** above:
+  P3#8 resolves attached HEAD in the caller's linked worktree, so its chat
+  branch can become the default and a legacy implicit-base row can have an
+  empty clean diff; P3#9 deliberately drops develop/trunk/first-local-branch
+  candidates in degenerate no-origin repositories and returns honest `main`
+  fallback, potentially falling back to project-directory mode.
+- Pre-integration checks: local and remote `main` both
+  `61cc6af64d08ea2d7efa5bd1240cdac1dedb9d27`; both assigned worktrees clean;
+  RED test diff `30451539..88bb8029` empty; source/tests/lint baseline diff
+  `7d26fec7..88bb8029` empty.
+- The current coordination dispatch authorizes this slice's acceptance docs,
+  no-ff local merge into `main` without rebase, STATUS-only union conflict
+  resolution, post-merge gates, standard archive, and one `git push origin main`.
+  Post-merge and push receipts will be recorded in `openspec/STATUS.md`.

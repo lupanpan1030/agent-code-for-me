@@ -4,10 +4,11 @@ This ledger records execution state only. Current product truth remains in
 `openspec/specs/` plus the checked-out code; future direction remains in the
 ratified strategy and interoperability contract.
 
-Updated: 2026-09-02 (Pacific/Auckland)
+Updated: 2026-09-07 (Pacific/Auckland)
 
 | Change | State | Concrete next gate |
 | --- | --- | --- |
+| `fix-default-branch-resolution-local-repos` | **ACCEPTED 2026-09-07** — evidence `88bb8029`, source `7d26fec7`; both Owner acceptance notes acknowledged | Coordination-dispatched no-ff merge, post-merge gates, archive, and one main push |
 
 Parked proposals are indexed in [`deferred/README.md`](deferred/README.md) and
 do not appear in the active list.
