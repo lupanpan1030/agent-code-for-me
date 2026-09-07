@@ -2,9 +2,9 @@
 
 > **DIRECTION+IMPLEMENTATION APPROVED (eight defaults), 2026-09-05.** The
 > Owner accepted all eight recommended defaults, conditional on 0.2/0.3/0.4/0.5.
-> Only 0.1 and the historical feasibility receipt in 0.2 are complete. Source
-> edits remain gated; Approval Question 9 is **PENDING Owner decision (morning
-> 2026-09-06)** and does not inherit the eight-default approval.
+> Among approval prerequisites, only 0.1 and the historical feasibility receipt
+> in 0.2 are complete. Source edits remain gated; Owner **APPROVED the Q9 compromise on 2026-09-07**.
+> Task 2.11 ticket registration is also complete; implementation remains open.
 
 Routing from the archived parent is explicit: sections 1–2 carry original 2.2,
 sections 3–4 carry original 2.3 and the removed R6 webview scenario, and section
@@ -34,8 +34,8 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       `wf_461ff527-9bb`. Targeted re-review: **REVIEW_APPROVED** at
       `04193a4b7455d4619fce613307e3cafee4267c95`, workflow `wf_d03b4b51-d03`
       (20 fixes: 16 applied / 4 deviated-justified; 2 P2 + 6 P3 follow-ups).
-      This dispatch applies those eight text fixes; **待 Q9 决定后的最终定向复核**.
-      Remains unchecked until that decision and the revised exact SHA's final
+      The eight text fixes and Owner-approved Q9 compromise are recorded;
+      **待最终定向复核**. Remains unchecked until the revised exact SHA's final
       fresh-context R3 approval; the historical verdict does not transfer.
 - [ ] 0.4 Rebase all source/test anchors and active-change conflicts onto the
       implementation-start SHA; update the Draft rather than carrying stale
@@ -43,9 +43,9 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
 - [ ] 0.5 Run strict OpenSpec validation and obtain explicit Owner `APPROVED`
       for the exact rebaselined package before the first source edit. The
       present documentation strict-validation run does not close this task;
-      final targeted re-review, the pending Question 9 decision and three
-      post-approval Owner acknowledgements, and 0.4 precede exact-package
-      confirmation.
+      final targeted re-review, three post-approval Owner acknowledgements,
+      and 0.4 precede exact-package confirmation. Each disclosure is
+      presented to Owner 2026-09-07 (board §六); acknowledgement pending.
 
 ## 1. Characterization and renderer source guard (original 2.2)
 
@@ -70,7 +70,9 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       safety from source inventory alone. Name the Vite-aliased Locus-owned
       `pierre-diffs-shiki-shim.ts` (`createPlainHast` live; `codeToHtml` exported
       but uncalled by the render path; private `escapeHtml`), @pierre/diffs'
-      internal writers, Monaco files, and xterm PTY output. Inventory the local
+      internal writers as reviewed producers under the approved Q9 compromise;
+      classify Monaco files and xterm PTY output as explicit residuals tracked
+      in Yellow TICKET-125. Inventory the local
       `chat-markdown-renderer.tsx` `escapeHtml` fallback and classify the
       zero-caller `diff-view-highlighter.ts#getAST` adapter as dormant.
       Inventory `openExternalUrl` plus its preload/tRPC entry points as the
@@ -165,12 +167,10 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       sinks. Strict mode protects the transient pre-sanitizer body mount;
       DOMPurify is load-bearing for returned SVG, its DOMParser pass is defense
       in depth. Real transient execution/CSS/layout evidence remains GUI 5.1.
-- [ ] 2.10 **gated on Approval Question 9:** resolve coverage exactly as the
-      Owner selects. Under (a), black-box hostile `<FileDiff>`/`<PatchDiff>`
-      rendering through the real Locus shim/Vite alias, file-viewer input, and
-      hostile PTY streams enter the reviewed-producer contract and D10 matrix.
-      Under (a) or the coordination recommendation (diff only), exact-pin
-      `@pierre/diffs@1.0.10` (`bun.lock:476`), un-aliased `hast-util-to-html@9.0.5`
+- [ ] 2.10 Implement the **Owner-approved Q9 compromise (2026-09-07)**:
+      black-box hostile `<FileDiff>`/`<PatchDiff>` rendering through the real
+      Locus shim/Vite alias enters the reviewed-producer contract and D10 matrix.
+      Exact-pin `@pierre/diffs@1.0.10` (`bun.lock:476`), un-aliased `hast-util-to-html@9.0.5`
       (`:1360`, the load-bearing production-bundle escaper), and the actual
       Shiki resolution: nested `shiki@3.21.0` under @pierre/diffs (`:2300`),
       hoisted `@shikijs/core@3.21.0` / `@shikijs/engine-javascript@3.21.0`
@@ -186,20 +186,16 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       a built-renderer fixture with the same binding assertion is an alternative.
       Development pre-bundling's use of plugin `resolveId` is unverified and
       must be proved in implementation GUI 5.1; verify packaged binding in 5.3.
-      Under (a)/compromise, strip the conditional Scenario's status paragraph
-      and keep only WHEN/THEN/AND bullets before task 0.5 exact-package
-      confirmation. Under (b), record explicit residuals/compensating controls,
-      still exact-pin @pierre/diffs, and remove
-      the conditional reviewed-producer Scenario. This task selects no option.
-- [ ] 2.11 **gated on Approval Question 9:** if Monaco/xterm remain residual
-      (option (b) or the coordination recommendation), create Yellow
-      `docs/tickets/TICKET-123-dependency-dom-producer-residuals.md` after
-      rechecking the next repository ticket number. Track file-viewer/PTY DOM
-      producers, compensating controls, black-box hostile fixtures and upgrade
-      criteria without implementing that extension. Actual ticket creation is
-      deferred here because this dispatch permits edits only in this change
-      directory and its status sentence in `docs/tickets/README.md`; no ticket
-      is claimed to exist.
+      The approved diff Scenario retains only WHEN/THEN/AND bullets; its
+      pending-status paragraph has been removed. Monaco/xterm are explicit
+      residuals in Threat Model/Non-Goals and Yellow TICKET-125.
+- [x] 2.11 Register the Monaco file-viewer/xterm terminal residuals in Yellow
+      `docs/tickets/TICKET-125-monaco-xterm-dom-producers.md` and its README
+      index under the Owner-approved Q9 compromise. Completed 2026-09-07
+      after confirming TICKET-124 exists on main; TICKET-123 is reserved for
+      `add-linked-worktree-admission`. The ticket tracks compensating controls,
+      black-box hostile fixtures and dependency/upgrade ownership and criteria.
+      This is documentation registration only; the extension is not implemented.
 
 ## 3. Main-owned local-browser guest policy (original 2.3 / R6 webview)
 

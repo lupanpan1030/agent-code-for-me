@@ -93,17 +93,9 @@ SHALL be admitted by the Mermaid oracle.
 - **AND** a generator exception, output-shape mismatch, or extraction failure
   SHALL NOT fall back to inserting the original source as HTML
 
-#### Scenario: Dependency diff rendering is covered if Approval Question 9 includes it
+#### Scenario: Dependency diff rendering is covered by the reviewed-producer contract
 
-Approval Question 9 status: **PENDING Owner decision (morning 2026-09-06)**.
-This conditional scenario becomes applicable only if the Owner selects (a) for
-the `@pierre/diffs` path, including the coordinator's recommended compromise
-(`@pierre/diffs` under (a), Monaco/xterm as explicit residuals under (b)). If the
-Owner selects (b) for `@pierre/diffs`, this scenario SHALL be deleted before the
-exact implementation package is confirmed. No option is selected by this text.
-
-- **WHEN** the Owner includes the diff path in the reviewed-producer contract
-  and repository content renders through `<FileDiff>` or `<PatchDiff>` via the
+- **WHEN** repository content renders through `<FileDiff>` or `<PatchDiff>` via the
   Locus-owned `pierre-diffs-shiki-shim.ts` and its Vite aliases
 - **THEN** black-box hostile filename, hunk-header, line-content, and patch-text
   fixtures SHALL exercise that actual path and apply the shared rendered-DOM

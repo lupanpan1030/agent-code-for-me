@@ -1,14 +1,15 @@
 # Change: Harden untrusted renderer content and local-browser guests
 
-> Status: **DIRECTION+IMPLEMENTATION APPROVED (eight defaults) 2026-09-05 — source edit still gated on 0.2/0.3/0.4/0.5**.
+> Status: **DIRECTION+IMPLEMENTATION APPROVED (eight defaults 2026-09-05 + Q9 compromise 2026-09-07) — source edit still gated on 0.2/0.3/0.4/0.5**.
 > Owner accepted the eight recommended defaults late on 2026-09-05, conditional
 > on the feasibility/R3 reviews, implementation-start rebase, strict validation,
 > and exact-package confirmation. Feasibility 0.2 is `REVIEW_APPROVED` at
 > `2292d36a`; targeted R3 re-review is `REVIEW_APPROVED` at `04193a4b`
 > (`wf_d03b4b51-d03`). Its 2 P2 / 6 P3 text follow-ups are handled here; task
 > 0.3 remains open for final targeted re-review after the Question 9 decision.
-> Approval Question 9 is **PENDING Owner decision (morning 2026-09-06)**; the
-> coordination recommendation is not approval. This documentation touch-up
+> Approval Question 9: **Owner APPROVED the compromise, 2026-09-07**.
+> The three post-approval disclosures were presented to Owner 2026-09-07
+> (board §六); acknowledgement pending. This documentation touch-up
 > authorizes no source edit. Current base remains local `main` at
 > `30c72ad3c26dd952410c6e38678faf43d8c55895` (2026-09-04).
 >
@@ -180,8 +181,8 @@ desktop bridge.
   Remove or route caller-local extraction/escape fallbacks, including
   `chat-markdown-renderer.tsx#escapeHtml`, through the renderer HTML-policy
   owner. The Vite-aliased `src/renderer/lib/vendor/pierre-diffs-shiki-shim.ts`
-  is a separately inventoried Shiki-API producer whose reviewed-producer versus
-  residual classification is gated on Question 9; explicitly dispose of its
+  is a separately inventoried Shiki-API producer included in the reviewed-producer
+  contract by the approved Question 9 compromise; explicitly dispose of its
   `escapeHtml`/`codeToHtml` branch and the dormant
   `src/renderer/lib/themes/diff-view-highlighter.ts#getAST` adapter. No claim
   of repository-wide sole/centralized Shiki production is made.
@@ -250,7 +251,7 @@ same change. It must not leave old and new business paths live together.
 
 ## Explicit Non-Goals
 
-- No product implementation before gates 0.3/0.4/0.5 and Question 9 close;
+- No product implementation before gates 0.3/0.4/0.5 close;
   no remote push,
   PR mutation, merge, release, or repository-rule change.
 - No tRPC capability taxonomy, procedure wrapper, consent memory, audit log,
@@ -280,10 +281,10 @@ same change. It must not leave old and new business paths live together.
 - App-document remote HTTPS markdown images can disclose IP/timing as beacons.
   Record this separately from guest egress; it is not script execution or a
   claim that sanitizer tests prevent network requests.
-- Dependency-internal Monaco/xterm DOM hardening is a proposed explicit
-  residual under Question 9(b) or the coordination recommendation, with a
-  Yellow ticket to be created under task 2.11. Option (a) includes their
-  reviewed-producer tests instead. No disposition is selected here.
+- Dependency-internal Monaco file-viewer/xterm terminal DOM hardening beyond
+  existing controls is an explicit residual under the Owner-approved Q9
+  compromise (2026-09-07), tracked in Yellow
+  [TICKET-125](../../../docs/tickets/TICKET-125-monaco-xterm-dom-producers.md).
 - No nonexistent chat HTML-export preview work. Current exports are text-based;
   future HTML preview would require its own reviewed sink before it ships.
 
@@ -311,9 +312,10 @@ Before any source edit, this package still requires:
 2. independent fresh-context R3 review of attach timing, preload isolation,
    permissions, registered file roots, redirects, popup/download behavior,
    partition lifecycle, and testability on supported Electron hosts;
-3. resolution of Approval Question 9 (PENDING Owner decision, morning
-   2026-09-06), acknowledgement of the three post-approval disclosures in
-   design, and final targeted re-review of the revised exact SHA; and
+3. acknowledgement of the three post-approval disclosures in design
+   (presented to Owner 2026-09-07 (board §六); acknowledgement pending),
+   and final targeted re-review of the revised exact SHA reflecting the
+   Owner-approved Question 9 compromise; and
 4. task 0.4 implementation-start rebase followed by task 0.5 strict validation
    and Owner confirmation of the exact package. This does not reopen the eight
    defaults or substitute historical receipts for review of the revised SHA.

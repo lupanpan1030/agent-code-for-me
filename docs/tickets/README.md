@@ -45,7 +45,7 @@
 是 **worktree-per-run + cwd 租约** 工作的现成基础，见 [../ideas/cross-engine-delegation.md](../ideas/cross-engine-delegation.md) P1-2。
 
 Phase 2（渲染层 markdown/webview 隔离）已由归档后的 follow-up Draft OpenSpec
-`add-renderer-untrusted-content-hardening` 承接（eight defaults APPROVED 2026-09-05; source edits gated on 0.3/0.4/0.5 and Approval Question 9）；Phase 3
+`add-renderer-untrusted-content-hardening` 承接（APPROVED (eight defaults + Q9 compromise 2026-09-07); next gate: targeted re-review → 0.4 rebase → 0.5 strict/exact-package confirmation）；Phase 3
 （capability 中间件/consent/audit）的 follow-up B 尚未创建。原
 `update-trpc-capability-boundary` 已按实装真相归档，不再承载“剩余 8 条任务”。
 
@@ -120,3 +120,14 @@ registry / 新路由准入设计、OpenSpec 批准和 Owner 授权。
 | 工单 | 标题 | 级别 | 状态 |
 |------|------|------|------|
 | [TICKET-122](TICKET-122-router-sibling-route-surface-ratchet.md) | Router 兄弟文件的目录级 surface ratchet / 准入设计 | 🟡 Yellow（架构治理） | 待设计 / 未授权实施 |
+
+## 第八批 — Renderer dependency DOM producers Yellow 后续（2026-09-07）
+
+来源：`add-renderer-untrusted-content-hardening` Approval Question 9 的 Owner
+折中决定。Monaco 文件查看器与 xterm 终端作为显式残留登记；本票需单独设计和批准，未授权实施。
+编号已核对：main 已有 TICKET-124；TICKET-123 属 `add-linked-worktree-admission`，
+TICKET-124 属已归档的默认分支修复，本票使用 TICKET-125。
+
+| 工单 | 标题 | 级别 | 状态 |
+|------|------|------|------|
+| [TICKET-125](TICKET-125-monaco-xterm-dom-producers.md) | Monaco 文件查看器 / xterm 终端 DOM producer 覆盖 | 🟡 Yellow（安全边界） | 待设计 / 未授权实施 |

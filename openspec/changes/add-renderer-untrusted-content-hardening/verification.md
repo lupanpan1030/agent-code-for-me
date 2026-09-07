@@ -495,3 +495,57 @@ unchecked for the final targeted re-review after the Q9 decision. Only tasks
   0.3/0.4/0.5 remain open. The `wf_d03b4b51-d03` verdict applies only to
   `04193a4b`; no fresh independent verdict for this successor is claimed.
   Product implementation and its targeted/GUI smoke remain unstarted.
+
+### Approval Question 9 decision — 2026-09-07
+
+- Initial HEAD precondition: **PASS**, exact
+  `aee1e2835cb4ea03d386e6f49e0271fb31bc83db`, clean worktree.
+- Decision source: Owner decision dated **2026-09-07**, supplied by the
+  coordination dispatch. Selected **折中方案（统筹推荐默认值） / compromise**:
+  (a) for the Locus shim/Vite-aliased `@pierre/diffs` path, (b) for Monaco/xterm.
+  This receipt supersedes the Q9-pending state in the historical receipts above;
+  it does not change their exact-SHA technical verdicts.
+- Rationale: the diff producer includes Locus-owned shim/alias code and the
+  load-bearing HAST serializer, so its reviewed-producer behavior and dependency
+  drift belong in A. Monaco file-viewer/xterm terminal DOM producers are
+  explicit Threat Model residuals and Non-Goals with a separate Yellow scope.
+- Applied to proposal/design, D10, tasks 1.3/2.10/2.11 and the runtime delta:
+  exact-pin `@pierre/diffs@1.0.10`, its resolved Shiki ^3 subtree (mixed
+  3.21.0/3.22.0 as inventoried in Q9), and `hast-util-to-html@9.0.5`; require
+  hostile black-box fixtures through the real shim-backed diff renderer with
+  all four aliases bound and `createPlainHast` shape asserted; dependency,
+  shim and alias changes enter the upgrade gate. These remain implementation
+  requirements, not completed product controls. The retained diff Scenario now
+  contains only WHEN/THEN/AND bullets, with pending-status prose removed.
+- Yellow [TICKET-125](../../../docs/tickets/TICKET-125-monaco-xterm-dom-producers.md)
+  and README index registered. Ran the requested `ls` of
+  `/home/chen/projects/agent-code-for-me/docs/tickets` and confirmed the checkout
+  is on `main`; `git -C /home/chen/projects/agent-code-for-me ls-tree --name-only
+  main docs/tickets/TICKET-124-default-branch-guard-cleanup-hermetic-tests.md`
+  returned that tracked path. TICKET-123 belongs to
+  `add-linked-worktree-admission`; TICKET-124 is the archived default-branch fix.
+  Task 2.11 registration is complete; checked tasks are now 0.1/0.2/2.11 (3/46).
+- All three post-approval disclosures — Q4 named loopback listeners, Q5 win32
+  file-preview disablement, and developer react-scan loader removal — are
+  **presented to Owner 2026-09-07 (board §六); acknowledgement pending**.
+  The Q9 decision does not acknowledge these disclosures.
+- Next gate: **targeted re-review → 0.4 rebase → 0.5 strict/exact-package
+  confirmation**; collect all three acknowledgements before 0.5 confirmation.
+  Tasks 0.3/0.4/0.5 remain unchecked. No independent verdict for this successor
+  SHA is claimed; historical reviews do not transfer to it.
+- Documentation gates: **PASS**, exit 0,
+  `/home/chen/projects/agent-code-for-me/node_modules/.bin/openspec validate
+  add-renderer-untrusted-content-hardening --strict --no-interactive` output:
+  `Change 'add-renderer-untrusted-content-hardening' is valid`.
+  `git diff --check`: **PASS**, exit 0, no output. These gates are rerun after
+  this receipt edit and against the single local commit.
+- Repository-required `bun run check:full`: **exit 1**, attempted in this
+  worktree. It stopped at lint because
+  `node_modules/.bin/biome` is absent (this worktree has no `node_modules`).
+  Tests/build were not reached; this is not a full-check pass. Log:
+  `/tmp/followup-a-q9-check-full.log` (temporary local artifact).
+- Write scope: only this change package, its `openspec/STATUS.md` row,
+  `docs/tickets/README.md` index/status and the new TICKET-125. No product code,
+  tests, dependency declarations, lockfile or living spec changed. No rebase,
+  merge, push or remote mutation; product implementation and GUI smoke remain
+  unstarted. The local documentation commit does not close implementation gates.
