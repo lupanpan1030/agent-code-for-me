@@ -341,9 +341,13 @@ Require a positive control proving that safe diagram styling survives;
 otherwise fail closed. The Mermaid oracle permits no `style` element other
 than this single value-profile-validated paint element. Strip unreviewed
 CSS-bearing attributes; do not insert output that fails the profile.
+Attacker-controlled `classDef`/`style` diagram-source statements are a second
+CSS ingress into the retained paint `<style>`: the `secure` list cannot suppress
+this diagram syntax, so the post-render CSS value profile covers it.
 
 Test `themeCSS`, root `position:fixed`/`position:absolute`, background remote
-`url()`, `@import`, and stray returned `style` in addition to script/link
+`url()`, `@import`, hostile `classDef x fill:url(https://evil/x)` /
+`style` statements with `position:fixed`, and stray returned `style` in addition to script/link
 payloads. Strict mode is
 load-bearing during Mermaid's temporary `document.body` mount, while DOMPurify
 is load-bearing for returned SVG and the later DOMParser pass is defense in
@@ -854,7 +858,7 @@ weakening those defaults; they require Owner acknowledgement and are not
 retrospectively covered by that approval. Source editing still requires tasks
 0.2/0.3/0.4/0.5; Question 9's compromise was approved on 2026-09-07.
 
-### Post-approval disclosures for Owner acknowledgement (2026-09-06)
+### Post-approval disclosures for Owner acknowledgement (2026-09-07)
 
 Status for each of the following three disclosures: **presented to Owner
 2026-09-07 (board §六); acknowledgement pending**. Presentation is not

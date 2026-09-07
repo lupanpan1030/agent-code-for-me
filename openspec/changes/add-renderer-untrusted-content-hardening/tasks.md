@@ -151,7 +151,9 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       path, beyond the existing literal-SVG sanitizer test. Render hostile
       flowchart/sequence sources (`htmlLabels`, click directives, `javascript:`,
       `themeCSS` with root `position:fixed`, `background:url(https://...)`,
-      `@import`, and stray returned `<style>`). Extend the pinned configuration's
+      `@import`, hostile `classDef x fill:url(https://evil/x)` / `style`
+      statements with `position:fixed`, and stray returned `<style>`).
+      Extend the pinned configuration's
       existing `secure` list with `themeCSS`, `themeVariables`, `theme`,
       `fontFamily`, `altFontFamily`, and `htmlLabels` before rendering; fail
       closed if source directives can change styling before the transient

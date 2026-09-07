@@ -160,7 +160,8 @@ SHALL be admitted by the Mermaid oracle.
 - **WHEN** chat, repository, MCP, or tool-output markdown renders a Mermaid
   diagram containing `click`, `javascript:` URLs, script tags, event-handler
   attributes, foreign-object content, hostile `themeCSS` (`position:fixed`,
-  `background:url(...)`, or `@import`), or a stray SVG `<style>` element
+  `background:url(...)`, or `@import`), hostile `classDef x fill:url(https://evil/x)`
+  / `style` statements with `position:fixed`, or a stray SVG `<style>` element
 - **THEN** the renderer SHALL use Mermaid strict mode as the load-bearing
   control while Mermaid transiently mounts content under `document.body`
 - **AND** before `mermaid.render`, the pinned configuration's existing `secure`
@@ -175,7 +176,8 @@ SHALL be admitted by the Mermaid oracle.
   or external references. Unreviewed CSS-bearing attributes SHALL be stripped;
   any other `style` element or failed profile validation SHALL fail closed
 - **AND** a positive control SHALL prove safe diagram styling survives under
-  that profile; themeCSS/overlay/url/@import/stray-style fixtures SHALL remain
+  that profile; themeCSS/classDef/style-statement/overlay/url/@import/stray-style
+  fixtures SHALL remain
 - **AND** an end-to-end fixture using pinned Mermaid through MermaidBlock's
   actual render path SHALL prove that the shared rendered-DOM oracle holds for
   returned/sanitized SVG and that no executable or unreviewed CSS artifact

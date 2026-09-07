@@ -1,10 +1,12 @@
 # Verification: add-renderer-untrusted-content-hardening
 
-> Status: **APPROVED (eight defaults) — pre-implementation touch-up**.
+> Status: **APPROVED (eight defaults + Q9 compromise) — pre-implementation touch-up**.
 > Owner direction/implementation approval was given late 2026-09-05, conditional
 > on tasks 0.2/0.3/0.4/0.5. Feasibility 0.2 is `REVIEW_APPROVED` at `2292d36a`;
-> R3 0.3 remains `CHANGES_REQUESTED`. Approval Question 9 is **PENDING Owner
-> decision (morning 2026-09-06)**. This file records historical exact-SHA review
+> R3 targeted re-review is `REVIEW_APPROVED` for `96ca3afe` only; task 0.3
+> remains open for the revised exact package. Approval Question 9:
+> **Owner APPROVED the compromise, 2026-09-07**. Three post-approval disclosures
+> presented 2026-09-07; acknowledgement pending. This file records exact-SHA review
 > receipts and documentation checks, not an implementation verification,
 > fresh approval of revised text, or Owner acceptance. No source edits run.
 
@@ -185,7 +187,7 @@ closeout tasks, including new Question 9 tasks 2.10/2.11, remain open.
 | Exact renderer sink/source guard | Rebaselined insertion inventory, negative scanner fixtures, named producer/test for every sink | NOT RUN |
 | Streamdown | Static + streaming hostile matrix and safe-format controls through the actual app wrapper | NOT RUN |
 | Shiki | Hostile inputs plus forced exception/output-shape mismatch through inventoried raw consumers; chat-local escape fallback disposition | NOT RUN |
-| Dependency-internal producers | Q9-selected @pierre/diffs through the Locus shim/Vite alias, file-viewer/PTY coverage or explicit residual, exact pins/upgrade gate and Yellow ticket | PENDING Owner decision; NOT RUN |
+| Dependency-internal producers | Owner-approved @pierre/diffs coverage through the Locus shim/Vite alias, exact pins/upgrade gate and hostile fixtures; Monaco/xterm explicit residuals in Yellow TICKET-125 | Q9 compromise APPROVED 2026-09-07; implementation NOT RUN |
 | Mentions | Lossless text/atomic-mention runs, exact spacing/selection, component-owned mixed/HTML-only paste/drop and beforeinput rejection, synthetic defaultPrevented/DOM oracle plus separate real-browser undo/redo, and no value-bearing HTML restore | NOT RUN |
 | Mermaid/subtitle/CSP | Pinned MermaidBlock end-to-end flowchart/sequence, CSS payloads, transient body cleanup, identical inline/fullscreen reviewed SVG; retained subtitle and CSP construction/GUI evidence | NOT RUN |
 | Guest unit/integration | Exact attach preferences, bridge globals, Session-gated initial/link/location/`loadURL`/back/forward/redirect, direct-file denial and descriptor broker, popup, full permission/device/display selectors, download, partitions, teardown/race, redacted diagnostics, documented network residual | NOT RUN |
@@ -247,8 +249,8 @@ single successful track cannot stand in for another track.
   20 fixes: 16 applied / 4 deviated-justified, with 2 P2 / 6 P3 text follow-ups
   addressed in the disposition below. This verdict applies only to that SHA;
   task 0.3 stays open for final targeted re-review after the Q9 decision.
-- Approval Question 9: **PENDING Owner decision (morning 2026-09-06)**;
-  coordination recommendation recorded, no coverage option selected.
+- Approval Question 9: **Owner APPROVED the compromise, 2026-09-07**;
+  three post-approval disclosures presented 2026-09-07; acknowledgement pending.
 - Tasks 0.4/0.5: NOT COMPLETE; no rebase in this docs-only dispatch, and current
   strict validation is not the final exact-package confirmation.
 - Codex `IMPLEMENTATION_VERIFIED`: NOT APPLICABLE / NOT RUN.
@@ -343,19 +345,18 @@ section/task/scenario anchors in this change package.
 
 ## Scope Delta And Recommendation Disposition
 
-- Question 9 remains **PENDING Owner decision (morning 2026-09-06)**. The
-  coordination recommendation is pierre via the owned shim under (a), with
-  Monaco/xterm residual under (b); no option has been selected by an AI.
-- The user restricted writes to this change directory and `openspec/STATUS.md`
-  while also mentioning a new `docs/tickets/TICKET-1xx`. This turn records the
-  Yellow follow-up in task 2.11, with tentative next number **TICKET-123**
-  (current sequence ends at TICKET-122), and defers the actual out-of-scope file
-  until the Question 9 decision and authorized ticket creation. Recheck the
-  sequence before allocating; no nonexistent ticket is presented as created.
-- Finding 1's instruction to wait before recording any Owner approval is
+- Question 9: **Owner APPROVED the compromise, 2026-09-07**: @pierre/diffs
+  via the owned shim under (a), with Monaco/xterm residuals under (b).
+- Yellow `TICKET-125` and its README index were registered in `96ca3afe`;
+  task 2.11 is complete (0.1/0.2/2.11 checked, 3/46 at that SHA).
+  TICKET-124 exists on main; TICKET-123 belongs to
+  `add-linked-worktree-admission`. This supersedes the earlier tentative
+  TICKET-123 allocation and deferred-creation note.
+- Finding 1's instruction to wait before recording any Owner approval was
   superseded by the dispatch's explicit instruction to record the already
-  granted eight-default approval now. Question 9 and exact-package gates remain
-  open, so the record does not imply approval of dependency scope.
+  granted eight-default approval. The Q9 compromise is now approved too;
+  exact-package confirmation and the three disclosure acknowledgements remain
+  open, so product implementation is still gated.
 - Finding 3's canonical-path versus registered-path `lstat` comparison is
   clarified: a symlinked parent prefix can resolve to the same directory leaf,
   but a final-component symlink has its own inode and is rejected. Comparing
@@ -437,8 +438,9 @@ section/task/scenario anchors in this change package.
 - Verdict: **REVIEW_APPROVED** (targeted re-review, Draft quality; fresh-context; 2026-09-06; 0 P0 / 0 P1 / 2 P2 / 6 P3). Technical verdict for SHA `04193a4b` only; it does not replace Owner product acceptance and does not authorize push, remote PR mutation, merge, release, or repository-rules changes.
 - Single remaining approval item: **Approval Question 9 — dependency-internal DOM producer coverage.** 统筹推荐默认值 = 折中 / recommended default = compromise: apply (a) to `@pierre/diffs` — exact-pin the package, its resolved Shiki subtree, and `hast-util-to-html`; one adversarial black-box fixture group through the real shim-backed `<FileDiff>`/`<PatchDiff>` path with the alias bound and asserted; D10 row plus upgrade/source guard — and apply (b) to Monaco/xterm — explicit Threat Model residuals plus Yellow `TICKET-123` (revalidate the sequence before creation in a separately authorized write). Record the Owner's choice, fold the two P2 precision items and the three disclosures into the same text pass, then proceed to task 0.4 rebase and task 0.5 strict validation / exact-package confirmation before any source edit.
 
-### Targeted re-review follow-up disposition — 2026-09-07
+### Targeted re-review follow-up disposition — 2026-09-07 (as of `aee1e283`)
 
+Historical snapshot at `aee1e283`, superseded by the Q9 receipt below.
 All eight rows are documentation fixes against `04193a4b`, not implemented
 controls or fresh review verdicts. Approval Question 9 and all three
 post-approval Owner acknowledgements remain **PENDING**; task 0.3 remains
@@ -448,7 +450,7 @@ unchecked for the final targeted re-review after the Q9 decision. Only tasks
 | Finding | Disposition | Modified sections / result |
 | --- | --- | --- |
 | P2 #1 | Applied | `design.md` D2/D3, runtime delta oracle/Mermaid Scenario, task 2.9: preserve existing pinned `secure` entries and add all six style/label keys before render; retain only the single Mermaid-generated paint `<style>` validated against the diagram-id CSS value profile with a positive control; otherwise fail closed. Keep themeCSS/overlay/url/@import/stray-style fixtures. |
-| P2 #2 | Applied | Context/Q9/D10, conditional diff Scenario and task 2.10: verify mixed Shiki 3.21.0/3.22.0 resolution against `bun.lock:476,618,620,628,1360,1978,2300,2328,2330`; name un-aliased `hast-util-to-html@9.0.5` as the production-bundle load-bearing escaper in the exact-pin/upgrade gate; correct exported `codeToHtml` versus private `escapeHtml`; require four-specifier fixture binding and text-node-shape assertion, and implementation proof of currently unverified development pre-bundling. Q9 selects nothing. |
+| P2 #2 | Applied | Context/Q9/D10, conditional diff Scenario and task 2.10: verify mixed Shiki 3.21.0/3.22.0 resolution against `bun.lock:476,618,620,628,1360,1978,2300,2328,2330`; name un-aliased `hast-util-to-html@9.0.5` as the production-bundle load-bearing escaper in the exact-pin/upgrade gate; correct exported `codeToHtml` versus private `escapeHtml`; require four-specifier fixture binding and text-node-shape assertion, and implementation proof of currently unverified development pre-bundling. As of `aee1e283`, Q9 selects nothing. |
 | P3 #3 | Applied | D2/task 2.2: `rehype-sanitize` is baseline transitive-only via Streamdown; add it and every app-imported rehype package as exact direct dependencies before importing `defaultSchema`. No new package enters the tree; a direct exact declaration is still required. |
 | P3 #4 | Applied; Owner acknowledgement pending | Add the dated post-approval disclosure section for named Q4 loopback listeners, Q5 win32 file-preview disablement, and recommended react-scan loader removal; align Non-Goals/Risks/Q4/Q5, proposal, tasks and migration wording. These are not retroactive Owner approvals; collect acknowledgements with the Q9 packet before 0.5. |
 | P3 #5 | Applied | Correct historical touch-up ledger locations: #3 drops W7; #6 names the Threat Model attacker-must-not list instead of Invariant 5; #14 names only the runtime navigation Scenario. |
@@ -549,3 +551,20 @@ unchecked for the final targeted re-review after the Q9 decision. Only tasks
   tests, dependency declarations, lockfile or living spec changed. No rebase,
   merge, push or remote mutation; product implementation and GUI smoke remain
   unstarted. The local documentation commit does not close implementation gates.
+
+### Targeted re-review of aee1e283+96ca3afe — 2026-09-07
+
+- Review mode: Claude fresh-context, read-only, 2026-09-07; commits `aee1e2835cb4ea03d386e6f49e0271fb31bc83db` and `96ca3afe8a0bf247946c30349edc5d57fbfe4551` (worktree HEAD confirmed; docs-only successors of `04193a4b`; `src`/`electron.vite.config.ts`/`package.json`/`bun.lock`/`tests` byte-identical to `30c72ad3`; `git diff --check` clean; strict OpenSpec validation exit 0, `openspec list` 3/46). Canonical receipt: `/home/chen/.claude/projects/-home-chen-projects-agent-code-for-me/f1888632-cd03-49a0-a57d-51704695f29d/handoff/reviews/followup-a-rereview-96ca3afe.md`.
+- Fix fidelity: all **8** follow-ups from the `04193a4b` re-review are **applied** (2 P2 + 6 P3, none partial or missing). The Mermaid rule is now one consistent rule across the D2 oracle bullet, the D2 Mermaid profile, D3, the spec requirement, the Mermaid Scenario and task 2.9, with the same six `secure` keys in all five places; re-verified feasible in pinned mermaid 11.16.0 (`sanitize` applies to directives only, so the app's own initialize theming survives; `render()` emits exactly one paint `<style>`). Every new `bun.lock`/`electron.vite.config.ts`/shim citation in the Q9 text re-verified exact.
+- Q9 fidelity: recorded as **Owner APPROVED the compromise, 2026-09-07** — (a) for `@pierre/diffs` with exact pins on `@pierre/diffs@1.0.10`, the actual mixed Shiki resolution and un-aliased `hast-util-to-html@9.0.5`, four-specifier-bound black-box fixtures and the unconditional D10 row; (b) for Monaco/xterm as explicit residuals in Yellow `TICKET-125` (numbering verified: TICKET-124 on main, TICKET-123 on the admission branch, TICKET-125 nowhere else). Conditional Scenario kept its WHEN/THEN/AND bullets with the status prose stripped; tasks 1.3/2.10/2.11 are unconditional. Q1–Q3 and Q6–Q8 are byte-unchanged; Q4/Q5 changed only to mark their disclosures pending; **no approved default is weakened and none of the three disclosures is acknowledged**.
+- Remaining (text-only, fold into the pre-0.4 pass): **P2** `verification.md:3-9` and `:250-251` still record Q9 as "PENDING Owner decision (morning 2026-09-06)", contradicting the Q9 receipt at `:508-533` and `proposal.md`/`STATUS.md`. **P3 ×4**: three further stale spots (`:188` matrix row, `:344-351` Scope Delta with the superseded TICKET-123 text, `:442-451` asserting Q9 PENDING and "2/46"); attacker `classDef`/`style` statements are a second CSS ingress into the retained paint `<style>` that `secure` cannot suppress (`mermaid.esm.mjs:1684` → `:1477-1516` → `:1685-1688`) and need a fixture in D3/task 2.9/the Scenario; `STATUS.md:7` and `design.md:857` date stamps lag their content; 0.4 rebase onto `9cff32da` has exactly one overlapping file (`openspec/STATUS.md`, conflicting "Updated:" line) — `docs/tickets/README.md` is untouched on main so TICKET-125's index rebases cleanly, and no package citation points into any file main changed.
+- Verdict: **REVIEW_APPROVED** (targeted re-review, Draft quality; fresh-context; 2026-09-07; 0 P0 / 0 P1 / 1 P2 / 4 P3). Technical verdict for SHA `96ca3afe` only; it does not replace Owner product acceptance and does not authorize push, remote PR mutation, merge, release, or repository-rules changes. Remaining gates unchanged: three post-approval acknowledgements, task 0.4 rebase, task 0.5 strict validation and exact-package confirmation before any source edit.
+
+### Pre-rebase re-review fixes — 2026-09-07
+
+Applied N1–N4 from the `96ca3afe` review: refreshed current Q9 approval,
+TICKET-125 and 3/46 bookkeeping; marked the `aee1e283` disposition historical;
+named Mermaid `classDef`/`style` CSS ingress and added hostile fixtures to D3,
+task 2.9 and the Mermaid Scenario; corrected both date stamps. The verbatim
+review receipt above describes `96ca3afe`, before these fixes. N5 is handled
+by task 0.4 below; no historical technical verdict transfers to a successor SHA.
