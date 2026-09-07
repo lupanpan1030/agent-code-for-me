@@ -8,7 +8,7 @@ Updated: 2026-09-30 (Pacific/Auckland); previous: 2026-09-09 (Pacific/Auckland)
 
 | Change | State | Concrete next gate |
 | --- | --- | --- |
-| `refactor-canonical-run-event-ledger` | DRAFT — third revision re-checked REVIEW_APPROVED; awaiting Owner answers to 4 open questions + APPROVED | Re-check verdict is bound to 4b6ca640288555ca1d94c546ca6bf9d13e4b7fba; its 2 P2 + 5 P3 touch-ups and verbatim review ledger are recorded in verification.md. Owner still resolves C7 R1 (rows 4/5 terminal truth and exit codes) and four Open Questions before product or test changes. |
+| `refactor-canonical-run-event-ledger` | APPROVED — queued (after admission + renderer hardening); next gate: red test authoring | Owner 2026-09-07 APPROVED bound to 9ebe6c34; four answers and R1 = DIRECT_NEW_STANDARD recorded. Implementation follows add-linked-worktree-admission and add-renderer-untrusted-content-hardening; independent red acceptance tests required before source edits (pilot policy 2026-09-05). |
 
 Parked proposals are indexed in [`deferred/README.md`](deferred/README.md) and
 do not appear in the active list.

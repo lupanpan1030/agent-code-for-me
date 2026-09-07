@@ -1,6 +1,6 @@
 # Change: Refactor to a Canonical Run Event Ledger
 
-Status: **DRAFT — awaiting Owner APPROVED**
+Status: **APPROVED 2026-09-07 (Owner; bound to 9ebe6c34; open questions 1–4 answered as recorded below); implementation queued after add-linked-worktree-admission and add-renderer-untrusted-content-hardening; source edit still requires the test-first red suite (independent author) per repository pilot policy**
 
 ## Why
 
@@ -17,8 +17,9 @@ is a non-normative factual baseline; [strategy](../../../docs/ideas/locus-produc
 §§9/12 sets Phase 3 direction, and [C2/C5/C7](../../../docs/ideas/locus-interoperability-contract-v1.zh-CN.md)
 constrains the execution, interaction and public boundaries. This revision disposes the
 second fresh-context review (5 opus dimensions + fable synthesis) against
-`9e47e2ddb79e3856d16ba1753d87f1cafd107a8d`, following the first review at `0bd7b2bf`; it is not an
-implementation approval or a fresh review approval.
+`9e47e2ddb79e3856d16ba1753d87f1cafd107a8d`, following the first review at `0bd7b2bf`;
+that revision record is historical. Owner implementation approval is now recorded below;
+no new independent review verdict is claimed.
 
 ## What Changes
 
@@ -28,7 +29,7 @@ implementation approval or a fresh review approval.
   record correlated resume validation and exact installation/schema provenance.
 - Reconcile assistant, reasoning text/summary parts and tool lifecycles against item
   snapshots, with explicit item-state and reconciliation readers.
-- **BREAKING — C7 Red R1 (rows 4/5), Owner decision needed:** correct terminal result
+- **BREAKING — C7 Red R1 (rows 4/5), Owner DIRECT_NEW_STANDARD 2026-09-07:** correct terminal result
   truth and its CLI exit-code consequences: denial/rejected/invalid-empty output is
   failed; a retryable diagnostic alone cannot force a successful Run to failed.
 - Keep exactly one terminal, make transport exit a synthetic terminal with provenance,
@@ -72,16 +73,18 @@ This section follows all ten fields of the [Consumer Impact template](../../../d
 ### 1. Gate status
 
 ```text
-Status: OWNER_DECISION_REQUIRED
+Status: APPROVED 2026-09-07 — R1 = DIRECT_NEW_STANDARD
 OpenSpec change: refactor-canonical-run-event-ledger
 Author / date: Codex / 2026-09-07
 Decision owner: Owner
-Implementation blocked until: Owner fills section 10 for R1 and marks the change APPROVED
+Implementation queued after: add-linked-worktree-admission and add-renderer-untrusted-content-hardening
+Next gate: independent red acceptance-test authoring before source edits
 ```
 
-The change itself remains DRAFT. Governance gates live here and in tasks, not in living
-behavior requirements. The deterministic deltas describe the proposed direct-standard
-behavior; choosing another disposition requires revising those deltas before APPROVED.
+Owner APPROVED is bound to design content SHA 9ebe6c34. Governance gates live here
+and in tasks, not in living behavior requirements. The deterministic deltas describe
+the approved direct-standard behavior; implementation remains queued behind the
+two preceding changes and requires the independent test-first red suite.
 
 ### 2. One-line change
 
@@ -116,7 +119,7 @@ runtime_selection_refused status events; that semantic string is preserved.
 | 1 — deletion/rename | Non-breaking | No public command, field, event or error is deleted/renamed; desktop wrapper removal is internal. |
 | 2 — type/requiredness/nullable/enum/default/validation | Non-breaking | No public input validation/default, required field, nullable field or status/event enum changes; the additive discovery feature enum extension is accounted for under row 10; output truth is classified once as R1 under 4/5. |
 | 3 — identity | Non-breaking | `jobId` already identifies the API Run; retry already creates a new job with `job.retryOfJobId` and `job.attempt` ([serializer](../../../src/main/lib/headless/cli-output.ts), [schema](../../../docs/local-job-api-v1.schema.json)); these stay unchanged. |
-| 4 — lifecycle | **Red R1: Owner decision needed** | Existing succeeded/failed/canceled/interrupted vocabulary and synchronous create/retry waiting remain; denial, rejection and invalid-empty completion become failed, and retry-only diagnostics no longer force failed. See 5 for the same decision's result/exit effects. |
+| 4 — lifecycle | **Red R1: Owner DIRECT_NEW_STANDARD 2026-09-07** | Existing succeeded/failed/canceled/interrupted vocabulary and synchronous create/retry waiting remain; denial, rejection and invalid-empty completion become failed, and retry-only diagnostics no longer force failed. See 5 for the same decision's result/exit effects. |
 | 5 — ordering/cursor/replay/retry/terminal result | **Red R1 for terminal result only** | Result status and derived create/retry exit codes change for the R1 cases. Additional already-declared event types/optional evidence are additive. Proposed v1 projects EVERY ledger record, including safe status stubs, so sequence remains dense; no sparse-sequence break is taken. |
 | 6 — Runtime/provider/model/policy defaults | Non-breaking | Existing selections, fallback and unsupported/degraded states unchanged. |
 | 7 — trust/access boundary | Non-breaking | Redaction remains inside the existing promised boundary; no new auth, permission, workspace, filesystem or network grant. R1 is not counted again here. |
@@ -192,7 +195,7 @@ not invented, and do not automatically become a consumer Owner release veto (C9.
 
 | Option | Locus change | Consumer change | Cost | Risk | Deletion condition |
 | --- | --- | --- | --- | --- | --- |
-| DIRECT_NEW_STANDARD (proposed) | Correct R1 on v1 with feature discovery and updated guide | Coordinate status/exit expectations | Low | Unknown consumers may have false-success assumptions | N/A |
+| DIRECT_NEW_STANDARD (Owner selected 2026-09-07) | Correct R1 on v1 with feature discovery and updated guide | Coordinate status/exit expectations | Low | Unknown consumers may have false-success assumptions | N/A |
 | NEW_VERSION | Separate public serializer over this same core, if separately scoped | Version selection/migration | Medium | Cannot preserve false-success semantics in old version under C7 §9.5 | Explicit old-version sunset |
 | TEMPORARY_FACADE | Lossless envelope-only translation over the same core | Parser migration can be staged | Medium | Cannot translate failed to success or run a second terminal state machine; no compatibility solution for R1 | Objective removal condition required |
 | DEFER / REJECT | No affected public implementation | None | Delay | Existing evidence gaps remain | New decision |
@@ -249,16 +252,23 @@ Security impact: no new grants; native metadata is redacted before durable publi
 - [ ] Desktop/CLI transport smoke and applicable macOS/Windows packaged evidence are
   recorded without upgrading untested runtime surfaces.
 
-### 10. Owner decision (unfilled)
+### 10. Owner decision
 
 ```text
-Decision: pending (DIRECT_NEW_STANDARD | NEW_VERSION | TEMPORARY_FACADE | DEFER | REJECT)
-Approved exact scope: pending — R1 only (C7 rows 4/5)
-Compatibility obligation: pending
-Sunset/deletion condition: pending / N/A for proposed direct standard
-Consumer coordination required: pending
-Owner: pending
-Date: pending
+Decision: R1 = DIRECT_NEW_STANDARD (semantic breaking; BREAKING retained)
+Approved exact scope: C7 rows 4/5 terminal-result truth and derived CLI exit codes;
+  design content SHA 9ebe6c3410c23575e991d91ee8fb71b95854bea8
+Compatibility obligation: same-change consumer guide/schema/examples/error semantics
+  and conformance updates (tasks 7.16, 8.1 and 8.2); rejected/invalid-empty runs fail with
+  reasons and corresponding exit codes; preserve the existing explicit internal
+  allow-empty exception; no false-success compatibility
+Sunset/deletion condition: N/A — direct new standard, no public compatibility facade
+Consumer coordination required: Amadeus and Career Kit adapt to R1; inventory actual
+  dependencies and record consumer-owned receipts or unknown (tasks 1.3 and 8.6)
+Owner: Owner
+Date: 2026-09-07 (evening decision)
+Approval: APPROVED; implementation queued after add-linked-worktree-admission and
+  add-renderer-untrusted-content-hardening; next gate: independent red test authoring
 ```
 
 ## Impact
@@ -277,9 +287,16 @@ The red-first pilot is sourced to the original coordinator dispatch dated 2026-0
 in the ratified workflow document. This turn edits only this draft directory and its
 STATUS row, creates one local commit, and performs no product/test changes, merge or push.
 
-## Open Questions
+## Owner answers (2026-09-07)
 
-1. Owner 是否对 R1（C7 rows 4/5 的终态真相及 exit code）选择 DIRECT_NEW_STANDARD，或选择 DEFER／REJECT？
-2. Owner 是否接受本草案的确定规则：默认空产出失败、显式允许空产出的既有内部请求例外，以及 completed 后 usage 仅作为可读诊断？
-3. Owner 是否接受最小 immutable provenance snapshot 与 schema v1／legacy-unverified 历史标记在本切片内实现，而不等待 Runtime delivery registry？
-4. Owner 是否接受保持 v1 稠密 sequence 的逐记录 status 投影（每个 Run 的 status 记录会增加，消费者须用 --after 分页且不假定事件数量上限），以及终态 artifact 与 completed 同一 durable commit 登记的方案？
+Owner 2026-09-07 晚裁决，绑定设计内容 SHA `9ebe6c3410c23575e991d91ee8fb71b95854bea8`：
+
+1. R1（C7 rows 4/5 终态真相与 CLI exit code）：**DIRECT_NEW_STANDARD**。被拒／零产出的运行报失败并给原因，退出码跟着变；同变更更新 consumer guide/schema/conformance，已知消费者 Amadeus、Career Kit 适配。此项为 semantic breaking，保留 **BREAKING** 标记。
+2. 接受确定性规则：默认空产出 = 失败；既有内部请求显式允许空产出的例外保留；completed 后到的 usage 只作可读诊断。
+3. 接受本切片内最小不可变 provenance 快照与 schema v1／`legacy_unverified` 历史标记；采用两阶段规则（入队 pending，实际可执行文件解析时捕获并封存 runtime tuple），不等待 Runtime delivery registry。
+4. 接受 v1 稠密序号逐记录 status 投影；每个 Run 的 status 记录会增加，消费者用 `--after` 分页且不假定事件数量上限；终态 artifact 与 completed 同一持久提交登记。
+
+综上 **Owner APPROVED**（实施许可），绑定设计内容 SHA `9ebe6c34`；实施排在
+`add-linked-worktree-admission` 与 `add-renderer-untrusted-content-hardening` 之后。
+下一门禁为独立作者先编写 red acceptance tests；产品源码编辑仍须先满足
+2026-09-05 test-first pilot policy。本次派单仅记录文档，不执行测试编写或产品实现。

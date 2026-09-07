@@ -1,6 +1,6 @@
 # Design
 
-Status: **DRAFT — awaiting Owner APPROVED**
+Status: **APPROVED 2026-09-07 (Owner; bound to 9ebe6c34; open questions 1–4 answered as recorded below); implementation queued after add-linked-worktree-admission and add-renderer-untrusted-content-hardening; source edit still requires the test-first red suite (independent author) per repository pilot policy**
 
 ## Context and Source Basis
 
@@ -526,7 +526,7 @@ Known supported rows do not acquire a false unknown/loss marker merely due to ca
 The complete normative 66/10/16 table is in the [Codex Native Boundary Forwarding And
 Disposition requirement](specs/codex-runtime-parity/spec.md). It is inlined there so
 archiving preserves the enforceable inventory. `native-dispositions.json` will exercise
-that table; it is a future test artifact, not a checked-in capture in this DRAFT.
+that table; it is a future test artifact, not a checked-in capture before implementation.
 
 The nine existing internal types outside the 12 public v1 types project to `status`
 with `payload.subtype` equal to the **original internal type name**: guard_decision,
@@ -638,11 +638,18 @@ snapshot. Immediate seal makes trailing usage diagnostic-only, so sealed usage m
 incomplete. Atomic terminal artifact visibility requires staged file preparation and
 crash tests; SQL cannot roll back filesystem writes, hence unreferenced prepared files
 must remain unpublished. Legacy reads honestly lack new guarantees. Minimal provenance
-must not claim Runtime delivery certification. All remain proposed, pending Owner choices.
+must not claim Runtime delivery certification. Owner accepted these design choices on 2026-09-07; implementation remains queued.
 
-## Open Questions
+## Owner answers (2026-09-07)
 
-1. Owner 是否对 R1（C7 rows 4/5 的终态真相及 exit code）选择 DIRECT_NEW_STANDARD，或选择 DEFER／REJECT？
-2. Owner 是否接受本草案的确定规则：默认空产出失败、显式允许空产出的既有内部请求例外，以及 completed 后 usage 仅作为可读诊断？
-3. Owner 是否接受最小 immutable provenance snapshot 与 schema v1／legacy-unverified 历史标记在本切片内实现，而不等待 Runtime delivery registry？
-4. Owner 是否接受保持 v1 稠密 sequence 的逐记录 status 投影（每个 Run 的 status 记录会增加，消费者须用 --after 分页且不假定事件数量上限），以及终态 artifact 与 completed 同一 durable commit 登记的方案？
+Owner 2026-09-07 晚裁决，绑定设计内容 SHA `9ebe6c3410c23575e991d91ee8fb71b95854bea8`：
+
+1. R1（C7 rows 4/5 终态真相与 CLI exit code）：**DIRECT_NEW_STANDARD**。被拒／零产出的运行报失败并给原因，退出码跟着变；同变更更新 consumer guide/schema/conformance，已知消费者 Amadeus、Career Kit 适配。此项为 semantic breaking，保留 **BREAKING** 标记。
+2. 接受确定性规则：默认空产出 = 失败；既有内部请求显式允许空产出的例外保留；completed 后到的 usage 只作可读诊断。
+3. 接受本切片内最小不可变 provenance 快照与 schema v1／`legacy_unverified` 历史标记；采用两阶段规则（入队 pending，实际可执行文件解析时捕获并封存 runtime tuple），不等待 Runtime delivery registry。
+4. 接受 v1 稠密序号逐记录 status 投影；每个 Run 的 status 记录会增加，消费者用 `--after` 分页且不假定事件数量上限；终态 artifact 与 completed 同一持久提交登记。
+
+综上 **Owner APPROVED**（实施许可），绑定设计内容 SHA `9ebe6c34`；实施排在
+`add-linked-worktree-admission` 与 `add-renderer-untrusted-content-hardening` 之后。
+下一门禁为独立作者先编写 red acceptance tests；产品源码编辑仍须先满足
+2026-09-05 test-first pilot policy。本次派单仅记录文档，不执行测试编写或产品实现。

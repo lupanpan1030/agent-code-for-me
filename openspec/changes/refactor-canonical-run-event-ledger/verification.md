@@ -1,13 +1,14 @@
 # Verification
 
-Status: **DRAFT — awaiting Owner APPROVED**
+Status: **APPROVED 2026-09-07 (Owner; bound to 9ebe6c34); queued; next gate: independent red test authoring**
 
 This is documentation-revision evidence plus a future implementation evidence register.
 No product code, acceptance test or runtime fixture is implemented by this revision.
 Passing document/unchanged-code checks does not mean IMPLEMENTATION_VERIFIED,
 REVIEW_APPROVED or Owner ACCEPTED. The third re-check below is REVIEW_APPROVED only
 for source 4b6ca640288555ca1d94c546ca6bf9d13e4b7fba; it is not a fresh review verdict
-on this subsequent documentation touch-up commit. Owner answers/APPROVED remain pending.
+on this subsequent documentation touch-up commit. Owner answers/APPROVED are recorded in the receipt below; historical pending statements
+retain their original review-time meaning.
 
 ## Sources
 
@@ -447,3 +448,49 @@ Full aggregate output: `/tmp/run-event-ledger-touchups-check-full.log` (local di
 receipt). No package/lockfile change, product-code workaround or permission escalation
 was used. The historical REVIEW_APPROVED stays bound exclusively to `4b6ca640`; these
 receipts do not transfer that independent verdict to the touch-up commit.
+
+## Owner APPROVED receipt — 2026-09-07
+
+Source: Owner evening decision relayed in the current coordinator dispatch. Intake HEAD
+matched `9ebe6c3410c23575e991d91ee8fb71b95854bea8`, with a clean worktree.
+**Owner APPROVED** grants implementation permission bound to that exact design content
+SHA (`9ebe6c34`); this approval-record commit does not rebind the historical independent
+REVIEW_APPROVED at `4b6ca640` or claim IMPLEMENTATION_VERIFIED / Owner ACCEPTED.
+
+1. R1, C7 rows 4/5: **DIRECT_NEW_STANDARD**, semantic **BREAKING**. Rejected/invalid-empty
+   runs fail with reasons and corresponding CLI exit codes. Same-change consumer
+   guide/schema/conformance updates and Amadeus / Career Kit adaptation are required;
+   their implementation receipts remain future work, not claimed here.
+2. Accepted: default empty output fails, existing explicitly allowed internal empty-output
+   requests remain exceptions, and usage after completed is readable diagnostic-only.
+3. Accepted: this slice owns the minimal immutable provenance snapshot, schema v1 and
+   `legacy_unverified` historical marking, with two-stage pending/runtime capture;
+   it does not wait for a Runtime delivery registry.
+4. Accepted: dense per-record v1 status projection, consumer `--after` pagination with
+   increased status volume, and terminal artifact registration in the same durable
+   commit as completed.
+
+Implementation is queued after `add-linked-worktree-admission` and
+`add-renderer-untrusted-content-hardening`. Next gate: **test-first: independent author
+writes red acceptance tests before implementation (pilot policy 2026-09-05)**. Source
+edits still require that red suite. This dispatch changes only approval documentation
+inside this change and its STATUS row; no product/test authoring, merge or push.
+
+### Approval-record validation
+
+Checks cover this documentation-only approval record over `9ebe6c34`; the resulting
+single local commit SHA is reported in the handoff. No implementing-source verdict
+is claimed.
+
+| Check | Command / environment | Result |
+| --- | --- | --- |
+| Single strict | /home/chen/projects/agent-code-for-me/node_modules/.bin/openspec validate refactor-canonical-run-event-ledger --strict --no-interactive | Exit 0: `Change 'refactor-canonical-run-event-ledger' is valid` |
+| All strict | /home/chen/projects/agent-code-for-me/node_modules/.bin/openspec validate --all --strict --no-interactive | Exit 0: `Totals: 53 passed, 0 failed (53 items)` |
+| Whitespace | git diff --check | Exit 0, no output |
+| Scope / consistency | Changed-path and single STATUS-row check; proposal/design answer equality | Five Markdown files only; only the target STATUS row changes; four answers agree; spec deltas and product/test files unchanged |
+| Required current-code gate | bun run check:full, temporary symlink to main checkout's existing node_modules, removed after execution | Exit 1: 1925 passed / 3 failed / 9338 expectations / 304 files; lint, architecture, retired-runtime residue and typecheck passed. The same three unchanged Codex snapshot-scrub EROFS tests recorded in prior receipts fail; the aggregate stops at tests, before spec/build/diff stages. Strict validation and diff checks ran separately. |
+| Product / manual smoke | Not run for this approval-record-only dispatch | No implementation or smoke-pass claim |
+
+Full aggregate output: `/tmp/run-event-ledger-owner-approval-check-full.log` (local
+diagnostic receipt). The aggregate failure is retained as failed; no product/test fix,
+package/lockfile change, permission escalation, merge or push was performed.

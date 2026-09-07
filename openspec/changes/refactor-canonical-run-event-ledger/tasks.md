@@ -1,15 +1,16 @@
 # Tasks
 
-Status: **DRAFT — awaiting Owner APPROVED**. All boxes describe future implementation,
-not work authorized by the current documentation-only dispatch. The source dispatch
-and raw reviews are indexed in verification.md. No product or acceptance-test authoring
-starts until Owner APPROVED and the Consumer Impact decision are recorded.
+Status: **APPROVED 2026-09-07 (Owner; bound to 9ebe6c34)**. Implementation is queued
+after `add-linked-worktree-admission` and `add-renderer-untrusted-content-hardening`.
+The current dispatch records approval only; unchecked boxes remain future work.
+Next gate: independent red acceptance-test authoring before product source edits,
+per the 2026-09-05 pilot policy indexed in verification.md.
 
 ## 1. Governance and baseline
 
-- [ ] 1.1 Resolve proposal's four Open Questions and R1 (C7 rows 4/5); update the deterministic
-  proposed behavior if the Owner selects a different disposition, then obtain APPROVED.
-  Do not encode the approval's absence as a living runtime scenario.
+- [x] 1.1 Record Owner APPROVED 2026-09-07 bound to design content SHA 9ebe6c34;
+  four Owner answers and R1 = DIRECT_NEW_STANDARD are recorded in proposal.md.
+  Do not encode governance approval as a living runtime scenario.
 - [ ] 1.2 Freeze source SHA, current living requirements, public bare API payload/12 types,
   dense order, existing one completed, retry job envelope and initial/final artifact behavior.
   Characterization uses current product readers, not the draft's former desktop wrapper example.
@@ -33,6 +34,9 @@ starts until Owner APPROVED and the Consumer Impact decision are recorded.
   new acceptance behavior must demonstrate a meaningful failure, not merely missing imports.
 - [ ] 1.6 Confirm permitted owner inventory, threat boundaries and data stage; agree on
   active legacy drain and read-only legacy marking, not an undisclosed data reset.
+
+- [ ] 1.7 test-first: independent author writes red acceptance tests before implementation (pilot policy 2026-09-05).
+  Complete and record the meaningful red suite from 1.5 before any product source edit.
 
 ## 2. Ledger owner and native identity
 
