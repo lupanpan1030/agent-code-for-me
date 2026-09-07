@@ -39,22 +39,32 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       2026-09-07 (1 P2 + 4 P3, now addressed). Remains unchecked until the
       rebased exact package's fresh-context R3 approval; historical verdicts
       do not transfer to a successor SHA.
+      Exact-package ledger: **CHANGES_REQUESTED at 95831ab6 → fixes at `<SHA>`
+      → targeted R3 pending** (2026-09-08; workflow `wf_165bd6a0-1b5`,
+      2 P1 / 9 P2 / 7 P3). Here `<SHA>` denotes the single successor commit
+      containing this revision, titled `docs(openspec): address exact-package
+      R3 review for renderer hardening`; resolve its full SHA from Git (the
+      final handoff records it). It cannot embed its own hash. Targeted fresh
+      R3 follows 0.5 re-confirmation and covers the two P1s and folded P2s.
 - [x] 0.4 Rebase all source/test anchors and active-change conflicts onto
       `main` at `9cff32daa89f4431be37cf307897b97ec48cda77`, completed 2026-09-07.
       Audited proposal/design/tasks citations: no source line-number updates
       needed. Only STATUS Updated conflicts occurred; keep 2026-09-07, main's
       archive and this branch's active row. Recheck if the implementation-start
       baseline advances again.
-- [x] 0.5 Run strict OpenSpec validation and obtain explicit Owner `APPROVED`
+- [ ] 0.5 Run strict OpenSpec validation and obtain explicit Owner `APPROVED`
       for the exact rebaselined package before the first source edit. The
-      strict portion passed after the 0.4 rebase (see `verification.md`);
-      exact package awaiting Owner confirmation. This checkbox stays open.
-      The three post-approval Owner acknowledgements and exact-package R3
-      approval remain required before confirmation. Each disclosure is
-      presented to Owner 2026-09-07 (board §六); acknowledgement pending.
-      Done 2026-09-07: strict validation passed at `0c805564`; Owner confirmed the
-      exact rebased package the same day. Task 0.3 (fresh R3 on this exact package)
-      remains the last gate before the first source edit.
+      historical strict/rebase preconditions passed and Owner confirmation
+      occurred on 2026-09-07: **confirmed content 0c805564, recording commit
+      95831ab6; re-confirmation required after this revision**. This checkbox
+      is reopened for the 2026-09-08 revised package. Strict target and `--all`
+      validation must pass again; D7 origin option (a) is **Owner decision
+      pending**, and the three earlier disclosures remain presented to Owner
+      2026-09-07 (board §六), acknowledgement pending. Record the new confirmed
+      exact SHA (or distinguish confirmed content from its recording commit),
+      then obtain task 0.3 targeted fresh R3 on that same package. Historical
+      confirmation does not certify revised text; source edits also remain
+      queued after `add-linked-worktree-admission`.
 
 ## 1. Characterization and renderer source guard (original 2.2)
 
@@ -70,10 +80,20 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       negative fixtures for each class. Recommended default, pending the
       post-approval Owner acknowledgement: remove the remote react-scan loader
       in `agents-debug-tab.tsx`; no new remote-script bypass.
+      The loader is already CSP-blocked in both CSP-covered modes (removal
+      costs no working functionality there); it loads only in development
+      without `ELECTRON_RENDERER_URL`.
       Keep the scan rooted at `src/renderer`: shared denylist string literals
       in `plugin-controlled-ui.ts` are not executable sink sites. Add an exact
       configuration check for new Shiki-API shims/Vite aliases into DOM-producing
       dependencies, without treating configuration strings as HTML sinks.
+      Add a named raw-markup/raw-CSS dependency-prop rule: `unsafeCSS` at both
+      diff option sites must be exactly `PIERRE_DIFFS_THEME_CSS`, not an
+      expression/interpolated template; guard the constant declaration against
+      untrusted interpolation. Use that same repository constant for D2's
+      diff-profile style comparison. Assert `prerenderedHTML` absent unless
+      explicitly bound to a reviewed producer and its behavior gate. Include
+      negative fixtures for these named rules, not a broad string scan.
 - [ ] 1.3 Record the rebaselined sink and producer inventory in
       `verification.md`. Do not label a whole file safe and do not infer runtime
       safety from source inventory alone. Name the Vite-aliased Locus-owned
@@ -86,6 +106,13 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       zero-caller `diff-view-highlighter.ts#getAST` adapter as dormant.
       Inventory `openExternalUrl` plus its preload/tRPC entry points as the
       reviewed executable-URL click sink; do not introduce follow-up B policy.
+      Inventory both `unsafeCSS: PIERRE_DIFFS_THEME_CSS` dependency-prop sinks
+      and the absent `prerenderedHTML` path under 1.2's named rule, sharing D2's
+      constant source of truth. Name plugin-controlled UI manifests as a
+      classified-safe, schema-bounded text producer owned by the validator in
+      `src/shared/plugin-controlled-ui.ts#parseControlledUiManifest`;
+      React text rendering remains its
+      boundary and richer surface types must revisit the classification.
 - [ ] 1.4 Keep this renderer guard test-owned and executed by `bun run test` /
       `check:full`; do not modify `scripts/check-architecture-guards.mjs` or its
       Foundation 1c baselines.
@@ -115,7 +142,10 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       rendered-DOM executable-markup oracle (not string-presence checks) to
       static/streaming markdown, Shiki consumers, Mermaid, and mentions.
 - [ ] 2.4 Make `highlightCode()` fail closed when Shiki throws or its expected
-      `<code>` output shape is absent; never return unescaped source as HTML and
+      output shape fails: require exactly one top-level `<pre><code>` wrapper
+      with the entire output consumed. Retain forced-mismatch and forced
+      dual-`<code>` fixtures so a non-greedy regex cannot silently truncate.
+      Never return unescaped source as HTML and
       leave no second highlighting/extraction path in callers. Remove or route
       `chat-markdown-renderer.tsx`'s local `escapeHtml` pre-highlight/plaintext
       branch through the renderer HTML-policy owner. Under the Question 9
@@ -195,6 +225,30 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       `<PatchDiff>`; assert its `createPlainHast` text-node output shape before
       hostile cases. An unbound fixture runs nested real Shiki 3, not the shim;
       a built-renderer fixture with the same binding assertion is an alternative.
+      Apply the D2 diff profile to all output including Shadow DOM: exactly
+      one `style[data-unsafe-css]` byte-equal to
+      `wrapUnsafeCSS(PIERRE_DIFFS_THEME_CSS)` (app-owned input, never producer
+      output); `use[href]` matching `^#diffs-icon-[a-z0-9-]+$` only in separator/
+      expand-button subtrees; adopted constructed stylesheets need no element
+      allowance; all other DOM keeps the global rules. Use Locus's actual
+      options: `disableFileHeader: true`, `unsafeCSS: PIERRE_DIFFS_THEME_CSS`,
+      default `hunkSeparators` (`line-info`), `expandUnchanged: false`.
+      Retain negative controls for missing/duplicate style elements, marker/CSS
+      drift, and fragment hrefs outside the permitted pattern/subtrees.
+      The committed `bun.lock` plus `bun install --frozen-lockfile` is the
+      pin of record. Retain a lockfile-assertion test for every anchor above
+      and app Shiki `1.29.2`; fail on version/resolution drift. Top-level
+      `overrides` may pin only a globally correct version (e.g.
+      `hast-util-to-html`); forbid a flat `@shikijs/core` override that collapses
+      the mixed resolution. The stale pnpm block/packageManager metadata is
+      historical and is not the Bun pin mechanism (D10); no package-manager
+      migration is part of this task.
+      Limit the reviewed producer to the main-thread, context-free path.
+      Source-guard imports/mounts/use of `@pierre/diffs/worker`,
+      `worker-portable.js`, `WorkerPoolContextProvider`,
+      `getOrCreateWorkerPoolSingleton`, or `workerFactory` must fail; worker
+      activation requires its own scope decision and producer review, even
+      without dependency/shim/alias changes.
       Development pre-bundling's use of plugin `resolveId` is unverified and
       must be proved in implementation GUI 5.1; verify packaged binding in 5.3.
       The approved diff Scenario retains only WHEN/THEN/AND bullets; its
@@ -217,11 +271,19 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       `registered-roots.ts`, `stable-directory.ts`, window ownership, and
       `src/shared/local-browser-workbench.ts`. Register the diagnostics-policy
       composition adapter over the canonical main `redaction.ts` owner too.
+      Expose pure, injectable decision functions for effective preferences,
+      admission consume/replay, request-gate verdicts, permission/download
+      verdicts and teardown state transitions. Use Electron `import type`
+      plus injected factories/surfaces; no runtime Electron import-side effect
+      may prevent loading the owner in `bun test --isolate tests`. Maintain
+      verification.md's explicit ADDED Scenario → fixture mapping.
 - [ ] 3.2 Add a narrow internal, non-tRPC preview-admission operation. Resolve
       chat/worktree state in main, derive the embedder from the IPC event,
       atomically call `windowManager.claimChat(chatId, senderWindow.id)`
       (idempotent for this window; bounded denial if another live window owns
-      it), then resolve the DB-registered worktree and issue the partition.
+      it; explicitly acquire if unowned, including after stale-owner cleanup),
+      then resolve the DB-registered worktree and issue the partition. Cover
+      all three ownership states in 4.8 without weakening DB-root checks.
       This cross-checks chat ownership; authorization derives from the live
       app-window sender plus DB-registered chat/worktree, not the chat map
       alone. Reject caller-provided filesystem/webContents authority. Return only the approved URL
@@ -237,11 +299,16 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       old guest before replacement. Every `<webview>` element mount, including
       React remount/StrictMode, needs a fresh generation/admission; no renderer
       retry may reuse a consumed attachment capability.
-- [ ] 3.5 Install each embedder's `will-attach-webview` listener before its app
-      document can attach a guest. At attachment, consume the exact admission,
+- [ ] 3.5 Install one `app.on('web-contents-created')` hook before creating
+      webContents; it installs every potential embedder's `will-attach-webview`
+      listener. Use the per-window registry to deny unregistered embedders,
+      including future window paths, before any document can attach a guest.
+      At attachment, consume the exact admission,
       deny unknown guests, and force empty preload/additional arguments,
       `webviewTag`/all Node modes/insecure content off, context isolation/
-      sandbox/web security on, no popup grant, and the issued partition.
+      sandbox/web security on and no popup grant. Validate the element's
+      partition against the pending admission and reject every mismatch;
+      writing/forcing partition is best-effort reinforcement only.
       Explicitly force sandbox/contextIsolation rather than inheriting the
       privileged embedder's `sandbox:false` preferences.
 - [ ] 3.6 Register valid guests through `did-attach-webview` and install all
@@ -250,6 +317,11 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       into `main.ts` or the renderer. Account for post-navigation-start,
       pre-commit attach ordering; prove no guest request precedes installation
       of the pre-return Session gate.
+      Destroy from main via `guestWebContents.close()` with
+      `waitForBeforeUnload` unset, then re-check `isDestroyed()` and revoke
+      registry state per D5. Invalidate authority immediately on teardown;
+      reject revival/reattach or replacement until destruction is confirmed,
+      and require fresh generation/admission. No renderer unmount fallback.
 - [ ] 3.7 Prove guest JavaScript cannot observe `electronTRPC`, `desktopApi`,
       `webUtils`, `ipcRenderer`, `require`, or `process`, cannot send privileged
       IPC/tRPC, and cannot trigger a Locus-mediated privileged side effect.
@@ -263,11 +335,28 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       sole `<all_urls>` `webRequest.onBeforeRequest` owner: exact-origin check
       every `mainFrame` request (initial, link/location, `loadURL`, back/forward,
       redirect) and cancel direct `file:` for every resource type. Keep
-      `will-*` and committed-URL destruction as defense in depth.
-- [ ] 4.2 Register/configure the fixed-origin Session-local
-      `locus-preview://preview.local` scheme with minimum privileges before app
-      readiness, then bind its handler/root on each unique Session before the
-      partition is returned. Translate an admitted user `file://` target to it,
+      `will-*` and committed-URL destruction as defense in depth, using
+      `guestWebContents.close()` with `waitForBeforeUnload` unset, an
+      `isDestroyed()` re-check and registry revocation. File admissions use
+      D7's exact `locus-preview://<per-admission-random>.preview.local` origin
+      plus document path; cancel other preview hosts/out-of-scope resources
+      and every `locus-preview:` request on HTTP(S)-admitted Sessions. Other
+      schemes fail closed except the explicit D7 non-network postconditions
+      and accepted HTTP(S) subresource residual. Remove renderer `loadURL`.
+- [ ] 4.2 After Owner confirms D7 origin granularity (option (a) is drafted,
+      pending), register `locus-preview` before app readiness with exactly D7's
+      flags: standard/secure/supportFetchAPI/corsEnabled true;
+      bypassCSP/allowServiceWorkers/stream/codeCache false. Bind `protocol.handle`
+      only on file-admission Sessions before partition return; HTTP(S) Sessions
+      leave it unhandled and reject the scheme. Bind each random admission
+      host to its document plus declared relative-asset scope, defaulting to
+      its directory subtree; preserve relative URLs, deny other hosts and
+      out-of-scope paths, and require fresh admission for another top-level
+      document. Freeze the main-validated scope and expose its read/egress
+      consequence, including when the default directory is the worktree root.
+      The protocol handler enforces live admission/host/scope on every request
+      independently of custom-scheme `webRequest` observability; no permissive
+      CORS or origin relaxation. Translate an admitted user `file://` target to it,
       extend `src/main/lib/filesystem/stable-directory.ts` (do not add a second
       descriptor owner), traverse the registered chat root with descriptor/no-
       follow semantics, realpath-canonicalize the DB-registered root and compare
@@ -286,7 +375,10 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       `shell.openExternal` call occurs.
 - [ ] 4.4 Install both permission-check and permission-request default-deny
       handlers on each guest partition, plus a denying device-permission
-      handler. On HID/serial/USB/Bluetooth selection, call
+      handler. Every Session-scoped permission/device/display/selector handler
+      is installed in the same pre-return configuration step as 4.1's request
+      gate; guest WebContents handlers follow D5/3.6's attach timing. On
+      HID/serial/USB/Bluetooth selection, call
       `event.preventDefault()` and the API-specific rejecting callback
       (Bluetooth/serial empty string; HID/USB no ID); return no display streams
       with the system-picker bypass disabled. Prove no automatic device choice
@@ -297,7 +389,9 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       handler launch and no `mcp-import:preview` push. Trusted app-window
       `shell.openExternal` remains a separate reviewed path.
 - [ ] 4.5 Cancel guest downloads, including redirect and download-attribute
-      paths. Any future user-approved save flow remains out of scope.
+      paths. Install Session `will-download` in the same pre-return step as
+      the request gate; 4.8/5.2 include first-response download and early
+      permission checks. Any future user-approved save flow remains out of scope.
 - [ ] 4.6 Preserve the trusted app session's microphone/voice behavior and prove
       guest deny handlers are never installed as a global `persist:main`
       deny-all policy.
@@ -325,6 +419,11 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       retain only URL-free lifecycle signals. Evidence asserts absence from
       app state, chat text, security logs, and media; Electron's element-level
       dispatch itself is not claimed to be suppressed.
+      Move screenshots to main-owned `webContents.capturePage()`, binding
+      request/completion to the current admitted guest/navigation generation.
+      Apply approved identity/type/dimension/byte bounds before renderer
+      projection; reject stale or oversized captures and remove renderer
+      `webview.capturePage()` with no fallback.
 - [ ] 4.8 Add focused unit/integration fixtures for unsafe attach preferences,
       bridge probes, initial/link/location/`loadURL`/back/forward/redirect
       requests, direct `file:` in main/subframe/XHR/script/image positions,
@@ -336,12 +435,19 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       mismatch/symlinked-prefix cases. Distinguish non-network/external-scheme
       navigation from observable `webRequest` requests: apply D7's committed-
       URL rule to `about:`/`data:`/`blob:`/`javascript:` and test explicit
-      `openExternal` denial. Require runtime-observed cancellation of `file:`
-      mainFrame/subFrame/xhr/script/image requests and every redirect hop,
-      including 3xx to another loopback port; mock registration proves neither.
-      Remove the renderer `<webview>.loadURL` escape hatch. Probe Locus auth
-      callback/gateway with no state/token: observe bounded 400/401/404 and no
-      state change, without claiming egress itself is blocked.
+      `openExternal` denial. This task's acceptance is double-driven ordering/
+      verdict/state-machine evidence, including all handlers before partition
+      return, first-response download, early permission checks, acquire-if-
+      unowned chat, main-alone close/isDestroyed/revocation, fresh admission
+      after teardown, and bounded/stale screenshot rejection. Model file-
+      admission origin/host/scope checks and HTTP(S)-admission scheme rejection,
+      with cross-file fetch/XHR/iframe-contentDocument/script-src cases and
+      allowed in-scope controls. Mocks SHALL NOT claim runtime observations:
+      actual `file:` cancellation per mainFrame/subFrame/xhr/script/image and
+      every redirect hop (including cross-port 3xx), custom-scheme gate
+      observability, cross-file reads/execution, main-alone guest destruction,
+      OS effects and no-state/token auth/gateway 400/401/404 outcomes are
+      discharged only by 5.2 and repeated in 5.3.
 
 ## 5. GUI smoke and TICKET-114 linkage (original 2.4)
 
@@ -363,6 +469,16 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       file resource type, per-hop cross-port redirects, non-network scheme
       commits, canonical-root identity failures, and controlled auth/gateway
       probes specified in 4.8.
+      Record whether `locus-preview:` reaches `webRequest`, evidence for the
+      protocol handler's independent admission/host/scope enforcement, and
+      scheme denial from HTTP(S)-admitted guests. For file admission, attempt
+      fetch, XHR, iframe `contentDocument` and `script src` reads/execution of
+      in-scope assets, out-of-scope files under the same worktree, and another
+      admission's host; record actual results and relative-URL controls.
+      Observe first-response download/early permission denial and main-alone
+      `close()`/`isDestroyed()` teardown without renderer cooperation; attempts
+      to revive/reattach need a fresh generation/admission. These runtime
+      observations cannot be discharged by 4.8 doubles.
 - [ ] 5.3 Against a packaged build, repeat the full section 5.1 malicious-
       content matrix and section 5.2 guest-security matrix. Record OS,
       Electron/Bun versions, exact frozen source SHA, package/start commands,
@@ -396,8 +512,9 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       browser rich-HTML paste/drop/beforeinput, renderer partition authority/URL-key
       remount, direct guest `file:` loading, renderer subscriptions to raw
       guest `will-navigate`/console/load-failure/title/navigation or any other
-      page-controlled URL/text payload, direct renderer `loadURL`, remote
-      react-scan loading (recommended removal pending post-approval Owner
+      page-controlled URL/text payload, direct renderer `loadURL`,
+      renderer `webview.capturePage()` (bounded capture now belongs to main),
+      remote react-scan loading (recommended removal pending post-approval Owner
       acknowledgement), and duplicate
       guest-policy paths. Confirm the only diagnostic event path is the
       main-owned post-`did-attach-webview` guest `webContents` relay after

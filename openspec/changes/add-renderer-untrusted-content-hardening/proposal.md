@@ -1,6 +1,7 @@
 # Change: Harden untrusted renderer content and local-browser guests
 
-> Status: **DIRECTION+IMPLEMENTATION APPROVED (eight defaults 2026-09-05 + Q9 compromise 2026-09-07); EXACT PACKAGE `0c805564` CONFIRMED by Owner 2026-09-07 (task 0.5) — source edit still gated on task 0.3 (fresh-context R3 approval of this exact package at implementation start); implementation queued after `add-linked-worktree-admission`**.
+> Status: **DIRECTION+IMPLEMENTATION APPROVED (eight defaults 2026-09-05 + Q9 compromise 2026-09-07); exact-package R3 CHANGES_REQUESTED at 95831ab6 (2026-09-08); fixes drafted, D7 origin decision and task 0.5 re-confirmation pending, then targeted fresh R3 (0.3) on the same SHA; implementation queued after `add-linked-worktree-admission`**.
+> Historical confirmation: **confirmed content 0c805564, recording commit 95831ab6; re-confirmation required after this revision**.
 > Owner accepted the eight recommended defaults late on 2026-09-05, conditional
 > on the feasibility/R3 reviews, implementation-start rebase, strict validation,
 > and exact-package confirmation. Feasibility 0.2 is `REVIEW_APPROVED` at
@@ -20,7 +21,7 @@
 > default-branch changes touch no cited source anchor. The only conflict was
 > `openspec/STATUS.md`; retain main's archive, this branch's active row and
 > Updated 2026-09-07. Task 0.5 strict validation is recorded in `verification.md`;
-> exact package awaiting Owner confirmation, with implementation queued after
+> the revised exact package awaits Owner re-confirmation, with implementation queued after
 > `add-linked-worktree-admission`.
 
 ## Why
@@ -135,8 +136,10 @@ minimization/redaction owner.
   forward, and redirect requests; `will-*` handlers and postcondition
   destruction remain defense in depth.
 - Never load direct `file://` content in a guest. Translate an admitted file
-  target to a fixed-origin, Session-local `locus-preview://` URL and serve every
-  path through a main-owned registered-root broker that traverses without
+  target to a per-admission-origin, Session-local `locus-preview://` URL under
+  D7's pending option (a), serving only its document and declared relative-asset
+  scope (default: document-directory subtree) through the registered-root
+  broker. Its file-admission-only protocol handler traverses without
   following symlinks and streams the same verified file descriptor it opened.
   If the platform/filesystem cannot prove that race-resistant read, file
   preview fails closed rather than falling back to check-then-load.
@@ -219,6 +222,16 @@ same change. It must not leave old and new business paths live together.
 
 ## Impact
 
+- **Owner decision pending (2026-09-08): origin granularity option (a) drafted as recommended default; alternatives (b) narrowed subtree on fixed origin / (c) whole-root + fourth disclosure**
+  D7 drafts a separate `locus-preview://<per-admission-random>.preview.local/`
+  origin for each admitted document, preserving relative URLs within its
+  declared asset scope (default: document-directory subtree) and rejecting
+  out-of-scope/other-host requests. In-scope files remain readable and can be
+  exfiltrated through the accepted egress residual; if the document directory
+  is the worktree root, the default scope includes that root's entire subtree.
+  This scope/consequence must be visible at admission. HTTP(S)-admission
+  Sessions receive no file-serving handler and reject the scheme. Origin
+  granularity is not yet Owner-confirmed and requires 0.5 re-confirmation.
 - Affected specs: `runtime-security-baseline` and `local-browser-workbench`.
   The latter is narrowed so a guest remains on its exact admitted HTTP(S)
   origin; opening another local origin/port is a new explicit preview
@@ -251,6 +264,11 @@ same change. It must not leave old and new business paths live together.
   canonical-path, and opened-anchor dev/ino identity; symlink leaves and
   mismatches fail closed, while a canonicalized symlinked parent prefix is
   permitted only after identity checks.
+  The workbench's displayed URL now omits query and fragment as well as
+  credentials: route parameters and hash-router state are not reflected in
+  the address bar or diagnostics. Main retains the admitted navigation target
+  for reload; this display loss is explicit compatibility behavior, with no
+  raw-URL renderer fallback. Screenshots move to bounded main-owned capture.
 
 ## Explicit Non-Goals
 
@@ -284,6 +302,10 @@ same change. It must not leave old and new business paths live together.
 - App-document remote HTTPS markdown images can disclose IP/timing as beacons.
   Record this separately from guest egress; it is not script execution or a
   claim that sanitizer tests prevent network requests.
+- No confidentiality guarantee for files inside D7's pending document/asset
+  scope: per-admission origins do not prevent a preview reading in-scope files
+  and sending them through the accepted egress residual. Whole-worktree
+  serving is not the default except when the document directory is that root.
 - Dependency-internal Monaco file-viewer/xterm terminal DOM hardening beyond
   existing controls is an explicit residual under the Owner-approved Q9
   compromise (2026-09-07), tracked in Yellow
@@ -317,8 +339,9 @@ Before any source edit, this package still requires:
    partition lifecycle, and testability on supported Electron hosts;
 3. acknowledgement of the three post-approval disclosures in design
    (presented to Owner 2026-09-07 (board §六); acknowledgement pending),
-   and final targeted re-review of the revised exact SHA reflecting the
-   Owner-approved Question 9 compromise; and
-4. task 0.4 implementation-start rebase followed by task 0.5 strict validation
-   and Owner confirmation of the exact package. This does not reopen the eight
-   defaults or substitute historical receipts for review of the revised SHA.
+   plus an Owner decision on D7's newly drafted origin granularity; and
+4. retain/recheck task 0.4's completed rebase as needed, then task 0.5 strict
+   target/all validation and Owner re-confirmation of the revised exact package,
+   followed by targeted fresh R3 on the same SHA for the two P1s and folded P2s
+   from `95831ab6` (`wf_165bd6a0-1b5`). This does not reopen the eight defaults
+   or Q9 compromise, nor transfer historical receipts to the revised SHA.

@@ -1,6 +1,7 @@
 # Verification: add-renderer-untrusted-content-hardening
 
-> Status: **APPROVED (eight defaults + Q9 compromise) — exact package `0c805564` CONFIRMED by Owner 2026-09-07 (task 0.5); task 0.3 fresh R3 on this package remains before source edit**.
+> Status: **APPROVED (eight defaults + Q9 compromise); exact-package R3 CHANGES_REQUESTED at 95831ab6, workflow wf_165bd6a0-1b5 (2026-09-08). Fixes drafted; D7 origin decision, task 0.5 re-confirmation, then same-SHA targeted R3 (0.3) pending before source edit**.
+> Historical confirmation: **confirmed content 0c805564, recording commit 95831ab6; re-confirmation required after this revision**.
 > Owner direction/implementation approval was given late 2026-09-05, conditional
 > on tasks 0.2/0.3/0.4/0.5. Feasibility 0.2 is `REVIEW_APPROVED` at `2292d36a`;
 > R3 targeted re-review is `REVIEW_APPROVED` for `96ca3afe` only; task 0.3
@@ -191,8 +192,8 @@ closeout tasks, including new Question 9 tasks 2.10/2.11, remain open.
 | --- | --- | --- |
 | Exact renderer sink/source guard | Rebaselined insertion inventory, negative scanner fixtures, named producer/test for every sink | NOT RUN |
 | Streamdown | Static + streaming hostile matrix and safe-format controls through the actual app wrapper | NOT RUN |
-| Shiki | Hostile inputs plus forced exception/output-shape mismatch through inventoried raw consumers; chat-local escape fallback disposition | NOT RUN |
-| Dependency-internal producers | Owner-approved @pierre/diffs coverage through the Locus shim/Vite alias, exact pins/upgrade gate and hostile fixtures; Monaco/xterm explicit residuals in Yellow TICKET-125 | Q9 compromise APPROVED 2026-09-07; implementation NOT RUN |
+| Shiki | Hostile inputs plus forced exception/mismatch/dual-code output through inventoried raw consumers; exactly one fully consumed pre/code wrapper; chat-local escape fallback disposition | NOT RUN |
+| Dependency-internal producers | Owner-approved @pierre/diffs coverage through the Locus shim/Vite alias; D2 diff profile with actual Locus options, named unsafeCSS/prerenderedHTML rules, lockfile-assertion pin and worker-activation gate; Monaco/xterm explicit residuals in Yellow TICKET-125 | Q9 compromise APPROVED 2026-09-07; revised exact package awaiting re-confirmation; implementation NOT RUN |
 | Mentions | Lossless text/atomic-mention runs, exact spacing/selection, component-owned mixed/HTML-only paste/drop and beforeinput rejection, synthetic defaultPrevented/DOM oracle plus separate real-browser undo/redo, and no value-bearing HTML restore | NOT RUN |
 | Mermaid/subtitle/CSP | Pinned MermaidBlock end-to-end flowchart/sequence, CSS payloads, transient body cleanup, identical inline/fullscreen reviewed SVG; retained subtitle and CSP construction/GUI evidence | NOT RUN |
 | Guest unit/integration | Exact attach preferences, bridge globals, Session-gated initial/link/location/`loadURL`/back/forward/redirect, direct-file denial and descriptor broker, popup, full permission/device/display selectors, download, partitions, teardown/race, redacted diagnostics, documented network residual | NOT RUN |
@@ -202,6 +203,26 @@ closeout tasks, including new Question 9 tasks 2.10/2.11, remain open.
 | TICKET-114 production CSP | Separate current-SHA receipt under ticket rules; never historical task 4.4 backfill | NOT RUN; ticket unchecked |
 | TICKET-114 development CSP/HMR | Separate current-SHA receipt under ticket rules; never historical task 4.5 backfill | NOT RUN; ticket unchecked |
 | Full quality gate | Targeted suites, architecture, TypeScript, strict OpenSpec, build, diff, `check:full` on one frozen implementation SHA | NOT RUN |
+
+Explicit mapping for every Scenario under the ADDED `Local Browser Webview
+Guests Stay Outside Privileged App Bridges` requirement follows. Fixture IDs
+are planned retained cases in the future injectable guest-policy suite; all
+are **NOT RUN**, not mock or GUI receipts. Task 4.8 owns double-driven decisions,
+ordering and state transitions. Runtime observations listed here belong to
+5.2/5.3 and cannot be claimed by doubles or registration-only assertions.
+
+| ADDED Scenario | 4.8 injectable fixture / assertion | 5.2 / 5.3 runtime observation |
+| --- | --- | --- |
+| Renderer attempts an unsafe or unregistered guest attachment | GP-01: global creation-hook/per-window registry, reject unknown embedder/partition mismatch, effective preferences, no preloads, all Session handlers installed before return; early permission/first-response download | Actual first-request order, effective sandbox/bridge absence and no early prompt/download |
+| Renderer requests or replays a preview admission | GP-02: acquire-if-unowned, same-owner idempotence, deny other live owner, DB-root checks, one-shot/replay/TTL/caps/StrictMode/remount rejection | Each remount requires fresh generation/admission; no capability leakage |
+| Preview JavaScript probes privileged capabilities | GP-03: injected bridge-probe result/IPC spy and preference policy; doubles do not prove runtime global absence | Actual electronTRPC/desktopApi/webUtils/ipcRenderer/require/process absence and zero privileged effect |
+| Preview attempts disallowed top-level navigation or redirect | GP-04: origin/document-path/scheme verdicts, HTTP(S)-guest preview-scheme rejection, direct-file resource cases, programmatic/redirect and non-network postconditions | Per-hop network/file cancellation, locus-preview gate observability, non-network inherited origins, main-alone close/isDestroyed and no renderer revival |
+| Preview attempts file-root escape | GP-05: anchored filesystem fixture plus injected Session/protocol, canonical identity/no-follow/races/win32 refusal, host/document/declared-scope checks, fetch/XHR/iframe/script decisions | Actual in-scope relative asset read controls, denied out-of-scope/other-host fetch/XHR/iframe-contentDocument/script-src read/execution; file-admission-only handler; unsupported platforms reported honestly |
+| Preview attempts to open another window | GP-06: window-open deny and no shell/BrowserWindow/OS/MCP-import dispatch under every external-scheme probe | No new window, OS handler or mcp-import preview push |
+| Preview requests permission, capture, or download | GP-07: permission/device/display/selector/download deny verdicts, rejecting callbacks, pre-return order, first-response download and early permission | No device auto-selection/system picker/OS prompt/file write, including early requests |
+| Two previews use guest storage | GP-08: unique partitions/caps/revocation/cleanup, close with waitForBeforeUnload unset then isDestroyed check, fail-closed cleanup/replacement races | Storage isolation, main-alone destruction, no renderer-cooperation dependency or reattach without fresh admission; no Session-destroy claim |
+| Host captures guest diagnostics | GP-09: closed userGesture:false probes, generation/stale-result rejection, redaction/bounds/level mapping, no raw renderer event listeners; screenshot identity/type/dimension/byte bounds via main capture | Raw values absent from app state/chat/logs/media, bounded capture and stale rejection; Electron element dispatch not claimed suppressed |
+| Trusted app requests its existing microphone behavior | GP-10: inject distinct trusted/guest Sessions, assert guest deny handlers never installed on persist:main | Trusted app voice path remains separately governed and functional |
 
 ## Future GUI Receipt Requirements
 
@@ -259,9 +280,16 @@ single successful track cannot stand in for another track.
 - Approval Question 9: **Owner APPROVED the compromise, 2026-09-07**;
   three post-approval disclosures presented 2026-09-07; acknowledgement pending.
 - Task 0.4: COMPLETE, rebased onto `9cff32da` and anchors rechecked 2026-09-07.
-- Task 0.5: strict portion PASSED; exact package `0c805564` confirmed by the Owner on 2026-09-07 (coordination session relayed the confirmation; board §六).
-  Three disclosure acknowledgements remain pending; implementation is queued
-  after `add-linked-worktree-admission`.
+- Exact-package R3 0.3: **CHANGES_REQUESTED** at
+  `95831ab6055411b95d308f8042e530f98687ef6b`, workflow `wf_165bd6a0-1b5`,
+  2026-09-08, 2 P1 / 9 P2 / 7 P3; successor fixes and targeted R3 pending
+  are recorded in the appended ledger, with no approval transfer.
+- Task 0.5: **REOPENED**. Historical strict/Owner confirmation on 2026-09-07:
+  **confirmed content 0c805564, recording commit 95831ab6; re-confirmation
+  required after this revision**. D7 origin granularity is pending Owner
+  decision; the three disclosure acknowledgements remain pending.
+  Re-confirm the revised exact package, then obtain same-SHA targeted R3;
+  implementation is queued after `add-linked-worktree-admission`.
 - Codex `IMPLEMENTATION_VERIFIED`: NOT APPLICABLE / NOT RUN.
 - Independent implementation `REVIEW_APPROVED`: NOT APPLICABLE / NOT RUN.
 - Owner `ACCEPTED`: NOT APPLICABLE / NOT REQUESTED.
@@ -652,3 +680,116 @@ exit 0
 The installed CLI requires explicit `--all` for noninteractive full validation;
 the corrected command fulfills the full strict gate, while the original
 command's exit 1 above remains recorded. `git diff --check main` also passed.
+
+
+## Exact-package R3 review and revision ledger — 2026-09-08
+
+- Required starting HEAD: **PASS**, `95831ab6055411b95d308f8042e530f98687ef6b`,
+  `git rev-parse --short HEAD` = `95831ab6`; initial worktree clean.
+- Workflow: **`wf_165bd6a0-1b5`** (2 opus lenses + fable synthesis).
+- Canonical review input:
+  `/home/chen/.claude/projects/-home-chen-projects-agent-code-for-me/f1888632-cd03-49a0-a57d-51704695f29d/handoff/reviews/followup-a-r3-exact-package-95831ab6.md`.
+- The following receipt is retained verbatim from that input. It describes the
+  reviewed SHA, not the revised package or an implementation verdict.
+
+### Fresh-context R3 approval of the exact package (0.3) — 2026-09-08
+
+- Review mode: fresh-context; two security lenses (A: renderer content boundary; B: local-browser guest / Electron boundary) merged by a fresh-context synthesizer who re-verified both P1s in package text and code at the exact SHA. Read-only: no edits, commits, or worktrees; no bun tests run in the draft worktree (no node_modules); code and installed packages read from the draft worktree and the main checkout's node_modules.
+- SHA: `95831ab6055411b95d308f8042e530f98687ef6b` (worktree HEAD confirmed; main `9cff32da` is an ancestor; documentation-only vs main, 9 files +3024/−5, and documentation-only vs the Owner-confirmed `0c805564`, 4 files +8/−5). `openspec validate add-renderer-untrusted-content-hardening --strict --no-interactive`: valid.
+- Verified at this SHA: exact sink inventory (6 `dangerouslySetInnerHTML` / 5 files, 2 innerHTML restores, 1 dynamic-script loader); all nine bun.lock anchors and the mixed Shiki resolution; four-specifier alias completeness; shim text-node HAST and un-aliased `hast-util-to-html@9.0.5` default escaping; Streamdown 2.1.0 replace-not-merge and dormant Mermaid sink; Mermaid strict/DOMPurify-first and the svg `style` allowance; mentions innerHTML restores and HTML-only paste fall-through; production CSP without unsafe-inline; no existing guest attach/protocol/webRequest policy; every Electron 39.4.0 primitive named in D5–D9 (except a typed `WebContents.destroy()`); win32 descriptor-backend absence; `claimChat` semantics; task 0.4 anchor audit.
+- Findings: 0 P0 / 2 P1 / 9 P2 / 7 P3.
+  - **P1-1** — Q9(a) diff row cannot pass the shared rendered-DOM oracle as written: no diff profile exists, and the real shim-backed diff DOM contains Locus's own `<style data-unsafe-css>` element (`unsafeCSS: PIERRE_DIFFS_THEME_CSS`, agent-diff-view.tsx:211,814,827 → FileDiff.js:309-318) and `<use href="#diffs-icon-…">` expand icons (hast_utils.js:16-29; createSeparator.js; DiffHunksRenderer.js:86,326-341) that the oracle's `style` and fragment-href rules reject (spec.md:18-32; design.md:282-301 vs spec.md:100-102). Fix: add a strictly enumerated diff profile (one `data-unsafe-css` `<style>` byte-equal to `wrapUnsafeCSS(PIERRE_DIFFS_THEME_CSS)`; `use[href]` matching `^#diffs-icon-[a-z0-9-]+$` in separator subtrees; adopted stylesheet needs no allowance; fixtures use Locus's actual option set) to D2, the D10 diff row, the RSB oracle paragraph and the diff Scenario.
+  - **P1-2** — The fixed-origin `locus-preview://preview.local` broker (design.md:539-544; tasks 4.2; RSB/LBW Scenarios) with standard/secure/fetch privileges serving the whole registered worktree grants any previewed file same-origin read of every file under the root, composing with the accepted egress residual (default 4) into worktree exfiltration; a confinement regression versus today's `file://` previews, disclosed nowhere. Fix: decide origin granularity before source edit — per-admission origin (preferred), narrowed served scope, or an explicit Owner-acknowledged disclosure — name the exact `Privileges` flags, add Threat Model/Non-Goals/Risks entries and a cross-file-read fixture in 4.8/5.2.
+  - P2 (fold into the re-confirmation round): locus-preview gate treatment and HTTP(S)-Session handler scoping; dependency-prop `unsafeCSS`/`prerenderedHTML` sink class in D1/1.2/1.3; worker-pool activation as a Q9 trigger; named exact-pin mechanism (lockfile assertion; no flat `@shikijs/core` override); typed guest-destroy primitive; pre-return ordering for all Session-scoped deny handlers; main-owned bounded screenshot in 4.7/6.3; injectable guest-policy owner in 3.1; consistent task 0.5 record and confirmed-SHA naming.
+  - P3: react-scan loader already CSP-blocked; plugin-controlled UI classification; Shiki `<code>` regex truncation fixture; D6 acquire-if-unowned semantics; per-embedder vs global attach denial and partition validation wording; query/fragment loss in the address bar; 4.8/5.2 observation split.
+- Verdict: **CHANGES_REQUESTED** (security, exact-package R3; fresh-context; 2026-09-08; 0 P0 / 2 P1 / 9 P2 / 7 P3). Technical verdict for SHA `95831ab6` only; it does not replace Owner product acceptance and does not authorize push, remote PR mutation, merge, release, or repository-rules changes. The first source edit remains gated: apply the two P1 text fixes (both touch spec deltas: the runtime-security-baseline oracle paragraph and diff Scenario; the preview-broker Scenarios and D7) and the folded P2s, re-run 0.5 strict validation and exact-package confirmation (plus Owner acknowledgement of the preview-origin trade if the disclosure option is chosen), then a same-SHA targeted fresh R3 limited to the two P1 items and the folded P2s. On approval of that successor SHA, the first source edit may begin only after `add-linked-worktree-admission` per the Owner's ordering.
+- Freeze-time proof set retained unchanged for the eventual approval: malicious-content matrix (static + streaming markdown), Shiki consumer and shim-backed `<FileDiff>`/`<PatchDiff>` fixtures with all four aliases bound and the diff profile applied, Mermaid inline/fullscreen fixtures, mentions-editor paste/drop/beforeinput/undo/redo fixtures, guest-security matrix in development and packaged tracks (attach preferences, bridge probes, request gate incl. observed `file:` cancellation per position and redirect hop, brokered preview incl. cross-file-read attempt, popup/permission/device/display/download denial, two-partition isolation, teardown races, diagnostics minimization), TICKET-114 development-HMR and packaged-production CSP tracks, `bun run check:full`, strict OpenSpec validation, the 1c ratchet, and same-SHA fresh R3 plus normal implementation review.
+
+### Disposition of all 18 findings
+
+All rows describe documentation revisions only; product controls and fixtures
+remain unimplemented/unrun. Row 2 records the recommended draft, **not an Owner
+approval**. The eight defaults and Q9 coverage compromise remain in force.
+
+| Finding | Changed section / task / Scenario | Disposition |
+| --- | --- | --- |
+| #1 P1 | D2/D10; 2.10; runtime oracle/diff Scenario | 已写严格 diff profile：唯一常量 style、限域 use href、adopted stylesheet 非元素；使用实际 Locus options，全 Shadow DOM 仍受全局规则约束。 |
+| #2 P1 | D7/Threat Model/Non-Goals/Risks/Q5; proposal Impact; 4.2/4.8/5.2; LBW/RSB file Scenarios | 已起草每 admission 独立 origin 与目录子树资源范围；列明全部 Privileges、范围内读取/egress 后果及跨文件用例；Owner decision pending。 |
+| #3 P2 | D7; 4.1/4.2/4.8/5.2; navigation/file Scenarios | 明确 file admitted-origin、其它 scheme fail closed、file-only protocol.handle、HTTP(S) Session 拒绝及真实 gate 可观察性证据。 |
+| #4 P2 | D1; 1.2/1.3; raw-markup Scenario | 新增依赖 raw CSS/HTML props 命名规则：unsafeCSS 只能是同一仓库常量，prerenderedHTML 缺席或显式 reviewed binding。 |
+| #5 P2 | D10/Q9; 2.10; diff Scenario | 增补五类 worker 入口/挂载/option guard；reviewed producer 限 main-thread context-free，worker activation 需独立决策与评审。 |
+| #6 P2 | D10; 2.10; diff Scenario | 指定 bun.lock + frozen-lockfile + 全 anchors 断言为 pin；禁平面 core override，解释历史 pnpm metadata 不作为该机制。 |
+| #7 P2 | D5/D6/D7; 3.6/4.1/4.8/5.2; navigation/storage Scenarios | 指定 main close()、不设置 waitForBeforeUnload、isDestroyed 复核与撤销；加入无 renderer 协作销毁和重新 admission 用例。 |
+| #8 P2 | D8/D10; 4.4/4.5/4.8/5.2; attachment/permission Scenarios | 全 Session deny handlers 与 gate 同步在 partition 返回前安装；覆盖首响应下载与早期权限检查。 |
+| #9 P2 | D9/Migration; 4.7/6.3; LBW capture Scenario | 截图改由 main capturePage，绑定 generation 并在投影前检查 identity/type/dimensions/bytes；删除 renderer fallback。 |
+| #10 P2 | 3.1; runtime ADDED requirement; evidence matrix | 指定纯函数、import type 与注入工厂；为全部 10 个 ADDED Scenarios 各列 fixture/runtime 映射。 |
+| #11 P2 | 0.3/0.5; proposal/verification status; STATUS | 0.5 重新未勾选；统一 confirmed content 0c805564 / recording commit 95831ab6，明确本轮需重确认并再定向 R3。 |
+| #12 P3 | 第三项 disclosure; 1.2 | 说明 react-scan 在两个 CSP-covered modes 已不可用；仅无 ELECTRON_RENDERER_URL 的 dev 路径可加载。 |
+| #13 P3 | D1/Threat Model; 1.3; runtime source list | plugin-controlled UI manifests 归为 validator-owned、schema-bounded React text；更丰富 surface 必须重审分类。 |
+| #14 P3 | D3; 2.4; highlighted Scenario | 正向验证完整唯一 pre/code wrapper；保留 mismatch 与 dual-code 截断用例。 |
+| #15 P3 | D6; 3.2/4.8; admission Scenario | 明确 acquire-if-unowned、同窗幂等、其它活窗拒绝，并覆盖三个状态。 |
+| #16 P3 | D5; 3.5; attachment Scenario | 统一全局 web-contents-created hook + per-window registry；partition mismatch 必拒绝，forcing 仅 best effort。 |
+| #17 P3 | proposal Impact compatibility | 明确地址栏/diagnostics 不显示 query/fragment，main 保留 reload 目标，无 raw-URL fallback。 |
+| #18 P3 | 4.8/5.2/5.3; evidence matrix | 4.8 仅 doubles 顺序/决策；真实请求、读取、销毁和 OS 观察由 5.2/5.3 承担，mock 不得冒充。 |
+
+### Revision gates and source identity
+
+- Task 0.3: **CHANGES_REQUESTED at 95831ab6 → fixes at `<SHA>` → targeted R3
+  pending**. `<SHA>` is this document's single revision commit, whose parent
+  is `95831ab6055411b95d308f8042e530f98687ef6b` and whose exact subject is
+  `docs(openspec): address exact-package R3 review for renderer hardening`.
+  A Git commit cannot contain its own final hash; the final handoff supplies
+  it. Resolve the immutable revision from this checkout with:
+  `git log --format=%H --fixed-strings --grep='docs(openspec): address exact-package R3 review for renderer hardening' -1`.
+- Task 0.5 is reopened: **confirmed content 0c805564, recording commit 95831ab6;
+  re-confirmation required after this revision**. The new D7 option (a) is
+  drafted pending Owner decision, while the three earlier disclosure
+  acknowledgements retain their pending status. No confirmation is inferred.
+- Next gate: Owner D7 decision + 0.5 revised exact-package confirmation, then
+  targeted fresh R3 for that same SHA covering both P1s and folded P2s. Record
+  any confirmation-only commit separately from confirmed content. Task 0.4
+  remains complete for its recorded baseline and must be rechecked if that
+  baseline advances. Implementation stays after `add-linked-worktree-admission`.
+- Scope: this change directory and its STATUS row only; zero product/test/
+  dependency/living-spec edits. No merge, push or remote operation. No
+  implementation/GUI pass or independent review of this successor is claimed.
+
+### Documentation validation — 2026-09-08 revision
+
+Run in the required worktree using the main checkout's existing OpenSpec
+binary, without installing or changing dependencies:
+
+```text
+$ /home/chen/projects/agent-code-for-me/node_modules/.bin/openspec validate add-renderer-untrusted-content-hardening --strict --no-interactive
+Change 'add-renderer-untrusted-content-hardening' is valid
+exit 0
+
+$ /home/chen/projects/agent-code-for-me/node_modules/.bin/openspec validate --all --strict --no-interactive
+[all 54 change/spec items printed with checkmarks]
+Totals: 54 passed, 0 failed (54 items)
+exit 0
+
+$ git diff --check
+[no output]
+exit 0
+```
+
+The receipt-inclusive working diff and the single revision commit are checked
+with these commands; post-commit whitespace uses `git diff --check HEAD^ HEAD`
+to inspect the actual committed revision. The final handoff binds their output
+to the resulting full commit SHA; no same-SHA independent review is claimed.
+
+Repository-required `bun run check:full`: **exit 1** at `lint:changed`, because
+`node_modules/.bin/biome` is absent from this worktree. Architecture, tests,
+TypeScript and build were not reached; this is not a full-check pass. The
+direct strict target/all and diff checks above passed independently. No
+dependency install or product edit was performed to work around this
+environment limitation. Product targeted/manual/GUI tasks remain unrun and
+open because this dispatch is documentation-only.
+
+Consistency audit: **PASS**, 18/18 disposition rows, 10/10 ADDED Scenario
+fixture mappings, all four required D7/Q5/Impact/LBW Owner-pending markers,
+0.3/0.5 unchecked and checked tasks 0.1/0.2/0.4/2.11 (**4/46**). Exactly seven
+documentation files differ from `95831ab6`; only this change directory and its
+single STATUS row are touched. The eight defaults and Q9 compromise were not
+reopened; D7 origin granularity is the newly pending Owner decision.

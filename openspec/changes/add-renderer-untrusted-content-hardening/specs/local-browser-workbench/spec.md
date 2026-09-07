@@ -12,6 +12,12 @@ navigation; it does not claim to block page-controlled fetch, form, WebSocket,
 image/ping, frame, or other subresource egress to remote or other loopback
 services.
 
+File-origin granularity follows the pending D7 draft: a unique origin per
+admitted document and a main-validated relative-asset scope defaulting to the
+document-directory subtree. This does not claim confidentiality for in-scope
+files; their read/egress consequence remains visible, including when the
+directory is the worktree root. These details await exact-package confirmation.
+
 #### Scenario: User opens a localhost page
 
 - **WHEN** the user enters `localhost`, `127.0.0.1`, `[::1]`, or an allowed
@@ -60,6 +66,38 @@ services.
 - **AND** it SHALL re-verify the binding before use and fail closed on a
   terminal symlink or identity mismatch; `path.resolve()` alone SHALL NOT be
   treated as canonicalization or authorization
+
+#### Scenario: An admitted file attempts cross-file or cross-admission reads
+
+**Owner decision pending (2026-09-08): origin granularity option (a) drafted as recommended default; alternatives (b) narrowed subtree on fixed origin / (c) whole-root + fourth disclosure**
+
+- **WHEN** previewed file content attempts fetch, XHR, iframe `contentDocument`,
+  or `script src` access to another file or admission
+- **THEN** main SHALL bind `locus-preview://<per-admission-random>.preview.local/`
+  to that document plus its declared relative-asset scope (default: its
+  directory subtree under the registered worktree), preserving relative URLs
+  while isolating admissions by origin
+- **AND** the scope SHALL be frozen by main; out-of-scope paths and other
+  hosts SHALL be denied for every resource type. A different top-level document
+  SHALL require fresh admission/origin; in-scope asset reads remain permitted
+  and SHALL NOT be represented as confidential or protected from egress
+- **AND** `protocol.handle` SHALL be bound only to file-admission Sessions,
+  with live admission/host/scope/descriptor checks on every request and all
+  Session deny handlers installed before partition return. HTTP(S)-admission
+  Sessions SHALL leave the scheme unhandled and reject it in the request gate
+- **AND** file admissions SHALL use that exact scheme/host/port tuple as their
+  admitted origin, with document-path checks for top-level requests; other
+  observable schemes SHALL fail closed except accepted HTTP(S) subresource
+  egress, with D7's non-network postconditions separately enforced
+- **AND** the scheme SHALL use exactly D7's standard/secure/supportFetchAPI/
+  corsEnabled true and bypassCSP/allowServiceWorkers/stream/codeCache false,
+  without permissive CORS responses or origin relaxation
+- **AND** 4.8 SHALL cover policy verdicts with doubles, and real Electron
+  5.2/5.3 SHALL record actual read/execution results for allowed in-scope and
+  relative-URL controls, denied out-of-scope worktree files and other hosts,
+  scheme rejection from HTTP(S) guests, and whether custom-scheme requests
+  reach `webRequest`; protocol-handler enforcement SHALL NOT depend on that
+  observation being positive
 
 #### Scenario: Safe file broker is unavailable
 
@@ -128,6 +166,10 @@ dispatch to the `<webview>` element itself is not claimed to be suppressed.
   guest/navigation results; the selected-element probe SHALL be in the same
   repository-owned shared closed set
 - **AND** it SHALL capture a screenshot if available only after applying the
-  approved identity, type, dimension, and byte bounds
+  approved identity, type, dimension, and byte bounds: main-owned
+  `webContents.capturePage()` SHALL validate the current guest/navigation
+  generation before capture and on completion, reject stale or oversized
+  results, and apply bounds before projection reaches renderer state; no
+  renderer `webview.capturePage()` fallback SHALL remain
 - **AND** it SHALL minimize, secret-redact, and bound the DOM summary before
   returning it to local renderer state for review

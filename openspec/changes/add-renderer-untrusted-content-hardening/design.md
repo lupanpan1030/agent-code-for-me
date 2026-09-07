@@ -5,6 +5,9 @@ DIRECTION+IMPLEMENTATION APPROVED on 2026-09-05. Source edits remain gated on
 tasks 0.2/0.3/0.4/0.5. The 2292d36a pre-implementation review accepted
 feasibility (0.2) and requested security touch-ups (0.3); Approval Question 9
 below received Owner approval for the compromise on 2026-09-07. This package
+carries the 2026-09-08 exact-package R3 fixes after **CHANGES_REQUESTED at
+95831ab6** (2 P1 / 9 P2 / 7 P3). D7 origin granularity is drafted, pending
+Owner decision; task 0.5 re-confirmation and same-SHA targeted R3 remain open. It
 carries forward only the unfinished renderer and webview work routed out of archived
 `update-trpc-capability-boundary`; it does not reopen the capability, consent,
 or router-boundary decisions assigned to follow-up B.
@@ -72,6 +75,11 @@ sink.
   exposure exists only in development (see Threat Model).
 - No app-document remote-image egress isolation: allowed HTTPS markdown images
   can disclose IP/timing without a click; this is an explicit residual.
+- No confidentiality claim for files inside a file admission's declared asset
+  scope: D7's pending option (a) defaults to the document-directory subtree.
+  Those bytes are readable by that document and can leave through the accepted
+  egress residual; per-admission origins do not make in-scope assets private.
+  Whole-worktree serving is not the drafted default.
 - Monaco file-viewer and xterm terminal dependency-internal DOM hardening
   beyond existing controls is an explicit residual under the approved Q9
   compromise, tracked in Yellow
@@ -85,6 +93,10 @@ The attacker may control:
 
 - repository files, chat/model output, MCP and tool input/output, markdown raw
   HTML, fenced code, Mermaid source, and URLs embedded in those values;
+- plugin-controlled UI manifests, currently classified-safe schema-bounded
+  text through `src/shared/plugin-controlled-ui.ts#parseControlledUiManifest`
+  validation and React text
+  rendering; adding richer surface types requires revisiting that classification;
 - a local HTTP server or file preview, including its JavaScript, redirects,
   popup/download attempts, permission requests, storage, and returned
   diagnostics;
@@ -118,6 +130,17 @@ random 127.0.0.1 port (per-endpoint Bearer token), and development Vite/HMR.
 No unauthenticated state-changing Locus endpoint was identified; presence
 fingerprinting and nuisance probes remain possible. Codex app-server uses
 stdio and is not a loopback listener.
+
+File-preview origin granularity is pending Owner decision in D7. Option (a)
+isolates admissions by origin and serves only the admitted document and its
+declared relative-asset scope (default: its directory subtree), not the whole
+registered worktree. A hostile document can still read other files inside that
+scope and exfiltrate them through the accepted egress residual. Out-of-scope
+files and another admission's host must be denied even to fetch/XHR, iframe,
+and script requests. The former fixed-origin whole-root draft would make all
+worktree bytes same-origin readable; that consequence is not an approved Q5
+default. Today's `file://` cross-file behavior and the proposed scheme's actual
+enforcement require separate runtime observation, not an assumed baseline.
 
 Allowed HTTPS images in privileged-document markdown also permit remote beacon
 requests and IP/timing disclosure. This app-document egress residual is
@@ -227,6 +250,17 @@ It scans at least:
 - dynamic script element creation, `script.src` assignment, remote dynamic
   `import()`, and `importScripts`.
 
+Add a named-rule class for raw-markup/raw-CSS props passed to DOM-producing
+dependencies. At both diff option sites, `unsafeCSS` must be the single
+repository constant identifier `PIERRE_DIFFS_THEME_CSS`, not an expression or
+interpolated template; its declaration must remain app-owned constant CSS with
+no untrusted interpolation. This same constant is the source of truth for D2's
+diff-profile byte comparison. Assert `prerenderedHTML` is absent at the diff
+call sites; introducing it requires an explicit reviewed-producer binding and
+behavior gate. Match these dependency props/options as named constructs, not
+as a broad string scan. Classify the plugin-controlled UI validator/text path
+separately from its non-executable denylist literals.
+
 The scanner includes negative self-test fixtures so a new or disguised
 value-bearing sink makes the test fail. Constant empty clears may be separately
 classified, though replacing them with DOM removal APIs is preferred. The
@@ -282,7 +316,7 @@ no element with `aria-label="Mermaid chart"` mounts.
 The `renderer-html-policy.ts` owner defines the rendered-DOM oracle profiles;
 a single associated test helper, proposed as
 `tests/helpers/renderer-executable-markup-oracle.ts`, implements them for
-markdown static/streaming, all Shiki consumers, Mermaid and editor suites.
+markdown static/streaming, all Shiki consumers, Mermaid, diff and editor suites.
 Tests walk the actual untrusted output subtree (not source strings),
 including namespace-aware SVG/MathML nodes and the diff path's Shadow DOM
 descendants, and fail on:
@@ -290,7 +324,8 @@ descendants, and fail on:
 - `script`, `iframe`, `object`, `embed`, `frame`, `base`, `meta`, `link`,
   `foreignObject`, any `animate*`, `set`, or `maction` element; `style` is also
   forbidden except for the single value-profile-validated Mermaid paint
-  element under the Mermaid profile and D3's pre-render `secure` rule;
+  element under the Mermaid profile and D3's pre-render `secure` rule, or the
+  exact app-owned constant style under the strictly enumerated diff profile below;
 - any attribute whose normalized name begins with `on`, or any `srcdoc`
   attribute; and
 - `href`, `src`, `xlink:href`, `action`, `formaction`, `poster`, or `data`
@@ -317,11 +352,31 @@ tables, code, reviewed HTTP(S)/mailto links and safe HTTP(S) images where suppor
 positive control alongside every negative suite. Executable data/blob payloads
 are not accepted as formatting compatibility exceptions.
 
+The **diff profile** has exactly these allowances per rendered `<FileDiff>` or
+`<PatchDiff>` subtree: (a) exactly one `<style data-unsafe-css>` element, whose
+text must be byte-equal to `wrapUnsafeCSS(PIERRE_DIFFS_THEME_CSS)` computed from
+the repository constant; any other `style` element, missing marker, or text
+drift fails; (b) `href` on a `use` element must match
+`^#diffs-icon-[a-z0-9-]+$` and occur only inside a separator/expand-button
+subtree; (c) the adopted constructed stylesheet is not an element and needs
+no allowance. The constant CSS is **app-owned input, never producer output**.
+All other nodes/attributes/URLs, including every Shadow DOM descendant, keep
+the global oracle rules. Fixtures use Locus's actual options:
+`disableFileHeader: true`, `unsafeCSS: PIERRE_DIFFS_THEME_CSS`, default
+`hunkSeparators` (`line-info`), and `expandUnchanged: false`, with benign
+collapsed multi-region diffs exercising separators/expand buttons as well as
+hostile cases. Retain negative controls for missing/duplicate styles, marker
+or CSS drift, and fragment hrefs outside the permitted pattern/subtrees.
+No arbitrary producer CSS or fragment href exception is added.
+
 ### D3. Shiki extraction fails closed
 
 Keep one `highlightCode()` owner, remove the raw-code fallback, and make output
 parsing failure return escaped text or a bounded failure value. Add hostile code
-tests and a forced extraction-mismatch fixture. Callers may not each add their
+tests, a forced extraction-mismatch fixture, and a forced dual-`<code>` fixture.
+Accept only exactly one top-level `<pre><code>` wrapper with the entire output
+consumed; a non-greedy match that silently drops a second/nested code block is
+an output-shape failure. Callers may not each add their
 own escape/sanitizer branch. The tests must cover code originating from chat,
 repository views, MCP results, and tool output because those consumers share
 the same producer but exercise different components. Replace the existing
@@ -403,7 +458,11 @@ rich paste/drop rejection and native undo/redo are GUI task 5.1 evidence.
 ### D5. One main-process guest-policy owner guards every attachment
 
 Create `src/main/windows/local-browser-guest-policy.ts` and install it from
-`main.ts` for each privileged app window. It owns:
+the main composition before any webContents can be created. A single
+`app.on('web-contents-created')` hook installs attachment guards on every
+potential embedder, using the per-window registry to admit only live privileged
+app windows; unregistered embedders fail closed. `main.ts` registers each app
+window with that owner before loading its app document. It owns:
 
 - pending preview admissions and guest identity;
 - `will-attach-webview` validation and effective web preferences;
@@ -412,8 +471,8 @@ Create `src/main/windows/local-browser-guest-policy.ts` and install it from
 - partition lifecycle and cleanup; and
 - minimized/redacted security diagnostics.
 
-Install the embedder listener immediately after BrowserWindow construction and
-before its app document can create a webview. `will-attach-webview` is the
+The global hook installs each embedder listener before its document can create
+a webview; a future window path cannot bypass registration. `will-attach-webview` is the
 attachment-time gate, not a pre-creation event: it consumes the one-shot pending
 admission, validates initial `src` and partition, and forces the effective
 preferences before the first guest load. Force `sandbox` and `contextIsolation`
@@ -429,11 +488,23 @@ partial denylist: `preload` and `additionalArguments` empty,
 `nodeIntegration`, `nodeIntegrationInSubFrames`, and
 `nodeIntegrationInWorker` false, `contextIsolation`, `sandbox`, and
 `webSecurity` true, `allowRunningInsecureContent` and `webviewTag` false, no
-popup grant, and the exact issued non-persistent partition. Any supplied value
+popup grant. Validate the element's partition against the exact pending
+admission and reject every mismatch; writing an effective partition is only
+best-effort reinforcement, never evidence that the attribute was overridden.
+Any supplied value
 outside that set is removed or rejects attachment; the decision and logs never
 include the capability value or raw page URL. The issued guest Session must
 also have zero registered preload scripts (`registerPreloadScript`/`setPreloads`);
 empty webPreferences alone does not prove preload absence.
+
+The main-owned fail-closed primitive throughout D5/D6/D7 is
+`guestWebContents.close()` with `waitForBeforeUnload` unset, followed by an
+`isDestroyed()` re-check and registry revocation. Invalidate admission authority
+immediately when teardown begins, including if close fails or destruction is
+not confirmed; never return a replacement or ask the renderer to perform the
+security action. Retain deny handlers, reject revival/reattach, and report a
+bounded failure if destruction cannot be confirmed. Real Electron 5.2/5.3 must
+prove main-alone destruction; no undocumented `destroy()` is assumed.
 
 This does not alter `main.ts`'s `sandbox: false` setting for the privileged app
 document. App CSP and app-window navigation handlers remain separate owners and
@@ -449,7 +520,9 @@ embedder from `IpcMainInvokeEvent.sender`, calls
 DB-registered chat/worktree through `resolveRegisteredChatWorktreeRoot` and
 normalizes the proposed URL before issuing a partition. Claiming is idempotent
 for the same window and denies another live-window owner with a bounded reason;
-it handles non-claiming chat-selection paths and first-preview IPC races.
+it may acquire an unowned chat (including after stale-owner cleanup). This
+explicit acquire-if-unowned behavior handles non-claiming chat-selection paths
+and first-preview IPC races; a fixture covers acquire/same-owner/other-live-owner.
 This cross-checks chat ownership; authorization derives from the live app-window
 sender and DB-registered chat/worktree, not from a renderer-named chat or the
 ownership map alone.
@@ -476,7 +549,9 @@ reuse.
 
 Non-persistent Electron Session objects may remain alive until process exit;
 Electron exposes no partition-destroy primitive. Teardown therefore means:
-immediately revoke registry/admission state, destroy the guest, stop/unregister
+immediately invalidate registry/admission authority, close the guest using
+D5's `guestWebContents.close()` (no `waitForBeforeUnload`), re-check
+`isDestroyed()` and revoke registry state, stop/unregister
 service workers where supported, best-effort clear storage/cache/auth state,
 and retain the Session's deny/webRequest handlers for its remaining lifetime.
 Partition names are never reused. The owner bounds both active and cumulative
@@ -499,6 +574,20 @@ The main guest owner's `will-navigate`/`will-frame-navigate` handlers are the
 sole source of minimized/redacted blocked-origin diagnostics. For HTTP(S), one
 admission fixes the exact normalized origin, including port. Another local
 origin requires a fresh user-entered admission.
+
+For a file admission, the admitted-origin value is exactly
+`locus-preview://<per-admission-random>.preview.local` (the scheme/host/port
+tuple fixed in main, not an assumed WHATWG custom-scheme `.origin` value).
+Observable `mainFrame` requests must match that origin and the admitted
+document path; opening a different document requires a fresh admission even
+within the same asset scope. HTTP(S) admissions use their normalized HTTP(S)
+origin. The Session gate cancels `locus-preview:` requests of every resource
+type on HTTP(S)-admitted Sessions, and on file-admitted Sessions rejects any
+other preview host or path outside that admission's scope. It cancels direct
+`file:` for every resource type. Other observable schemes fail closed except
+HTTP(S) subresource traffic under the already accepted egress residual; there
+is no allow-unknown-scheme branch. The explicit non-network postconditions
+below remain separate.
 
 Before main returns the unique partition, it creates/configures that Session
 and installs its sole `webRequest.onBeforeRequest` listener over `<all_urls>`.
@@ -534,14 +623,56 @@ replace the preinstalled request gate for programmatic network navigation. An
 unexpected disallowed postcondition destroys the guest and emits only a
 minimized diagnostic.
 
+Every D7 destruction uses D5's main-owned `guestWebContents.close()` with
+`waitForBeforeUnload` unset, `isDestroyed()` re-check, and registry revocation;
+renderer unmount/rollback is not the enforcement primitive.
+
 An admitted user-facing `file://` target is never handed to the guest. Main
 resolves the root through
-`src/main/lib/fs/registered-roots.ts:66-109`, then maps the relative target to a
-fixed-origin, Session-local `locus-preview://preview.local/...` URL. A protocol
-scheme with the minimum required standard/secure/fetch privileges is registered
-once before app readiness; the per-Session handler and root binding exist before
-the partition is returned. That handler serves top-level documents and relative
-assets. It extends the existing descriptor owner at
+`src/main/lib/fs/registered-roots.ts:66-109` and applies the following drafted
+origin and serving-scope contract.
+
+**Owner decision pending (2026-09-08): origin granularity option (a) drafted as recommended default; alternatives (b) narrowed subtree on fixed origin / (c) whole-root + fourth disclosure**
+
+Each admitted document is served from its own origin,
+`locus-preview://<per-admission-random>.preview.local/`. Main binds that random
+host to the admitted document plus its declared relative-asset scope, defaulting
+to the document's directory subtree within the DB-registered worktree. The host
+root represents the scope root; the initial document URL retains its encoded
+relative path beneath that root, so relative URLs keep their normal directory
+meaning. Main validates and freezes the scope at admission; renderer-supplied
+roots or guest requests cannot expand it. A different top-level document needs
+a fresh admission/origin. Another admission's host, paths outside this scope,
+ambiguous decoding, and traversal fail closed for every resource type.
+Files inside the declared scope remain readable by the admitted document and
+may be exfiltrated through the accepted egress residual; per-document origins
+isolate admissions, not individual assets within a declared scope. The default
+does not grant whole-worktree read unless the admitted document's directory is
+itself the worktree root, in which case that entire subtree is in scope and
+the same read/egress consequence must be visible at admission.
+
+Register `locus-preview` once before app readiness with these exact Electron
+`Privileges`: `standard: true` for hierarchical origins/relative URLs,
+`secure: true` for a secure scheme, `supportFetchAPI: true` for same-origin
+relative fetch, and `corsEnabled: true` to subject cross-origin requests to
+CORS; `bypassCSP`, `allowServiceWorkers`, `stream`, and `codeCache` are all
+`false`. No permissive CORS response or `document.domain` origin relaxation is
+allowed. Privilege registration alone grants no filesystem access.
+Bind `protocol.handle` only on a Session issued for a file admission, with its
+host/document/scope registry and all deny handlers ready before returning the
+partition. HTTP(S)-admission Sessions leave this scheme unhandled and reject
+it in the request gate; they never receive a worktree-serving handler.
+The protocol handler independently enforces the live admission, exact host,
+document/resource scope, and anchored read on every request, and rejects stale
+bindings; it is the file-serving enforcement owner even if the runtime does
+not route custom-scheme requests through `webRequest`. Tasks 4.8 and 5.2/5.3
+separately prove decisions and record whether `locus-preview:` reaches that
+gate, plus denial from HTTP(S)-admitted guests. No runtime observation is yet
+claimed. Cross-file fixtures cover fetch, XHR, iframe `contentDocument`, and
+`script src` for in-scope controls, out-of-scope worktree files, and another
+admission's host; record read/execution results, not merely CORS errors.
+
+The broker extends the existing descriptor owner at
 `src/main/lib/filesystem/stable-directory.ts:65-157,191-205`, rather than adding
 a competing backend. First `lstat` the DB-registered root and reject a final
 symlink or non-directory. `realpath`-canonicalize it (allowing stable symlinked
@@ -579,7 +710,8 @@ the trusted app-window handler, it does not call `shell.openExternal`.
 ### D8. Guest permissions and downloads default deny without changing app voice
 
 Each issued guest partition installs both Electron
-`setPermissionCheckHandler` and `setPermissionRequestHandler` before load, with
+`setPermissionCheckHandler` and `setPermissionRequestHandler` in the same
+pre-return Session configuration step as D7's request gate, with
 consistent default denial, explicitly including `openExternal`, plus
 `setDevicePermissionHandler(() => false)`. External protocols such as Locus
 and legacy deep links, mailto and vscode must not open an OS handler or publish
@@ -592,6 +724,14 @@ Electron's default first-device selection. `setDisplayMediaRequestHandler`
 returns no streams with `useSystemPicker: false`, unknown permission types fail
 closed, and no native prompt is shown. Session `will-download` cancels ordinary,
 redirected, and download-attribute downloads.
+
+Every Session-scoped deny handler (permission check/request, device grants,
+display-media, HID/serial/USB selectors and `will-download`) must be installed
+before the partition is returned. Guest WebContents handlers, including
+Bluetooth selection, remain in `did-attach-webview` with D5's late-handler
+failure rule. The first-request ordering fixture includes a first-response
+download and an early permission check; doubles establish ordering/verdicts,
+while 5.2/5.3 must observe actual prompt/download prevention.
 
 Handlers are partition-specific and must not be installed as a deny-all policy
 on `persist:main`, where
@@ -609,6 +749,13 @@ Main invokes all probes with `userGesture:false`; page-poisonable diagnostics
 must not gain transient user activation. Bind each request/result to the current
 guest and navigation generation; ignore a result from a destroyed, replaced,
 or navigated guest.
+
+Screenshot capture also moves into main: `webContents.capturePage()` is bound
+to the current admitted guest/navigation generation. Validate identity before
+capture and again on completion, then enforce the approved image type,
+dimension and byte bounds before any projection reaches renderer state.
+Stale, wrong-type or oversized images fail closed; no renderer
+`webview.capturePage()` fallback remains.
 
 Raw probe results remain in main. A single proposed
 `src/shared/local-browser-diagnostics-policy.ts` is a serializable shape and
@@ -665,6 +812,24 @@ controls. Mermaid additionally runs the pinned dependency through the actual
 component, checks body cleanup and identical inline/fullscreen output, then
 uses GUI observation for transient rendering effects.
 
+For Q9, the committed `bun.lock` plus `bun install --frozen-lockfile` is the
+pin of record. Retain a lockfile-assertion test for `@pierre/diffs@1.0.10`,
+`hast-util-to-html@9.0.5`, nested `shiki@3.21.0`, hoisted
+`@shikijs/core@3.21.0` / `@shikijs/engine-javascript@3.21.0`, and
+`@shikijs/transformers@3.22.0` with nested core/types `3.22.0` (plus the
+separate app Shiki `1.29.2` anchor). It fails on any version/resolution change.
+Top-level `overrides` may be used only where one global version is correct,
+such as `hast-util-to-html`; a flat `@shikijs/core` override is forbidden
+because it collapses the mixed resolution. The stale `pnpm.overrides` and
+`packageManager: pnpm@9.15.4` metadata are historical, not a pin mechanism for
+the Bun/CI path; this change does not rely on them or authorize package-manager
+migration. The reviewed diff producer is only the main-thread, context-free
+render path. A source-guard rule fails on import/mount/use of
+`@pierre/diffs/worker`, `worker-portable.js`, `WorkerPoolContextProvider`,
+`getOrCreateWorkerPoolSingleton`, or a `workerFactory` option. Enabling a worker
+pool bypasses the reviewed alias/serializer path and requires a new scope
+decision and its own producer review, even without a dependency change.
+
 The GUI matrix must demonstrate:
 
 - static/streaming markdown, Shiki, Mermaid (including themeCSS/stray style,
@@ -673,10 +838,19 @@ The GUI matrix must demonstrate:
 - **Question 9 approved diff-producer row:** hostile
   file names, hunk headers, line content and diff-text/HAST serialization
   breakouts through actual `<FileDiff>`/`<PatchDiff>` with Locus's shim/Vite
-  aliases. Pin `@pierre/diffs@1.0.10`, the actual mixed Shiki resolution recorded
+  aliases. Apply D2's strictly enumerated diff profile per rendered subtree:
+  exactly one `style[data-unsafe-css]` byte-equal to
+  `wrapUnsafeCSS(PIERRE_DIFFS_THEME_CSS)` from the repository constant;
+  `use[href]` matching `^#diffs-icon-[a-z0-9-]+$` only in separator/expand-button
+  subtrees; adopted constructed stylesheets are not elements and need no
+  allowance. The CSS is app-owned input, never producer output; all remaining
+  DOM including Shadow DOM keeps the global rules. Use `disableFileHeader: true`,
+  `unsafeCSS: PIERRE_DIFFS_THEME_CSS`, default `hunkSeparators` (`line-info`), and
+  `expandUnchanged: false`. Pin `@pierre/diffs@1.0.10`, the actual mixed Shiki resolution recorded
   in Question 9, and un-aliased `hast-util-to-html@9.0.5` (the production-bundle
   load-bearing escaper); dependency, shim, and four-specifier alias changes
-  share the upgrade gate. A bun-test fixture must bind all four specifiers to
+  share the lockfile-assertion/upgrade gate above, together with the worker-path
+  activation source guard. A bun-test fixture must bind all four specifiers to
   the shim and assert its `createPlainHast` text-node shape before hostile cases;
   an unbound test runs nested real Shiki 3 and is not evidence for the shim.
   Production bundle uses the shim; development pre-bundle `resolveId` behavior
@@ -691,6 +865,13 @@ The GUI matrix must demonstrate:
   denial, or an honest unsupported-platform result; Windows packaged preview
   remains disabled with the current backend. Stable symlinked parent-prefix
   canonicalization is a positive control on supported hosts;
+- per-admission preview origins and declared-scope cross-file fetch/XHR/iframe
+  `contentDocument`/`script src` results (allowed in-scope controls, denied
+  out-of-scope/other-host requests), custom-scheme gate observability and
+  HTTP(S)-admission scheme denial, under D7's pending option (a);
+- main-alone `close()`/`isDestroyed()` teardown and no revival or reattachment
+  without fresh generation/admission; pre-return ordering for all Session
+  handlers, including first-response download and early permission denial;
 - non-network about/data/blob/javascript cases and external-protocol
   `locus://`/development/legacy/mailto/vscode top-level, `location.href` and
   `_blank` probes, with no claimed webRequest observation, OS handler launch,
@@ -784,6 +965,12 @@ guest confinement.
   which may reduce file-preview availability. The broker prevents path
   retargeting outside the root, not concurrent mutation of the same admitted
   inode; all served bytes therefore remain untrusted renderer content.
+- **File-origin and asset-scope trade (Owner decision pending).** D7 option (a)
+  uses separate admission origins with a default document-directory subtree.
+  In-scope files remain readable/exfiltratable, including the whole worktree
+  when its root is that directory. Scope must be visible, frozen and enforced;
+  another host/out-of-scope read must fail. Cross-file GUI evidence is required;
+  neither random hosts nor CORS alone proves path confinement.
 - **Dependency-internal producers.** The shim-backed diff path, Monaco and
   xterm must not disappear from the inventory; the approved Q9 compromise
   includes diff reviewed-producer coverage and tracks Monaco/xterm as explicit
@@ -814,7 +1001,8 @@ partition authority/URL-key remount, direct guest `file://` loading, and rendere
 listeners for raw
 `console-message`, `did-fail-load`, `page-title-updated`, `will-navigate`,
 `did-navigate`, in-page navigation, and any page-controlled URL/title/text event
-payloads, and duplicate guest policy in the same implementation. Replace those raw event paths with the sole main-owned
+payloads, renderer `webview.capturePage()` (replace with bounded main capture),
+and duplicate guest policy in the same implementation. Replace those raw event paths with the sole main-owned
 post-`did-attach-webview` guest `webContents` relay after
 minimization/redaction/bounds; do not leave a renderer fallback listener.
 
@@ -879,6 +1067,9 @@ exact-package confirmation:
   acknowledgement of this developer-feature removal. D1, the proposal, tasks
   1.2/6.3, and the migration list describe that proposed choice; they do not
   record it as already approved.
+  The loader is already CSP-blocked in both CSP-covered modes, so removal
+  costs no working functionality there; its only loading path is a development
+  run without `ELECTRON_RENDERER_URL` (outside those CSP-covered modes).
 
 ### Approved defaults 1–8
 
@@ -911,6 +1102,11 @@ exact-package confirmation:
    (including nsis/portable) until a Yellow handle-relative backend extension
    lands; supported platforms still require canonical root/descriptor identity
    re-verification, including roots with symlinked parent prefixes.
+   **Owner decision pending (2026-09-08): origin granularity option (a) drafted as recommended default; alternatives (b) narrowed subtree on fixed origin / (c) whole-root + fourth disclosure**
+   D7's per-admission host and default document-directory asset scope are new
+   draft details, not part of the confirmed default. In-scope files remain
+   readable and subject to the accepted egress residual; see D7 for the
+   worktree-root-directory case and required cross-file evidence.
 6. **Guest permissions:** approve deny-all guest permissions, device selectors,
    display capture, downloads, and popups, while leaving the trusted app Session
    under its own policy.
@@ -931,8 +1127,10 @@ Reason: the diff path includes Locus-owned Shiki shim/Vite alias code and a
 load-bearing HAST serializer, so its producer binding, exact dependency pins,
 and adversarial upgrade gate belong in this change; Monaco/xterm DOM
 producers remain explicit residuals with a separately scoped Yellow follow-up.
-The eight approved defaults remain in force. Source edits still require final
-targeted re-review → 0.4 rebase → 0.5 strict/exact-package confirmation.
+The eight approved defaults remain in force. After the 95831ab6 exact-package
+CHANGES_REQUESTED verdict, source edits require D7's pending origin decision,
+0.5 strict/exact-package re-confirmation, and targeted fresh R3 on that same
+successor SHA; recheck 0.4 if the implementation-start baseline advances.
 The options below are retained as decision history; only the compromise is selected.
 
 **Verified dependency resolution and runtime producer binding.** At the
@@ -997,7 +1195,10 @@ resolution above, and the un-aliased load-bearing escaper
 `hast-util-to-html@9.0.5`. Retain one adversarial black-box fixture group through
 the real shim-backed `<FileDiff>`/`<PatchDiff>` path with all four aliases bound
 and asserted as above, and add its D10 row and dependency/shim/alias
-upgrade/source guard. Apply (b) to Monaco/xterm: explicit Threat Model
+upgrade/source guard. The 2026-09-08 revisions define the diff profile,
+lockfile-assertion pin mechanism and worker-activation guard in D2/D10; they
+await exact-package re-confirmation and do not reopen this coverage choice.
+Apply (b) to Monaco/xterm: explicit Threat Model
 residuals plus Yellow
 [TICKET-125](../../../docs/tickets/TICKET-125-monaco-xterm-dom-producers.md).
 Numbering was checked on 2026-09-07: main contains TICKET-124; TICKET-123
@@ -1009,6 +1210,8 @@ The diff-path Scenario is retained with only WHEN/THEN/AND bullets; its pending
 status paragraph is removed. Monaco/xterm remain outside that reviewed-producer
 scope. The three post-approval disclosures are **presented to Owner 2026-09-07
 (board §六); acknowledgement pending**, not confirmed by the Q9 decision.
-Obtain final targeted re-review of the revised exact SHA, then task 0.4 rebase
-and task 0.5 strict validation/exact-package confirmation before source edits;
-collect the three acknowledgements before 0.5 confirmation.
+Task 0.4's 2026-09-07 rebase remains recorded; recheck it if the baseline moves.
+Before source edits, resolve D7's pending origin decision, collect the three
+acknowledgements, re-run 0.5 strict validation/exact-package confirmation, then
+obtain targeted fresh R3 for that same revised SHA. Implementation stays queued
+after `add-linked-worktree-admission`.

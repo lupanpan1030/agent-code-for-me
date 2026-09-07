@@ -3,7 +3,12 @@
 ### Requirement: Untrusted Renderer Content Uses Reviewed Rendering Boundaries
 
 The renderer SHALL treat repository content, chat markdown, tool output, MCP
-output, highlighted code, and editable-content state as untrusted. Static and
+output, plugin-controlled UI manifests, highlighted code, and editable-content
+state as untrusted. Plugin-controlled UI manifests SHALL remain classified-safe
+only as schema-bounded text validated by
+`src/shared/plugin-controlled-ui.ts#parseControlledUiManifest`
+and rendered as React text; richer surface types SHALL revisit that producer
+classification. Static and
 streaming markdown raw HTML SHALL pass through one reviewed sanitizer/hardener
 policy with retained adversarial behavior tests. Every Locus-owned
 value-bearing raw-markup insertion SHALL appear in an exact source-guard
@@ -17,12 +22,13 @@ CSP SHALL block inline and remote script execution in production.
 
 Retained behavior suites SHALL share the rendered-DOM oracle specified by the
 `renderer-html-policy.ts` owner in design D2, with explicit profiles for markdown,
-highlighted code, Mermaid SVG, and the editor, implemented by the shared test
+highlighted code, Mermaid SVG, diff, and the editor, implemented by the shared test
 helper in D2. Within each untrusted-content subtree the oracle SHALL reject
 script/iframe/object/embed/frame/base/meta/link/
 foreignObject, animation (`animate*`/`set`), and MathML `maction` elements;
 `style` elements other than the single value-profile-validated Mermaid paint
-element allowed only by the Mermaid profile and its pre-render `secure` rule;
+element allowed only by the Mermaid profile and its pre-render `secure` rule,
+or the exact constant style allowed only by the diff profile below;
 `on*` attributes; `srcdoc`; and executable, encoded, or disallowed URL schemes in
 `href`, `src`, `xlink:href`, `action`, `formaction`, `poster`, or `data`.
 `javascript:`, `data:`, `vbscript:`, `file:`, and `blob:` URL values SHALL be
@@ -41,6 +47,19 @@ rendering so source directives cannot change styling before the transient
 mount. Unprovable suppression or failed CSS validation SHALL fail closed;
 unreviewed CSS-bearing attributes SHALL be stripped. No other `style` element
 SHALL be admitted by the Mermaid oracle.
+
+Per rendered `<FileDiff>`/`<PatchDiff>` subtree, the strictly enumerated diff
+profile SHALL require exactly one `<style data-unsafe-css>` element with text
+byte-equal to `wrapUnsafeCSS(PIERRE_DIFFS_THEME_CSS)` computed from the repository
+constant. Any other `style` element, missing marker or text drift SHALL fail.
+The constant CSS is app-owned input, never producer output. The profile SHALL
+allow `href` on `use` only when it matches `^#diffs-icon-[a-z0-9-]+$` inside a
+separator/expand-button subtree. Adopted constructed stylesheets are not
+elements and need no allowance. All remaining nodes, attributes and URLs,
+including every Shadow DOM descendant, SHALL retain the global oracle rules.
+Fixtures SHALL use Locus's actual option set: `disableFileHeader: true`,
+`unsafeCSS: PIERRE_DIFFS_THEME_CSS`, default `hunkSeparators` (`line-info`),
+and `expandUnchanged: false`.
 
 #### Scenario: Markdown active HTML and highlighted HTML sinks
 
@@ -74,6 +93,7 @@ SHALL be admitted by the Mermaid oracle.
   value-bearing direct DOM HTML assignment, `insertAdjacentHTML`, `srcDoc`,
   `document.write`, a contextual fragment, an equivalent raw-markup sink,
   dynamic script creation/`script.src`, remote `import()`, or `importScripts`
+  or raw-markup/raw-CSS props passed to a DOM-producing dependency
 - **THEN** the renderer source guard SHALL require an exact insertion-point
   entry naming its reviewed producer and adversarial behavior test or fail
   before merge
@@ -83,6 +103,12 @@ SHALL be admitted by the Mermaid oracle.
   `.ts`/`.tsx`/`.html`/`.js`/`.jsx`/`.mjs`/`.cjs` files, with negative fixtures
   for the scanned classes and a rule flagging new Shiki-API shims or Vite aliases
   into DOM-producing dependencies
+- **AND** a named dependency-prop rule SHALL require both diff `unsafeCSS`
+  arguments to be the single `PIERRE_DIFFS_THEME_CSS` constant identifier,
+  rejecting expressions/interpolated templates and untrusted interpolation in
+  its declaration; that same constant SHALL drive the diff-profile comparison.
+  `prerenderedHTML` SHALL be absent unless explicitly bound to a reviewed
+  producer and behavior gate; broad string scanning is not this named rule
 
 #### Scenario: Highlighted HTML reaches a raw insertion sink
 
@@ -92,6 +118,9 @@ SHALL be admitted by the Mermaid oracle.
   insertion boundary under the shared rendered-DOM oracle
 - **AND** a generator exception, output-shape mismatch, or extraction failure
   SHALL NOT fall back to inserting the original source as HTML
+- **AND** extraction SHALL positively validate exactly one top-level
+  `<pre><code>` wrapper and consume the complete output; forced-mismatch and
+  forced dual-`<code>` fixtures SHALL reject silent regex truncation
 
 #### Scenario: Dependency diff rendering is covered by the reviewed-producer contract
 
@@ -99,7 +128,15 @@ SHALL be admitted by the Mermaid oracle.
   Locus-owned `pierre-diffs-shiki-shim.ts` and its Vite aliases
 - **THEN** black-box hostile filename, hunk-header, line-content, and patch-text
   fixtures SHALL exercise that actual path and apply the shared rendered-DOM
-  oracle to its resulting DOM, including Shadow DOM
+  oracle's diff profile to its resulting DOM, including every Shadow DOM
+  descendant: exactly one `style[data-unsafe-css]` byte-equal to
+  `wrapUnsafeCSS(PIERRE_DIFFS_THEME_CSS)`, and `use[href]` matching
+  `^#diffs-icon-[a-z0-9-]+$` only in separator/expand-button subtrees; adopted
+  constructed stylesheets are not elements and need no allowance. The CSS is
+  app-owned input, never producer output; all other DOM keeps the global rules
+- **AND** both fixtures SHALL use `disableFileHeader: true`,
+  `unsafeCSS: PIERRE_DIFFS_THEME_CSS`, default `hunkSeparators` (`line-info`),
+  and `expandUnchanged: false`, including benign collapsed multi-region controls
 - **AND** `@pierre/diffs@1.0.10` (`bun.lock:476`), un-aliased
   `hast-util-to-html@9.0.5` (`:1360`, the load-bearing production-bundle
   `toHtml` escaper), and the actual Shiki resolution SHALL be exact-pinned:
@@ -108,6 +145,12 @@ SHALL be admitted by the Mermaid oracle.
   and `@shikijs/transformers@3.22.0` (`:628`) with nested core/types `3.22.0`
   (`:2328,2330`); the Shiki subtree is installed but aliased away from the
   production diff path, and remains inventoried for test/type resolution
+- **AND** the pin of record SHALL be committed `bun.lock` plus
+  `bun install --frozen-lockfile`, enforced by a retained lockfile-assertion
+  test for all those anchors and separate app Shiki `1.29.2`. A flat
+  `@shikijs/core` override SHALL NOT collapse the mixed resolution; top-level
+  overrides may select only globally correct versions. Historical pnpm
+  metadata SHALL NOT be treated as this Bun pin mechanism
 - **AND** the fixtures and design D10 row SHALL gate dependency, Locus shim,
   and four-specifier Vite alias changes. A `bun test --isolate` `<FileDiff>`/
   `<PatchDiff>` fixture SHALL bind `shiki`, `shiki/core`,
@@ -116,6 +159,11 @@ SHALL be admitted by the Mermaid oracle.
   before hostile cases; an unbound test runs nested real Shiki 3 and SHALL NOT
   count as shim evidence. A built-renderer fixture with the same binding
   assertion is an alternative
+- **AND** the reviewed producer SHALL be limited to the main-thread,
+  context-free path. A source-guard rule SHALL fail on import/mount/use of
+  `@pierre/diffs/worker`, `worker-portable.js`, `WorkerPoolContextProvider`,
+  `getOrCreateWorkerPoolSingleton`, or a `workerFactory` option; enabling the
+  worker pool requires a new scope decision and separate producer review
 - **AND** implementation evidence SHALL prove producer binding in development
   GUI track 5.1 and packaged track 5.3. Development pre-bundling's use of the
   plugin `resolveId` hook is unverified at the draft baseline and SHALL NOT be
@@ -239,6 +287,19 @@ requests SHALL NOT be described as authenticated access; a controlled auth/
 gateway probe SHALL demonstrate rejection without state changes. Codex
 app-server uses stdio rather than an additional loopback listener.
 
+The following file-origin details implement the draft in D7 and remain pending
+Owner confirmation of the revised exact package: each document has a separate
+admission origin and declared relative-asset scope, defaulting to its directory
+subtree. In-scope files remain readable and subject to the accepted egress
+residual, including the entire worktree if that directory is the root.
+
+The guest-policy owner SHALL expose pure injectable decisions for effective
+preferences, admission consume/replay, request/permission/download verdicts
+and teardown transitions, using Electron `import type` and injected factories.
+Each ADDED Scenario SHALL have a double-driven fixture mapping plus any required
+runtime evidence in `verification.md`; mock handler registration alone SHALL
+NOT satisfy runtime observations.
+
 #### Scenario: Renderer attempts an unsafe or unregistered guest attachment
 
 - **WHEN** a webview attachment has no live main-issued admission, selects an
@@ -254,9 +315,18 @@ app-server uses stdio rather than an additional loopback listener.
 - **AND** `will-attach-webview` SHALL explicitly force sandbox and context
   isolation, independent of the embedder's `sandbox:false`; the issued guest
   Session SHALL have no registered preload scripts
+- **AND** a main `app.on('web-contents-created')` hook installed before any
+  webContents creation SHALL guard all potential embedders using the per-window
+  registry; unregistered embedders SHALL be denied. Partition mismatch with
+  the pending admission SHALL reject attachment; writing a partition is only
+  best-effort reinforcement, not proof that an attribute was overridden
 - **AND** the first-request fixture SHALL prove Session-gate installation
   precedes any guest request; `did-attach-webview` handlers are installed after
   navigation starts and SHALL NOT substitute for that preinstalled gate
+- **AND** all Session-scoped permission/device/display/selector/download deny
+  handlers SHALL be installed in that same step before partition return;
+  first-response download and early permission fixtures SHALL prove the order
+  with doubles and actual denial separately in runtime tracks 5.2/5.3
 
 #### Scenario: Renderer requests or replays a preview admission
 
@@ -265,7 +335,8 @@ app-server uses stdio rather than an additional loopback listener.
 - **THEN** main SHALL derive the live app-window sender from the IPC event,
   atomically call `windowManager.claimChat(chatId, senderWindow.id)`, and deny
   with a bounded reason if another live window owns the chat; a same-window
-  claim SHALL be idempotent
+  claim SHALL be idempotent and an unowned chat MAY be acquired, including
+  after stale-owner cleanup; fixtures SHALL cover all three ownership states
 - **AND** authorization SHALL derive from that live app-window sender and the
   DB-registered chat/worktree resolved by main; the claim is an ownership
   cross-check, not independent filesystem authority
@@ -297,6 +368,14 @@ app-server uses stdio rather than an additional loopback listener.
   redirect request; runtime fixtures SHALL observe direct `file:` cancellation
   across main-frame, subframe, XHR, script, and image positions and each
   redirect hop, including a redirect to another loopback port
+- **AND** file-admission requests SHALL use the exact
+  `locus-preview://<per-admission-random>.preview.local` scheme/host/port tuple
+  as admitted origin plus the admitted document path; other preview hosts or
+  out-of-scope paths SHALL fail closed, and HTTP(S)-admitted Sessions SHALL
+  reject every `locus-preview:` request. Other observable schemes SHALL fail
+  closed except HTTP(S) subresources under the accepted egress residual;
+  runtime fixtures SHALL record custom-scheme gate observability without
+  assuming `protocol.handle` requests pass through `webRequest`
 - **AND** the renderer SHALL retain no `<webview>.loadURL` escape hatch;
   non-network top-level schemes SHALL instead be governed by the main guest's
   navigation listeners, explicit `openExternal` permission denial, and
@@ -309,16 +388,37 @@ app-server uses stdio rather than an additional loopback listener.
   the inherited-origin cases
 - **AND** an unexpected disallowed committed postcondition SHALL destroy the
   guest and record only a bounded diagnostic rather than rely on renderer
-  rollback
+  rollback: main SHALL use `guestWebContents.close()` with
+  `waitForBeforeUnload` unset, re-check `isDestroyed()` and revoke registry
+  state, invalidating authority immediately on teardown. No replacement or
+  renderer fallback SHALL bypass unconfirmed destruction
 
 #### Scenario: Preview attempts file-root escape
 
 - **WHEN** a `file://` target uses a renderer-forged root, traversal, decoding
   ambiguity, or a path inside the registered root that resolves through a
-  symlink outside it
+  symlink outside it, or preview content attempts to read another file or
+  another admission's host
 - **THEN** the guest SHALL NOT load direct `file://` content; main SHALL resolve
   the owning chat worktree and map an admitted target to a Session-local
-  fixed-origin preview protocol
+  per-admission preview origin `locus-preview://<per-admission-random>.preview.local/`
+- **AND** main SHALL bind that host to the admitted document plus declared
+  relative assets (default: document-directory subtree), preserve relative
+  URLs, freeze the main-validated scope and deny another host or out-of-scope
+  path for every resource type. Another top-level document SHALL need fresh
+  admission; the scope's read/egress consequence SHALL be visible, including
+  when the default document directory is the worktree root
+- **AND** only file-admission Sessions SHALL bind `protocol.handle`, before
+  partition return, enforcing live admission/host/scope/anchored reads on every
+  request independently of `webRequest` observability; HTTP(S)-admission
+  Sessions SHALL leave the scheme unhandled and reject it at the request gate
+- **AND** scheme privileges SHALL be exactly D7's standard/secure/
+  supportFetchAPI/corsEnabled true and bypassCSP/allowServiceWorkers/stream/
+  codeCache false, with no permissive CORS response or origin relaxation
+- **AND** 4.8 doubles SHALL test scope/verdicts, while 5.2/5.3 SHALL record actual
+  cross-file fetch, XHR, iframe `contentDocument`, and `script src` results for
+  allowed in-scope controls, denied out-of-scope worktree files and other hosts,
+  plus HTTP(S)-guest scheme denial and custom-scheme gate observability
 - **AND** main SHALL realpath-canonicalize the DB-registered root and require
   matching directory `dev`/`ino` identities from the registered path's `lstat`,
   the canonical path, and the opened anchor, re-verifying the binding before
@@ -360,6 +460,8 @@ app-server uses stdio rather than an additional loopback listener.
   rejecting callback, display selection SHALL return no stream without a
   system-picker bypass, and the download SHALL be cancelled
 - **AND** no operating-system prompt or file write SHALL occur
+- **AND** every Session-scoped deny handler SHALL be ready before partition
+  return, including for an early permission check or first-response download
 - **AND** external-protocol probes SHALL cause no OS handler launch or
   `mcp-import:preview` push
 
@@ -373,6 +475,10 @@ app-server uses stdio rather than an additional loopback listener.
 - **AND** stale, cross-embedder, expired, or conflicting admission reuse SHALL
   fail closed; teardown SHALL revoke registry state, destroy the guest, attempt
   storage/cache/service-worker cleanup, and never reuse the partition
+- **AND** destruction SHALL use main-owned `guestWebContents.close()` with
+  `waitForBeforeUnload` unset, an `isDestroyed()` re-check and registry
+  revocation per D5; runtime evidence SHALL prove main-alone destruction and
+  that renderer revival/reattachment requires fresh generation/admission
 - **AND** the system SHALL NOT claim that Electron destroyed a non-persistent
   Session object that can remain until process exit
 
