@@ -8,7 +8,7 @@ Updated: 2026-09-07 (Pacific/Auckland)
 
 | Change | State | Concrete next gate |
 | --- | --- | --- |
-| `add-renderer-untrusted-content-hardening` | APPROVED (eight defaults + Q9 compromise) | exact package ready — awaiting Owner confirmation; implementation queued after add-linked-worktree-admission |
+| `add-renderer-untrusted-content-hardening` | APPROVED (eight defaults + Q9 compromise); exact package `0c805564` confirmed by Owner 2026-09-07 | fresh-context R3 approval of the exact package (task 0.3) at implementation start; implementation queued after add-linked-worktree-admission |
 
 Parked proposals are indexed in [`deferred/README.md`](deferred/README.md) and
 do not appear in the active list.

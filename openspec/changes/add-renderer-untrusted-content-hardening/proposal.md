@@ -1,6 +1,6 @@
 # Change: Harden untrusted renderer content and local-browser guests
 
-> Status: **DIRECTION+IMPLEMENTATION APPROVED (eight defaults 2026-09-05 + Q9 compromise 2026-09-07) — source edit still gated on 0.2/0.3/0.4/0.5**.
+> Status: **DIRECTION+IMPLEMENTATION APPROVED (eight defaults 2026-09-05 + Q9 compromise 2026-09-07); EXACT PACKAGE `0c805564` CONFIRMED by Owner 2026-09-07 (task 0.5) — source edit still gated on task 0.3 (fresh-context R3 approval of this exact package at implementation start); implementation queued after `add-linked-worktree-admission`**.
 > Owner accepted the eight recommended defaults late on 2026-09-05, conditional
 > on the feasibility/R3 reviews, implementation-start rebase, strict validation,
 > and exact-package confirmation. Feasibility 0.2 is `REVIEW_APPROVED` at

@@ -45,13 +45,16 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       needed. Only STATUS Updated conflicts occurred; keep 2026-09-07, main's
       archive and this branch's active row. Recheck if the implementation-start
       baseline advances again.
-- [ ] 0.5 Run strict OpenSpec validation and obtain explicit Owner `APPROVED`
+- [x] 0.5 Run strict OpenSpec validation and obtain explicit Owner `APPROVED`
       for the exact rebaselined package before the first source edit. The
       strict portion passed after the 0.4 rebase (see `verification.md`);
       exact package awaiting Owner confirmation. This checkbox stays open.
       The three post-approval Owner acknowledgements and exact-package R3
       approval remain required before confirmation. Each disclosure is
       presented to Owner 2026-09-07 (board §六); acknowledgement pending.
+      Done 2026-09-07: strict validation passed at `0c805564`; Owner confirmed the
+      exact rebased package the same day. Task 0.3 (fresh R3 on this exact package)
+      remains the last gate before the first source edit.
 
 ## 1. Characterization and renderer source guard (original 2.2)
 

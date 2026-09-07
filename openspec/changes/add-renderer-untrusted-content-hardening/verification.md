@@ -1,6 +1,6 @@
 # Verification: add-renderer-untrusted-content-hardening
 
-> Status: **APPROVED (eight defaults + Q9 compromise) — exact package ready, awaiting Owner confirmation**.
+> Status: **APPROVED (eight defaults + Q9 compromise) — exact package `0c805564` CONFIRMED by Owner 2026-09-07 (task 0.5); task 0.3 fresh R3 on this package remains before source edit**.
 > Owner direction/implementation approval was given late 2026-09-05, conditional
 > on tasks 0.2/0.3/0.4/0.5. Feasibility 0.2 is `REVIEW_APPROVED` at `2292d36a`;
 > R3 targeted re-review is `REVIEW_APPROVED` for `96ca3afe` only; task 0.3
@@ -259,7 +259,7 @@ single successful track cannot stand in for another track.
 - Approval Question 9: **Owner APPROVED the compromise, 2026-09-07**;
   three post-approval disclosures presented 2026-09-07; acknowledgement pending.
 - Task 0.4: COMPLETE, rebased onto `9cff32da` and anchors rechecked 2026-09-07.
-- Task 0.5: strict portion PASSED; exact package awaiting Owner confirmation.
+- Task 0.5: strict portion PASSED; exact package `0c805564` confirmed by the Owner on 2026-09-07 (coordination session relayed the confirmation; board §六).
   Three disclosure acknowledgements remain pending; implementation is queued
   after `add-linked-worktree-admission`.
 - Codex `IMPLEMENTATION_VERIFIED`: NOT APPLICABLE / NOT RUN.
