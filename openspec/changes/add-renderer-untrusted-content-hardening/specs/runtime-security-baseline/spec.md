@@ -17,9 +17,12 @@ CSP SHALL block inline and remote script execution in production.
 
 Retained behavior suites SHALL share the rendered-DOM oracle specified by the
 `renderer-html-policy.ts` owner in design D2, with explicit profiles for markdown,
-highlighted code, Mermaid SVG, and the editor. Within each untrusted-content
-subtree the oracle SHALL reject script/iframe/object/embed/frame/base/meta/link/
-style/foreignObject, animation (`animate*`/`set`), and MathML `maction` elements;
+highlighted code, Mermaid SVG, and the editor, implemented by the shared test
+helper in D2. Within each untrusted-content subtree the oracle SHALL reject
+script/iframe/object/embed/frame/base/meta/link/
+foreignObject, animation (`animate*`/`set`), and MathML `maction` elements;
+`style` elements other than the single value-profile-validated Mermaid paint
+element allowed only by the Mermaid profile and its pre-render `secure` rule;
 `on*` attributes; `srcdoc`; and executable, encoded, or disallowed URL schemes in
 `href`, `src`, `xlink:href`, `action`, `formaction`, `poster`, or `data`.
 `javascript:`, `data:`, `vbscript:`, `file:`, and `blob:` URL values SHALL be
@@ -27,8 +30,17 @@ rejected in these untrusted subtrees. URL decisions SHALL use parsed DOM values
 and the attribute's context: reviewed HTTP(S) links/images, `mailto:` links,
 reviewed relative links resolved against the trusted base, and same-SVG local
 fragment references are permitted only by the corresponding explicit profile.
-Safe formatting and approved diagram styling SHALL have positive controls;
-app-owned styling is distinct from attacker-controlled `<style>` content.
+Safe formatting and approved diagram styling SHALL have positive controls.
+The Mermaid profile SHALL retain the single Mermaid-generated `<style>` only
+after reviewed CSS value-profile validation: every selector SHALL be scoped to
+the diagram id namespace; `url(`, `@import`, `expression(`, `behavior:`, root-level
+`position:fixed`/`position:absolute`, and external references SHALL be forbidden.
+The pinned configuration's existing `secure` list SHALL include `themeCSS`,
+`themeVariables`, `theme`, `fontFamily`, `altFontFamily`, and `htmlLabels` before
+rendering so source directives cannot change styling before the transient
+mount. Unprovable suppression or failed CSS validation SHALL fail closed;
+unreviewed CSS-bearing attributes SHALL be stripped. No other `style` element
+SHALL be admitted by the Mermaid oracle.
 
 #### Scenario: Markdown active HTML and highlighted HTML sinks
 
@@ -96,10 +108,27 @@ exact implementation package is confirmed. No option is selected by this text.
 - **THEN** black-box hostile filename, hunk-header, line-content, and patch-text
   fixtures SHALL exercise that actual path and apply the shared rendered-DOM
   oracle to its resulting DOM, including Shadow DOM
-- **AND** `@pierre/diffs` and its resolved Shiki 3 subtree SHALL be pinned to
-  exact reviewed versions, with the fixtures and design D10 row serving as a
-  required upgrade gate; Shadow DOM SHALL NOT be treated as a script/CSP
-  boundary
+- **AND** `@pierre/diffs@1.0.10` (`bun.lock:476`), un-aliased
+  `hast-util-to-html@9.0.5` (`:1360`, the load-bearing production-bundle
+  `toHtml` escaper), and the actual Shiki resolution SHALL be exact-pinned:
+  nested `shiki@3.21.0` under @pierre/diffs (`:2300`), hoisted
+  `@shikijs/core@3.21.0` / `@shikijs/engine-javascript@3.21.0` (`:618,620`),
+  and `@shikijs/transformers@3.22.0` (`:628`) with nested core/types `3.22.0`
+  (`:2328,2330`); the Shiki subtree is installed but aliased away from the
+  production diff path, and remains inventoried for test/type resolution
+- **AND** the fixtures and design D10 row SHALL gate dependency, Locus shim,
+  and four-specifier Vite alias changes. A `bun test --isolate` `<FileDiff>`/
+  `<PatchDiff>` fixture SHALL bind `shiki`, `shiki/core`,
+  `@shikijs/engine-javascript`, and `@shikijs/transformers` to the shim before
+  importing the diff renderer and assert its `createPlainHast` text-node shape
+  before hostile cases; an unbound test runs nested real Shiki 3 and SHALL NOT
+  count as shim evidence. A built-renderer fixture with the same binding
+  assertion is an alternative
+- **AND** implementation evidence SHALL prove producer binding in development
+  GUI track 5.1 and packaged track 5.3. Development pre-bundling's use of the
+  plugin `resolveId` hook is unverified at the draft baseline and SHALL NOT be
+  inferred from production bundling or a bound bun test
+- **AND** Shadow DOM SHALL NOT be treated as a script/CSP boundary
 
 #### Scenario: Mentions editor receives browser rich content or restores content
 
@@ -109,10 +138,15 @@ exact implementation package is confirmed. No option is selected by this text.
 - **THEN** the editor itself SHALL prevent browser rich-content insertion,
   consume only explicit `text/plain` through the safe builder or reject it,
   and reject HTML-only clipboard/drop data
-- **AND** one component-owned `beforeinput` allowlist SHALL admit only
-  `insertText`, `insertCompositionText`, `insertParagraph`/`insertLineBreak`,
-  `deleteContent*`, and canonical `historyUndo`/`historyRedo` operations
-  with their browser default prevented; all other input types,
+- **AND** one component-owned `beforeinput` allowlist SHALL admit ordinary
+  `insertText`, `insertCompositionText`, and all `delete*` inputTypes, including
+  `deleteByCut`, `deleteByDrag`, `deleteWord*`, and `deleteSoftLine*`.
+  `insertParagraph`/`insertLineBreak` SHALL prevent browser default and insert
+  the newline through the safe text-node/`br` builder without `div` wrappers,
+  preserving non-shift Enter submit. `historyUndo`/`historyRedo` SHALL also
+  prevent browser default and route through canonical state restoration;
+  ordinary text/IME input and admitted deletions SHALL NOT be blanket-prevented
+- **AND** all other input types,
   including `insertFromPaste`, `insertFromDrop`, `insertLink`,
   `insertReplacementText`, and `format*`, SHALL be prevented and handled only
   by the explicit safe insertion path if supported
@@ -137,16 +171,23 @@ exact implementation package is confirmed. No option is selected by this text.
   `background:url(...)`, or `@import`), or a stray SVG `<style>` element
 - **THEN** the renderer SHALL use Mermaid strict mode as the load-bearing
   control while Mermaid transiently mounts content under `document.body`
-- **AND** the source/configuration boundary SHALL suppress or reject attacker
-  themeCSS/theme overrides before that transient mount, failing closed when
-  suppression cannot be proved
+- **AND** before `mermaid.render`, the pinned configuration's existing `secure`
+  list SHALL be extended with `themeCSS`, `themeVariables`, `theme`, `fontFamily`,
+  `altFontFamily`, and `htmlLabels`; source directives SHALL NOT change styling
+  before that transient mount, failing closed when suppression cannot be proved
 - **AND** it SHALL sanitize the resulting SVG before insertion into either the
-  inline or fullscreen privileged app document, removing untrusted `<style>`
-  content and applying only reviewed app-owned diagram CSS
+  inline or fullscreen privileged app document, retaining only the single
+  Mermaid-generated `<style>` whose content passes the reviewed CSS value
+  profile: selectors scoped to the diagram id namespace; no `url(`, `@import`,
+  `expression(`, `behavior:`, root-level `position:fixed`/`position:absolute`,
+  or external references. Unreviewed CSS-bearing attributes SHALL be stripped;
+  any other `style` element or failed profile validation SHALL fail closed
+- **AND** a positive control SHALL prove safe diagram styling survives under
+  that profile; themeCSS/overlay/url/@import/stray-style fixtures SHALL remain
 - **AND** an end-to-end fixture using pinned Mermaid through MermaidBlock's
   actual render path SHALL prove that the shared rendered-DOM oracle holds for
-  returned/sanitized SVG and that nothing executable remains under
-  `document.body` after rendering; the identical sanitized output SHALL reach
+  returned/sanitized SVG and that no executable or unreviewed CSS artifact
+  remains under `document.body` after rendering; the identical sanitized output SHALL reach
   both inline and fullscreen sinks
 - **AND** DOMPurify SHALL remain the load-bearing sanitizer before the
   defensive DOMParser attribute pass; a parser-error pass-through SHALL NOT

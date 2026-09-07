@@ -26,7 +26,7 @@ active-change conflict onto the implementation-start SHA.
 | Markdown | Static and streaming `Streamdown` mounts are at `src/renderer/components/chat-markdown-renderer.tsx:460-469,693-700`. `bun.lock` resolves Streamdown 2.1.0 and its default raw/sanitize/harden chain; `package.json` declares the wider `^2.0.1` range. | No retained malicious-HTML or executable-URL render test covers either app path; dependency behavior is carrying a security statement without a local upgrade gate. |
 | React raw HTML | `tests/renderer-html-sinks.test.ts:27-68` permits five files. Current source has six `dangerouslySetInnerHTML` insertions: chat markdown (one), Mermaid (two), and three tool/message views. Mermaid alone has a dedicated sanitizer. | The guard exempts whole files, not individual sinks, and does not bind each sink to a reviewed producer or test its rendered behavior. |
 | Shiki HTML-string insertions | The four inventoried non-Mermaid raw insertions consume `highlightCode()` in `src/renderer/lib/themes/shiki-theme-loader.ts:255-292`; chat markdown also has a local `escapeHtml` pre-highlight/plaintext fallback at `chat-markdown-renderer.tsx:24-26,90-92`. The locked Shiki output escapes sampled hostile text. | `<code>` extraction failure returns raw `code` at line 287; local escaping must route through the reviewed-content owner. This is not the only Shiki-API path in the app. |
-| Dependency-internal DOM producers of untrusted content | `@pierre/diffs` `FileDiff`/`PatchDiff` render repository diffs through the Locus-owned `src/renderer/lib/vendor/pierre-diffs-shiki-shim.ts` and `electron.vite.config.ts` aliases. Its live `createPlainHast` uses text nodes; local `codeToHtml`/`escapeHtml` is re-exported but not used by the live diff render path. `@pierre/diffs` 1.0.10 has its own `shiki ^3` subtree (locked 3.21.0), beside app Shiki 1.29.2. Monaco renders repository files; xterm renders hostile PTY output. `diff-view-highlighter.ts` constructs a `getAST` adapter with no callers. | Library DOM writes and Shadow DOM are outside the source-only raw-sink scan; Shadow DOM is not a script/CSP boundary. Coverage/pins/upgrade evidence and explicit residuals need the Owner's Question 9 decision; no coverage option is selected here. |
+| Dependency-internal DOM producers of untrusted content | In the production renderer bundle, `@pierre/diffs` `FileDiff`/`PatchDiff` render repository diffs through the Locus-owned `src/renderer/lib/vendor/pierre-diffs-shiki-shim.ts` and the four-specifier alias in `electron.vite.config.ts:10-37`. Its live `createPlainHast` uses text nodes; `codeToHtml` is re-exported but unused by the diff render path, while `escapeHtml` is private (`shim:207,225`). The load-bearing production-bundle escaper is un-aliased `hast-util-to-html@9.0.5` (`bun.lock:1360`). `@pierre/diffs@1.0.10` (`:476`) resolves nested `shiki@3.21.0` (`:2300`), hoisted `@shikijs/core@3.21.0` / `@shikijs/engine-javascript@3.21.0` (`:618,620`), and `@shikijs/transformers@3.22.0` (`:628`) with nested core/types `3.22.0` (`:2328,2330`), beside app Shiki 1.29.2 (`:1978`). This installed Shiki subtree is aliased away from the production diff path; development pre-bundle binding is unverified and bun tests require explicit binding (Question 9). Monaco renders repository files; xterm renders hostile PTY output. `diff-view-highlighter.ts` constructs a `getAST` adapter with no callers. | Library DOM writes and Shadow DOM are outside the source-only raw-sink scan; Shadow DOM is not a script/CSP boundary. Question 9 gates coverage and exact pins for `@pierre/diffs`, the resolved Shiki subtree and `hast-util-to-html@9.0.5`, plus dependency/shim/four-specifier-alias upgrades; no coverage option is selected here. |
 | Mentions editor | Programmatic rebuild uses text nodes / `textContent` in `src/renderer/features/agents/mentions/agents-mentions-editor.tsx:74-253`; production callers install `handlePasteEvent`, which normally pastes `text/plain`. | Undo and redo restore captured DOM through non-empty `.innerHTML` at `:991` and `:1019`. The current paste helper prevents default only for images or non-empty `text/plain`, so HTML-only data can retain the browser's default contentEditable insertion. Neither path has retained adversarial coverage. This is an unreviewed sink, not a claimed current exploit. |
 | Main app document | `main.ts:447-474` sets Node integration off, context isolation and web security on, main sandbox off for electron-trpc, `webviewTag` on, and `persist:main`. CSP is installed at `:482-487`; app-window popup/navigation/redirect guards are at `:573-607`. | App-window handlers and main-frame CSP do not establish a policy for guest webContents. The main sandbox constraint is not the guest sandbox decision. |
 | Local Browser | The renderer derives a non-persistent chat partition at `local-browser-workbench.tsx:89-92`, validates/rolls back top-level navigation at `:157-213`, runs fixed diagnostic scripts at `:111-119,268-305`, and creates the sole webview at `:449-464`. | Partition derivation can collide after filtering/truncation and has no lifecycle owner. There is no main-owned attach, guest navigation/redirect, bridge/preload, permission, popup, download, or cleanup policy. Renderer-supplied roots are only lexically checked. Full URL, console, DOM, and selection data also lack one pre-renderer secret-minimization owner. |
@@ -66,9 +66,10 @@ sink.
 - No claim of guest network-egress isolation. Exact-origin top-level navigation
   is enforced, but remote or other-loopback fetch/form/WebSocket/image/ping/
   frame traffic remains possible unless the Owner separately expands scope.
-  The eight-default approval accepts this residual, including Locus's own
-  state-validated MCP/OAuth callback listeners and Bearer-authenticated provider
-  gateway; Vite/HMR exposure exists only in development (see Threat Model).
+  Locus's own state-validated MCP/OAuth callback listeners and Bearer-authenticated
+  provider gateway fall within the accepted residual class; they are named here
+  for Owner acknowledgement under the post-approval disclosures below. Vite/HMR
+  exposure exists only in development (see Threat Model).
 - No app-document remote-image egress isolation: allowed HTTPS markdown images
   can disclose IP/timing without a click; this is an explicit residual.
 - Dependency-internal DOM producer coverage is pending Question 9. If option
@@ -92,7 +93,8 @@ The attacker may control:
 - dependency-internal DOM producers of untrusted content: `@pierre/diffs`
   through Locus's Shiki shim/Vite alias, Monaco files, and xterm PTY streams.
   Shadow DOM is not a script/CSP boundary (Shadow DOM 不是脚本/CSP 边界).
-  Current diff controls are text-node HAST, default `toHtml` escaping, production
+  Current diff controls are text-node HAST, un-aliased `hast-util-to-html@9.0.5`
+  default `toHtml` escaping in the production bundle, production
   CSP and `DiffErrorBoundary`; exact pinning and coverage remain gated on
   Question 9. Under (b), these controls accompany an explicit diff residual;
   under the compromise, only Monaco/xterm remain residual, with Yellow tracking;
@@ -224,10 +226,12 @@ It scans at least:
 
 The scanner includes negative self-test fixtures so a new or disguised
 value-bearing sink makes the test fail. Constant empty clears may be separately
-classified, though replacing them with DOM removal APIs is preferred. Remove
-the `agents-debug-tab.tsx` unpkg react-scan script loader during implementation;
-no new runtime dependency or remote-script exception is introduced. Its absence
-is an explicit guard fixture. Add an inventory alarm for any new Shiki-API
+classified, though replacing them with DOM removal APIs is preferred. The
+recommended default, pending Owner acknowledgement in the post-approval
+disclosures, is to remove the `agents-debug-tab.tsx` unpkg react-scan script
+loader during implementation; no new runtime dependency or remote-script
+exception is introduced. Its absence is an explicit guard fixture for that
+choice. Add an inventory alarm for any new Shiki-API
 shim or Vite alias into a DOM-producing dependency. Conditional on Question 9
 including the diff path, bind the existing alias/shim to the reviewed diff
 entry and its behavior/upgrade gate. An inventory alarm alone does not select
@@ -263,7 +267,8 @@ default.
 At pinned 2.1.0, supplying `rehypePlugins` replaces rather than merges defaults.
 The explicit chain is `[rehypeRaw, [rehypeSanitize, reviewedSchema],
 [harden, reviewedOptions]]`: `reviewedSchema` derives from `defaultSchema`
-imported from `rehype-sanitize` (no extra dependency), and harden receives
+imported from `rehype-sanitize` (no new package enters the tree; a direct exact
+declaration is still required), and harden receives
 reviewed non-wildcard protocol/image/link options. Current harden wildcard
 prefixes/protocols are not the load-bearing sanitizer; `rehype-sanitize`'s
 schema is. Parity characterization covers the remark chain too, including GFM
@@ -271,15 +276,18 @@ and breaks. Both wrapper paths retain the app `code`/`pre` overrides so
 Streamdown's built-in Mermaid raw sink stays dormant; a fixture asserts that
 no element with `aria-label="Mermaid chart"` mounts.
 
-A single owner-associated test helper, proposed as
-`tests/helpers/renderer-executable-markup-oracle.ts`, defines the rendered-DOM
-oracle for markdown static/streaming, all Shiki consumers, Mermaid and editor
-suites. Tests walk the actual untrusted output subtree (not source strings),
+The `renderer-html-policy.ts` owner defines the rendered-DOM oracle profiles;
+a single associated test helper, proposed as
+`tests/helpers/renderer-executable-markup-oracle.ts`, implements them for
+markdown static/streaming, all Shiki consumers, Mermaid and editor suites.
+Tests walk the actual untrusted output subtree (not source strings),
 including namespace-aware SVG/MathML nodes and, when Question 9 includes the
 diff path, its Shadow DOM descendants, and fail on:
 
 - `script`, `iframe`, `object`, `embed`, `frame`, `base`, `meta`, `link`,
-  `style`, `foreignObject`, any `animate*`, `set`, or `maction` element;
+  `foreignObject`, any `animate*`, `set`, or `maction` element; `style` is also
+  forbidden except for the single value-profile-validated Mermaid paint
+  element under the Mermaid profile and D3's pre-render `secure` rule;
 - any attribute whose normalized name begins with `on`, or any `srcdoc`
   attribute; and
 - `href`, `src`, `xlink:href`, `action`, `formaction`, `poster`, or `data`
@@ -291,10 +299,18 @@ diff path, its Shadow DOM descendants, and fail on:
 
 The Mermaid profile may retain only validated same-SVG fragment references
 needed for diagram paint; this does not authorize navigable URLs or weaken its
-existing href stripping. Generated Shiki span styles and app-controlled
-Mermaid paint use separate reviewed value profiles, rejecting remote CSS URLs
-and active/overlay constructs. The safe-format matrix (emphasis, tables, code,
-reviewed HTTP(S)/mailto links and safe HTTP(S) images where supported) is a
+existing href stripping. The Mermaid profile permits no `style` element other
+than the single value-profile-validated Mermaid paint element: selectors are
+scoped to the diagram id namespace; `url(`, `@import`, `expression(`, `behavior:`,
+root-level `position:fixed`/`position:absolute`, and external references are
+forbidden. D3 requires the pinned `secure` list to include `themeCSS`,
+`themeVariables`, `theme`, `fontFamily`, `altFontFamily`, and `htmlLabels` before
+rendering; unprovable source-override suppression or failed CSS validation
+fails closed. Generated Shiki span styles use their own reviewed value profile,
+rejecting remote CSS URLs and active/overlay constructs; unreviewed CSS-bearing
+attributes are stripped. Mermaid's retained paint has a positive control
+proving safe diagram styling survives. The safe-format matrix (emphasis,
+tables, code, reviewed HTTP(S)/mailto links and safe HTTP(S) images where supported) is a
 positive control alongside every negative suite. Executable data/blob payloads
 are not accepted as formatting compatibility exceptions.
 
@@ -310,21 +326,30 @@ the same producer but exercise different components. Replace the existing
 owner. Diff shim and dormant HAST paths stay separately inventoried under D1
 and their Question 9 gates; they are not claimed consumers of `highlightCode`.
 
-Mermaid remains its own reviewed adapter: forbid returned `style` elements,
-strip unreviewed CSS-bearing attributes, and reapply only app-owned diagram
-CSS. Attacker-controlled `themeCSS`/theme overrides must not affect the
-transient render mount; the pinned configuration/source boundary must suppress
-or reject them before `mermaid.render`, failing closed if that cannot be
-proved. Test root `position:fixed`, background remote `url()`, `@import`, and
-stray returned `style` in addition to script/link payloads. Strict mode is
+Mermaid remains its own reviewed adapter. Before `mermaid.render`, extend the
+pinned configuration's existing `secure` list with `themeCSS`, `themeVariables`,
+`theme`, `fontFamily`, `altFontFamily`, and `htmlLabels`. Source directives must
+not change styling before the transient render mount; fail closed if this
+cannot be proved. Retain the single Mermaid-generated `<style>` only when its
+content passes a reviewed CSS value profile: every selector is scoped to the
+diagram id namespace; no `url(`, `@import`, `expression(`, `behavior:`, root-level
+`position:fixed`/`position:absolute`, or external reference is permitted.
+Require a positive control proving that safe diagram styling survives;
+otherwise fail closed. The Mermaid oracle permits no `style` element other
+than this single value-profile-validated paint element. Strip unreviewed
+CSS-bearing attributes; do not insert output that fails the profile.
+
+Test `themeCSS`, root `position:fixed`/`position:absolute`, background remote
+`url()`, `@import`, and stray returned `style` in addition to script/link
+payloads. Strict mode is
 load-bearing during Mermaid's temporary `document.body` mount, while DOMPurify
 is load-bearing for returned SVG and the later DOMParser pass is defense in
 depth. End-to-end tests must use pinned Mermaid through MermaidBlock's actual
 render path with hostile flowchart/sequence `htmlLabels`, click directives,
 `javascript:` links, and themeCSS. Assert the shared executable-markup oracle
 on returned/sanitized SVG, no executable or unreviewed CSS artifacts from the
-render remaining under `document.body`, and the identical reviewed string at both inline and
-fullscreen sinks. Real GUI evidence also checks transient CSS effects and
+render remaining under `document.body`, and the identical reviewed string at
+both inline and fullscreen sinks. Real GUI evidence also checks transient CSS effects and
 cleanup; a literal-SVG sanitizer unit alone is insufficient.
 
 ### D4. Mentions undo/redo stores canonical editor state, not DOM HTML
@@ -341,10 +366,15 @@ reviewed mention elements. Remove the two non-empty `.innerHTML` assignments;
 do not retain a sanitizer-based restore beside a structured restore.
 
 The editor component owns browser rich-content insertion from every source,
-not only paste. One `beforeinput` allowlist permits `insertText`,
-`insertCompositionText`, `insertParagraph`/`insertLineBreak`, and reviewed
-`deleteContent*` operations; `historyUndo`/`historyRedo` route through the safe
-state builder with browser default prevented. Every other inputType is
+not only paste. One `beforeinput` allowlist permits ordinary `insertText`,
+`insertCompositionText`, and all `delete*` inputTypes (including `deleteByCut`,
+`deleteByDrag`, `deleteWord*`, and `deleteSoftLine*`; deletion cannot add markup).
+For `insertParagraph` and `insertLineBreak`, prevent browser default and insert
+the newline through the safe builder using text nodes/`br`, never browser-created
+`div` wrappers; preserve the existing non-shift Enter submit behavior.
+`historyUndo`/`historyRedo` also prevent browser default and route through the
+canonical state builder. This default-prevention rule does not blanket-prevent
+ordinary text/IME input or admitted deletions. Every other inputType is
 prevented, including `insertFromDrop`, `insertFromPaste` (handled by the paste
 gate), `insertLink`, `insertReplacementText`, and `format*`. Component-owned
 `onDrop`/`onDragOver` prevent browser rich insertion and either consume only
@@ -355,7 +385,8 @@ default. Optional parent handlers cannot be the security boundary.
 
 Tests cover ordinary typing/IME, line breaks, exact spacing, atomic mentions,
 undo/redo and forward/backward selection. Synthetic DragEvent/InputEvent
-fixtures include HTML-only/mixed drop, `insertLink` and `formatBold`; DOM must
+fixtures include HTML-only/mixed drop, `insertLink`, `formatBold`, the admitted
+deletion families, and safe-builder paragraph/line-break insertion; DOM must
 contain only text nodes, `br`, and reviewed mention spans under the shared
 oracle. In happy-dom, prove `defaultPrevented`, unchanged DOM for HTML-only
 input and safe-builder plain-text insertion (replace or stub `execCommand`).
@@ -635,9 +666,16 @@ The GUI matrix must demonstrate:
 - **Question 9 conditional row:** if (a) or the compromise is approved, hostile
   file names, hunk headers, line content and diff-text/HAST serialization
   breakouts through actual `<FileDiff>`/`<PatchDiff>` with Locus's shim/Vite
-  aliases; exact `@pierre/diffs` and resolved Shiki 3 subtree pins join the
-  upgrade gate. If (a) is approved in full, add Monaco file-viewer and hostile
-  PTY-stream xterm rendering fixtures too. Under (b), remove this reviewed-
+  aliases. Pin `@pierre/diffs@1.0.10`, the actual mixed Shiki resolution recorded
+  in Question 9, and un-aliased `hast-util-to-html@9.0.5` (the production-bundle
+  load-bearing escaper); dependency, shim, and four-specifier alias changes
+  share the upgrade gate. A bun-test fixture must bind all four specifiers to
+  the shim and assert its `createPlainHast` text-node shape before hostile cases;
+  an unbound test runs nested real Shiki 3 and is not evidence for the shim.
+  Production bundle uses the shim; development pre-bundle `resolveId` behavior
+  is unverified and must be proved in implementation GUI track 5.1, alongside
+  the packaged binding in 5.3. If (a) is approved in full, add Monaco file-viewer
+  and hostile PTY-stream xterm rendering fixtures too. Under (b), remove this reviewed-
   producer row and record explicit residuals; under the compromise, Monaco/
   xterm receive the Yellow residual receipt instead. No outcome is preselected;
 - guest bridge/Node-global absence and zero Session-level registered preloads;
@@ -748,8 +786,9 @@ guest confinement.
   and minimize/redact/bound all output in main before renderer or chat use.
 - **Guest network egress remains.** A page can contact remote or unrelated
   loopback services through non-top-level requests. Exact-origin navigation
-  reduces silent replacement but not egress/CSRF; the eight-default Owner
-  approval accepts this residual, now including the named local listeners.
+  reduces silent replacement but not egress/CSRF. The named local listeners
+  fall within the accepted residual class; they are named here for Owner
+  acknowledgement, not retroactively recorded as individually approved.
 - **Webview remains a powerful primitive.** Deny all unregistered attachments
   globally on app webContents and retain a future WebContentsView migration as
   a separate decision.
@@ -762,7 +801,8 @@ guest confinement.
 There is no database migration. Introduce characterization tests first, then
 the reviewed-content owner, then the main guest owner and renderer projection.
 Remove superseded whole-file exemptions, raw-code fallback, caller-local chat
-escaping, the remote react-scan script loader, raw-HTML undo state, default
+escaping, the remote react-scan script loader (recommended removal pending
+post-approval Owner acknowledgement), raw-HTML undo state, default
 rich-HTML paste/drop/other browser rich-content insertion, renderer-derived
 partition authority/URL-key remount, direct guest `file://` loading, and renderer
 listeners for raw
@@ -797,9 +837,9 @@ Electron process exits and therefore retain their deny handlers.
   (next after current TICKET-122); recheck the repository sequence before
   creating `docs/tickets/TICKET-123-dependency-dom-producer-residuals.md` in a
   separately authorized write scope. This document-only dispatch permits only
-  the change package and `openspec/STATUS.md`, so no ticket outside that scope
-  is created here. Its closure must define file-viewer and hostile-PTY behavior
-  evidence, dependency/upgrade ownership, and a scope decision without
+  the change package and its one status sentence in `docs/tickets/README.md`,
+  so no new ticket is created here. Its closure must define file-viewer and
+  hostile-PTY behavior evidence, dependency/upgrade ownership, and a scope decision without
   authorizing product implementation. Option (b) also records the diff residual.
 - **Red:** public/versioned API, database state, generic tRPC capability work,
   permission allowlisting for guests, remote subresource firewalling,
@@ -812,8 +852,31 @@ Electron process exits and therefore retain their deny handlers.
 
 Questions 1–8: **Owner APPROVED all eight recommended defaults, 2026-09-05**.
 The disclosures below clarify their implementation and evidence without
-weakening those defaults. Source editing still requires tasks 0.2/0.3/0.4/0.5;
-Question 9 is a separate, unresolved coverage decision.
+weakening those defaults; they require Owner acknowledgement and are not
+retrospectively covered by that approval. Source editing still requires tasks
+0.2/0.3/0.4/0.5; Question 9 is a separate, unresolved coverage decision.
+
+### Post-approval disclosures for Owner acknowledgement (2026-09-06)
+
+All three acknowledgements are **PENDING** and must be recorded with the
+Question 9 decision packet before task 0.5 exact-package confirmation:
+
+- **Q4 named listeners:** MCP auth callback localhost:21321 (dev 21322), OAuth
+  127.0.0.1:8914, the Bearer-authenticated random-port provider gateway, and
+  development Vite/HMR fall within the accepted guest-egress residual class.
+  Their concrete exposure and state/Bearer controls are newly named for Owner
+  acknowledgement; the 2026-09-05 approval did not name these endpoints.
+- **Q5 win32 availability:** the existing descriptor owner has no win32
+  backend, so the proposed fail-closed behavior disables file preview on every
+  win32 packaged target, including nsis/portable. HTTP(S) preview remains
+  available; a handle-relative backend extension needs separate approval.
+- **Developer react-scan loader:** removing the remote unpkg loader in
+  `agents-debug-tab.tsx` is the recommended default, pending Owner
+  acknowledgement of this developer-feature removal. D1, the proposal, tasks
+  1.2/6.3, and the migration list describe that proposed choice; they do not
+  record it as already approved.
+
+### Approved defaults 1–8
 
 1. **Markdown owner:** approve exact Streamdown 2.1.0, one app wrapper, and an
    explicit reviewed rehype chain with every imported plugin exact/direct; any
@@ -829,7 +892,8 @@ Question 9 is a separate, unresolved coverage decision.
    `onBeforeRequest` gate and exact admitted top-level origin; explicitly accept
    that remote/other-loopback subresource, fetch, form, WebSocket, image/ping,
    and frame traffic remains possible and can have external/CSRF effects.
-   This includes Locus's state-validated MCP auth callback (21321; dev 21322),
+   Post-approval disclosure pending acknowledgement: the same residual class
+   includes Locus's state-validated MCP auth callback (21321; dev 21322),
    state-validated OAuth callback (8914), Bearer-authenticated random-port
    provider gateway, and development Vite/HMR; fingerprinting/nuisance probing
    remains possible, without an identified unauthenticated state-changing Locus
@@ -838,7 +902,8 @@ Question 9 is a separate, unresolved coverage decision.
    descriptor-anchored `locus-preview://` broker; accept fail-closed loss of
    file preview on platforms/filesystems lacking a proven safe-read backend and
    accept that containment does not freeze concurrent writes to the same inode.
-   With the existing descriptor owner, **file preview ships disabled on win32**
+   Post-approval availability disclosure pending acknowledgement: with the
+   existing descriptor owner, **file preview ships disabled on win32**
    (including nsis/portable) until a Yellow handle-relative backend extension
    lands; supported platforms still require canonical root/descriptor identity
    re-verification, including roots with symlinked parent prefixes.
@@ -860,22 +925,56 @@ Question 9 is a separate, unresolved coverage decision.
 recommended defaults remain in force. This question does not select a coverage
 option or authorize source edits.
 
+**Verified dependency resolution and runtime producer binding.** At the
+`04193a4b` documentation baseline, `bun.lock:476` resolves `@pierre/diffs@1.0.10`;
+its installed Shiki dependencies are nested `shiki@3.21.0` under `@pierre/diffs`
+(`:2300`), hoisted `@shikijs/core@3.21.0` (`:618`) and
+`@shikijs/engine-javascript@3.21.0` (`:620`), and hoisted
+`@shikijs/transformers@3.22.0` (`:628`) with nested `@shikijs/core@3.22.0`
+(`:2328`) / `@shikijs/types@3.22.0` (`:2330`). App Shiki is separately 1.29.2
+(`:1978`); this is not a uniformly 3.21.0 subtree.
+
+Production renderer bundling aliases exactly `shiki`, `shiki/core`,
+`@shikijs/engine-javascript`, and `@shikijs/transformers` for @pierre/diffs
+importers to the Locus shim (`electron.vite.config.ts:10-37`). The installed
+Shiki subtree is therefore aliased away from this production path, but remains
+inventoried for test/type resolution. The load-bearing production-bundle
+escaper is **un-aliased `hast-util-to-html@9.0.5`** (`bun.lock:1360`) `toHtml()`
+over the shim's text-node HAST, followed by @pierre/diffs' DOM writes.
+`codeToHtml` is re-exported but unused by that render path; `escapeHtml` is
+private. Development pre-bundling's use of the plugin `resolveId` hook is
+**unverified** (no `optimizeDeps` configuration or inspected pre-bundle cache);
+implementation must prove the development binding in GUI track 5.1 and the
+production binding in packaged track 5.3. Production alias behavior does not
+prove development behavior.
+
+The `<FileDiff>`/`<PatchDiff>` black-box fixture group in `bun test --isolate`
+must explicitly bind all four Vite-aliased specifiers to the shim, for example
+with `mock.module` in an isolated test file before importing the diff renderer,
+and assert the shim's `createPlainHast` text-node output shape before hostile
+filename/hunk/line/patch cases. Without this binding it runs nested real Shiki 3,
+not the shim. Execution against the built renderer bundle is an alternative
+with the same binding assertion. An alias regression must fail the gate.
+
 **(a) Include all three paths in the reviewed-producer contract.** Add black-box
 adversarial rendering tests through `<FileDiff>`/`<PatchDiff>` with the Locus-owned
 Shiki shim and Vite aliases (hostile file names, hunk headers, line content and
 diff text that attempts HAST serialization breakouts), the Monaco file viewer,
-and hostile PTY streams through xterm. Exact-pin `@pierre/diffs` and its resolved
-`shiki ^3` subtree, and put dependency/shim/alias changes behind the retained
-upgrade gate. Add D10 rows and a source-guard alarm for new Shiki-API shims or
-Vite aliases into DOM-producing dependencies. Route or remove the shim's local
+and hostile PTY streams through xterm. Exact-pin `@pierre/diffs@1.0.10`,
+`hast-util-to-html@9.0.5` (the live un-aliased escaper), and the actual mixed
+Shiki resolution above. Put dependency changes, the Locus shim, and the exact
+four-specifier alias list behind the retained fixture/upgrade gate. Add D10
+rows and a source-guard alarm for new Shiki-API shims or Vite aliases into
+DOM-producing dependencies. Route or remove the shim's local
 `escapeHtml`/`codeToHtml` through the reviewed-content owner; classify the
 dormant `diff-view-highlighter.ts#getAST` adapter rather than calling it a live
 producer.
 
 **(b) Declare explicit residuals.** Record these dependency-internal paths in
 Threat Model residuals and Non-Goals, naming the diff path's current text-node
-HAST, default `toHtml` escaping, production CSP and `DiffErrorBoundary` controls.
-Still exact-pin `@pierre/diffs` as a low-cost drift control; retain its resolved
+HAST, un-aliased `hast-util-to-html@9.0.5` default `toHtml` escaping, production
+CSP and `DiffErrorBoundary` controls. Still exact-pin `@pierre/diffs` as a
+low-cost drift control; retain its resolved
 Shiki subtree in the dependency review inventory. Register a Yellow ticket for
 Monaco/xterm coverage and record the diff residual there. Remove the conditional
 reviewed-diff Scenario and D10 behavior row; do not describe residual paths as
@@ -883,21 +982,28 @@ reviewed producers.
 
 **统筹推荐默认值 = 折中 / Coordinator recommended default = compromise:** apply
 (a) to the `@pierre/diffs` path, because its Shiki shim and Vite aliases are
-Locus-owned code: exact-pin the package and its resolved Shiki subtree, retain
-one adversarial black-box fixture group through the real shim-backed
-`<FileDiff>`/`<PatchDiff>` path, and add its D10 row and upgrade/source guard.
-Apply (b) to Monaco/xterm: explicit Threat Model residuals plus a Yellow ticket,
+Locus-owned code: exact-pin `@pierre/diffs@1.0.10`, the actual mixed Shiki
+resolution above, and the un-aliased load-bearing escaper
+`hast-util-to-html@9.0.5`. Retain one adversarial black-box fixture group through
+the real shim-backed `<FileDiff>`/`<PatchDiff>` path with all four aliases bound
+and asserted as above, and add its D10 row and dependency/shim/alias
+upgrade/source guard. Apply (b) to Monaco/xterm: explicit Threat Model
+residuals plus a Yellow ticket,
 provisionally `TICKET-123` after the current repository sequence (revalidate
 before creation). The intended ticket path is
 `docs/tickets/TICKET-123-dependency-dom-producer-residuals.md`; this dispatch's
-write scope excludes `docs/tickets`, so the ticket content/scope remains a
-tracked follow-up pending the Owner decision and an authorized ticket write.
+ticket write scope permits only the existing README status sentence, so new
+ticket content/scope remains a tracked follow-up pending the Owner decision
+and an authorized ticket write.
 
 All corresponding tasks and the delta Scenario “Dependency diff rendering
 is covered if Approval Question 9 includes it” are **gated on Approval Question 9**.
 If the Owner selects (b), delete that Scenario; if the Owner selects the
 compromise, retain only the diff-path reviewed-producer scope; if the Owner
-selects (a), also finalize Monaco/xterm coverage before task 0.5 exact-package
-confirmation. Record the actual Owner decision and obtain the targeted P1/P2
-re-review, then task 0.4 rebase and task 0.5 strict validation/exact-package
-confirmation, before source edits.
+selects (a), also finalize Monaco/xterm coverage. Under (a) or the compromise,
+strip the conditional Scenario's status paragraph and keep only the
+WHEN/THEN/AND bullets before task 0.5 exact-package confirmation; pending-status
+prose must not enter the living spec on archive. Record the actual Owner
+decision and the three post-approval acknowledgements, obtain the final
+targeted re-review of the revised exact SHA, then task 0.4 rebase and task 0.5
+strict validation/exact-package confirmation, before source edits.

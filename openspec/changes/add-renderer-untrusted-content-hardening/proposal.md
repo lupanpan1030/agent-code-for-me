@@ -4,7 +4,9 @@
 > Owner accepted the eight recommended defaults late on 2026-09-05, conditional
 > on the feasibility/R3 reviews, implementation-start rebase, strict validation,
 > and exact-package confirmation. Feasibility 0.2 is `REVIEW_APPROVED` at
-> `2292d36a`; R3 0.3 is `CHANGES_REQUESTED` and awaits targeted re-review.
+> `2292d36a`; targeted R3 re-review is `REVIEW_APPROVED` at `04193a4b`
+> (`wf_d03b4b51-d03`). Its 2 P2 / 6 P3 text follow-ups are handled here; task
+> 0.3 remains open for final targeted re-review after the Question 9 decision.
 > Approval Question 9 is **PENDING Owner decision (morning 2026-09-06)**; the
 > coordination recommendation is not approval. This documentation touch-up
 > authorizes no source edit. Current base remains local `main` at
@@ -73,8 +75,9 @@ minimization/redaction owner.
   `.outerHTML`, `insertAdjacentHTML`, `srcDoc`, `document.write`, contextual
   fragment, or equivalent raw-markup sink must name one reviewed producer and
   have adversarial behavior coverage. Scan renderer public JavaScript and
-  dynamic-script/remote-import classes too; remove the remote
-  react-scan loader. A whole-file exemption is insufficient. Classify
+  dynamic-script/remote-import classes too. Recommended default, pending the
+  post-approval Owner acknowledgement in design: remove the remote react-scan
+  loader. A whole-file exemption is insufficient. Classify
   dependency-internal producers and new Shiki shim/Vite aliases explicitly,
   with Question 9's selected behavior coverage and pin/upgrade gates.
 - Exercise the app's real static and streaming Streamdown render paths with
@@ -97,7 +100,8 @@ minimization/redaction owner.
 - Preserve the existing Mermaid strict-mode plus sanitizer owner, React-text
   tool subtitles, and production/development CSP guarantees. This change adds
   missing behavior proof and Mermaid CSS/transient-render coverage, including
-  app-owned diagram styles and a shared rendered-DOM oracle. DOMPurify protects
+  the single value-profile-validated Mermaid paint `<style>` after pinned
+  pre-render `secure` configuration, and a shared rendered-DOM oracle. DOMPurify protects
   returned SVG; strict mode protects Mermaid's transient pre-sanitizer mount;
   the DOMParser pass is defense in depth. Specialized owners remain canonical.
 
@@ -235,7 +239,8 @@ same change. It must not leave old and new business paths live together.
   replaced by the broker; a platform/filesystem without the approved
   race-resistant read primitive retains HTTP(S) preview but disables file
   preview with a bounded explanation. Specifically, the current descriptor
-  owner has **no win32 backend**, so file preview ships disabled on Windows (a
+  owner has **no win32 backend**; the post-approval availability disclosure
+  awaiting Owner acknowledgement is that file preview ships disabled on Windows (a
   packaged release target) until a separately approved Yellow handle-relative
   backend extension lands. HTTP(S) preview remains available. The broker must
   realpath-canonicalize DB-registered roots and reverify registered-leaf,
@@ -266,7 +271,8 @@ same change. It must not leave old and new business paths live together.
   form, WebSocket, image/ping, frame, and other subresource traffic may still
   reach remote hosts or other loopback services. That residual network/CSRF
   risk is accepted under default 4; a network-egress firewall is a separate
-  scope decision. Locus's own listeners are included: MCP callback localhost
+  scope decision. Locus's own listeners fall within that accepted residual
+  class and are newly named for Owner acknowledgement: MCP callback localhost
   21321 (dev 21322) requires pending-flow random state, the random-port provider
   gateway requires Bearer authentication, OAuth 127.0.0.1:8914 checks state;
   Vite/HMR remains reachable in development. No authentication bypass is
@@ -306,8 +312,8 @@ Before any source edit, this package still requires:
    permissions, registered file roots, redirects, popup/download behavior,
    partition lifecycle, and testability on supported Electron hosts;
 3. resolution of Approval Question 9 (PENDING Owner decision, morning
-   2026-09-06) and targeted re-review of finding 1/P2 fixes, with all P3
-   touch-ups checked in that pass; and
+   2026-09-06), acknowledgement of the three post-approval disclosures in
+   design, and final targeted re-review of the revised exact SHA; and
 4. task 0.4 implementation-start rebase followed by task 0.5 strict validation
    and Owner confirmation of the exact package. This does not reopen the eight
    defaults or substitute historical receipts for review of the revised SHA.

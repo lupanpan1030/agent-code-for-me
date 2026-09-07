@@ -29,19 +29,23 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       threat model and fail-closed design, with special focus on preload/bridge
       absence, programmatic/redirect ordering, file TOCTOU, permission/device
       denial, popup/download effects, partition reuse, diagnostic secret flow,
-      and explicitly residual guest network egress. This round:
+      and explicitly residual guest network egress. Historical initial review:
       **CHANGES_REQUESTED** (1 P1, 9 P2, 10 P3), SHA `2292d36a`, workflow
-      `wf_461ff527-9bb`; **待修补后定向复核** of finding 1 and the P1/P2 fixes,
-      with P3 checked in the same pass. Remains unchecked until the revised
-      exact SHA has the required fresh-context R3 approval.
+      `wf_461ff527-9bb`. Targeted re-review: **REVIEW_APPROVED** at
+      `04193a4b7455d4619fce613307e3cafee4267c95`, workflow `wf_d03b4b51-d03`
+      (20 fixes: 16 applied / 4 deviated-justified; 2 P2 + 6 P3 follow-ups).
+      This dispatch applies those eight text fixes; **待 Q9 决定后的最终定向复核**.
+      Remains unchecked until that decision and the revised exact SHA's final
+      fresh-context R3 approval; the historical verdict does not transfer.
 - [ ] 0.4 Rebase all source/test anchors and active-change conflicts onto the
       implementation-start SHA; update the Draft rather than carrying stale
       counts or line numbers forward.
 - [ ] 0.5 Run strict OpenSpec validation and obtain explicit Owner `APPROVED`
       for the exact rebaselined package before the first source edit. The
       present documentation strict-validation run does not close this task;
-      targeted re-review, the pending Question 9 decision, and 0.4 precede
-      exact-package confirmation.
+      final targeted re-review, the pending Question 9 decision and three
+      post-approval Owner acknowledgements, and 0.4 precede exact-package
+      confirmation.
 
 ## 1. Characterization and renderer source guard (original 2.2)
 
@@ -54,8 +58,9 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       unsafe HTML APIs. Walk all of `src/renderer`, including `public/` and
       `.ts/.tsx/.html/.js/.jsx/.mjs/.cjs`; scan dynamic script-element creation,
       `script.src` assignment, remote `import()`, and `importScripts`, with
-      negative fixtures for each class. Remove the remote
-      react-scan loader in `agents-debug-tab.tsx`; no new remote-script bypass.
+      negative fixtures for each class. Recommended default, pending the
+      post-approval Owner acknowledgement: remove the remote react-scan loader
+      in `agents-debug-tab.tsx`; no new remote-script bypass.
       Keep the scan rooted at `src/renderer`: shared denylist string literals
       in `plugin-controlled-ui.ts` are not executable sink sites. Add an exact
       configuration check for new Shiki-API shims/Vite aliases into DOM-producing
@@ -84,8 +89,10 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       Streamdown configuration; implement the Owner-approved exact dependency /
       rehype ownership decision: replacement (not merge) rehype chain
       `[rehypeRaw, [rehypeSanitize, defaultSchema-derived reviewed schema],
-      [harden, reviewed non-wildcard options]]`. Import `defaultSchema` from
-      the already required exact/direct `rehype-sanitize`. Characterize remark
+      [harden, reviewed non-wildcard options]]`. Add `rehype-sanitize` and every
+      other app-imported rehype package as exact direct dependencies per D2/Q1,
+      then import `defaultSchema` from it; the baseline has only transitive
+      rehype dependencies via Streamdown. Characterize remark
       parity too; pin the `code`/`pre` overrides and assert Streamdown's dormant
       `aria-label="Mermaid chart"` sink never mounts. Give both mounts the same
       app-owned error boundary that renders source as escaped text.
@@ -114,9 +121,13 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       superseded state path in the same change.
 - [ ] 2.7 Make the mentions component own browser rich-content insertion from
       every source. Its single `beforeinput` allowlist admits `insertText`,
-      `insertCompositionText`, `insertParagraph`/`insertLineBreak`,
-      `deleteContent*`, and `historyUndo`/`historyRedo` routed to canonical undo/redo with default
-      prevented; prevent
+      `insertCompositionText`, and all `delete*` inputTypes, including
+      `deleteByCut`, `deleteByDrag`, `deleteWord*`, and `deleteSoftLine*`.
+      Prevent default for `insertParagraph`/`insertLineBreak` and insert the
+      newline through the safe text-node/`br` builder (no `div` wrappers),
+      preserving non-shift Enter submit. Prevent default for
+      `historyUndo`/`historyRedo` and route to canonical undo/redo; ordinary
+      text/IME input and admitted deletions are not blanket-prevented. Prevent
       every other inputType, including `insertFromDrop`, `insertFromPaste`,
       `insertLink`, `insertReplacementText`, and `format*`. Component-owned
       paste/drop/dragover handlers prevent default, consume only `text/plain`
@@ -125,8 +136,9 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       insertion fallback; optional parent handlers are not the boundary.
 - [ ] 2.8 Add mentions regressions for exact whitespace, atomic mention tokens,
       forward/backward selection, undo/redo, mixed/HTML-only clipboard and drop
-      data, `insertLink`, `formatBold`, and typed caller delegation. Synthetic
-      DragEvent/InputEvent happy-dom evidence asserts `defaultPrevented`,
+      data, `insertLink`, `formatBold`, all admitted deletion families,
+      safe-builder paragraph/line-break insertion, and typed caller delegation.
+      Synthetic DragEvent/InputEvent happy-dom evidence asserts `defaultPrevented`,
       unchanged DOM for HTML-only input, safe-builder text insertion, and only
       text nodes, `<br>`, and reviewed mention spans after insertion/restore.
       happy-dom has no native contentEditable paste or `execCommand`: stub the
@@ -137,11 +149,19 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       path, beyond the existing literal-SVG sanitizer test. Render hostile
       flowchart/sequence sources (`htmlLabels`, click directives, `javascript:`,
       `themeCSS` with root `position:fixed`, `background:url(https://...)`,
-      `@import`, and stray returned `<style>`). Forbid returned `<style>` and unreviewed CSS attributes, reapply app-owned
-      diagram CSS, and suppress/reject attacker themeCSS before the transient
-      render mount per D3;
-      assert the D2 oracle on returned/sanitized SVG, no executable residue
-      under `document.body`, and the same reviewed string at inline/fullscreen
+      `@import`, and stray returned `<style>`). Extend the pinned configuration's
+      existing `secure` list with `themeCSS`, `themeVariables`, `theme`,
+      `fontFamily`, `altFontFamily`, and `htmlLabels` before rendering; fail
+      closed if source directives can change styling before the transient
+      mount or suppression cannot be proved. Retain only the single
+      Mermaid-generated `<style>` whose content passes D3's reviewed CSS value
+      profile: selectors scoped to the diagram id namespace; no `url(`,
+      `@import`, `expression(`, `behavior:`, root-level `position:fixed`/
+      `position:absolute`, or external references. Require a positive control
+      proving safe diagram styling survives; otherwise fail closed. Strip
+      unreviewed CSS-bearing attributes and reject any other `style` element;
+      assert the D2 oracle on returned/sanitized SVG, no executable or
+      unreviewed CSS residue under `document.body`, and the same reviewed string at inline/fullscreen
       sinks. Strict mode protects the transient pre-sanitizer body mount;
       DOMPurify is load-bearing for returned SVG, its DOMParser pass is defense
       in depth. Real transient execution/CSS/layout evidence remains GUI 5.1.
@@ -149,11 +169,27 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       Owner selects. Under (a), black-box hostile `<FileDiff>`/`<PatchDiff>`
       rendering through the real Locus shim/Vite alias, file-viewer input, and
       hostile PTY streams enter the reviewed-producer contract and D10 matrix.
-      Under the coordination recommendation, apply (a) to @pierre/diffs only:
-      exact pin `@pierre/diffs` and its reviewed Shiki `^3` resolution/subtree,
-      gate upgrades (including aliases) on hostile filenames, hunk headers,
-      line content, and HAST-breakout diff fixtures. Under (b), record explicit
-      residuals/compensating controls, still exact-pin @pierre/diffs, and remove
+      Under (a) or the coordination recommendation (diff only), exact-pin
+      `@pierre/diffs@1.0.10` (`bun.lock:476`), un-aliased `hast-util-to-html@9.0.5`
+      (`:1360`, the load-bearing production-bundle escaper), and the actual
+      Shiki resolution: nested `shiki@3.21.0` under @pierre/diffs (`:2300`),
+      hoisted `@shikijs/core@3.21.0` / `@shikijs/engine-javascript@3.21.0`
+      (`:618,620`), and `@shikijs/transformers@3.22.0` (`:628`) with nested
+      core/types `3.22.0` (`:2328,2330`). The Shiki subtree is installed but
+      aliased away from the production diff path. Gate dependency, shim, and
+      exact four-specifier alias changes on hostile filename/hunk/line/patch
+      and HAST-breakout fixtures. In `bun test --isolate`, explicitly bind
+      `shiki`, `shiki/core`, `@shikijs/engine-javascript`, and
+      `@shikijs/transformers` to the shim before importing `<FileDiff>`/
+      `<PatchDiff>`; assert its `createPlainHast` text-node output shape before
+      hostile cases. An unbound fixture runs nested real Shiki 3, not the shim;
+      a built-renderer fixture with the same binding assertion is an alternative.
+      Development pre-bundling's use of plugin `resolveId` is unverified and
+      must be proved in implementation GUI 5.1; verify packaged binding in 5.3.
+      Under (a)/compromise, strip the conditional Scenario's status paragraph
+      and keep only WHEN/THEN/AND bullets before task 0.5 exact-package
+      confirmation. Under (b), record explicit residuals/compensating controls,
+      still exact-pin @pierre/diffs, and remove
       the conditional reviewed-producer Scenario. This task selects no option.
 - [ ] 2.11 **gated on Approval Question 9:** if Monaco/xterm remain residual
       (option (b) or the coordination recommendation), create Yellow
@@ -162,7 +198,8 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       producers, compensating controls, black-box hostile fixtures and upgrade
       criteria without implementing that extension. Actual ticket creation is
       deferred here because this dispatch permits edits only in this change
-      directory and `openspec/STATUS.md`; no ticket is claimed to exist.
+      directory and its status sentence in `docs/tickets/README.md`; no ticket
+      is claimed to exist.
 
 ## 3. Main-owned local-browser guest policy (original 2.3 / R6 webview)
 
@@ -353,7 +390,8 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       remount, direct guest `file:` loading, renderer subscriptions to raw
       guest `will-navigate`/console/load-failure/title/navigation or any other
       page-controlled URL/text payload, direct renderer `loadURL`, remote
-      react-scan loading, and duplicate
+      react-scan loading (recommended removal pending post-approval Owner
+      acknowledgement), and duplicate
       guest-policy paths. Confirm the only diagnostic event path is the
       main-owned post-`did-attach-webview` guest `webContents` relay after
       minimization/redaction/bounds, with no renderer fallback; confirm it does

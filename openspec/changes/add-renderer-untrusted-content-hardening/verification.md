@@ -241,8 +241,12 @@ single successful track cannot stand in for another track.
 - Pre-implementation feasibility 0.2: **REVIEW_APPROVED**, zero P0/P1, exact SHA
   `2292d36a2947325ace8bb982a6e11a581bf4b12f`, workflow `wf_461ff527-9bb`.
 - Pre-implementation R3 security 0.3: **CHANGES_REQUESTED**, 1 P1 / 9 P2 / 10 P3,
-  same SHA/workflow; pending targeted re-review of revised text. The historical
-  Draft approval above does not override this later verdict.
+  same SHA/workflow (historical initial verdict).
+- Targeted re-review of touch-ups: **REVIEW_APPROVED**, exact SHA
+  `04193a4b7455d4619fce613307e3cafee4267c95`, workflow `wf_d03b4b51-d03`;
+  20 fixes: 16 applied / 4 deviated-justified, with 2 P2 / 6 P3 text follow-ups
+  addressed in the disposition below. This verdict applies only to that SHA;
+  task 0.3 stays open for final targeted re-review after the Q9 decision.
 - Approval Question 9: **PENDING Owner decision (morning 2026-09-06)**;
   coordination recommendation recorded, no coverage option selected.
 - Tasks 0.4/0.5: NOT COMPLETE; no rebase in this docs-only dispatch, and current
@@ -318,10 +322,10 @@ section/task/scenario anchors in this change package.
 | --- | --- | --- |
 | #1 P1 | `design.md` Context, Threat Model, D1/D3/D10, Question 9; `proposal.md` Why/Canonical Owners/Non-Goals; `tasks.md` 1.2/1.3/2.4/2.10/2.11/6.3; runtime delta conditional producer Scenario | Inventory the Vite-aliased pierre shim, library DOM writers, Monaco/xterm, chat-local escape fallback and dormant getAST; correct sole-producer claims and leave coverage/pins/ticket choice explicitly pending Owner. |
 | #2 P2 | `design.md` Threat Model/D4; `tasks.md` 2.7/2.8/5.1/6.3; runtime delta mentions Scenario | Extend component-owned default prevention to drop and beforeinput rich insertion, safe-builder plain text, typed callbacks, and DOM-shape fixtures. |
-| #3 P2 | `design.md` D7/D10/Q5/W7; `proposal.md` Impact; `tasks.md` 4.2/4.8/5.2/5.3; local-browser delta unavailable-broker Scenario | Disclose win32 file-preview disablement and require realpath, registered/canonical/anchor dev/ino identity checks with fail-closed mismatch. |
+| #3 P2 | `design.md` D7/D10/Q5; `proposal.md` Impact; `tasks.md` 4.2/4.8/5.2/5.3; local-browser delta unavailable-broker Scenario | Disclose win32 file-preview disablement and require realpath, registered/canonical/anchor dev/ino identity checks with fail-closed mismatch. |
 | #4 P2 | `design.md` D6; `tasks.md` 3.2/3.4; runtime delta admission Scenario | Atomically claim for the true sender, retain DB-root authorization, and require a new admission on every element mount. |
 | #5 P2 | `design.md` Invariant 7/D9/Migration; `tasks.md` 4.7/6.3; local-browser delta remote-navigation/diagnostics Scenarios | Remove raw renderer will-navigate and all page-controlled URL/text listeners; main alone emits minimized blocked-origin diagnostics. |
-| #6 P2 | `design.md` Threat Model/Invariant 5/D7/D8/D10; `tasks.md` 4.4/4.8/5.2; runtime delta popup/permission Scenarios | Explicitly deny guest openExternal and probe current/legacy Locus, mailto, and vscode schemes for zero OS launch or MCP-import push. |
+| #6 P2 | `design.md` Threat Model attacker-must-not list/D7/D8/D10; `tasks.md` 4.4/4.8/5.2; runtime delta popup/permission Scenarios | Explicitly deny guest openExternal and probe current/legacy Locus, mailto, and vscode schemes for zero OS launch or MCP-import push. |
 | #7 P2 | `design.md` Threat Model/D3/D10; `tasks.md` 2.9; runtime delta Mermaid Scenario | Model themeCSS/returned-style injection and require overlay, URL-beacon, @import and stray-style fixtures with app-owned CSS control. |
 | #8 P2 | `design.md` Threat Model/D3/D10; `tasks.md` 2.9/5.1; runtime delta Mermaid Scenario; this file characterization/matrix | Require pinned MermaidBlock end-to-end rendering, sanitized output, transient body cleanup, and identical inline/fullscreen sink values; old literal-SVG tests are not that proof. |
 | #9 P2 | `design.md` D1; `proposal.md` Reviewed renderer-content boundary; `tasks.md` 1.2/6.3; runtime delta sink-guard Scenario | Scan renderer public JS/JSX/MJS/CJS and dynamic script/remote import classes; remove the remote react-scan loader. |
@@ -329,7 +333,7 @@ section/task/scenario anchors in this change package.
 | #11 P3 | `design.md` D1/D2; `proposal.md` Canonical Owners; `tasks.md` 1.3/2.2/2.3; runtime delta markdown Scenarios | Record replace-not-merge chain/defaultSchema/non-wildcard options, remark parity, code/pre overrides, dormant Mermaid assertion and reviewed external-link owner. |
 | #12 P3 | `design.md` D4/D10; `tasks.md` 2.8/5.1; this file implementation matrix | Separate synthetic happy-dom defaultPrevented/DOM evidence from live browser paste/drop and undo/redo proof. |
 | #13 P3 | `design.md` D5/D9; `tasks.md` 3.5/3.6/3.7/4.7; runtime delta bridge/probe Scenarios | Force guest isolation explicitly, prove pre-return Session timing and empty Session preloads, and run fixed probes without user gesture. |
-| #14 P3 | `design.md` D7/D10; `tasks.md` 4.8/5.2/6.3; runtime delta navigation and local-browser delta preview Scenarios | Distinguish non-network commits from webRequest coverage; require runtime file/resource/per-hop redirect cancellation and remove renderer loadURL authority. |
+| #14 P3 | `design.md` D7/D10; `tasks.md` 4.8/5.2/6.3; runtime delta navigation Scenario | Distinguish non-network commits from webRequest coverage; require runtime file/resource/per-hop redirect cancellation and remove renderer loadURL authority. |
 | #15 P3 | `design.md` Invariant 7/D9/D10; `proposal.md` Canonical Owners; `tasks.md` 3.1/4.7; both diagnostic deltas | Declare diagnostics a main-redaction composition adapter, register reused owners, map console levels, name selection probe and assert app-state absence without claiming Electron dispatch suppression. |
 | #16 P3 | `design.md` Non-Goals/Threat Model/D10/Risks/Q4; `proposal.md` Non-Goals; `tasks.md` 4.8/5.2 | Name Locus loopback listeners and state/Bearer controls, with bounded no-credential probes proving no state change. |
 | #17 P3 | `design.md` Threat Model/D10 CSP note; `proposal.md` Non-Goals; runtime delta CSP Scenario | Record privileged-document remote-image beacons separately and assess the optional object-src/base-uri/frame-src tightening without silently changing approved CSP scope. |
@@ -412,3 +416,82 @@ section/task/scenario anchors in this change package.
   dispatch response, without a second evidence commit. This pre-commit record
   does not claim that the revised text has a fresh Claude verdict. Targeted
   P1/P2 review and all implementation/GUI verdicts remain outstanding.
+
+## Targeted Re-review Receipt And Follow-up Disposition
+
+- Canonical receipt: `/home/chen/.claude/projects/-home-chen-projects-agent-code-for-me/f1888632-cd03-49a0-a57d-51704695f29d/handoff/reviews/followup-a-rereview-04193a4b.md`.
+- Workflow: `wf_d03b4b51-d03`; Claude fresh-context, read-only, 2026-09-06.
+- The following pasteable text is reproduced verbatim. Its findings, remaining
+  work, write-scope references, and sequencing recommendation describe reviewed
+  SHA `04193a4b7455d4619fce613307e3cafee4267c95`. This later dispatch authorizes
+  the eight text fixes before the Q9 decision and the single ticket-README
+  sentence; their current disposition follows the historical receipt. No
+  verdict or Owner acknowledgement is transferred to the revised SHA.
+
+### Targeted re-review of touch-ups (0.3 continuation) — 2026-09-06
+
+- Review mode: two fresh-context lenses (fix-fidelity; security re-check) merged by a fresh-context synthesizer who re-verified every P2 candidate in code; commit `04193a4b7455d4619fce613307e3cafee4267c95` (`04193a4b`; worktree HEAD confirmed; docs-only successor of `2292d36a`; `src`/`package.json`/`bun.lock`/`tests` byte-identical to `30c72ad3`; strict OpenSpec validation re-run and valid; `git diff --check` clean; 44 open / 2 checked task checkboxes). Read-only; no files edited.
+- Fix fidelity: all 20 findings from the `2292d36a` review are traceable in the diff — 16 applied as recommended, 4 deviated with stated, justified reasons (#1 coverage decision deferred to Approval Question 9 per dispatch; #14 `about:blank`/`blob:` narrowed to protect the exact-origin default; #17 optional CSP directives assessed but not mandated; #19 optional parsererror code change not prescribed); none missing. Approval Questions 1–3 and 6–8 are byte-unchanged; Q4/Q5 received additive disclosures only; no approved default is weakened. Approval bookkeeping (proposal status block, tasks 0.1/0.2 receipts, Verdict Ledger, both receipt sections, touch-up ledger, `openspec/STATUS.md` row) is recorded as instructed; the cited precheck log SHA-256s re-hash correctly.
+- P1 disposition: framed as Approval Question 9 with options (a)/(b) and the coordinator compromise, **PENDING**, selecting nothing; provisional `TICKET-123` sequencing verified (TICKET-122 current on branch and main).
+- Remaining (text-only; fold into the Q9 decision record before task 0.4): **P2** Mermaid `<style>` rule — D3/spec forbid every returned `style` element, but mermaid 11.16.0 `render()` always inserts the diagram base stylesheet as the SVG's first-child `<style>` (`mermaid.esm.mjs:1685-1688`) and `themeCSS`/`themeVariables`/`theme` are not in Mermaid's default `secure` list; D2/spec.md:31 already describe a retain-under-profile model — reconcile to one rule (add the theme keys to `secure` pre-render; retain the single value-profile-validated paint element, or strip it and name the app CSS source). **P2** Q9 pin/fixture precision — '(locked 3.21.0)' is actually shiki 3.21.0 nested + @shikijs/core/engine-javascript 3.21.0 hoisted + @shikijs/transformers 3.22.0 with nested core/types 3.22.0; only the four Shiki specifiers are aliased, so the live bundle escaper is un-aliased `hast-util-to-html@9.0.5` (unnamed in the pin gate); a `bun test` `<FileDiff>`/`<PatchDiff>` fixture resolves nested real Shiki 3, not the shim, unless it binds the four specifiers and asserts the binding; state the producer binding per runtime (production bundle / development pre-bundle / bun test); `escapeHtml` is private, only `codeToHtml` is re-exported. **P3 ×6**: task 2.2 misstates `rehype-sanitize` as already direct (transitive via streamdown only); three post-approval disclosures (Q4 named loopback listeners, Q5 win32 disablement, react-scan loader removal) should be listed for Owner acknowledgement rather than written as already accepted; ledger rows #3/#6/#14 over-claim one location each (W7 / Invariant 5 / local-browser delta); the conditional Q9 scenario's status prose needs a strip instruction under (a)/compromise; D4 `beforeinput` allowlist precision (`insertParagraph` `<div>` vs the text/br/mention oracle; `deleteContent*`-only blocks markup-free deletions); `docs/tickets/README.md:48` on the branch is stale (outside this dispatch's write scope).
+- Verdict: **REVIEW_APPROVED** (targeted re-review, Draft quality; fresh-context; 2026-09-06; 0 P0 / 0 P1 / 2 P2 / 6 P3). Technical verdict for SHA `04193a4b` only; it does not replace Owner product acceptance and does not authorize push, remote PR mutation, merge, release, or repository-rules changes.
+- Single remaining approval item: **Approval Question 9 — dependency-internal DOM producer coverage.** 统筹推荐默认值 = 折中 / recommended default = compromise: apply (a) to `@pierre/diffs` — exact-pin the package, its resolved Shiki subtree, and `hast-util-to-html`; one adversarial black-box fixture group through the real shim-backed `<FileDiff>`/`<PatchDiff>` path with the alias bound and asserted; D10 row plus upgrade/source guard — and apply (b) to Monaco/xterm — explicit Threat Model residuals plus Yellow `TICKET-123` (revalidate the sequence before creation in a separately authorized write). Record the Owner's choice, fold the two P2 precision items and the three disclosures into the same text pass, then proceed to task 0.4 rebase and task 0.5 strict validation / exact-package confirmation before any source edit.
+
+### Targeted re-review follow-up disposition — 2026-09-07
+
+All eight rows are documentation fixes against `04193a4b`, not implemented
+controls or fresh review verdicts. Approval Question 9 and all three
+post-approval Owner acknowledgements remain **PENDING**; task 0.3 remains
+unchecked for the final targeted re-review after the Q9 decision. Only tasks
+0.1/0.2 are checked (2/46). No rebase or task 0.5 confirmation occurs here.
+
+| Finding | Disposition | Modified sections / result |
+| --- | --- | --- |
+| P2 #1 | Applied | `design.md` D2/D3, runtime delta oracle/Mermaid Scenario, task 2.9: preserve existing pinned `secure` entries and add all six style/label keys before render; retain only the single Mermaid-generated paint `<style>` validated against the diagram-id CSS value profile with a positive control; otherwise fail closed. Keep themeCSS/overlay/url/@import/stray-style fixtures. |
+| P2 #2 | Applied | Context/Q9/D10, conditional diff Scenario and task 2.10: verify mixed Shiki 3.21.0/3.22.0 resolution against `bun.lock:476,618,620,628,1360,1978,2300,2328,2330`; name un-aliased `hast-util-to-html@9.0.5` as the production-bundle load-bearing escaper in the exact-pin/upgrade gate; correct exported `codeToHtml` versus private `escapeHtml`; require four-specifier fixture binding and text-node-shape assertion, and implementation proof of currently unverified development pre-bundling. Q9 selects nothing. |
+| P3 #3 | Applied | D2/task 2.2: `rehype-sanitize` is baseline transitive-only via Streamdown; add it and every app-imported rehype package as exact direct dependencies before importing `defaultSchema`. No new package enters the tree; a direct exact declaration is still required. |
+| P3 #4 | Applied; Owner acknowledgement pending | Add the dated post-approval disclosure section for named Q4 loopback listeners, Q5 win32 file-preview disablement, and recommended react-scan loader removal; align Non-Goals/Risks/Q4/Q5, proposal, tasks and migration wording. These are not retroactive Owner approvals; collect acknowledgements with the Q9 packet before 0.5. |
+| P3 #5 | Applied | Correct historical touch-up ledger locations: #3 drops W7; #6 names the Threat Model attacker-must-not list instead of Invariant 5; #14 names only the runtime navigation Scenario. |
+| P3 #6 | Applied | Q9/task 2.10: under (a)/compromise strip the conditional Scenario status paragraph and keep only WHEN/THEN/AND bullets before 0.5; under (b) delete the Scenario. The paragraph remains pending the actual decision. |
+| P3 #7 | Applied | D4/tasks 2.7–2.8/runtime mentions Scenario: admit all `delete*`; prevent default for paragraph/line-break insertion and use the safe text-node/`br` builder without `div` wrappers; prevent default for canonical historyUndo/Redo and non-admitted types, not ordinary text/IME/deletions. Preserve non-shift Enter submit and unit/GUI evidence separation. |
+| P3 #8 | Applied | Change only the sentence for this change in `docs/tickets/README.md` to “eight defaults APPROVED 2026-09-05; source edits gated on 0.3/0.4/0.5 and Approval Question 9”. |
+
+### Documentation validation for this targeted touch-up — 2026-09-07
+
+- Initial HEAD precondition: **PASS**, exact
+  `04193a4b7455d4619fce613307e3cafee4267c95`, clean worktree.
+- Write scope: this change package and only its existing status sentence in
+  `docs/tickets/README.md`. No product/test source, dependency declaration or
+  lockfile, living spec, `openspec/STATUS.md`, or new ticket is changed. No
+  rebase, merge, push, remote PR, release, or repository-rule operation occurs.
+- Strict target validation from the dispatched worktree: **PASS**, exit 0,
+  command `/home/chen/projects/agent-code-for-me/node_modules/.bin/openspec
+  validate add-renderer-untrusted-content-hardening --strict --no-interactive`;
+  exact output: `Change 'add-renderer-untrusted-content-hardening' is valid`.
+  `git diff --check`: **PASS**, exit 0, no output. The same documentation gates
+  are rerun after the final receipt edit and against the single committed SHA.
+- Repository-required `bun run check:full`: **exit 1**, run in the local
+  `/tmp/followup-a-rereview-9732qlgs/repo` snapshot of base `04193a4b` plus these
+  documentation fixes, before final wording/receipt edits. Product/test source
+  remains byte-identical to `04193a4b` in the snapshot and final worktree; this
+  is a regression attempt on that unchanged source, not an implementation
+  verdict or final-documentation-SHA pass. Linux sandbox, Bun 1.3.14 / Node
+  v24.19.0; existing dependencies were linked only inside the temporary snapshot
+  after `package.json` and `bun.lock` compared byte-identical to the main
+  checkout. No dependency installation or update was performed.
+- Lint, architecture, retired-runtime residue (1,607 files / 10 allowlisted),
+  and TypeScript stages passed. Tests: **1,925 pass / 3 fail / 9,338
+  expectations / 304 files**. The same three
+  `tests/codex-app-server-adapter.test.ts` cases identified in the previous
+  round fail before startup with `CodexAppServerShellSnapshotScrubError`:
+  two `EROFS` errors against `/home/chen/.codex/shell_snapshots`. No product/test
+  change or environment bypass was made. The aggregate stopped at tests; its
+  subsequent OpenSpec/build/diff stages did not run. The direct documentation
+  gates above are separate, passing checks.
+- Full regression log: `/tmp/followup-a-rereview-9732qlgs/check-full.log`, SHA-256
+  `521f4cdff9f5a816b6b80f8627597c8f165c61781b99b191e1853b3e99b86224`.
+  This temporary local artifact is subject to host cleanup.
+- Approval Question 9, the three post-approval acknowledgements, and tasks
+  0.3/0.4/0.5 remain open. The `wf_d03b4b51-d03` verdict applies only to
+  `04193a4b`; no fresh independent verdict for this successor is claimed.
+  Product implementation and its targeted/GUI smoke remain unstarted.

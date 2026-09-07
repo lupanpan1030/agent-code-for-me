@@ -45,7 +45,7 @@
 是 **worktree-per-run + cwd 租约** 工作的现成基础，见 [../ideas/cross-engine-delegation.md](../ideas/cross-engine-delegation.md) P1-2。
 
 Phase 2（渲染层 markdown/webview 隔离）已由归档后的 follow-up Draft OpenSpec
-`add-renderer-untrusted-content-hardening` 承接（尚未 Owner `APPROVED`，不得实施）；Phase 3
+`add-renderer-untrusted-content-hardening` 承接（eight defaults APPROVED 2026-09-05; source edits gated on 0.3/0.4/0.5 and Approval Question 9）；Phase 3
 （capability 中间件/consent/audit）的 follow-up B 尚未创建。原
 `update-trpc-capability-boundary` 已按实装真相归档，不再承载“剩余 8 条任务”。
 
