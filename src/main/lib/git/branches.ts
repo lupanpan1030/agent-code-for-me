@@ -1,14 +1,15 @@
 import { eq } from "drizzle-orm";
-import { getDatabase, chats } from "../db";
-import simpleGit from "simple-git";
+import type simpleGit from "simple-git";
 import { z } from "zod";
+import { chats, getDatabase } from "../db";
 import { publicProcedure, router } from "../trpc";
+import { resolveDefaultBranch } from "./default-branch";
+import { createGit, createGitForNetwork, withGitLock, withLockRetry } from "./git-factory";
 import {
 	assertRegisteredWorktree,
 	getRegisteredChat,
 	gitSwitchBranch,
 } from "./security";
-import { createGit, createGitForNetwork, withGitLock, withLockRetry } from "./git-factory";
 
 /** Regex for valid branch names */
 const BRANCH_NAME_REGEX = /^[a-zA-Z0-9._/-]+$/;
@@ -47,7 +48,10 @@ export const createBranchesRouter = () => {
 					}
 
 					const local = await getLocalBranchesWithDates(git, localBranches);
-					const defaultBranch = await getDefaultBranch(git, remote);
+					const defaultBranch = await resolveDefaultBranch(git, {
+						profile: "branch-listing",
+						remoteBranches: remote,
+					});
 					const checkedOutBranches = await getCheckedOutBranches(
 						git,
 						input.worktreePath,
@@ -57,7 +61,7 @@ export const createBranchesRouter = () => {
 						current: branchSummary.current,
 						local,
 						remote: remote.sort(),
-						defaultBranch,
+						defaultBranch: defaultBranch.branch,
 						checkedOutBranches,
 					};
 				},
@@ -221,12 +225,14 @@ export const createBranchesRouter = () => {
 
 				// Get all branches that are associated with active chats
 				const activeChats = db.select().from(chats).all();
-				const activeBranches = new Set(activeChats.map((c) => c.branch).filter(Boolean));
-
-				// Also add the default branch and current branch
-				const defaultBranch = await getDefaultBranch(git, []);
-				activeBranches.add(defaultBranch);
-				activeBranches.add(branchSummary.current);
+				const defaultBranch = await resolveDefaultBranch(git, {
+					profile: "orphan-cleanup",
+				});
+				const activeBranches = buildCleanupProtectedBranches(
+					activeChats.map((chat) => chat.branch),
+					defaultBranch.branch,
+					branchSummary.current,
+				);
 
 				// Find orphaned branches (pattern: adjective-animal-hex, e.g., clever-fox-a1b2)
 				const worktreeBranchPattern = /^[a-z]+-[a-z]+-[a-f0-9]{3,}$/;
@@ -297,22 +303,18 @@ async function getLocalBranchesWithDates(
 	}
 }
 
-async function getDefaultBranch(
-	git: ReturnType<typeof simpleGit>,
-	remoteBranches: string[],
-): Promise<string> {
-	try {
-		const headRef = await git.raw(["symbolic-ref", "refs/remotes/origin/HEAD"]);
-		const match = headRef.match(/refs\/remotes\/origin\/(.+)/);
-		if (match) {
-			return match[1].trim();
-		}
-	} catch {
-		if (remoteBranches.includes("master") && !remoteBranches.includes("main")) {
-			return "master";
-		}
+export function buildCleanupProtectedBranches(
+	activeChatBranches: Iterable<string | null | undefined>,
+	defaultBranch: string,
+	currentBranch: string,
+): Set<string> {
+	const protectedBranches = new Set<string>();
+	for (const branch of activeChatBranches) {
+		if (branch) protectedBranches.add(branch);
 	}
-	return "main";
+	protectedBranches.add(defaultBranch);
+	protectedBranches.add(currentBranch);
+	return protectedBranches;
 }
 
 async function getCheckedOutBranches(

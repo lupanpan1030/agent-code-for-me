@@ -202,6 +202,44 @@ or UI helper.
   or submit approval decisions, but must not derive their own trust state or
   start setup command execution directly.
 
+## Repository Default Branch Resolution
+
+- Canonical owner: `src/main/lib/git/default-branch.ts`
+- Direct consumers: `changes.getBranches` and `cleanupOrphanedBranches` in
+  `src/main/lib/git/branches.ts`; `createWorktreeForChat` and
+  `getWorktreeDiff` in `src/main/lib/git/worktree.ts`
+- Rule: repository default-branch precedence and local/remote/fallback
+  provenance live only in the canonical owner. Without a configured `origin`,
+  an existing local `main` wins, then local `master`, then an attached current
+  branch backed by a local ref; the compatibility fallback is `main` and must
+  not be reported as an existing ref. Branch listing and orphan cleanup use
+  cached/local observations only. Worktree creation and clean-diff fallback
+  retain the legacy network-allowed `origin` observation profile. Consumers
+  must preserve explicit branch choices, use auto-detected local results as
+  local refs, and leave existing stored `baseBranch` values authoritative.
+- Adjacent exclusions: GitHub workflow discovery remains owned by
+  `src/main/lib/github-workflow/gh-cli.ts:resolveGitDefaultBranch`; explicit
+  `origin/HEAD` synchronization is implemented by the currently unreferenced
+  `src/main/lib/git/worktree.ts:refreshDefaultBranch` (its `hasOriginRemote`
+  dependency and `fetchDefaultBranch` are also pre-existing dead-helper cleanup
+  candidates); remote fetch and
+  merge/rebase policy remains owned by
+  `src/main/lib/git/git-operations.ts:mergeFromDefault`.
+  `src/main/lib/git/worktree.ts:606` (`detectBaseBranch`) is a currently
+  unreferenced base-detection heuristic over `origin/*`, not a default-branch
+  resolver. Guard strengthening and these dead helpers are tracked in
+  [TICKET-124](tickets/TICKET-124-default-branch-guard-cleanup-hermetic-tests.md).
+  Existing fallback/presentation heuristics in
+  `src/main/lib/git/file-contents.ts:80`,
+  `src/main/lib/trpc/routers/chats-pr.ts:75`,
+  `src/main/lib/trpc/routers/status.ts:35`,
+  `src/renderer/features/details-sidebar/sections/changes-widget.tsx:309-312`,
+  `src/renderer/features/agents/ui/sub-chat-status-card.tsx:82`, and the
+  `createWorktree` default `origin/main` start point in
+  `src/main/lib/git/worktree.ts:227-231` remain outside this four-consumer
+  migration. They do not inspect local refs or implement/replace the repository
+  resolver policy; this change does not migrate them.
+
 ## Managed Worktree Path Parsing
 
 - Canonical owner: `src/shared/worktree-path.ts`

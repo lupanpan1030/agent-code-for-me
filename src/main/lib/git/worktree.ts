@@ -11,6 +11,7 @@ import {
   uniqueNamesGenerator,
 } from "unique-names-generator"
 import { MANAGED_WORKTREE_PATH_SEGMENTS } from "../../../shared/worktree-path"
+import { resolveDefaultBranch } from "./default-branch"
 import {
   GIT_DIFF_EXCLUSION_ARGS,
   isGitDiffExcludedPath,
@@ -340,70 +341,6 @@ export async function hasOriginRemote(mainRepoPath: string): Promise<boolean> {
   } catch {
     return false
   }
-}
-
-export async function getDefaultBranch(mainRepoPath: string): Promise<string> {
-  const git = simpleGit(mainRepoPath)
-
-  // First check if we have an origin remote
-  const hasRemote = await hasOriginRemote(mainRepoPath)
-
-  if (hasRemote) {
-    // Try to get the default branch from origin/HEAD
-    try {
-      const headRef = await git.raw([
-        "symbolic-ref",
-        "refs/remotes/origin/HEAD",
-      ])
-      const match = headRef.trim().match(/refs\/remotes\/origin\/(.+)/)
-      if (match) return match[1]
-    } catch {}
-
-    // Check remote branches for common default branch names
-    try {
-      const branches = await git.branch(["-r"])
-      const remoteBranches = branches.all.map((b) => b.replace("origin/", ""))
-
-      for (const candidate of ["main", "master", "develop", "trunk"]) {
-        if (remoteBranches.includes(candidate)) {
-          return candidate
-        }
-      }
-    } catch {}
-
-    // Try ls-remote as last resort for remote repos
-    try {
-      const result = await git.raw(["ls-remote", "--symref", "origin", "HEAD"])
-      const symrefMatch = result.match(/ref:\s+refs\/heads\/(.+?)\tHEAD/)
-      if (symrefMatch) {
-        return symrefMatch[1]
-      }
-    } catch {}
-  } else {
-    // No remote - use the current local branch or check for common branch names
-    try {
-      const currentBranch = await getCurrentBranch(mainRepoPath)
-      if (currentBranch) {
-        return currentBranch
-      }
-    } catch {}
-
-    // Fallback: check for common default branch names locally
-    try {
-      const localBranches = await git.branchLocal()
-      for (const candidate of ["main", "master", "develop", "trunk"]) {
-        if (localBranches.all.includes(candidate)) {
-          return candidate
-        }
-      }
-      // If we have any local branches, use the first one
-      if (localBranches.all.length > 0) {
-        return localBranches.all[0]
-      }
-    } catch {}
-  }
-
-  return "main"
 }
 
 export async function fetchDefaultBranch(
@@ -1009,9 +946,21 @@ export async function createWorktreeForChat(
       return { success: true, worktreePath: projectPath }
     }
 
-    // Use provided base branch or auto-detect
-    const baseBranch =
-      selectedBaseBranch || (await getDefaultBranch(projectPath))
+    let baseBranch: string
+    let startPoint: string
+    if (selectedBaseBranch) {
+      baseBranch = selectedBaseBranch
+      startPoint = branchType === "local" ? baseBranch : `origin/${baseBranch}`
+    } else {
+      const defaultBranch = await resolveDefaultBranch(git, {
+        profile: "worktree",
+      })
+      baseBranch = defaultBranch.branch
+      startPoint =
+        defaultBranch.source === "local"
+          ? `refs/heads/${baseBranch}`
+          : `origin/${baseBranch}`
+    }
 
     branch = generateBranchName()
     const worktreesDir =
@@ -1020,12 +969,6 @@ export async function createWorktreeForChat(
     const projectWorktreeDir = join(worktreesDir, projectSlug)
     const folderName = generateWorktreeFolderName(projectWorktreeDir)
     worktreePath = join(projectWorktreeDir, folderName)
-
-    // Determine startPoint based on branch type
-    // For local branches, use the local ref directly
-    // For remote branches or when type is not specified, use origin/{branch}
-    const startPoint =
-      branchType === "local" ? baseBranch : `origin/${baseBranch}`
 
     const baseCommit = await createWorktree(
       projectPath,
@@ -1223,15 +1166,24 @@ export async function getWorktreeDiff(
     }
 
     // All committed - diff against base branch
-    const targetBranch = baseBranch || (await getDefaultBranch(worktreePath))
+    let targetBranch = baseBranch
+    let useResolvedLocalRef = false
+    if (!targetBranch) {
+      const defaultBranch = await resolveDefaultBranch(
+        simpleGit(worktreePath),
+        { profile: "worktree" },
+      )
+      targetBranch = defaultBranch.branch
+      useResolvedLocalRef = defaultBranch.source === "local"
+    }
 
-    // Use origin if available, fallback to local branch
-    const baseRef = (await refExistsLocally(
-      worktreePath,
-      `origin/${targetBranch}`,
-    ))
-      ? `origin/${targetBranch}`
-      : targetBranch
+    // Keep auto-detected local refs local. Explicit and remote-backed names
+    // retain the existing origin-first compatibility behavior.
+    const baseRef = useResolvedLocalRef
+      ? `refs/heads/${targetBranch}`
+      : (await refExistsLocally(worktreePath, `origin/${targetBranch}`))
+        ? `origin/${targetBranch}`
+        : targetBranch
 
     try {
       const diff = await git.diff([
