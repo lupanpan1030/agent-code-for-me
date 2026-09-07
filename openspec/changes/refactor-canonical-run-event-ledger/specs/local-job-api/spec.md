@@ -6,18 +6,24 @@ public vocabulary SHALL remain job_created, job_started, assistant_delta, reason
 tool_started, tool_delta, tool_finished, usage_update, artifact_created, status, error,
 completed. Public envelope fields SHALL remain apiVersion, jobId, sequence, type,
 createdAt and payload. Payload SHALL be the bare redacted semantic payload; optional
-runtime.codex.v1 metadata SHALL appear at /payload/runtime/codex/v1. Every canonical
+runtime.codex.v1 metadata SHALL appear at /payload/extensions/runtime.codex.v1. Every canonical
 record SHALL project once at its original sequence, using safe status stubs when
 necessary, so the post-cutover sequence domain remains dense. The nine internal types
 outside v1 SHALL map to status with subtype equal to their original internal type name.
+The extension SHALL preserve an existing string payload.runtime; it SHALL be added only
+to object semantic payloads under payload.extensions["runtime.codex.v1"], with no wrapper
+for non-object payloads. Dense status records can increase event volume; --after SHALL
+remain the cursor for incremental reads, with no bounded per-Run event-count guarantee.
 
 #### Scenario: Consumer reads events
 - **WHEN** source=api `public-v1.json` records are read by runs events with --after=2
 - **THEN** envelopes contain the expected sequences strictly greater than 2 in order,
   apiVersion=locus.local-job.v1 and the same jobId; payload.text remains "hello" in
-  the assistant fixture and optional metadata is at /payload/runtime/codex/v1
+  the assistant fixture and optional metadata is at /payload/extensions/runtime.codex.v1
 - **AND** no desktop runId/runEventSequence/redaction/payload wrapper appears, and
   reading again with the last sequence returns only subsequent records
+- **AND** runtime_selected/runtime_selection_refused fixtures retain their original
+  string payload.runtime beside payload.extensions["runtime.codex.v1"]
 - **AND** a source=desktop fixture is rejected by getLocalJobApiEvents
 
 #### Scenario: Consumer follows events
@@ -77,12 +83,8 @@ this SHALL not claim native protocol stability or live-attach support.
   are present as in the existing contract
 
 #### Scenario: Older build lacks the feature
-- **WHEN** the neutral consumer preflight fixture requires canonical-run-ledger or its
-  runtime.codex.v1 extension but discovery.json lacks that feature
-- **THEN** the consumer treats it as unsupported before dispatch, without assuming an
-  unknown request field would be honored or silently downgrading
-- **AND** a consumer requiring neither feature nor extension can ignore optional metadata;
-  v1 does not gain a required-extension request field from this advertisement
+- **WHEN** a consumer reads the discovery envelope from a build without a given feature identifier
+- **THEN** the consumer treats the corresponding contract addition as unsupported instead of assuming silently-dropped request fields were honored
 
 #### Scenario: Consumer detects canonical ledger support
 - **WHEN** the implemented discovery reader is exercised with the ledger-enabled

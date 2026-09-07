@@ -5,11 +5,36 @@ The system SHALL normalize runtime output into ordered canonical `RunEvent` reco
 that can be persisted, streamed, and mapped to protocol, CLI, desktop and Local Job
 API clients through the Run's canonical ledger. The internal envelope SHALL retain
 runId, runtimeId, sequence, type, createdAt, sanitized payload and redaction metadata.
-The fixture names below refer to the file shapes in this change's tasks §7; all readers
-and injection ports are defined in design's Test-facing Contract.
+The internal observation ports SHALL accept retained observationKey, receivedAt and
+sanitizable input; native response/notification/request ports additionally accept
+transportId, the native message envelope and available request correlation (id, method,
+params, intent, expectedSessionId). Send/resolved ports SHALL accept requestId and send
+result where applicable. ingestRuntimeObservation SHALL accept normalized type/payload;
+appendSystemEvent SHALL accept lifecycle type/payload. Neither may mint owner-gated
+artifact or terminal records. admitRunArtifactCandidate SHALL accept candidate path,
+ownerRunId, expected digest/media and the admitted Run context. settle SHALL accept a
+live native terminal, host result, cancel, interrupt, transport-exit or recovery trigger
+with observationKey plus explicit policy denial, output validity/empty/allowEmpty,
+credential-postcheck and evidence-key fields. Missing success evidence SHALL fail closed.
+repairFromSnapshot SHALL accept snapshot, source provenance, schema disposition and
+target turn; bindExecutionProvenance SHALL bind the actual execution tuple once.
+
+read(afterSequence) SHALL return only committed records after that sequence;
+readOutcome SHALL return null while unsettled, otherwise status/reasons/evidenceKeys and
+completedSequence; readUsage SHALL return total/last/baseline/delta/discontinuity and seal
+sequence. readNativeContext SHALL expose only the host's observed interrupt target.
+readItem's keys, state and reconciliation are specified by Item Lifecycle Reconciliation.
+Store cursor/ack SHALL read and monotonically acknowledge a projection's contiguous
+committed prefix; deliver SHALL consume committed records. Tests SHALL drive these
+observable ports/readers using versioned synthetic or source-attributed fixtures under
+tests/fixtures/run-event-ledger/, with deterministic clock and temporary store/files;
+fixture names identify test inputs and do not delegate normative behavior to a change
+plan or its implementation checklist.
 
 #### Scenario: Event type is emitted
-- **WHEN** the ledger ingests `vocabulary.json` through `ingestRuntimeObservation`
+- **WHEN** `vocabulary.json` is driven by each case's port: ingestRuntimeObservation
+  for normalized runtime/system vocabulary cases, admitRunArtifactCandidate for artifact
+  cases, and settle for terminal cases
 - **THEN** `read(0)` contains exactly the fixture's 21 allowed internal types:
   `job_created`, `job_started`, `assistant_delta`, `reasoning_delta`, `tool_started`,
   `tool_delta`, `tool_finished`, `guard_decision`, `permission_requested`,
@@ -108,35 +133,63 @@ resume using durable acknowledged cursors and be idempotent by Run/sequence.
   the projector upsert contains A once, and ack advances monotonically over its prefix
 - **AND** `read(0)` never duplicates A and the next observation uses the next sequence
 
+#### Scenario: Cross-process queued cancel races with start
+- **WHEN** two host ledgers sharing `store-faults.json`'s temporary SQLite store race
+  queued cancel against start, with each winner ordering and a retry-exhaustion variant
+- **THEN** an expectedHighWater/state conflict reloads committed header/records and
+  re-evaluates the original intent; already committed fact keys return the prior batch,
+  otherwise the ledger re-reserves uncommitted sequences above the current high-water
+- **AND** cancel-first prevents start/spawn; start-first converts the losing queued
+  cancel to the existing cancel-request flag, leaving settlement to the worker
+- **AND** at most three transaction attempts occur per call; exhaustion returns host
+  LEDGER_APPEND_CONFLICT without acknowledgment, partial mutation or a second completed;
+  the store never re-sequences records and successful commits form a dense sequence
+
 #### Scenario: Historical rows remain explicitly unverified
-- **WHEN** the schema migration is applied to `legacy-store.json` containing terminal
+- **WHEN** the ledger opens a store containing `legacy-store.json`'s pre-ledger terminal
   desktop wrapper rows, bare API rows and an inactive incomplete historical Run
 - **THEN** existing row payload/ID/sequence bytes are unchanged, header.ledger_version
-  is 0, and the read projection exposes historyQuality=legacy_unverified
+  is 0, and only the internal store/Workbench read projection exposes historyQuality=legacy_unverified
 - **AND** opening these Runs for ledger append is rejected; no fact keys, provenance
-  or missing completed are fabricated; a new job fixture is version 1 with required metadata
+  or missing completed are fabricated; new jobs have version 1 record metadata with
+  pending provenance until execution binding; no public job.ledger.historyQuality is added
 
 ### Requirement: Native Identity And Runtime Provenance
 The ledger SHALL preserve available native identities in redacted versioned metadata
 without substituting threadId/sessionId. Each runtime-backed record SHALL refer to its
 immutable installation/version/binary/protocol/schema tuple; provider-only completion
-records SHALL identify their actual Locus execution source. Native context used for
+records SHALL identify their actual Locus execution source. Lifecycle-only job_created,
+worker-claim job_started, pre-start cancel and never-started recovery/failure records
+SHALL use kind=pending before execution binding, with ledger_provenance_json null and
+no claimed binary. A pending ledger SHALL reject native observations, usage and native
+artifact candidates. At adapter executable resolution, the provenance owner SHALL
+capture installationId/executableRef/actual version/source/binarySha256 and reproducible
+schema fingerprints and bind them before runtime execution or runtime-backed records.
+The tuple SHALL remain immutable for the Run; earlier pending facts SHALL remain pending.
+Binding after terminal seal SHALL be rejected; a never-started terminal SHALL remain null.
+Runtime-execution ledger construction/binding with a missing required tuple field SHALL
+fail before runtime publication. Native context used for
 interrupt SHALL be owned by the ledger and read only by the host adapter.
 
 #### Scenario: Distinct native identities are preserved
 - **WHEN** `identity-provenance.json` supplies distinct thread/session/turn/item/request/call
   values, including exact-secret substrings, to a ledger with secretHints
-- **THEN** `read(0).payload.runtime.codex.v1` preserves each value's redacted field and
+- **THEN** `read(0).payload.extensions["runtime.codex.v1"]` preserves each value's redacted field and
   omits unavailable fields; no thread ID fills a missing session ID
 - **AND** serialized records contain none of the fixture secrets
 
 #### Scenario: Exact runtime provenance follows every event
 - **WHEN** runtime and locus-completion variants of `identity-provenance.json` create
-  ledgers and ingest native/system/synthetic observations
+  execution ledgers and ingest native/system/synthetic observations, and never-started
+  variants create a pending ledger for enqueue, worker claim, queued cancel or recovery
 - **THEN** committed record metadata and trace header retain their exact immutable
   source tuple; the completion variant claims no native binary/installation
-- **AND** a missing binary digest on the runtime variant rejects construction before
-  publication, and schema identity uses the fixture's reproducible per-file fingerprints
+- **AND** a missing binary digest rejects runtime-execution ledger construction or
+  pending-to-runtime binding before runtime publication; schema identity uses reproducible
+  per-file fingerprints, and no missing digest is invented for a pending lifecycle ledger
+- **AND** pending rows/header remain null-provenance on never-started cancel/recovery;
+  native input before binding is rejected; executable resolution binds the tuple once,
+  subsequent runtime rows reference it, reopening preserves it and changing it is rejected
 
 #### Scenario: Interrupt target comes from native Run state
 - **WHEN** the adapter reads `readNativeContext()` after thread/turn observations in
@@ -162,7 +215,15 @@ snapshot as authoritative for pre-seal materialization. `readItem` SHALL expose 
 state/text/fields and reconciliation result, lossPossible, missingStart and suppressed
 count; committed `status/item_reconciliation` SHALL carry the same data in payload.item
 and payload.reconciliation. Results SHALL be matched, suffix_repaired, missing_local,
-missing_native or mismatch. Reasoning keys SHALL separate text/summary and partIndex.
+missing_native or mismatch. readItem SHALL accept either the complete native
+(threadId, turnId, itemId) key or an observation-local correlationKey, each with channel
+and partIndex; every committed item observation, including deltas, SHALL carry that key
+in payload.item so missing-ID items remain
+addressable without fabricated native IDs. Reasoning keys SHALL separate text/summary
+and partIndex. A schema-proven index SHALL be retained; otherwise the ledger SHALL
+infer summary's last observed summaryPartAdded index (default 0) or content/text index
+0 and record indexSource=inferred, lossPossible=true. This fallback is an inferred
+policy, not a claim that native deltas carry a part index.
 
 #### Scenario: Assistant deltas reconcile with final snapshot
 - **WHEN** `items-assistant.jsonl` supplies a missing start, repeated handoff key,
@@ -171,15 +232,21 @@ missing_native or mismatch. Reasoning keys SHALL separate text/summary and partI
   is suffix_repaired for prefix "hel" and mismatch for "heX"
 - **AND** missingStart/lossPossible are true in missing-start/gap variants; final text
   is authoritative item state rather than a second appended assistant_delta
+- **AND** the missing-native-ID variant returns its correlationKey in the committed
+  record and readItem(correlationKey, channel, partIndex) addresses only that observation;
+  equal text under another correlationKey does not merge the two
 
 #### Scenario: Reasoning channels and parts reconcile separately
-- **WHEN** `items-reasoning.jsonl` sends textDelta("analysis"), summaryPartAdded(0),
-  summaryTextDelta(0,"short"), summaryPartAdded(1), summaryTextDelta(1,"next"), plus
+- **WHEN** `items-reasoning.jsonl` sends index-less textDelta("analysis"), summaryPartAdded(0),
+  summaryTextDelta("short"), summaryPartAdded(1), summaryTextDelta("next"), plus
   completed content/summary arrays and duplicate/out-of-order variants
 - **THEN** `readItem` returns distinct completed text/0="analysis", summary/0="short",
   summary/1="next" with corresponding committed reconciliation fields
 - **AND** no channel concatenates another channel or part, and missing/overlap variants
   have their explicit fixture result/loss/suppressed counts
+- **AND** inferred index-less deltas use text/0 and the last summary boundary (or summary/0
+  when no boundary exists), with indexSource=inferred and lossPossible=true; exact native
+  fields are schema-attributed, never invented to satisfy a normalized descriptor
 
 #### Scenario: Tool item lifecycle is incomplete or repeated
 - **WHEN** `items-tools.jsonl` supplies start/progress/final for each of the eight tool
@@ -192,8 +259,9 @@ missing_native or mismatch. Reasoning keys SHALL separate text/summary and partI
 ### Requirement: Diagnostic Error And Terminal Invariants
 The ledger SHALL preserve error classification, willRetry, code and native identity
 without treating every error as terminal. It SHALL emit exactly one completed per
-settled Run. Transport exit SHALL supply a synthetic interrupted terminal with
-provenance; there SHALL be no same-Run transport replacement exception. Outcome SHALL
+settled Run. Transport exit SHALL supply a synthetic interrupted terminal candidate
+with provenance, settling an unsealed Run and becoming a late diagnostic if already
+sealed; there SHALL be no same-Run transport replacement exception. Outcome SHALL
 be determined by the declared evidence rule: cancel → canceled; interrupt/exit/recovery
 → interrupted; denial/invalid-output/invalid-empty/credential-check failure/native
 failure → failed; live success or valid host result with valid allowed output → succeeded.
@@ -220,14 +288,22 @@ be immutable status/late_event diagnostics and SHALL NOT change outcome or mater
   transport ID, exit/signal and installation provenance
 - **AND** subsequent observations are status/late_event with terminalSequence and cannot
   change the interrupted result or create a replacement transport on this Run
+- **AND** the post-seal-exit variant keeps its prior succeeded/failed terminal, records
+  only a status/late_event referencing it and never adds an interrupted completed
 
 #### Scenario: Pre-start cancel and dead-worker recovery settle through ledger
 - **WHEN** queued and confirmed-dead-worker fixtures in `terminal-evidence.json` use
   the host ledger's cancel and recovery evidence ports
 - **THEN** each durable job mutation and one completed commit atomically, respectively
   canceled and interrupted, with synthetic.source=cancel or recovery
-- **AND** repeating recovery does not add a terminal; stale heartbeat without confirmed
-  process death cannot claim a running native owner
+- **AND** headless/job-recovery.ts requires a null/older-than-120-s heartbeat and same-host
+  ESRCH/observed worker exit, or a never-claimed never-executed job with no workerId/PID;
+  it rechecks status/workerId/PID/workerStartedAt/heartbeat in the atomic settlement
+- **AND** repeated recovery adds no terminal; alive, EPERM, unsupported/unknown host or
+  a claimed worker with absent PID stays unsettled with host confidence=heartbeat_only;
+  confirmed settlement carries recovery.confidence=confirmed and its observed basis
+- **AND** never-started settlement retains pending provenance; executed recovery reuses
+  the sealed tuple; a changed worker/heartbeat invalidates recovery admission
 
 #### Scenario: Usage after completed is diagnostic only
 - **WHEN** `late-usage.jsonl` sends total=20, turn/completed and then total=25 with last=5,
@@ -236,6 +312,9 @@ be immutable status/late_event diagnostics and SHALL NOT change outcome or mater
   each later record is status/late_event with diagnosticOnly=true and terminalSequence
 - **AND** the late usage's payload.observation preserves total=25/last=5, while result,
   item state, artifact refs and the sole completed remain unchanged
+- **AND** arrivals during preparation commit at their reserved post-terminal sequences
+  only after the terminal transaction; preparation failure keeps one failed terminal in
+  the terminal slot and those late records reference it, without silent discard
 
 ### Requirement: Usage Snapshot Accounting
 Canonical usage_update SHALL use cumulative snapshot semantics, retaining total, last,
@@ -315,24 +394,37 @@ SHALL require matching JSON-RPC id and returned/requested thread.id plus indepen
 session identity and provenance; Claude SHALL require correlated system/init with
 resume equality or fork's distinct new UUID. Outcomes SHALL be neutral
 native_resume_validated/native_resume_rejected facts, preserving native codes and
-separating native loading from later provider success or live attach.
+separating native loading from later provider success or live attach. Available intent,
+observed thread/target-turn status and race context SHALL be recorded without changing
+live Run state. Ephemeral/path/creator-version SHALL be durability evidence, independent
+of the four Codex response clauses; absent or non-durable evidence SHALL set
+durableEvidence=false/lossPossible=true without rejecting an otherwise valid load.
+Claude's ambiguous "No conversation found" stderr SHALL remain a sanitized
+NATIVE_RESUME_REJECTED diagnostic; it SHALL NOT prove SESSION_EXPIRED or trigger
+sessionId/binding clearing from stream-error finalization.
 
 #### Scenario: Codex response validates the requested native thread
 - **WHEN** `resume-codex.jsonl` sends early status, unrelated response, matching success,
-  wrong-thread, absent-session, -32600 and -32603 variants through ingress
+  wrong-thread, absent-session, -32600 and -32603 variants through ingress, plus
+  ephemeral/missing-path/missing-cliVersion and CODEX-05 start/resume no-rollout variants
 - **THEN** only the matching success yields status/native_resume_validated, carrying
-  jsonRpcId, requestedThreadId, returnedThreadId, sessionId, ephemeral, redacted path
-  and cliVersion; unrelated response is protocol_response with correlated=false
+  jsonRpcId, requestedThreadId, returnedThreadId, sessionId and available ephemeral,
+  redacted path, cliVersion, intent, observedThreadStatus and observedTargetTurnStatus; unrelated response is protocol_response with correlated=false
 - **AND** wrong/missing/error variants yield native_resume_rejected with reason/code;
   early status remains thread_lifecycle; no variant fabricates thread/started or expired
+- **AND** otherwise valid ephemeral/missing-path/missing-cliVersion responses remain
+  validated with durableEvidence=false/lossPossible=true; CODEX-05 records rejected
+  raceContext=start_resume_no_rollout and its native error without altering readOutcome
 
 #### Scenario: Claude correlated init validates resume independently of turn success
 - **WHEN** `resume-claude.jsonl` supplies ordinary/fork correlated system/init and
-  unrelated-init/result-success-is_error/no-init rejection variants
+  unrelated-init/result-success-is_error/no-init and No conversation found rejection variants
 - **THEN** only correct correlated resume equality or a valid distinct fork UUID yields
   native_resume_validated; the other terminal rejection cases yield native_resume_rejected
 - **AND** a later auth failure leaves the validation fact unchanged and no one-shot
   handle state is mutated by the fact recorder
+- **AND** the stream-error variant retains the sanitized native diagnostic without
+  SESSION_EXPIRED/proven-expiry wording; finalization leaves the existing sessionId intact
 
 ### Requirement: Resume Snapshot Repair
 Snapshots SHALL be recorded as repair evidence with repair.source=snapshot,
@@ -345,7 +437,9 @@ Durable terminal truth SHALL be immutable even when native disk history loses fa
   completed item "hello" before the Run seal
 - **THEN** readItem.text becomes "hello" with suffix_repaired and a fresh status/repair
   sequence carrying repair.source=snapshot and lossPossible=true
-- **AND** readOutcome remains null and native item offsets do not replace the ledger cursor
+- **AND** a completed snapshot item without any local item yields missing_local with
+  authoritative final text and lossPossible=true; readOutcome remains null and native
+  item offsets do not replace the ledger cursor
 
 #### Scenario: Durable failure survives degraded native snapshot
 - **WHEN** `snapshot-failed.json` commits a live failed terminal with 401 diagnostic,
@@ -362,3 +456,6 @@ Durable terminal truth SHALL be immutable even when native disk history loses fa
   creator version; repair carries source/target reproducible fingerprints
 - **AND** incompatible input records mismatch/lossPossible without guessing item state;
   all variants use fresh Locus sequence and are labeled synthetic, not captured full responses
+- **AND** a pre-seal local item absent from a supplied authoritative snapshot yields
+  missing_native/lossPossible=true, retains the local text as unverified and never
+  invents native completion for that item

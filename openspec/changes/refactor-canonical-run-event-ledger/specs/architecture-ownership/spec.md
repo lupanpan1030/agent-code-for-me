@@ -9,8 +9,16 @@ admitRunArtifactCandidate in run-artifacts.ts; redactRuntimePayload and
 redactExactSecretHints in redaction.ts. These module paths are under src/main/lib/.
 The exact store append export appendExactRunEventBatch SHALL exist only in
 headless/job-store.ts, with a private record insert helper; its sole direct importer
-SHALL be agent-runtime/run-event-ledger-host.ts. The legacy mapping/bridge/writer
-exports listed in design's deletion inventory SHALL have no definitions or call sites.
+SHALL be agent-runtime/run-event-ledger-host.ts. captureRunExecutionProvenance SHALL
+be defined only in agent-runtime/run-provenance.ts; the ledger host SHALL be the only
+composition path binding its tuple to a Run. The removed legacy exports
+mapDesktopStreamChunkToRunEvents, createDesktopStreamEventMapper,
+appendRunEventsToAgentJob, redactRendererDiagnosticChunk, redactRendererRuntimeChunk,
+createRuntimeRendererChunkEmitter, createRuntimeStreamChunkSecretRedactor,
+isDesktopRuntimeFailureChunk, persistedPayloadForRunEvent, createAgentJobRunEvent and
+appendAgentJobEvent SHALL have no definitions, re-exports or call sites. Historical
+ledger_version=0 decoding SHALL be confined to the single versioned Workbench reader;
+it SHALL NOT restore a wrapper writer or a live legacy event path.
 Direct inserts into agentJobEvents outside job-store SHALL also be rejected by the
 static guard (including the schedules bypass). Static checks SHALL assert source
 structure, not secret leakage or runtime outcomes.
@@ -30,7 +38,7 @@ structure, not secret leakage or runtime outcomes.
 - **AND** a schedules-style direct db.insert(agentJobEvents) outside the store is rejected
 
 #### Scenario: Guard proves its own detection
-- **WHEN** the guard scans clean, duplicate-definition, forbidden-import, exported-insert
+- **WHEN** the guard scans clean, duplicate-definition, forbidden-import, exported-insert,
   direct-event-insert and legacy-symbol fixtures in `architecture-fixtures.json`
 - **THEN** exact expected static findings are matched, and missing/unexpected findings
   fail the self-test; runtime fault/redaction/terminal behavior is tested in core instead

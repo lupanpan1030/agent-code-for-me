@@ -16,7 +16,8 @@ The [trace](../../../docs/native-resume-event-gap-trace-2026-09-04.zh-CN.md) §�
 is a non-normative factual baseline; [strategy](../../../docs/ideas/locus-product-direction-harness-strategy.zh-CN.md)
 §§9/12 sets Phase 3 direction, and [C2/C5/C7](../../../docs/ideas/locus-interoperability-contract-v1.zh-CN.md)
 constrains the execution, interaction and public boundaries. This revision disposes the
-five raw review reports against `0bd7b2bf2452773d416c7009a208e9590daa679f`; it is not an
+second fresh-context review (5 opus dimensions + fable synthesis) against
+`9e47e2ddb79e3856d16ba1753d87f1cafd107a8d`, following the first review at `0bd7b2bf`; it is not an
 implementation approval or a fresh review approval.
 
 ## What Changes
@@ -59,8 +60,8 @@ implementation approval or a fresh review approval.
 
 | Deliverable | Proposed disposition |
 | --- | --- |
-| Owner | `agent-runtime/run-event-ledger.ts` owns facts, sequence, state and settlement; `run-event-ledger-host.ts` composes the store and projections; `run-artifacts.ts` owns admission and manifests. Existing `runtime-events.ts`, `redaction.ts`, `shared/usage-metadata.ts` retain types/redaction/vector normalization. |
-| Same-change deletion | Delete `job-event-bridge.ts` / `createAgentJobRunEvent`, the old chunk-to-RunEvent exports and `runEventSequence` wrapper; remove native default empty projection, adapter/mapping sequence and terminal inference, raw desktop text joins, headless completed suppression, job-store sequence/terminal minting and dispatcher artifact minting. [Design owner inventory](design.md#current-owner-to-target-mapping) enumerates all system, recovery, cancel and completion paths. |
+| Owner | `agent-runtime/run-provenance.ts` captures the two-stage immutable runtime tuple; `headless/job-recovery.ts` owns stale/death confirmation; `agent-runtime/run-event-ledger.ts` owns facts, sequence, state and settlement; `run-event-ledger-host.ts` composes the store and projections; `run-artifacts.ts` owns admission and manifests. Existing `runtime-events.ts`, `redaction.ts`, `shared/usage-metadata.ts` retain types/redaction/vector normalization. |
+| Same-change deletion | Delete `job-event-bridge.ts` / `createAgentJobRunEvent`, the old chunk-to-RunEvent exports and `runEventSequence` wrapper writer (unwrap only for v0 historical reads); remove native default empty projection, adapter/mapping sequence and terminal inference, raw desktop text joins, headless completed suppression, job-store sequence/terminal minting and dispatcher artifact minting. [Design owner inventory](design.md#current-owner-to-target-mapping) enumerates all system, recovery, cancel and completion paths. |
 | Migration | `canonicalRunEventLedgerV1` is a build-time implementation gate read only by the host composition module; [design](design.md#migration-plan) defines activation conditions, legacy marking and final deletion. No Run is written by both cores. |
 | Verification consumers | Locus-owned Desktop/Workbench, headless/CLI, public batch and interactive conformance fixtures; separately record Career Kit and Amadeus's own adapter/E2E receipts or `unknown`. |
 
@@ -102,14 +103,18 @@ sets `runId = jobId` and persists `runEvent.payload` bare;
 The desktop-only `{runId, runtimeId, runEventSequence, redaction, payload}` wrapper in
 [stream-event-mapper.ts](../../../src/main/lib/agent-runtime/stream-event-mapper.ts)
 is C7 §9.1 internal SQLite/renderer projection. Its removal has no public alias or C7
-sunset obligation. The new public extension pointer is **`/payload/runtime/codex/v1`**.
+sunset obligation. Historical v0 wrapper decoding remains a read-only data-format branch.
+The new public extension pointer is **`/payload/extensions/runtime.codex.v1`**, accessed as
+`payload.extensions["runtime.codex.v1"]`. This replaces the previous draft pointer because
+`headless/agent-runtime.ts` already emits a string `payload.runtime` in runtime_selected /
+runtime_selection_refused status events; that semantic string is preserved.
 
 ### 3. Affected public boundaries and C7 classification
 
 | C7 §9.2 row | Classification | Consumer-observable change / evidence |
 | --- | --- | --- |
 | 1 — deletion/rename | Non-breaking | No public command, field, event or error is deleted/renamed; desktop wrapper removal is internal. |
-| 2 — type/requiredness/nullable/enum/default/validation | Non-breaking | No public input validation/default, required field, nullable field or enum changes; output truth is classified once as R1 under 4/5. |
+| 2 — type/requiredness/nullable/enum/default/validation | Non-breaking | No public input validation/default, required field, nullable field or status/event enum changes; the additive discovery feature enum extension is accounted for under row 10; output truth is classified once as R1 under 4/5. |
 | 3 — identity | Non-breaking | `jobId` already identifies the API Run; retry already creates a new job with `job.retryOfJobId` and `job.attempt` ([serializer](../../../src/main/lib/headless/cli-output.ts), [schema](../../../docs/local-job-api-v1.schema.json)); these stay unchanged. |
 | 4 — lifecycle | **Red R1: Owner decision needed** | Existing succeeded/failed/canceled/interrupted vocabulary and synchronous create/retry waiting remain; denial, rejection and invalid-empty completion become failed, and retry-only diagnostics no longer force failed. See 5 for the same decision's result/exit effects. |
 | 5 — ordering/cursor/replay/retry/terminal result | **Red R1 for terminal result only** | Result status and derived create/retry exit codes change for the R1 cases. Additional already-declared event types/optional evidence are additive. Proposed v1 projects EVERY ledger record, including safe status stubs, so sequence remains dense; no sparse-sequence break is taken. |
@@ -117,7 +122,7 @@ sunset obligation. The new public extension pointer is **`/payload/runtime/codex
 | 7 — trust/access boundary | Non-breaking | Redaction remains inside the existing promised boundary; no new auth, permission, workspace, filesystem or network grant. R1 is not counted again here. |
 | 8 — artifact/ref/digest/retention/access | Non-breaking, additive | Existing run-dir request/events/result/manifest paths, SHA-256 and retention remain; they are already verified today ([fileArtifact](../../../src/main/lib/headless/local-job-api.ts)). Newly admitted native artifacts add entries; no formerly public native candidate is removed. |
 | 9 — transport/Host/platform | Non-breaking | No launch, shutdown, packaging or public transport changes; additional feature advertisement uses existing discovery. |
-| 10 — mandatory new event/enum/extension or unknown handling | Non-breaking | Twelve public types unchanged; `runtime.codex.v1` schemaVersion 1 is optional and experimental; unknown optional fields remain ignorable under the [guide Stability Contract](../../../docs/local-job-api-v1-consumer-guide.md). No new mandatory extension request is introduced. |
+| 10 — mandatory new event/enum/extension or unknown handling | Non-breaking | Twelve public types unchanged; `runtime.codex.v1` schemaVersion 1 is optional and experimental; unknown optional fields remain ignorable under the [guide Stability Contract](../../../docs/local-job-api-v1-consumer-guide.md). No new mandatory extension request is introduced. The living Discovery requirement defines additive feature detection; the published discoveryFeature enum and LOCAL_JOB_API_DISCOVERY_FEATURES are closed today and must be extended in this change. Consumers validating with a pinned older schema copy must refresh it; unknown-field tolerance alone does not cover enum values. |
 
 Row 5's rejected sparse alternative is an actual potential public ordering change:
 filtering internal ledger records would make v1 `sequence` sparse relative to today's
@@ -146,8 +151,14 @@ Current API-job event (shape characterized by the existing bridge test):
 Proposed optional additions, with the original semantic field in place:
 
 ```json
-{"apiVersion":"locus.local-job.v1","jobId":"job-example","sequence":3,"type":"assistant_delta","createdAt":"2026-09-04T00:00:00.000Z","payload":{"text":"hello","runtime":{"codex":{"v1":{"schemaVersion":1,"maturity":"experimental","threadId":"th","turnId":"tu","itemId":"msg"}}}}}
+{"apiVersion":"locus.local-job.v1","jobId":"job-example","sequence":3,"type":"assistant_delta","createdAt":"2026-09-04T00:00:00.000Z","payload":{"text":"hello","extensions":{"runtime.codex.v1":{"schemaVersion":1,"maturity":"experimental","threadId":"th","turnId":"tu","itemId":"msg"}}}}
 ```
+
+A status payload can retain `"runtime":"codex"` beside the optional `extensions` object;
+`public-v1.json` includes both runtime_selected and runtime_selection_refused cases.
+Dense projection increases the number of status records per Run. Consumers page with
+`--after` and must not assume a bounded event count; consumers filtering to their
+existing non-status event types retain those semantics.
 
 Pure schema diff cannot express R1: a native completed/default-success result with a
 recorded denied request becomes `failed`/exit 1; a retry error followed by a live success
@@ -246,7 +257,8 @@ Date: pending
 Six capability deltas are affected: agent-runtime-core, architecture-ownership,
 local-job-api, desktop-agent-jobs, headless-agent-jobs and codex-runtime-parity.
 The implementing slice also migrates Claude desktop event persistence (including SDK
-job/startup/state wiring) to the ledger without changing its resume/CAS workflow,
+job/startup/state wiring) to the ledger and removes the ambiguous SESSION_EXPIRED
+inference/stream-error binding clear; one-shot resume/CAS remains deferred,
 and all existing headless/completion/system terminal writers. It does not replace
 Run constructors or expand capability claims. Schema/store and artifact preparation
 are explicit design additions, requiring their own tests within this change.
@@ -261,4 +273,4 @@ STATUS row, creates one local commit, and performs no product/test changes, merg
 1. Owner 是否对 R1（C7 rows 4/5 的终态真相及 exit code）选择 DIRECT_NEW_STANDARD，或选择 DEFER／REJECT？
 2. Owner 是否接受本草案的确定规则：默认空产出失败、显式允许空产出的既有内部请求例外，以及 completed 后 usage 仅作为可读诊断？
 3. Owner 是否接受最小 immutable provenance snapshot 与 schema v1／legacy-unverified 历史标记在本切片内实现，而不等待 Runtime delivery registry？
-4. Owner 是否接受保持 v1 稠密 sequence 的逐记录 status 投影，以及终态 artifact 与 completed 同一 durable commit 登记的方案？
+4. Owner 是否接受保持 v1 稠密 sequence 的逐记录 status 投影（每个 Run 的 status 记录会增加，消费者须用 --after 分页且不假定事件数量上限），以及终态 artifact 与 completed 同一 durable commit 登记的方案？

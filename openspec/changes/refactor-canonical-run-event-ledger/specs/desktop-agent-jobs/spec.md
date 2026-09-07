@@ -18,4 +18,6 @@ and sequence without reconstructing a second fact chain from provider chunks.
   MCP and provider metadata and a sentinel raw input available only to ingress
 - **THEN** the desktop writer and renderer receive the committed redacted record only;
   neither projection is passed the raw sentinel input or exact secret hints
-- **AND** replay uses record sequence directly without a runEventSequence wrapper reader
+- **AND** ledger_version=1 replay uses record sequence directly; the single versioned
+  Workbench decoder unwraps ledger_version=0 historical desktop rows only, preserving
+  their semantic display without restoring a live wrapper writer

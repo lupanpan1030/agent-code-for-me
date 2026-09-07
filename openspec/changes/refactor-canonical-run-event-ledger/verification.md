@@ -9,7 +9,16 @@ REVIEW_APPROVED or Owner ACCEPTED. A fresh review of the revised source remains 
 
 ## Sources
 
-- Required starting source: `0bd7b2bf2452773d416c7009a208e9590daa679f`, branch
+- Third-revision required starting/reviewed source:
+  `9e47e2ddb79e3856d16ba1753d87f1cafd107a8d`; HEAD matched and worktree was clean.
+  Current dispatch authorizes one local documentation commit only.
+- [Second fresh-context review](/home/chen/.claude/projects/-home-chen-projects-agent-code-for-me/f1888632-cd03-49a0-a57d-51704695f29d/handoff/reviews/run-event-ledger-rereview-9e47e2dd.md),
+  workflow `wf_28e60ec0-0f1`: 5 opus dimensions + fable synthesis,
+  CHANGES_REQUESTED, 1 P1 + 10 P2 + 10 P3; 58/59 first-review findings resolved,
+  SQ-8 partially resolved, no regressions. Its closing summary is reproduced verbatim
+  below; prior author responses/receipts remain historical, not current approval.
+
+- Second-revision starting source: `0bd7b2bf2452773d416c7009a208e9590daa679f`, branch
   `codex/refactor-canonical-run-event-ledger-draft`, worktree
   `/home/chen/projects/locus-refactor-canonical-run-event-ledger-draft` (clean at intake).
 - [Raw five-dimension review](/home/chen/.claude/projects/-home-chen-projects-agent-code-for-me/f1888632-cd03-49a0-a57d-51704695f29d/handoff/reviews/run-event-ledger-draft-review-0bd7b2bf.md):
@@ -25,7 +34,7 @@ REVIEW_APPROVED or Owner ACCEPTED. A fresh review of the revised source remains 
   [Consumer Impact template](../../../docs/consumer-impact-template.zh-CN.md),
   [ownership](../../../docs/OWNERSHIP_MAP.md), living specs and code at the base SHA.
 
-## Draft Revision Receipts
+## Second Revision Receipts (historical source 9e47e2dd)
 
 Date: 2026-09-07 (Pacific/Auckland). All source edits are confined to this change
 folder and its one STATUS row; even STATUS's global Updated date is left untouched.
@@ -56,7 +65,7 @@ implementation to the old source. After the implementing source is frozen, **eve
 implementation check and fresh independent review must name that same exact SHA.
 No merge/push/remote PR/release was authorized or performed.
 
-## Review dispositions
+## First Review Dispositions (historical author response)
 
 IDs use the raw report's dimension and numbered heading: BA=brief-adherence,
 C7=contract-c7, CF=code-fit, TF=trace-fidelity, SQ=spec-quality.
@@ -152,6 +161,8 @@ and retry job typing above take precedence over contradictory raw reviewer claim
 Each row below identifies one exact capability/Requirement/Scenario. Independent author
 adds one test file/ID and red command/output, then a green command/output at the frozen
 implementing SHA. Fixtures are defined in tasks §7; no row is already a passing test.
+Third revision: 56 unique scenarios = 38 core + 3 architecture + 3 Codex + 2 desktop +
+2 headless + 8 Local Job API. S01–S55 retain their IDs; S56 adds conflict reconciliation.
 
 | ID | Capability / Requirement / Scenario | Test ID / red / green |
 | --- | --- | --- |
@@ -210,6 +221,7 @@ implementing SHA. Fixtures are defined in tasks §7; no row is already a passing
 | S53 | local-job-api / Discovery Feature Advertisement / Consumer detects readiness support | Pending / Pending / Pending |
 | S54 | local-job-api / Discovery Feature Advertisement / Older build lacks the feature | Pending / Pending / Pending |
 | S55 | local-job-api / Discovery Feature Advertisement / Consumer detects canonical ledger support | Pending / Pending / Pending |
+| S56 | agent-runtime-core / Canonical Run Event Ledger Ownership / Cross-process queued cancel races with start | Pending / Pending / Pending |
 
 
 ## Future Implementation Receipts
@@ -247,6 +259,118 @@ specified. Rows 2/3/7/8 are not separate Red changes. Governance approval remain
 proposal/tasks/STATUS, not in living behavior requirements.
 
 Deferred: C2 constructor/renderer identity convergence; Phase 5 replacement/lease/fencing/
-Claude one-shot CAS; add-durable-agent-interactions; add-local-job-api-async-submit;
+Claude one-shot CAS and binding expiry/repair (the ambiguous stream-error classification/clear is addressed in this slice); add-durable-agent-interactions; add-local-job-api-async-submit;
 native rollout writer and trace §6.2 dynamic conformance. No deferred work was implemented.
 Open Questions have one canonical wording, mirrored in proposal/design (four items).
+
+
+## Third Revision Dispositions — Second Review Items 1–21
+
+These are author dispositions on the review of `9e47e2ddb79e3856d16ba1753d87f1cafd107a8d`,
+workflow `wf_28e60ec0-0f1`. All 21 findings are addressed in this DRAFT; no current P3 is
+left undisposed. This does not issue a third-review verdict. A third fresh-context review
+of the new committed SHA, followed by Owner APPROVED, is still the next gate.
+
+| Review item | Priority | Disposition and concrete revised location |
+| --- | --- | --- |
+| 1 | P1 | Accepted two-stage provenance: pending lifecycle records/null job tuple at enqueue, worker claim, queued cancel and never-started recovery; runtime capture at adapter executable resolution, one-time bind and immutable references thereafter. Runtime-required-field rejection applies to runtime construction/binding. NEW run-provenance.ts owns installation identity/executableRef/digest/reproducible schema manifest; no registry. design Test-facing Contract / Durable Schema / owner table; core Native Identity And Runtime Provenance; tasks 2.4–2.5, 6.1, 7.15. |
+| 2 | P2 | Inline all 11 forbidden exports in architecture delta. Move the complete 66/10/16 table from design to the parity requirement; design references that normative table. Core defines observable ports/readers directly. No living delta delegates normative content to design/tasks or a not-yet-committed fixture. |
+| 3 | P2 | Select internal-only option: historyQuality belongs to the store/Workbench reader; remove public job.ledger.historyQuality addition. design Migration Plan, core historical scenario and tasks 2.9/7.16/8.2 agree. No new public-envelope/C7 addition is implied. |
+| 4 | P2 | Replace colliding pointer with /payload/extensions/runtime.codex.v1, i.e. payload.extensions["runtime.codex.v1"]. Keep string payload.runtime in runtime_selected/runtime_selection_refused; proposal example/C7, core identity, local API delta and tasks 7.16/8.2 include collision cases. |
+| 5 | P2 | Name job-recovery.ts owner and 120 s stale + same-host absent/observed-exit/never-claimed predicate; alive/EPERM/unknown/claimed-missing-PID is not death. Revalidate claim/heartbeat transactionally, record confidence and basis. Drain/cancel/recover all old queued/running jobs with old build before activation; no v0 writes after cutover. design Store/Migration/owner table; core recovery scenario; tasks 2.9/4.3/7.4. |
+| 6 | P2 | Ledger reloads committed header/events, rebuilds state, looks up stable fact keys, re-evaluates intent and re-reserves uncommitted sequences on conflict, at most three attempts. Cancel-first blocks spawn; start-first forwards existing cancel request to worker. Store never re-sequences. design Store Invariants; core new race scenario S56; tasks 2.10/7.8. |
+| 7 | P2 | Delete writer-side wrapper only; getWorkbenchSemanticPayload logic remains solely in the ledger_version=0 historical branch of one versioned decoder. v1 uses direct committed records. design D3/owner table/Migration; desktop delta; tasks 2.3/2.9/7.15. |
+| 8 | P2 | Label part-index rule 推断/inferred. Stateless decoder preserves proven index or absence; ledger fallback is last summary boundary/default 0 and text/content 0, with indexSource=inferred/lossPossible=true. Verify pinned 0.139 schema before 7.2 freeze. design evidence/reconciliation; core/parity scenarios; tasks 1.4/3.3/7.2. |
+| 9 | P2 | Choose in-slice correction: map No conversation found to neutral NATIVE_RESUME_REJECTED; remove SESSION_EXPIRED inference and stream-error sessionId clear. Both Claude error files have owner-table rows/tasks; rejection itself neither settles the Run nor mutates a binding. Full expiry/repair/CAS remains Phase 5. design Resume/owner table; core Claude scenario; tasks 6.3/7.9. |
+| 10 | P2 | Vocabulary WHEN explicitly drives ingestRuntimeObservation, admitRunArtifactCandidate and settle; tasks 7.17 requires a per-case port field for owner-gated artifact/terminal inputs. core Event type is emitted. |
+| 11 | P2 | Restore the living Older build lacks the feature WHEN/THEN verbatim and generic. The existing Consumer detects canonical ledger support scenario carries this change's IDs; task 7.16 names the actual Locus discovery reader, no invented preflight subject. |
+| 12 | P3 | State higher status-event volume, --after pagination and no bounded count assumption in Consumer Impact §4, local API requirement, task 8.2 and identical Open Question 4 in proposal/design. |
+| 13 | P3 | C7 row 10 explicitly accounts for the closed discoveryFeature enum/LOCAL_JOB_API_DISCOVERY_FEATURES, same-change extension and consumers refreshing pinned schema copies. Row 2 no longer claims no enum additions at all. task 8.2 names both owners. |
+| 14 | P3 | Task 8.3 explicitly records run-artifacts.ts file validation/preparation/writing versus local-job-api capability/serializer ownership of public paths/roles/schema; writer consumes that contract rather than forking it. |
+| 15 | P3 | Late observations during preparation retain post-terminal reservations, publish only after terminal commit and point to its terminal slot. Failed preparation keeps one failed candidate in that slot and preserves diagnostics (no discard needed); conflict rebase affects only uncommitted reservations. design Late Policy; core late-usage scenario; tasks 4.5/7.6. |
+| 16 | P3 | Resume validated/rejected facts record intent, available observed thread/target-turn statuses and CODEX-05 no-rollout raceContext without changing live outcome. design Resume; core Codex scenario; tasks 6.2/7.9. |
+| 17 | P3 | Separate four measured response clauses from ephemeral/path/cliVersion durability evidence. Otherwise valid load remains validated, missing/non-durable evidence sets durableEvidence=false/lossPossible=true. design/core/tasks 7.9 agree. |
+| 18 | P3 | Transport exit is a candidate: unsealed settles interrupted; already sealed becomes late diagnostic. Add post-seal exit fixture variant and assertion in core and task 7.5. |
+| 19 | P3 | Add missing_local completed-without-local snapshot and missing_native local-absent-from-authoritative-snapshot variants with explicit reconciliation/loss assertions; core repair scenarios and tasks 7.10/7.11. |
+| 20 | P3 | readItem accepts complete native key or returned observation-local correlationKey plus channel/partIndex. Missing-ID fixture checks addressability and no merge of unrelated equal-text observations. design contract/reconciliation; core assistant scenario; tasks 3.1/7.2. |
+| 21 | P3 | Historical invariant WHEN now opens a store of pre-ledger rows, not a one-time migration act; task 2.9 retains migration work. Fix comma between exported-insert and direct-event-insert architecture variants. This addresses the residual first-review SQ-8. |
+
+Unaddressed P3 and reasons: **none**. R1 and the four mirrored Open Questions remain
+Owner decisions; this author response does not resolve or approve them.
+
+## Third Revision Receipts
+
+Date: 2026-09-07 (Pacific/Auckland). Required base/reviewed source:
+`9e47e2ddb79e3856d16ba1753d87f1cafd107a8d`. Scope: this change directory plus the single
+STATUS row only; product code, tests, fixture files, living specs, package/lock files
+and global STATUS Updated date are untouched. Tasks/fixture descriptions remain future
+approved work. Existing dependencies are temporarily linked for checks and the link
+is removed before commit. The final local source SHA is the commit containing this
+receipt (reported in the handoff); it must receive its own fresh review.
+
+| Check | Command / evidence | Result |
+| --- | --- | --- |
+| Intake | pwd; git rev-parse HEAD; git status --short | Required worktree/SHA, clean |
+| Single strict | PATH=/home/chen/projects/agent-code-for-me/node_modules/.bin:$PATH openspec validate refactor-canonical-run-event-ledger --strict --no-interactive | Exit 0: Change 'refactor-canonical-run-event-ledger' is valid |
+| All strict | PATH=/home/chen/projects/agent-code-for-me/node_modules/.bin:$PATH openspec validate --all --strict --no-interactive | Exit 0: Totals: 53 passed, 0 failed (53 items) |
+| Whitespace | git diff --check | Exit 0, no output |
+| Document consistency | Unique scenario/register mapping; MODIFIED baseline names; inline native table vs trace; JSON examples; identical ≤5 Open Questions; source scope | Passed: 56 scenarios/56 rows; 66/10/16 table preserved exactly; 4 mirrored questions; 21 dispositions; exact summary; 10 changed documents/one STATUS row |
+| Required current-code gate | bun run check:full (temporary existing-dependency link) | Exit 1: 1925 pass / 3 fail / 9338 expectations / 304 files; same three Codex snapshot EROFS failures as second revision; lint/architecture/residue/typecheck passed |
+| Interrupted aggregate build step, run separately | bun run build | Exit 0: main/preload/renderer production build succeeded |
+| Independent third review / implementation / product smoke | Not performed; this remains a pure-document DRAFT | No IMPLEMENTATION_VERIFIED / REVIEW_APPROVED / Owner acceptance |
+| Git authority | One local docs commit only | No merge/push/remote PR/release |
+
+The three failed tests are the exact second-revision test names listed above; each
+throws CodexAppServerShellSnapshotScrubError during pre-start with `scrub snapshot entry:
+EROFS` in the restricted home snapshot area. Product/test code is unchanged. The aggregate
+is **failed**, not converted to a pass by separate strict/build results; no out-of-scope
+fix or permission escalation was attempted. Native/manual/packaged implementation smoke
+is not applicable to this unapproved documentation revision and is not claimed passed.
+
+## Second Review Receipt — Verbatim Closing Summary
+
+Source: the full second-review file indexed above; reviewed SHA
+`9e47e2ddb79e3856d16ba1753d87f1cafd107a8d`, workflow `wf_28e60ec0-0f1`.
+The text below is the original closing summary, including historical line references
+and recommended defaults. It records that review, not a verdict on this revision.
+
+```text
+## Second fresh-context draft review
+
+Reviewed SHA: `9e47e2ddb79e3856d16ba1753d87f1cafd107a8d` (one docs-only commit over `0bd7b2bf`; 11 files, +1736/−2006; strict validate exit 0; `git diff --check` exit 0). Five dimension reports (BA, C7, CF, TF, SQ) merged by one synthesizer who re-checked the sole P1 in the documents and code.
+
+**Verdict: CHANGES_REQUESTED** — 0 P0, **1 P1**, 10 P2, 10 P3. Approval-blocking work is a single, bounded document fix (item 1); everything else is touch-up.
+
+**Prior findings:** 58 of 59 first-round findings resolved with checkable evidence; SQ-8 partially resolved (residual is P3 item 21). No regressions. Highlights: Consumer Impact rebuilt on the real public v1 shape (bare payload, source=api, jobId = Run id, one dense sequence); identity convergence and the transport-replacement window removed and registered as Non-goals with real sibling change ids; no gate/Owner state in living requirements; L1–L12 presets separated from labelled D1–D10 additions; 66/10/16 disposition table machine-checked against the trace; resume predicates, late-usage seal, reconciliation carrier, schema/migration path, deletion inventory and the build-time gate all concrete; 12-type v1 vocabulary frozen; 55 scenarios = 55 register rows.
+
+### Findings
+1. **[P1] Provenance capture point/owner** — design.md:128-132/156-157/193 and core delta:138-139 require a runtime provenance tuple with binary digest at ledger construction and make `ledger_provenance_json` non-null for every v1 job, while design.md:484/486-487/490 and the architecture delta route `job_created`, scheduled creation and pre-start cancel through that ledger at enqueue time, where no binary is resolved (job-store.ts:302-368; schedules.ts:346-351; agent-jobs.ts:88-96) and no digest facility or owner row exists (runtime-executable.ts stats only; no installation/digest symbol in src/). Fix: add a provenance-owner row + task; two-stage rule (`kind:"pending"` for lifecycle-only records, runtime tuple captured when the adapter resolves its executable and sealed thereafter); scope the construction rejection to runtime-execution ledgers; design.md:193 → nullable for legacy and never-started jobs.
+2. **[P2] Living requirements by reference** — architecture delta:12-13, parity delta:6-7/20, core delta:8-9 delegate normative lists to design/tasks, which are not living after archive (AGENTS.md:271). Inline the deletion list; point the parity requirement at the checked-in fixture.
+3. **[P2] `job.ledger.historyQuality`** — new optional public job-envelope field named only at design.md:520-521; no local-job-api delta, no C7 row, not in tasks 8.2. Declare and classify it, or scope it internal.
+4. **[P2] `/payload/runtime/codex/v1` collision** — `payload.runtime` is already a string in runAgentTask status events on the default API path (agent-runtime.ts:18-40). Coordinator preset with new code evidence: move to `payload.extensions["runtime.codex.v1"]` or state a collision rule plus fixture case.
+5. **[P2] "Confirmed dead-worker" predicate** — undefined; today's detection is heartbeat-only (job-recovery.ts; job-store.ts:645-700), workerPid never probed; v0 rows left running become unsettleable after cutover (core delta:116-117; design.md:513). Name the predicate, owner and v0 drain disposition.
+6. **[P2] Cross-process conflict reconciliation** — store re-sequencing deleted (design.md:200-204) with only "runtime tests enforce exclusivity" (design.md:533) for the queued-cancel/start race today's withEventSequenceRetry handles (job-store.ts:234-245; agent-jobs.ts:88-96). State reload/re-reserve/idempotent-resubmit or single-process writer rule.
+7. **[P2] Task 2.3 vs 2.9/7.15** — atomic deletion of the Workbench wrapper reader (the sole unwrap, workbench-trace-presenter.ts:202-209) contradicts the versioned-decoder migration plan. Keep the unwrap as the ledger_version=0 read branch.
+8. **[P2] Reasoning part index** — design.md:232-233 selects `content[partIndex]`/`summary[partIndex]` but the pinned delta params carry no index (app-server-stream-events.ts:51-58); label as inferred and state the fallback.
+9. **[P2] Claude SESSION_EXPIRED** — trace §0/§4 obligation has no disposition; classifier still upgrades and clears the binding (agent-sdk-errors.ts:129-138; stream-error-finalization.ts:119-151). Add an inventory row or an explicit Deferred line.
+10. **[P2] One-port WHEN** — core delta:11-20 drives vocabulary.json through `ingestRuntimeObservation` alone while requiring artifact/terminal owner ports. Name all three ports / per-case `port` field.
+11. **[P2] Discovery scenario narrowing** — local-job-api delta:79-83 replaces the generic living 'Older build lacks the feature' with this change's ids and an unowned 'preflight fixture'. Restore generic wording; name a Locus subject if kept.
+12. [P3] Dense projection status-volume increase not stated to consumers (proposal.md:115/122-126; tasks 8.2).
+13. [P3] Row 10 rationale ignores the closed `discoveryFeature` enum (schema:106; local-job-api.ts:18-25).
+14. [P3] run-artifacts.ts under agent-runtime writes public v1 files; ownership split unrecorded in 8.3.
+15. [P3] Commit ordering of late diagnostics between seal and terminal commit unstated (design.md:208-212/271-273/322-345).
+16. [P3] Resume fact omits observed thread/turn status, intent and the CODEX-05 race (design.md:354-361; core delta:320-327).
+17. [P3] Design vs scenario disagree on ephemeral/path/cliVersion rejection (design.md:355-359; core delta:320-327).
+18. [P3] Transport-exit SHALL is unconditional vs the post-seal late-diagnostic rule (core delta:195-197; design.md:283-285).
+19. [P3] `missing_local`/`missing_native` never asserted (core delta:164-165).
+20. [P3] `readItem` key cannot address items with absent native IDs (design.md:146, 231-232).
+21. [P3] Migration-act WHEN in a living scenario (core delta:112) and a run-on fixture list (architecture delta:33-34) — SQ-8 residual.
+
+### Owner decision items (remaining Red + open questions, with recommended defaults)
+- **R1 / Open Question 1 — C7 rows 4/5 terminal-result truth and derived create/retry exit codes.** Recommended default: **DIRECT_NEW_STANDARD** (NEW_VERSION and TEMPORARY_FACADE cannot preserve false success under C7 §9.5; the exit-code table is unchanged; the change ships behind the `canonical-run-ledger` feature id with same-change guide/schema/examples and explicit consumer notice).
+- **Open Question 2 — deterministic rules: default empty-output failure with the existing explicit allow-empty internal exception; post-completed usage diagnostic-only.** Recommended default: **accept** (matches preset L4 and D6; the trace marks late-usage order unmeasured, so a deterministic seal is the only testable rule).
+- **Open Question 3 — minimal immutable provenance snapshot plus schema v1 / legacy-unverified marking in this slice, without a Runtime delivery registry.** Recommended default: **accept, conditioned on item 1** (two-stage capture: pending at enqueue, runtime tuple sealed when the adapter resolves its executable; named owner for digest/fingerprints; L8 preset is preserved).
+- **Open Question 4 — dense per-record v1 status projection and terminal-artifact registration in the same durable commit as `completed`.** Recommended default: **accept** (only alternative is a sparse-sequence C7 #5 break; the artifact rule is now implementable), with the status-volume consequence (item 12) stated to consumers.
+- Coordinator item (preset, not an Owner gate): item 4 pointer collision — recommended default `payload.extensions["runtime.codex.v1"]`.
+
+Next gate: revised draft addressing item 1 (and the P2 touch-ups as convenient), then a third fresh review, then Owner APPROVED. Nothing here authorizes push, merge, remote PR or release.```

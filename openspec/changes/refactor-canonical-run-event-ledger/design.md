@@ -5,7 +5,8 @@ Status: **DRAFT — awaiting Owner APPROVED**
 ## Context and Source Basis
 
 Current product truth is code plus living specs at the reviewed base
-`0bd7b2bf2452773d416c7009a208e9590daa679f`. The
+`9e47e2ddb79e3856d16ba1753d87f1cafd107a8d` (product code unchanged from the first-review
+base `0bd7b2bf2452773d416c7009a208e9590daa679f`). The
 [trace](../../../docs/native-resume-event-gap-trace-2026-09-04.zh-CN.md) is research,
 not an approved implementation. [C2/C5/C7](../../../docs/ideas/locus-interoperability-contract-v1.zh-CN.md),
 [strategy §§9/12](../../../docs/ideas/locus-product-direction-harness-strategy.zh-CN.md),
@@ -18,6 +19,7 @@ not an approved implementation. [C2/C5/C7](../../../docs/ideas/locus-interoperab
 | Measured trace fact | Resume may emit status before response, emits no thread/started in successful samples, and failed/error can become completed/error-null in Codex's own disk reconstruction (§3.1, CODEX-08). |
 | Trace inference, adopted policy | Resume snapshot is not lossless event replay (§6.1); independent process resume is an offline view, not proven live attach; native thread and session must remain distinct. |
 | Static provenance caveat | Trace §5.1 observes non-deterministic v2.schemas.json generation; use reproducible per-file/TS-manifest fingerprints, not that directory-manifest digest. |
+| Schema availability unverified; inferred policy / 推断 | The checked-in reasoning delta params show no part index. Until the pinned 0.139 ServerNotification.ts closure proves otherwise, summary uses the last summaryPartAdded boundary (default 0), content uses part 0; inferred indexing sets lossPossible=true. |
 | Defensive inference, synthetic tests | Counter reset/decrease, incompatible-schema rejection, post-terminal usage and interrupted in-flight snapshot handling are proposed safety rules, not measured native behavior. |
 | Consumer fact | Amadeus direct native consumption: Owner relay 2026-09-02, confirmed as dispatch input here; not established by trace and not a Locus public boundary. |
 | Unmeasured | Trace §6.2 dynamic frequency/order, realtime/remote/process/Windows behavior, native event retransmission, SIGKILL/power loss, in-flight rollout continuity; no support claim. |
@@ -74,14 +76,14 @@ dispatch; L12's impossible Locus rollout-write seam is disposed in verification.
 | --- | --- |
 | D1 durable visibility | SQLite commits before acknowledgement/fan-out; events plus cursor checkpoints serve as replayable projection obligations, avoiding a second outbox table. Needed to prevent a displayed fact that was never stored. |
 | D2 fact key / crash | Persist a per-Run unique fact key; retry the same handoff without duplicate facts. Drop the prior network-style unknown-commit API: synchronous SQLite returns commit or rollback; crash/reopen reads committed facts/high-water. No claim that current SQLite produces unknown outcomes. |
-| D3 internal alias | Remove the desktop runEventSequence wrapper and its reader atomically, with no compatibility alias. C7 §9.1 does not permit retaining an internal alias for hypothetical consumers. Existing renderer runId remains stream metadata; constructor convergence is deferred. |
+| D3 internal alias | Delete the desktop wrapper writer; retain unwrapping only in the single versioned decoder's ledger_version=0 historical read branch, with no live compatibility alias. C7 §9.1 does not permit retaining an internal alias for hypothetical consumers. Existing renderer runId remains stream metadata; constructor convergence is deferred. |
 | D4 redaction | One Run-scoped stateful stream redactor with memory-only exact secret hints, before any durable/public fan-out; preserve the existing provider-runtime-bindings split-secret invariant. |
 | D5 public order | Dense sequence from 1, one v1 projection per record, safe status stubs for restricted evidence. This avoids the prior design's new sparse-sequence C7 #5 break. |
 | D6 terminal / late | Freeze output and usage when the ledger receives the terminal boundary; no timer/drain or replacement window. All later observations, including usage, become diagnostic-only status/late_event. Deterministic tests do not assume unmeasured native ordering. |
 | D7 outcome mapping | Denial/rejected/invalid-empty maps to existing failed; explicit cancel to canceled, interrupt/transport exit/recovery to interrupted; retry diagnostics alone do not fail. No new public status enum. |
 | D8 artifacts | Prepare terminal files from a frozen candidate completed record; register their refs with completed in one SQL commit. Final projections do not emit artifact_created, avoiding circular event/digest dependencies. |
 | D9 history | Add ledger_version=0 legacy-unverified marking; retain historical bytes/IDs/sequences, prohibit extension by the new ledger, do not fabricate missing provenance or terminal evidence. |
-| D10 provenance | Minimal immutable installation/source/version/digest/schema snapshot in the existing job record; no delivery registry. Provider-only completion jobs identify a Locus completion execution source, not a fictional Codex installation. |
+| D10 provenance | Lifecycle-only pending provenance until executable resolution; then seal the minimal immutable installation/source/version/digest/schema snapshot in the existing job record; no delivery registry. Provider-only completion jobs identify a Locus completion execution source, not a fictional Codex installation. |
 
 No D1–D10 choice is current implemented truth. A different Owner choice is incorporated
 in the draft/specs before implementation; living requirements contain deterministic
@@ -97,6 +99,7 @@ provider-only jobs can use an execution provenance variant without inventing a b
 
 ```ts
 type ExecutionProvenance =
+  | { kind: "pending"; runtimeId: string } // lifecycle only; no executable claim
   | { kind: "runtime"; installationId: string; runtimeId: string;
       adapterSource: string; version: string; executableRef: string;
       binarySha256: string; protocolName: string; protocolVersion: string;
@@ -130,6 +133,7 @@ createCanonicalRunEventLedger({
   redactionContext: { secretHints }, // exact provider/gateway hints, memory only
   durableStore, projections, artifactOwner,
 })
+ledger.bindExecutionProvenance(provenance) // pending -> runtime or locus-completion, once
 ledger.appendSystemEvent({ observationKey, type, payload })
 ledger.ingestResponse(boundary: Boundary)
 ledger.ingestNotification(boundary: Boundary)
@@ -143,7 +147,10 @@ ledger.repairFromSnapshot({ observationKey, snapshot, sourceProvenance,
   schemaDisposition: "recognized" | "incompatible", targetTurnId })
 ledger.settle(evidence: OutcomeEvidence)
 ledger.read(afterSequence) // committed RunEvent[] only
-ledger.readItem({ threadId, turnId, itemId, channel, partIndex }) // state or null
+ledger.readItem(key: ItemKey) // state or null
+// Native IDs must all exist, otherwise use an observation-local key returned in records.
+type ItemKey = ({ threadId: string; turnId: string; itemId: string }
+             | { correlationKey: string }) & { channel: string; partIndex: number }
 ledger.readUsage() // { total, last, baseline, delta, discontinuity, sealedAtSequence }
 ledger.readOutcome() // null or { status, reasons, evidenceKeys, completedSequence }
 ledger.readNativeContext() // host-only raw interrupt target; never serialized
@@ -153,12 +160,45 @@ admitRunArtifactCandidate(candidate, runContext)
 Tests use a deterministic clock, the fixture shapes in tasks §7 and either an in-memory
 store or temporary SQLite store. `artifactOwner` receives temporary in-scope files and
 has deterministic prepare/fail hooks; tests do not depend on real credentials/binaries.
-An input without a required provenance field is rejected before publication; absent
-native IDs remain absent, and native IDs alone do not confer execution authority.
+Runtime-execution ledger construction (or pending-to-runtime binding) without any
+required runtime tuple field is rejected before runtime publication/execution. Lifecycle
+ledger construction uses `kind:"pending"`; it does not resolve or hash a speculative
+binary. Absent native IDs remain absent and never confer execution authority.
+
+Two-stage capture is owned by **NEW agent-runtime/run-provenance.ts**, using the existing
+runtime-executable.ts path checks without changing selection. Enqueue (`job_created`),
+worker-claim (`job_started`, a host lifecycle fact, not proof of native execution),
+pre-start cancel and recovery/failure before runtime admission can use pending metadata.
+Only these lifecycle facts and their host status/error/completed settlement are admitted
+while pending; native observations, usage and native artifact candidates are rejected.
+Initial run-dir files can be prepared as lifecycle output; artifact event publication
+waits for execution binding. A never-started terminal exposes its prepared lifecycle
+files through the existing result/manifest contract, with no claimed native artifact.
+`ledger_provenance_json` remains null until the adapter resolves the executable it will
+use. Before runtime execution/any runtime record, run-provenance captures installationId,
+executableRef, actual version/source, binarySha256 and reproducible schema fingerprints;
+`bindExecutionProvenance` commits that tuple once, before publication, and seals it for
+the entire remaining Run. Every subsequent runtime-backed record references it. Earlier
+pending records are immutable and are not retroactively relabeled. A different tuple
+on rebind fails; binding after terminal seal is rejected, so a never-started terminal
+remains pending/null. Reopen reads the committed tuple, never the currently selected binary.
+Provider-only completion binds its actual locus-completion source before execution.
+
+The provenance owner computes a deterministic local installation identity from the
+runtime/source/platform/architecture/version and actual executable digest, records an
+opaque executableRef with a host-only resolved-path association, and hashes the exact
+schema files used by the adapter. The reproducible manifest is sorted by relative path,
+with per-file SHA-256 over exact bytes and a versioned canonical manifest encoding;
+it never hashes the non-deterministic v2.schemas.json bundle. This is execution evidence,
+not Runtime delivery certification or a registry. Actual executable bytes must remain
+unchanged between capture and launch; validation failure fails before runtime execution
+and does not substitute another binary. Task 6.1 freezes the identity encoding and
+repeatability fixtures for all execution surfaces.
 
 ```ts
 durableStore.appendExact({ records, expectedHighWater, jobMutation?, artifactRefs? })
-// atomic batch; all supplied sequences/fact keys unchanged; throw => definite rollback
+// atomic batch; store never changes supplied sequences/fact keys; throw => definite rollback
+// expectedHighWater conflict => ledger reload/re-reserve, not blind identical-sequence retry
 // same complete fact-key batch => return previous committed records, not a new append
 durableStore.lookupFact(observationKey)
 durableStore.read(runId, afterSequence)
@@ -190,7 +230,7 @@ in `headless/job-store.ts`. There is no `src/main/lib/db/migrations` directory.
 
 | Structure | Required post-cutover data / invariant |
 | --- | --- |
-| agent_jobs | `ledger_version` = 0 or 1; `ledger_provenance_json` nullable only for legacy; `ledger_sealed_sequence` null while live, otherwise points to its one completed. ID/retry/source/runtime columns retain their meaning. |
+| agent_jobs | `ledger_version` = 0 or 1; `ledger_provenance_json` nullable for legacy and jobs that never reached runtime execution (pending before executable resolution; locus-completion binds its own source); `ledger_sealed_sequence` null while live, otherwise points to its one completed. ID/retry/source/runtime columns retain their meaning. |
 | agent_job_events | Existing id/job_id/sequence/type/payload_json/created_at retained; payload_json holds bare sanitized semantic payload. Add nullable legacy-compatible `fact_key` and `record_metadata_json` (redaction, boundary/source, provenance ref); v1 inserts require both. |
 | uniqueness | Existing unique(job_id,sequence); new unique(job_id,fact_key) for non-null fact keys; one v1 completed per job enforced in the transaction and a partial uniqueness constraint with predicate type=completed AND fact_key IS NOT NULL. No invalid uniqueness assertion is imposed on historical bytes. |
 | agent_job_projection_cursors | PK(job_id,projection_name), acknowledged_sequence >= 0, <= committed high-water; ack monotone and only over delivered contiguous prefix; foreign key cascade on job deletion. |
@@ -202,6 +242,26 @@ SQLite transaction. The ledger allocates; the store validates, never re-sequence
 Committed events are immutable. Batch failure changes neither events, outcome, artifact
 refs nor cursors; retry uses the same fact keys. The event log itself is the outbox
 obligation; no extra outbox queue or unknown-commit state machine is introduced.
+
+An expectedHighWater or conditional lifecycle-state conflict is reconciled by the ledger,
+not the store: reload the header and committed records, rebuild state, lookup the retained
+fact keys, then re-evaluate the original intent. Return a fully committed matching batch
+idempotently; otherwise discard only uncommitted reservations, re-reserve a dense batch
+above the new high-water and resubmit with the same observation/fact identities. Allow
+at most three transaction attempts per call; exhaustion returns a sanitized host
+`LEDGER_APPEND_CONFLICT` and no success acknowledgment. A definite rollback with no
+competing commit can retry its unchanged sequences. Cross-process order is successful
+commit order; arrival order is guaranteed within each host's serial ingress only.
+
+For queued-cancel/start, appendExact checks the expected queued state atomically with
+status, worker claim and event insertion. If cancel wins, start reloads terminal state
+and must not spawn. If start wins, queued cancel reloads running state and records only
+the existing cancel-request flag for the worker to consume; it cannot settle from the
+losing process. Stable cancellation intent keys prevent duplicate effects. Neither side
+can force a terminal using an obsolete queued snapshot. Any terminal preparation whose
+uncommitted sequence reservations change must regenerate its files from the rebased
+candidate. This replaces withEventSequenceRetry at the ledger owner and adds no lease,
+queue, epoch or same-Run runtime restart.
 
 Reuse **the atomic shape of `completeAgentJob`'s status+event transaction** as the new
 exact terminal sink; remove its independent event construction and sequence allocation,
@@ -217,23 +277,47 @@ none. Lookup/retry deduplicates retained handoff keys; if a raw input was never 
 and the process died, it is not recoverable and must not be represented as replay.
 A permanently unavailable store halts ingestion/provider progress and emits a sanitized
 infrastructure diagnostic on the host error channel; it cannot claim a durable completed
-until storage succeeds. Recovery records use the existing dead-worker detection,
-reopen a ledger only after the old process is known stopped, and settle interrupted
-with `synthetic.source=recovery`; stale heartbeat alone grants no live write authority.
-No new lease/fencing protocol or same-Run native restart is added. A source job
-without confirmed process death is not recovered; its unresolved live authority is a
-Phase 5 input, not a reason to grant this ledger a parallel writer.
+until storage succeeds. **headless/job-recovery.ts** owns stale selection and the new
+same-host process-liveness probe. Stale means heartbeatAt is null or strictly older
+than now minus the existing 120 s threshold. Confirmed stopped means stale AND either
+(a) a stored workerPid probes absent (ESRCH), (b) the same host supervisor has positively
+observed that worker's exit, or (c) workerPid/workerId are both absent and the job has
+never claimed a worker or entered runtime execution. A successful signal-0 probe means
+alive; EPERM, unsupported probing, an unknown host or a claimed worker with no PID means
+unknown, not dead. Missing PID alone never proves a previously claimed worker stopped.
+Re-read status, worker identity/startedAt and heartbeat in the settlement transaction;
+a changed claim/heartbeat invalidates the probe and follows conflict reconciliation.
+
+Only confirmed stopped recovery may reopen and settle interrupted, carrying
+`synthetic.source=recovery` and `recovery:{confidence:"confirmed", basis, observedAt}`.
+Never-started recovery retains pending provenance; executed recovery reuses its sealed
+tuple. Alive/unknown stale rows remain unsettled with a host diagnostic
+`recovery.confidence="heartbeat_only"`; no parallel writer or native restart is granted.
+The old implementation is heartbeat-only: this probe is new scoped work, not an
+existing guarantee. Tests cover all branches; unresolved alive/unknown cases require
+explicit stop/drain and are Phase 5 recovery inputs.
 
 ## Item Reconciliation and Redaction
 
 State key: `(threadId, turnId, itemId, channel, partIndex)`; assistant channel is
 `assistant`, reasoning channels are **`text` and `summary`** separately, and tools use
 `tool`/part 0. Missing IDs use an observation-local correlation key and `lossPossible`,
-never an inferred native ID. `summaryPartAdded` creates a summary part boundary;
-`textDelta` selects `content[partIndex]`, `summaryTextDelta` selects `summary[partIndex]`.
+never an inferred native ID. The correlationKey is retained in committed payload.item
+and returned to readItem callers on every item observation, including deltas; different
+unidentified observations do not merge just
+because their text matches. Native-key and correlation-key forms are disjoint.
+
+**Inferred / 推断 indexing policy:** the pinned repository delta DTO has no part-index
+field. The stateless decoder forwards a schema-proven index when present and otherwise
+omits it. The ledger assigns summary deltas to the last observed summaryPartAdded
+boundary for that item (default 0 if none); text/content deltas default to part 0.
+Every inferred assignment sets lossPossible=true and indexSource="inferred"; a proven
+native index uses indexSource="native". Completed content and summary arrays enumerate
+independent parts and reconcile provisional assignments without claiming missing native
+indexes were measured. Task 1.4 verifies the pinned schema before freezing task 7.2.
 
 The observable `readItem(key)` is `{ state: started|streaming|completed, text?, fields?,
-reconciliation: { result, lossPossible, missingStart, suppressedDuplicateCount } }`.
+indexSource?: native|inferred, reconciliation: { result, lossPossible, missingStart, suppressedDuplicateCount } }`.
 On final item completion the ledger emits `status` with `subtype=item_reconciliation`
 and these same fields under `payload.item` and `payload.reconciliation`. `payload.item`
 contains the redacted key, itemKind and authoritative completed text/fields, so restart
@@ -243,7 +327,8 @@ that item on reconciliation. Existing payload text/delta fields remain in place.
 
 Results: `matched` for exact equality, `suffix_repaired` for a missing trailing suffix,
 `missing_local` for a completed item without local data, `missing_native` for a local
-item absent from a supplied authoritative snapshot, `mismatch` for other disagreement.
+item absent from a supplied authoritative snapshot (retain local text as unverified,
+without inventing native completion), `mismatch` for other disagreement.
 Final text wins for pre-seal item materialization; no final text is appended a second
 time. `missingStart`, missing content or mismatch sets `lossPossible=true`; a final
 snapshot does not prove all intermediate events were observed. Repeated completion
@@ -270,7 +355,16 @@ RunTerminalEvent. Outcome is a single `completed.payload` with existing `status`
 The ledger holds live terminal evidence pending existing output validation, credential
 post-check and artifact preparation. Receipt of the first terminal boundary seals the
 materialization input prefix; queued later native input becomes late diagnostics even
-while terminal files are being prepared. `settle` resolves that evidence in this order:
+while terminal files are being prepared. Late records retain reserved post-terminal
+sequences and stay unpublished until the terminal transaction commits; they then commit
+in that reserved order. If artifact-preparation failure prevents a proposed success,
+the replacement failed candidate keeps the same terminal slot and late diagnostics
+still commit after it, pointing to that failed terminal. Already canceled/interrupted
+outcomes retain their precedence and carry the preparation diagnostic. They are not silently discarded. If conflict reconciliation
+rebases uncommitted reservations, it also rebases their terminalSequence before any
+publication; committed sequences never change. A process crash before these buffered
+facts commit may lose them and recovery marks lossPossible; it never fabricates them.
+`settle` resolves that evidence in this order:
 explicit cancel → canceled; explicit interrupt/transport exit/dead-worker recovery →
 interrupted; denial/output-invalid/invalid-empty/credential-postcheck failure or live
 native failure → failed; live native success (or valid process/completion host result)
@@ -332,12 +426,17 @@ commit**, never as a prerequisite that requires completed already publicly visib
    artifacts.json references request/events/result but not its own digest; the returned
    DB/result envelope can additionally reference the manifest with its digest. Final
    events/result/manifest files do **not** emit artifact_created events, so there is no
-   events-file self-hash loop. Existing initial artifact_created semantics remain.
+   events-file self-hash loop. Initial artifact role/ref semantics remain; publication
+   waits for execution binding under the pending rule. Never-started lifecycle files
+   remain readable through their result/manifest refs without invented runtime events.
 4. Commit the terminal job mutation, exact completed and all admitted manifest refs in
    one SQLite transaction, then publish. Final file preparation failure blocks success;
    record failed outcome with the artifact diagnostic and no unverified refs (a failure
    result need not claim files that could not be written). Do not expose a prospective
-   terminal or its refs through result/events readers before this commit.
+   terminal or its refs through result/events readers before this commit. Any reserved
+   pre-terminal artifact candidate that loses admission becomes artifact_admission
+   rejection at its uncommitted slot, not a missing sequence or an unverified ref; final
+   file failure is carried in the completed reasons at the reserved terminal slot.
 5. Crash before commit leaves only unreferenced staged/prepared files; retry validates
    or cleans those within the admitted run directory, with no deletion outside it.
    Crash after commit reuses registered digests. Once committed the terminal snapshot
@@ -352,11 +451,23 @@ admitted native roles are additive; existing v1 artifacts were already verified.
 ## Resume Validation and Snapshot Repair
 
 Codex pending-request context records JSON-RPC id, method, intent, requestedThreadId and
-independent expectedSessionId. A matched success response must contain equal thread.id,
-non-empty independently matching sessionId, and recorded ephemeral/path/cliVersion with
-installation/schema evidence. Its event subtype is `native_resume_validated`; missing,
-mismatched or RPC-error response is `native_resume_rejected` with reason and original
-code (-32600/-32603 included), never `expired`. An unrelated response yields
+independent expectedSessionId. Validation has exactly four measured clauses: matching
+response id, no response.error, returned thread.id equal to requestedThreadId, and a
+non-empty sessionId equal to the independent expectedSessionId. That yields
+`native_resume_validated`; correlated missing/mismatched/error responses yield
+`native_resume_rejected` with reason and original code (-32600/-32603 included), never
+`expired`. Both facts retain intent, available observed thread.status and target-turn
+status, requested/returned identities, error and race evidence with installation/schema
+provenance; absent response fields remain absent. These statuses describe only the
+responding process's view, not live Run state. CODEX-05's no-rollout response beside
+turn/start is a rejection fact carrying raceContext="start_resume_no_rollout" and does
+not itself settle the Run.
+
+Record ephemeral, redacted path and creator cliVersion separately as durability evidence.
+If ephemeral is not false, path is absent/empty or cliVersion is absent, mark
+`durableEvidence=false, lossPossible=true`; this does not reject an otherwise validated
+native load and does not prove any durable Binding eligibility. Otherwise record
+`durableEvidence=true` only as the observed tuple, not a live-attach grant. An unrelated response yields
 `protocol_response` with `correlated:false`, not validation. Native-load validation
 alone neither proves rollout materialization for a fresh start nor grants live attach.
 
@@ -371,6 +482,14 @@ native_resume_validated; result success/is_error, arbitrary session_id or exit a
 cannot validate. Init establishes slice acceptance where resumeSessionAt was supplied.
 Mismatched init/pre-init rejection is native_resume_rejected; future one-shot consumption
 must use this fact, but chat-history.ts CAS behavior is not changed here.
+`agent-sdk-errors.ts` must preserve sanitized "No conversation found" as neutral
+`NATIVE_RESUME_REJECTED` diagnostic evidence, never upgrade it to `SESSION_EXPIRED` or
+claim proven expiry. `agent-sdk-stream-error-finalization.ts` removes its stream-error
+sessionId clear and forwards the diagnostic/rejection evidence through the ledger;
+it cannot decide binding invalidation from this ambiguous stderr. Binding expiry,
+repair and one-shot CAS stay with the Phase 5 binding owner. A rejected native load can
+lead to normal failed/transport-exit settlement, but the rejection fact itself is not
+an independent terminal or binding mutation.
 
 `repairFromSnapshot` records `status/repair` with `repair:{source:"snapshot", result}`,
 `lossPossible:true`, source/target provenance and item reconciliation. Pre-seal snapshots
@@ -392,58 +511,10 @@ dispatch through the item table. Realtime/remote/Windows are observed/deferred, 
 unknown and not supported; raw/audio content is omitted with `contentOmitted:true`.
 Known supported rows do not acquire a false unknown/loss marker merely due to category.
 
-| Notification methods (66 total) | Canonical disposition |
-| --- | --- |
-| account/login/completed, mcpServer/oauthLogin/completed | status/oauth_lifecycle |
-| account/rateLimits/updated, account/updated | status/account_lifecycle |
-| app/list/updated, externalAgentConfig/import/completed, skills/changed | status/configuration |
-| command/exec/outputDelta, process/outputDelta, process/exited | status/runtime_process (process/exited notification is not transport exit) |
-| configWarning, deprecationNotice, guardianWarning, warning | status/warning |
-| error | error with classification/code/willRetry |
-| fs/changed, fuzzyFileSearch/sessionCompleted, fuzzyFileSearch/sessionUpdated | status/workspace_observation |
-| hook/completed, hook/started | status/hook_lifecycle |
-| item/agentMessage/delta | assistant_delta |
-| item/autoApprovalReview/completed, item/autoApprovalReview/started | status/approval_review |
-| item/commandExecution/outputDelta, item/commandExecution/terminalInteraction, item/fileChange/outputDelta, item/fileChange/patchUpdated, item/mcpToolCall/progress | tool_delta (terminalInteraction is tool evidence, not a second Interaction FSM) |
-| item/completed, item/started | item table below, including reconciliation on completed |
-| item/plan/delta, turn/plan/updated | status/plan |
-| item/reasoning/summaryPartAdded | status/reasoning_part |
-| item/reasoning/summaryTextDelta, item/reasoning/textDelta | reasoning_delta with distinct channel/partIndex |
-| mcpServer/startupStatus/updated | status/mcp_lifecycle |
-| model/rerouted | status/reroute |
-| model/verification, turn/moderationMetadata | status/model_verification |
-| rawResponseItem/completed | status/raw_response_observed (allowlisted metadata only, contentOmitted:true) |
-| remoteControl/status/changed, windows/worldWritableWarning, windowsSandbox/setupCompleted | status/unsupported_native_surface with surface=remote_control or windows and disposition=observed_deferred |
-| serverRequest/resolved | status/interaction_boundary, boundary=resolved |
-| thread/archived, thread/closed, thread/goal/cleared, thread/goal/updated, thread/name/updated, thread/settings/updated, thread/started, thread/status/changed, thread/unarchived | status/thread_lifecycle |
-| thread/compacted | status/compaction |
-| thread/realtime/closed, thread/realtime/error, thread/realtime/itemAdded, thread/realtime/outputAudio/delta, thread/realtime/sdp, thread/realtime/started, thread/realtime/transcript/delta, thread/realtime/transcript/done | status/unsupported_native_surface, surface=realtime, disposition=observed_deferred |
-| thread/tokenUsage/updated | usage_update (after seal: late_event with observed usage) |
-| turn/completed | terminal candidate, settled by core outcome rule |
-| turn/diff/updated | status/diff_observation plus candidate evidence to artifact owner; no direct artifact event |
-| turn/started | status/turn_lifecycle |
-
-| Server request methods (10 total) | Disposition |
-| --- | --- |
-| account/chatgptAuthTokens/refresh, applyPatchApproval, attestation/generate, execCommandApproval, item/commandExecution/requestApproval, item/fileChange/requestApproval, item/permissions/requestApproval, item/tool/call, item/tool/requestUserInput, mcpServer/elicitation/request | status/interaction_boundary, boundary=request, native method + requestId; exact existing safety owner still handles authorization; no credential material persists |
-
-For each request, response-send records boundary=response_send and sent/failed;
-serverRequest/resolved records boundary=resolved. A response-send failure does not
-claim success or resolution. Transport passes the resolved notification only once to
-recordServerRequestResolved; it must not also ingest a duplicate generic notification.
-Other client responses emit status/protocol_response with request correlation and
-sanitized result/error metadata; thread/resume uses the resume subtypes above.
-
-| ThreadItem variants (16 total) | started / completed disposition |
-| --- | --- |
-| agentMessage | status/item_lifecycle then status/item_reconciliation; assistant deltas and authoritative readItem text |
-| reasoning | status/item_lifecycle then status/item_reconciliation; separate content/text and summary parts |
-| commandExecution, mcpToolCall, dynamicToolCall, collabAgentToolCall, webSearch, imageView, imageGeneration, fileChange | tool_started / tool_finished plus item_reconciliation; imageGeneration.savedPath and fileChange/diff only feed artifact candidates |
-| contextCompaction | status/compaction |
-| enteredReviewMode, exitedReviewMode | status/review_mode |
-| hookPrompt | status/hook_lifecycle |
-| plan | status/plan |
-| userMessage | status/user_message (including snapshot user items), no assistant output |
+The complete normative 66/10/16 table is in the [Codex Native Boundary Forwarding And
+Disposition requirement](specs/codex-runtime-parity/spec.md). It is inlined there so
+archiving preserves the enforceable inventory. `native-dispositions.json` will exercise
+that table; it is a future test artifact, not a checked-in capture in this DRAFT.
 
 The nine existing internal types outside the 12 public v1 types project to `status`
 with `payload.subtype` equal to the **original internal type name**: guard_decision,
@@ -469,6 +540,7 @@ in the same implementing change; no residual second mapper or terminal owner is 
 | agent-runtime/stream-event-mapper.ts | Delete old exports mapDesktopStreamChunkToRunEvents, createDesktopStreamEventMapper, appendRunEventsToAgentJob, redactRendererDiagnosticChunk, redactRendererRuntimeChunk, createRuntimeRendererChunkEmitter, createRuntimeStreamChunkSecretRedactor, isDesktopRuntimeFailureChunk, persistedPayloadForRunEvent and their allocators/default-success logic. Repurpose module solely as projectRunEventToRendererChunks (pure forward projection of committed records); move coarse input decode to ledger-ingress.ts, no chunk round trip. |
 | agent-runtime/job-event-bridge.ts / createAgentJobRunEvent | Delete module and old call sites; shared JSON-safe conversion, if needed, folds into runtime-events.ts; job-store no longer calls a redactor/bridge. |
 | NEW agent-runtime/run-event-ledger-host.ts | Compose one ledger with job-store adapter, artifact owner, renderer/history projections; single host entry getOrCreateRunEventLedger(existingJob) for existing lifecycle callers; no ID minting or lease registry. |
+| runtime-executable.ts (existing path checks); NEW agent-runtime/run-provenance.ts | run-provenance owns local installation identity, executableRef/actual binary digest and reproducible schema fingerprints at adapter resolution; host binds and persists the immutable tuple once. Existing path checks/selection remain, no registry or duplicate capture helpers. |
 | NEW agent-runtime/run-event-ledger.ts; run-artifacts.ts; ledger-ingress.ts | Ledger owns sequence/item/usage/terminal; artifacts owns validation/preparation; ingress stateless decode only. |
 | codex/app-server-stream-events.ts | Stateless decodeCodexNativeBoundary and measured disposition table; no [] default, no thread/session/turn/tokenUsage state, no buildInterruptRequest state. |
 | codex/app-server-adapter.ts | Submit response/notification/request/send/resolved/exit; remove sequence/lastError/pendingTerminalChunk terminal owner, fabricated thread/started on resume and sessionId<-threadId fallback; retain transport request correlation and existing safety cleanup; read interrupt target from ledger. |
@@ -476,13 +548,14 @@ in the same implementing change; no residual second mapper or terminal owner is 
 | trpc/routers/codex.ts; codex/desktop-run-persistence.ts | Delete appServerPersistenceChunks/raw text-delta joins; use committed item projection for history; route remains envelope only. |
 | codex/desktop-run-finalize.ts; desktop-agent-jobs.ts | CompleteDesktop*Safely paths submit terminal evidence to ledger instead of calling independent completeAgentJob; replace desktop status append with ledger ingress. |
 | claude/agent-sdk-desktop-job.ts; agent-sdk-desktop-run-startup.ts; agent-sdk-desktop-run-state.ts; agent-sdk-desktop-run-envelope.ts | Replace mapper/emitter/appendRunEvents wiring with same host ledger and committed renderer projection; cleanup/finalization submit evidence; SDK message ingress records correlated init. |
+| claude/agent-sdk-errors.ts; claude/agent-sdk-stream-error-finalization.ts | Preserve No conversation found as neutral NATIVE_RESUME_REJECTED, delete SESSION_EXPIRED inference and stream-error sessionId clear; send diagnostic/init evidence to ledger. No binding expiry/repair or one-shot CAS is implemented here. |
 | claude/agent-sdk-query-options.ts; claude/chat-history.ts | Read-only resume-intent source for ledger facts; do not change one-shot flag/CAS, binding policy or create a handle store. |
 | headless/adapters/codex-app-server.ts | Remove completed suppression/envelope stripping as an internal ingestion path; consume existing committed record, do not append it again; public v1 serializer still emits bare payload. |
 | headless/agent-runtime.ts; headless/agent-runtime-contract.ts; agent-runtime/run-contract.ts; headless/adapters/claude-code.ts, codex.ts; headless/process-runner.ts | AgentRuntimePersistedObserver.appendEvent becomes thin ledger-ingress submission with observation key for coarse outputs; no native decoder duplication or runtime selection change. |
 | headless/job-runner.ts createObserver/appendDirect/appendResolvedProviderEvent; both completeAgentJob calls | Remove independent secret-buffer/redaction chain and raw append, use ledger ingress; both success/catch finalize paths submit outcome evidence. |
 | headless/job-store.ts insertAgentJobEventRecord/nextEventSequence/appendAgentJobEvent/completeAgentJob | Replace exported raw writer with appendExactRunEventBatch and read/cursor functions; exact record insert remains private. Delete store-created event/sequence/redaction; reuse terminal transaction shape. |
 | headless/job-store.ts createAgentJob/startAgentJob/retryAgentJob system appends | Lifecycle service supplies job_created/job_started through host ledger as part of creation/start transactions; store mutates supplied job fields only. Existing ID/retry allocation rule unchanged. |
-| headless/job-recovery.ts; job-store.ts interruptStaleAgentJobs | Remove error-only interrupted mint; confirmed dead-worker recovery uses ledger synthetic interrupted completed once; no attach/live owner transfer. |
+| headless/job-recovery.ts; job-store.ts interruptStaleAgentJobs | Remove error-only interrupted mint; job-recovery owns the 120 s stale predicate plus same-host alive/absent/unknown probe and revalidation; only confirmed stopped recovery uses ledger synthetic interrupted completed once; no attach/live owner transfer. |
 | headless/cli-dispatcher.ts cancelApiJob and jobs cancel pre-start branches | Get ledger for queued existing job and settle canceled; no raw completeAgentJob outside ledger. |
 | trpc/routers/agent-jobs.ts queued cancel | Replace its direct completeAgentJob call with host cancel evidence; preserve existing request/cancel routing and internal exit metadata. |
 | headless/completion-runner.ts usage append + success/catch completeAgentJob | Include kind=completion in ledger, use locus-completion provenance and host_result; retain provider/output owner. |
@@ -490,7 +563,7 @@ in the same implementing change; no residual second mapper or terminal owner is 
 | headless/schedules.ts createScheduledJob direct db.insert(agentJobEvents), sequence=1 | Replace raw event insert with the host-composed ledger job_created transaction; existing schedule jobId minting and queue transaction stay unchanged. |
 | headless/cli-dispatcher.ts initial artifact_created/final write; headless/local-job-api.ts writeLocalJobApiInitialArtifacts/writeLocalJobApiFinalArtifacts/fileArtifact | Move admission/preparation to run-artifacts.ts; serializer/read helpers remain public projection; dispatcher calls owner, never emits artifacts or invents final truth. |
 | src/shared/agent-jobs.ts; src/shared/local-job-api.ts | Internal 21 types and public 12 types unchanged; add feature identifier and optional metadata; no runEventSequence symbol here today. |
-| renderer workbench-trace-presenter.ts; runtime-event-state.ts; chat transports | Migrate wrapper reader to committed envelope/item projection, preserve existing stream/cancel IDs and UI-state owner; no event/terminal reconstruction. |
+| renderer workbench-trace-presenter.ts; runtime-event-state.ts; chat transports | Use one versioned decoder: retain getWorkbenchSemanticPayload logic solely for ledger_version=0 historical wrapper reads, use direct committed envelope/item projection for v1; delete the wrapper writer/live read path, preserve existing stream/cancel IDs and UI-state owner; no event/terminal reconstruction. |
 | src/main/lib/db/schema/index.ts; drizzle/ | Own explicit schema/cutover metadata described above. |
 | scripts/check-architecture-guards.mjs; docs/OWNERSHIP_MAP.md | Pin new owners; remove legacy symbol pins and all five raw-writer allowlist entries; end state: only run-event-ledger-host.ts imports appendExactRunEventBatch. |
 
@@ -510,17 +583,21 @@ switch. It carries a deprecation comment naming this change and removal before a
 
 Activation requires all of: (1) recorded Owner APPROVED/R1 disposition; (2) red-first
 fixture/scenario inventory frozen; (3) schema migration applied; (4) no active legacy
-jobs (drain/cancel them using the old build, do not continue them with the ledger);
+jobs (finish/cancel queued jobs and stop workers, then recover/settle orphaned running
+rows with the old build during the drain; verify zero queued/running v0 rows before
+activation, do not continue them with the ledger). An unresolved legacy running row
+blocks activation; no one-time v0 write is permitted after cutover;
 (5) all inventory callers converted as one reviewed cutover; (6) target tests for store,
 terminal/artifact, projections and public contract pass with the true build in isolated
 test profiles. These are explicit build/review conditions, not a markdown-checking
 runtime behavior scenario.
 
 The migration labels **all** existing jobs ledger_version=0 and preserves their events
-unchanged. Readers expose `historyQuality=legacy_unverified` as optional read metadata
-(public job envelope: optional job.ledger.historyQuality), with no fabricated fact
-keys, binary provenance, reconciliations or completed. New jobs are version 1 with
-required metadata; no new writer admits events to version 0. Workbench has one decoder
+unchanged. Internal store/Workbench readers expose `historyQuality=legacy_unverified` as read
+metadata only; no `job.ledger.historyQuality` public job-envelope field is added.
+No fact keys, binary provenance, reconciliations or completed are fabricated. New jobs
+are version 1 with required record metadata and two-stage pending/execution provenance;
+no new writer admits events to version 0. Workbench has one decoder
 that reads versioned persisted records, not an old executable business path. Historical
 v1 API payloads were bare already and keep that shape, including non-object payloads;
 no wrapper is added merely to attach metadata. New optional payload members apply to
@@ -530,7 +607,8 @@ be retried through the existing new-job operation and gets a v1 ledger.
 
 Intermediate guard mode is a CLI test/build option `--run-event-ledger-phase=transition`
 that permits exactly the declared temporary gate and legacy symbol set while checking
-imports/owner pins; runtime tests enforce per-Run exclusivity. Final/default guard mode
+imports/owner pins; runtime tests enforce per-Run exclusivity and the cross-process
+conditional-state/high-water reconciliation rule above. Final/default guard mode
 `canonical` requires absence of that constant and all old exports/call sites. Before
 acceptance delete false branch, gate and transition mode/allowlist; only canonical mode
 remains. The living architecture spec describes that final static state.
@@ -555,4 +633,4 @@ must not claim Runtime delivery certification. All remain proposed, pending Owne
 1. Owner 是否对 R1（C7 rows 4/5 的终态真相及 exit code）选择 DIRECT_NEW_STANDARD，或选择 DEFER／REJECT？
 2. Owner 是否接受本草案的确定规则：默认空产出失败、显式允许空产出的既有内部请求例外，以及 completed 后 usage 仅作为可读诊断？
 3. Owner 是否接受最小 immutable provenance snapshot 与 schema v1／legacy-unverified 历史标记在本切片内实现，而不等待 Runtime delivery registry？
-4. Owner 是否接受保持 v1 稠密 sequence 的逐记录 status 投影，以及终态 artifact 与 completed 同一 durable commit 登记的方案？
+4. Owner 是否接受保持 v1 稠密 sequence 的逐记录 status 投影（每个 Run 的 status 记录会增加，消费者须用 --after 分页且不假定事件数量上限），以及终态 artifact 与 completed 同一 durable commit 登记的方案？

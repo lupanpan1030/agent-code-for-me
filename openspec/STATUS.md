@@ -8,7 +8,7 @@ Updated: 2026-09-30 (Pacific/Auckland); previous: 2026-09-09 (Pacific/Auckland)
 
 | Change | State | Concrete next gate |
 | --- | --- | --- |
-| `refactor-canonical-run-event-ledger` | DRAFT — awaiting Owner APPROVED | Fresh-review rewrite ready; Owner resolves four Open Questions and C7 R1 (rows 4/5 terminal truth and exit codes), then APPROVED before product or test changes. |
+| `refactor-canonical-run-event-ledger` | DRAFT — awaiting Owner APPROVED | Third revision addresses second-review 1 P1 + 10 P2 + 10 P3; next: third fresh review, then Owner resolves four Open Questions and C7 R1 (rows 4/5 terminal truth and exit codes) and marks APPROVED before product or test changes. |
 
 Parked proposals are indexed in [`deferred/README.md`](deferred/README.md) and
 do not appear in the active list.
