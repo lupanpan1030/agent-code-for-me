@@ -5,20 +5,23 @@
 > on the feasibility/R3 reviews, implementation-start rebase, strict validation,
 > and exact-package confirmation. Feasibility 0.2 is `REVIEW_APPROVED` at
 > `2292d36a`; targeted R3 re-review is `REVIEW_APPROVED` at `04193a4b`
-> (`wf_d03b4b51-d03`). Its 2 P2 / 6 P3 text follow-ups are handled here; task
-> 0.3 remains open for final targeted re-review after the Question 9 decision.
+> (`wf_d03b4b51-d03`). Final targeted re-review is `REVIEW_APPROVED` at
+> `96ca3afe` (2026-09-07); its 1 P2 / 4 P3 follow-ups are addressed here.
+> Historical technical verdicts do not transfer to the rebased exact package;
+> task 0.3 remains open for that package's fresh-context R3 approval.
 > Approval Question 9: **Owner APPROVED the compromise, 2026-09-07**.
 > The three post-approval disclosures were presented to Owner 2026-09-07
-> (board §六); acknowledgement pending. This documentation touch-up
-> authorizes no source edit. Current base remains local `main` at
-> `30c72ad3c26dd952410c6e38678faf43d8c55895` (2026-09-04).
+> (board §六); acknowledgement pending. Source edits remain gated.
 >
-> Baseline note (2026-09-05): local `main` has advanced to
-> `d923119c090ef8a252ef084bb1453b4b937d563d`. The intervening
-> `30c72ad3..d923119c` changes are tests/documentation only; the cited product
-> anchors were checked and remain current. Task 0.4 still requires a fresh
-> implementation-start rebase and anchor/conflict audit before exact-package
-> confirmation. No rebase is performed by this documentation dispatch.
+> Baseline note (2026-09-07): rebased onto local `main` at
+> `9cff32daa89f4431be37cf307897b97ec48cda77` (read-only reference).
+> Task 0.4 is complete: proposal/design/tasks source and test anchors were
+> rechecked against this baseline and require no line-number changes. Main's
+> default-branch changes touch no cited source anchor. The only conflict was
+> `openspec/STATUS.md`; retain main's archive, this branch's active row and
+> Updated 2026-09-07. Task 0.5 strict validation is recorded in `verification.md`;
+> exact package awaiting Owner confirmation, with implementation queued after
+> `add-linked-worktree-admission`.
 
 ## Why
 

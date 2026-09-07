@@ -1,6 +1,6 @@
 # Verification: add-renderer-untrusted-content-hardening
 
-> Status: **APPROVED (eight defaults + Q9 compromise) — pre-implementation touch-up**.
+> Status: **APPROVED (eight defaults + Q9 compromise) — exact package ready, awaiting Owner confirmation**.
 > Owner direction/implementation approval was given late 2026-09-05, conditional
 > on tasks 0.2/0.3/0.4/0.5. Feasibility 0.2 is `REVIEW_APPROVED` at `2292d36a`;
 > R3 targeted re-review is `REVIEW_APPROVED` for `96ca3afe` only; task 0.3
@@ -11,6 +11,11 @@
 > fresh approval of revised text, or Owner acceptance. No source edits run.
 
 ## Draft Baseline
+
+Current baseline after task 0.4: local `main`
+`9cff32daa89f4431be37cf307897b97ec48cda77` (2026-09-07). The original draft
+and 2026-09-05 audit below are historical; the completed rebase and current
+strict results are recorded in the 0.4/0.5 receipt at the end of this file.
 
 - Draft date: 2026-09-04 (Pacific/Auckland).
 - Product/document baseline: local `main`
@@ -248,11 +253,15 @@ single successful track cannot stand in for another track.
   `04193a4b7455d4619fce613307e3cafee4267c95`, workflow `wf_d03b4b51-d03`;
   20 fixes: 16 applied / 4 deviated-justified, with 2 P2 / 6 P3 text follow-ups
   addressed in the disposition below. This verdict applies only to that SHA;
-  task 0.3 stays open for final targeted re-review after the Q9 decision.
+  final targeted re-review at `96ca3afe` is also **REVIEW_APPROVED** (receipt
+  below). Task 0.3 stays open for the rebased exact package; neither historical
+  verdict transfers to a successor SHA.
 - Approval Question 9: **Owner APPROVED the compromise, 2026-09-07**;
   three post-approval disclosures presented 2026-09-07; acknowledgement pending.
-- Tasks 0.4/0.5: NOT COMPLETE; no rebase in this docs-only dispatch, and current
-  strict validation is not the final exact-package confirmation.
+- Task 0.4: COMPLETE, rebased onto `9cff32da` and anchors rechecked 2026-09-07.
+- Task 0.5: strict portion PASSED; exact package awaiting Owner confirmation.
+  Three disclosure acknowledgements remain pending; implementation is queued
+  after `add-linked-worktree-admission`.
 - Codex `IMPLEMENTATION_VERIFIED`: NOT APPLICABLE / NOT RUN.
 - Independent implementation `REVIEW_APPROVED`: NOT APPLICABLE / NOT RUN.
 - Owner `ACCEPTED`: NOT APPLICABLE / NOT REQUESTED.
@@ -568,3 +577,78 @@ named Mermaid `classDef`/`style` CSS ingress and added hostile fixtures to D3,
 task 2.9 and the Mermaid Scenario; corrected both date stamps. The verbatim
 review receipt above describes `96ca3afe`, before these fixes. N5 is handled
 by task 0.4 below; no historical technical verdict transfers to a successor SHA.
+
+### Tasks 0.4 rebase and 0.5 strict gate — 2026-09-07
+
+- Authorized documentation repair commit before rebase:
+  `62d14d7eea297fe39443eeda6ca3e38d083f8473`
+  (`docs(openspec): apply re-review fixes before rebase`).
+- Rebase target: read-only local `main`
+  `9cff32daa89f4431be37cf307897b97ec48cda77`; rebased HEAD before this
+  bookkeeping commit: `e12860b773e32a811357e098c36f50f39e99d346`.
+  The repair commit was rewritten to that rebased HEAD.
+- Conflict file list: **only `openspec/STATUS.md`**. Its Updated line
+  conflicted while replaying `81cce589` and `04193a4b`; each was resolved to
+  `2026-09-07`. Main's complete 2026-09-07 archive and this branch's active row
+  were retained. No other file conflicted; no abort condition was encountered.
+- Anchor audit: proposal/design/tasks reference 12 distinct source/test/config/
+  lock files. Their Git blobs are identical at `30c72ad3`, reviewed `96ca3afe`,
+  main `9cff32da`, and rebased HEAD, preserving every cited line and range:
+  `chat-markdown-renderer.tsx`, `renderer-html-sinks.test.ts`,
+  `shiki-theme-loader.ts`, `pierre-diffs-shiki-shim.ts`,
+  `agents-mentions-editor.tsx`, `src/main/windows/main.ts`,
+  `local-browser-workbench.tsx`, `registered-roots.ts`, `stable-directory.ts`,
+  `use-voice-recording.ts`, `electron.vite.config.ts`, and `bun.lock`.
+  No package line citation targets main's changed `src/main/lib/git/branches.ts`,
+  `default-branch.ts`, `worktree.ts`, or TICKET-124; ownership-map references
+  have no line numbers. **Source-anchor updates: none required.** Proposal's
+  top baseline note now names `9cff32da`; task 0.4 is checked.
+- 0.5 strict passed at `e12860b773e32a811357e098c36f50f39e99d346`;
+  exact package awaiting Owner confirmation. Validation includes the final
+  documentation bookkeeping diff; both strict commands and diff check are
+  rerun after its commit. This is a documentation gate, not an implementation
+  verdict or fresh independent review of the rebased package.
+- Validation environment: this worktree has no `node_modules`. Initial bare
+  `bun x openspec` exited 1 (`could not determine executable to run for package
+  openspec`). Reruns prepend the read-only main checkout's existing
+  `node_modules/.bin` to PATH; no dependency declarations or lockfiles change.
+- `bun run check:full`: **exit 1**, stops at lint because this worktree's
+  `node_modules/.bin/biome` is absent. Tests/build were not reached; no full-gate
+  pass is claimed. Log: `/tmp/followup-a-rebase-check-full.log` (ephemeral).
+- Checked tasks are 0.1/0.2/0.4/2.11 (**4/46**). Task 0.5 remains unchecked
+  for exact-package Owner confirmation and the three pending acknowledgements;
+  task 0.3 remains open for the successor package's independent R3 approval.
+  Implementation is queued after `add-linked-worktree-admission`. Product code,
+  tests, dependencies and living specs remain byte-identical to main `9cff32da`.
+  No main mutation, merge, push or other remote action was performed.
+
+Validation commands/results (PATH prepends
+`/home/chen/projects/agent-code-for-me/node_modules/.bin`):
+
+```text
+$ bun x openspec validate add-renderer-untrusted-content-hardening --strict --no-interactive
+Change 'add-renderer-untrusted-content-hardening' is valid
+exit 0
+
+$ bun x openspec validate --strict --no-interactive
+Nothing to validate. Try one of:
+  openspec validate --all
+  openspec validate --changes
+  openspec validate --specs
+  openspec validate <item-name>
+Or run in an interactive terminal.
+exit 1
+
+$ bun x openspec validate --all --strict --no-interactive
+[all 54 change/spec items printed with checkmarks]
+Totals: 54 passed, 0 failed (54 items)
+exit 0
+
+$ git diff --check
+[no output]
+exit 0
+```
+
+The installed CLI requires explicit `--all` for noninteractive full validation;
+the corrected command fulfills the full strict gate, while the original
+command's exit 1 above remains recorded. `git diff --check main` also passed.

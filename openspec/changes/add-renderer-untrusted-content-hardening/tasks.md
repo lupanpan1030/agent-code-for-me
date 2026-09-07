@@ -2,8 +2,9 @@
 
 > **DIRECTION+IMPLEMENTATION APPROVED (eight defaults), 2026-09-05.** The
 > Owner accepted all eight recommended defaults, conditional on 0.2/0.3/0.4/0.5.
-> Among approval prerequisites, only 0.1 and the historical feasibility receipt
-> in 0.2 are complete. Source edits remain gated; Owner **APPROVED the Q9 compromise on 2026-09-07**.
+> Among approval prerequisites, 0.1, the historical feasibility receipt in 0.2,
+> and the 2026-09-07 baseline rebase/anchor audit in 0.4 are complete. Source
+> edits remain gated; Owner **APPROVED the Q9 compromise on 2026-09-07**.
 > Task 2.11 ticket registration is also complete; implementation remains open.
 
 Routing from the archived parent is explicit: sections 1–2 carry original 2.2,
@@ -34,17 +35,22 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       `wf_461ff527-9bb`. Targeted re-review: **REVIEW_APPROVED** at
       `04193a4b7455d4619fce613307e3cafee4267c95`, workflow `wf_d03b4b51-d03`
       (20 fixes: 16 applied / 4 deviated-justified; 2 P2 + 6 P3 follow-ups).
-      The eight text fixes and Owner-approved Q9 compromise are recorded;
-      **待最终定向复核**. Remains unchecked until the revised exact SHA's final
-      fresh-context R3 approval; the historical verdict does not transfer.
-- [ ] 0.4 Rebase all source/test anchors and active-change conflicts onto the
-      implementation-start SHA; update the Draft rather than carrying stale
-      counts or line numbers forward.
+      Final targeted re-review: **REVIEW_APPROVED** at `96ca3afe` on
+      2026-09-07 (1 P2 + 4 P3, now addressed). Remains unchecked until the
+      rebased exact package's fresh-context R3 approval; historical verdicts
+      do not transfer to a successor SHA.
+- [x] 0.4 Rebase all source/test anchors and active-change conflicts onto
+      `main` at `9cff32daa89f4431be37cf307897b97ec48cda77`, completed 2026-09-07.
+      Audited proposal/design/tasks citations: no source line-number updates
+      needed. Only STATUS Updated conflicts occurred; keep 2026-09-07, main's
+      archive and this branch's active row. Recheck if the implementation-start
+      baseline advances again.
 - [ ] 0.5 Run strict OpenSpec validation and obtain explicit Owner `APPROVED`
       for the exact rebaselined package before the first source edit. The
-      present documentation strict-validation run does not close this task;
-      final targeted re-review, three post-approval Owner acknowledgements,
-      and 0.4 precede exact-package confirmation. Each disclosure is
+      strict portion passed after the 0.4 rebase (see `verification.md`);
+      exact package awaiting Owner confirmation. This checkbox stays open.
+      The three post-approval Owner acknowledgements and exact-package R3
+      approval remain required before confirmation. Each disclosure is
       presented to Owner 2026-09-07 (board §六); acknowledgement pending.
 
 ## 1. Characterization and renderer source guard (original 2.2)
