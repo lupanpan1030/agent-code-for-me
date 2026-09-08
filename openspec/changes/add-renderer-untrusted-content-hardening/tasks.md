@@ -39,13 +39,12 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       2026-09-07 (1 P2 + 4 P3, now addressed). Remains unchecked until the
       rebased exact package's fresh-context R3 approval; historical verdicts
       do not transfer to a successor SHA.
-      Exact-package ledger: **CHANGES_REQUESTED at 95831ab6 → fixes at `<SHA>`
-      → targeted R3 pending** (2026-09-08; workflow `wf_165bd6a0-1b5`,
-      2 P1 / 9 P2 / 7 P3). Here `<SHA>` denotes the single successor commit
-      containing this revision, titled `docs(openspec): address exact-package
-      R3 review for renderer hardening`; resolve its full SHA from Git (the
-      final handoff records it). It cannot embed its own hash. Targeted fresh
-      R3 follows 0.5 re-confirmation and covers the two P1s and folded P2s.
+      Exact-package ledger: **CHANGES_REQUESTED at 95831ab6 → fixes at fad8959c + Owner origin decision → targeted R3 pending**
+      (2026-09-08; workflow `wf_165bd6a0-1b5`, 2 P1 / 9 P2 / 7 P3).
+      Fixes SHA: `fad8959c70b4494c21fdcbff41d1bf394d5cf5f8`.
+      Owner decided 2026-09-08: option (a); receipt in `verification.md`.
+      Targeted fresh R3 follows 0.5 re-confirmation and covers the two P1s
+      and folded P2s on the same revised exact-package SHA.
 - [x] 0.4 Rebase all source/test anchors and active-change conflicts onto
       `main` at `9cff32daa89f4431be37cf307897b97ec48cda77`, completed 2026-09-07.
       Audited proposal/design/tasks citations: no source line-number updates
@@ -58,8 +57,7 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       occurred on 2026-09-07: **confirmed content 0c805564, recording commit
       95831ab6; re-confirmation required after this revision**. This checkbox
       is reopened for the 2026-09-08 revised package. Strict target and `--all`
-      validation must pass again; D7 origin option (a) is **Owner decision
-      pending**, and the three earlier disclosures remain presented to Owner
+      validation must pass again; D7 origin is **Owner decided 2026-09-08: option (a)**, and the three earlier disclosures remain presented to Owner
       2026-09-07 (board §六), acknowledgement pending. Record the new confirmed
       exact SHA (or distinguish confirmed content from its recording commit),
       then obtain task 0.3 targeted fresh R3 on that same package. Historical
@@ -343,8 +341,8 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       and every `locus-preview:` request on HTTP(S)-admitted Sessions. Other
       schemes fail closed except the explicit D7 non-network postconditions
       and accepted HTTP(S) subresource residual. Remove renderer `loadURL`.
-- [ ] 4.2 After Owner confirms D7 origin granularity (option (a) is drafted,
-      pending), register `locus-preview` before app readiness with exactly D7's
+- [ ] 4.2 Following **Owner decided 2026-09-08: option (a)** for D7,
+      register `locus-preview` before app readiness with exactly D7's
       flags: standard/secure/supportFetchAPI/corsEnabled true;
       bypassCSP/allowServiceWorkers/stream/codeCache false. Bind `protocol.handle`
       only on file-admission Sessions before partition return; HTTP(S) Sessions

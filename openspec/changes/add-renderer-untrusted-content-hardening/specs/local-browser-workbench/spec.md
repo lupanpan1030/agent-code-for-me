@@ -12,7 +12,7 @@ navigation; it does not claim to block page-controlled fetch, form, WebSocket,
 image/ping, frame, or other subresource egress to remote or other loopback
 services.
 
-File-origin granularity follows the pending D7 draft: a unique origin per
+File-origin granularity follows the Owner-decided D7 option (a) (2026-09-08): a unique origin per
 admitted document and a main-validated relative-asset scope defaulting to the
 document-directory subtree. This does not claim confidentiality for in-scope
 files; their read/egress consequence remains visible, including when the
@@ -69,7 +69,7 @@ directory is the worktree root. These details await exact-package confirmation.
 
 #### Scenario: An admitted file attempts cross-file or cross-admission reads
 
-**Owner decision pending (2026-09-08): origin granularity option (a) drafted as recommended default; alternatives (b) narrowed subtree on fixed origin / (c) whole-root + fourth disclosure**
+**Owner decided 2026-09-08: option (a)**
 
 - **WHEN** previewed file content attempts fetch, XHR, iframe `contentDocument`,
   or `script src` access to another file or admission

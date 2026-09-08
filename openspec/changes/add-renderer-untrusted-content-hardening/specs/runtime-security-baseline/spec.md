@@ -287,8 +287,8 @@ requests SHALL NOT be described as authenticated access; a controlled auth/
 gateway probe SHALL demonstrate rejection without state changes. Codex
 app-server uses stdio rather than an additional loopback listener.
 
-The following file-origin details implement the draft in D7 and remain pending
-Owner confirmation of the revised exact package: each document has a separate
+The following file-origin details implement Owner-decided option (a) in D7
+(2026-09-08); confirmation of the revised exact package remains pending: each document has a separate
 admission origin and declared relative-asset scope, defaulting to its directory
 subtree. In-scope files remain readable and subject to the accepted egress
 residual, including the entire worktree if that directory is the root.

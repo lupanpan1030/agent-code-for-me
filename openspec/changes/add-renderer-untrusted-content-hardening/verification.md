@@ -1,6 +1,6 @@
 # Verification: add-renderer-untrusted-content-hardening
 
-> Status: **APPROVED (eight defaults + Q9 compromise); exact-package R3 CHANGES_REQUESTED at 95831ab6, workflow wf_165bd6a0-1b5 (2026-09-08). Fixes drafted; D7 origin decision, task 0.5 re-confirmation, then same-SHA targeted R3 (0.3) pending before source edit**.
+> Status: **APPROVED (eight defaults + Q9 compromise); exact-package R3 CHANGES_REQUESTED at 95831ab6, workflow wf_165bd6a0-1b5 (2026-09-08). Fixes at fad8959c; Owner decided 2026-09-08: option (a); task 0.5 re-confirmation, then same-SHA targeted R3 (0.3) pending before source edit**.
 > Historical confirmation: **confirmed content 0c805564, recording commit 95831ab6; re-confirmation required after this revision**.
 > Owner direction/implementation approval was given late 2026-09-05, conditional
 > on tasks 0.2/0.3/0.4/0.5. Feasibility 0.2 is `REVIEW_APPROVED` at `2292d36a`;
@@ -286,8 +286,7 @@ single successful track cannot stand in for another track.
   are recorded in the appended ledger, with no approval transfer.
 - Task 0.5: **REOPENED**. Historical strict/Owner confirmation on 2026-09-07:
   **confirmed content 0c805564, recording commit 95831ab6; re-confirmation
-  required after this revision**. D7 origin granularity is pending Owner
-  decision; the three disclosure acknowledgements remain pending.
+  required after this revision**. D7 origin: Owner decided 2026-09-08: option (a); the three disclosure acknowledgements remain pending.
   Re-confirm the revised exact package, then obtain same-SHA targeted R3;
   implementation is queued after `add-linked-worktree-admission`.
 - Codex `IMPLEMENTATION_VERIFIED`: NOT APPLICABLE / NOT RUN.
@@ -793,3 +792,52 @@ fixture mappings, all four required D7/Q5/Impact/LBW Owner-pending markers,
 documentation files differ from `95831ab6`; only this change directory and its
 single STATUS row are touched. The eight defaults and Q9 compromise were not
 reopened; D7 origin granularity is the newly pending Owner decision.
+
+
+## Owner preview-origin decision receipt — 2026-09-08 follow-up A
+
+- Authority: Owner decision supplied by coordination dispatch on 2026-09-08.
+  Starting HEAD verified as `fad8959c70b4494c21fdcbff41d1bf394d5cf5f8`, clean.
+- **Owner decided 2026-09-08: option (a)**. Each admission serves its document
+  and declared relative-resource scope (default: document-directory subtree)
+  from `locus-preview://<per-admission-random>.preview.local/`.
+  Alternatives (b) narrowed subtree on fixed origin and (c) whole-root + fourth
+  disclosure are not adopted.
+- Owner accepts incomplete previews for pages referencing parent-directory
+  resources. Future extension via an explicit resource-scope declaration is
+  recorded in proposal Impact as a Yellow compatibility/consumer note, subject
+  to D7 validation; no new ticket is opened.
+- This receipt supersedes origin-decision-pending statements in the historical
+  revision/disposition ledger above; it does not rewrite those historical
+  review results or acknowledge the three earlier disclosures.
+- Task 0.3: **fixes at fad8959c + Owner origin decision → targeted R3 pending**.
+  Task 0.5 remains unchecked pending revised exact-package re-confirmation,
+  followed by targeted fresh R3 on that same SHA. The origin decision alone
+  is not exact-package confirmation or independent review approval.
+- Only this change directory and its STATUS row are edited; no product code,
+  merge, push, or remote operations. Implementation remains queued after
+  `add-linked-worktree-admission` and the existing gates.
+
+### Decision-record validation
+
+Using `/home/chen/projects/agent-code-for-me/node_modules/.bin/openspec`:
+
+```text
+validate add-renderer-untrusted-content-hardening --strict --no-interactive
+Change 'add-renderer-untrusted-content-hardening' is valid
+exit 0
+
+validate --all --strict --no-interactive
+Totals: 54 passed, 0 failed (54 items)
+exit 0
+
+git diff --check
+[no output]
+exit 0
+```
+
+`bun run check:full`: exit 1 at `lint:changed`; this worktree lacks
+`node_modules/.bin/biome`. Later stages were not reached. No dependency install
+or product/manual/GUI verification is claimed. The receipt-inclusive revision
+is validated again before the single local commit; the final handoff records
+its full SHA, and `git diff --check HEAD^ HEAD` checks the committed diff.

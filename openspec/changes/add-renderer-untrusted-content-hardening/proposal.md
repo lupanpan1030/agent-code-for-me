@@ -1,6 +1,6 @@
 # Change: Harden untrusted renderer content and local-browser guests
 
-> Status: **DIRECTION+IMPLEMENTATION APPROVED (eight defaults 2026-09-05 + Q9 compromise 2026-09-07); exact-package R3 CHANGES_REQUESTED at 95831ab6 (2026-09-08); fixes drafted, D7 origin decision and task 0.5 re-confirmation pending, then targeted fresh R3 (0.3) on the same SHA; implementation queued after `add-linked-worktree-admission`**.
+> Status: **DIRECTION+IMPLEMENTATION APPROVED (eight defaults 2026-09-05 + Q9 compromise 2026-09-07); exact-package R3 CHANGES_REQUESTED at 95831ab6 (2026-09-08); fixes at fad8959c; Owner decided 2026-09-08: option (a); task 0.5 re-confirmation pending, then targeted fresh R3 (0.3) on the same SHA; implementation queued after `add-linked-worktree-admission`**.
 > Historical confirmation: **confirmed content 0c805564, recording commit 95831ab6; re-confirmation required after this revision**.
 > Owner accepted the eight recommended defaults late on 2026-09-05, conditional
 > on the feasibility/R3 reviews, implementation-start rebase, strict validation,
@@ -137,7 +137,7 @@ minimization/redaction owner.
   destruction remain defense in depth.
 - Never load direct `file://` content in a guest. Translate an admitted file
   target to a per-admission-origin, Session-local `locus-preview://` URL under
-  D7's pending option (a), serving only its document and declared relative-asset
+  D7's Owner-selected option (a), serving only its document and declared relative-asset
   scope (default: document-directory subtree) through the registered-root
   broker. Its file-admission-only protocol handler traverses without
   following symlinks and streams the same verified file descriptor it opened.
@@ -222,16 +222,16 @@ same change. It must not leave old and new business paths live together.
 
 ## Impact
 
-- **Owner decision pending (2026-09-08): origin granularity option (a) drafted as recommended default; alternatives (b) narrowed subtree on fixed origin / (c) whole-root + fourth disclosure**
-  D7 drafts a separate `locus-preview://<per-admission-random>.preview.local/`
+- **Owner decided 2026-09-08: option (a)**
+  D7 specifies a separate `locus-preview://<per-admission-random>.preview.local/`
   origin for each admitted document, preserving relative URLs within its
   declared asset scope (default: document-directory subtree) and rejecting
   out-of-scope/other-host requests. In-scope files remain readable and can be
   exfiltrated through the accepted egress residual; if the document directory
   is the worktree root, the default scope includes that root's entire subtree.
   This scope/consequence must be visible at admission. HTTP(S)-admission
-  Sessions receive no file-serving handler and reject the scheme. Origin
-  granularity is not yet Owner-confirmed and requires 0.5 re-confirmation.
+  Sessions receive no file-serving handler and reject the scheme. Owner selected option (a); alternatives (b)/(c) are not adopted. The revised
+  exact package still requires 0.5 re-confirmation.
 - Affected specs: `runtime-security-baseline` and `local-browser-workbench`.
   The latter is narrowed so a guest remains on its exact admitted HTTP(S)
   origin; opening another local origin/port is a new explicit preview
@@ -269,6 +269,11 @@ same change. It must not leave old and new business paths live together.
   the address bar or diagnostics. Main retains the admitted navigation target
   for reload; this display loss is explicit compatibility behavior, with no
   raw-URL renderer fallback. Screenshots move to bounded main-owned capture.
+  Yellow compatibility/consumer note (Owner accepted 2026-09-08): pages
+  referencing parent-directory resources have incomplete previews under the
+  default document-directory subtree; a future explicit resource-scope
+  declaration can extend that scope, subject to D7 main validation (recorded
+  here as a Yellow note, with no new ticket).
 
 ## Explicit Non-Goals
 
@@ -339,7 +344,7 @@ Before any source edit, this package still requires:
    partition lifecycle, and testability on supported Electron hosts;
 3. acknowledgement of the three post-approval disclosures in design
    (presented to Owner 2026-09-07 (board §六); acknowledgement pending),
-   plus an Owner decision on D7's newly drafted origin granularity; and
+   D7 origin granularity was decided by Owner on 2026-09-08: option (a); and
 4. retain/recheck task 0.4's completed rebase as needed, then task 0.5 strict
    target/all validation and Owner re-confirmation of the revised exact package,
    followed by targeted fresh R3 on the same SHA for the two P1s and folded P2s

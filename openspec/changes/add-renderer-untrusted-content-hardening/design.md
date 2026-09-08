@@ -6,8 +6,7 @@ tasks 0.2/0.3/0.4/0.5. The 2292d36a pre-implementation review accepted
 feasibility (0.2) and requested security touch-ups (0.3); Approval Question 9
 below received Owner approval for the compromise on 2026-09-07. This package
 carries the 2026-09-08 exact-package R3 fixes after **CHANGES_REQUESTED at
-95831ab6** (2 P1 / 9 P2 / 7 P3). D7 origin granularity is drafted, pending
-Owner decision; task 0.5 re-confirmation and same-SHA targeted R3 remain open. It
+95831ab6** (2 P1 / 9 P2 / 7 P3). Owner decided 2026-09-08: option (a) for D7 origin granularity; task 0.5 re-confirmation and same-SHA targeted R3 remain open. It
 carries forward only the unfinished renderer and webview work routed out of archived
 `update-trpc-capability-boundary`; it does not reopen the capability, consent,
 or router-boundary decisions assigned to follow-up B.
@@ -76,10 +75,10 @@ sink.
 - No app-document remote-image egress isolation: allowed HTTPS markdown images
   can disclose IP/timing without a click; this is an explicit residual.
 - No confidentiality claim for files inside a file admission's declared asset
-  scope: D7's pending option (a) defaults to the document-directory subtree.
+  scope: D7's Owner-selected option (a) defaults to the document-directory subtree.
   Those bytes are readable by that document and can leave through the accepted
   egress residual; per-admission origins do not make in-scope assets private.
-  Whole-worktree serving is not the drafted default.
+  Whole-worktree serving is not the selected default.
 - Monaco file-viewer and xterm terminal dependency-internal DOM hardening
   beyond existing controls is an explicit residual under the approved Q9
   compromise, tracked in Yellow
@@ -131,7 +130,7 @@ No unauthenticated state-changing Locus endpoint was identified; presence
 fingerprinting and nuisance probes remain possible. Codex app-server uses
 stdio and is not a loopback listener.
 
-File-preview origin granularity is pending Owner decision in D7. Option (a)
+Owner decided 2026-09-08: option (a) for file-preview origin granularity in D7. It
 isolates admissions by origin and serves only the admitted document and its
 declared relative-asset scope (default: its directory subtree), not the whole
 registered worktree. A hostile document can still read other files inside that
@@ -629,10 +628,15 @@ renderer unmount/rollback is not the enforcement primitive.
 
 An admitted user-facing `file://` target is never handed to the guest. Main
 resolves the root through
-`src/main/lib/fs/registered-roots.ts:66-109` and applies the following drafted
+`src/main/lib/fs/registered-roots.ts:66-109` and applies the following Owner-selected
 origin and serving-scope contract.
 
-**Owner decision pending (2026-09-08): origin granularity option (a) drafted as recommended default; alternatives (b) narrowed subtree on fixed origin / (c) whole-root + fourth disclosure**
+**Owner decided 2026-09-08: option (a)**
+
+Alternatives (b) narrowed subtree on fixed origin and (c) whole-root + fourth
+disclosure are not adopted. Owner accepts incomplete previews for pages
+referencing parent-directory resources; the Yellow compatibility note in
+proposal Impact records future explicit resource-scope extension.
 
 Each admitted document is served from its own origin,
 `locus-preview://<per-admission-random>.preview.local/`. Main binds that random
@@ -868,7 +872,7 @@ The GUI matrix must demonstrate:
 - per-admission preview origins and declared-scope cross-file fetch/XHR/iframe
   `contentDocument`/`script src` results (allowed in-scope controls, denied
   out-of-scope/other-host requests), custom-scheme gate observability and
-  HTTP(S)-admission scheme denial, under D7's pending option (a);
+  HTTP(S)-admission scheme denial, under D7's Owner-selected option (a);
 - main-alone `close()`/`isDestroyed()` teardown and no revival or reattachment
   without fresh generation/admission; pre-return ordering for all Session
   handlers, including first-response download and early permission denial;
@@ -965,7 +969,7 @@ guest confinement.
   which may reduce file-preview availability. The broker prevents path
   retargeting outside the root, not concurrent mutation of the same admitted
   inode; all served bytes therefore remain untrusted renderer content.
-- **File-origin and asset-scope trade (Owner decision pending).** D7 option (a)
+- **File-origin and asset-scope trade (Owner decided 2026-09-08: option (a)).** D7 option (a)
   uses separate admission origins with a default document-directory subtree.
   In-scope files remain readable/exfiltratable, including the whole worktree
   when its root is that directory. Scope must be visible, frozen and enforced;
@@ -1102,9 +1106,10 @@ exact-package confirmation:
    (including nsis/portable) until a Yellow handle-relative backend extension
    lands; supported platforms still require canonical root/descriptor identity
    re-verification, including roots with symlinked parent prefixes.
-   **Owner decision pending (2026-09-08): origin granularity option (a) drafted as recommended default; alternatives (b) narrowed subtree on fixed origin / (c) whole-root + fourth disclosure**
-   D7's per-admission host and default document-directory asset scope are new
-   draft details, not part of the confirmed default. In-scope files remain
+   **Owner decided 2026-09-08: option (a)**
+   Owner selected D7's per-admission host and default document-directory asset
+   scope; alternatives (b)/(c) are not adopted. Owner accepts incomplete
+   previews for pages referencing parent-directory resources. In-scope files remain
    readable and subject to the accepted egress residual; see D7 for the
    worktree-root-directory case and required cross-file evidence.
 6. **Guest permissions:** approve deny-all guest permissions, device selectors,
@@ -1128,7 +1133,7 @@ load-bearing HAST serializer, so its producer binding, exact dependency pins,
 and adversarial upgrade gate belong in this change; Monaco/xterm DOM
 producers remain explicit residuals with a separately scoped Yellow follow-up.
 The eight approved defaults remain in force. After the 95831ab6 exact-package
-CHANGES_REQUESTED verdict, source edits require D7's pending origin decision,
+CHANGES_REQUESTED verdict, D7 option (a) is Owner-decided on 2026-09-08; source edits require
 0.5 strict/exact-package re-confirmation, and targeted fresh R3 on that same
 successor SHA; recheck 0.4 if the implementation-start baseline advances.
 The options below are retained as decision history; only the compromise is selected.
@@ -1211,7 +1216,7 @@ status paragraph is removed. Monaco/xterm remain outside that reviewed-producer
 scope. The three post-approval disclosures are **presented to Owner 2026-09-07
 (board §六); acknowledgement pending**, not confirmed by the Q9 decision.
 Task 0.4's 2026-09-07 rebase remains recorded; recheck it if the baseline moves.
-Before source edits, resolve D7's pending origin decision, collect the three
+D7 origin: Owner decided 2026-09-08: option (a). Before source edits, collect the three
 acknowledgements, re-run 0.5 strict validation/exact-package confirmation, then
 obtain targeted fresh R3 for that same revised SHA. Implementation stays queued
 after `add-linked-worktree-admission`.

@@ -8,7 +8,7 @@ Updated: 2026-09-07 (Pacific/Auckland)
 
 | Change | State | Concrete next gate |
 | --- | --- | --- |
-| `add-renderer-untrusted-content-hardening` | APPROVED (eight defaults + Q9 compromise); confirmed content `0c805564`, recording commit `95831ab6`; exact-package R3 CHANGES_REQUESTED at `95831ab6` (2026-09-08), fixes drafted | Owner decision pending: D7 origin option (a); task 0.5 strict/exact-package re-confirmation, then same-SHA targeted fresh R3 (0.3); implementation queued after add-linked-worktree-admission |
+| `add-renderer-untrusted-content-hardening` | APPROVED (eight defaults + Q9 compromise); confirmed content `0c805564`, recording commit `95831ab6`; exact-package R3 CHANGES_REQUESTED at `95831ab6` (2026-09-08), fixes at `fad8959c`; Owner decided 2026-09-08: option (a) | task 0.5 strict/exact-package re-confirmation, then same-SHA targeted fresh R3 (0.3); implementation queued after add-linked-worktree-admission |
 
 Parked proposals are indexed in [`deferred/README.md`](deferred/README.md) and
 do not appear in the active list.
