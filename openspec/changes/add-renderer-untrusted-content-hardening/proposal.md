@@ -1,7 +1,7 @@
 # Change: Harden untrusted renderer content and local-browser guests
 
-> Status: **DIRECTION+IMPLEMENTATION APPROVED (eight defaults 2026-09-05 + Q9 compromise 2026-09-07); exact-package R3 CHANGES_REQUESTED at 95831ab6 (2026-09-08); fixes at fad8959c; Owner decided 2026-09-08: option (a); task 0.5 re-confirmation pending, then targeted fresh R3 (0.3) on the same SHA; implementation queued after `add-linked-worktree-admission`**.
-> Historical confirmation: **confirmed content 0c805564, recording commit 95831ab6; re-confirmation required after this revision**.
+> Status: **DIRECTION+IMPLEMENTATION APPROVED (eight defaults 2026-09-05 + Q9 compromise 2026-09-07); exact-package R3 CHANGES_REQUESTED at 95831ab6 (2026-09-08); fixes at fad8959c; Owner decided 2026-09-08: option (a); targeted/final fresh R3 (0.3) REVIEW_APPROVED at efe3fb91 (2026-09-09); **EXACT PACKAGE `efe3fb91` RE-CONFIRMED by Owner 2026-09-09 (task 0.5)**; implementation queued after `add-linked-worktree-admission` and starts test-first (Owner 2026-09-09)**.
+> Confirmation history: content 0c805564 confirmed 2026-09-07 (recording commit 95831ab6); revised content **efe3fb91 re-confirmed 2026-09-09** (recording commit follows this line's commit).
 > Owner accepted the eight recommended defaults late on 2026-09-05, conditional
 > on the feasibility/R3 reviews, implementation-start rebase, strict validation,
 > and exact-package confirmation. Feasibility 0.2 is `REVIEW_APPROVED` at

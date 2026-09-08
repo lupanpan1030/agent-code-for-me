@@ -8,7 +8,7 @@ Updated: 2026-09-09 (Pacific/Auckland)
 
 | Change | State | Concrete next gate |
 | --- | --- | --- |
-| `add-renderer-untrusted-content-hardening` | R3 REVIEW_APPROVED at efe3fb91 — awaiting Owner re-confirmation of the exact package (0.5); implementation queued after add-linked-worktree-admission | Owner exact-package re-confirmation (0.5); technical verdict bound to `efe3fb91ba3a20ecf7a5e7177fa3a83bb875ce99` |
+| `add-renderer-untrusted-content-hardening` | APPROVED — exact package `efe3fb91` re-confirmed by Owner 2026-09-09 (0.1–0.5 closed) | implementation queued after add-linked-worktree-admission; starts test-first (independent red suite) then IMPLEMENTATION_VERIFIED at a frozen SHA |
 
 Parked proposals are indexed in [`deferred/README.md`](deferred/README.md) and
 do not appear in the active list.

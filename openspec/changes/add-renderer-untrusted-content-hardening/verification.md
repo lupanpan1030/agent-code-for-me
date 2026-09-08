@@ -1,6 +1,6 @@
 # Verification: add-renderer-untrusted-content-hardening
 
-> Status: **R3 REVIEW_APPROVED at efe3fb91 — awaiting Owner re-confirmation of the exact package (0.5); implementation queued after add-linked-worktree-admission**.
+> Status: **R3 REVIEW_APPROVED at efe3fb91; exact package `efe3fb91` RE-CONFIRMED by Owner 2026-09-09 (0.5) — all approval prerequisites closed; implementation queued after add-linked-worktree-admission, test-first**.
 > Historical confirmation: **confirmed content 0c805564, recording commit 95831ab6; re-confirmation required after this revision**.
 > Owner direction/implementation approval was given late 2026-09-05, conditional
 > on tasks 0.2/0.3/0.4/0.5. Feasibility 0.2 is `REVIEW_APPROVED` at `2292d36a`;

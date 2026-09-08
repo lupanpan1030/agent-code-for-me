@@ -60,7 +60,7 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       needed. Only STATUS Updated conflicts occurred; keep 2026-09-07, main's
       archive and this branch's active row. Recheck if the implementation-start
       baseline advances again.
-- [ ] 0.5 Run strict OpenSpec validation and obtain explicit Owner `APPROVED`
+- [x] 0.5 Run strict OpenSpec validation and obtain explicit Owner `APPROVED`
       for the exact rebaselined package before the first source edit. The
       historical strict/rebase preconditions passed and Owner confirmation
       occurred on 2026-09-07: **confirmed content 0c805564, recording commit
@@ -72,6 +72,11 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       then obtain task 0.3 targeted fresh R3 on that same package. Historical
       confirmation does not certify revised text; source edits also remain
       queued after `add-linked-worktree-admission`.
+      Done 2026-09-09: strict validation passed at `efe3fb91` (target + --all 54/54)
+      and the Owner re-confirmed the revised exact package `efe3fb91` the same day,
+      choosing test-first for its implementation. All approval prerequisites
+      (0.1–0.5) are closed; the first source edit waits only on the queue
+      (after `add-linked-worktree-admission`).
 
 ## 1. Characterization and renderer source guard (original 2.2)
 
