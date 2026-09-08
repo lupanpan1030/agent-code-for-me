@@ -4,11 +4,11 @@ This ledger records execution state only. Current product truth remains in
 `openspec/specs/` plus the checked-out code; future direction remains in the
 ratified strategy and interoperability contract.
 
-Updated: 2026-09-07 (Pacific/Auckland)
+Updated: 2026-09-09 (Pacific/Auckland)
 
 | Change | State | Concrete next gate |
 | --- | --- | --- |
-| `add-renderer-untrusted-content-hardening` | APPROVED (eight defaults + Q9 compromise); confirmed content `0c805564`, recording commit `95831ab6`; exact-package R3 CHANGES_REQUESTED at `95831ab6` (2026-09-08), fixes at `fad8959c`; Owner decided 2026-09-08: option (a); targeted R3 CHANGES_REQUESTED at `e86d341f` (1 P1), workflow `wf_11f5b099-acd`; five-place innerText DOM wording fix in this commit, final judge pending | task 0.5 strict/exact-package re-confirmation, then same-SHA targeted fresh R3 (0.3); implementation queued after add-linked-worktree-admission |
+| `add-renderer-untrusted-content-hardening` | R3 REVIEW_APPROVED at efe3fb91 — awaiting Owner re-confirmation of the exact package (0.5); implementation queued after add-linked-worktree-admission | Owner exact-package re-confirmation (0.5); technical verdict bound to `efe3fb91ba3a20ecf7a5e7177fa3a83bb875ce99` |
 
 Parked proposals are indexed in [`deferred/README.md`](deferred/README.md) and
 do not appear in the active list.

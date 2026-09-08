@@ -26,7 +26,7 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       P0/P1, reviewed SHA `2292d36a2947325ace8bb982a6e11a581bf4b12f`, workflow
       `wf_461ff527-9bb`; full pasteable receipt is in `verification.md`. This
       receipt does not certify the revised text or a future implementation.
-- [ ] 0.3 Obtain independent fresh-context R3 security review of the exact
+- [x] 0.3 Obtain independent fresh-context R3 security review of the exact
       threat model and fail-closed design, with special focus on preload/bridge
       absence, programmatic/redirect ordering, file TOCTOU, permission/device
       denial, popup/download effects, partition reuse, diagnostic secret flow,
@@ -36,19 +36,24 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       `04193a4b7455d4619fce613307e3cafee4267c95`, workflow `wf_d03b4b51-d03`
       (20 fixes: 16 applied / 4 deviated-justified; 2 P2 + 6 P3 follow-ups).
       Final targeted re-review: **REVIEW_APPROVED** at `96ca3afe` on
-      2026-09-07 (1 P2 + 4 P3, now addressed). Remains unchecked until the
-      rebased exact package's fresh-context R3 approval; historical verdicts
-      do not transfer to a successor SHA.
-      Exact-package ledger: **CHANGES_REQUESTED at 95831ab6 → fixes at fad8959c + Owner origin decision → targeted R3 pending**
-      (2026-09-08; workflow `wf_165bd6a0-1b5`, 2 P1 / 9 P2 / 7 P3).
-      Fixes SHA: `fad8959c70b4494c21fdcbff41d1bf394d5cf5f8`.
-      Owner decided 2026-09-08: option (a); receipt in `verification.md`.
-      Targeted R3 ledger: **targeted R3 CHANGES_REQUESTED (1 P1) → fix at <SHA> → final judge pending**.
-      Reviewed SHA: `e86d341f193c0421a1e3f50a4afe24962eaa8552`, workflow
-      `wf_11f5b099-acd`; prior findings: 17 resolved, #1 partially resolved.
-      `<SHA>` denotes the single commit carrying this five-place wording fix;
-      its full SHA is recorded in the final handoff. Task 0.5 re-confirmation
-      and same-SHA final judge on this sole P1 remain pending.
+      2026-09-07 (1 P2 + 4 P3, now addressed). Historical verdicts do not
+      transfer to a successor SHA. Four-round package ledger:
+      1. Targeted re-review: **REVIEW_APPROVED at 96ca3afe** (2026-09-07).
+      2. Exact-package R3: **CHANGES_REQUESTED at 95831ab6** (2026-09-08;
+         workflow `wf_165bd6a0-1b5`, 2 P1 / 9 P2 / 7 P3).
+         Fixes SHA: `fad8959c70b4494c21fdcbff41d1bf394d5cf5f8`.
+         Owner decided 2026-09-08: option (a); receipt in `verification.md`.
+      3. Targeted R3: **CHANGES_REQUESTED at e86d341f (1 P1)**;
+         reviewed SHA `e86d341f193c0421a1e3f50a4afe24962eaa8552`, workflow
+         `wf_11f5b099-acd`; prior findings: 17 resolved, #1 partially resolved.
+         Five-place wording fix: `efe3fb91ba3a20ecf7a5e7177fa3a83bb875ce99`.
+      4. Final fresh-context R3 judge: **REVIEW_APPROVED at efe3fb91**
+         (2026-09-09; 0 P0 / 0 P1 / 1 non-blocking P2 / 5 P3).
+         Exact reviewed SHA: `efe3fb91ba3a20ecf7a5e7177fa3a83bb875ce99`;
+         full original verdict ledger in `verification.md`. Ledger-only
+         successors within the verdict's stated scope do not reopen it.
+      Task 0.5 Owner re-confirmation of this exact package remains pending;
+      implementation is queued after `add-linked-worktree-admission`.
 - [x] 0.4 Rebase all source/test anchors and active-change conflicts onto
       `main` at `9cff32daa89f4431be37cf307897b97ec48cda77`, completed 2026-09-07.
       Audited proposal/design/tasks citations: no source line-number updates

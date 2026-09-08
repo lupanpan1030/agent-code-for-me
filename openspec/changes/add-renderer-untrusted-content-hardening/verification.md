@@ -1,15 +1,15 @@
 # Verification: add-renderer-untrusted-content-hardening
 
-> Status: **APPROVED (eight defaults + Q9 compromise); exact-package R3 CHANGES_REQUESTED at 95831ab6, workflow wf_165bd6a0-1b5 (2026-09-08). Fixes at fad8959c; Owner decided 2026-09-08: option (a); task 0.5 re-confirmation, then same-SHA targeted R3 (0.3) pending before source edit**.
+> Status: **R3 REVIEW_APPROVED at efe3fb91 — awaiting Owner re-confirmation of the exact package (0.5); implementation queued after add-linked-worktree-admission**.
 > Historical confirmation: **confirmed content 0c805564, recording commit 95831ab6; re-confirmation required after this revision**.
 > Owner direction/implementation approval was given late 2026-09-05, conditional
 > on tasks 0.2/0.3/0.4/0.5. Feasibility 0.2 is `REVIEW_APPROVED` at `2292d36a`;
-> R3 targeted re-review is `REVIEW_APPROVED` for `96ca3afe` only; task 0.3
-> remains open for the revised exact package. Approval Question 9:
+> Final R3 is `REVIEW_APPROVED` for `efe3fb91`; task 0.3 is complete,
+> with Owner exact-package re-confirmation (0.5) pending. Approval Question 9:
 > **Owner APPROVED the compromise, 2026-09-07**. Three post-approval disclosures
 > presented 2026-09-07; acknowledgement pending. This file records exact-SHA review
-> receipts and documentation checks, not an implementation verification,
-> fresh approval of revised text, or Owner acceptance. No source edits run.
+> receipts and documentation checks; implementation verification and Owner
+> acceptance remain outstanding. No source edits run.
 
 ## Draft Baseline
 
@@ -275,20 +275,20 @@ single successful track cannot stand in for another track.
   20 fixes: 16 applied / 4 deviated-justified, with 2 P2 / 6 P3 text follow-ups
   addressed in the disposition below. This verdict applies only to that SHA;
   final targeted re-review at `96ca3afe` is also **REVIEW_APPROVED** (receipt
-  below). Task 0.3 stays open for the rebased exact package; neither historical
-  verdict transfers to a successor SHA.
+  below). Neither historical verdict transfers to a successor SHA; the final
+  exact-package verdict at `efe3fb91` is recorded separately below.
 - Approval Question 9: **Owner APPROVED the compromise, 2026-09-07**;
   three post-approval disclosures presented 2026-09-07; acknowledgement pending.
 - Task 0.4: COMPLETE, rebased onto `9cff32da` and anchors rechecked 2026-09-07.
-- Exact-package R3 0.3: **CHANGES_REQUESTED** at
-  `95831ab6055411b95d308f8042e530f98687ef6b`, workflow `wf_165bd6a0-1b5`,
-  2026-09-08, 2 P1 / 9 P2 / 7 P3; successor fixes and targeted R3 pending
-  are recorded in the appended ledger, with no approval transfer.
+- Exact-package R3 0.3: **REVIEW_APPROVED** at
+  `efe3fb91ba3a20ecf7a5e7177fa3a83bb875ce99`, final fresh-context judge,
+  2026-09-09, 0 P0 / 0 P1 / 1 non-blocking P2 / 5 P3. The preceding
+  CHANGES_REQUESTED verdicts and fixes remain in the appended history.
 - Task 0.5: **REOPENED**. Historical strict/Owner confirmation on 2026-09-07:
   **confirmed content 0c805564, recording commit 95831ab6; re-confirmation
   required after this revision**. D7 origin: Owner decided 2026-09-08: option (a); the three disclosure acknowledgements remain pending.
-  Re-confirm the revised exact package, then obtain same-SHA targeted R3;
-  implementation is queued after `add-linked-worktree-admission`.
+  Re-confirm the exact package reviewed at `efe3fb91`; final R3 is complete.
+  Implementation is queued after `add-linked-worktree-admission`.
 - Codex `IMPLEMENTATION_VERIFIED`: NOT APPLICABLE / NOT RUN.
 - Independent implementation `REVIEW_APPROVED`: NOT APPLICABLE / NOT RUN.
 - Owner `ACCEPTED`: NOT APPLICABLE / NOT REQUESTED.
@@ -309,7 +309,6 @@ single successful track cannot stand in for another track.
   migration deletion list, the `Browser Diagnostics Capture` MODIFIED delta,
   and this verification ledger.
 - Verdict: **REVIEW_APPROVED** (Draft quality only; fresh-context; 2026-09-05).
-
 
 ## Owner Approval And Pre-Implementation Review Receipts — 2026-09-06
 
@@ -346,7 +345,6 @@ single successful track cannot stand in for another track.
 - P2 (touch-ups; fold in with the P1 revision): (2) D4/2.7/2.8/scenario gate clipboard only while drop/`beforeinput` rich insertion stays host-owned, contradicting D4's own principle — downgraded from lens A's P1 because the scenario WHEN is clipboard-scoped, both (and only) hosts already `preventDefault` drop, and the residual is the non-exploit class D4 already frames; (3) win32/realpath disclosure for Q5 (shared with feasibility); (4) D6 atomic claim and per-element-mount admission (shared); (5) renderer `will-navigate` listener (stores page-controlled URLs into `loadFailures`/report) missing from Invariant 7/D9/4.7/6.3 removal lists; (6) `openExternal` permission / external-scheme top-level navigation only implicitly denied although Locus is a `locus://` protocol client and the Session request gate cannot observe it; (7) Mermaid `themeCSS`/`<style>` CSS injection outside the threat model and fixtures (DOMPurify svg profile keeps `style`); (8) `mermaid.render` transient `document.body` mount precedes the app sanitizer with no end-to-end render test; (9) source guard skips `.js` files and dynamic script/remote `import()` (a remote unpkg loader exists, CSP-only); (10) "no executable form" needs a defined DOM oracle.
 - P3: D2 wrapper contract details (drop `allowedProtocols:['*']`, pin `code`/`pre` overrides against Streamdown's dormant Mermaid sink, inventory `openExternalUrl`), Session-level preload proof and `userGesture:false`, non-network scheme handling, loopback-listener enumeration in the residual, remote-image beacon residual and `object-src`/`base-uri`/`frame-src`, Streamdown error-boundary owner for Invariant 3, Mermaid load-bearing-layer statement, ledger closure (Owner APPROVED still PENDING at verification.md:231).
 - Verdict: **CHANGES_REQUESTED** (security, Draft quality; fresh-context; 2026-09-05). Re-review of the revised text is required only for finding 1; the P2/P3 items may be verified in the same pass, after which 0.5 strict validation and the Owner's exact-scope `APPROVED` can be recorded.
-
 
 ## Review touch-up ledger
 
@@ -680,7 +678,6 @@ The installed CLI requires explicit `--all` for noninteractive full validation;
 the corrected command fulfills the full strict gate, while the original
 command's exit 1 above remains recorded. `git diff --check main` also passed.
 
-
 ## Exact-package R3 review and revision ledger — 2026-09-08
 
 - Required starting HEAD: **PASS**, `95831ab6055411b95d308f8042e530f98687ef6b`,
@@ -691,7 +688,7 @@ command's exit 1 above remains recorded. `git diff --check main` also passed.
 - The following receipt is retained verbatim from that input. It describes the
   reviewed SHA, not the revised package or an implementation verdict.
 
-### Fresh-context R3 approval of the exact package (0.3) — 2026-09-08
+### Fresh-context R3 review of the exact package (0.3) — 2026-09-08
 
 - Review mode: fresh-context; two security lenses (A: renderer content boundary; B: local-browser guest / Electron boundary) merged by a fresh-context synthesizer who re-verified both P1s in package text and code at the exact SHA. Read-only: no edits, commits, or worktrees; no bun tests run in the draft worktree (no node_modules); code and installed packages read from the draft worktree and the main checkout's node_modules.
 - SHA: `95831ab6055411b95d308f8042e530f98687ef6b` (worktree HEAD confirmed; main `9cff32da` is an ancestor; documentation-only vs main, 9 files +3024/−5, and documentation-only vs the Owner-confirmed `0c805564`, 4 files +8/−5). `openspec validate add-renderer-untrusted-content-hardening --strict --no-interactive`: valid.
@@ -733,12 +730,12 @@ approval**. The eight defaults and Q9 coverage compromise remain in force.
 
 ### Revision gates and source identity
 
-- Task 0.3: **CHANGES_REQUESTED at 95831ab6 → fixes at `<SHA>` → targeted R3
-  pending**. `<SHA>` is this document's single revision commit, whose parent
+- Task 0.3: **CHANGES_REQUESTED at 95831ab6 → fixes at fad8959c →
+  targeted R3 pending**. Revision commit
+  `fad8959c70b4494c21fdcbff41d1bf394d5cf5f8` has parent
   is `95831ab6055411b95d308f8042e530f98687ef6b` and whose exact subject is
   `docs(openspec): address exact-package R3 review for renderer hardening`.
-  A Git commit cannot contain its own final hash; the final handoff supplies
-  it. Resolve the immutable revision from this checkout with:
+  The revision is now resolved; confirm it from this checkout with:
   `git log --format=%H --fixed-strings --grep='docs(openspec): address exact-package R3 review for renderer hardening' -1`.
 - Task 0.5 is reopened: **confirmed content 0c805564, recording commit 95831ab6;
   re-confirmation required after this revision**. The new D7 option (a) is
@@ -793,7 +790,6 @@ documentation files differ from `95831ab6`; only this change directory and its
 single STATUS row are touched. The eight defaults and Q9 compromise were not
 reopened; D7 origin granularity is the newly pending Owner decision.
 
-
 ## Owner preview-origin decision receipt — 2026-09-08 follow-up A
 
 - Authority: Owner decision supplied by coordination dispatch on 2026-09-08.
@@ -807,6 +803,11 @@ reopened; D7 origin granularity is the newly pending Owner decision.
   resources. Future extension via an explicit resource-scope declaration is
   recorded in proposal Impact as a Yellow compatibility/consumer note, subject
   to D7 validation; no new ticket is opened.
+- Compatibility disclosure added 2026-09-09 for task 0.5 re-confirmation:
+  Under option (a), following any top-level link, even to an in-scope file,
+  requires a fresh admission and origin, consistent with the LBW spec.
+  Owner acknowledgement of this disclosure remains pending; this addition
+  does not claim a new Owner decision or exact-package re-confirmation.
 - This receipt supersedes origin-decision-pending statements in the historical
   revision/disposition ledger above; it does not rewrite those historical
   review results or acknowledge the three earlier disclosures.
@@ -842,7 +843,6 @@ or product/manual/GUI verification is claimed. The receipt-inclusive revision
 is validated again before the single local commit; the final handoff records
 its full SHA, and `git diff --check HEAD^ HEAD` checks the committed diff.
 
-
 ## Targeted R3 ledger and sole-P1 disposition — 2026-09-09 follow-up A
 
 - Review: **CHANGES_REQUESTED (0 P0 / 1 P1)**, exact reviewed SHA
@@ -859,11 +859,12 @@ its full SHA, and `git diff --check HEAD^ HEAD` checks the committed diff.
   of every line-break code point. The `br` nodes are the write's artefact,
   never a producer-output allowance; one added non-line-break character must
   still fail the negative control.
-- **targeted R3 CHANGES_REQUESTED (1 P1) → fix at <SHA> → final judge pending**.
-  `<SHA>` denotes the single commit carrying this entry and the five-place fix;
-  the final handoff supplies its full SHA. No independent approval is claimed
-  for this successor. Tasks 0.3 and 0.5 remain unchecked; exact-package Owner
-  re-confirmation and same-SHA final judge remain pending before source edits.
+- **targeted R3 CHANGES_REQUESTED (1 P1) → fix at efe3fb91 →
+  final judge pending**. `efe3fb91ba3a20ecf7a5e7177fa3a83bb875ce99`
+  denotes the single commit carrying this entry and the five-place fix;
+  this historical receipt preceded the final judge verdict recorded below.
+  At that time, tasks 0.3 and 0.5 remained unchecked; exact-package Owner
+  re-confirmation and the same-SHA final judge were pending before source edits.
 - Scope: this change directory and its single STATUS row only, zero product
   code. No merge, push, remote mutation, or implementation/manual/GUI evidence.
 
@@ -894,3 +895,69 @@ Repository-required `bun run check:full`: exit 1 at `lint:changed` because
 `node_modules/.bin/biome` is missing in this worktree. Later stages were not
 reached; this is not a full-check pass. No dependency install or product edits
 were performed. Product targeted/manual/GUI checks remain unrun and open.
+
+### Final R3 judge verdict on the revised exact package (0.3) — 2026-09-09
+
+- Review mode: single fresh-context judge (fable), read-only; prior exact-package review (95831ab6) and targeted review (e86d341f) read in full; library facts from the main checkout's node_modules (@pierre/diffs 1.0.10, happy-dom 20.10.6, electron 39.4.0). No edits, commits, worktrees, installs, or tests.
+- SHA: `efe3fb91ba3a20ecf7a5e7177fa3a83bb875ce99` (worktree HEAD confirmed; parent `e86d341f`; main `9cff32da` is an ancestor; documentation-only vs main and vs `e86d341f` — 5 files, +65/−19). `git diff --check`: clean. `openspec validate add-renderer-untrusted-content-hardening --strict --no-interactive`: valid, exit 0. `validate --all --strict`: 54 passed, 0 failed.
+- Sole prior P1 (diff-profile `<style data-unsafe-css>` clause): **RESOLVED**. All five places (RSB spec.md:51 oracle paragraph, :129 diff Scenario; design.md:355 D2 (a), :843 D10 Q9 row; tasks.md:230 2.10) carry the recommended wording verbatim and consistently, defined over the innerText-written DOM (Text/`br` children only; `textContent` byte-equal to `wrapUnsafeCSS(PIERRE_DIFFS_THEME_CSS)` with `\n`/`\r` removed; negative control). Verified against FileDiff.js:309-318 (`innerText` write at :317; File.js:222), cssWrappers.js:12-17 (always multi-line, public export), happy-dom HTMLElement.js:568-580 (split on every `\n`/`\r`, Text/`br` alternation, replace-all) and HTMLStyleElement.js:74/:97 (sheet from `textContent`): a benign `<FileDiff>`/`<PatchDiff>` render passes; one non-line-break character of drift, an injected extra `style`, or any non-Text/`br` child fails. No fail-closed rule was relaxed.
+- Prior findings 1–18: no regression; option (a), Mermaid single-style rule, Q9 pins/lockfile/worker guard, D4, `will-navigate` removal, `openExternal` denial and the `close()`/`isDestroyed()` primitive spot-checked at this SHA.
+- Findings at this SHA: 0 P0 / 0 P1 / 1 P2 / 5 P3. P2 (non-blocking, disclosure only): option (a)'s fresh-admission rule for any top-level link, including in-scope files, is specified (LBW spec.md:81-83) but not restated in proposal.md's compatibility paragraph or the Owner origin receipt — add before/at 0.5 re-confirmation. P3: `<SHA>` placeholders (verification.md:736-742 = fad8959c; tasks.md:46,49 and verification.md:862-863 = efe3fb91), stale heading verification.md:694, "pending" at proposal.md:310, STATUS.md Updated date, negative-control phrasing clarity, multi-file patch-text fixture note, unwrapped lines.
+- Verdict: **REVIEW_APPROVED** (security, final R3 judge; fresh-context; 2026-09-09; 0 P0 / 0 P1). The package is ready for Owner re-confirmation (0.5) at `efe3fb91ba3a20ecf7a5e7177fa3a83bb875ce99`. Ledger-only successor commits (0.5 receipt, placeholder replacement, STATUS/verification rows, the proposal compatibility sentence) do not reopen this verdict; any edit to the spec deltas, D2–D10, or task acceptance text does. On Owner re-confirmation, the first source edit may begin only after `add-linked-worktree-admission`. Technical verdict for this SHA only; it does not replace Owner product acceptance and authorizes no push, remote PR mutation, merge, release, or repository-rules change.
+- Freeze-time proof set (unchanged): malicious-content matrix (static + streaming markdown); Shiki consumer fixtures with the positive `<pre><code>` shape and forced-mismatch/dual-`<code>` controls; shim-backed `<FileDiff>`/`<PatchDiff>` fixtures with all four aliases bound, `createPlainHast` shape asserted, Locus's actual option set, and the diff profile applied including the innerText-DOM style clause, its one-character-drift negative control, duplicate/missing-style and fragment-href controls; lockfile-assertion test over the nine bun.lock anchors and the worker-path source guard; Mermaid inline/fullscreen fixtures with the single value-profile-validated style; mentions-editor paste/drop/beforeinput/undo/redo fixtures; guest-security matrix in development and packaged tracks (attach preferences validated against the pending admission, bridge probes, request gate with observed `file:` cancellation per position and redirect hop, per-admission `locus-preview://` broker with in-scope/out-of-scope/other-host/HTTP(S)-Session rejection and cross-file-read attempts, popup/permission/device/display/download denial with pre-return handler ordering, main-owned bounded screenshot, two-partition isolation, `close()`-based teardown races, diagnostics minimization); TICKET-114 development-HMR and packaged-production CSP tracks; `bun run check:full`; strict OpenSpec validation (target and `--all`); the 1c ratchet; same-SHA fresh R3 plus normal implementation review.
+
+### Final R3 non-blocking follow-up receipt — 2026-09-09
+
+- P2: option (a)'s top-level-link compatibility disclosure is now in the
+  proposal consumer paragraph and the Owner origin receipt above, awaiting
+  Owner re-confirmation in 0.5. No Owner acknowledgement is inferred.
+- P3 placeholders: the old revision resolves to
+  `fad8959c70b4494c21fdcbff41d1bf394d5cf5f8`; the five-place fix resolves to
+  `efe3fb91ba3a20ecf7a5e7177fa3a83bb875ce99`. Existing receipt placeholders
+  were replaced. The literal placeholder mentioned in the judge's finding
+  above is retained solely to preserve the paste-ready ledger verbatim.
+- P3 ledger hygiene: corrected the historical CHANGES_REQUESTED heading,
+  proposal's obsolete origin-scope pending wording, and STATUS date;
+  wrapped the updated task 0.3 receipt and tidied ledger blank lines.
+- Negative-control clarification for implementation: **drift the unsafeCSS
+  input, not the oracle's constant**. Render with one added non-line-break
+  character in `unsafeCSS`; keep the oracle bound to the unchanged repository
+  `PIERRE_DIFFS_THEME_CSS`. This records the judge's interpretation without
+  editing the spec delta, D2–D10, or task acceptance text.
+- Multi-file patch-text fixture note: include a hostile multi-file patch and
+  record that `getSingularPatch` throws before any DOM exists. This is a React
+  render error, not the library's error wrapper; record the oracle outcome as
+  **no DOM produced**, rather than a successful rendered-subtree check. The
+  pre-existing behavior is availability-only and outside this security scope;
+  this note is not an executed-fixture or feasibility claim.
+- Task 0.3 is complete for the final reviewed package at `efe3fb91`; task 0.5
+  remains open. This successor is ledger-only within the final verdict's
+  exception. No implementation, manual/GUI evidence, merge, push, or remote
+  action is claimed.
+
+
+### Ledger-only closeout validation — 2026-09-09
+
+Using `/home/chen/projects/agent-code-for-me/node_modules/.bin/openspec`:
+
+```text
+validate add-renderer-untrusted-content-hardening --strict --no-interactive
+Change 'add-renderer-untrusted-content-hardening' is valid
+exit 0
+
+validate --all --strict --no-interactive
+Totals: 54 passed, 0 failed (54 items)
+exit 0
+
+git diff --check
+[no output]
+exit 0
+```
+
+Repository-required `bun run check:full`: **exit 1** at `lint:changed`;
+`node_modules/.bin/biome` is absent in this worktree. Later stages were not
+reached; no full-check pass or product/manual/GUI evidence is claimed.
+No dependencies were installed. Receipt-inclusive strict target/all validation
+and whitespace checks are repeated for the final ledger content; the handoff
+records the single local commit SHA and its diff stat against `efe3fb91`.
+The review remains bound to `efe3fb91`, under its explicit ledger-only exception.

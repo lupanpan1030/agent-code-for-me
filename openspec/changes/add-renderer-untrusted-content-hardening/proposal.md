@@ -269,6 +269,8 @@ same change. It must not leave old and new business paths live together.
   the address bar or diagnostics. Main retains the admitted navigation target
   for reload; this display loss is explicit compatibility behavior, with no
   raw-URL renderer fallback. Screenshots move to bounded main-owned capture.
+  Under option (a), following any top-level link, even to an in-scope file,
+  requires a fresh admission and origin, consistent with the LBW spec.
   Yellow compatibility/consumer note (Owner accepted 2026-09-08): pages
   referencing parent-directory resources have incomplete previews under the
   default document-directory subtree; a future explicit resource-scope
@@ -307,8 +309,8 @@ same change. It must not leave old and new business paths live together.
 - App-document remote HTTPS markdown images can disclose IP/timing as beacons.
   Record this separately from guest egress; it is not script execution or a
   claim that sanitizer tests prevent network requests.
-- No confidentiality guarantee for files inside D7's pending document/asset
-  scope: per-admission origins do not prevent a preview reading in-scope files
+- No confidentiality guarantee for files inside D7's Owner-decided option (a)
+  document/asset scope: per-admission origins do not prevent a preview reading in-scope files
   and sending them through the accepted egress residual. Whole-worktree
   serving is not the default except when the document directory is that root.
 - Dependency-internal Monaco file-viewer/xterm terminal DOM hardening beyond
