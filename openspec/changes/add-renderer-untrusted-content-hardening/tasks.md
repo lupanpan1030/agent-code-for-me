@@ -43,8 +43,12 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       (2026-09-08; workflow `wf_165bd6a0-1b5`, 2 P1 / 9 P2 / 7 P3).
       Fixes SHA: `fad8959c70b4494c21fdcbff41d1bf394d5cf5f8`.
       Owner decided 2026-09-08: option (a); receipt in `verification.md`.
-      Targeted fresh R3 follows 0.5 re-confirmation and covers the two P1s
-      and folded P2s on the same revised exact-package SHA.
+      Targeted R3 ledger: **targeted R3 CHANGES_REQUESTED (1 P1) → fix at <SHA> → final judge pending**.
+      Reviewed SHA: `e86d341f193c0421a1e3f50a4afe24962eaa8552`, workflow
+      `wf_11f5b099-acd`; prior findings: 17 resolved, #1 partially resolved.
+      `<SHA>` denotes the single commit carrying this five-place wording fix;
+      its full SHA is recorded in the final handoff. Task 0.5 re-confirmation
+      and same-SHA final judge on this sole P1 remain pending.
 - [x] 0.4 Rebase all source/test anchors and active-change conflicts onto
       `main` at `9cff32daa89f4431be37cf307897b97ec48cda77`, completed 2026-09-07.
       Audited proposal/design/tasks citations: no source line-number updates
@@ -223,10 +227,7 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       `<PatchDiff>`; assert its `createPlainHast` text-node output shape before
       hostile cases. An unbound fixture runs nested real Shiki 3, not the shim;
       a built-renderer fixture with the same binding assertion is an alternative.
-      Apply the D2 diff profile to all output including Shadow DOM: exactly
-      one `style[data-unsafe-css]` byte-equal to
-      `wrapUnsafeCSS(PIERRE_DIFFS_THEME_CSS)` (app-owned input, never producer
-      output); `use[href]` matching `^#diffs-icon-[a-z0-9-]+$` only in separator/
+      Apply the D2 diff profile to all output including Shadow DOM: exactly one `style[data-unsafe-css]` with only Text/`br` children whose `textContent` is byte-equal to `wrapUnsafeCSS(PIERRE_DIFFS_THEME_CSS)` with `\n`/`\r` removed per D2's `innerText`-write rule (app-owned input, never producer output), plus the one-character-drift negative control; `use[href]` matching `^#diffs-icon-[a-z0-9-]+$` only in separator/
       expand-button subtrees; adopted constructed stylesheets need no element
       allowance; all other DOM keeps the global rules. Use Locus's actual
       options: `disableFileHeader: true`, `unsafeCSS: PIERRE_DIFFS_THEME_CSS`,

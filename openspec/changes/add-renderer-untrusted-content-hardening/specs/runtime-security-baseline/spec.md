@@ -48,10 +48,7 @@ mount. Unprovable suppression or failed CSS validation SHALL fail closed;
 unreviewed CSS-bearing attributes SHALL be stripped. No other `style` element
 SHALL be admitted by the Mermaid oracle.
 
-Per rendered `<FileDiff>`/`<PatchDiff>` subtree, the strictly enumerated diff
-profile SHALL require exactly one `<style data-unsafe-css>` element with text
-byte-equal to `wrapUnsafeCSS(PIERRE_DIFFS_THEME_CSS)` computed from the repository
-constant. Any other `style` element, missing marker or text drift SHALL fail.
+Per rendered `<FileDiff>`/`<PatchDiff>` subtree, the strictly enumerated diff profile SHALL require exactly one `<style data-unsafe-css>` element whose child nodes are only Text and `br` nodes and whose `textContent` is byte-equal to `wrapUnsafeCSS(PIERRE_DIFFS_THEME_CSS)` (the public `@pierre/diffs` export applied to the repository constant) with every `\n`/`\r` code point removed. That transform mirrors the library's `innerText` write, which replaces each line break with a `br` element; the `br` nodes are that write's artefact, not a producer-output allowance, and the compared `textContent` is the CSS the browser actually applies. Any other `style` element, missing marker, any non-Text/non-`br` child, or any other text drift SHALL fail; a negative control SHALL prove that one added non-line-break character in the constant still fails.
 The constant CSS is app-owned input, never producer output. The profile SHALL
 allow `href` on `use` only when it matches `^#diffs-icon-[a-z0-9-]+$` inside a
 separator/expand-button subtree. Adopted constructed stylesheets are not
@@ -129,8 +126,7 @@ and `expandUnchanged: false`.
 - **THEN** black-box hostile filename, hunk-header, line-content, and patch-text
   fixtures SHALL exercise that actual path and apply the shared rendered-DOM
   oracle's diff profile to its resulting DOM, including every Shadow DOM
-  descendant: exactly one `style[data-unsafe-css]` byte-equal to
-  `wrapUnsafeCSS(PIERRE_DIFFS_THEME_CSS)`, and `use[href]` matching
+  descendant: exactly one `style[data-unsafe-css]` with only Text/`br` children whose `textContent` is byte-equal to `wrapUnsafeCSS(PIERRE_DIFFS_THEME_CSS)` with `\n`/`\r` removed (the library's `innerText` write), and `use[href]` matching
   `^#diffs-icon-[a-z0-9-]+$` only in separator/expand-button subtrees; adopted
   constructed stylesheets are not elements and need no allowance. The CSS is
   app-owned input, never producer output; all other DOM keeps the global rules

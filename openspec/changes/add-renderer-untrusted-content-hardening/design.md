@@ -352,10 +352,7 @@ positive control alongside every negative suite. Executable data/blob payloads
 are not accepted as formatting compatibility exceptions.
 
 The **diff profile** has exactly these allowances per rendered `<FileDiff>` or
-`<PatchDiff>` subtree: (a) exactly one `<style data-unsafe-css>` element, whose
-text must be byte-equal to `wrapUnsafeCSS(PIERRE_DIFFS_THEME_CSS)` computed from
-the repository constant; any other `style` element, missing marker, or text
-drift fails; (b) `href` on a `use` element must match
+`<PatchDiff>` subtree: (a) exactly one `<style data-unsafe-css>` element whose children are only Text and `br` nodes and whose `textContent` is byte-equal to `wrapUnsafeCSS(PIERRE_DIFFS_THEME_CSS)` computed from the repository constant with every `\n`/`\r` removed — `@pierre/diffs@1.0.10` assigns the always-multi-line wrapper through the `innerText` setter (`dist/components/FileDiff.js:317`, `dist/components/File.js:222`), which turns each line break into a `br` element, so no DOM text property of that element can equal the raw wrapper; any other `style` element, missing marker, non-Text/`br` child, or other text drift fails, and a negative control proves that one added non-line-break character in the constant fails; (b) `href` on a `use` element must match
 `^#diffs-icon-[a-z0-9-]+$` and occur only inside a separator/expand-button
 subtree; (c) the adopted constructed stylesheet is not an element and needs
 no allowance. The constant CSS is **app-owned input, never producer output**.
@@ -843,8 +840,7 @@ The GUI matrix must demonstrate:
   file names, hunk headers, line content and diff-text/HAST serialization
   breakouts through actual `<FileDiff>`/`<PatchDiff>` with Locus's shim/Vite
   aliases. Apply D2's strictly enumerated diff profile per rendered subtree:
-  exactly one `style[data-unsafe-css]` byte-equal to
-  `wrapUnsafeCSS(PIERRE_DIFFS_THEME_CSS)` from the repository constant;
+  exactly one `style[data-unsafe-css]` with only Text/`br` children whose `textContent` is byte-equal to `wrapUnsafeCSS(PIERRE_DIFFS_THEME_CSS)` from the repository constant with `\n`/`\r` removed (D2's `innerText`-write rule);
   `use[href]` matching `^#diffs-icon-[a-z0-9-]+$` only in separator/expand-button
   subtrees; adopted constructed stylesheets are not elements and need no
   allowance. The CSS is app-owned input, never producer output; all remaining

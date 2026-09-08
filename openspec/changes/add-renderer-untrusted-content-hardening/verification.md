@@ -841,3 +841,56 @@ exit 0
 or product/manual/GUI verification is claimed. The receipt-inclusive revision
 is validated again before the single local commit; the final handoff records
 its full SHA, and `git diff --check HEAD^ HEAD` checks the committed diff.
+
+
+## Targeted R3 ledger and sole-P1 disposition — 2026-09-09 follow-up A
+
+- Review: **CHANGES_REQUESTED (0 P0 / 1 P1)**, exact reviewed SHA
+  `e86d341f193c0421a1e3f50a4afe24962eaa8552`, workflow `wf_11f5b099-acd`
+  (opus verifier + fable judge). Starting HEAD matched this SHA; worktree clean.
+- Receipt: `/home/chen/.claude/projects/-home-chen-projects-agent-code-for-me/f1888632-cd03-49a0-a57d-51704695f29d/handoff/reviews/followup-a-r3-targeted-e86d341f.md`.
+- Prior 18 findings: 17 resolved; #1 partially resolved. The sole surviving
+  P1 is the diff-profile style clause's raw-wrapper comparison after the
+  library writes it through `innerText`.
+- Disposition: applied the Recommended fix verbatim at all five locations:
+  RSB spec oracle paragraph and diff Scenario, design D2 allowance (a),
+  design D10 Q9 row, and task 2.10. Only Text/`br` children are allowed;
+  `textContent` is compared with the repository-constant wrapper after removal
+  of every line-break code point. The `br` nodes are the write's artefact,
+  never a producer-output allowance; one added non-line-break character must
+  still fail the negative control.
+- **targeted R3 CHANGES_REQUESTED (1 P1) → fix at <SHA> → final judge pending**.
+  `<SHA>` denotes the single commit carrying this entry and the five-place fix;
+  the final handoff supplies its full SHA. No independent approval is claimed
+  for this successor. Tasks 0.3 and 0.5 remain unchecked; exact-package Owner
+  re-confirmation and same-SHA final judge remain pending before source edits.
+- Scope: this change directory and its single STATUS row only, zero product
+  code. No merge, push, remote mutation, or implementation/manual/GUI evidence.
+
+### Sole-P1 documentation validation
+
+Using `/home/chen/projects/agent-code-for-me/node_modules/.bin/openspec`:
+
+```text
+validate add-renderer-untrusted-content-hardening --strict --no-interactive
+Change 'add-renderer-untrusted-content-hardening' is valid
+exit 0
+
+validate --all --strict --no-interactive
+Totals: 54 passed, 0 failed (54 items)
+exit 0
+
+git diff --check
+[no output]
+exit 0
+```
+
+All five replacement strings were checked directly against the review's
+Recommended fix: verbatim PASS (5/5). Receipt-inclusive strict target/all and
+diff checks are repeated before the single local commit and bound to its
+full SHA in the final handoff; no same-SHA independent approval is claimed.
+
+Repository-required `bun run check:full`: exit 1 at `lint:changed` because
+`node_modules/.bin/biome` is missing in this worktree. Later stages were not
+reached; this is not a full-check pass. No dependency install or product edits
+were performed. Product targeted/manual/GUI checks remain unrun and open.
