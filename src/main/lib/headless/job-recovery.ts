@@ -14,7 +14,8 @@ import { type AgentJobDatabase, getAgentJob } from "./job-store"
  *
  * The existing 120 s heartbeat predicate selects candidates; a same-host
  * liveness probe then decides. Only a confirmed-stopped worker (the claimed
- * PID is gone: ESRCH, or the job was never claimed at all) is settled, once,
+ * PID is gone: ESRCH, its exit was observed by the same-host supervisor that
+ * probes it, or the job was never claimed at all) is settled, once,
  * through the ledger's recovery evidence as a synthetic `interrupted`
  * completed; the store revalidates the probed worker identity, start and
  * heartbeat inside the commit transaction. An alive, permission-denied
@@ -36,8 +37,14 @@ export type JobRecoveryDiagnostic = {
 export type RecoverStaleAgentJobsOptions = {
   /** Host-only diagnostics (e.g. the CLI command's stderr); never persisted. */
   onDiagnostic?: (diagnostic: JobRecoveryDiagnostic) => void
-  /** Same-host liveness probe; defaults to `process.kill(pid, 0)`. */
-  probeProcess?: (pid: number) => "alive" | "absent" | "denied" | "unknown"
+  /**
+   * Same-host liveness probe; defaults to `process.kill(pid, 0)`. A
+   * supervisor that observed the claimed worker process exit reports
+   * `exited` (confirmed, basis `worker_exit_observed`).
+   */
+  probeProcess?: (
+    pid: number,
+  ) => "alive" | "absent" | "exited" | "denied" | "unknown"
 }
 
 type RecoveryDecision =
@@ -75,6 +82,8 @@ function decide(
   switch (probe(job.workerPid)) {
     case "absent":
       return { kind: "confirmed", basis: "worker_process_absent" }
+    case "exited":
+      return { kind: "confirmed", basis: "worker_exit_observed" }
     case "alive":
       return { kind: "heartbeat_only", basis: "worker_alive" }
     case "denied":
