@@ -861,9 +861,6 @@ class RunEventLedgerImpl {
       default:
         break
     }
-    if (payload.status === "cancel_requested") {
-      // The cancel-request flag lives on the job row; nothing to reduce.
-    }
   }
 
   private reduceUsage(payload: JsonObject): void {
@@ -1833,21 +1830,18 @@ class RunEventLedgerImpl {
         terminal
           ? this.planTerminalCandidate(prepared())
           : this.planNative(context, decoded, prepared()),
-      onCommitted: () => this.applyNativeContext(decoded, boundary),
+      onCommitted: () => this.applyNativeContext(decoded),
     })
   }
 
-  private applyNativeContext(
-    decoded: CodexNativeDescriptor,
-    boundary: LedgerBoundary & Record<string, unknown>,
-  ): void {
+  /** Host-only raw interrupt target from committed native identities. */
+  private applyNativeContext(decoded: CodexNativeDescriptor): void {
     const ids = decoded.native
     if (ids.threadId && ids.turnId) {
       this.nativeContext = { threadId: ids.threadId, turnId: ids.turnId }
     } else if (ids.threadId && this.nativeContext.threadId !== ids.threadId) {
       this.nativeContext = { threadId: ids.threadId }
     }
-    void boundary
   }
 
   private prepareNative(
@@ -3101,12 +3095,7 @@ class RunEventLedgerImpl {
         ]
         if (recognized) {
           drafts.push(
-            ...this.snapshotItemDrafts(
-              context,
-              thread,
-              input?.targetTurnId,
-              repair,
-            ),
+            ...this.snapshotItemDrafts(context, thread, input?.targetTurnId),
           )
         }
         return { kind: "commit", drafts }
@@ -3144,7 +3133,6 @@ class RunEventLedgerImpl {
     context: PlanContext,
     thread: Record<string, unknown>,
     targetTurnId: string | undefined,
-    repair: JsonObject,
   ): Draft[] {
     const drafts: Draft[] = []
     const threadId = typeof thread.id === "string" ? thread.id : undefined
@@ -3213,7 +3201,6 @@ class RunEventLedgerImpl {
         }),
       )
     }
-    void repair
     return drafts
   }
 
