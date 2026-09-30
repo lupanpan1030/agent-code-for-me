@@ -1,12 +1,12 @@
-import { useState, useEffect } from "react"
 import { useAtom } from "jotai"
+import { Check, Copy, FileJson, FolderOpen, RefreshCw, Terminal, WifiOff } from "lucide-react"
+import { useEffect, useState } from "react"
+import { toast } from "sonner"
+import { showMessageJsonAtom } from "../../../features/agents/atoms"
+import { useI18n } from "../../../lib/i18n"
+import { trpc } from "../../../lib/trpc"
 import { Button } from "../../ui/button"
 import { Switch } from "../../ui/switch"
-import { trpc } from "../../../lib/trpc"
-import { useI18n } from "../../../lib/i18n"
-import { toast } from "sonner"
-import { Copy, FolderOpen, RefreshCw, Terminal, Check, Scan, WifiOff, FileJson } from "lucide-react"
-import { showMessageJsonAtom } from "../../../features/agents/atoms"
 
 // Hook to detect narrow screen
 function useIsNarrowScreen(): boolean {
@@ -25,49 +25,14 @@ function useIsNarrowScreen(): boolean {
   return isNarrow
 }
 
-// React Scan state management (only available in dev mode)
-const REACT_SCAN_SCRIPT_ID = "react-scan-script"
-const REACT_SCAN_STORAGE_KEY = "react-scan-enabled"
-
-function loadReactScan(): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (document.getElementById(REACT_SCAN_SCRIPT_ID)) {
-      resolve()
-      return
-    }
-
-    const script = document.createElement("script")
-    script.id = REACT_SCAN_SCRIPT_ID
-    script.src = "https://unpkg.com/react-scan/dist/auto.global.js"
-    script.async = true
-    script.onload = () => resolve()
-    script.onerror = () => reject(new Error("Failed to load React Scan"))
-    document.head.appendChild(script)
-  })
-}
-
-function unloadReactScan(): void {
-  const script = document.getElementById(REACT_SCAN_SCRIPT_ID)
-  if (script) {
-    script.remove()
-  }
-  // React Scan adds a toolbar element, try to remove it
-  const toolbar = document.querySelector("[data-react-scan]")
-  if (toolbar) {
-    toolbar.remove()
-  }
-}
-
 export function AgentsDebugTab() {
   const { t } = useI18n()
   const [copiedPath, setCopiedPath] = useState(false)
   const [copiedInfo, setCopiedInfo] = useState(false)
-  const [reactScanEnabled, setReactScanEnabled] = useState(false)
-  const [reactScanLoading, setReactScanLoading] = useState(false)
   const [showMessageJson, setShowMessageJson] = useAtom(showMessageJsonAtom)
   const isNarrowScreen = useIsNarrowScreen()
 
-  // Check if we're in dev mode (only show React Scan in dev)
+  // Developer tools are only shown in dev mode
   const isDev = import.meta.env.DEV
 
   // Fetch system info
@@ -138,43 +103,6 @@ export function AgentsDebugTab() {
   const handleOpenDevTools = () => {
     window.desktopApi?.toggleDevTools()
   }
-
-  const handleReactScanToggle = async (enabled: boolean) => {
-    if (!isDev) return
-
-    setReactScanLoading(true)
-    try {
-      if (enabled) {
-        await loadReactScan()
-        localStorage.setItem(REACT_SCAN_STORAGE_KEY, "true")
-        setReactScanEnabled(true)
-        toast.success(t("settings.debug.toast.reactScanEnabled"), {
-          description: t("settings.debug.toast.reactScanEnabledDescription"),
-        })
-      } else {
-        unloadReactScan()
-        localStorage.removeItem(REACT_SCAN_STORAGE_KEY)
-        setReactScanEnabled(false)
-        toast.success(t("settings.debug.toast.reactScanDisabled"), {
-          description: t("settings.debug.toast.reactScanDisabledDescription"),
-        })
-      }
-    } catch (error) {
-      toast.error(t("settings.debug.toast.failedToToggleReactScan"))
-      console.error(error)
-    } finally {
-      setReactScanLoading(false)
-    }
-  }
-
-  // Initialize React Scan state from localStorage (dev only)
-  useEffect(() => {
-    if (isDev && localStorage.getItem(REACT_SCAN_STORAGE_KEY) === "true") {
-      loadReactScan()
-        .then(() => setReactScanEnabled(true))
-        .catch(console.error)
-    }
-  }, [isDev])
 
   const isLoading = isLoadingSystem || isLoadingDb
 
@@ -256,22 +184,6 @@ export function AgentsDebugTab() {
             {t("settings.debug.developerTools")}
           </h4>
           <div className="rounded-lg border bg-muted/30 divide-y">
-            <div className="flex items-center justify-between p-3">
-              <div className="flex items-center gap-2">
-                <Scan className="h-4 w-4 text-muted-foreground" />
-                <div>
-                  <span className="text-sm">React Scan</span>
-                  <p className="text-xs text-muted-foreground">
-                    {t("settings.debug.reactScanDescription")}
-                  </p>
-                </div>
-              </div>
-              <Switch
-                checked={reactScanEnabled}
-                onCheckedChange={handleReactScanToggle}
-                disabled={reactScanLoading}
-              />
-            </div>
             <div className="flex items-center justify-between p-3">
               <div className="flex items-center gap-2">
                 <WifiOff className="h-4 w-4 text-muted-foreground" />

@@ -1861,14 +1861,6 @@ export const en = {
   "settings.debug.toast.allChatsCleared": "All chats cleared",
   "settings.debug.toast.allDataCleared": "All data cleared. Reloading...",
   "settings.debug.toast.debugInfoCopied": "Debug info copied to clipboard",
-  "settings.debug.toast.reactScanEnabled": "React Scan enabled",
-  "settings.debug.toast.reactScanEnabledDescription":
-    "Reload the page to see re-render highlights",
-  "settings.debug.toast.reactScanDisabled": "React Scan disabled",
-  "settings.debug.toast.reactScanDisabledDescription":
-    "Reload the page to fully remove it",
-  "settings.debug.toast.failedToToggleReactScan":
-    "Failed to toggle React Scan",
   "settings.debug.title": "Debug",
   "settings.debug.subtitle": "System information and developer tools",
   "settings.debug.systemInfo": "System Info",
@@ -1885,7 +1877,6 @@ export const en = {
   "settings.debug.chats": "Workspaces",
   "settings.debug.subChats": "Chats",
   "settings.debug.developerTools": "Developer Tools",
-  "settings.debug.reactScanDescription": "Highlight component re-renders",
   "settings.debug.simulateOffline": "Simulate Offline",
   "settings.debug.simulateOfflineDescription":
     "Test offline mode without disconnecting",
@@ -5414,14 +5405,6 @@ export const zhCN: Partial<Record<TranslationKey, string>> = {
   "settings.debug.toast.allChatsCleared": "所有对话已清除",
   "settings.debug.toast.allDataCleared": "所有数据已清除，正在重新加载...",
   "settings.debug.toast.debugInfoCopied": "调试信息已复制到剪贴板",
-  "settings.debug.toast.reactScanEnabled": "React Scan 已启用",
-  "settings.debug.toast.reactScanEnabledDescription":
-    "重新加载页面后可查看重新渲染高亮",
-  "settings.debug.toast.reactScanDisabled": "React Scan 已禁用",
-  "settings.debug.toast.reactScanDisabledDescription":
-    "重新加载页面后可完全移除",
-  "settings.debug.toast.failedToToggleReactScan":
-    "切换 React Scan 失败",
   "settings.debug.title": "调试",
   "settings.debug.subtitle": "系统信息和开发者工具",
   "settings.debug.systemInfo": "系统信息",
@@ -5438,7 +5421,6 @@ export const zhCN: Partial<Record<TranslationKey, string>> = {
   "settings.debug.chats": "工作区",
   "settings.debug.subChats": "对话",
   "settings.debug.developerTools": "开发者工具",
-  "settings.debug.reactScanDescription": "高亮组件重新渲染",
   "settings.debug.simulateOffline": "模拟离线",
   "settings.debug.simulateOfflineDescription":
     "不真正断网也能测试离线模式",
