@@ -299,6 +299,19 @@ describe("T4-P1: assistant output evidence from the final item state", () => {
         `record:${sequenceOf(settled, (type) => type === "assistant_delta")}`,
       )
     })
+
+    // T4 review P3: output evidence uses the item's trimmed materialized
+    // text, so a whitespace-only coarse text delta (on desktop formerly
+    // counted by its type) is not output.
+    test(`${host}: a whitespace-only coarse text delta is not output evidence and fails as output_empty`, async () => {
+      const settled = await settle([
+        { kind: "coarse", payload: { text: "  \n\t " } },
+      ])
+      const delta = sequenceOf(settled, (type) => type === "assistant_delta")
+      expect(settled.status).toBe("failed")
+      expect(settled.reasons).toContain("output_empty")
+      expect(settled.evidenceKeys).not.toContain(`record:${delta}`)
+    })
   }
 
   test("headless: an item-less structured assistant_delta keeps counting", async () => {

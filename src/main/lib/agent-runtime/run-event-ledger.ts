@@ -4091,12 +4091,15 @@ export function isAssistantItemRecord(record: LedgerRecord): boolean {
  * Output evidence of the Run's assistant items from their final item state
  * (design "Final text wins for pre-seal item materialization"; an invalid
  * empty output fails): the committed records are folded per item key with
- * the ledger's own item reduction, so a completed item counts only when its
- * final text is non-empty (earlier deltas superseded by an empty final text
- * are not output) and an item still streaming counts by its materialized
- * text. Returns the records that carry the counted text: the reconciliation
- * that set a completed item's final text, or the non-empty deltas of a
- * streaming item. Shared by the headless and desktop hosts.
+ * the same item rules as reduceItem (kept in parity by
+ * tests/run-event-ledger-output-evidence-parity.test.ts), so a completed item
+ * counts only when its trimmed final text is non-empty (earlier deltas
+ * superseded by an empty final text are not output) and an item still
+ * streaming counts by its trimmed materialized text. Returns the records that
+ * carry the counted text: the latest reconciliation carrying a completed
+ * item's final text (an ignoredDelta or duplicate-completion echo restates
+ * it), or the non-empty deltas of a streaming item. Shared by the headless
+ * and desktop hosts.
  */
 export function assistantItemOutputRecords(
   records: readonly LedgerRecord[],
