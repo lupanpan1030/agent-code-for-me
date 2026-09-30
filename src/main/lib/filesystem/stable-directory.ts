@@ -5,6 +5,7 @@ import {
   fsyncSync,
   lstatSync,
   openSync,
+  readSync,
   realpathSync,
   statSync,
 } from "node:fs"
@@ -17,6 +18,13 @@ export type StableDirectoryHandle = {
   readonly fd: number
   readonly anchorPath: string
   closed: boolean
+}
+
+export type StableDirectoryFile = {
+  readonly dev: number
+  readonly ino: number
+  readonly size: number
+  readonly bytes: Buffer
 }
 
 function sameDirectoryIdentity(
@@ -100,6 +108,52 @@ export function openStableDirectory(
     }
   } catch (error) {
     closeSync(fd)
+    throw error
+  }
+}
+
+/**
+ * Anchors a registered directory that may be reached through stable symlinked
+ * parent prefixes (for example macOS `/tmp` or a symlinked `~/projects`).
+ *
+ * The registered path's own leaf must be a real directory. Its realpath is the
+ * canonical anchor path, and the registered leaf `lstat`, the canonical path
+ * and the opened descriptor must share one directory `dev`/`ino` identity. The
+ * registered identity and canonical resolution are re-read after anchoring so
+ * a retarget during admission fails closed. `path.resolve()` alone is never
+ * treated as canonicalization.
+ */
+export function openRegisteredStableDirectory(
+  registeredPath: string,
+  label: string,
+): StableDirectoryHandle {
+  const resolvedPath = resolve(registeredPath)
+  const registeredStat = lstatSync(resolvedPath)
+  if (registeredStat.isSymbolicLink() || !registeredStat.isDirectory()) {
+    throw new Error(`${label} must be a real directory, not a symlink`)
+  }
+  const registered = { dev: registeredStat.dev, ino: registeredStat.ino }
+  const canonicalPath = realpathSync(resolvedPath)
+  if (!sameDirectoryIdentity(lstatSync(canonicalPath), registered)) {
+    throw new Error(`${label} canonical directory identity does not match`)
+  }
+
+  const directory = openStableDirectory(canonicalPath, label)
+  try {
+    if (!sameDirectoryIdentity(fstatSync(directory.fd), registered)) {
+      throw new Error(`${label} canonical directory identity does not match`)
+    }
+    const reread = lstatSync(resolvedPath)
+    if (
+      reread.isSymbolicLink() ||
+      !sameDirectoryIdentity(reread, registered) ||
+      realpathSync(resolvedPath) !== canonicalPath
+    ) {
+      throw new Error(`${label} directory identity changed while anchoring`)
+    }
+    return directory
+  } catch (error) {
+    closeStableDirectory(directory)
     throw error
   }
 }
@@ -202,6 +256,58 @@ export function stableDirectoryChildPath(
   }
   assertStableDirectoryHandle(directory, "Stable")
   return join(directory.anchorPath, childName)
+}
+
+/**
+ * Opens one regular-file child of an anchored directory without following a
+ * final symlink, verifies the opened descriptor is a regular file within the
+ * byte bound, and reads the bytes from that same descriptor. There is no
+ * authorization-check-then-path-reopen gap. Concurrent in-place writes to the
+ * already opened inode remain possible, so the bytes stay untrusted content.
+ */
+export function readStableDirectoryFile(
+  directory: StableDirectoryHandle,
+  childName: string,
+  label: string,
+  options: { maxBytes: number },
+): StableDirectoryFile {
+  assertStableDirectoryHandle(directory, `${label} parent`)
+  const operationPath = stableDirectoryChildPath(directory, childName)
+  const fd = openSync(
+    operationPath,
+    constants.O_RDONLY |
+      (constants.O_NOFOLLOW ?? 0) |
+      (constants.O_NONBLOCK ?? 0),
+  )
+  try {
+    const opened = fstatSync(fd)
+    if (!opened.isFile()) {
+      throw new Error(`${label} must be a regular file`)
+    }
+    if (opened.size > options.maxBytes) {
+      throw new Error(`${label} exceeds the allowed size`)
+    }
+    const bytes = Buffer.alloc(opened.size)
+    let offset = 0
+    while (offset < bytes.length) {
+      const read = readSync(fd, bytes, offset, bytes.length - offset, offset)
+      if (read === 0) break
+      offset += read
+    }
+    const completed = fstatSync(fd)
+    if (completed.dev !== opened.dev || completed.ino !== opened.ino) {
+      throw new Error(`${label} descriptor identity changed while reading`)
+    }
+    assertStableDirectoryHandle(directory, `${label} parent`)
+    return {
+      dev: opened.dev,
+      ino: opened.ino,
+      size: offset,
+      bytes: offset === bytes.length ? bytes : bytes.subarray(0, offset),
+    }
+  } finally {
+    closeSync(fd)
+  }
 }
 
 export function fsyncStableDirectory(
