@@ -4,11 +4,11 @@ This ledger records execution state only. Current product truth remains in
 `openspec/specs/` plus the checked-out code; future direction remains in the
 ratified strategy and interoperability contract.
 
-Updated: 2026-09-09 (Pacific/Auckland)
+Updated: 2026-09-30 (Pacific/Auckland); previous: 2026-09-09 (Pacific/Auckland)
 
 | Change | State | Concrete next gate |
 | --- | --- | --- |
-| `add-renderer-untrusted-content-hardening` | APPROVED — exact package `efe3fb91` re-confirmed by Owner 2026-09-09 (0.1–0.5 closed) | implementation queued after add-linked-worktree-admission; starts test-first (independent red suite) then IMPLEMENTATION_VERIFIED at a frozen SHA |
+| `add-renderer-untrusted-content-hardening` | IMPLEMENTATION_CANDIDATE — unit half complete; GUI tracks 5.1–5.3 pending a GUI host; fresh reviews pending. Frozen source `8f4181a4a9f0d6267396781e2df48883d29aad1e`; evidence head = the change's ledger commit (verification.md "Implementation record"); `bun run check:full` exit 0 (2,467 pass / 0 fail); red suite 233/233; tasks 38/46 | GUI host: tracks 5.1–5.3 plus TICKET-114 5.4/5.5 on the frozen SHA; fresh-context correctness and R3 security reviews of `8f4181a4` (6.4; verifier-role mapping under the 2026-09-30 roles is a coordinator/Owner call); then Owner ACCEPTED (6.5). No IMPLEMENTATION_VERIFIED claimed |
 
 Parked proposals are indexed in [`deferred/README.md`](deferred/README.md) and
 do not appear in the active list.

@@ -1,5 +1,8 @@
 # Verification: add-renderer-untrusted-content-hardening
 
+> Current status (2026-09-30): **IMPLEMENTATION_CANDIDATE — unit half complete; GUI tracks 5.1–5.3 pending a GUI host; fresh reviews pending.**
+> Frozen source SHA `8f4181a4a9f0d6267396781e2df48883d29aad1e`; see "Implementation record" at the end. The status lines below are historical.
+>
 > Status: **R3 REVIEW_APPROVED at efe3fb91; exact package `efe3fb91` RE-CONFIRMED by Owner 2026-09-09 (0.5) — all approval prerequisites closed; implementation queued after add-linked-worktree-admission, test-first**.
 > Historical confirmation: **confirmed content 0c805564, recording commit 95831ab6; re-confirmation required after this revision**.
 > Owner direction/implementation approval was given late 2026-09-05, conditional
@@ -981,3 +984,459 @@ The review remains bound to `efe3fb91`, under its explicit ledger-only exception
   Upper-case schemes (`HTTPS://`) fail closed (unchanged from the previous default
   chain). `remark-gfm`/`remark-breaks` remain caret ranges (D2 pins only the rehype
   packages).
+
+## Implementation record (test-first, Claude Opus 5.5 implementer) — 2026-09-30
+
+Appended in Phase IV (closeout ledger, full gate, candidate freeze). Nothing
+above is rewritten; every historical receipt keeps its own SHA and scope.
+
+### Status and freeze
+
+- Status: **IMPLEMENTATION_CANDIDATE — unit half complete; GUI tracks 5.1–5.3
+  pending a GUI host; fresh reviews pending.** `IMPLEMENTATION_VERIFIED` is
+  **not** claimed. No independent implementation verdict, GUI receipt,
+  TICKET-114 track or Owner `ACCEPTED` exists for this implementation.
+- **FROZEN SOURCE SHA: `8f4181a4a9f0d6267396781e2df48883d29aad1e`**
+  (`8f4181a4`, the last product/test commit). Phase IV changed no product or
+  test code: `bun run check:full` surfaced no defect.
+- Evidence head: the single commit that carries this section, subject
+  `docs(openspec): record renderer hardening implementation ledger and
+  candidate freeze`; resolve it with
+  `git log --format=%H --fixed-strings --grep='record renderer hardening implementation ledger and candidate freeze' -1`.
+  Between the frozen source and the evidence head only documentation changes:
+  `76d7ad85` (`docs/OWNERSHIP_MAP.md`) and the evidence commit (this change's
+  `tasks.md` / `verification.md` and its `openspec/STATUS.md` row).
+- Fresh reviews bind to the frozen source SHA; the documentation successors
+  are ledger-only.
+
+### Identity, bases and topology
+
+- Implementer: Claude Opus 5.5 (`claude-opus-5-5`), coordination-dispatched
+  subagents working only in the worktree
+  `/home/chen/projects/locus-add-renderer-untrusted-content-hardening-draft`
+  on branch `codex/add-renderer-untrusted-content-hardening`, in four phases:
+  I renderer content boundary; II Mermaid and mentions editor; III
+  local-browser guest boundary; IV this ledger, gate and freeze. The
+  coordinator (Claude Fable 5.1) made the fixture adjudications and the
+  harden-options clarification cross-referenced below. Commits are authored as
+  Ethan C.Lu with the acting model's co-author trailer.
+- Topology note: the Owner's 2026-09-30 direction decisions (recorded on local
+  `main` `dcd5153c`, not on this branch) name Claude Opus 5.5 subagents the
+  implementation lead and Codex (`gpt-6-sol`) the cross-vendor fresh reviewer.
+  Task 6.4 still names Codex `IMPLEMENTATION_VERIFIED`; how that gate maps to
+  the new roles is a coordinator/Owner decision and 6.4 stays open.
+- Approved package: exact package `efe3fb91` (final R3 `REVIEW_APPROVED`),
+  Owner re-confirmed 2026-09-09, recording commit `45f6e54c`.
+- Red suite: `08c4f455` (parent `45f6e54c`), `RED_SUITE_ACCEPTED`: 233 tests in
+  seven files, 104 RED / 129 green-by-design on its base (`red-receipt.md`).
+- Branch base: merge-base with local `main` is `9cff32da` (the task 0.4
+  anchor). Local `main` has since advanced to `dcd5153c`, a documentation-only
+  commit that changes only `openspec/STATUS.md` (+22/−1); no cited product
+  anchor changed. This branch also edits `openspec/STATUS.md`, so a textual
+  conflict there is expected at integration.
+- Host: WSL2 Linux `6.18.33.2-microsoft-standard-WSL2`, no display; Bun
+  1.3.14, Node v24.19.0, installed Electron 39.4.0. The worktree has its own
+  `node_modules`; no dependency was installed or updated in Phase IV.
+
+### Commits over the red suite (`08c4f455..8f4181a4`, 20 commits)
+
+Aggregate: 45 files, +12,041/−1,145.
+
+| Phase | Commit | Subject |
+| --- | --- | --- |
+| I | `85ea8ea4` | build(renderer): pin streamdown 2.1.0 and declare rehype chain deps |
+| I | `ee38b3d6` | feat(renderer): add the reviewed renderer HTML output owner |
+| I | `e0674323` | fix(renderer): fail closed on shiki extraction and route local escapers through the owner |
+| I | `376b9303` | fix(renderer): render markdown through the explicit reviewed rehype chain |
+| I | `8c2e595b` | fix(renderer): remove the remote react-scan script loader |
+| I | `f4a720aa` | test(renderer): replace the five-file allowlist with the exact sink inventory guard |
+| I | `2192443b` | chore(lint): tighten the lint baseline for the cleaned renderer files |
+| I (coordinator) | `c6787acb` | docs(openspec): clarify the reviewed harden options after implementation intake |
+| II | `06ba7fb8` | fix(renderer): pin mermaid styling directives and review the retained paint stylesheet |
+| II | `ecac32ea` | refactor(renderer): store mentions undo/redo as canonical runs |
+| II | `7f3ea1a6` | fix(renderer): gate mentions editor input, paste and drop |
+| II | `a76de436` | test(renderer): cover the mermaid paint profile and the mentions editor model |
+| II | `5fc8bc78` | chore(lint): tighten the lint baseline for the mentions editor |
+| II (coordinator) | `2cd19fb4` | test: exclude test-owned mounts from the mermaid residue check |
+| II (coordinator) | `ca4efbe6` | test: close a prior render's fullscreen viewer before the mermaid residue scan |
+| III | `4160f12a` | feat(main): anchor registered roots and read regular files from verified descriptors |
+| III | `91f8b4ee` | fix(main): minimize and redact local-browser diagnostics before the renderer |
+| III | `04949c40` | feat(main): add the local-browser guest policy owner and locus-preview broker |
+| III | `1d3fd82b` | refactor(renderer): mount local-browser guests only through main admissions |
+| III | `8f4181a4` | chore(lint): tighten the lint baseline for the local-browser workbench |
+| IV (docs) | `76d7ad85` | docs(ownership): register renderer hardening owners |
+| IV (docs) | evidence commit | docs(openspec): record renderer hardening implementation ledger and candidate freeze |
+
+### Gate receipts at the frozen source SHA
+
+Run sequentially from the worktree at HEAD `8f4181a4` with a clean tree on
+2026-09-30 (Pacific/Auckland), except where a row names a documentation
+successor.
+
+| Gate | Command | Result | Exit |
+| --- | --- | --- | --- |
+| Full aggregate | `bun run check:full` | every stage passed (below) | 0 |
+| · lint | `bun run lint:changed` | `No changed files supported by Biome.` (clean tree) | 0 |
+| · architecture | `bun run architecture:check` | `Architecture guard passed.` | 0 |
+| · retired runtime | `bun run retired-runtime:check` | 1,695 files scanned / 10 allowlisted | 0 |
+| · TypeScript | `bun run ts:check` (`tsc --noEmit`) | no diagnostics | 0 |
+| · tests | `bun run test` (`bun test --isolate tests`) | 2,467 pass / 0 fail / 11,554 expect() / 322 files | 0 |
+| · OpenSpec | `bun run spec:validate` | 54 passed / 0 failed | 0 |
+| · build | `bun run build` (electron-vite: main, preload, renderer) | all three bundles built | 0 |
+| · whitespace | `bun run diff:check` | pass | 0 |
+| Seven red files | `bun test --isolate` + the seven `tests/renderer-hardening-*.test.ts` red files | **233 pass / 0 fail** / 706 expect() / 7 files | 0 |
+| Implementation files | `bun test --isolate` + the nine `tests/renderer-hardening-impl-*.test.ts` files + `tests/renderer-html-sinks.test.ts` | 274 pass / 0 fail / 1,353 expect() / 10 files | 0 |
+| Focused neighbours (6.1) | `bun test --isolate` + the 11 files listed below | 53 pass / 0 fail / 168 expect() / 11 files | 0 |
+| Full suite | `bun test --isolate ./tests` | 2,467 pass / 0 fail / 11,554 expect() / 322 files | 0 |
+| Lint vs red base | `BIOME_CHANGED_SINCE=08c4f455 bun run lint` | `Biome reported diagnostics only outside changed lines; ignoring legacy file diagnostics.` | 0 |
+| TypeScript | `bun run ts:check` | no diagnostics | 0 |
+| Architecture | `bun run architecture:check` | `Architecture guard passed.` | 0 |
+| Retired runtime | `bun run retired-runtime:check` | 1,695 scanned / 10 allowlisted | 0 |
+| OpenSpec all | `bun run spec:validate` | 54 passed / 0 failed | 0 |
+| OpenSpec target | `bun x openspec validate add-renderer-untrusted-content-hardening --strict --no-interactive` | `Change 'add-renderer-untrusted-content-hardening' is valid` | 0 |
+| OpenSpec specs | `bun x openspec validate --specs --strict --no-interactive` (run at docs-only `76d7ad85`; living specs identical) | 53 passed / 0 failed | 0 |
+| Whitespace | `git diff --check`; `git diff --check 08c4f455..HEAD`; `git diff --check main..HEAD` | no output | 0 / 0 / 0 |
+
+The earlier sandbox-only `EROFS` Codex shell-snapshot failures recorded in
+older receipts did not occur on this host run. Local logs (ephemeral session
+scratchpad, not committed): `check:full` SHA-256
+`3f48a7b9274d90cd9ab5843f260044bdff506fa4a3e05c91888472273f6d7521`; seven red
+files `1f527c477873a252fea0c10147672496f5212b6459616ed42df582cce319a79d`;
+implementation files
+`4497401f54be684c817edac2c9f6ff28ce96cc6f5c665474eb9adb6690f9f73a`; full
+suite `14a855370bba23ff74e6e526504edfd444940042cc3cd4a3d91d9e249e47eda4`;
+explicit-base lint
+`999853389e68bb42127e49de61e1b42d03777065a759f530929f66b0b3550258`;
+neighbours `d77159ca3f2ab5e551ca5cee28aac8c321adec8b0cf2aeb64c2039b79ae0a6d6`.
+
+Receipt-inclusive rerun: with `76d7ad85` committed and this ledger, `tasks.md`
+and `openspec/STATUS.md` edits in the working tree (the evidence commit's
+content apart from this paragraph), `bun run check:full` again exited 0 with
+every stage passing (tests 2,467 pass / 0 fail / 11,554 expect() / 322 files;
+OpenSpec 54/54; build and whitespace pass), strict target validation was
+valid, `--all` returned 54 passed / 0 failed, and `git diff --check` was
+clean. Log SHA-256
+`72ce6742db186e82fc7d9bf85493d8fc8711f7362f4e7e945f6a5b8934b859be`
+(ephemeral).
+
+Per-file counts (each file run alone with `bun test --isolate <file>`, exit 0):
+
+| File | Pass / fail | expect() |
+| --- | --- | ---: |
+| `tests/renderer-hardening-content.test.ts` (red) | 84 / 0 | 215 |
+| `tests/renderer-hardening-content-markdown-boundary.test.ts` (red) | 2 / 0 | 14 |
+| `tests/renderer-hardening-content-shiki.test.ts` (red) | 20 / 0 | 54 |
+| `tests/renderer-hardening-content-diff.test.ts` (red) | 12 / 0 | 46 |
+| `tests/renderer-hardening-mermaid-editor.test.ts` (red) | 72 / 0 | 242 |
+| `tests/renderer-hardening-guest-policy.test.ts` (red) | 31 / 0 | 89 |
+| `tests/renderer-hardening-preview-broker.test.ts` (red) | 12 / 0 | 46 |
+| `tests/renderer-hardening-impl-html-policy.test.ts` | 25 / 0 | 206 |
+| `tests/renderer-hardening-impl-markdown.test.ts` | 13 / 0 | 60 |
+| `tests/renderer-hardening-impl-mermaid.test.ts` | 84 / 0 | 229 |
+| `tests/renderer-hardening-impl-editor.test.ts` | 28 / 0 | 83 |
+| `tests/renderer-hardening-impl-diagnostics.test.ts` | 11 / 0 | 63 |
+| `tests/renderer-hardening-impl-guest-decisions.test.ts` | 34 / 0 | 278 |
+| `tests/renderer-hardening-impl-guest-owner.test.ts` | 36 / 0 | 233 |
+| `tests/renderer-hardening-impl-preview-broker.test.ts` | 11 / 0 | 73 |
+| `tests/renderer-hardening-impl-workbench.test.ts` | 12 / 0 | 67 |
+| `tests/renderer-html-sinks.test.ts` | 20 / 0 | 61 |
+| `tests/renderer-mermaid-xss.test.ts` | 2 / 0 | 7 |
+| `tests/renderer-agent-tool-call-xss.test.tsx` | 2 / 0 | 7 |
+| `tests/renderer-csp-policy.test.ts` | 7 / 0 | 29 |
+| `tests/local-browser-workbench.test.ts` | 4 / 0 | 22 |
+| `tests/main-window-navigation-guard.test.ts` | 2 / 0 | 6 |
+| `tests/stable-directory.test.ts` | 2 / 0 | 5 |
+| `tests/registered-roots.test.ts` | 9 / 0 | 12 |
+| `tests/trpc-path-boundaries.test.ts` | 9 / 0 | 20 |
+| `tests/runtime-redaction.test.ts` | 10 / 0 | 26 |
+| `tests/voice-recording-interaction.test.ts` | 3 / 0 | 20 |
+| `tests/reusable-voice-input-boundaries.test.ts` | 3 / 0 | 14 |
+
+The last eleven rows are the focused neighbour suites for task 6.1 (renderer,
+CSP, local browser, main window, filesystem boundary, redaction, trusted
+voice).
+
+### Lint baseline and architecture registries
+
+`lint-baseline.json` only shrank (`08c4f455..8f4181a4`); no count grew and
+no new file entered the baseline:
+
+| Commit | File | Before → after |
+| --- | --- | --- |
+| `2192443b` | `src/renderer/components/chat-markdown-renderer.tsx` | 51 → 49 |
+| `2192443b` | `src/renderer/components/dialogs/settings-tabs/agents-debug-tab.tsx` | 3 → 1 |
+| `2192443b` | `src/renderer/features/agents/ui/agent-edit-tool.tsx` | 16 → 15 |
+| `2192443b` | `src/renderer/features/agents/ui/agent-mcp-tool-call.tsx` | 12 → 10 |
+| `2192443b` | `src/renderer/features/agents/ui/message-json-display.tsx` | 5 → 3 |
+| `2192443b` | `src/renderer/lib/themes/shiki-theme-loader.ts` | 4 → 3 |
+| `2192443b` | `tests/renderer-html-sinks.test.ts` | 1 → removed (0) |
+| `5fc8bc78` | `src/renderer/features/agents/mentions/agents-mentions-editor.tsx` | 23 → 9 |
+| `8f4181a4` | `src/renderer/features/agents/ui/local-browser-workbench.tsx` | 10 → 3 |
+
+`git diff 08c4f455..8f4181a4 -- scripts/` is empty:
+`scripts/architecture-baselines.json` (including `reachThroughWrappers`,
+`importBoundaryViolations`, `reverseDirectionImports` and
+`routeSurfaceRatchets`) and `scripts/check-architecture-guards.mjs` are
+unchanged. The `docs/OWNERSHIP_MAP.md` wrapper mirror block is untouched by
+`76d7ad85` and the guard still passes on it.
+
+### Rebaselined sink and producer inventory (task 1.3)
+
+Scanner `tests/helpers/renderer-raw-sink-scanner.ts` at the frozen SHA: 376
+files under `src/renderer` (including `public/`; `.ts/.tsx/.js/.jsx/.mjs/.cjs/
+.html`), 18 construct classes. Value-bearing sites (8 sites, 6 inventory
+entries):
+
+| Construct | Site (line) | Reviewed producer | Behavior evidence |
+| --- | --- | --- | --- |
+| `react-dangerouslySetInnerHTML` | `chat-markdown-renderer.tsx#CodeBlock` (:143) | `reviewedInnerHtml` over `highlightCode` or `reviewedEscapedText` | shiki (red), content (red), impl-html-policy, impl-markdown |
+| `react-dangerouslySetInnerHTML` | `agent-edit-tool.tsx#DiffLineRow` (:204) | `reviewedInnerHtml` over `highlightCode` | shiki (red), impl-html-policy |
+| `react-dangerouslySetInnerHTML` | `agent-mcp-tool-call.tsx#HighlightedJson` (:195) | `reviewedInnerHtml` over `highlightCode` | shiki (red), impl-html-policy |
+| `react-dangerouslySetInnerHTML` | `message-json-display.tsx#MessageJsonDisplay` (:94) | `reviewedInnerHtml` over `highlightCode` | shiki (red), impl-html-policy |
+| `react-dangerouslySetInnerHTML` ×2 | `mermaid-block.tsx#MermaidBlockInner` (:500 inline, :577 fullscreen) | `sanitizeMermaidSvg` string (one value for both) | mermaid-editor (red), `renderer-mermaid-xss`, impl-mermaid |
+| `dependency-unsafeCSS` ×2 | `agent-diff-view.tsx#FileDiffCard` (:814, :827) | app constant `PIERRE_DIFFS_THEME_CSS` | content-diff (red) |
+
+Absent and guarded at the frozen SHA: value-bearing and empty `.innerHTML`
+writes (both mentions restores and the clears are gone), `outerHTML`,
+`insertAdjacentHTML`, `document.write`, contextual fragments,
+`setHTMLUnsafe`, `srcdoc`, dynamic script creation, `script.src`, remote
+`import()`, `importScripts`, `prerenderedHTML`, and HTML inline handlers,
+`srcdoc`, remote or inline scripts. Producers and classified paths:
+
+- `shiki-theme-loader.ts#highlightCode` is the sole Shiki HTML producer for the
+  four non-Mermaid sinks and returns only `reviewShikiCodeToHtmlOutput` results
+  (fail closed to escaped text).
+- The `chat-markdown-renderer.tsx` local `escapeHtml` is removed; its
+  pre-highlight/plaintext path renders `reviewedEscapedText`.
+- Q9 diff producer: Vite-aliased `pierre-diffs-shiki-shim.ts` —
+  `createPlainHast` live (text-node HAST serialized by un-aliased
+  `hast-util-to-html@9.0.5`); exported `codeToHtml` is uncalled by the render
+  path and routes through `reviewedPlainCodeToHtml`; the private escaper is
+  removed. `@pierre/diffs@1.0.10` internal writers are reviewed producers
+  under the Q9 compromise, judged by the D2 diff profile; worker entry points
+  are guarded absent.
+- `diff-view-highlighter.ts#getAST`: zero callers, classified dormant,
+  guarded.
+- Monaco file viewer and xterm PTY output: explicit residuals in Yellow
+  TICKET-125.
+- Executable-URL click sink: `src/main/lib/local-only.ts#openExternalUrl`
+  (http/https/mailto only) behind preload `shell:open-external` and tRPC
+  `external.openExternal`, checked as a named rule.
+- Plugin-controlled UI manifests: validator-owned, schema-bounded text
+  producer (`src/shared/plugin-controlled-ui.ts#parseControlledUiManifest`);
+  React text rendering remains the boundary.
+
+This inventory is an architecture alarm, not runtime proof; runtime safety
+comes from the named behavior suites and GUI 5.1.
+
+### Superseded-path removal check (task 6.3, implementer self-check)
+
+At the frozen SHA: no `innerHTML` in `src/renderer/features/agents/mentions/`;
+no `match ? match[1] : code` Shiki fallback and no `escapeHtml` function
+outside the owner's private `escapeHtmlText`; no `loadURL`, `capturePage`,
+`executeJavaScript`, `key={currentUrl}` or chat-derived partition template in
+`src/renderer`; no renderer listener for `will-navigate`, `did-navigate`,
+`did-navigate-in-page`, `did-fail-load`, `did-fail-provisional-load`,
+`page-title-updated` or `console-message` (the workbench had 10
+`addEventListener` calls at `08c4f455` and has 0); no `react-scan`/`unpkg`
+reference in `src/renderer`; `web-contents-created`, `will-/did-attach-webview`
+and Electron Session permission/download handlers appear only in the guest
+owner (the one other textual match, `src/main/lib/codex/tool-permission.ts`,
+is the Codex protocol client's own `setPermissionRequestHandler`, not
+Electron). The renderer receives guest diagnostics only through
+`onLocalBrowserGuestEvent` / `captureLocalBrowserDiagnostics` after main
+minimization and redaction. `git diff 08c4f455..8f4181a4 -- scripts/
+src/main/lib/trpc/` is empty (no follow-up B or Foundation 1c ownership
+touched). Independent reviewers re-verify this at the frozen SHA.
+
+### D10 evidence matrix at the frozen SHA
+
+"Unit" names the retained fixture files (red = immutable red suite; impl =
+implementation suites). "GUI" names the section 5 track that alone can
+discharge the runtime half; none of those tracks has run.
+
+runtime-security-baseline — MODIFIED requirement:
+
+| Scenario | Unit fixtures | GUI |
+| --- | --- | --- |
+| Markdown active HTML and highlighted HTML sinks | red content (malicious/streaming/safe matrices, custom-scheme and relative-URL links, D2 pin/schema/wrapper), red shiki; impl-markdown, impl-html-policy; `renderer-html-sinks` | 5.1, 5.3 |
+| The app markdown pipeline throws while rendering untrusted content | red content-markdown-boundary; impl-markdown (boundary reset) | 5.1 |
+| A raw-markup insertion is introduced or changed | red content D1 group; `renderer-html-sinks` (exact inventory, scanner self-test, named rules) | source guard; no runtime claim |
+| Highlighted HTML reaches a raw insertion sink | red shiki (4 consumers × hostile, mismatch, dual, trailing, throw); impl-html-policy | 5.1 |
+| Dependency diff rendering is covered by the reviewed-producer contract | red content-diff (12) and content lockfile/alias/worker/unsafeCSS rules; `renderer-html-sinks` Q9 rules | 5.1 development pre-bundle binding; 5.3 packaged binding |
+| Mentions editor receives browser rich content or restores content | red mermaid-editor D4 group; impl-editor | 5.1 native paste/drop/execCommand/IME/undo/redo |
+| Mermaid diagram contains scriptable content | red mermaid-editor D3 group; impl-mermaid; `renderer-mermaid-xss` | 5.1 transient mount/CSS/cleanup |
+| Tool subtitle contains HTML | `renderer-agent-tool-call-xss` (retained) | 5.1 |
+| Production renderer CSP permits script execution | red content (construction); `renderer-csp-policy` | 5.4 (TICKET-114 packaged) |
+| Development renderer CSP permits Vite HMR | red content (construction); `renderer-csp-policy` | 5.5 (TICKET-114 development) |
+
+runtime-security-baseline — ADDED requirement (fixture IDs GP-01..GP-10):
+
+| Scenario | Unit fixtures | GUI |
+| --- | --- | --- |
+| GP-01 Renderer attempts an unsafe or unregistered guest attachment | red guest-policy D5 group; impl-guest-decisions "D5 effective guest preferences"; impl-guest-owner "D5 install", "D5 attachment guard (GP-01)", "pre-return Session configuration (GP-01/GP-07)" | 5.2, 5.3 |
+| GP-02 Renderer requests or replays a preview admission | red guest-policy D6 group; impl-guest-decisions "one-shot admission registry (GP-02)"; impl-guest-owner "D6 admission IPC (GP-02)", "admission through the real window registry"; impl-workbench "remount and generation rules" | 5.2 |
+| GP-03 Preview JavaScript probes privileged capabilities | red guest-policy webview-attribute guard (proxy); impl-guest-owner "GP-03 … (doubles)" and the registered-preload abort case | 5.2, 5.3 (runtime global absence) |
+| GP-04 Preview attempts disallowed top-level navigation or redirect | red guest-policy D7 wiring, no renderer `loadURL`, no raw listeners; impl-guest-decisions request gate, navigation handlers, committed-URL owner; impl-guest-owner "guest WebContents handlers (GP-04/GP-06)" | 5.2, 5.3 |
+| GP-05 Preview attempts file-root escape | red preview-broker (12); impl-preview-broker; impl-guest-owner "file admission through the locus-preview broker (GP-05)"; impl-guest-decisions file-admission gate; `stable-directory`, `registered-roots` | 5.2, 5.3 |
+| GP-06 Preview attempts to open another window | red guest-policy static; impl-guest-decisions window.open and external-protocol cases; impl-guest-owner window.open case | 5.2 |
+| GP-07 Preview requests permission, capture, or download | red guest-policy D8 static; impl-guest-decisions "permission verdicts (GP-07)"; impl-guest-owner pre-return handlers, first-response download, early permission, Bluetooth selection | 5.2, 5.3 |
+| GP-08 Two previews use guest storage | red guest-policy teardown static; impl-guest-decisions teardown state machine and never-reused partitions; impl-guest-owner "main-alone teardown (GP-08)" | 5.2, 5.3 |
+| GP-09 Host captures guest diagnostics | red guest-policy Invariant 7/D9 and adapter group; impl-diagnostics; impl-guest-owner "diagnostics relay and capture (GP-09)"; impl-workbench "Invariant 7 with a mounted admitted guest" | 5.2 |
+| GP-10 Trusted app requests its existing microphone behavior | red guest-policy `persist:main` guard; impl-guest-owner GP-10 case; voice suites | 5.2 |
+
+local-browser-workbench — MODIFIED requirements:
+
+| Scenario | Unit fixtures | GUI |
+| --- | --- | --- |
+| User opens a localhost page | red guest-policy (no direct `file:` src); impl-guest-owner D6 admission; impl-workbench admitted mount; `local-browser-workbench` | 5.2 |
+| User enters a remote URL | red guest-policy (shared grammar); `local-browser-workbench` | 5.2 |
+| Preview attempts remote navigation | red guest-policy (raw listeners removed); impl-guest-decisions navigation; impl-guest-owner minimized blocked-origin projection | 5.2 |
+| User deliberately opens another local origin | red guest-policy (one guest for same origin); impl-workbench remount/generation; impl-guest-owner new generation closes the old guest | 5.2 |
+| The registered file root needs canonicalization | red preview-broker canonicalization; impl-preview-broker stable-directory extensions; impl-guest-owner symlinked-prefix positive control | 5.2, 5.3 |
+| An admitted file attempts cross-file or cross-admission reads | red preview-broker + `preview-worktree.json`; impl-preview-broker cross-file matrix; impl-guest-decisions file-admission gate | 5.2, 5.3 |
+| Safe file broker is unavailable | red preview-broker win32; impl-guest-owner win32 case | 5.3 Windows record |
+| Console errors occur | red guest-policy console; impl-diagnostics levels; impl-guest-owner level mapping; impl-workbench | 5.2 |
+| Network or load failure occurs | red guest-policy load failure; impl-diagnostics; impl-guest-owner relay; impl-workbench | 5.2 |
+| Guest title or navigation changes | red guest-policy title/navigation; impl-diagnostics; impl-guest-owner relay; impl-workbench | 5.2 |
+| User captures page context | red guest-policy removal list; impl-guest-owner capture (userGesture:false, stale, oversized screenshot); impl-diagnostics screenshot bounds; impl-workbench | 5.2 |
+
+Red-receipt auditor P2 (vacuous pass): the red guest-policy renderer tests
+loop over mounted `<webview>` elements and their harness supplies no
+`window.desktopApi` admission, so after `1d3fd82b` those loops can see zero
+guests. The non-vacuous evidence is `tests/renderer-hardening-impl-workbench.test.ts`,
+which mounts an admitted guest and asserts at least one `<webview>` before
+dispatching raw events. The red file stays unchanged (immutable).
+
+### Yellow items (recorded, awaiting reviewer agreement)
+
+Phase I (renderer content):
+1. Relative and footnote (`#fragment`) markdown links render as harden's
+   "[blocked]" span under the fail-closed markdown profile.
+2. Upper-case schemes (`HTTPS://`) fail closed.
+3. `remark-gfm`/`remark-breaks` stay caret ranges (D2 pins only the rehype
+   packages).
+4. Harden options are the coordinator-clarified reading (`c6787acb`): see the
+   clarification section above; listed again for Owner `ACCEPTED`.
+
+Phase II (Mermaid, mentions editor):
+5. Mermaid's `htmlLabels` default stays true while the adapter forbids
+   `foreignObject` (both pre-existing), so labels Mermaid renders inside
+   `foreignObject` are removed by sanitization (label fidelity only).
+6. A retained paint `<style>` that fails the CSS value profile is removed and
+   the diagram renders unstyled rather than failing entirely.
+7. `position:fixed` is rejected anywhere in retained CSS, stricter than the
+   root-level rule.
+8. The Mermaid sinks still receive the adapter's string, not a sealed
+   `ReviewedRendererHtml` (the red suite requires `sanitizeMermaidSvg` to
+   return a string).
+9. The editor's typed `onPaste` delegate returns `consumed`/`insertText`
+   (`MentionsEditorPasteResult`), a signature change for its callers
+   `chat-input-area.tsx` and `new-chat-form.tsx`.
+10. A `biome-ignore lint/a11y/noStaticElementInteractions` sits on the
+    contentEditable editor element.
+
+Phase III (guest boundary):
+11. Subframe navigation residual: HTTP(S), `about:`, `data:`, `blob:` and
+    `javascript:` subframes are allowed; `file:`, another preview host and
+    external/unknown schemes are denied.
+12. `ws:`/`wss:` subresource egress joins the accepted HTTP(S) egress
+    residual.
+13. The renderer keeps `reload()`/`reloadIgnoringCache()` on the admitted
+    element.
+14. Chosen limits: admission TTL 30 s, 8 active admissions, 512 cumulative
+    partitions; preview files ≤32 MiB; screenshots PNG ≤4096×4096 and ≤8 MiB;
+    probe timeout 5 s; teardown confirmation wait 2 s.
+15. The `exactSecretHints` dependency hook exists but main's wiring supplies
+    none; guest diagnostics get recognized-pattern redaction only.
+16. A cancelled top-level request whose error page commits destroys the guest
+    (committed-URL rule).
+17. `did-attach-webview` binds the guest by Session identity;
+    `getLastWebPreferences` is consulted only when present.
+18. Page titles are projected after shaping and redaction, not suppressed.
+19. Installation site: the owner is installed through
+    `main.ts#installLocalBrowserGuestBoundary`, called from `src/main/index.ts`
+    before app readiness (scheme privileges must precede `ready`); task 3.1
+    and the proposal say "installed by `main.ts`".
+20. Preview bytes are read from the same verified descriptor into a bounded
+    buffer (≤32 MiB) and returned, not streamed; the same-descriptor/no
+    path-reopen property of task 4.2 holds.
+
+Package-level items for Owner `ACCEPTED` (not implementation defects): the
+three 2026-09-07 post-approval disclosures (Q4 named loopback listeners, Q5
+win32 file-preview disablement, react-scan loader removal) and the 2026-09-09
+option (a) top-level-link disclosure have no separate acknowledgement record
+in this package beyond the exact-package re-confirmation.
+
+### GUI runtime observations (not executed on this host)
+
+**Not executed on this host (WSL2, no display); pending a GUI host.** Tasks
+5.1–5.6 stay open; no unit result substitutes for them.
+
+- 5.1 (development Electron, content): real-browser rich paste/drop rejection,
+  native execCommand/undo/redo and IME; transient Mermaid mount, CSS, layout,
+  network effects and cleanup; dark-theme Mermaid control; HTTPS image-beacon
+  residual; `@pierre/diffs` development pre-bundle `resolveId` binding.
+- 5.2 / 5.3 (development, then packaged, guest): real first-request ordering;
+  effective sandbox and bridge/Node-global absence with zero Session
+  preloads; `webRequest` interception per resource type and per redirect hop
+  (including cross-port 3xx); `locus-preview` reachability through the gate
+  and the handler's independent enforcement; attach ordering; non-network
+  (`about:`/`data:`/`blob:`/`javascript:`) commits; popup, permission, device,
+  display, download and external-scheme denial with no OS prompt, handler or
+  `mcp-import:preview` push; main-alone `close()` destruction and no revival
+  without fresh admission; two-partition isolation; bounded `capturePage` and
+  stale rejection; controlled egress-residual and auth/gateway probes; trusted
+  voice on `persist:main`; Windows packaged file preview disabled; packaged
+  production alias binding.
+- 5.4 / 5.5: TICKET-114 packaged-production and development-HMR CSP tracks,
+  recorded under that ticket's rules.
+
+### Coordinator adjudications and clarifications (cross-reference)
+
+- `red-receipt.md` → "Adjudications" (2026-09-30, Mermaid residue helper): the
+  helper counted the same test's control mount and the prior render's open
+  fullscreen dialog as residue. Coordinator verdict: fixture defect. Fixes
+  were fixture-only with no assertion changed: `2cd19fb4` (skip every
+  `[data-test-root]` mount) and `ca4efbe6` (close any open fullscreen viewer
+  before rendering), both over `08c4f455`.
+- Harden options: "Implementation-time clarifications" above (`c6787acb`),
+  which reworded the requirement paragraph and D2 after the Owner's
+  exact-package re-confirmation; flagged for the fresh review and Owner
+  `ACCEPTED`.
+- The red suite's own pre-commit determinism fix (Mermaid settle harness) is
+  red-receipt.md §2 and predates `08c4f455`.
+
+### Immutable red suite proof
+
+The eleven red-suite paths are the seven `tests/renderer-hardening-*.test.ts`
+red files (content, content-markdown-boundary, content-shiki, content-diff,
+mermaid-editor, guest-policy, preview-broker),
+`tests/renderer-hardening-content-oracle.ts`,
+`tests/renderer-hardening-content-scanner.ts`,
+`tests/fixtures/renderer-hardening/**` and this change's `red-receipt.md`.
+
+```text
+$ git diff ca4efbe6..8f4181a4 --stat -- <the eleven paths>
+[no output]
+exit 0
+
+$ git diff 08c4f455..8f4181a4 --stat -- <the eleven paths>
+ .../red-receipt.md                                  |  8 ++++++++
+ tests/renderer-hardening-mermaid-editor.test.ts     | 21 +++++++++++++++++++++
+ 2 files changed, 29 insertions(+)
+```
+
+The only red-suite changes after `08c4f455` are the coordinator's
+fixture-only adjudications `2cd19fb4` and `ca4efbe6`; no implementer commit
+touches a red path. The implementation added separate `impl` suites and
+helpers instead.
+
+### Open gates after this freeze
+
+- 5.1–5.6 GUI and TICKET-114 tracks on a GUI host against the frozen source
+  SHA.
+- 6.4 fresh-context correctness and R3 security reviews (and the verifier
+  role mapping) for the frozen source SHA.
+- 6.5 Owner `ACCEPTED`. No push, merge, remote PR, release or rule change is
+  performed or implied.

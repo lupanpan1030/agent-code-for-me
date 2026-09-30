@@ -6,6 +6,12 @@
 > and the 2026-09-07 baseline rebase/anchor audit in 0.4 are complete. Source
 > edits remain gated; Owner **APPROVED the Q9 compromise on 2026-09-07**.
 > Task 2.11 ticket registration is also complete; implementation remains open.
+>
+> **IMPLEMENTATION_CANDIDATE (2026-09-30)** — unit half complete; GUI tracks
+> 5.1–5.3 pending a GUI host; fresh reviews pending. Frozen source SHA
+> `8f4181a4a9f0d6267396781e2df48883d29aad1e`; sections 1–4 and 6.1–6.3 carry
+> receipts, while 5.x, 6.4 and 6.5 stay open. Ledger: verification.md
+> "Implementation record". `IMPLEMENTATION_VERIFIED` is not claimed.
 
 Routing from the archived parent is explicit: sections 1–2 carry original 2.2,
 sections 3–4 carry original 2.3 and the removed R6 webview scenario, and section
@@ -80,10 +86,13 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
 
 ## 1. Characterization and renderer source guard (original 2.2)
 
-- [ ] 1.1 Convert `tests/renderer-html-sinks.test.ts` from a five-file allowlist
+- [x] 1.1 Convert `tests/renderer-html-sinks.test.ts` from a five-file allowlist
       to an exact insertion-point inventory keyed by construct, enclosing owner,
       content producer, and required behavior test.
-- [ ] 1.2 Scan `dangerouslySetInnerHTML`, value-bearing and empty
+      Receipt: `f4a720aa` — exact inventory (construct/file/enclosing symbol →
+      producer, value shape, behavior tests) in
+      `tests/renderer-html-sinks.test.ts`, 20/20 at frozen `8f4181a4`.
+- [x] 1.2 Scan `dangerouslySetInnerHTML`, value-bearing and empty
       `.innerHTML` / `.outerHTML`, `insertAdjacentHTML`, `document.write` /
       `writeln`, contextual fragments, `srcDoc` / `srcdoc`, and equivalent
       unsafe HTML APIs. Walk all of `src/renderer`, including `public/` and
@@ -106,7 +115,13 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       diff-profile style comparison. Assert `prerenderedHTML` absent unless
       explicitly bound to a reviewed producer and its behavior gate. Include
       negative fixtures for these named rules, not a broad string scan.
-- [ ] 1.3 Record the rebaselined sink and producer inventory in
+      Receipt: `f4a720aa` (TypeScript-AST scanner
+      `tests/helpers/renderer-raw-sink-scanner.ts`: 376 `src/renderer` files
+      incl. `public/`, 18 construct classes each with a negative fixture, named
+      unsafeCSS/prerenderedHTML, Q9 alias/shim and worker rules) + `8c2e595b`
+      (react-scan loader removed; its disclosure acknowledgement stays open, see
+      verification.md).
+- [x] 1.3 Record the rebaselined sink and producer inventory in
       `verification.md`. Do not label a whole file safe and do not infer runtime
       safety from source inventory alone. Name the Vite-aliased Locus-owned
       `pierre-diffs-shiki-shim.ts` (`createPlainHast` live; `codeToHtml` exported
@@ -125,17 +140,26 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       `src/shared/plugin-controlled-ui.ts#parseControlledUiManifest`;
       React text rendering remains its
       boundary and richer surface types must revisit the classification.
-- [ ] 1.4 Keep this renderer guard test-owned and executed by `bun run test` /
+      Receipt: verification.md "Implementation record" → "Rebaselined sink and
+      producer inventory" (ledger commit; inventory source `f4a720aa`, scanned
+      at frozen `8f4181a4`).
+- [x] 1.4 Keep this renderer guard test-owned and executed by `bun run test` /
       `check:full`; do not modify `scripts/check-architecture-guards.mjs` or its
       Foundation 1c baselines.
+      Receipt: `f4a720aa`; the guard runs under `bun run test`/`check:full`;
+      `git diff 08c4f455..8f4181a4 -- scripts/` is empty (guards and 1c
+      baselines untouched).
 
 ## 2. Reviewed content producers and behavior tests (original 2.2)
 
-- [ ] 2.1 Add the single reviewed-renderer-HTML policy owner under
+- [x] 2.1 Add the single reviewed-renderer-HTML policy owner under
       `src/renderer/lib/security/` and a typed reviewed-output contract for
       Locus-owned raw insertions. Keep Mermaid as its specialized SVG adapter;
       do not create caller-local sanitizer paths.
-- [ ] 2.2 Put both static and streaming app markdown paths behind one reviewed
+      Receipt: `ee38b3d6` (`renderer-html-policy.ts`: sealed
+      `ReviewedRendererHtml`, sole `reviewedInnerHtml` sink adapter; Mermaid
+      stays its SVG adapter).
+- [x] 2.2 Put both static and streaming app markdown paths behind one reviewed
       Streamdown configuration; implement the Owner-approved exact dependency /
       rehype ownership decision: replacement (not merge) rehype chain
       `[rehypeRaw, [rehypeSanitize, defaultSchema-derived reviewed schema],
@@ -146,14 +170,22 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       parity too; pin the `code`/`pre` overrides and assert Streamdown's dormant
       `aria-label="Mermaid chart"` sink never mounts. Give both mounts the same
       app-owned error boundary that renders source as escaped text.
-- [ ] 2.3 Add black-box static and streaming regressions for script/iframe,
+      Receipt: `85ea8ea4` (exact `streamdown@2.1.0` + direct
+      `rehype-raw@7.0.0`/`rehype-sanitize@6.0.0`/`rehype-harden@1.1.7`) +
+      `376b9303` (`reviewed-streamdown.tsx` wrapper, explicit chain, code/pre
+      overrides, error boundary); harden-options wording `c6787acb`. Unit half;
+      real renderer is GUI 5.1.
+- [x] 2.3 Add black-box static and streaming regressions for script/iframe,
       active SVG/MathML, event attributes, executable and encoded URLs,
       malformed/incomplete chunks, and a safe-formatting preservation matrix.
       Include `locus://`, `vscode://`, `ms-msdt:`, relative-URL links, and a
       forced-throw plugin through both mounts. Apply D2's shared owner-located
       rendered-DOM executable-markup oracle (not string-presence checks) to
       static/streaming markdown, Shiki consumers, Mermaid, and mentions.
-- [ ] 2.4 Make `highlightCode()` fail closed when Shiki throws or its expected
+      Receipt: red `08c4f455` content/markdown-boundary suites + `376b9303`
+      (`tests/renderer-hardening-impl-markdown.test.ts`), shared oracle
+      `ee38b3d6`/`a76de436`. Unit half; GUI half is 5.1.
+- [x] 2.4 Make `highlightCode()` fail closed when Shiki throws or its expected
       output shape fails: require exactly one top-level `<pre><code>` wrapper
       with the entire output consumed. Retain forced-mismatch and forced
       dual-`<code>` fixtures so a non-greedy regex cannot silently truncate.
@@ -164,15 +196,23 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       decision, remove or route the shim's `escapeHtml`/exported `codeToHtml`
       branch through that owner and classify its live text-node HAST path;
       delete or explicitly retain as dormant the zero-caller `getAST` adapter.
-- [ ] 2.5 Add hostile-code and forced-output-shape tests at the shared Shiki
+      Receipt: `e0674323` (`highlightCode` returns only reviewed output, fails
+      closed to escaped text; chat-local `escapeHtml` and shim escaper routed
+      through the owner; `getAST` kept dormant under the guard).
+- [x] 2.5 Add hostile-code and forced-output-shape tests at the shared Shiki
       producer and raw insertion boundary, covering chat/repository, MCP, tool,
       and message-JSON consumers.
-- [ ] 2.6 Replace mentions undo/redo `{ html, cursorOffset }` snapshots with
+      Receipt: red `08c4f455` shiki suite (4 consumers ×
+      hostile/mismatch/dual/trailing/throw) + `ee38b3d6`
+      (`tests/renderer-hardening-impl-html-policy.test.ts`).
+- [x] 2.6 Replace mentions undo/redo `{ html, cursorOffset }` snapshots with
       lossless canonical text/atomic-mention runs plus anchor/focus positions.
       Define the round-trip/spacing/selection model, rebuild through the one
       safe DOM builder, and remove both non-empty `.innerHTML` restores and the
       superseded state path in the same change.
-- [ ] 2.7 Make the mentions component own browser rich-content insertion from
+      Receipt: `ecac32ea` (`mentions-editor-state.ts` canonical runs +
+      anchor/focus; both `.innerHTML` restores and the snapshot path removed).
+- [x] 2.7 Make the mentions component own browser rich-content insertion from
       every source. Its single `beforeinput` allowlist admits `insertText`,
       `insertCompositionText`, and all `delete*` inputTypes, including
       `deleteByCut`, `deleteByDrag`, `deleteWord*`, and `deleteSoftLine*`.
@@ -187,7 +227,10 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       through the safe builder (or reject), and reject HTML-only input. Typed
       image/attachment delegation stays an explicit callback with no browser
       insertion fallback; optional parent handlers are not the boundary.
-- [ ] 2.8 Add mentions regressions for exact whitespace, atomic mention tokens,
+      Receipt: `7f3ea1a6` (native `beforeinput` allowlist, component-owned
+      paste/drop/dragover gates, typed paste delegate). Unit half; native
+      browser behavior is GUI 5.1.
+- [x] 2.8 Add mentions regressions for exact whitespace, atomic mention tokens,
       forward/backward selection, undo/redo, mixed/HTML-only clipboard and drop
       data, `insertLink`, `formatBold`, all admitted deletion families,
       safe-builder paragraph/line-break insertion, and typed caller delegation.
@@ -197,7 +240,10 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       happy-dom has no native contentEditable paste or `execCommand`: stub the
       latter or use the safe builder; real paste/drop rejection and browser
       undo/redo are GUI 5.1 evidence, never inferred from synthetic dispatch.
-- [ ] 2.9 Retain tool-subtitle text-rendering coverage and add a pinned-Mermaid
+      Receipt: red `08c4f455` mermaid-editor D4 group + `a76de436`
+      (`tests/renderer-hardening-impl-editor.test.ts`). Unit half; real
+      paste/drop/undo/redo/IME are GUI 5.1.
+- [x] 2.9 Retain tool-subtitle text-rendering coverage and add a pinned-Mermaid
       happy-dom/jsdom end-to-end fixture through MermaidBlock's actual render
       path, beyond the existing literal-SVG sanitizer test. Render hostile
       flowchart/sequence sources (`htmlLabels`, click directives, `javascript:`,
@@ -220,7 +266,11 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       sinks. Strict mode protects the transient pre-sanitizer body mount;
       DOMPurify is load-bearing for returned SVG, its DOMParser pass is defense
       in depth. Real transient execution/CSS/layout evidence remains GUI 5.1.
-- [ ] 2.10 Implement the **Owner-approved Q9 compromise (2026-09-07)**:
+      Receipt: `06ba7fb8` (extended `secure` list with fail-closed proof,
+      reviewed paint `<style>`, single fullscreen viewer) + `a76de436`
+      (`tests/renderer-hardening-impl-mermaid.test.ts`); coordinator fixture
+      rulings `2cd19fb4`/`ca4efbe6`. Unit half; transient mount/CSS is GUI 5.1.
+- [x] 2.10 Implement the **Owner-approved Q9 compromise (2026-09-07)**:
       black-box hostile `<FileDiff>`/`<PatchDiff>` rendering through the real
       Locus shim/Vite alias enters the reviewed-producer contract and D10 matrix.
       Exact-pin `@pierre/diffs@1.0.10` (`bun.lock:476`), un-aliased `hast-util-to-html@9.0.5`
@@ -263,6 +313,10 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       The approved diff Scenario retains only WHEN/THEN/AND bullets; its
       pending-status paragraph has been removed. Monaco/xterm are explicit
       residuals in Threat Model/Non-Goals and Yellow TICKET-125.
+      Receipt: red `08c4f455` diff suite + lockfile/alias/worker rules (green by
+      design) and `e0674323` (shim `codeToHtml` through the owner, no own
+      escaper). Unit half; development pre-bundle binding is GUI 5.1, packaged
+      binding 5.3.
 - [x] 2.11 Register the Monaco file-viewer/xterm terminal residuals in Yellow
       `docs/tickets/TICKET-125-monaco-xterm-dom-producers.md` and its README
       index under the Owner-approved Q9 compromise. Completed 2026-09-07
@@ -273,7 +327,7 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
 
 ## 3. Main-owned local-browser guest policy (original 2.3 / R6 webview)
 
-- [ ] 3.1 Add `src/main/windows/local-browser-guest-policy.ts` as the sole
+- [x] 3.1 Add `src/main/windows/local-browser-guest-policy.ts` as the sole
       Electron guest-policy owner; wire it from `main.ts`, project only its
       narrow operation through `src/preload/index.ts` / `index.d.ts`, and add
       exact owner entries to `docs/OWNERSHIP_MAP.md`, including reused
@@ -286,7 +340,12 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       plus injected factories/surfaces; no runtime Electron import-side effect
       may prevent loading the owner in `bun test --isolate tests`. Maintain
       verification.md's explicit ADDED Scenario → fixture mapping.
-- [ ] 3.2 Add a narrow internal, non-tRPC preview-admission operation. Resolve
+      Receipt: `04949c40` (owner with pure injectable decisions, `import type`
+      only; installed via `main.ts#installLocalBrowserGuestBoundary` from
+      `src/main/index.ts` before app readiness; preload projection) + `91f8b4ee`
+      (diagnostics adapter over `redaction.ts`) + `76d7ad85` (OWNERSHIP_MAP
+      entries); Scenario mapping in verification.md.
+- [x] 3.2 Add a narrow internal, non-tRPC preview-admission operation. Resolve
       chat/worktree state in main, derive the embedder from the IPC event,
       atomically call `windowManager.claimChat(chatId, senderWindow.id)`
       (idempotent for this window; bounded denial if another live window owns
@@ -298,17 +357,24 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       alone. Reject caller-provided filesystem/webContents authority. Return only the approved URL
       plus a high-entropy non-persistent partition treated as the sole bearer
       attachment capability.
-- [ ] 3.3 Implement an embedder/chat/generation/partition/exact-src pending
+      Receipt: `04949c40` (`local-browser:request-preview`; sender-derived
+      embedder, `claimChat` three states, `resolveRegisteredChatWorktreeRoot`,
+      caller authority rejected).
+- [x] 3.3 Implement an embedder/chat/generation/partition/exact-src pending
       registry with one-shot consume, short TTL, replay/conflict rejection, and
       active/cumulative caps. Never persist, log, put in URL/arguments, or reuse
       the partition; do not create a second token.
-- [ ] 3.4 Remove `<webview key={currentUrl}>` remounts. Keep one guest for
+      Receipt: `04949c40` (`LocalBrowserAdmissionRegistry`: one-shot, 30 s TTL,
+      8 active / 512 cumulative, never-reused partition).
+- [x] 3.4 Remove `<webview key={currentUrl}>` remounts. Keep one guest for
       allowed same-origin navigation; require a new generation/partition/
       admission for a user-entered different origin or recovery, destroying the
       old guest before replacement. Every `<webview>` element mount, including
       React remount/StrictMode, needs a fresh generation/admission; no renderer
       retry may reuse a consumed attachment capability.
-- [ ] 3.5 Install one `app.on('web-contents-created')` hook before creating
+      Receipt: `1d3fd82b` (no URL-key remount; fresh generation/admission per
+      element mount) over the `04949c40` registry.
+- [x] 3.5 Install one `app.on('web-contents-created')` hook before creating
       webContents; it installs every potential embedder's `will-attach-webview`
       listener. Use the per-window registry to deny unregistered embedders,
       including future window paths, before any document can attach a guest.
@@ -320,7 +386,10 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       writing/forcing partition is best-effort reinforcement only.
       Explicitly force sandbox/contextIsolation rather than inheriting the
       privileged embedder's `sandbox:false` preferences.
-- [ ] 3.6 Register valid guests through `did-attach-webview` and install all
+      Receipt: `04949c40` (one `web-contents-created` hook, per-window registry,
+      forced preferences, partition validation). Unit half; real attach ordering
+      is GUI 5.2/5.3.
+- [x] 3.6 Register valid guests through `did-attach-webview` and install all
       WebContents handlers through the one owner. If registration or any
       mandatory handler is late/missing, destroy the guest; do not copy policy
       into `main.ts` or the renderer. Account for post-navigation-start,
@@ -331,15 +400,21 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       registry state per D5. Invalidate authority immediately on teardown;
       reject revival/reattach or replacement until destruction is confirmed,
       and require fresh generation/admission. No renderer unmount fallback.
-- [ ] 3.7 Prove guest JavaScript cannot observe `electronTRPC`, `desktopApi`,
+      Receipt: `04949c40` (`did-attach-webview` registration, main-alone
+      `close()`/`isDestroyed()` teardown and revocation). Unit half (doubles);
+      real ordering and destruction are GUI 5.2/5.3.
+- [x] 3.7 Prove guest JavaScript cannot observe `electronTRPC`, `desktopApi`,
       `webUtils`, `ipcRenderer`, `require`, or `process`, cannot send privileged
       IPC/tRPC, and cannot trigger a Locus-mediated privileged side effect.
       Verify the issued Session has no registered preload scripts, in addition
       to empty guest WebPreferences preload/additionalArguments.
+      Receipt: `04949c40` (GP-03 doubles; admission aborts when the Session has
+      registered preloads). Unit half only; runtime global absence and zero
+      privileged effect are GUI 5.2/5.3.
 
 ## 4. Navigation, permission, popup, download, and diagnostic confinement
 
-- [ ] 4.1 Reuse one shared local URL grammar for renderer UX and main
+- [x] 4.1 Reuse one shared local URL grammar for renderer UX and main
       enforcement. Before returning a partition, install that unique Session's
       sole `<all_urls>` `webRequest.onBeforeRequest` owner: exact-origin check
       every `mainFrame` request (initial, link/location, `loadURL`, back/forward,
@@ -352,7 +427,10 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       and every `locus-preview:` request on HTTP(S)-admitted Sessions. Other
       schemes fail closed except the explicit D7 non-network postconditions
       and accepted HTTP(S) subresource residual. Remove renderer `loadURL`.
-- [ ] 4.2 Following **Owner decided 2026-09-08: option (a)** for D7,
+      Receipt: `04949c40` (sole pre-return `onBeforeRequest` gate, `will-*` and
+      committed-URL defense in depth) + `1d3fd82b` (renderer `loadURL` removed).
+      Unit half; per-hop interception is GUI 5.2/5.3.
+- [x] 4.2 Following **Owner decided 2026-09-08: option (a)** for D7,
       register `locus-preview` before app readiness with exactly D7's
       flags: standard/secure/supportFetchAPI/corsEnabled true;
       bypassCSP/allowServiceWorkers/stream/codeCache false. Bind `protocol.handle`
@@ -379,10 +457,16 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       against concurrent writes to the same opened inode. The existing owner
       has no win32 backend: Windows packaged file preview ships disabled until
       a separately approved Yellow handle-relative backend extension lands.
-- [ ] 4.3 Deny guest `window.open` / `_blank` through guest
+      Receipt: `4160f12a` (`openRegisteredStableDirectory`,
+      `readStableDirectoryFile`) + `04949c40` (`locus-preview` privileges,
+      file-Session-only handler, per-admission host/scope, win32 disabled). Unit
+      half; runtime reads are GUI 5.2/5.3.
+- [x] 4.3 Deny guest `window.open` / `_blank` through guest
       `setWindowOpenHandler`; assert no BrowserWindow and no
       `shell.openExternal` call occurs.
-- [ ] 4.4 Install both permission-check and permission-request default-deny
+      Receipt: `04949c40` (`setWindowOpenHandler` deny, no shell/BrowserWindow).
+      Unit half; runtime is GUI 5.2.
+- [x] 4.4 Install both permission-check and permission-request default-deny
       handlers on each guest partition, plus a denying device-permission
       handler. Every Session-scoped permission/device/display/selector handler
       is installed in the same pre-return configuration step as 4.1's request
@@ -397,14 +481,22 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       `vscode://` via top-level links, `location.href`, and `_blank`: no OS
       handler launch and no `mcp-import:preview` push. Trusted app-window
       `shell.openExternal` remains a separate reviewed path.
-- [ ] 4.5 Cancel guest downloads, including redirect and download-attribute
+      Receipt: `04949c40` (permission check/request incl. `openExternal`,
+      device, display, HID/serial/USB/Bluetooth selectors). Unit half; OS
+      prompt/handler observations are GUI 5.2/5.3.
+- [x] 4.5 Cancel guest downloads, including redirect and download-attribute
       paths. Install Session `will-download` in the same pre-return step as
       the request gate; 4.8/5.2 include first-response download and early
       permission checks. Any future user-approved save flow remains out of scope.
-- [ ] 4.6 Preserve the trusted app session's microphone/voice behavior and prove
+      Receipt: `04949c40` (pre-return Session `will-download` cancel,
+      first-response case). Unit half; runtime is GUI 5.2/5.3.
+- [x] 4.6 Preserve the trusted app session's microphone/voice behavior and prove
       guest deny handlers are never installed as a global `persist:main`
       deny-all policy.
-- [ ] 4.7 Replace arbitrary `executeJavaScript(string)` access in the workbench
+      Receipt: `04949c40` (GP-10: `persist:main`/default Session never
+      configured); voice suites unchanged and green. Unit half; trusted voice
+      runtime is GUI 5.2.
+- [x] 4.7 Replace arbitrary `executeJavaScript(string)` access in the workbench
       with the closed named set of app-owned diagnostic probes executed through
       main with `userGesture:false`, including the currently inline selection
       probe moved into the shared named set. Compose the diagnostics shape
@@ -433,7 +525,12 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       Apply approved identity/type/dimension/byte bounds before renderer
       projection; reject stale or oversized captures and remove renderer
       `webview.capturePage()` with no fallback.
-- [ ] 4.8 Add focused unit/integration fixtures for unsafe attach preferences,
+      Receipt: `91f8b4ee` (shared shape adapter +
+      `redactUntrustedDiagnosticPayload`) + `04949c40` (main relay, closed
+      `userGesture:false` probes, bounded `capturePage`) + `1d3fd82b` (renderer
+      raw listeners/`executeJavaScript`/`capturePage` removed). Unit half; GUI
+      5.2.
+- [x] 4.8 Add focused unit/integration fixtures for unsafe attach preferences,
       bridge probes, initial/link/location/`loadURL`/back/forward/redirect
       requests, direct `file:` in main/subframe/XHR/script/image positions,
       descriptor/symlink races, popup, permissions/device/display, downloads,
@@ -457,6 +554,10 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       observability, cross-file reads/execution, main-alone guest destruction,
       OS effects and no-state/token auth/gateway 400/401/404 outcomes are
       discharged only by 5.2 and repeated in 5.3.
+      Receipt: `4160f12a`/`91f8b4ee`/`04949c40`/`1d3fd82b` impl suites
+      (guest-decisions, guest-owner, preview-broker, diagnostics, workbench).
+      Double-driven evidence only; every runtime observation remains GUI
+      5.2/5.3.
 
 ## 5. GUI smoke and TICKET-114 linkage (original 2.4)
 
@@ -509,13 +610,18 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
 
 ## 6. Exact-SHA verification, review, and closeout
 
-- [ ] 6.1 Run the focused renderer, mentions, local-browser guest, main-window,
+- [x] 6.1 Run the focused renderer, mentions, local-browser guest, main-window,
       CSP, filesystem-boundary, and trusted voice test suites; record exact
       files, counts, and assertions in `verification.md`.
-- [ ] 6.2 Run `bun run architecture:check`, `bun run ts:check`, strict target /
+      Receipt: verification.md "Implementation record" per-gate and per-file
+      counts at frozen `8f4181a4` (ledger commit).
+- [x] 6.2 Run `bun run architecture:check`, `bun run ts:check`, strict target /
       specs / all OpenSpec validation, `bun run check:full`, and
       `git diff --check` on one frozen implementation SHA.
-- [ ] 6.3 Confirm the source diff removes superseded raw-HTML restore, raw Shiki
+      Receipt: frozen `8f4181a4`: `bun run check:full` exit 0 (all stages),
+      strict target/`--specs`/`--all` valid, `git diff --check` clean; see
+      verification.md (ledger commit).
+- [x] 6.3 Confirm the source diff removes superseded raw-HTML restore, raw Shiki
       fallback (including chat-markdown's local `escapeHtml` and the Q9-selected
       shim `escapeHtml`/`codeToHtml` disposition), unclassified dormant `getAST`,
       browser rich-HTML paste/drop/beforeinput, renderer partition authority/URL-key
@@ -529,6 +635,8 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       main-owned post-`did-attach-webview` guest `webContents` relay after
       minimization/redaction/bounds, with no renderer fallback; confirm it does
       not touch follow-up B or Foundation 1c guard ownership.
+      Receipt: implementer source-diff check recorded in verification.md (ledger
+      commit); independent reviewers re-verify at the frozen SHA.
 - [ ] 6.4 Record Codex `IMPLEMENTATION_VERIFIED` and independent fresh-context
       correctness plus R3 security `REVIEW_APPROVED` verdicts for that same
       frozen source SHA.
