@@ -2,9 +2,15 @@ import { z } from "zod"
 import {
   AGENT_JOB_SOURCES,
   AGENT_JOB_STATUSES,
-  isTerminalAgentJobStatus,
   type AgentJobStatus,
+  isTerminalAgentJobStatus,
 } from "../../../../shared/agent-jobs"
+import { getDatabase } from "../../db"
+import { requestCancelDesktopAgentJob } from "../../desktop-agent-jobs"
+import {
+  serializeAgentJob,
+  serializeAgentJobEvent,
+} from "../../headless/cli-output"
 import {
   cancelAgentJob,
   getAgentJob,
@@ -12,12 +18,6 @@ import {
   listAgentJobs,
   retryAgentJob,
 } from "../../headless/job-store"
-import {
-  serializeAgentJob,
-  serializeAgentJobEvent,
-} from "../../headless/cli-output"
-import { requestCancelDesktopAgentJob } from "../../desktop-agent-jobs"
-import { getDatabase } from "../../db"
 import { publicProcedure, router } from "../index"
 
 const sourceSchema = z.enum(AGENT_JOB_SOURCES)

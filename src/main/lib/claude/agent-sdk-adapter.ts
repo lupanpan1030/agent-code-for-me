@@ -74,7 +74,7 @@ async function* withCorrelatedInitIngress(
   request: DesktopRunRequest,
   queryOptions: ClaudeAgentSdkQueryParams,
   stream: ClaudeAgentSdkStream,
-): AsyncGenerator<any> {
+): ClaudeAgentSdkStream {
   const ledger = request.ledger ?? null
   const options = queryOptions.options as Record<string, unknown>
   const queryId = `claude-query:${request.identity.runId}`

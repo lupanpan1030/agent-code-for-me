@@ -24,7 +24,7 @@ import {
   buildUtilityProviderHeaders,
   redactAndTruncateUtilityProviderText,
 } from "../utility-chat-completion"
-import { HEADLESS_EXIT_CODES, normalizeHeadlessExitCode } from "./job-runner"
+import { normalizeHeadlessExitCode } from "./job-runner"
 import {
   type AgentJobDatabase,
   getAgentJob,

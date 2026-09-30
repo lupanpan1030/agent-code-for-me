@@ -1,8 +1,5 @@
-import { eq } from "drizzle-orm"
 import { redactRuntimePayload } from "../agent-runtime/redaction"
 import type { JsonValue } from "../agent-runtime/runtime-events"
-import { subChats } from "../db/schema"
-import { isActiveClaudeSessionSignal } from "./active-sessions"
 import { flushClaudeAgentSdkTextAccumulator } from "./agent-sdk-chunk-processor"
 import { classifyClaudeAgentSdkStreamError } from "./agent-sdk-errors"
 import {

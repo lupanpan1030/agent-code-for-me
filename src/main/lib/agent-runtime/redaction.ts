@@ -80,7 +80,8 @@ const PERSISTED_RECORD_TEXT_PATTERNS: readonly SecretTextPattern[] = [
       /(?:anthropic_auth_token|openai_api_key|codex_api_key|github_token|npm_token|aws_secret_access_key|aws_session_token|id_token)["'=:\s]+["']?[^\s"',;]+/gi,
   },
   {
-    pattern: /[?&](?:code|access_token|refresh_token|id_token|token)=[^&#\s]+/gi,
+    pattern:
+      /[?&](?:code|access_token|refresh_token|id_token|token)=[^&#\s]+/gi,
   },
   ...SECRET_TEXT_PATTERNS,
 ]
