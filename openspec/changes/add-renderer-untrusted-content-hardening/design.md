@@ -306,12 +306,16 @@ The explicit chain is `[rehypeRaw, [rehypeSanitize, reviewedSchema],
 imported from `rehype-sanitize` (no new package enters the tree; a direct exact
 declaration is still required), and harden receives
 reviewed options: an empty protocol allowlist (no `*` protocol), data images
-refused, and the `*` link/image prefix — which in the pinned rehype-harden
-1.1.7 admits only absolute `http:`/`https:` URLs, while any specific prefix is
-origin-bound and would block every ordinary chat link (implementation-time
-clarification 2026-09-30; the earlier "non-wildcard" wording mis-modelled the
-library's prefix semantics). Harden is defense in depth, not the load-bearing
-sanitizer; `rehype-sanitize`'s schema is. Parity characterization covers the remark chain too, including GFM
+refused, and the `*` link/image prefixes; in the pinned rehype-harden 1.1.7 a
+specific prefix is origin-bound and would block every ordinary chat link.
+Harden's built-in safe-protocol set and its relative, fragment and `blob:`
+handling are not relied on: the reviewed sanitizer schema runs first and
+alone enforces the absolute `http:`/`https:` policy (plus `mailto:` for
+links). Harden is defense in depth, not the load-bearing sanitizer;
+`rehype-sanitize`'s schema is. (Implementation-time clarification 2026-09-30,
+corrected in the post-freeze touch-up: the earlier "non-wildcard" wording
+mis-modelled the library's prefix semantics, and the first clarification's
+description of `*` as an absolute-`http(s)`-only mode was inaccurate.) Parity characterization covers the remark chain too, including GFM
 and breaks. Both wrapper paths retain the app `code`/`pre` overrides so
 Streamdown's built-in Mermaid raw sink stays dormant; a fixture asserts that
 no element with `aria-label="Mermaid chart"` mounts.

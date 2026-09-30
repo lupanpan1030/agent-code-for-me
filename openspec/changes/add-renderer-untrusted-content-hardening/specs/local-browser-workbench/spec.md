@@ -16,7 +16,7 @@ File-origin granularity follows the Owner-decided D7 option (a) (2026-09-08): a 
 admitted document and a main-validated relative-asset scope defaulting to the
 document-directory subtree. This does not claim confidentiality for in-scope
 files; their read/egress consequence remains visible, including when the
-directory is the worktree root. These details await exact-package confirmation.
+directory is the worktree root.
 
 #### Scenario: User opens a localhost page
 

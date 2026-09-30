@@ -69,12 +69,13 @@ and `expandUnchanged: false`.
   formatting subset still renders
 - **AND** both app markdown modes SHALL use the same explicit raw/sanitize/
   harden chain, whose sanitizer schema derives from `rehype-sanitize`'s
-  `defaultSchema` and whose hardener options carry no wildcard protocol (the
-  protocol allowlist is empty) and refuse data images; the hardener's `*`
-  link/image prefix is that library's absolute-`http(s)`-only mode and is
-  permitted because scheme and relative-URL policy is enforced by the reviewed
-  sanitizer schema; parity fixtures SHALL cover the remark configuration as
-  well as the replacing rehype chain
+  `defaultSchema`; the hardener receives an empty protocol allowlist (no
+  wildcard protocol), refuses data images and uses the `*` link/image
+  prefixes; the hardener's built-in safe-protocol set and relative-URL
+  handling are not relied on, because the reviewed sanitizer schema alone
+  enforces the absolute `http`/`https` policy (plus `mailto` for links), and
+  the hardener is defense in depth; parity fixtures SHALL cover the remark
+  configuration as well as the replacing rehype chain
 - **AND** the wrapper's `code`/`pre` overrides SHALL keep Streamdown's built-in
   Mermaid renderer dormant, proven by the absence of its `aria-label="Mermaid
   chart"` element; custom-scheme and relative-link fixtures SHALL exercise the
@@ -288,7 +289,7 @@ gateway probe SHALL demonstrate rejection without state changes. Codex
 app-server uses stdio rather than an additional loopback listener.
 
 The following file-origin details implement Owner-decided option (a) in D7
-(2026-09-08); confirmation of the revised exact package remains pending: each document has a separate
+(2026-09-08): each document has a separate
 admission origin and declared relative-asset scope, defaulting to its directory
 subtree. In-scope files remain readable and subject to the accepted egress
 residual, including the entire worktree if that directory is the root.

@@ -1193,7 +1193,7 @@ entries):
 | `react-dangerouslySetInnerHTML` | `agent-edit-tool.tsx#DiffLineRow` (:204) | `reviewedInnerHtml` over `highlightCode` | shiki (red), impl-html-policy |
 | `react-dangerouslySetInnerHTML` | `agent-mcp-tool-call.tsx#HighlightedJson` (:195) | `reviewedInnerHtml` over `highlightCode` | shiki (red), impl-html-policy |
 | `react-dangerouslySetInnerHTML` | `message-json-display.tsx#MessageJsonDisplay` (:94) | `reviewedInnerHtml` over `highlightCode` | shiki (red), impl-html-policy |
-| `react-dangerouslySetInnerHTML` ×2 | `mermaid-block.tsx#MermaidBlockInner` (:500 inline, :577 fullscreen) | `sanitizeMermaidSvg` string (one value for both) | mermaid-editor (red), `renderer-mermaid-xss`, impl-mermaid |
+| `react-dangerouslySetInnerHTML` ×2 | `mermaid-block.tsx#MermaidBlockInner` (:500 inline, :577 fullscreen) | `sanitizeMermaidSvg` string (one value for both; sealed at the re-frozen source, see "Post-freeze touch-up slice") | mermaid-editor (red), `renderer-mermaid-xss` (retained; non-probative under stock happy-dom, see red-receipt §7), impl-mermaid |
 | `dependency-unsafeCSS` ×2 | `agent-diff-view.tsx#FileDiffCard` (:814, :827) | app constant `PIERRE_DIFFS_THEME_CSS` | content-diff (red) |
 
 Absent and guarded at the frozen SHA: value-bearing and empty `.innerHTML`
@@ -1265,7 +1265,7 @@ runtime-security-baseline — MODIFIED requirement:
 | Highlighted HTML reaches a raw insertion sink | red shiki (4 consumers × hostile, mismatch, dual, trailing, throw); impl-html-policy | 5.1 |
 | Dependency diff rendering is covered by the reviewed-producer contract | red content-diff (12) and content lockfile/alias/worker/unsafeCSS rules; `renderer-html-sinks` Q9 rules | 5.1 development pre-bundle binding; 5.3 packaged binding |
 | Mentions editor receives browser rich content or restores content | red mermaid-editor D4 group; impl-editor | 5.1 native paste/drop/execCommand/IME/undo/redo |
-| Mermaid diagram contains scriptable content | red mermaid-editor D3 group; impl-mermaid; `renderer-mermaid-xss` | 5.1 transient mount/CSS/cleanup |
+| Mermaid diagram contains scriptable content | red mermaid-editor D3 group; impl-mermaid; `renderer-mermaid-xss` (retained; non-probative under stock happy-dom, see red-receipt §7) | 5.1 transient mount/CSS/cleanup |
 | Tool subtitle contains HTML | `renderer-agent-tool-call-xss` (retained) | 5.1 |
 | Production renderer CSP permits script execution | red content (construction); `renderer-csp-policy` | 5.4 (TICKET-114 packaged) |
 | Development renderer CSP permits Vite HMR | red content (construction); `renderer-csp-policy` | 5.5 (TICKET-114 development) |
@@ -1317,7 +1317,10 @@ Phase I (renderer content):
 3. `remark-gfm`/`remark-breaks` stay caret ranges (D2 pins only the rehype
    packages).
 4. Harden options are the coordinator-clarified reading (`c6787acb`): see the
-   clarification section above; listed again for Owner `ACCEPTED`.
+   clarification section above; listed again for Owner `ACCEPTED`. [Wording
+   corrected in the post-freeze touch-up: the `*` prefix is not an
+   absolute-http(s)-only mode; the sanitizer schema alone enforces the URL
+   policy.]
 
 Phase II (Mermaid, mentions editor):
 5. Mermaid's `htmlLabels` default stays true while the adapter forbids
@@ -1325,11 +1328,18 @@ Phase II (Mermaid, mentions editor):
    `foreignObject` are removed by sanitization (label fidelity only).
 6. A retained paint `<style>` that fails the CSS value profile is removed and
    the diagram renders unstyled rather than failing entirely.
-7. `position:fixed` is rejected anywhere in retained CSS, stricter than the
-   root-level rule.
+7. [Reworded in the post-freeze touch-up, after `0377f736`.]
+   `position:fixed` is rejected in every retained paint rule and in every
+   `@keyframes` frame body; root-level rules and keyframe frames admit only
+   `position:static|relative`, descendant rules
+   `static|relative|absolute|sticky`, `style` attributes `static|relative`.
+   This is stricter than the spec's root-level rule. (At `8f4181a4` keyframe
+   frame bodies were not position-checked.)
 8. The Mermaid sinks still receive the adapter's string, not a sealed
    `ReviewedRendererHtml` (the red suite requires `sanitizeMermaidSvg` to
-   return a string).
+   return a string). [Resolved in the post-freeze touch-up, `570d6f2d`:
+   `sanitizeMermaidSvg` still returns a string, and both sinks take the
+   owner's sealed `reviewMermaidSvgOutput` result.]
 9. The editor's typed `onPaste` delegate returns `consumed`/`insertText`
    (`MentionsEditorPasteResult`), a signature change for its callers
    `chat-input-area.tsx` and `new-chat-form.tsx`.
@@ -1349,8 +1359,15 @@ Phase III (guest boundary):
     probe timeout 5 s; teardown confirmation wait 2 s.
 15. The `exactSecretHints` dependency hook exists but main's wiring supplies
     none; guest diagnostics get recognized-pattern redaction only.
-16. A cancelled top-level request whose error page commits destroys the guest
-    (committed-URL rule).
+16. [Reworded in the post-freeze touch-up, after `9761a352`.] A top-level
+    request the Session gate cancels while the guest holds authority
+    (`net::ERR_BLOCKED_BY_CLIENT`, -20, main frame) tears the guest down from
+    main on `did-fail-provisional-load` with reason
+    `committed-url-rejected`. Chromium reports the resulting error page
+    through `did-fail-provisional-load`/`did-fail-load`, never
+    `did-navigate`, so the `did-navigate` committed-URL rule (unchanged)
+    could not see it; at `8f4181a4` no code path performed this teardown.
+    The real Electron event sequence is a GUI 5.2 observation.
 17. `did-attach-webview` binds the guest by Session identity;
     `getLastWebPreferences` is consulted only when present.
 18. Page titles are projected after shaping and redaction, not suppressed.
@@ -1366,7 +1383,8 @@ Package-level items for Owner `ACCEPTED` (not implementation defects): the
 three 2026-09-07 post-approval disclosures (Q4 named loopback listeners, Q5
 win32 file-preview disablement, react-scan loader removal) and the 2026-09-09
 option (a) top-level-link disclosure have no separate acknowledgement record
-in this package beyond the exact-package re-confirmation.
+in this package beyond the exact-package re-confirmation. [Post-freeze
+touch-up: all four are now listed in task 6.5 and the STATUS next gate.]
 
 ### GUI runtime observations (not executed on this host)
 
@@ -1440,3 +1458,337 @@ helpers instead.
   role mapping) for the frozen source SHA.
 - 6.5 Owner `ACCEPTED`. No push, merge, remote PR, release or rule change is
   performed or implied.
+
+## Post-freeze touch-up slice (2026-09-30)
+
+Appended after the two fresh implementation reviews of the first freeze
+`8f4181a4`. Earlier sections are not rewritten except where marked in place:
+Yellow 4/7/8/16, the `renderer-mermaid-xss` qualifier in the inventory and
+D10 rows, and the package-level acknowledgement pointer.
+
+### Status and re-freeze
+
+- Status: **IMPLEMENTATION_CANDIDATE — unit half complete; GUI tracks
+  5.1–5.3 pending a GUI host.** Both fresh reviews of `8f4181a4` returned
+  `REVIEW_APPROVED` with 0 P0/P1; this slice applies their P2/P3
+  dispositions. `IMPLEMENTATION_VERIFIED` is **not** claimed; no GUI receipt,
+  TICKET-114 track or Owner `ACCEPTED` exists.
+- **NEW FROZEN SOURCE SHA: `5ca5a17aaa7c4ac4cd5d13b41fd528886a1c22ef`**
+  (`5ca5a17a`, the last source commit of this slice). It supersedes
+  `8f4181a4` as the frozen source; receipts above keep their own SHA and
+  scope.
+- Evidence head: the single commit that carries this section, subject
+  `docs(openspec): record the renderer hardening post-freeze touch-up and
+  re-freeze`; resolve it with
+  `git log --format=%H --fixed-strings --grep='record the renderer hardening post-freeze touch-up and re-freeze' -1`.
+  Between the new frozen source and the evidence head only documentation
+  changes: this change's `design.md`, `tasks.md`, `verification.md`, both
+  spec deltas, and its `openspec/STATUS.md` row.
+- Implementer: Claude Opus 5.5 (`claude-opus-5-5`), coordination-dispatched,
+  in the same worktree and branch; slice base = evidence head `55335976`
+  over frozen `8f4181a4`. Commits are authored as Ethan C.Lu with the acting
+  model's co-author trailer.
+- The two approvals bind to `8f4181a4`. The touch-up needs a targeted
+  re-review bound to `5ca5a17a` ("For the targeted re-review" below).
+
+### Fresh-review ledger entries (paste-ready, verbatim)
+
+#### Codex fresh-context implementation review — source `8f4181a4a9f0d6267396781e2df48883d29aad1e`
+
+VERDICT: REVIEW_APPROVED
+
+评审绑定源码 SHA：`8f4181a4a9f0d6267396781e2df48883d29aad1e`。**0 个 P0/P1，1 个 P2**；批准的是代码评审，GUI 门禁和 Owner 验收仍未完成。
+
+| # | 级别与位置 | 复现／证据 | 建议 |
+| --- | --- | --- | --- |
+| 1 | P2 · [local-browser-workbench.tsx:127](/home/chen/projects/locus-add-renderer-untrusted-content-hardening-draft/src/renderer/features/agents/ui/local-browser-workbench.tsx:127) | 先捕获报告，再在同一 guest 内导航：`navigated` 只更新 URL；[插入报告:292](/home/chen/projects/locus-add-renderer-untrusted-content-hardening-draft/src/renderer/features/agents/ui/local-browser-workbench.tsx:292)优先复用旧 `lastReport`，不会重新经过主进程的导航代次检查。 | 导航时清除缓存报告及页面快照；增加“捕获→导航→插入”的回归测试。 |
+
+Yellow 逐条裁定（编号对应 [verification.md](/home/chen/projects/locus-add-renderer-untrusted-content-hardening-draft/openspec/changes/add-renderer-untrusted-content-hardening/verification.md:1311)）：
+
+1. **accept**：相对及片段链接阻断符合当前 fail-closed 策略。
+2. **accept**：大写 scheme 被拒绝是保守兼容性损失。
+3. **accept**：remark 版本范围不在本次精确 pin 范围。
+4. **escalate（Owner）**：`c6787acb` 的 harden 选项澄清需在验收中明确认可。
+5. **accept**：`foreignObject` 标签丢失仅影响图表呈现。
+6. **accept**：不合规 paint CSS 被移除，图表仍可无样式显示。
+7. **accept**：全面拒绝 `position:fixed` 更严格。
+8. **accept**：Mermaid 专用净化适配器按设计返回字符串，双 sink 使用同一结果。
+9. **accept**：paste delegate 签名变化只涉及内部调用者。
+10. **accept**：contentEditable 元素的单点 a11y lint 说明可核对。
+11. **accept**：子帧非网络 scheme 是设计中明列的残余，仍待 GUI 观察。
+12. **accept**：WebSocket 子资源外连已纳入外连残余。
+13. **accept**：reload 沿用已准入 guest，主进程请求门仍生效。
+14. **accept**：所列容量和超时均有实现常量。
+15. **escalate（Owner）**：主进程未提供 exact-secret hints；目前只能保证模式识别脱敏。
+16. **accept**：取消请求后的错误页若提交即销毁 guest，符合 fail-closed。
+17. **accept**：按设计在可用时检查有效 preferences；真实 Electron 值待 GUI 验证。
+18. **accept**：标题先整形脱敏再投影，符合诊断设计。
+19. **accept**：`index.ts` 在 ready 前调用 `main.ts` 安装入口。
+20. **accept**：文件由已验证的同一描述符限量读取，未重新按路径打开。
+
+核查范围：单一 renderer 输出 owner、精确 sink 守卫、Streamdown 链与 URL 策略、Shiki、diff shim/pin、Mermaid、编辑器、主进程 guest 策略与 preview broker 均与设计相符；旧渲染路径已移除。红套件 11 个路径相对 `ca4efbe6` 零差异，实施测试未见 skip/only/todo；[workbench 测试:239](/home/chen/projects/locus-add-renderer-untrusted-content-hardening-draft/tests/renderer-hardening-impl-workbench.test.ts:239)在投递原始事件前断言 guest 非空。未发现 Local Job API 或 tRPC 公共形状变化；preload 新增三项均在设计范围内。
+
+证据限制：`check:full` 的同 SHA 回执、显式基线 lint、233/233 红套件和 2,467/0 全套件记录相互一致；本次只读评审未重跑会写入构建产物的门禁，也无法核对临时日志哈希。GUI 5.1–5.5 尚无实测；5.6 是缺少 GUI 时停止验收的规则，待办已列明。
+
+#### Claude fresh-context implementation review — source `8f4181a4a9f0d6267396781e2df48883d29aad1e`
+
+- Reviewer: Claude Fable 5.1, single synthesizer over three read-only lens reviews (renderer content, guest boundary, ownership/evidence). Every P2 was re-verified in the frozen source by probe or grep; no files edited, no commits, no worktrees created (scratch probes lived in the session scratchpad with a symlink to the worktree's node_modules).
+- Reviewed at evidence head `5533597610150caaa9ead0b125d1bca0a8c4efed` (branch `codex/add-renderer-untrusted-content-hardening`); it differs from the source SHA only in docs/OWNERSHIP_MAP.md, openspec/STATUS.md, tasks.md and verification.md. `git rev-list --count 08c4f455..8f4181a4` = 20.
+- **Verdict: REVIEW_APPROVED for source `8f4181a4` — 0 P0 / 0 P1 / 6 P2 / 11 P3.** Technical verdict for this SHA only. It is not Owner ACCEPTED, does not claim IMPLEMENTATION_VERIFIED, and authorizes no push, remote PR mutation, merge, release or repository-rule change. GUI tasks 5.1–5.6 remain open.
+
+**Test-first attestations**
+- Red suite zero-diff vs `ca4efbe6`: **yes** — the 65 test/fixture paths created by `08c4f455` are byte-identical at `8f4181a4` and at `5533597`. The only red-suite change since `08c4f455` is `tests/renderer-hardening-mermaid-editor.test.ts` +21 through the coordinator adjudications `2cd19fb4` (+4, skip `[data-test-root]` mounts) and `ca4efbe6` (+17, close an open fullscreen dialog before rendering); both fixture-only, no assertion changed, judged sound.
+- Implementer tests weakened: **no** (red files untouched; impl files have no .skip/.only/.todo and no swallowed errors per Lens C; counts re-measured here).
+- Re-run on this host: red 7 files 233 pass / 0 fail / 706 expect(); renderer-html-sinks + 9 impl files 274 pass / 0 fail / 1353 expect(). Ledger full-suite figure 2,467 / 0 / 11,554 / 322 files matched by Lens C (build stage not re-run).
+
+**Findings (measured unless marked inferred)**
+1. P2 — `c6787acb` harden-options clarification mis-describes rehype-harden 1.1.7: with the shipped options harden alone admits relative, protocol-relative, `#fragment`, `blob:`, `irc:`, `ircs:`, `xmpp:` and `mailto:` links; the reviewed sanitizer schema is the load-bearing control and the full chain blocks all but `https://`/`mailto:`. Security unchanged; normative wording is wrong and post-dates the Owner's re-confirmation; tasks.md 2.2 still says 'non-wildcard'. Fix wording in the ledger-only successor; Owner acknowledgement at ACCEPTED. (Yellow 4)
+2. P2 — `reviewMermaidPaintCss` retains `position:fixed` inside `@keyframes` frame bodies (`url()`/`@import` are still caught); Yellow 7's 'anywhere' is overstated; spec's root-level rule still met; exploitability inferred low. Fix in a touch-up + negative fixture. (Yellow 7)
+3. P2 — Yellow 16's error-page teardown is not implemented: only `did-navigate`/`did-navigate-in-page` run the committed-URL rule; `did-fail-*` handlers only project. Inferred from Electron semantics that an error page after a gate cancel never reaches `did-navigate`. Low impact; reword or implement, plus a GUI 5.2 observation. (Yellow 16)
+4. P2 — Guest diagnostics free text: OAuth `code`/`state`/`nonce`, bare JWTs and scheme-less query strings pass canonical pattern redaction; tests cover these classes only inside scheme URLs or behind `Bearer`. Extend redaction.ts or record as residual with Yellow 15.
+5. P2 — The four Owner-acknowledgement items (Q4 named loopback listeners, Q5 win32 file-preview disablement, react-scan loader removal, 2026-09-09 option (a) top-level-link disclosure) appear only in verification.md:1365-1369; task 6.5 and the STATUS next-gate cell omit them; ticked 6.3 still reads 'pending acknowledgement'. Ledger-only fix.
+6. P2 — Mermaid sinks take a plain string, not `ReviewedRendererHtml` (Invariant 1); all writers are sanitizer output and the exact inventory/named rule/red suite bind the sink; seal at MermaidBlock in a later touch-up. (Yellow 8)
+7. P3 — URL projections bounded to 240 chars before redaction (partial `sk-` prefix survives).
+8. P3 — 512 lifetime-partition cap shares the 'close one' capacity message; needs restart.
+9. P3 — locus-preview handler reads ≤32 MiB synchronously on the main thread (availability).
+10. P3 — 'replayed' attach verdict sends `closed/attach-rejected` for the live generation (self-DoS only).
+11. P3 — Main-frame same-origin `blob:` denied at navigation though the committed rule allows it (stricter than D7).
+12. P3 — Root-level Mermaid paint permits relative+z-index+transform overlay (within D3); add to GUI 5.1 observation.
+13. P3 — Task 6.4 lacks the 2026-09-30 role mapping (Opus 5.5 implements; Codex gpt-6-sol cross-vendor review); GUI 5.1–5.3 still prerequisite.
+14. P3 — D10 rows cite `renderer-mermaid-xss` without the red-receipt 'non-probative under stock happy-dom' qualifier.
+15. P3 — openspec/STATUS.md content conflict with local main `dcd5153c` (merge-tree); keep main's direction section, take this branch's row.
+16. P3 — Stale 'await/pending exact-package confirmation' prose in both spec deltas; strip at archive.
+17. P3 — Impl oracle imports `RENDERER_MARKUP_PROFILES` from the owner under test; independent red oracle mitigates.
+
+**Yellow dispositions (20)** — accept: Y1, Y2, Y3, Y5, Y6, Y8, Y9, Y10, Y11, Y12, Y13, Y14, Y17, Y18, Y19, Y20. needs-change: Y4 (wording, then Owner), Y7 (keyframes gap), Y16 (teardown claim not implemented). escalate-owner: Y15 (exact-secret hints unwired; with finding 4 a credential-boundary decision). Where lenses split, code measurement decided: Y7 and Y16 follow the lens that read the code; Y8 follows D1's explicit specialized-adapter rule plus the measured backstop; Y4 combines Lens C's measured wording defect with the post-approval escalation; Y15 follows the two lenses that treated the missing wiring as a trust decision.
+
+**Ownership, old paths, consumers, dependencies** — sole owners `renderer-html-policy.ts` (sealed WeakMap token; only adapter `reviewedInnerHtml`) and `local-browser-guest-policy.ts` (single `web-contents-created` registration, installed from index.ts before readiness via `main.ts#installLocalBrowserGuestBoundary`) match the new OWNERSHIP_MAP sections. Old paths gone: react-scan/unpkg loader, five-file allowlist, innerHTML restores, caller-local escapers, raw Shiki fallback, renderer `loadURL`/`capturePage`/raw webview listeners. No tRPC, Local Job, scripts/, Vite config or tsconfig change; preload adds three narrow IPC operations. Dependencies: streamdown pinned 2.1.0 plus exact rehype-raw 7.0.0 / rehype-sanitize 6.0.0 / rehype-harden 1.1.7; bun.lock resolution entries unchanged; lint baseline only shrank.
+
+**Owner must see at ACCEPTED**
+1. Spec wording change `c6787acb` (post re-confirmation) together with the corrected wording from finding 1.
+2. Escalated Yellow 15 (exact-secret hints not wired) with the finding-4 free-text redaction residual.
+3. The four disclosures: Q4 named loopback listeners; Q5 win32 file-preview disablement (shipped); react-scan loader removal (shipped in `8c2e595b`); 2026-09-09 option (a) top-level-link disclosure.
+4. GUI 5.1–5.6 pending on a GUI host (5.1–5.3 required for IMPLEMENTATION_VERIFIED under approved default 8; 5.4/5.5 TICKET-114 CSP tracks), adding the Yellow 16 event-sequence observation to 5.2 and the overlay/keyframes attempts to 5.1.
+5. Task 6.4 role-mapping decision under the 2026-09-30 roles.
+6. UX notes: Yellow 1 (footnote/relative links render as [blocked]), Yellow 5 (foreignObject label fidelity), Yellow 14 (lifetime partition cap needs restart).
+
+Lens-level unverifiable items (Electron runtime behaviour, macOS anchor, Chromium animation of `position`) are listed in the structured `unverifiable` field.
+
+### Disposition table
+
+| Review item | Disposition | Commit / record |
+| --- | --- | --- |
+| Codex P2 — stale `lastReport` reused across a same-guest navigation | fixed: `navigated` clears the cached report, screenshot, DOM summary and selected element; a capture resolving after a navigation is discarded | `61418c58`; impl-workbench capture → navigate → insert, reuse control, in-flight case |
+| Claude P2 #1 — harden-options wording (Yellow 4) | fixed (wording): requirement bullet, D2, task 2.2 and the policy comment now state the shipped options and that the sanitizer schema alone enforces the URL policy; Owner sees the corrected post-approval edit at `ACCEPTED` (task 6.5) | `5ca5a17a` (comment) + evidence commit |
+| Claude P2 #2 — `position` unchecked in `@keyframes` frame bodies (Yellow 7) | fixed: every frame body runs the position check under the root profile (`static`/`relative`) | `0377f736`; impl-mermaid owner and adapter fixtures |
+| Claude P2 #3 — Yellow 16 teardown not implemented | fixed, option (a): pure `decideGuestProvisionalLoadFailure`; a live guest whose main-frame provisional load fails with the gate's cancellation (-20) is torn down (`committed-url-rejected`); the `did-navigate` rule is unchanged; event sequence added to GUI 5.2 | `9761a352`; impl-guest-decisions verdict table, impl-guest-owner fixtures |
+| Claude P2 #4 — free-text OAuth `code`/`state`/`nonce`, bare JWTs, scheme-less queries | fixed inside `redaction.ts` (untrusted page-text profile used only by `redactUntrustedDiagnosticPayload`); shared adapter stays pattern-free; `redactRuntimePayload` unchanged | `71e21255`; impl-diagnostics, impl-guest-owner |
+| Claude P2 #5 — Owner acknowledgements only in the ledger | fixed (ledger): the four items listed in task 6.5 and the STATUS next gate; 6.3 and the 1.2 receipt point to 6.5 | evidence commit |
+| Claude P2 #6 — Mermaid sinks take a plain string (Invariant 1; Yellow 8) | fixed: owner `reviewMermaidSvgOutput` re-checks the adapter string in the sink's HTML parse and seals it; one profile walk `applyMermaidSvgProfile` (strip/verify); sinks use `reviewedInnerHtml`; `sanitizeMermaidSvg` still returns a string (red suite untouched) | `570d6f2d`; sink inventory entry, named rule, impl-mermaid |
+| Claude P3 #7 — URL projections bounded before redaction | fixed: minimize → redact → bound for display/source/load-failure/DOM URLs, URLs in text and origins (`shapeLocalBrowserOrigin`); URL pre-cap drops a trailing partial segment | `10c8fdba`; impl-diagnostics |
+| Claude P3 #8 — lifetime partition cap message | recorded (T1) | this section |
+| Claude P3 #9 — synchronous ≤32 MiB preview reads | recorded (T2) | this section |
+| Claude P3 #10 — `replayed` attach closes the live guest | fixed: a replay is prevented and logged only; other own-embedder denials still report `closed` | `8dc13788`; impl-guest-owner |
+| Claude P3 #11 — main-frame same-origin `blob:` denied | recorded (T3) | this section |
+| Claude P3 #12 — root-level relative + z-index + transform overlay | recorded (T4) + GUI 5.1 attempt | this section |
+| Claude P3 #13 — task 6.4 role mapping | fixed (ledger): mapping note in 6.4 | evidence commit |
+| Claude P3 #14 — `renderer-mermaid-xss` cited without qualifier | fixed (ledger): inventory and D10 rows annotated | evidence commit |
+| Claude P3 #15 — `openspec/STATUS.md` conflict with `dcd5153c` | recorded (T5) | this section |
+| Claude P3 #16 — pending prose in spec deltas | fixed (ledger): both pending clauses removed; every WHEN/THEN/AND bullet kept | evidence commit |
+| Claude P3 #17 — implementation oracle derives profiles from the owner | recorded (T6) | this section |
+
+Yellow items (20, both reviews): **16 accept** (Y1, Y2, Y3, Y5, Y6, Y8, Y9,
+Y10, Y11, Y12, Y13, Y14, Y17, Y18, Y19, Y20); **Y4, Y7, Y16 fixed** (wording
+/ `0377f736` / `9761a352`); **Y15 escalated to the Owner** (exact-secret
+hints are still not wired; `71e21255` narrows the pattern residual only).
+Y8 was accepted by both reviews and is additionally closed by `570d6f2d`.
+
+### Touch-up commits (`55335976..5ca5a17a`, 8 commits)
+
+Aggregate `55335976..5ca5a17a`: 15 files, +1,035/−194 (source, tests,
+`lint-baseline.json`, `docs/OWNERSHIP_MAP.md`); the two documentation
+commits between `8f4181a4` and `55335976` are unchanged.
+
+| Commit | Subject | Item |
+| --- | --- | --- |
+| `61418c58` | fix(renderer): drop the cached browser report when the guest navigates | Codex P2 |
+| `0377f736` | fix(renderer): check position in mermaid keyframe frames | P2 #2 |
+| `9761a352` | fix(main): tear down a guest whose top-level request the gate cancelled | P2 #3 |
+| `71e21255` | fix(main): redact OAuth parameters, bare JWTs and scheme-less queries in guest diagnostics | P2 #4 |
+| `570d6f2d` | fix(renderer): seal mermaid diagram markup through the renderer HTML owner | P2 #6 |
+| `10c8fdba` | fix(shared): redact local-browser URL projections before the length bound | P3 #7 |
+| `8dc13788` | fix(main): keep the live guest when a replayed attach is denied | P3 #10 |
+| `5ca5a17a` | docs(renderer): describe the reviewed harden options accurately | P2 #1 (comment) |
+| evidence commit | docs(openspec): record the renderer hardening post-freeze touch-up and re-freeze | P2 #1/#5, P3 #13/#14/#16, ledger |
+
+No dependency, public API, tRPC, preload or database change. The owner
+additions are `applyMermaidSvgProfile`, `reviewMermaidSvgOutput` and
+`isUnsafeMermaidSvgAttribute` (moved from the adapter, which now imports
+them: one profile walk, no second sanitizer path),
+`decideGuestProvisionalLoadFailure` /
+`GUEST_REQUEST_GATE_CANCEL_ERROR_CODE`, and `shapeLocalBrowserOrigin`;
+`docs/OWNERSHIP_MAP.md` records the Mermaid owner additions (`570d6f2d`).
+
+### Touch-up Yellow items and notes
+
+- T1 (P3 #8): the 512 cumulative-partition cap reuses the active-cap
+  `capacity` denial and its "close one and try again" message; the cap
+  clears only on restart. Fail-closed behaviour is correct (D6); the message
+  is a UX note for the Owner.
+- T2 (P3 #9): `locus-preview` requests read in-scope files (≤32 MiB)
+  synchronously on the main thread from the verified descriptor; a hostile
+  in-scope page could stall the app UI by fetching a large asset in a loop.
+  Availability only; the same-descriptor/no-path-reopen property holds.
+  A per-admission rate bound or asynchronous descriptor read is deferred.
+- T3 (P3 #11): a main-frame same-origin `blob:` navigation is denied by
+  `decideGuestNavigation` although `decideCommittedGuestUrl` would admit
+  the commit; stricter than D7 (compatibility only, not a bypass).
+- T4 (P3 #12): the root-level Mermaid paint profile admits
+  `position:relative` with `z-index`/`transform`, so Mermaid's own generated
+  CSS could draw a large overlay (within D3; attacker `classDef`/`style`
+  targets descendants only). UI-spoofing residual, no script; added to the
+  GUI 5.1 observation.
+- T5 (P3 #15): `git merge-tree --write-tree HEAD dcd5153c` conflicts only in
+  `openspec/STATUS.md`. At local integration keep `main`'s 2026-09-30
+  direction-decisions section and Updated line and take this branch's
+  renderer row.
+- T6 (P3 #17): `tests/helpers/renderer-executable-markup-oracle.ts` derives
+  its profiles from the owner under test, so a widened owner profile widens
+  it too; the immutable red oracle stays independent. Snapshot-pinning the
+  profile constants is a later option.
+- T7 (touch-up): changing the inline Mermaid sink touched the clickable
+  diagram container's opening tag, so its two pre-existing a11y findings
+  (`noStaticElementInteractions`, `useKeyWithClickEvents`) became
+  changed-line diagnostics; they carry a reasoned suppression (the toolbar
+  fullscreen button is the control), and both reviewed sinks carry the
+  standard reviewed-sink suppression. `mermaid-block.tsx` baseline 9 → 5.
+- T8 (touch-up): the owner's Mermaid sink review parses with the HTML parser
+  as the sink does. happy-dom does not model Chromium's foreign-content
+  breakout (for example `<p>` inside `<svg>`), so that rejection and the
+  acceptance of every diagram type in real Chromium are GUI 5.1 evidence;
+  unit tests cover acceptance in happy-dom for 17 diagram types × 2 themes.
+- T9 (touch-up): the untrusted page-text redaction profile may over-redact
+  diagnostic text containing `?key=value` / `#key=value` or
+  `code=`/`state=`/`nonce=` pairs (fail closed); runtime payload redaction
+  is unchanged.
+
+### Gate receipts at the new frozen source
+
+Run sequentially from the worktree at HEAD `5ca5a17a` with a clean tree on
+2026-09-30 (Pacific/Auckland).
+
+| Gate | Command | Result | Exit |
+| --- | --- | --- | --- |
+| Full aggregate | `bun run check:full` | every stage passed: lint (`No changed files supported by Biome.`), `Architecture guard passed.`, retired runtime 1,695 scanned / 10 allowlisted, `tsc --noEmit` clean, tests **2,507 pass / 0 fail / 11,706 expect() / 322 files**, OpenSpec 54 passed / 0 failed, electron-vite build (main, preload, renderer), whitespace pass | 0 |
+| Seven red files | `bun test --isolate` + the seven red files | **233 pass / 0 fail** / 706 expect() / 7 files | 0 |
+| Implementation files | `bun test --isolate` + the nine `tests/renderer-hardening-impl-*.test.ts` + `tests/renderer-html-sinks.test.ts` | 314 pass / 0 fail / 1,505 expect() / 10 files | 0 |
+| Focused neighbours (6.1) | `bun test --isolate` + the same 11 neighbour files | 53 pass / 0 fail / 168 expect() / 11 files | 0 |
+| Lint vs first freeze | `BIOME_CHANGED_SINCE=8f4181a4 bun run lint` | `Biome reported diagnostics only outside changed lines; ignoring legacy file diagnostics.` | 0 |
+| Lint vs red base | `BIOME_CHANGED_SINCE=08c4f455 bun run lint` | same message | 0 |
+| TypeScript | `bun run ts:check` | no diagnostics | 0 |
+| Architecture | `bun run architecture:check` | `Architecture guard passed.` | 0 |
+| Retired runtime | `bun run retired-runtime:check` | 1,695 scanned / 10 allowlisted | 0 |
+| OpenSpec all | `bun run spec:validate` | 54 passed / 0 failed | 0 |
+| OpenSpec target | `bun x openspec validate add-renderer-untrusted-content-hardening --strict --no-interactive` | `Change 'add-renderer-untrusted-content-hardening' is valid` | 0 |
+| OpenSpec specs | `bun x openspec validate --specs --strict --no-interactive` | 53 passed / 0 failed | 0 |
+| Whitespace | `git diff --check`; `git diff --check 08c4f455..HEAD`; `git diff --check main..HEAD` | no output | 0 / 0 / 0 |
+
+Per-file implementation counts (each file alone, `bun test --isolate`,
+exit 0); the seven red files and the eleven neighbours are unchanged from
+the table above:
+
+| File | Pass / fail | expect() |
+| --- | --- | ---: |
+| `tests/renderer-hardening-impl-html-policy.test.ts` | 25 / 0 | 206 |
+| `tests/renderer-hardening-impl-markdown.test.ts` | 13 / 0 | 60 |
+| `tests/renderer-hardening-impl-mermaid.test.ts` | 103 / 0 | 289 |
+| `tests/renderer-hardening-impl-editor.test.ts` | 28 / 0 | 83 |
+| `tests/renderer-hardening-impl-diagnostics.test.ts` | 24 / 0 | 97 |
+| `tests/renderer-hardening-impl-guest-decisions.test.ts` | 35 / 0 | 285 |
+| `tests/renderer-hardening-impl-guest-owner.test.ts` | 40 / 0 | 259 |
+| `tests/renderer-hardening-impl-preview-broker.test.ts` | 11 / 0 | 73 |
+| `tests/renderer-hardening-impl-workbench.test.ts` | 15 / 0 | 85 |
+| `tests/renderer-html-sinks.test.ts` | 20 / 0 | 68 |
+
+The full suite grew by 40 tests (2,467 → 2,507), all in the implementation
+files above. The new regressions were also run against the pre-fix product
+source (product file stashed): each fix's regression failed there, while
+the controls that are green by design (no-navigation reuse, ordinary-text
+non-redaction, `did-fail-load`-only projection) passed; the Mermaid sealing
+and URL-order suites fail at import pre-fix because they use new owner
+exports. Local logs (ephemeral session
+scratchpad, not committed): `check:full` SHA-256
+`919acde5d4d43f8ecdb738c2c5bcf5a0eef82f35f021d9359049c73b450822d3`; seven
+red files `7f3f1628fcb8a019c0beb204ef40c66fb73aa37434c99003ace2a15208a0cc74`;
+implementation files
+`a12f8d60eeb57b45bf7a77dbcb5367a97b339441b93490a13f8025f4eb10ecc6`;
+neighbours `e44d4723d96ec3c9388028d96ff5b0a33e92f690319b8df397defeba97d7029b`.
+
+Receipt-inclusive rerun: with this section and the evidence commit's
+`design.md`, `tasks.md`, spec-delta and `openspec/STATUS.md` edits in the
+working tree, strict target validation was valid, `bun run spec:validate`
+returned 54 passed / 0 failed, `--specs` 53 passed / 0 failed,
+`bun run diff:check` and `git diff --check` passed, and the architecture
+guard passed. No source or test file changes after `5ca5a17a`.
+
+### Lint baseline and architecture registries
+
+`git diff 8f4181a4..5ca5a17a -- lint-baseline.json` changes one count:
+`src/renderer/components/mermaid-block.tsx` 9 → 5 (`570d6f2d`, T7). No count
+grew and no file entered the baseline. `git diff 8f4181a4..5ca5a17a --
+scripts/` is empty: `scripts/architecture-baselines.json` (including
+`reachThroughWrappers`) and the guard scripts are unchanged.
+
+### Rebaselined Mermaid inventory row at the new frozen source
+
+Scanner totals are unchanged (8 value-bearing sites, 6 inventory entries);
+only the Mermaid entry's value shape and producer binding change:
+
+| Construct | Site (line) | Reviewed producer | Behavior evidence |
+| --- | --- | --- | --- |
+| `react-dangerouslySetInnerHTML` ×2 | `mermaid-block.tsx#MermaidBlockInner` (:526 inline, :606 fullscreen) | `reviewedInnerHtml` over `reviewMermaidSvgOutput(sanitizeMermaidSvg(...))` — one sealed `ReviewedRendererHtml` for both; the plain string backs only the SVG download | mermaid-editor (red), impl-mermaid, `renderer-mermaid-xss` (retained; non-probative under stock happy-dom, see red-receipt §7) |
+
+### GUI observations added by this slice (not executed on this host)
+
+- 5.1: Mermaid diagrams of every type still render through the sink-parse
+  review in real Chromium, in both themes (T8); an HTML breakout inside the
+  SVG is rejected; keyframe `position:fixed`/`absolute` attempts and a
+  root-level `position:relative` + `z-index` + `transform` overlay attempt
+  (T4).
+- 5.2: the real event sequence after the Session gate cancels a top-level
+  request that the navigation handlers did not prevent (expected from
+  Electron's `DidFinishNavigation`: `did-fail-provisional-load` then
+  `did-fail-load` with -20 `ERR_BLOCKED_BY_CLIENT`, an error-page commit and
+  no `did-navigate`) and that main tears the guest down with
+  `committed-url-rejected`; capture → navigate → insert in the real
+  workbench; a replayed attach keeps the live preview.
+
+### Immutable red suite proof at the new frozen source
+
+```text
+$ git diff ca4efbe6..5ca5a17a --stat -- <the eleven red paths>
+[no output]
+exit 0
+```
+
+No commit in this slice touches a red path.
+
+### For the targeted re-review
+
+Check first: `570d6f2d` (the Mermaid profile walk moved into the owner with
+strip/verify modes and the sink-parse seal; confirm the adapter's behaviour
+is unchanged and no second sanitizer path exists), `9761a352` (gate
+error-page teardown semantics and the -20 assumption), `71e21255` (the
+page-text profile is diagnostic-only and does not alter
+`redactRuntimePayload`), then `61418c58`, `10c8fdba`, `8dc13788` and
+`0377f736`. Also confirm the spec-delta wording changes (harden bullet,
+removed pending clauses) keep every WHEN/THEN/AND bullet.
+
+### Open gates after the re-freeze
+
+- Targeted re-review of the touch-up bound to `5ca5a17a`.
+- 5.1–5.6 GUI and TICKET-114 tracks on a GUI host against `5ca5a17a`.
+- 6.4 per the recorded 2026-09-30 role mapping; `IMPLEMENTATION_VERIFIED`
+  also requires GUI 5.1–5.3.
+- 6.5 Owner `ACCEPTED` with the acknowledgements listed in task 6.5. No
+  push, merge, remote PR, release or rule change is performed or implied.

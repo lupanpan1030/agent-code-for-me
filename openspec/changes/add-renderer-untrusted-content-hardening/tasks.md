@@ -8,10 +8,13 @@
 > Task 2.11 ticket registration is also complete; implementation remains open.
 >
 > **IMPLEMENTATION_CANDIDATE (2026-09-30)** — unit half complete; GUI tracks
-> 5.1–5.3 pending a GUI host; fresh reviews pending. Frozen source SHA
-> `8f4181a4a9f0d6267396781e2df48883d29aad1e`; sections 1–4 and 6.1–6.3 carry
+> 5.1–5.3 pending a GUI host. Both fresh reviews of the first freeze
+> `8f4181a4` returned `REVIEW_APPROVED` (0 P0/P1); the post-freeze touch-up
+> applied their P2/P3 dispositions and re-froze. Frozen source SHA
+> `5ca5a17aaa7c4ac4cd5d13b41fd528886a1c22ef`; sections 1–4 and 6.1–6.3 carry
 > receipts, while 5.x, 6.4 and 6.5 stay open. Ledger: verification.md
-> "Implementation record". `IMPLEMENTATION_VERIFIED` is not claimed.
+> "Implementation record" and "Post-freeze touch-up slice".
+> `IMPLEMENTATION_VERIFIED` is not claimed.
 
 Routing from the archived parent is explicit: sections 1–2 carry original 2.2,
 sections 3–4 carry original 2.3 and the removed R6 webview scenario, and section
@@ -119,8 +122,8 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       `tests/helpers/renderer-raw-sink-scanner.ts`: 376 `src/renderer` files
       incl. `public/`, 18 construct classes each with a negative fixture, named
       unsafeCSS/prerenderedHTML, Q9 alias/shim and worker rules) + `8c2e595b`
-      (react-scan loader removed; its disclosure acknowledgement stays open, see
-      verification.md).
+      (react-scan loader removed; its disclosure acknowledgement is carried to
+      6.5).
 - [x] 1.3 Record the rebaselined sink and producer inventory in
       `verification.md`. Do not label a whole file safe and do not infer runtime
       safety from source inventory alone. Name the Vite-aliased Locus-owned
@@ -163,7 +166,11 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       Streamdown configuration; implement the Owner-approved exact dependency /
       rehype ownership decision: replacement (not merge) rehype chain
       `[rehypeRaw, [rehypeSanitize, defaultSchema-derived reviewed schema],
-      [harden, reviewed non-wildcard options]]`. Add `rehype-sanitize` and every
+      [harden, reviewed options]]`: harden receives an empty protocol
+      allowlist, refuses data images and uses the `*` link/image prefixes; its
+      built-in safe set and relative handling are not relied on because the
+      reviewed sanitizer schema alone enforces the absolute http/https (+mailto
+      for links) policy, and harden is defense in depth. Add `rehype-sanitize` and every
       other app-imported rehype package as exact direct dependencies per D2/Q1,
       then import `defaultSchema` from it; the baseline has only transitive
       rehype dependencies via Streamdown. Characterize remark
@@ -173,8 +180,10 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       Receipt: `85ea8ea4` (exact `streamdown@2.1.0` + direct
       `rehype-raw@7.0.0`/`rehype-sanitize@6.0.0`/`rehype-harden@1.1.7`) +
       `376b9303` (`reviewed-streamdown.tsx` wrapper, explicit chain, code/pre
-      overrides, error boundary); harden-options wording `c6787acb`. Unit half;
-      real renderer is GUI 5.1.
+      overrides, error boundary); harden-options wording `c6787acb`, corrected
+      in the post-freeze touch-up (`5ca5a17a` policy comment; requirement, D2
+      and this task reworded in the touch-up ledger commit). Unit half; real
+      renderer is GUI 5.1.
 - [x] 2.3 Add black-box static and streaming regressions for script/iframe,
       active SVG/MathML, event attributes, executable and encoded URLs,
       malformed/incomplete chunks, and a safe-formatting preservation matrix.
@@ -269,7 +278,10 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       Receipt: `06ba7fb8` (extended `secure` list with fail-closed proof,
       reviewed paint `<style>`, single fullscreen viewer) + `a76de436`
       (`tests/renderer-hardening-impl-mermaid.test.ts`); coordinator fixture
-      rulings `2cd19fb4`/`ca4efbe6`. Unit half; transient mount/CSS is GUI 5.1.
+      rulings `2cd19fb4`/`ca4efbe6`; touch-up `0377f736` (keyframe frame
+      bodies position-checked) + `570d6f2d` (both sinks take the owner-sealed
+      `reviewMermaidSvgOutput` value; `sanitizeMermaidSvg` still returns a
+      string). Unit half; transient mount/CSS is GUI 5.1.
 - [x] 2.10 Implement the **Owner-approved Q9 compromise (2026-09-07)**:
       black-box hostile `<FileDiff>`/`<PatchDiff>` rendering through the real
       Locus shim/Vite alias enters the reviewed-producer contract and D10 matrix.
@@ -373,7 +385,9 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       React remount/StrictMode, needs a fresh generation/admission; no renderer
       retry may reuse a consumed attachment capability.
       Receipt: `1d3fd82b` (no URL-key remount; fresh generation/admission per
-      element mount) over the `04949c40` registry.
+      element mount) over the `04949c40` registry; touch-up `61418c58` (a
+      same-guest navigation clears the cached report and page snapshot) and
+      `8dc13788` (a replayed attach no longer closes the live guest).
 - [x] 3.5 Install one `app.on('web-contents-created')` hook before creating
       webContents; it installs every potential embedder's `will-attach-webview`
       listener. Use the per-window registry to deny unregistered embedders,
@@ -528,8 +542,10 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       Receipt: `91f8b4ee` (shared shape adapter +
       `redactUntrustedDiagnosticPayload`) + `04949c40` (main relay, closed
       `userGesture:false` probes, bounded `capturePage`) + `1d3fd82b` (renderer
-      raw listeners/`executeJavaScript`/`capturePage` removed). Unit half; GUI
-      5.2.
+      raw listeners/`executeJavaScript`/`capturePage` removed); touch-up
+      `71e21255` (untrusted page-text redaction profile in `redaction.ts`: bare
+      JWTs, OAuth/OIDC parameters, scheme-less query/fragment) + `10c8fdba`
+      (URL projections redacted before the length bound). Unit half; GUI 5.2.
 - [x] 4.8 Add focused unit/integration fixtures for unsafe attach preferences,
       bridge probes, initial/link/location/`loadURL`/back/forward/redirect
       requests, direct `file:` in main/subframe/XHR/script/image positions,
@@ -555,9 +571,10 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       OS effects and no-state/token auth/gateway 400/401/404 outcomes are
       discharged only by 5.2 and repeated in 5.3.
       Receipt: `4160f12a`/`91f8b4ee`/`04949c40`/`1d3fd82b` impl suites
-      (guest-decisions, guest-owner, preview-broker, diagnostics, workbench).
-      Double-driven evidence only; every runtime observation remains GUI
-      5.2/5.3.
+      (guest-decisions, guest-owner, preview-broker, diagnostics, workbench);
+      touch-up `9761a352` (a main-frame request-gate cancellation tears the
+      guest down on `did-fail-provisional-load`). Double-driven evidence only;
+      every runtime observation remains GUI 5.2/5.3.
 
 ## 5. GUI smoke and TICKET-114 linkage (original 2.4)
 
@@ -614,13 +631,16 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       CSP, filesystem-boundary, and trusted voice test suites; record exact
       files, counts, and assertions in `verification.md`.
       Receipt: verification.md "Implementation record" per-gate and per-file
-      counts at frozen `8f4181a4` (ledger commit).
+      counts at frozen `8f4181a4` (ledger commit); re-run at the re-frozen
+      `5ca5a17a` in "Post-freeze touch-up slice".
 - [x] 6.2 Run `bun run architecture:check`, `bun run ts:check`, strict target /
       specs / all OpenSpec validation, `bun run check:full`, and
       `git diff --check` on one frozen implementation SHA.
       Receipt: frozen `8f4181a4`: `bun run check:full` exit 0 (all stages),
       strict target/`--specs`/`--all` valid, `git diff --check` clean; see
-      verification.md (ledger commit).
+      verification.md (ledger commit). Re-frozen `5ca5a17a` after the
+      post-freeze touch-up: the same gates pass again (verification.md
+      "Post-freeze touch-up slice").
 - [x] 6.3 Confirm the source diff removes superseded raw-HTML restore, raw Shiki
       fallback (including chat-markdown's local `escapeHtml` and the Q9-selected
       shim `escapeHtml`/`codeToHtml` disposition), unclassified dormant `getAST`,
@@ -629,8 +649,8 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       guest `will-navigate`/console/load-failure/title/navigation or any other
       page-controlled URL/text payload, direct renderer `loadURL`,
       renderer `webview.capturePage()` (bounded capture now belongs to main),
-      remote react-scan loading (recommended removal pending post-approval Owner
-      acknowledgement), and duplicate
+      remote react-scan loading (removal implemented in `8c2e595b`; its Owner
+      acknowledgement is carried to 6.5), and duplicate
       guest-policy paths. Confirm the only diagnostic event path is the
       main-owned post-`did-attach-webview` guest `webContents` relay after
       minimization/redaction/bounds, with no renderer fallback; confirm it does
@@ -640,6 +660,28 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
 - [ ] 6.4 Record Codex `IMPLEMENTATION_VERIFIED` and independent fresh-context
       correctness plus R3 security `REVIEW_APPROVED` verdicts for that same
       frozen source SHA.
+      Role mapping under the Owner's 2026-09-30 direction decisions (local
+      `main` `dcd5153c`): the implementer receipt is the Claude Opus 5.5
+      implementation plus the coordination full gate (verification.md
+      ledgers); the cross-vendor fresh-context eye is the Codex review,
+      recorded in verification.md (Codex and Claude `REVIEW_APPROVED` for
+      `8f4181a4`; a targeted re-review of the touch-up at `5ca5a17a` is
+      pending). `IMPLEMENTATION_VERIFIED` still also requires GUI 5.1–5.3
+      under approved default 8 and is not claimed.
 - [ ] 6.5 Stop for explicit Owner `ACCEPTED` before local integration/archive.
       Push, remote PR mutation/merge, release, or repository-rule changes require
       separate explicit authorization and are never implied by acceptance.
+      Owner acknowledgements to record at `ACCEPTED` (no separate record exists
+      beyond the 2026-09-09 exact-package re-confirmation):
+      (1) the 2026-09-07 Q4 disclosure of the named loopback listeners in the
+      guest-egress residual (MCP auth callback, OAuth callback, provider
+      gateway, development Vite/HMR);
+      (2) the 2026-09-07 Q5 disclosure that file preview is disabled on win32
+      (shipped);
+      (3) the 2026-09-07 react-scan remote loader removal (shipped in
+      `8c2e595b`);
+      (4) the 2026-09-09 option (a) disclosure that following any top-level
+      link, even to an in-scope file, needs a fresh admission and origin.
+      Also for `ACCEPTED`: the post-approval harden-options wording (`c6787acb`)
+      as corrected in the post-freeze touch-up (Yellow 4), and escalated
+      Yellow 15 (no exact-secret hints wired into guest diagnostics).
