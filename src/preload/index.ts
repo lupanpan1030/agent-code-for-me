@@ -1,5 +1,10 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron"
 import { exposeElectronTRPC } from "trpc-electron/main"
+import type {
+  LocalBrowserCaptureResult,
+  LocalBrowserGuestEvent,
+  LocalBrowserPreviewAdmission,
+} from "../shared/local-browser-diagnostics-policy"
 import type { McpImportPreview } from "../shared/mcp-import-preview"
 
 // Expose tRPC IPC bridge for type-safe communication
@@ -119,6 +124,26 @@ contextBridge.exposeInMainWorld("desktopApi", {
       callback(preview)
     ipcRenderer.on("mcp-import:preview", handler)
     return () => ipcRenderer.removeListener("mcp-import:preview", handler)
+  },
+
+  // Local Browser guest admission (narrow, main-owned; not a tRPC capability)
+  requestLocalBrowserPreview: (request: { chatId: string; url: string }) =>
+    ipcRenderer.invoke("local-browser:request-preview", {
+      chatId: request.chatId,
+      url: request.url,
+    }) as Promise<LocalBrowserPreviewAdmission>,
+  captureLocalBrowserDiagnostics: (request: { generation: number }) =>
+    ipcRenderer.invoke("local-browser:capture-diagnostics", {
+      generation: request.generation,
+    }) as Promise<LocalBrowserCaptureResult>,
+  onLocalBrowserGuestEvent: (
+    callback: (event: LocalBrowserGuestEvent) => void,
+  ) => {
+    const handler = (_event: unknown, event: LocalBrowserGuestEvent) =>
+      callback(event)
+    ipcRenderer.on("local-browser:guest-event", handler)
+    return () =>
+      ipcRenderer.removeListener("local-browser:guest-event", handler)
   },
 
   // Shortcut events (from main process menu accelerators)
@@ -312,6 +337,17 @@ export interface DesktopApi {
   clearPendingMcpImportPreview: () => Promise<{ success: boolean }>
   onMcpImportPreview: (
     callback: (preview: McpImportPreview) => void,
+  ) => () => void
+  // Local Browser guest admission and main-minimized diagnostics
+  requestLocalBrowserPreview: (request: {
+    chatId: string
+    url: string
+  }) => Promise<LocalBrowserPreviewAdmission>
+  captureLocalBrowserDiagnostics: (request: {
+    generation: number
+  }) => Promise<LocalBrowserCaptureResult>
+  onLocalBrowserGuestEvent: (
+    callback: (event: LocalBrowserGuestEvent) => void,
   ) => () => void
   // Shortcuts
   onShortcutNewAgent: (callback: () => void) => () => void

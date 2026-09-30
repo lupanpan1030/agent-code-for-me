@@ -1,3 +1,8 @@
+import type {
+  LocalBrowserCaptureResult,
+  LocalBrowserGuestEvent,
+  LocalBrowserPreviewAdmission,
+} from "../shared/local-browser-diagnostics-policy"
 import type { McpImportPreview } from "../shared/mcp-import-preview"
 
 export interface WorktreeSetupFailurePayload {
@@ -62,6 +67,18 @@ export interface DesktopApi {
   clearPendingMcpImportPreview: () => Promise<{ success: boolean }>
   onMcpImportPreview: (
     callback: (preview: McpImportPreview) => void,
+  ) => () => void
+
+  // Local Browser guest admission and main-minimized diagnostics
+  requestLocalBrowserPreview: (request: {
+    chatId: string
+    url: string
+  }) => Promise<LocalBrowserPreviewAdmission>
+  captureLocalBrowserDiagnostics: (request: {
+    generation: number
+  }) => Promise<LocalBrowserCaptureResult>
+  onLocalBrowserGuestEvent: (
+    callback: (event: LocalBrowserGuestEvent) => void,
   ) => () => void
 
   // Multi-window

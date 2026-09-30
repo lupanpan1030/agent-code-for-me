@@ -86,6 +86,27 @@ function fileUrlPath(url: URL): string | null {
   }
 }
 
+/**
+ * Decoded, slash-normalized filesystem path of an already normalized
+ * `file://` preview URL, using the same decoding as the root check below.
+ * Main uses it to map an admitted file target onto the registered root.
+ */
+export function localBrowserFileUrlPath(input: string): string | null {
+  let url: URL
+  try {
+    url = new URL(input)
+  } catch {
+    return null
+  }
+  if (url.protocol !== "file:") return null
+  return fileUrlPath(url)
+}
+
+/** Slash-normalized form of a root path, matching the file-URL root check. */
+export function normalizeLocalBrowserRootPath(root: string): string {
+  return normalizeBoundaryPath(root)
+}
+
 function isFileUrlInsideAllowedRoot(
   url: URL,
   allowedFileRoots: readonly string[] | undefined,
@@ -239,6 +260,63 @@ export function buildLocalBrowserReport(input: LocalBrowserCaptureReportInput): 
 
   return lines.join("\n")
 }
+
+/**
+ * The closed, repository-owned set of diagnostic probes (design D9). Main runs
+ * only these fixed scripts against an admitted guest, always with
+ * `userGesture:false`; no component, model, page, repository or tool string is
+ * ever executed. Probe results are page-controlled and are shaped by
+ * `local-browser-diagnostics-policy.ts` before any projection.
+ */
+export const LOCAL_BROWSER_DIAGNOSTIC_PROBES = Object.freeze({
+  "click-tracker": `(() => {
+    if (window.__LOCUS_LOCAL_BROWSER_CLICK_TRACKER__) return true;
+    window.__LOCUS_LOCAL_BROWSER_CLICK_TRACKER__ = true;
+    const describe = (node) => {
+      const element = node && node.nodeType === Node.ELEMENT_NODE ? node : node?.parentElement;
+      if (!element) return null;
+      const parts = [element.tagName.toLowerCase()];
+      const id = element.getAttribute("id");
+      if (id) parts.push("#" + id);
+      const testId = element.getAttribute("data-testid");
+      if (testId) parts.push("[data-testid='" + testId + "']");
+      const role = element.getAttribute("role");
+      if (role) parts.push("[role='" + role + "']");
+      const label = element.getAttribute("aria-label") || element.getAttribute("title") || element.innerText || element.textContent || "";
+      const text = String(label).replace(/\\s+/g, " ").trim().slice(0, 140);
+      return text ? parts.join("") + " - " + text : parts.join("");
+    };
+    document.addEventListener("click", (event) => {
+      window.__LOCUS_LAST_CLICKED_ELEMENT__ = describe(event.target);
+    }, true);
+    return true;
+  })()`,
+  "dom-summary": `(() => {
+    const textOf = (element) => (element.innerText || element.textContent || element.getAttribute("aria-label") || element.getAttribute("title") || "").replace(/\\s+/g, " ").trim().slice(0, 160);
+    const collect = (selector, limit) => Array.from(document.querySelectorAll(selector)).map(textOf).filter(Boolean).slice(0, limit);
+    const active = document.activeElement && document.activeElement !== document.body ? textOf(document.activeElement) || document.activeElement.tagName.toLowerCase() : null;
+    return {
+      title: document.title || "",
+      url: location.href,
+      activeElement: active,
+      headings: collect("h1, h2, h3", 12),
+      buttons: collect("button, [role='button']", 12),
+      links: Array.from(document.querySelectorAll("a")).map((element) => ({
+        label: textOf(element),
+        href: element.getAttribute("href") || "",
+      })).filter((link) => link.label || link.href).slice(0, 12),
+      inputs: Array.from(document.querySelectorAll("input, textarea, select")).map((element) => {
+        const label = element.getAttribute("aria-label") || element.getAttribute("placeholder") || element.getAttribute("name") || element.id || element.tagName.toLowerCase();
+        return String(label).replace(/\\s+/g, " ").trim().slice(0, 160);
+      }).filter(Boolean).slice(0, 12),
+      textSample: (document.body ? document.body.innerText : "").replace(/\\s+/g, " ").trim().slice(0, 600),
+    };
+  })()`,
+  "last-selection": "window.__LOCUS_LAST_CLICKED_ELEMENT__ || null",
+})
+
+export type LocalBrowserDiagnosticProbe =
+  keyof typeof LOCAL_BROWSER_DIAGNOSTIC_PROBES
 
 export function createLocalBrowserDomSummaryScript(): string {
   return `(() => {
