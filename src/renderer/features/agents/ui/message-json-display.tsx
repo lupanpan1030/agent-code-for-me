@@ -1,15 +1,19 @@
 "use client"
 
-import { memo, useState, useCallback, useEffect } from "react"
+import { Check, ChevronRight, Copy } from "lucide-react"
+import { memo, useCallback, useEffect, useState } from "react"
 import {
   Collapsible,
-  CollapsibleTrigger,
   CollapsibleContent,
+  CollapsibleTrigger,
 } from "../../../components/ui/collapsible"
-import { ChevronRight, Copy, Check } from "lucide-react"
-import { cn } from "../../../lib/utils"
-import { highlightCode } from "../../../lib/themes/shiki-theme-loader"
 import { useCodeTheme } from "../../../lib/hooks/use-code-theme"
+import {
+  type ReviewedRendererHtml,
+  reviewedInnerHtml,
+} from "../../../lib/security/renderer-html-policy"
+import { highlightCode } from "../../../lib/themes/shiki-theme-loader"
+import { cn } from "../../../lib/utils"
 
 interface MessageJsonDisplayProps {
   message: any
@@ -22,7 +26,8 @@ export const MessageJsonDisplay = memo(function MessageJsonDisplay({
 }: MessageJsonDisplayProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [copied, setCopied] = useState(false)
-  const [highlightedHtml, setHighlightedHtml] = useState<string | null>(null)
+  const [highlightedHtml, setHighlightedHtml] =
+    useState<ReviewedRendererHtml | null>(null)
   const themeId = useCodeTheme()
 
   const jsonString = JSON.stringify(message, null, 2)
@@ -85,7 +90,8 @@ export const MessageJsonDisplay = memo(function MessageJsonDisplay({
             {highlightedHtml ? (
               <pre
                 className="text-xs font-mono"
-                dangerouslySetInnerHTML={{ __html: highlightedHtml }}
+                // biome-ignore lint/security/noDangerouslySetInnerHtml: reviewed sink: value comes only from renderer-html-policy; exact inventory in tests/renderer-html-sinks.test.ts
+                dangerouslySetInnerHTML={reviewedInnerHtml(highlightedHtml)}
               />
             ) : (
               <pre className="text-xs font-mono text-muted-foreground whitespace-pre-wrap">

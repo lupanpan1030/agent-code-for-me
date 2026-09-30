@@ -1,6 +1,5 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   AlertTriangle,
   Camera,
@@ -11,10 +10,23 @@ import {
   MousePointerClick,
   RefreshCw,
   Send,
+  ShieldAlert,
   X,
 } from "lucide-react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
-
+import type {
+  LocalBrowserGuestEvent,
+  LocalBrowserPreviewAdmission,
+  LocalBrowserScreenshotProjection,
+} from "../../../../shared/local-browser-diagnostics-policy"
+import {
+  buildLocalBrowserReport,
+  type LocalBrowserConsoleMessage,
+  type LocalBrowserDomSummary,
+  type LocalBrowserLoadFailure,
+  normalizeLocalBrowserUrl,
+} from "../../../../shared/local-browser-workbench"
 import { Button } from "../../../components/ui/button"
 import { Input } from "../../../components/ui/input"
 import { Textarea } from "../../../components/ui/textarea"
@@ -25,26 +37,30 @@ import {
   DEVICE_PRESETS,
   type DevicePreset,
 } from "../constants"
-import {
-  buildLocalBrowserReport,
-  createLocalBrowserClickTrackerScript,
-  createLocalBrowserDomSummaryScript,
-  normalizeLocalBrowserUrl,
-  type LocalBrowserConsoleLevel,
-  type LocalBrowserConsoleMessage,
-  type LocalBrowserDomSummary,
-  type LocalBrowserLoadFailure,
-} from "../../../../shared/local-browser-workbench"
 import { DevicePresetsBar } from "./device-presets-bar"
 import { ScaleControl } from "./scale-control"
 import { ViewportToggle } from "./viewport-toggle"
 
+/**
+ * Renderer half of the Local Browser guest boundary. Main owns admission,
+ * partition, navigation, permission and diagnostics policy
+ * (`src/main/windows/local-browser-guest-policy.ts`); this component only
+ * validates user-entered URLs for immediate UX, mounts a `<webview>` after a
+ * main admission, and renders main-minimized projections. It never listens
+ * to raw `<webview>` events carrying page-controlled URL, title or text.
+ */
+
+type AdmittedPreview = Extract<LocalBrowserPreviewAdmission, { ok: true }>
+
 type WebviewElement = HTMLElement & {
-  capturePage?: () => Promise<{ toDataURL?: () => string }>
-  executeJavaScript?: (code: string, userGesture?: boolean) => Promise<unknown>
-  loadURL?: (url: string) => Promise<void> | void
   reload?: () => void
   reloadIgnoringCache?: () => void
+}
+
+type PreviewTarget = {
+  url: string
+  /** Every user-requested open is a fresh mount and a fresh admission. */
+  requestId: number
 }
 
 interface LocalBrowserWorkbenchProps {
@@ -66,9 +82,15 @@ export function LocalBrowserWorkbench({
 }: LocalBrowserWorkbenchProps) {
   const { t } = useI18n()
   const webviewRef = useRef<WebviewElement | null>(null)
-  const lastAllowedUrlRef = useRef<string | null>(null)
+  const admissionRef = useRef<AdmittedPreview | null>(null)
+  const requestCounterRef = useRef(0)
+  // Committed navigations of the current guest seen by this view. A capture
+  // started before a navigation is discarded when it resolves after it.
+  const navigationCountRef = useRef(0)
   const [urlInput, setUrlInput] = useState("localhost:3000")
-  const [currentUrl, setCurrentUrl] = useState<string | null>(null)
+  const [target, setTarget] = useState<PreviewTarget | null>(null)
+  const [admission, setAdmission] = useState<AdmittedPreview | null>(null)
+  const [displayUrl, setDisplayUrl] = useState<string | null>(null)
   const [urlError, setUrlError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [isCapturing, setIsCapturing] = useState(false)
@@ -81,136 +103,77 @@ export function LocalBrowserWorkbench({
   const [consoleMessages, setConsoleMessages] = useState<LocalBrowserConsoleMessage[]>([])
   const [loadFailures, setLoadFailures] = useState<LocalBrowserLoadFailure[]>([])
   const [domSummary, setDomSummary] = useState<LocalBrowserDomSummary | null>(null)
-  const [screenshotDataUrl, setScreenshotDataUrl] = useState<string | null>(null)
+  const [screenshot, setScreenshot] = useState<LocalBrowserScreenshotProjection | null>(null)
   const [lastClickedElement, setLastClickedElement] = useState<string | null>(null)
   const [note, setNote] = useState("")
   const [lastReport, setLastReport] = useState<string | null>(null)
-
-  const webviewPartition = useMemo(() => {
-    const safeId = chatId.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 48) || "default"
-    return `local-browser-${safeId}`
-  }, [chatId])
 
   const previewWidth = viewportMode === "desktop" ? DESKTOP_VIEWPORT.width : viewportWidth
   const previewHeight = viewportMode === "desktop" ? DESKTOP_VIEWPORT.height : viewportHeight
   const scaledWidth = Math.round(previewWidth * (scale / 100))
   const scaledHeight = Math.round(previewHeight * (scale / 100))
+  const currentUrl = admission ? displayUrl ?? admission.displayUrl : null
 
+  // Main-minimized, redacted projections are the only diagnostic input.
   useEffect(() => {
-    if (currentUrl) lastAllowedUrlRef.current = currentUrl
-  }, [currentUrl])
-
-  const pushConsoleMessage = useCallback((message: LocalBrowserConsoleMessage) => {
-    setConsoleMessages((prev) => [...prev, message].slice(-MAX_CONSOLE_MESSAGES))
-  }, [])
-
-  const pushLoadFailure = useCallback((failure: LocalBrowserLoadFailure) => {
-    setLoadFailures((prev) => [...prev, failure].slice(-MAX_LOAD_FAILURES))
-  }, [])
-
-  const installClickTracker = useCallback(async () => {
-    const webview = webviewRef.current
-    if (!webview?.executeJavaScript) return
-    try {
-      await webview.executeJavaScript(createLocalBrowserClickTrackerScript(), true)
-    } catch {
-      // Some pages can reject script execution during early load. Capture still works without click selection.
-    }
-  }, [])
-
-  useEffect(() => {
-    const webview = webviewRef.current
-    if (!webview || !currentUrl) return
-
-    const handleStartLoading = () => setIsLoading(true)
-    const handleStopLoading = () => {
-      setIsLoading(false)
-      void installClickTracker()
-    }
-    const handleDomReady = () => {
-      void installClickTracker()
-    }
-    const handleTitle = (event: any) => {
-      if (typeof event.title === "string") setPageTitle(event.title)
-    }
-    const handleConsole = (event: any) => {
-      const text = String(event.message ?? "").trim()
-      if (!text) return
-      pushConsoleMessage({
-        level: normalizeConsoleLevel(event.level),
-        text,
-        source: event.sourceId ? String(event.sourceId) : undefined,
-        line: typeof event.line === "number" ? event.line : undefined,
-        timestamp: new Date().toISOString(),
-      })
-    }
-    const handleFailure = (event: any) => {
-      if (event.errorCode === -3) return
-      pushLoadFailure({
-        url: String(event.validatedURL || event.url || currentUrl),
-        reason: String(event.errorDescription || event.reason || "Load failed"),
-        code: typeof event.errorCode === "number" ? event.errorCode : undefined,
-        timestamp: new Date().toISOString(),
-      })
-      setIsLoading(false)
-    }
-    const handleNavigate = (event: any) => {
-      const nextUrl = String(event.url || "")
-      const result = normalizeLocalBrowserUrl(nextUrl, {
-        allowedFileRoots: [worktreePath],
-      })
-      if (!result.ok) {
-        event.preventDefault()
-        setUrlError(result.message)
-        pushLoadFailure({
-          url: nextUrl,
-          reason: result.message,
-          timestamp: new Date().toISOString(),
-        })
-        rollbackToLastAllowedUrl(webview, lastAllowedUrlRef.current)
-        return
+    const subscribe = window.desktopApi?.onLocalBrowserGuestEvent
+    if (typeof subscribe !== "function") return
+    return subscribe((event: LocalBrowserGuestEvent) => {
+      const current = admissionRef.current
+      if (!current || event.generation !== current.generation) return
+      switch (event.kind) {
+        case "attached":
+          return
+        case "loading":
+          setIsLoading(event.loading)
+          return
+        case "navigated":
+          // A committed navigation starts a new page: main already rejects a
+          // capture across navigation generations, and the cached report and
+          // page snapshot must not outlive the page they describe either.
+          navigationCountRef.current += 1
+          setDisplayUrl(event.displayUrl)
+          setLastReport(null)
+          setScreenshot(null)
+          setDomSummary(null)
+          setLastClickedElement(null)
+          return
+        case "title":
+          setPageTitle(event.title)
+          return
+        case "console":
+          setConsoleMessages((prev) => [...prev, event.message].slice(-MAX_CONSOLE_MESSAGES))
+          return
+        case "load-failure":
+          setLoadFailures((prev) => [...prev, event.failure].slice(-MAX_LOAD_FAILURES))
+          return
+        case "navigation-blocked":
+          setUrlError(t("localBrowser.navigationBlocked", { target: event.target || "?" }))
+          return
+        case "closed":
+          admissionRef.current = null
+          webviewRef.current = null
+          setAdmission(null)
+          setTarget(null)
+          setIsLoading(false)
+          setUrlError(t("localBrowser.previewClosed"))
+          return
       }
-      setCurrentUrl(result.url)
-      setUrlInput(result.url)
-      setUrlError(null)
-    }
-    const handleNavigated = (event: any) => {
-      const nextUrl = String(event.url || "")
-      const result = normalizeLocalBrowserUrl(nextUrl, {
-        allowedFileRoots: [worktreePath],
-      })
-      if (!result.ok) {
-        rollbackToLastAllowedUrl(webview, lastAllowedUrlRef.current)
-        return
-      }
-      setCurrentUrl(result.url)
-      setUrlInput(result.url)
-    }
+    })
+  }, [t])
 
-    webview.addEventListener("did-start-loading", handleStartLoading)
-    webview.addEventListener("did-stop-loading", handleStopLoading)
-    webview.addEventListener("dom-ready", handleDomReady)
-    webview.addEventListener("page-title-updated", handleTitle)
-    webview.addEventListener("console-message", handleConsole)
-    webview.addEventListener("did-fail-load", handleFailure)
-    webview.addEventListener("did-fail-provisional-load", handleFailure)
-    webview.addEventListener("will-navigate", handleNavigate)
-    webview.addEventListener("did-navigate", handleNavigated)
-    webview.addEventListener("did-navigate-in-page", handleNavigated)
+  const handleAdmitted = useCallback((next: AdmittedPreview) => {
+    admissionRef.current = next
+    setAdmission(next)
+    setDisplayUrl(next.displayUrl)
+  }, [])
 
-    return () => {
-      webview.removeEventListener("did-start-loading", handleStartLoading)
-      webview.removeEventListener("did-stop-loading", handleStopLoading)
-      webview.removeEventListener("dom-ready", handleDomReady)
-      webview.removeEventListener("page-title-updated", handleTitle)
-      webview.removeEventListener("console-message", handleConsole)
-      webview.removeEventListener("did-fail-load", handleFailure)
-      webview.removeEventListener("did-fail-provisional-load", handleFailure)
-      webview.removeEventListener("will-navigate", handleNavigate)
-      webview.removeEventListener("did-navigate", handleNavigated)
-      webview.removeEventListener("did-navigate-in-page", handleNavigated)
-    }
-  }, [currentUrl, installClickTracker, pushConsoleMessage, pushLoadFailure, worktreePath])
+  const handleDenied = useCallback((message: string) => {
+    admissionRef.current = null
+    setAdmission(null)
+    setTarget(null)
+    setUrlError(message)
+  }, [])
 
   const handleViewportModeChange = useCallback((mode: "desktop" | "mobile") => {
     setViewportMode(mode)
@@ -238,6 +201,7 @@ export function LocalBrowserWorkbench({
 
   const handleNavigateSubmit = useCallback((event?: React.FormEvent) => {
     event?.preventDefault()
+    // Immediate UX only; main re-validates against the DB-registered root.
     const result = normalizeLocalBrowserUrl(urlInput, {
       allowedFileRoots: [worktreePath],
     })
@@ -245,15 +209,23 @@ export function LocalBrowserWorkbench({
       setUrlError(result.message)
       return
     }
+    requestCounterRef.current += 1
+    admissionRef.current = null
+    webviewRef.current = null
+    setAdmission(null)
+    setDisplayUrl(null)
     setUrlError(null)
+    setIsLoading(false)
     setPageTitle("")
+    setConsoleMessages([])
+    setLoadFailures([])
     setDomSummary(null)
-    setScreenshotDataUrl(null)
+    setScreenshot(null)
     setLastClickedElement(null)
     setLastReport(null)
-    setCurrentUrl(result.url)
+    setTarget({ url: result.url, requestId: requestCounterRef.current })
     setUrlInput(result.url)
-  }, [urlInput])
+  }, [urlInput, worktreePath])
 
   const handleReload = useCallback(() => {
     const webview = webviewRef.current
@@ -266,72 +238,59 @@ export function LocalBrowserWorkbench({
   }, [])
 
   const captureDiagnostics = useCallback(async () => {
-    const webview = webviewRef.current
-    if (!webview || !currentUrl) return null
+    const current = admissionRef.current
+    const capture = window.desktopApi?.captureLocalBrowserDiagnostics
+    if (!current || typeof capture !== "function") return null
 
+    const navigationCount = navigationCountRef.current
     setIsCapturing(true)
-    let screenshotCaptured = false
-    let nextDomSummary: LocalBrowserDomSummary | null = null
-    let selectedElement: string | null = null
-
     try {
-      const image = await webview.capturePage?.()
-      const dataUrl = image?.toDataURL?.()
-      if (dataUrl) {
-        setScreenshotDataUrl(dataUrl)
-        screenshotCaptured = true
+      const result = await capture({ generation: current.generation })
+      if (navigationCountRef.current !== navigationCount) {
+        toast.error(t("localBrowser.captureStale"))
+        return null
       }
+      if (!result.ok) {
+        toast.error(
+          result.code === "stale"
+            ? t("localBrowser.captureStale")
+            : t("localBrowser.captureFailed"),
+        )
+        return null
+      }
+      if (admissionRef.current?.generation !== result.generation) return null
+      setScreenshot(result.screenshot)
+      setDomSummary(result.domSummary)
+      setLastClickedElement(result.selectedElement)
+      if (result.title) setPageTitle(result.title)
+      const report = buildLocalBrowserReport({
+        url: result.displayUrl,
+        title: result.title || pageTitle,
+        viewport: {
+          mode: viewportMode,
+          width: previewWidth,
+          height: previewHeight,
+          scale,
+        },
+        capturedAt: new Date().toISOString(),
+        screenshotCaptured: result.screenshot !== null,
+        note,
+        selectedElement: result.selectedElement,
+        domSummary: result.domSummary,
+        consoleMessages,
+        loadFailures,
+      })
+      setLastReport(report)
+      toast.success(t("localBrowser.captured"))
+      return report
     } catch {
       toast.error(t("localBrowser.captureFailed"))
+      return null
+    } finally {
+      setIsCapturing(false)
     }
-
-    try {
-      const result = await webview.executeJavaScript?.(
-        createLocalBrowserDomSummaryScript(),
-        true,
-      )
-      nextDomSummary = normalizeDomSummary(result)
-      setDomSummary(nextDomSummary)
-      if (nextDomSummary?.title) setPageTitle(nextDomSummary.title)
-    } catch {
-      setDomSummary(null)
-    }
-
-    try {
-      const result = await webview.executeJavaScript?.(
-        "window.__LOCUS_LAST_CLICKED_ELEMENT__ || null",
-        true,
-      )
-      selectedElement = typeof result === "string" ? result : null
-      setLastClickedElement(selectedElement)
-    } catch {
-      selectedElement = null
-    }
-
-    const report = buildLocalBrowserReport({
-      url: currentUrl,
-      title: nextDomSummary?.title || pageTitle,
-      viewport: {
-        mode: viewportMode,
-        width: previewWidth,
-        height: previewHeight,
-        scale,
-      },
-      capturedAt: new Date().toISOString(),
-      screenshotCaptured,
-      note,
-      selectedElement,
-      domSummary: nextDomSummary,
-      consoleMessages,
-      loadFailures,
-    })
-    setLastReport(report)
-    setIsCapturing(false)
-    toast.success(t("localBrowser.captured"))
-    return report
   }, [
     consoleMessages,
-    currentUrl,
     loadFailures,
     note,
     pageTitle,
@@ -352,6 +311,8 @@ export function LocalBrowserWorkbench({
     onInsertReport(report)
     toast.success(t("localBrowser.reportInserted"))
   }, [captureDiagnostics, lastReport, onInsertReport, t])
+
+  const fileScope = admission?.kind === "file" ? admission.fileScope : null
 
   return (
     <div
@@ -405,7 +366,7 @@ export function LocalBrowserWorkbench({
           variant="ghost"
           size="icon"
           onClick={handleReload}
-          disabled={!currentUrl}
+          disabled={!admission}
           className="h-7 w-7 rounded-md"
           aria-label={t("localBrowser.reload")}
         >
@@ -417,6 +378,22 @@ export function LocalBrowserWorkbench({
         <div className="flex flex-shrink-0 items-center gap-2 border-b border-destructive/20 bg-destructive/10 px-2 py-1.5 text-xs text-destructive">
           <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0" />
           <span className="min-w-0 truncate">{urlError}</span>
+        </div>
+      )}
+
+      {fileScope && (
+        <div
+          className="flex flex-shrink-0 items-center gap-2 border-b border-border/50 bg-muted/40 px-2 py-1.5 text-xs text-muted-foreground"
+          data-testid="local-browser-file-scope"
+        >
+          <ShieldAlert className="h-3.5 w-3.5 flex-shrink-0" />
+          <span className="min-w-0 break-words">
+            {t("localBrowser.fileScope", {
+              scope: fileScope.isWorktreeRoot
+                ? t("localBrowser.fileScopeWorktreeRoot")
+                : `${fileScope.relativeDirectory}/`,
+            })}
+          </span>
         </div>
       )}
 
@@ -441,26 +418,26 @@ export function LocalBrowserWorkbench({
           </div>
 
           <div className="min-h-0 flex-1 overflow-auto bg-muted/20 p-3">
-            {currentUrl ? (
+            {target ? (
               <div
                 className="origin-top-left overflow-hidden rounded-md border border-border bg-background shadow-sm"
                 style={{ width: scaledWidth, height: scaledHeight }}
               >
-                <webview
-                  key={currentUrl}
-                  ref={(element) => {
-                    webviewRef.current = element as WebviewElement | null
-                  }}
-                  src={currentUrl}
-                  partition={webviewPartition}
-                  className="block bg-background"
+                <LocalBrowserGuestHost
+                  key={`${chatId}:${target.requestId}`}
+                  chatId={chatId}
+                  url={target.url}
+                  onAdmitted={handleAdmitted}
+                  onDenied={handleDenied}
+                  unavailableMessage={t("localBrowser.previewUnavailable")}
+                  requestingMessage={t("localBrowser.requestingPreview")}
+                  webviewRef={webviewRef}
                   style={{
                     width: previewWidth,
                     height: previewHeight,
                     transform: `scale(${scale / 100})`,
                     transformOrigin: "top left",
                   }}
-                  data-testid="local-browser-webview"
                 />
               </div>
             ) : (
@@ -481,7 +458,7 @@ export function LocalBrowserWorkbench({
               type="button"
               size="sm"
               onClick={handleCapture}
-              disabled={!currentUrl || isCapturing}
+              disabled={!admission || isCapturing}
               className="h-7 flex-1 gap-1.5 px-2"
               data-testid="local-browser-capture-button"
             >
@@ -495,7 +472,7 @@ export function LocalBrowserWorkbench({
               variant="secondary"
               size="icon"
               onClick={() => void handleInsertReport()}
-              disabled={!currentUrl || isCapturing}
+              disabled={!admission || isCapturing}
               className="h-7 w-7 rounded-md"
               aria-label={t("localBrowser.insertReport")}
               data-testid="local-browser-insert-report-button"
@@ -530,9 +507,9 @@ export function LocalBrowserWorkbench({
                 <ImageIcon className="h-3.5 w-3.5 text-muted-foreground" />
                 {t("localBrowser.screenshot")}
               </div>
-              {screenshotDataUrl ? (
+              {screenshot ? (
                 <img
-                  src={screenshotDataUrl}
+                  src={screenshot.dataUrl}
                   alt={t("localBrowser.screenshot")}
                   className="aspect-video w-full rounded-md border border-border object-contain bg-background"
                   data-testid="local-browser-screenshot"
@@ -618,39 +595,6 @@ function findPreset(presetName: string): DevicePreset {
   return DEVICE_PRESETS.find((preset) => preset.name === presetName) ?? DEVICE_PRESETS[1]!
 }
 
-function normalizeConsoleLevel(level: unknown): LocalBrowserConsoleLevel {
-  if (typeof level === "string") {
-    if (level === "error" || level === "warning" || level === "info" || level === "debug") return level
-    return "log"
-  }
-  if (level === 3) return "error"
-  if (level === 2) return "warning"
-  if (level === 1) return "info"
-  if (level === 0) return "debug"
-  return "log"
-}
-
-function normalizeDomSummary(value: unknown): LocalBrowserDomSummary | null {
-  if (!value || typeof value !== "object") return null
-  const source = value as Partial<LocalBrowserDomSummary>
-  return {
-    title: typeof source.title === "string" ? source.title : "",
-    url: typeof source.url === "string" ? source.url : "",
-    activeElement: typeof source.activeElement === "string" ? source.activeElement : null,
-    headings: normalizeStringList(source.headings),
-    buttons: normalizeStringList(source.buttons),
-    links: normalizeStringList(source.links),
-    inputs: normalizeStringList(source.inputs),
-    textSample: typeof source.textSample === "string" ? source.textSample : "",
-  }
-}
-
-function normalizeStringList(value: unknown): string[] {
-  return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === "string").slice(0, 12)
-    : []
-}
-
 function formatDomSummary(summary: LocalBrowserDomSummary | null): string[] {
   if (!summary) return []
   const items: string[] = []
@@ -663,9 +607,80 @@ function formatDomSummary(summary: LocalBrowserDomSummary | null): string[] {
   return items
 }
 
-function rollbackToLastAllowedUrl(webview: WebviewElement, allowedUrl: string | null) {
-  if (!allowedUrl || !webview.loadURL) return
-  window.setTimeout(() => {
-    void webview.loadURL?.(allowedUrl)
-  }, 0)
+/**
+ * One mount of this host is one main admission: it requests a fresh
+ * generation/partition when it mounts (including React remounts and
+ * StrictMode double mounts) and renders the `<webview>` only with the
+ * admitted partition and src. A consumed admission is never reused.
+ */
+function LocalBrowserGuestHost({
+  chatId,
+  url,
+  onAdmitted,
+  onDenied,
+  unavailableMessage,
+  requestingMessage,
+  webviewRef,
+  style,
+}: {
+  chatId: string
+  url: string
+  onAdmitted: (admission: AdmittedPreview) => void
+  onDenied: (message: string) => void
+  unavailableMessage: string
+  requestingMessage: string
+  webviewRef: React.RefObject<WebviewElement | null>
+  style: React.CSSProperties
+}) {
+  const [admitted, setAdmitted] = useState<AdmittedPreview | null>(null)
+  const callbacksRef = useRef({ onAdmitted, onDenied, unavailableMessage })
+  callbacksRef.current = { onAdmitted, onDenied, unavailableMessage }
+
+  useEffect(() => {
+    let cancelled = false
+    const request = window.desktopApi?.requestLocalBrowserPreview
+    if (typeof request !== "function") {
+      callbacksRef.current.onDenied(callbacksRef.current.unavailableMessage)
+      return
+    }
+    request({ chatId, url })
+      .then((result) => {
+        if (cancelled) return
+        if (!result.ok) {
+          callbacksRef.current.onDenied(result.message)
+          return
+        }
+        setAdmitted(result)
+        callbacksRef.current.onAdmitted(result)
+      })
+      .catch(() => {
+        if (!cancelled) {
+          callbacksRef.current.onDenied(callbacksRef.current.unavailableMessage)
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [chatId, url])
+
+  if (!admitted) {
+    return (
+      <div className="flex h-full items-center justify-center p-3 text-xs text-muted-foreground">
+        {requestingMessage}
+      </div>
+    )
+  }
+
+  return (
+    <webview
+      ref={(element) => {
+        webviewRef.current = element as WebviewElement | null
+      }}
+      src={admitted.src}
+      partition={admitted.partition}
+      className="block bg-background"
+      style={style}
+      data-testid="local-browser-webview"
+    />
+  )
 }

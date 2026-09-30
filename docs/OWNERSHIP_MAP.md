@@ -346,7 +346,9 @@ or UI helper.
 - Canonical owners: `src/main/lib/agent-runtime/runtime-events.ts`,
   `src/main/lib/agent-runtime/redaction.ts`
 - Consumers: desktop runtime adapters, `src/main/lib/job-store.ts`, Workbench,
-  chat transports
+  chat transports, and Local Browser guest diagnostics through
+  `redactUntrustedDiagnosticPayload` (the same matching without a run
+  identity; see Local Browser Guest Boundary)
 - Rule: runtime streams may emit provider-specific chunks, but persisted job
   events and renderer-visible diagnostics must pass through normalized event
   mapping and redaction first. Raw provider, gateway, MCP, OAuth, header, and
@@ -515,6 +517,163 @@ or UI helper.
   runtime routes unless the route is explicitly listed as the temporary owner.
   When a service is introduced, route-local duplicate logic must be deleted in
   the same commit or guarded by an explicit migration plan.
+
+## Renderer Untrusted Content Boundary
+
+- Canonical owner (reviewed raw-markup output):
+  `src/renderer/lib/security/renderer-html-policy.ts`. `ReviewedRendererHtml`
+  is an opaque sealed value; `reviewedInnerHtml` is the only adapter from a
+  reviewed value to a React raw-markup sink (a forged value renders nothing);
+  `reviewedEscapedText` is the single HTML text-escaping policy;
+  `reviewShikiCodeToHtmlOutput` is the Shiki output adapter (one fully
+  consumed top-level `<pre><code>` wrapper, fail closed to escaped text);
+  `reviewedPlainCodeToHtml` backs the diff shim's `codeToHtml` export. The
+  owner also holds the Mermaid CSS value profiles (`reviewMermaidPaintCss`,
+  `reviewMermaidInlineStyle`, `reviewMermaidAttributeCss`), the one Mermaid
+  SVG profile walk (`applyMermaidSvgProfile`, `strip` in the adapter,
+  `verify` at the sink), the Mermaid sink adapter `reviewMermaidSvgOutput`
+  (re-checks the adapter's string in the sink's HTML parse and seals it), the explicit
+  replace-not-merge markdown chain `REVIEWED_MARKDOWN_REHYPE_PLUGINS` with
+  `REVIEWED_MARKDOWN_SANITIZE_SCHEMA` (derived from `rehype-sanitize`
+  `defaultSchema`) and `REVIEWED_MARKDOWN_HARDEN_OPTIONS`, and the
+  rendered-DOM oracle profiles `RENDERER_MARKUP_PROFILES`.
+- Markdown mount owner: `src/renderer/components/reviewed-streamdown.tsx`
+  (`ReviewedStreamdown`, `MarkdownRenderBoundary`). Both the static and the
+  streaming mounts in `src/renderer/components/chat-markdown-renderer.tsx`
+  render through it: remark GFM + breaks, the reviewed rehype chain, required
+  `code`/`pre` overrides (Streamdown's built-in Mermaid renderer stays
+  dormant), and one app-owned error boundary that renders the source as React
+  text. `streamdown` is pinned exactly `2.1.0`; `rehype-raw@7.0.0`,
+  `rehype-sanitize@6.0.0` and `rehype-harden@1.1.7` are exact direct
+  dependencies.
+- Highlighted-code producer: `src/renderer/lib/themes/shiki-theme-loader.ts#highlightCode`
+  returns only `ReviewedRendererHtml`. Its raw-sink consumers are
+  `chat-markdown-renderer.tsx#CodeBlock`, `agent-edit-tool.tsx#DiffLineRow`,
+  `agent-mcp-tool-call.tsx#HighlightedJson`, and
+  `message-json-display.tsx#MessageJsonDisplay`.
+- Mermaid SVG adapter: `src/renderer/lib/security/mermaid-svg-sanitizer.ts`
+  (`MERMAID_SECURE_CONFIG_KEYS`, `assertMermaidDirectiveSuppression`,
+  `sanitizeMermaidSvg`; DOMPurify is load-bearing, the DOMParser pass is
+  defense in depth; it returns a string). `src/renderer/components/mermaid-block.tsx`
+  passes that string through `reviewMermaidSvgOutput` and hands the one
+  sealed `ReviewedRendererHtml` to its inline sink and its single fullscreen
+  viewer through `reviewedInnerHtml`; the plain string backs only the SVG
+  download.
+- Dependency diff producer (Approval Question 9): the Vite-aliased
+  `src/renderer/lib/vendor/pierre-diffs-shiki-shim.ts` (live `createPlainHast`
+  text-node HAST serialized by un-aliased `hast-util-to-html@9.0.5`; its
+  `codeToHtml` export routes through `reviewedPlainCodeToHtml`) for
+  `@pierre/diffs@1.0.10`. The `unsafeCSS` prop at both
+  `agent-diff-view.tsx#FileDiffCard` sites is exactly the app-owned constant
+  `PIERRE_DIFFS_THEME_CSS`.
+- Mentions editor model: `src/renderer/features/agents/mentions/mentions-editor-state.ts`
+  owns the lossless text/atomic-mention runs, anchor/focus positions,
+  canonical undo/redo state, and `buildEditorDom`, the one safe DOM builder
+  (Text nodes, `br`, reviewed mention elements). The component
+  `agents-mentions-editor.tsx` owns the native `beforeinput` allowlist and the
+  paste/drop/dragover gates; `src/renderer/features/agents/utils/paste-text.ts#handlePasteEvent`
+  is the typed paste delegate (images to the attachment callback, plain text
+  returned for safe-builder insertion, HTML-only data rejected).
+- Source guard: `tests/renderer-html-sinks.test.ts` with
+  `tests/helpers/renderer-raw-sink-scanner.ts` holds the exact insertion-point
+  inventory keyed by construct, file and enclosing symbol, each bound to its
+  reviewed producer and behavior tests; the shared rendered-DOM oracle is
+  `tests/helpers/renderer-executable-markup-oracle.ts`.
+- Residuals: Monaco file-viewer and xterm terminal DOM producers are explicit
+  residuals tracked in
+  [TICKET-125](tickets/TICKET-125-monaco-xterm-dom-producers.md).
+- Forbidden duplicates: caller-local HTML escapers, sanitizers or Shiki-output
+  extraction; a generic `sanitize(anything)` helper; a second Streamdown
+  configuration or a direct `<Streamdown>` mount outside the wrapper; DOM/HTML
+  snapshots in editor undo/redo or any value-bearing `.innerHTML` restore;
+  browser default rich-content insertion in the mentions editor; remote script
+  loaders (the react-scan loader is removed); `@pierre/diffs` worker-pool
+  entry points. A new raw-markup sink needs an inventory entry, a named
+  producer and a behavior test in the same change.
+
+## Local Browser Guest Boundary
+
+- Canonical owner: `src/main/windows/local-browser-guest-policy.ts`, the sole
+  Electron `<webview>` guest-policy owner (design D5-D9). It installs the one
+  `app.on("web-contents-created")` hook with a per-window embedder registry;
+  `will-attach-webview` forces `LOCAL_BROWSER_GUEST_WEB_PREFERENCES` and
+  validates the element partition against the pending admission;
+  `did-attach-webview` registration binds every guest WebContents handler.
+  `LocalBrowserAdmissionRegistry` issues one-shot, short-TTL, count-bounded
+  admissions whose high-entropy non-persistent partition is the sole
+  attachment capability. Before a partition is returned, its Session receives
+  the sole `webRequest.onBeforeRequest` gate and every deny handler
+  (permission check/request, device, display media, HID/serial/USB/Bluetooth
+  selection, `will-download`); file admissions alone bind the Session-scoped
+  `locus-preview` handler (`serveLocusPreviewRequest`), whose scheme
+  privileges (`LOCUS_PREVIEW_PRIVILEGES`) are registered before app
+  readiness. The owner also holds main-alone `close()`/`isDestroyed()`
+  teardown, the post-attach guest event relay, fixed `userGesture:false`
+  diagnostic probes and bounded `capturePage`. Its decisions
+  (`decideGuestRequest`, `decideGuestNavigation`, `decideCommittedGuestUrl`,
+  `decideGuestPermission`, `decideGuestWindowOpen`,
+  `enforceGuestWebPreferences`, `nextGuestLifecycleState`) are pure and its
+  Electron surfaces are injected; Electron is imported only as types.
+- Installation: `src/main/windows/main.ts#installLocalBrowserGuestBoundary`
+  injects the Electron surfaces, `windowManager.claimChat` and
+  `resolveRegisteredChatWorktreeRoot`, and is called from `src/main/index.ts`
+  before app readiness. `createWindow` registers each app window through
+  `registerLocalBrowserGuestEmbedder` before it loads the app document.
+- Reused owners composed by the guest owner (never copied):
+  - chat worktree authorization:
+    `src/main/lib/fs/registered-roots.ts#resolveRegisteredChatWorktreeRoot`
+    (DB-registered chat/worktree root);
+  - chat window ownership: `src/main/windows/window-manager.ts#claimChat`
+    (acquire if unowned, idempotent for the same window, bounded denial for
+    another live owner, stale-owner cleanup);
+  - descriptor-backed file reads: `src/main/lib/filesystem/stable-directory.ts`
+    is the sole descriptor owner. `openRegisteredStableDirectory` realpath-
+    canonicalizes the registered root and fails closed unless the registered
+    leaf, canonical path and opened descriptor share one directory identity;
+    `openStableDirectoryChild` and `readStableDirectoryFile` (no-follow,
+    regular-file, byte-bounded read from the same descriptor) serve preview
+    documents and assets. The owner has no win32 backend, so file preview is
+    disabled on Windows while HTTP(S) previews still work;
+  - pure URL grammar, report text and the named probe set:
+    `src/shared/local-browser-workbench.ts` (`normalizeLocalBrowserUrl`,
+    `isAllowedLocalBrowserUrl`, `localBrowserFileUrlPath`,
+    `normalizeLocalBrowserRootPath`, `buildLocalBrowserReport`,
+    `LOCAL_BROWSER_DIAGNOSTIC_PROBES`), shared by renderer UX and main
+    enforcement;
+  - diagnostics shape adapter: `src/shared/local-browser-diagnostics-policy.ts`
+    (field minimization, URL credential/query/fragment stripping, console-level
+    mapping, count/length and screenshot bounds, admission/event/capture
+    types). It imports no main or Electron code and does no secret matching;
+    main composes it with
+    `src/main/lib/agent-runtime/redaction.ts#redactUntrustedDiagnosticPayload`
+    before any value reaches the renderer.
+- Preload projection: exactly three narrow, non-tRPC operations in
+  `src/preload/index.ts` / `index.d.ts`: `requestLocalBrowserPreview`
+  (`local-browser:request-preview`), `captureLocalBrowserDiagnostics`
+  (`local-browser:capture-diagnostics`) and `onLocalBrowserGuestEvent`
+  (`local-browser:guest-event`). Main derives the embedder from the IPC
+  sender; callers supply only a chat ID and URL, or a generation.
+- Renderer consumer: `src/renderer/features/agents/ui/local-browser-workbench.tsx`
+  mounts a `<webview>` only with a main-issued admission (partition and src),
+  needs a fresh admission for every element mount, and receives only
+  main-minimized guest events and captures.
+- Tests: `tests/renderer-hardening-guest-policy.test.ts`,
+  `tests/renderer-hardening-preview-broker.test.ts`,
+  `tests/renderer-hardening-impl-guest-decisions.test.ts`,
+  `tests/renderer-hardening-impl-guest-owner.test.ts`,
+  `tests/renderer-hardening-impl-preview-broker.test.ts`,
+  `tests/renderer-hardening-impl-diagnostics.test.ts`,
+  `tests/renderer-hardening-impl-workbench.test.ts`
+- Forbidden duplicates: any `web-contents-created`, `will-attach-webview` or
+  `did-attach-webview` handler, guest Session permission/device/display/
+  download handler, guest `webRequest` gate or `locus-preview` handler outside
+  the owner; guest deny handlers on `persist:main` or the default Session (the
+  trusted voice/microphone path stays separately governed); renderer-derived
+  partitions, URL-keyed remounts, direct guest `file:` sources, renderer
+  `loadURL`, `executeJavaScript` or `capturePage`, and renderer listeners for
+  raw page-controlled `<webview>` events; a second descriptor backend or a
+  path-only/`file:` fallback; secret matching in shared or renderer code; a
+  tRPC route for guest admission; `shell.openExternal` from the guest owner.
 
 ## OpenSpec Boundary
 

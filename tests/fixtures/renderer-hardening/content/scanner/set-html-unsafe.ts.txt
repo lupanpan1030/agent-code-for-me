@@ -1,0 +1,3 @@
+export function unsafe(el: Element, markup: string) {
+  ;(el as unknown as { setHTMLUnsafe(value: string): void }).setHTMLUnsafe(markup)
+}

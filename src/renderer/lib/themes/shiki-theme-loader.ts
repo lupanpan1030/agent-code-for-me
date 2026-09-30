@@ -1,7 +1,12 @@
 import * as shiki from "shiki"
+import type { VSCodeFullTheme } from "../atoms"
+import {
+  type ReviewedRendererHtml,
+  reviewedEscapedText,
+  reviewShikiCodeToHtmlOutput,
+} from "../security/renderer-html-policy"
 import { isBuiltinTheme } from "../vscode-themes"
 import { getBuiltinThemeById } from "./builtin-themes"
-import type { VSCodeFullTheme } from "../atoms"
 
 /**
  * Shared Shiki highlighter instance
@@ -13,7 +18,7 @@ let highlighterPromise: Promise<shiki.Highlighter> | null = null
 // LRU CACHE FOR HIGHLIGHT RESULTS
 // ============================================================================
 // Prevents re-highlighting the same code when switching tabs.
-// Key: `${themeId}:${language}:${code}` -> Value: highlighted HTML
+// Key: `${themeId}:${language}:${code}` -> Value: reviewed highlighted HTML
 // Max 500 entries (~5MB assuming 10KB average per entry)
 const HIGHLIGHT_CACHE_MAX_SIZE = 500
 
@@ -54,7 +59,9 @@ class LRUCache<K, V> {
   }
 }
 
-const highlightCache = new LRUCache<string, string>(HIGHLIGHT_CACHE_MAX_SIZE)
+const highlightCache = new LRUCache<string, ReviewedRendererHtml>(
+  HIGHLIGHT_CACHE_MAX_SIZE,
+)
 
 /**
  * Languages supported by the highlighter
@@ -248,15 +255,24 @@ function isThemeAvailable(themeId: string): boolean {
 }
 
 /**
- * Highlight code with a specific theme
- * Uses custom themes with tokenColors when available, otherwise maps to bundled themes
- * Results are cached to prevent re-highlighting when switching tabs
+ * Highlight code with a specific theme.
+ *
+ * The sole Shiki HTML-string producer for the inventoried raw insertion
+ * sinks (design D1/D3). It returns only reviewed output from the
+ * `renderer-html-policy.ts` Shiki adapter: exactly one fully consumed
+ * `<pre><code>` wrapper whose inner span/text markup passes the reviewed
+ * profile. A generator exception, initialization failure or output-shape
+ * mismatch fails closed to the escaped source text, never raw source.
+ *
+ * Uses custom themes with tokenColors when available, otherwise maps to
+ * bundled themes. Accepted results are cached to prevent re-highlighting
+ * when switching tabs.
  */
 export async function highlightCode(
   code: string,
   language: string,
   themeId: string,
-): Promise<string> {
+): Promise<ReviewedRendererHtml> {
   // Check cache first - O(1) lookup
   const cacheKey = `${themeId}:${language}:${code}`
   const cached = highlightCache.get(cacheKey)
@@ -264,32 +280,42 @@ export async function highlightCode(
     return cached
   }
 
-  const highlighter = await getHighlighter()
+  let generatedHtml: string
+  try {
+    const highlighter = await getHighlighter()
 
-  // Ensure the theme is loaded (if it's a custom theme with tokenColors)
-  await ensureThemeLoaded(themeId)
+    // Ensure the theme is loaded (if it's a custom theme with tokenColors)
+    await ensureThemeLoaded(themeId)
 
-  // Get the theme to use for highlighting
-  const shikiTheme = getShikiThemeForHighlighting(themeId)
+    // Get the theme to use for highlighting
+    const shikiTheme = getShikiThemeForHighlighting(themeId)
 
-  const loadedLangs = highlighter.getLoadedLanguages()
-  const lang = loadedLangs.includes(language as shiki.BundledLanguage)
-    ? (language as shiki.BundledLanguage)
-    : "plaintext"
+    const loadedLangs = highlighter.getLoadedLanguages()
+    const lang = loadedLangs.includes(language as shiki.BundledLanguage)
+      ? (language as shiki.BundledLanguage)
+      : "plaintext"
 
-  const html = highlighter.codeToHtml(code, {
-    lang,
-    theme: shikiTheme,
-  })
+    generatedHtml = highlighter.codeToHtml(code, {
+      lang,
+      theme: shikiTheme,
+    })
+  } catch (error) {
+    console.error("[highlightCode] Shiki failed; rendering escaped text:", error)
+    return reviewedEscapedText(code)
+  }
 
-  // Extract just the code content from shiki's output (remove wrapper)
-  const match = html.match(/<code[^>]*>([\s\S]*?)<\/code>/)
-  const result = match ? match[1] : code
+  const review = reviewShikiCodeToHtmlOutput(generatedHtml, code)
+  if (!review.accepted) {
+    console.warn(
+      `[highlightCode] Unexpected Shiki output shape (${review.reason}); rendering escaped text`,
+    )
+    return review.html
+  }
 
-  // Cache the result
-  highlightCache.set(cacheKey, result)
+  // Cache only reviewed, accepted results
+  highlightCache.set(cacheKey, review.html)
 
-  return result
+  return review.html
 }
 
 /**

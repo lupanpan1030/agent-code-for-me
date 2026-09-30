@@ -1,0 +1,5 @@
+export function load(url: string) {
+  const tag = document.createElement("SCRIPT") as HTMLScriptElement
+  tag.src = url
+  document.head.appendChild(tag)
+}

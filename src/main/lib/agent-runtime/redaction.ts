@@ -7,12 +7,58 @@ import type { JsonValue, RunEventRedactionContext } from "./runtime-events"
 const SECRET_KEY_PATTERN =
   /(?:api[_-]?key|(?:^|[_-])token(?:$|[_-])|access[_-]?token|refresh[_-]?token|auth[_-]?token|gateway[_-]?token|authorization|cookie|password|secret|client[_-]?secret|oauth)/i
 
-const SECRET_TEXT_PATTERNS = [
-  /sk-[A-Za-z0-9_-]{16,}/g,
-  /bearer\s+[A-Za-z0-9._-]+/gi,
-  /(?:api[_-]?key|access[_-]?token|refresh[_-]?token|auth[_-]?token|authorization)=([A-Za-z0-9._~+/-]+)/gi,
-  /(?:api[_-]?key|access[_-]?token|refresh[_-]?token|auth[_-]?token|token|password|secret|authorization)\s*[:=]\s*["']?[A-Za-z0-9._~+/-]{8,}["']?/gi,
+type SecretTextPattern = {
+  pattern: RegExp
+  /** Replacement for one match; defaults to keeping a `key=`/`key:` prefix. */
+  replace?: (match: string) => string
+}
+
+const SECRET_TEXT_PATTERNS: readonly SecretTextPattern[] = [
+  { pattern: /sk-[A-Za-z0-9_-]{16,}/g },
+  { pattern: /bearer\s+[A-Za-z0-9._-]+/gi },
+  {
+    pattern:
+      /(?:api[_-]?key|access[_-]?token|refresh[_-]?token|auth[_-]?token|authorization)=([A-Za-z0-9._~+/-]+)/gi,
+  },
+  {
+    pattern:
+      /(?:api[_-]?key|access[_-]?token|refresh[_-]?token|auth[_-]?token|token|password|secret|authorization)\s*[:=]\s*["']?[A-Za-z0-9._~+/-]{8,}["']?/gi,
+  },
 ]
+
+/**
+ * Additional free-text patterns for untrusted page diagnostics only (Local
+ * Browser guest console text, titles, DOM text). Page text routinely carries
+ * bare JWTs, OAuth/OIDC callback parameters and scheme-less URLs whose query
+ * or fragment the shared URL minimizer cannot recognize. Runtime payload
+ * redaction keeps the base patterns so agent transcripts are not rewritten.
+ */
+const UNTRUSTED_DIAGNOSTIC_TEXT_PATTERNS: readonly SecretTextPattern[] = [
+  // Bare JWT/JWS compact serialization: a base64url JSON header ("eyJ").
+  {
+    pattern: /\beyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]*/g,
+    replace: () => "<redacted>",
+  },
+  // A scheme-less query string or fragment carrying key=value pairs.
+  {
+    pattern: /[?#][^\s?#"'<>]*=[^\s"'<>]*/g,
+    replace: (match) => `${match.charAt(0)}<redacted>`,
+  },
+  // OAuth/OIDC callback parameters anywhere else in free text.
+  {
+    pattern:
+      /\b(?:code|state|nonce|id_token|session_state|code_verifier|code_challenge)=[^\s&#"'<>]+/gi,
+  },
+  ...SECRET_TEXT_PATTERNS,
+]
+
+function keepSecretKeyPrefix(match: string): string {
+  const separatorIndex = Math.max(match.indexOf("="), match.indexOf(":"))
+  if (separatorIndex > 0) {
+    return `${match.slice(0, separatorIndex + 1)}<redacted>`
+  }
+  return "<redacted>"
+}
 
 export type RuntimeRedactionResult = {
   payload: JsonValue
@@ -217,23 +263,18 @@ function redactString(
   value: string,
   appliedRules: Set<string>,
   secretHints: readonly string[],
+  textPatterns: readonly SecretTextPattern[],
 ): string {
   const exactRedaction = redactExactSecretHints(value, secretHints)
   let redacted = exactRedaction.value
   if (exactRedaction.applied) {
     appliedRules.add("secret-hint")
   }
-  for (const pattern of SECRET_TEXT_PATTERNS) {
+  for (const { pattern, replace } of textPatterns) {
     if (pattern.test(redacted)) {
       appliedRules.add("secret-text")
       pattern.lastIndex = 0
-      redacted = redacted.replace(pattern, (match) => {
-        const separatorIndex = Math.max(match.indexOf("="), match.indexOf(":"))
-        if (separatorIndex > 0) {
-          return `${match.slice(0, separatorIndex + 1)}<redacted>`
-        }
-        return "<redacted>"
-      })
+      redacted = redacted.replace(pattern, replace ?? keepSecretKeyPrefix)
     }
     pattern.lastIndex = 0
   }
@@ -244,12 +285,15 @@ function redactValue(
   value: JsonValue,
   appliedRules: Set<string>,
   secretHints: readonly string[],
+  textPatterns: readonly SecretTextPattern[],
 ): JsonValue {
   if (typeof value === "string") {
-    return redactString(value, appliedRules, secretHints)
+    return redactString(value, appliedRules, secretHints, textPatterns)
   }
   if (Array.isArray(value)) {
-    return value.map((item) => redactValue(item, appliedRules, secretHints))
+    return value.map((item) =>
+      redactValue(item, appliedRules, secretHints, textPatterns),
+    )
   }
   if (!isJsonObject(value)) return value
 
@@ -260,19 +304,47 @@ function redactValue(
       output[key] = "<redacted>"
       continue
     }
-    output[key] = redactValue(child, appliedRules, secretHints)
+    output[key] = redactValue(child, appliedRules, secretHints, textPatterns)
   }
   return output
+}
+
+function redactPayloadWith(
+  payload: JsonValue,
+  secretHints: readonly string[] | undefined,
+  textPatterns: readonly SecretTextPattern[],
+): RuntimeRedactionResult {
+  const appliedRules = new Set<string>()
+  const normalizedHints = normalizeExactSecretHints(secretHints)
+  return {
+    payload: redactValue(payload, appliedRules, normalizedHints, textPatterns),
+    appliedRules: [...appliedRules].sort(),
+  }
 }
 
 export function redactRuntimePayload(
   payload: JsonValue,
   context: RunEventRedactionContext,
 ): RuntimeRedactionResult {
-  const appliedRules = new Set<string>()
-  const secretHints = normalizeExactSecretHints(context.secretHints)
-  return {
-    payload: redactValue(payload, appliedRules, secretHints),
-    appliedRules: [...appliedRules].sort(),
-  }
+  return redactPayloadWith(payload, context.secretHints, SECRET_TEXT_PATTERNS)
+}
+
+/**
+ * Composition entry for main-process diagnostics that are not tied to an
+ * agent run (for example Local Browser guest diagnostics). It applies the
+ * same provider-pattern, secret-key and exact-secret matching as
+ * {@link redactRuntimePayload}, plus the untrusted page-text patterns (bare
+ * JWTs, OAuth/OIDC callback parameters, scheme-less query strings and
+ * fragments), without fabricating a runtime/run identity, so callers never
+ * re-implement secret matching.
+ */
+export function redactUntrustedDiagnosticPayload(
+  payload: JsonValue,
+  secretHints?: readonly string[],
+): RuntimeRedactionResult {
+  return redactPayloadWith(
+    payload,
+    secretHints,
+    UNTRUSTED_DIAGNOSTIC_TEXT_PATTERNS,
+  )
 }

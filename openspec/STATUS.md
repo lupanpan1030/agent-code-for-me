@@ -4,10 +4,11 @@ This ledger records execution state only. Current product truth remains in
 `openspec/specs/` plus the checked-out code; future direction remains in the
 ratified strategy and interoperability contract.
 
-Updated: 2026-09-30 (Pacific/Auckland); previous: 2026-09-07 (Pacific/Auckland)
+Updated: 2026-09-30 (Pacific/Auckland); previous: 2026-09-09 (Pacific/Auckland)
 
 | Change | State | Concrete next gate |
 | --- | --- | --- |
+| `add-renderer-untrusted-content-hardening` | Owner ACCEPTED 2026-09-30 at frozen source `5ca5a17a`, evidence head `3de915c0`; three technical reviews REVIEW_APPROVED | Integrate and archive; GUI 5.1–5.5 remain open under TICKET-126 for development and packaged reruns |
 
 Parked proposals are indexed in [`deferred/README.md`](deferred/README.md) and
 do not appear in the active list.
@@ -198,9 +199,10 @@ to the living `runtime-security-baseline` for a final 15 requirements / 35 scena
 Because Foundation 1d archived first, final strict validation has no active changes, living specs
 pass **52/52**, strict all passes **52/52**, and the archive audit is **108 passed / 6 failed /
 114 total** with this entry passing. Historical CSP tasks 4.4/4.5 remain no-receipt,
-uncertified statements; TICKET-114 carries their two unchecked reruns. Follow-up A may now be
-drafted independently, while follow-up B remains sequenced after the Amadeus continuation slice.
-No push or other remote operation was authorized or performed for this closeout.
+uncertified statements; TICKET-114 carries their two unchecked reruns. Follow-up A is now tracked
+above as Draft `add-renderer-untrusted-content-hardening`, while follow-up B remains sequenced after
+the Amadeus continuation slice. No push or other remote operation was authorized or performed for
+this closeout.
 
 ## Locally archived 2026-08-27
 

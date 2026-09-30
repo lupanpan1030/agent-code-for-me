@@ -1,3 +1,18 @@
+import { reviewedPlainCodeToHtml } from "../security/renderer-html-policy"
+
+/**
+ * Locus-owned Shiki-API shim for `@pierre/diffs` (openspec change
+ * `add-renderer-untrusted-content-hardening`, Approval Question 9).
+ *
+ * `electron.vite.config.ts#pierreDiffsPlainHighlighterPlugin` aliases exactly
+ * `shiki`, `shiki/core`, `@shikijs/engine-javascript` and
+ * `@shikijs/transformers` to this module for @pierre/diffs importers. The live
+ * diff producer is `createPlainHast`, which emits text-node HAST that the
+ * un-aliased `hast-util-to-html@9.0.5` escapes. The re-exported `codeToHtml`
+ * is not called by the diff render path and routes through the reviewed
+ * renderer HTML owner; this shim keeps no escaping policy of its own.
+ */
+
 type HastText = {
   type: "text"
   value: string
@@ -205,7 +220,7 @@ export function createCssVariablesTheme({
 }
 
 export function codeToHtml(code: string): string {
-  return `<pre><code>${escapeHtml(code)}</code></pre>`
+  return reviewedPlainCodeToHtml(code)
 }
 
 export function getTokenStyleObject(token: { htmlStyle?: Record<string, string> }) {
@@ -220,11 +235,4 @@ export function stringifyTokenStyle(style: Record<string, string>): string {
 
 export function transformerStyleToClass() {
   return {}
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
 }

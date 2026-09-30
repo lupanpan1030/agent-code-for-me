@@ -44,6 +44,7 @@ import {
   createWindow,
   getAllWindows,
   getWindow,
+  installLocalBrowserGuestBoundary,
   setIsQuitting,
 } from "./windows/main"
 
@@ -488,6 +489,10 @@ if (!gotTheLock) {
 }
 
 if (gotTheLock) {
+  // Guest webview policy and preview-scheme privileges must exist before app
+  // readiness and before any window or webContents is created.
+  installLocalBrowserGuestBoundary()
+
   // Handle second instance launch (also handles deep links on Windows/Linux)
   app.on("second-instance", (_event, commandLine) => {
     // Check for deep link in command line args

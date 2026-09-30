@@ -1,0 +1,37 @@
+[
+  {
+    "id": "incomplete-image-with-handler",
+    "markdown": "Result: <img src=x onerror=\"window.__pwned = 1\" alt=\"partial\">",
+    "greenByDesign": true
+  },
+  {
+    "id": "incomplete-javascript-anchor",
+    "markdown": "Open <a href=\"javascript:window.__pwned=1\">the report</a> now",
+    "greenByDesign": true
+  },
+  {
+    "id": "incomplete-markdown-javascript-link",
+    "markdown": "Click [here](javascript:window.__pwned=1) to continue",
+    "greenByDesign": true
+  },
+  {
+    "id": "incomplete-data-image",
+    "markdown": "Chart ![pic](data:image/svg+xml;base64,PHN2ZyBvbmxvYWQ9ImFsZXJ0KDEpIj48L3N2Zz4=) end",
+    "greenByDesign": true
+  },
+  {
+    "id": "split-script-tag",
+    "markdown": "before <script>window.__pwned = 1</script> after\n\n<svg><a xlink:href=\"javascript:window.__pwned=1\"><text>t</text></a></svg>",
+    "greenByDesign": true
+  },
+  {
+    "id": "unclosed-fence-with-html",
+    "markdown": "```html\n<script>window.__pwned = 1</script><img src=x onerror=\"window.__pwned = 1\">\n",
+    "greenByDesign": true
+  },
+  {
+    "id": "incomplete-custom-scheme-link",
+    "markdown": "See [docs](locus://mcp-import?payload=x) and [more](vscode://file/etc/passwd",
+    "greenByDesign": true
+  }
+]

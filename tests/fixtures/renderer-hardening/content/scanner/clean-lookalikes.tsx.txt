@@ -1,0 +1,10 @@
+// dangerouslySetInnerHTML and innerHTML mentioned in a comment are not sinks.
+import { lazy } from "react"
+const LazyPanel = lazy(() => import("./local-panel"))
+export function Clean({ el, img, text }: { el: HTMLElement; img: HTMLImageElement; text: string }) {
+  const snapshot = el.innerHTML
+  el.textContent = text
+  img.src = "https://example.com/logo.png"
+  const label = "innerHTML is a string here"
+  return <span title={label} data-snapshot={snapshot}>{text}<LazyPanel /></span>
+}

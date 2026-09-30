@@ -1,0 +1,57 @@
+[
+  {
+    "id": "raw-script-iframe-object-embed-base-meta-link",
+    "markdown": "Intro paragraph.\n\n<script>window.__pwned = 1</script>\n\n<iframe src=\"https://evil.example/frame\" srcdoc=\"<script>window.__pwned = 1</script>\"></iframe>\n\n<object data=\"javascript:window.__pwned=1\"></object><embed src=\"javascript:window.__pwned=1\">\n\n<base href=\"https://evil.example/\"><meta http-equiv=\"refresh\" content=\"0;url=javascript:window.__pwned=1\"><link rel=\"stylesheet\" href=\"https://evil.example/x.css\">\n\n<frameset><frame src=\"javascript:window.__pwned=1\"></frameset>\n",
+    "greenByDesign": true
+  },
+  {
+    "id": "event-handler-attributes",
+    "markdown": "<img src=\"https://example.com/a.png\" onerror=\"window.__pwned = 1\">\n\n<details open ontoggle=\"window.__pwned = 1\"><summary>s</summary>d</details>\n\n<div onmouseover=\"window.__pwned = 1\" OnClick=\"window.__pwned = 1\">hover</div>\n\n<a href=\"https://example.com/\" onclick=\"window.__pwned = 1\">link</a>\n\n<p onpointerenter=\"window.__pwned = 1\" style=\"position:fixed;inset:0\">overlay</p>\n",
+    "greenByDesign": true
+  },
+  {
+    "id": "active-svg",
+    "markdown": "<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" onload=\"window.__pwned = 1\"><script>window.__pwned = 1</script><a xlink:href=\"javascript:window.__pwned=1\"><text x=\"0\" y=\"10\">svg link</text></a><animate attributeName=\"href\" to=\"javascript:window.__pwned=1\"/><set attributeName=\"onmouseover\" to=\"window.__pwned=1\"/><animateTransform attributeName=\"transform\" type=\"rotate\"/><foreignObject><div onclick=\"window.__pwned = 1\">foreign</div></foreignObject><use href=\"data:image/svg+xml,%3Csvg%20id='x'%20xmlns='http://www.w3.org/2000/svg'%3E%3C/svg%3E#x\"/><image href=\"javascript:window.__pwned=1\"/></svg>\n",
+    "greenByDesign": true
+  },
+  {
+    "id": "active-mathml",
+    "markdown": "<math><maction actiontype=\"statusline\" xlink:href=\"javascript:window.__pwned=1\">m<mtext>status</mtext></maction><mi href=\"javascript:window.__pwned=1\">x</mi></math>\n\n<math><mtext><table><mglyph><style><img src=x onerror=\"window.__pwned = 1\"></style></mglyph></table></mtext></math>\n",
+    "greenByDesign": true
+  },
+  {
+    "id": "mixed-namespace-confusion",
+    "markdown": "<svg><style><img src=x onerror=\"window.__pwned = 1\"></style></svg>\n\n<math><mi><svg><style><img src=x onerror=\"window.__pwned = 1\"></style></svg></mi></math>\n\n<noscript><p title=\"</noscript><img src=x onerror=window.__pwned=1>\"></p></noscript>\n\n<svg><![CDATA[><img src=x onerror=window.__pwned=1>]]></svg>\n\n<template><img src=x onerror=\"window.__pwned = 1\"></template>\n",
+    "greenByDesign": true
+  },
+  {
+    "id": "executable-url-links",
+    "markdown": "[plain](javascript:window.__pwned=1)\n\n[mixed case](JaVaScRiPt:window.__pwned=1)\n\n[data html](data:text/html;base64,PHNjcmlwdD53aW5kb3cuX19wd25lZD0xPC9zY3JpcHQ+)\n\n[vb](vbscript:msgbox(1))\n\n[file](file:///etc/passwd)\n\n[blob](blob:https://example.com/0b9c8f4e-0000-4000-8000-000000000000)\n",
+    "greenByDesign": true
+  },
+  {
+    "id": "encoded-url-links",
+    "markdown": "<a href=\"&#106;avascript:window.__pwned=1\">decimal entity</a>\n\n<a href=\"jav&#x09;ascript:window.__pwned=1\">tab entity</a>\n\n<a href=\"&#x6A;avascript&colon;window.__pwned=1\">named colon</a>\n\n<a href=\" javascript:window.__pwned=1\">leading space</a>\n\n[percent](java%73cript:window.__pwned=1)\n\n<img src=\"&#x64;ata:image/svg+xml,<svg onload=window.__pwned=1>\">\n",
+    "greenByDesign": true
+  },
+  {
+    "id": "custom-scheme-links",
+    "markdown": "[locus](locus://mcp-import?payload=x)\n\n[locus dev](locus-dev://mcp-import?payload=x)\n\n[legacy](agent-code-for-me://open?x=1)\n\n[vscode](vscode://file/etc/passwd)\n\n[msdt](ms-msdt:/id PCWDiagnostic)\n\n[irc](irc://evil.example/channel)\n\n[xmpp](xmpp:evil@example.com)\n\n<a href=\"ircs://evil.example/secure\">raw ircs</a>\n",
+    "greenByDesign": false
+  },
+  {
+    "id": "relative-url-links-and-media",
+    "markdown": "[relative](./secrets/.env)\n\n[rooted](/etc/passwd)\n\n[parent](../../outside/file.txt)\n\n[protocol relative](//evil.example/x)\n\n![relative image](../../private/avatar.png)\n\n<img src=\"./a.png\" alt=\"raw relative image\">\n",
+    "greenByDesign": false
+  },
+  {
+    "id": "executable-media-and-form-urls",
+    "markdown": "![svg data](data:image/svg+xml;base64,PHN2ZyBvbmxvYWQ9ImFsZXJ0KDEpIj48L3N2Zz4=)\n\n<video poster=\"javascript:window.__pwned=1\" src=\"javascript:window.__pwned=1\"></video>\n\n<form action=\"javascript:window.__pwned=1\"><button formaction=\"javascript:window.__pwned=1\">submit</button><input type=\"image\" src=\"javascript:window.__pwned=1\"></form>\n\n<img src=\"blob:https://example.com/0b9c8f4e-0000-4000-8000-000000000000\" alt=\"blob\">\n",
+    "greenByDesign": true
+  },
+  {
+    "id": "css-injection",
+    "markdown": "<style>body { background: url(https://evil.example/beacon) } @import url(https://evil.example/x.css);</style>\n\n<div style=\"position:fixed;inset:0;background:url(https://evil.example/b)\">overlay</div>\n\n<span style=\"behavior:url(x.htc);-moz-binding:url(x.xml#y)\">legacy</span>\n",
+    "greenByDesign": true
+  }
+]

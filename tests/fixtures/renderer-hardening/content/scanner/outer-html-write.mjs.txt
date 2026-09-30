@@ -1,0 +1,3 @@
+export function replaceNode(el, markup) {
+  ;(el).outerHTML = `${markup}`
+}

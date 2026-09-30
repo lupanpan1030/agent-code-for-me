@@ -9,6 +9,8 @@ import {
   Notification,
   nativeImage,
   nativeTheme,
+  protocol,
+  session,
 } from "electron"
 import { createIPCHandler } from "trpc-electron/main"
 import { IS_DEV } from "../constants"
@@ -21,6 +23,7 @@ import {
   hasActiveCodexStreams,
 } from "../lib/codex/active-streams"
 import { shouldOpenDevToolsOnStartup } from "../lib/devtools-startup"
+import { resolveRegisteredChatWorktreeRoot } from "../lib/fs/registered-roots"
 import { registerGitWatcherIPC } from "../lib/git/watcher"
 import {
   isLocalOnlyMode,
@@ -29,6 +32,10 @@ import {
 } from "../lib/local-only"
 import { createAppRouter } from "../lib/trpc/routers"
 import { registerThemeScannerIPC } from "../lib/vscode-theme-scanner"
+import {
+  installLocalBrowserGuestPolicy,
+  registerLocalBrowserGuestEmbedder,
+} from "./local-browser-guest-policy"
 import { isAllowedMainWindowNavigationUrl } from "./navigation-guard"
 import { installRendererContentSecurityPolicy } from "./renderer-csp"
 import { windowManager } from "./window-manager"
@@ -48,6 +55,31 @@ let isQuitting = false
 
 export function setIsQuitting(value: boolean): void {
   isQuitting = value
+}
+
+/**
+ * Installs the sole Local Browser guest-policy owner. `src/main/index.ts`
+ * calls this before app readiness so the preview scheme privileges and the
+ * global webview attachment guard exist before any webContents is created.
+ */
+export function installLocalBrowserGuestBoundary(): void {
+  installLocalBrowserGuestPolicy({
+    app,
+    protocol,
+    ipcMain,
+    sessionFromPartition: (partition) => session.fromPartition(partition),
+    windowIdForWebContents: (contents) => {
+      const window = BrowserWindow.fromWebContents(contents)
+      return window && !window.isDestroyed() ? window.id : null
+    },
+    isLiveAppWindow: (windowId) => {
+      const window = windowManager.get(windowId)
+      return Boolean(window && !window.isDestroyed())
+    },
+    claimChat: (chatId, windowId) => windowManager.claimChat(chatId, windowId),
+    resolveChatWorktreeRoot: resolveRegisteredChatWorktreeRoot,
+    platform: process.platform,
+  })
 }
 
 // Helper to get window from IPC event
@@ -475,6 +507,9 @@ export function createWindow(options?: { chatId?: string; subChatId?: string }):
 
   // Register window with manager and get stable ID for localStorage namespacing
   const stableWindowId = windowManager.register(window)
+  // Only registered app windows may embed a Local Browser guest; register
+  // before the app document can create a <webview>.
+  registerLocalBrowserGuestEmbedder(window.webContents)
   console.log(
     `[Main] Created window ${window.id} with stable ID "${stableWindowId}" (total: ${windowManager.count()})`,
   )

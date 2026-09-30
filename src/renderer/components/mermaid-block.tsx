@@ -21,9 +21,16 @@ import {
 import { useTheme } from "@/lib/themes/theme-mode-provider"
 import { useI18n } from "../lib/i18n"
 import {
+  assertMermaidDirectiveSuppression,
+  MERMAID_SECURE_CONFIG_KEYS,
   MERMAID_SECURITY_LEVEL,
   sanitizeMermaidSvg,
 } from "../lib/security/mermaid-svg-sanitizer"
+import {
+  type ReviewedRendererHtml,
+  reviewedInnerHtml,
+  reviewMermaidSvgOutput,
+} from "../lib/security/renderer-html-policy"
 import { cn } from "../lib/utils"
 import { Dialog, DialogContent, DialogPortal, DialogTitle } from "./ui/dialog"
 
@@ -36,25 +43,16 @@ const getMermaid = () => {
   return mermaidPromise
 }
 
-// Clean up mermaid error SVGs that get added to the DOM
-const cleanupMermaidErrors = () => {
-  // Mermaid adds error SVGs with id starting with 'd' or 'mermaid-' to the body
-  const errorSvgs = document.querySelectorAll('svg[id^="mermaid-"]')
-  errorSvgs.forEach((svg) => {
-    // Only remove if it's directly in body (error artifacts)
-    if (svg.parentElement === document.body) {
-      svg.remove()
+// Mermaid transiently mounts `div#d<id>` (holding `svg#<id>`) under
+// document.body to lay the diagram out, and leaves it there when parsing
+// fails. Remove exactly this render's transient elements once it settles.
+const removeMermaidRenderArtifacts = (id: string) => {
+  for (const artifactId of [`d${id}`, `i${id}`, id]) {
+    const element = document.getElementById(artifactId)
+    if (element?.parentElement === document.body) {
+      element.remove()
     }
-  })
-  // Also clean up any container divs mermaid creates
-  const containers = document.querySelectorAll(
-    'div[id^="dmermaid-"], div[id^="d"]',
-  )
-  containers.forEach((div) => {
-    if (div.parentElement === document.body && div.querySelector("svg")) {
-      div.remove()
-    }
-  })
+  }
 }
 
 interface MermaidBlockProps {
@@ -63,10 +61,20 @@ interface MermaidBlockProps {
   isStreaming?: boolean
 }
 
+/**
+ * One rendered diagram: the owner-sealed markup is the only value the inline
+ * and fullscreen sinks accept; the same adapter output as a plain string
+ * backs only the explicit SVG download.
+ */
+type RenderedDiagram = {
+  markup: ReviewedRendererHtml
+  svgFile: string
+}
+
 type RenderState =
   | { status: "idle" }
   | { status: "loading" }
-  | { status: "success"; svg: string }
+  | { status: "success"; diagram: RenderedDiagram }
   | { status: "error"; message: string }
   | { status: "parsing" } // Syntax not yet valid - show "Creating diagram..."
 
@@ -144,6 +152,8 @@ const getMermaidConfig = (isDark: boolean): Record<string, unknown> => ({
         edgeLabelBackground: "#fafafa",
       },
   securityLevel: MERMAID_SECURITY_LEVEL,
+  // Source directives cannot override these keys (design D3).
+  secure: [...MERMAID_SECURE_CONFIG_KEYS],
   fontFamily: "inherit",
 })
 
@@ -187,10 +197,14 @@ function ZoomControls() {
 const RENDER_DEBOUNCE_MS = 600
 
 // Global cache for rendered mermaid diagrams to persist across remounts
-const mermaidCache = new Map<string, string>()
+const mermaidCache = new Map<string, RenderedDiagram>()
 
 // Track which mermaid blocks have finished streaming (by first N chars of code as ID)
 const finishedStreamingBlocks = new Set<string>()
+
+// At most one fullscreen diagram viewer is open: opening one closes any other,
+// so the document never holds more than one fullscreen diagram sink.
+let closeActiveFullscreenViewer: (() => void) | null = null
 
 // Streaming placeholder - simple static text, no spinner
 const StreamingPlaceholder = memo(function StreamingPlaceholder() {
@@ -221,7 +235,7 @@ const MermaidBlockInner = memo(function MermaidBlockInner({
     const cacheKey = `${code}-${isDark ? "dark" : "light"}`
     const cached = mermaidCache.get(cacheKey)
     if (cached) {
-      return { status: "success", svg: cached }
+      return { status: "success", diagram: cached }
     }
     return { status: "idle" }
   })
@@ -247,36 +261,43 @@ const MermaidBlockInner = memo(function MermaidBlockInner({
       // Check if this render is still current
       if (currentRenderId !== renderIdRef.current) return
 
-      // Initialize/reinitialize mermaid with current theme
+      // Initialize/reinitialize mermaid with current theme, and fail closed
+      // unless strict mode and the pinned secure list are in force.
       mermaid.initialize(getMermaidConfig(isDark))
+      assertMermaidDirectiveSuppression(mermaid.mermaidAPI.getSiteConfig())
 
       // Generate unique ID for this render
       const id = `mermaid-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
 
-      const { svg } = await mermaid.render(id, code)
+      const { svg } = await mermaid
+        .render(id, code)
+        .finally(() => removeMermaidRenderArtifacts(id))
       const sanitizedSvg = sanitizeMermaidSvg(svg)
+      // The sinks accept only the owner's sealed review of the adapter output.
+      const reviewedSvg = reviewMermaidSvgOutput(sanitizedSvg)
+      if (!reviewedSvg) {
+        throw new Error("Diagram output failed the security profile")
+      }
+      const diagram: RenderedDiagram = {
+        markup: reviewedSvg,
+        svgFile: sanitizedSvg,
+      }
 
       // Check again if this render is still current
       if (currentRenderId !== renderIdRef.current) return
 
       // Cache the result for future remounts
       const cacheKey = `${code}-${isDark ? "dark" : "light"}`
-      mermaidCache.set(cacheKey, sanitizedSvg)
+      mermaidCache.set(cacheKey, diagram)
 
-      setRenderState({ status: "success", svg: sanitizedSvg })
+      setRenderState({ status: "success", diagram })
       lastRenderedCodeRef.current = code
       lastRenderedThemeRef.current = isDark
-
-      // Clean up any error artifacts mermaid left in DOM
-      cleanupMermaidErrors()
     } catch (error) {
       if (currentRenderId !== renderIdRef.current) return
 
       const message =
         error instanceof Error ? error.message : "Failed to render diagram"
-
-      // Clean up error SVGs that mermaid adds to DOM
-      cleanupMermaidErrors()
 
       // Check if this is a parse/syntax error (incomplete diagram)
       const isParseError =
@@ -355,7 +376,7 @@ const MermaidBlockInner = memo(function MermaidBlockInner({
     const cacheKey = `${code}-${isDark ? "dark" : "light"}`
     const cached = mermaidCache.get(cacheKey)
     if (cached) {
-      setRenderState({ status: "success", svg: cached })
+      setRenderState({ status: "success", diagram: cached })
       lastRenderedCodeRef.current = code
       lastRenderedThemeRef.current = isDark
       return
@@ -371,13 +392,13 @@ const MermaidBlockInner = memo(function MermaidBlockInner({
     renderDiagram()
   }, [code, isDark, renderDiagram])
 
-  // Cleanup mermaid artifacts and debounce timeout on unmount
+  // Cleanup debounce timeout on unmount (an in-flight render removes its own
+  // transient artifacts when it settles)
   useEffect(() => {
     return () => {
       if (debounceTimeoutRef.current) {
         clearTimeout(debounceTimeoutRef.current)
       }
-      cleanupMermaidErrors()
     }
   }, [])
 
@@ -390,7 +411,9 @@ const MermaidBlockInner = memo(function MermaidBlockInner({
   const handleDownload = useCallback(async () => {
     if (renderState.status !== "success") return
 
-    const blob = new Blob([renderState.svg], { type: "image/svg+xml" })
+    const blob = new Blob([renderState.diagram.svgFile], {
+      type: "image/svg+xml",
+    })
     const url = URL.createObjectURL(blob)
     const a = document.createElement("a")
     a.href = url
@@ -399,13 +422,32 @@ const MermaidBlockInner = memo(function MermaidBlockInner({
     URL.revokeObjectURL(url)
   }, [renderState])
 
-  const openFullscreen = useCallback(() => {
-    setIsFullscreen(true)
-  }, [])
-
   const closeFullscreen = useCallback(() => {
     setIsFullscreen(false)
   }, [])
+
+  const openFullscreen = useCallback(() => {
+    if (closeActiveFullscreenViewer !== closeFullscreen) {
+      closeActiveFullscreenViewer?.()
+    }
+    closeActiveFullscreenViewer = closeFullscreen
+    setIsFullscreen(true)
+  }, [closeFullscreen])
+
+  useEffect(() => {
+    if (!isFullscreen && closeActiveFullscreenViewer === closeFullscreen) {
+      closeActiveFullscreenViewer = null
+    }
+  }, [isFullscreen, closeFullscreen])
+
+  useEffect(
+    () => () => {
+      if (closeActiveFullscreenViewer === closeFullscreen) {
+        closeActiveFullscreenViewer = null
+      }
+    },
+    [closeFullscreen],
+  )
 
   return (
     <>
@@ -472,13 +514,18 @@ const MermaidBlockInner = memo(function MermaidBlockInner({
           )}
 
           {renderState.status === "success" && (
+            // biome-ignore lint/a11y/noStaticElementInteractions: pre-existing click-to-expand shortcut; the toolbar fullscreen button is the control.
+            // biome-ignore lint/a11y/useKeyWithClickEvents: pre-existing click-to-expand shortcut; the toolbar fullscreen button is the control.
             <div
               className={cn(
                 "mermaid-diagram w-full overflow-x-auto cursor-pointer",
                 "[&_svg]:max-w-full [&_svg]:h-auto [&_svg]:mx-auto",
               )}
               onClick={openFullscreen}
-              dangerouslySetInnerHTML={{ __html: renderState.svg }}
+              // biome-ignore lint/security/noDangerouslySetInnerHtml: reviewed sink: value comes only from renderer-html-policy; exact inventory in tests/renderer-html-sinks.test.ts
+              dangerouslySetInnerHTML={reviewedInnerHtml(
+                renderState.diagram.markup,
+              )}
             />
           )}
 
@@ -555,7 +602,10 @@ const MermaidBlockInner = memo(function MermaidBlockInner({
                         "[&_svg]:max-w-none [&_svg]:h-auto",
                         isDark ? "" : "[&_svg]:filter [&_svg]:drop-shadow-lg",
                       )}
-                      dangerouslySetInnerHTML={{ __html: renderState.svg }}
+                      // biome-ignore lint/security/noDangerouslySetInnerHtml: reviewed sink: value comes only from renderer-html-policy; exact inventory in tests/renderer-html-sinks.test.ts
+                      dangerouslySetInnerHTML={reviewedInnerHtml(
+                        renderState.diagram.markup,
+                      )}
                     />
                   </TransformComponent>
                 </TransformWrapper>

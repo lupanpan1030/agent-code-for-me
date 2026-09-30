@@ -1,14 +1,18 @@
 "use client"
 
-import { memo, useState, useMemo, useEffect } from "react"
 import { ChevronRight } from "lucide-react"
+import { memo, useEffect, useMemo, useState } from "react"
 import { TextShimmer } from "../../../components/ui/text-shimmer"
-import { getToolStatus, type McpToolInfo } from "./agent-tool-registry"
-import { AgentToolInterrupted } from "./agent-tool-interrupted"
-import { areToolPropsEqual } from "./agent-tool-utils"
-import { cn } from "../../../lib/utils"
-import { highlightCode } from "../../../lib/themes/shiki-theme-loader"
 import { useCodeTheme } from "../../../lib/hooks/use-code-theme"
+import {
+  type ReviewedRendererHtml,
+  reviewedInnerHtml,
+} from "../../../lib/security/renderer-html-policy"
+import { highlightCode } from "../../../lib/themes/shiki-theme-loader"
+import { cn } from "../../../lib/utils"
+import { AgentToolInterrupted } from "./agent-tool-interrupted"
+import { getToolStatus, type McpToolInfo } from "./agent-tool-registry"
+import { areToolPropsEqual } from "./agent-tool-utils"
 
 interface AgentMcpToolCallProps {
   part: any
@@ -170,7 +174,7 @@ function formatOutputForDisplay(output: any): string {
 
 /** Highlighted JSON code block using shiki */
 function HighlightedJson({ code }: { code: string }) {
-  const [html, setHtml] = useState<string | null>(null)
+  const [html, setHtml] = useState<ReviewedRendererHtml | null>(null)
   const themeId = useCodeTheme()
 
   useEffect(() => {
@@ -187,7 +191,8 @@ function HighlightedJson({ code }: { code: string }) {
     return (
       <pre
         className="text-[10px] font-mono leading-relaxed whitespace-pre-wrap break-words [&>pre]:!bg-transparent"
-        dangerouslySetInnerHTML={{ __html: html }}
+        // biome-ignore lint/security/noDangerouslySetInnerHtml: reviewed sink: value comes only from renderer-html-policy; exact inventory in tests/renderer-html-sinks.test.ts
+        dangerouslySetInnerHTML={reviewedInnerHtml(html)}
       />
     )
   }

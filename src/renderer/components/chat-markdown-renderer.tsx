@@ -1,12 +1,16 @@
-import { cn } from "../lib/utils"
-import { memo, useState, useCallback, useEffect, useMemo } from "react"
-import { Streamdown, parseMarkdownIntoBlocks } from "streamdown"
-import remarkBreaks from "remark-breaks"
-import remarkGfm from "remark-gfm"
-import { Copy, Check } from "lucide-react"
+import { Check, Copy } from "lucide-react"
+import { memo, useCallback, useEffect, useMemo, useState } from "react"
+import { parseMarkdownIntoBlocks } from "streamdown"
 import { useCodeTheme } from "../lib/hooks/use-code-theme"
+import {
+  type ReviewedRendererHtml,
+  reviewedEscapedText,
+  reviewedInnerHtml,
+} from "../lib/security/renderer-html-policy"
 import { highlightCode } from "../lib/themes/shiki-theme-loader"
+import { cn } from "../lib/utils"
 import { MermaidBlock } from "./mermaid-block"
+import { ReviewedStreamdown } from "./reviewed-streamdown"
 
 // Function to strip emojis from text (only common emojis, preserving markdown symbols)
 export function stripEmojis(text: string): string {
@@ -18,11 +22,6 @@ export function stripEmojis(text: string): string {
     .replace(/[\u{1F900}-\u{1F9FF}]/gu, "") // Supplemental Symbols
     .replace(/[\u{1FA00}-\u{1FAFF}]/gu, "") // Extended-A
     .replace(/[\u{2700}-\u{27BF}]/gu, "") // Dingbats
-}
-
-// Escape HTML special characters for safe rendering
-function escapeHtml(text: string): string {
-  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
 }
 
 // Code block text sizes matching paragraph text sizes
@@ -47,7 +46,8 @@ function CodeBlock({
   isStreaming?: boolean
 }) {
   const [copied, setCopied] = useState(false)
-  const [highlightedHtml, setHighlightedHtml] = useState<string | null>(null)
+  const [highlightedHtml, setHighlightedHtml] =
+    useState<ReviewedRendererHtml | null>(null)
 
   const handleCopy = useCallback(() => {
     navigator.clipboard.writeText(children)
@@ -85,11 +85,15 @@ function CodeBlock({
     }
   }, [children, language, themeId, shouldHighlight, isStreaming])
 
-  // For plaintext/ASCII art, just escape and render directly (no Shiki)
-  // For code with syntax highlighting, use Shiki output when available
-  const htmlContent = shouldHighlight
-    ? (highlightedHtml ?? escapeHtml(children))
-    : escapeHtml(children)
+  // Plaintext/ASCII art and the pre-highlight state render as reviewed
+  // escaped text; highlighted code uses the reviewed Shiki output.
+  const htmlContent = useMemo(
+    () =>
+      shouldHighlight && highlightedHtml
+        ? highlightedHtml
+        : reviewedEscapedText(children),
+    [shouldHighlight, highlightedHtml, children],
+  )
 
   return (
     <div className="relative mt-2 mb-4 rounded-[10px] bg-muted/50 overflow-hidden">
@@ -134,7 +138,10 @@ function CodeBlock({
           tabSize: 2,
         }}
       >
-        <code dangerouslySetInnerHTML={{ __html: htmlContent }} />
+        <code
+          // biome-ignore lint/security/noDangerouslySetInnerHtml: reviewed sink: value comes only from renderer-html-policy; exact inventory in tests/renderer-html-sinks.test.ts
+          dangerouslySetInnerHTML={reviewedInnerHtml(htmlContent)}
+        />
       </pre>
     </div>
   )
@@ -457,16 +464,13 @@ export const ChatMarkdownRenderer = memo(function ChatMarkdownRenderer({
         className,
       )}
     >
-      <Streamdown
+      <ReviewedStreamdown
         mode="streaming"
+        source={processedContent}
         components={components}
-        remarkPlugins={[remarkGfm, remarkBreaks]}
         isAnimating={isStreaming}
         parseIncompleteMarkdown={isStreaming}
-        controls={false}
-      >
-        {processedContent}
-      </Streamdown>
+      />
     </div>
   )
 })
@@ -690,14 +694,11 @@ const MemoizedMarkdownBlock = memo(
     )
 
     return (
-      <Streamdown
+      <ReviewedStreamdown
         mode="static"
+        source={content}
         components={components}
-        remarkPlugins={[remarkGfm, remarkBreaks]}
-        controls={false}
-      >
-        {content}
-      </Streamdown>
+      />
     )
   },
   (prevProps, nextProps) => {
