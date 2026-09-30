@@ -32,6 +32,25 @@ The [verification receipt](changes/archive/2026-10-01-refactor-canonical-run-eve
 records the exact gate results and accepted cutover prerequisites. The only
 remote target dispatched is `origin/main`; push receipt follows separately.
 
+### Canonical Run event ledger slice push receipt
+
+Archive commit: `87eb6b0115f6c6f5ab6afe1d429d2aab0ee11465`.
+
+slice: refactor-canonical-run-event-ledger (source f5704cb6; red suite 339c4e6e + b8830be5; Owner ACCEPTED 2026-10-01) pushed 2026-10-01 (coordination-dispatched under the 2026-09-04 push policy)
+
+This receipt precedes the coordination-authorized single `git push origin main`.
+The delivery handoff must record the pre-push and post-push
+`git ls-remote origin refs/heads/main` values and any CI run URL. Only
+`origin/main` is a remote target; there is no tag, release, other branch
+push or remote PR mutation.
+
+Whole-group rollback: `git revert -m 1 3d7645c23b29738a441c335b3f104b3477918bd0`
+(the single no-ff merge commit). Migration `0024` adds columns and tables;
+before rollback, use the old build only with an isolated profile, and stop
+old writers so old code cannot append to v1 rows. Do not separately revert
+individual commits from the accepted branch. Reconcile the later archive and
+push-receipt documentation if rollback is dispatched.
+
 ## Direction decisions 2026-09-30 (Owner)
 
 - **Consumer scope.** Amadeus is an integrating consumer, not a planning driver.
