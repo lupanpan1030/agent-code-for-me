@@ -1,3 +1,4 @@
+import { realpathSync } from "node:fs"
 import { CLAUDE_AGENT_SDK_DESKTOP_ADAPTER_METADATA } from "../agent-runtime/desktop-adapter-metadata"
 import type {
   DesktopRunRequest,
@@ -7,6 +8,7 @@ import {
   type DesktopRuntimeAdapter,
   recordDesktopRuntimeAdapterStarted,
 } from "../agent-runtime/desktop-runner"
+import { assertRunExecutableUnchanged } from "../agent-runtime/run-provenance"
 import { isActiveClaudeSessionSignal } from "./active-sessions"
 import {
   type ClaudeAgentSdkQuery,
@@ -59,6 +61,39 @@ export class ClaudeAgentSdkQueryStartError extends Error {
     super("Failed to start Claude query")
     this.name = "ClaudeAgentSdkQueryStartError"
     this.originalError = originalError
+  }
+}
+
+/**
+ * Pre-spawn executable check (tasks 6.1, design "Test-facing Contract"
+ * two-stage provenance): the SDK spawns `pathToClaudeCodeExecutable`, so the
+ * Run's bound tuple is re-checked right before the query starts, like the
+ * process runner and the Codex app-server launch. Changed executable bytes,
+ * an unknown executable reference or a different executable path fail
+ * closed; no other binary is substituted.
+ */
+export function assertClaudeAgentSdkExecutableUnchanged(
+  request: DesktopRunRequest,
+  queryOptions: ClaudeAgentSdkQueryParams,
+): void {
+  const provenance = request.executionProvenance
+  if (!provenance) return
+  const captured = assertRunExecutableUnchanged(provenance)
+  const configured = (queryOptions.options as Record<string, unknown>)
+    .pathToClaudeCodeExecutable
+  let launched: string | null = null
+  try {
+    launched =
+      typeof configured === "string" && configured.length > 0
+        ? realpathSync(configured)
+        : null
+  } catch {
+    launched = null
+  }
+  if (launched !== captured) {
+    throw new Error(
+      "Claude executable differs from the executable captured for this Run",
+    )
   }
 }
 
@@ -163,6 +198,7 @@ export function createClaudeAgentSdkAdapter({
 
       let stream: ClaudeAgentSdkStream
       try {
+        assertClaudeAgentSdkExecutableUnchanged(request, queryOptions)
         stream = sdkQuery(queryOptions) as ClaudeAgentSdkStream
       } catch (error) {
         throw new ClaudeAgentSdkQueryStartError(error)

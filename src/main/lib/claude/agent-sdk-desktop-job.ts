@@ -84,13 +84,18 @@ export type ClaudeAgentSdkDesktopJobSetup = {
   handle: DesktopAgentJobHandle
   jobId: string
   ledger: CanonicalDesktopRunLedger
+  /**
+   * The execution tuple bound to the ledger; the SDK adapter re-checks it
+   * immediately before the SDK spawns the executable (tasks 6.1).
+   */
+  executionProvenance?: RuntimeExecutionProvenance
 }
 
 export type CreateClaudeAgentSdkDesktopRunStartupInput =
   CreateClaudeAgentSdkDesktopJobInput &
     Omit<
       CreateClaudeDesktopRunRequestFromRuntimeStartupInput,
-      "jobId" | "runId" | "mode" | "prompt" | "ledger"
+      "jobId" | "runId" | "mode" | "prompt" | "ledger" | "executionProvenance"
     > & {
       createDesktopRunRequest?: typeof createClaudeDesktopRunRequestFromRuntimeStartup
     }
@@ -164,15 +169,14 @@ export async function createClaudeAgentSdkDesktopJob(
   const ledger = await dependencies.getRunEventLedger(input.db, handle.job, {
     secretHints: input.secretHints ?? [],
   })
-  await bindRunExecutionProvenance(
-    ledger,
-    await dependencies.captureExecutionProvenance(),
-  )
+  const executionProvenance = await dependencies.captureExecutionProvenance()
+  await bindRunExecutionProvenance(ledger, executionProvenance)
 
   return {
     handle,
     jobId,
     ledger,
+    executionProvenance,
   }
 }
 
@@ -230,6 +234,7 @@ export async function createClaudeAgentSdkDesktopRunStartup({
     signal: input.signal,
     existingSessionId: input.existingSessionId,
     ledger: desktopJob.ledger,
+    executionProvenance: desktopJob.executionProvenance ?? null,
   })
 
   return {

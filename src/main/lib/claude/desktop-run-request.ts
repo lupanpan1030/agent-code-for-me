@@ -7,6 +7,7 @@ import {
 } from "../agent-runtime/desktop-run-request"
 import type { DesktopPermissionPolicy } from "../agent-runtime/permission-policy"
 import type { DesktopRunPreflightResult } from "../agent-runtime/preflight"
+import type { RuntimeExecutionProvenance } from "../agent-runtime/run-event-ledger"
 import type { CanonicalDesktopRunLedger } from "../agent-runtime/run-event-ledger-host"
 
 export type ClaudeDesktopRunImageAttachment = {
@@ -40,6 +41,8 @@ export type CreateClaudeDesktopRunRequestInput = {
   parentSessionId?: string | null
   /** The desktop job's host-composed ledger. */
   ledger?: CanonicalDesktopRunLedger | null
+  /** The execution tuple the host bound to that ledger (host-only). */
+  executionProvenance?: RuntimeExecutionProvenance | null
 }
 
 export type CreateClaudeDesktopRunRequestFromRuntimeStartupInput = Omit<
@@ -87,6 +90,7 @@ export function createClaudeDesktopRunRequest({
   resumeSessionId,
   parentSessionId,
   ledger = null,
+  executionProvenance = null,
 }: CreateClaudeDesktopRunRequestInput): DesktopRunRequest {
   return {
     identity: {
@@ -133,6 +137,7 @@ export function createClaudeDesktopRunRequest({
       })),
     ],
     ledger,
+    ...(executionProvenance ? { executionProvenance } : {}),
     signal,
     session: {
       resumeSessionId,

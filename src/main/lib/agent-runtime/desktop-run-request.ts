@@ -16,6 +16,7 @@ import type {
   AgentRuntimeRunResultBase,
   AgentRuntimeTraceObserver,
 } from "./run-contract"
+import type { RuntimeExecutionProvenance } from "./run-event-ledger"
 import type { CanonicalDesktopRunLedger } from "./run-event-ledger-host"
 import type { RunEvent } from "./runtime-events"
 
@@ -99,6 +100,12 @@ export type DesktopRunRequest = AgentRuntimeRunRequestBase<
    * no durable job, e.g. isolated adapter tests).
    */
   ledger?: CanonicalDesktopRunLedger | null
+  /**
+   * Host-only execution tuple the host bound to this Run's ledger at launch
+   * capture; an adapter that spawns the runtime itself re-checks it
+   * immediately before the spawn (capture-to-launch changes fail closed).
+   */
+  executionProvenance?: RuntimeExecutionProvenance | null
   /**
    * Host consumer of already committed records (e.g. the headless wrapper);
    * it never appends them again or mints a terminal.
