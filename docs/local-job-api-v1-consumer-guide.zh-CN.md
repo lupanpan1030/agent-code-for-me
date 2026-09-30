@@ -476,11 +476,30 @@ run 不能成功：结算为 `failed`（或保留 `canceled`/`interrupted`），
 `completed.payload.reasons` 含 `terminal_artifact_preparation_failed`，且不登记
 未验证条目。
 
-run 的 artifact owner 也可以准入 native artifact 候选，准入后追加 role 为
-`native` 的条目；被拒绝的候选变成 `status` 记录：`subtype: "artifact_admission"`、
-`result: "rejected"`，`reason` 为 `missing`、`out_of_scope`、`ownership_mismatch`、
-`digest_mismatch` 或 `redaction_unsafe`。当前 build 中没有 runtime adapter 提交
-native 候选，所以 result 目前只列出 Locus run-dir role。未知 role 按新增处理。
+run 的 artifact owner 也会准入 native artifact 候选。Codex app-server run
+（`runtime.executionProfile: "policy-grant"`）把生成图片的路径
+（`imageGeneration.savedPath`）、已完成文件改动的路径以及该 turn 的累计 diff
+作为候选上报。runtime 自己从不创建 artifact，Locus 也不会授予 run 目录之外的
+文件系统访问：
+
+- 只有位于本 run 目录内的稳定普通文件才会被准入。准入条目的 role 为
+  `native-image`、`native-file` 或 `native-diff`，并带常规的 `path`、`sha256`、
+  `contentType`、`sizeBytes`。
+- Locus 把该 turn 最终的 diff 写入 run 目录，文件名为 `native-diff-<n>.patch`，
+  然后准入。含有精确 secret 的 diff 内容不会被写入。
+- 其余候选都变成 `status` 记录：`subtype: "artifact_admission"`、
+  `result: "rejected"`、候选的 `role`，`reason` 为 `missing`、`out_of_scope`、
+  `ownership_mismatch`、`digest_mismatch` 或 `redaction_unsafe`。该记录从不包含
+  路径或内容。因此工作区改动和保存在 run 目录之外的图片会以 `out_of_scope`
+  被拒绝。
+- 准入条目的 `artifact_created` 排在 run 的 `completed` 之前。最终的
+  `result.json`、`artifacts.json` 和 result 信封在 Locus run-dir 文件之后列出准入
+  条目。
+- `runs result` 只列出 run 的账本已登记 digest 的条目，所以为尚未提交的终态
+  准备的文件永远不会被列出。
+
+batch 模式的 Codex 与 Claude run、completion run，以及没有 `artifacts.baseDir`
+的 run 不会提交 native 候选。未知 role 按新增处理。
 
 ## Create Response
 
@@ -796,7 +815,7 @@ ledger 依据已记录的证据，对每个 run 只结算一次，顺序如下�
 | `system_lifecycle` | 本身没有 subtype 的主机生命周期 status。既有主机 status（如 `runtime_selected` / `runtime_selection_refused`）保留其 `payload.status` 与字符串 `payload.runtime`。 |
 | `guard_decision`、`permission_requested`、`scope_expansion_requested`、`question_pending`、`question_result`、`mcp_needs_auth`、`command_started`、`command_output`、`command_finished` | 12 个公开类型之外的内部记录类型，投影时保留其 payload 成员。 |
 | `late_event` | run 封存后到达、仅供诊断的观察。见下文“迟到观察”。 |
-| `artifact_admission` | 被拒绝的 native artifact 候选。见 [Artifact Contract](#artifact-contract)。 |
+| `artifact_admission` | 被拒绝的 native artifact 候选，带其 `role` 与 `reason`。见 [Artifact Contract](#artifact-contract)。 |
 | `interaction_boundary` | native server request、response send（`sent` 或 `failed`）或 resolution。它记录的是观察，不是交互状态或授权。 |
 | `native_resume_validated`、`native_resume_rejected` | 关联的 resume 事实（Codex `thread/resume` 响应、Claude 关联的 `system/init`）。拒绝既不结算 run，也不改变 session 绑定。 |
 | `thread_lifecycle`、`turn_lifecycle`、`item_lifecycle`、`item_reconciliation`、`reasoning_part`、`plan`、`hook_lifecycle`、`compaction`、`review_mode`、`user_message`、`diff_observation`、`runtime_process`、`workspace_observation`、`approval_review`、`model_verification`、`mcp_lifecycle`、`reroute`、`warning`、`protocol_response` 等 | Codex app-server native 边界，遵循 `codex-runtime-parity` capability 中固定的处置表。 |

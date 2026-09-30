@@ -498,13 +498,34 @@ preparation fails, the run cannot succeed; it settles `failed` (or keeps
 `canceled`/`interrupted`) with `terminal_artifact_preparation_failed` in
 `completed.payload.reasons` and no unverified entries.
 
-The run's artifact owner can also admit native artifact candidates, which add
-entries with role `native`; a rejected candidate becomes a `status` record with
-`subtype: "artifact_admission"`, `result: "rejected"` and a `reason` of
-`missing`, `out_of_scope`, `ownership_mismatch`, `digest_mismatch` or
-`redaction_unsafe`. No runtime adapter submits native candidates in the current
-build, so results list only the Locus run-dir roles today. Treat unknown roles
-as additive.
+The run's artifact owner also admits native artifact candidates. Codex
+app-server runs (`runtime.executionProfile: "policy-grant"`) report the path of
+a generated image (`imageGeneration.savedPath`), the paths of completed file
+changes and the turn's cumulative diff as candidates. The runtime never creates
+an artifact itself, and Locus grants no filesystem access beyond the run
+directory:
+
+- A candidate is admitted only as a stable regular file inside this run's
+  directory. Its entry has role `native-image`, `native-file` or `native-diff`
+  and the usual `path`, `sha256`, `contentType` and `sizeBytes`.
+- Locus writes the turn's final diff into the run directory as
+  `native-diff-<n>.patch` and then admits it. Diff content that contains an exact
+  secret is not written.
+- Every other candidate becomes a `status` record with
+  `subtype: "artifact_admission"`, `result: "rejected"`, the candidate `role` and
+  a `reason` of `missing`, `out_of_scope`, `ownership_mismatch`,
+  `digest_mismatch` or `redaction_unsafe`. The record never carries the path or
+  content. Workspace edits and images saved outside the run directory are
+  therefore rejected as `out_of_scope`.
+- An admitted entry's `artifact_created` precedes the run's `completed`. The
+  final `result.json`, `artifacts.json` and the result envelope list admitted
+  entries after the Locus run-dir files.
+- `runs result` lists only entries whose digest the run's ledger registered, so
+  files prepared for a terminal that has not been committed are never listed.
+
+Batch Codex and Claude runs, completion runs and runs without
+`artifacts.baseDir` submit no native candidates. Treat unknown roles as
+additive.
 
 ## Create Response
 
@@ -844,7 +865,7 @@ diagnostics.
 | `system_lifecycle` | Host lifecycle status that has no subtype of its own. Existing host status such as `runtime_selected` / `runtime_selection_refused` keeps its `payload.status` and its string `payload.runtime`. |
 | `guard_decision`, `permission_requested`, `scope_expansion_requested`, `question_pending`, `question_result`, `mcp_needs_auth`, `command_started`, `command_output`, `command_finished` | Internal record types outside the public twelve, projected with their payload members. |
 | `late_event` | A diagnostic-only observation that arrived after the run sealed. See [Late observations](#late-observations). |
-| `artifact_admission` | A rejected native artifact candidate. See [Artifact Contract](#artifact-contract). |
+| `artifact_admission` | A rejected native artifact candidate, with its `role` and `reason`. See [Artifact Contract](#artifact-contract). |
 | `interaction_boundary` | A native server request, a response send (`sent` or `failed`) or a resolution. It records an observation, not an interaction state or a grant. |
 | `native_resume_validated`, `native_resume_rejected` | Correlated resume facts (Codex `thread/resume` response, Claude correlated `system/init`). A rejection neither settles the run nor changes the session binding. |
 | `thread_lifecycle`, `turn_lifecycle`, `item_lifecycle`, `item_reconciliation`, `reasoning_part`, `plan`, `hook_lifecycle`, `compaction`, `review_mode`, `user_message`, `diff_observation`, `runtime_process`, `workspace_observation`, `approval_review`, `model_verification`, `mcp_lifecycle`, `reroute`, `warning`, `protocol_response` and similar | Codex app-server native boundaries, following the pinned disposition table of the `codex-runtime-parity` capability. |
