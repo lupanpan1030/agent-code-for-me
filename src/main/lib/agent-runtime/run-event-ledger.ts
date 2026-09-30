@@ -17,7 +17,7 @@ import {
   createExactSecretStreamChannelRedactor,
   redactRuntimePayload,
 } from "./redaction"
-import type { JsonValue, RunEvent } from "./runtime-events"
+import type { CommittedRunEvent, JsonValue, RunEvent } from "./runtime-events"
 
 /**
  * Canonical Run event ledger (refactor-canonical-run-event-ledger).
@@ -127,10 +127,7 @@ export type ItemKey = (
   | { correlationKey: string }
 ) & { channel: string; partIndex: number }
 
-export type LedgerRecord = RunEvent & {
-  factKey: string
-  metadata: JsonObject
-}
+export type LedgerRecord = CommittedRunEvent
 
 export type ItemReadModel = {
   state: "started" | "streaming" | "completed"

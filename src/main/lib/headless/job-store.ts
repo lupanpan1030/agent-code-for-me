@@ -31,7 +31,11 @@ import {
 } from "../../../shared/agent-runtime-capabilities"
 import { createAgentJobRunEvent } from "../agent-runtime/job-event-bridge"
 import { redactExactSecretHints } from "../agent-runtime/redaction"
-import type { JsonValue, RunEvent } from "../agent-runtime/runtime-events"
+import type {
+  CommittedRunEvent,
+  JsonValue,
+  RunEvent,
+} from "../agent-runtime/runtime-events"
 import type * as schema from "../db/schema"
 import {
   type AgentJob,
@@ -788,12 +792,8 @@ export function retryAgentJob(
 // constructs events. Its only importer is agent-runtime/run-event-ledger-host.
 // ---------------------------------------------------------------------------
 
-export type ExactRunEventRecord = RunEvent & {
-  /** `<observationKey>:<ordinal>`; stored verbatim, never hashed. */
-  factKey: string
-  /** Record metadata (redaction, boundary/source, provenance ref). */
-  metadata: { [key: string]: JsonValue }
-}
+/** `factKey` is stored verbatim (never hashed); metadata stays off payload. */
+export type ExactRunEventRecord = CommittedRunEvent
 
 type ExactRunEventTimestamp = Date | string | number | null
 

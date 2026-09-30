@@ -1,11 +1,14 @@
-import type { AgentRuntimeId } from "../../../shared/agent-runtime-capabilities"
 import type {
   AgentJobEventType,
   AgentJobStatus,
 } from "../../../shared/agent-jobs"
+import type { AgentRuntimeId } from "../../../shared/agent-runtime-capabilities"
 
 export type JsonPrimitive = string | number | boolean | null
-export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue }
+export type JsonValue =
+  | JsonPrimitive
+  | JsonValue[]
+  | { [key: string]: JsonValue }
 
 export type RunEventRedactionStatus = "not-required" | "redacted"
 
@@ -31,13 +34,24 @@ export type RunEvent = {
   }
 }
 
+/** The one terminal record of a Run; errors are diagnostics, never terminal. */
 export type RunTerminalEvent = RunEvent & {
-  type: "completed" | "error"
+  type: "completed"
   payload: {
     status: Exclude<AgentJobStatus, "queued" | "running">
     message?: string
     [key: string]: JsonValue | undefined
   }
+}
+
+/**
+ * A ledger-committed record: the RunEvent envelope plus its fact key
+ * (`<observationKey>:<ordinal>`) and record metadata (redaction, boundary /
+ * source, provenance ref) kept separate from the bare semantic payload.
+ */
+export type CommittedRunEvent = RunEvent & {
+  factKey: string
+  metadata: { [key: string]: JsonValue }
 }
 
 export type CreateRunEventInput = {
