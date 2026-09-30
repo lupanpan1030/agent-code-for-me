@@ -152,6 +152,21 @@ Diff `2d0b0da0..b0f3e60d`: 41 files, +4596/−107; `src`/`scripts`/`drizzle`: 21
 | Immutable red set | `git diff e63457a5 HEAD --` over the nine red files, the four kits/harness files, `tests/fixtures/run-event-ledger/` and `red-slice-receipt.md`; `git diff 2d0b0da0 HEAD -- red-receipt.md` | Both empty |
 | Ratchets | `git diff 2d0b0da0 HEAD -- lint-baseline.json scripts/architecture-baselines.json` | Empty: `lint-baseline.json` unchanged since Phase III (still only shrunk from `e63457a5`, +8/−17 lines); `reachThroughWrappers` unchanged |
 
+**Lint ratchet closure (2026-10-01).** This closes finding 7.
+- Coordinator adjudication `e99b9892` added `biome-ignore` above the two `type Json = any`
+  lines in the immutable red files and above the identical character class in
+  `tests/run-event-ledger-domain-b-kit.ts` (recorded in `red-receipt.md` §8.4).
+- `41a6d32b` drops the unused `isNull`/`lt`/`or` drizzle imports from
+  `src/main/lib/headless/job-store.ts`.
+- At `41a6d32b`, `BIOME_CHANGED_SINCE=25c075af node scripts/run-biome-changed.mjs`
+  (`main` = `origin/main`) exits 0. It reports no changed-line diagnostic and no baseline
+  excess, only the note "Biome reported diagnostics only outside changed lines; ignoring
+  legacy file diagnostics."
+- On that tree, `bun run check:full` exits 0 in 2m31.6s: 2703 pass / 0 fail, 13551
+  `expect()` calls, 344 files; strict 54/54; build OK. The nine red files pass 141/141.
+- The new frozen candidate is the commit that adds this paragraph on top of `41a6d32b`;
+  the handoff names its SHA, since a commit cannot name itself. It supersedes `8efe516b`.
+
 ### Candidate identity (Phase III, superseded by T1)
 
 - Worktree `/home/chen/projects/locus-refactor-canonical-run-event-ledger-draft`, branch
