@@ -7,6 +7,7 @@ import type {
   CodexAppServerTransportServerRequest,
   CodexAppServerTransportServerRequestResponse,
 } from "../../src/main/lib/codex/app-server-transport"
+import { selectCodexAppServerServerRequestResult } from "../../src/main/lib/codex/app-server-transport"
 
 /**
  * Minimal scripted Codex app-server transport for implementer unit tests:
@@ -19,6 +20,14 @@ export type CodexAppServerScript = {
   turnNotifications?: (
     threadId: string,
   ) => CodexAppServerTransportNotification[]
+  /**
+   * Asynchronous turn body (replaces turnNotifications): it may emit
+   * notifications and await server requests before turn/start resolves.
+   */
+  turn?: (
+    transport: ScriptedCodexAppServerTransport,
+    threadId: string,
+  ) => Promise<void>
 }
 
 export function defaultCodexTurnNotifications(
@@ -58,6 +67,13 @@ export class ScriptedCodexAppServerTransport
     | null = null
   private exitHandler: ((exit: CodexAppServerTransportExit) => void) | null =
     null
+  private serverRequestHandler:
+    | ((
+        request: CodexAppServerTransportServerRequest,
+      ) =>
+        | CodexAppServerTransportServerRequestResponse
+        | Promise<CodexAppServerTransportServerRequestResponse>)
+    | null = null
   private threadId = "thread-1"
 
   constructor(private readonly script: CodexAppServerScript = {}) {}
@@ -87,6 +103,10 @@ export class ScriptedCodexAppServerTransport
       case "mcpServerStatus/list":
         return { data: [], nextCursor: null }
       case "turn/start":
+        if (this.script.turn) {
+          await this.script.turn(this, this.threadId)
+          return { turn: { id: "turn-1" } }
+        }
         for (const notification of (
           this.script.turnNotifications ?? defaultCodexTurnNotifications
         )(this.threadId)) {
@@ -114,13 +134,25 @@ export class ScriptedCodexAppServerTransport
   }
 
   onServerRequest(
-    _handler: (
+    handler: (
       request: CodexAppServerTransportServerRequest,
     ) =>
       | CodexAppServerTransportServerRequestResponse
       | Promise<CodexAppServerTransportServerRequestResponse>,
   ): () => void {
-    return () => {}
+    this.serverRequestHandler = handler
+    return () => {
+      this.serverRequestHandler = null
+    }
+  }
+
+  /** Delivers one server request and resolves with the written result. */
+  async emitServerRequest(
+    request: CodexAppServerTransportServerRequest,
+  ): Promise<unknown> {
+    if (!this.serverRequestHandler) return undefined
+    const response = await this.serverRequestHandler(request)
+    return selectCodexAppServerServerRequestResult(response)
   }
 
   onExit(handler: (exit: CodexAppServerTransportExit) => void): () => void {
