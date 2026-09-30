@@ -7,18 +7,21 @@
  */
 import { afterEach, describe, expect, test } from "bun:test"
 import { createHash } from "node:crypto"
-import {
-  existsSync,
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-} from "node:fs"
+import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { decodeCoarseRuntimeObservation } from "../src/main/lib/agent-runtime/ledger-ingress"
-import { prepareRunTerminalArtifacts } from "../src/main/lib/agent-runtime/run-artifacts"
+import {
+  admitRunDirArtifacts,
+  describeRunArtifactFile,
+  type RunArtifactRunDir,
+  writeRunArtifactFile,
+} from "../src/main/lib/agent-runtime/run-artifacts"
 import { createCanonicalRunEventLedger } from "../src/main/lib/agent-runtime/run-event-ledger"
+import {
+  closeStableDirectory,
+  openStableDirectory,
+} from "../src/main/lib/filesystem/stable-directory"
 import {
   captureLocusCompletionProvenance,
   encodeRunSchemaManifest,
@@ -249,32 +252,48 @@ describe("terminal artifact preparation (design Artifacts and Terminal Commit Or
     })
   })
 
-  test("prepareRunTerminalArtifacts stages atomic files inside the admitted run dir and refuses an escape", () => {
+  test("run-dir files are written by the artifact owner and admitted as one artifact_created only when their digests still match", async () => {
     const runDir = mkdtempSync(join(tmpdir(), "run-units-dir-"))
     tempDirs.push(runDir)
-    const refs = prepareRunTerminalArtifacts({
-      allowedRunDir: runDir,
-      files: [{ name: "result.json", role: "result", content: '{"ok":true}' }],
-    })
-    expect(refs).toEqual([
-      {
-        role: "result",
-        name: "result.json",
-        sha256: createHash("sha256").update('{"ok":true}').digest("hex"),
-        sizeBytes: 11,
-      },
-    ])
-    expect(readFileSync(join(runDir, "result.json"), "utf8")).toBe(
-      '{"ok":true}',
+    const handle: RunArtifactRunDir = Object.assign(
+      openStableDirectory(runDir, "Artifact run"),
+      { fileReceipts: new Map() },
     )
-    expect(readdirSync(runDir)).toEqual(["result.json"])
-    expect(() =>
-      prepareRunTerminalArtifacts({
-        allowedRunDir: runDir,
-        files: [{ name: "../escape.json", role: "x", content: "{}" }],
+    writeRunArtifactFile(handle, "request.json", '{"ok":true}')
+    const request = describeRunArtifactFile("request", handle, "request.json")
+    expect(request).toMatchObject({
+      role: "request",
+      path: join(handle.path, "request.json"),
+      sha256: createHash("sha256").update('{"ok":true}').digest("hex"),
+      sizeBytes: 11,
+    })
+    const { store, commits } = memoryStore("run-units-run-dir")
+    const ledger = createCanonicalRunEventLedger({
+      runId: "run-units-run-dir",
+      runtimeId: "codex",
+      provenance: { kind: "pending", runtimeId: "codex" },
+      durableStore: store,
+    })
+    await expect(
+      admitRunDirArtifacts({
+        runId: "run-units-run-dir",
+        runDir: handle,
+        artifacts: [{ ...request, sha256: "0".repeat(64) }],
+        ledger,
       }),
-    ).toThrow("escapes")
-    expect(existsSync(join(runDir, "..", "escape.json"))).toBe(false)
+    ).rejects.toThrow("changed before admission")
+    await admitRunDirArtifacts({
+      runId: "run-units-run-dir",
+      runDir: handle,
+      artifacts: [request],
+      ledger,
+    })
+    const created = commits
+      .flatMap((commit) => commit.records)
+      .filter((record) => record.type === "artifact_created")
+    expect(created).toHaveLength(1)
+    expect(created[0]?.payload).toMatchObject({ artifacts: [request] })
+    closeStableDirectory(handle)
   })
 })
 

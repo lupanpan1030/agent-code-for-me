@@ -6,25 +6,15 @@ import {
   fstatSync,
   fsyncSync,
   lstatSync,
-  mkdirSync,
   openSync,
   readSync,
   realpathSync,
   renameSync,
-  rmSync,
   type Stats,
   unlinkSync,
-  writeFileSync,
   writeSync,
 } from "node:fs"
-import {
-  basename,
-  dirname,
-  isAbsolute,
-  join,
-  relative,
-  resolve,
-} from "node:path"
+import { basename, isAbsolute, join, relative, resolve } from "node:path"
 import {
   assertStableDirectoryPath,
   fsyncStableDirectory,
@@ -298,66 +288,6 @@ export async function admitRunDirArtifacts(input: {
     artifacts: input.artifacts.map((artifact) => ({ ...artifact })),
     runDir: input.runDir.path,
   })
-}
-
-export type RunTerminalArtifactFile = {
-  /** Relative file name inside the admitted run directory. */
-  name: string
-  role: string
-  content: string
-}
-
-export type RunTerminalArtifactRef = {
-  role: string
-  name: string
-  sha256: string
-  sizeBytes: number
-}
-
-/**
- * Prepares terminal run-dir files from a frozen terminal candidate (design
- * step 2): each file is staged and atomically renamed inside the admitted
- * run directory, and the returned refs carry the digests the ledger
- * registers with `completed` in one durable commit. Serialization of the v1
- * public files stays with the local-job-api owner; this function only writes
- * the bytes it is handed. A failure removes staged files and throws so the
- * ledger can settle `failed` with the preparation diagnostic.
- */
-export function prepareRunTerminalArtifacts(input: {
-  allowedRunDir: string
-  files: readonly RunTerminalArtifactFile[]
-}): RunTerminalArtifactRef[] {
-  const root = realpathSync(input.allowedRunDir)
-  const staged: string[] = []
-  try {
-    const refs: RunTerminalArtifactRef[] = []
-    for (const file of input.files) {
-      const target = resolve(root, file.name)
-      if (!isInside(root, target) || target === root) {
-        throw new Error("Terminal artifact escapes the admitted run directory")
-      }
-      mkdirSync(dirname(target), { recursive: true })
-      const stagedPath = join(
-        dirname(target),
-        `.${basename(target)}.${process.pid}.staged`,
-      )
-      writeFileSync(stagedPath, file.content, { flag: "w" })
-      staged.push(stagedPath)
-      renameSync(stagedPath, target)
-      staged.pop()
-      const bytes = Buffer.from(file.content)
-      refs.push({
-        role: file.role,
-        name: file.name,
-        sha256: createHash("sha256").update(bytes).digest("hex"),
-        sizeBytes: bytes.length,
-      })
-    }
-    return refs
-  } catch (error) {
-    for (const path of staged) rmSync(path, { force: true })
-    throw error
-  }
 }
 
 // ---------------------------------------------------------------------------
