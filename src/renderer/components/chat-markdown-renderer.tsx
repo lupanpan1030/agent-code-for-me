@@ -1,8 +1,6 @@
 import { Check, Copy } from "lucide-react"
 import { memo, useCallback, useEffect, useMemo, useState } from "react"
-import remarkBreaks from "remark-breaks"
-import remarkGfm from "remark-gfm"
-import { parseMarkdownIntoBlocks, Streamdown } from "streamdown"
+import { parseMarkdownIntoBlocks } from "streamdown"
 import { useCodeTheme } from "../lib/hooks/use-code-theme"
 import {
   type ReviewedRendererHtml,
@@ -12,6 +10,7 @@ import {
 import { highlightCode } from "../lib/themes/shiki-theme-loader"
 import { cn } from "../lib/utils"
 import { MermaidBlock } from "./mermaid-block"
+import { ReviewedStreamdown } from "./reviewed-streamdown"
 
 // Function to strip emojis from text (only common emojis, preserving markdown symbols)
 export function stripEmojis(text: string): string {
@@ -465,16 +464,13 @@ export const ChatMarkdownRenderer = memo(function ChatMarkdownRenderer({
         className,
       )}
     >
-      <Streamdown
+      <ReviewedStreamdown
         mode="streaming"
+        source={processedContent}
         components={components}
-        remarkPlugins={[remarkGfm, remarkBreaks]}
         isAnimating={isStreaming}
         parseIncompleteMarkdown={isStreaming}
-        controls={false}
-      >
-        {processedContent}
-      </Streamdown>
+      />
     </div>
   )
 })
@@ -698,14 +694,11 @@ const MemoizedMarkdownBlock = memo(
     )
 
     return (
-      <Streamdown
+      <ReviewedStreamdown
         mode="static"
+        source={content}
         components={components}
-        remarkPlugins={[remarkGfm, remarkBreaks]}
-        controls={false}
-      >
-        {content}
-      </Streamdown>
+      />
     )
   },
   (prevProps, nextProps) => {
