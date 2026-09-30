@@ -4,13 +4,34 @@ This ledger records execution state only. Current product truth remains in
 `openspec/specs/` plus the checked-out code; future direction remains in the
 ratified strategy and interoperability contract.
 
-Updated: 2026-09-07 (Pacific/Auckland)
+Updated: 2026-09-30 (Pacific/Auckland); previous: 2026-09-07 (Pacific/Auckland)
 
 | Change | State | Concrete next gate |
 | --- | --- | --- |
 
 Parked proposals are indexed in [`deferred/README.md`](deferred/README.md) and
 do not appear in the active list.
+
+## Direction decisions 2026-09-30 (Owner)
+
+- **Consumer scope.** Amadeus is an integrating consumer, not a planning driver.
+  No consumer-specific negotiation rounds or roadmap reordering are performed for
+  it; Consumer Impact sections list it factually as a known consumer only.
+- **Roadmap order restored.** The 2026-09-02 fast-lane reordering (Phase 5 minimal
+  continuation slice ahead of Phase 4) is withdrawn; delivery follows the ratified
+  §9 order (Phase 3 → 4 → 5 → 6). The bilaterally frozen `continuationHandle`
+  interface draft (FROZEN 1.1) remains a specification input for Phase 5 when it
+  is reached.
+- **Parked change.** `add-linked-worktree-admission` (external PR #18 lineage) is
+  parked at its implementation candidate on its own branch (see that branch's
+  ledger); its first release served only Linux headless batch and brings nothing
+  to Locus's own desktop platforms.
+- **Active queue.** `add-renderer-untrusted-content-hardening` (exact package
+  `efe3fb91` re-confirmed 2026-09-09; test-first) → `refactor-canonical-run-event-ledger`
+  (APPROVED bound to `9ebe6c34`; test-first) → later roadmap changes.
+- **Roles.** Coordination/planning: Claude (Fable). Implementation lead: Claude
+  Opus 5.5 subagents in the change worktree. Codex (`gpt-6-sol`, high): cross-vendor
+  fresh review, local integration/push, Codex-runtime paths.
 
 ## Locally archived 2026-09-07
 
