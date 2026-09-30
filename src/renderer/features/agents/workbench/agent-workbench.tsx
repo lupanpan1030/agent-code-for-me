@@ -80,6 +80,7 @@ import {
   getWorkbenchTraceRow,
   type WorkbenchObservedPermission,
   type WorkbenchTraceEvent,
+  withWorkbenchHistoryQuality,
 } from "./workbench-trace-presenter"
 import { WorkspaceConflictSection } from "./workspace-conflict-section"
 
@@ -1716,8 +1717,16 @@ export function AgentWorkbench() {
     (jobRecordQuery.data?.job as HeadlessJob | undefined)?.id === selectedJobId
       ? (jobRecordQuery.data?.job as HeadlessJob)
       : null
-  const headlessJobEvents = (selectedJobLogs?.events ??
-    []) as HeadlessJobEvent[]
+  const selectedJobLogEvents = selectedJobLogs?.events
+  const selectedJobHistoryQuality = selectedJobLogs?.historyQuality
+  const headlessJobEvents = useMemo(
+    () =>
+      withWorkbenchHistoryQuality(
+        selectedJobLogEvents as HeadlessJobEvent[] | undefined,
+        selectedJobHistoryQuality,
+      ),
+    [selectedJobHistoryQuality, selectedJobLogEvents],
+  )
   const loggedJob =
     selectedJobRecord ??
     (selectedJobLogs?.job as HeadlessJob | undefined) ??

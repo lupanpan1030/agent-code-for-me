@@ -670,6 +670,21 @@ export class RunEventStoreError extends Error {
   }
 }
 
+/**
+ * Internal read metadata of a job's persisted event history
+ * (refactor-canonical-run-event-ledger, design "Migration Plan"): pre-ledger
+ * (`ledger_version=0`) rows are `legacy_unverified`; ledger (v1) rows are
+ * `ledger`. It is exposed only to the store header and the Workbench reader,
+ * never in a public job, result or event envelope.
+ */
+export type RunEventHistoryQuality = "legacy_unverified" | "ledger"
+
+export function runEventHistoryQuality(
+  job: Pick<AgentJob, "ledgerVersion">,
+): RunEventHistoryQuality {
+  return job.ledgerVersion === 0 ? "legacy_unverified" : "ledger"
+}
+
 export type RunEventLedgerHeader = {
   runId: string
   jobId: string
@@ -678,6 +693,7 @@ export type RunEventLedgerHeader = {
   kind: string
   status: string
   ledgerVersion: number
+  historyQuality: RunEventHistoryQuality
   ledgerProvenanceJson: string | null
   ledgerSealedSequence: number | null
   cancelRequestedAt: string | null
@@ -1080,6 +1096,7 @@ export function readRunEventLedgerHeader(
     kind: job.kind,
     status: job.status,
     ledgerVersion: job.ledgerVersion,
+    historyQuality: runEventHistoryQuality(job),
     ledgerProvenanceJson: job.ledgerProvenanceJson,
     ledgerSealedSequence: job.ledgerSealedSequence,
     cancelRequestedAt: isoOrNull(job.cancelRequestedAt),

@@ -17,6 +17,7 @@ import {
   listAgentJobEvents,
   listAgentJobs,
   retryAgentJob,
+  runEventHistoryQuality,
 } from "../../headless/job-store"
 import { publicProcedure, router } from "../index"
 
@@ -71,6 +72,8 @@ export const agentJobsRouter = router({
       return {
         job: serializeAgentJob(job),
         events: events.map(serializeAgentJobEvent),
+        // Internal Workbench read metadata only (never a public envelope).
+        historyQuality: runEventHistoryQuality(job),
       }
     }),
 

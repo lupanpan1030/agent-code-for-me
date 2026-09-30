@@ -5,6 +5,7 @@ import { trpc } from "@/lib/trpc"
 import {
   getWorkbenchTraceRow,
   type WorkbenchTraceEvent,
+  withWorkbenchHistoryQuality,
 } from "../../agents/workbench/workbench-trace-presenter"
 import {
   type CurrentChatAgentJob,
@@ -45,7 +46,16 @@ export function useCurrentRunTrace({
       placeholderData: (previous) => previous,
     },
   )
-  const events = (logsQuery.data?.events ?? []) as WorkbenchTraceEvent[]
+  const logEvents = logsQuery.data?.events
+  const historyQuality = logsQuery.data?.historyQuality
+  const events = useMemo(
+    () =>
+      withWorkbenchHistoryQuality(
+        logEvents as WorkbenchTraceEvent[] | undefined,
+        historyQuality,
+      ),
+    [historyQuality, logEvents],
+  )
   const job =
     ((logsQuery.data?.job as CurrentChatAgentJob | undefined) ?? selectedJob) ||
     null
