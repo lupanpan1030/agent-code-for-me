@@ -123,15 +123,10 @@ export async function finalizeClaudeAgentSdkStreamError({
   const errorContext = streamDiagnostic.context
   const errorCategory = streamDiagnostic.category
 
-  if (
-    streamDiagnostic.isSessionNotFound &&
-    isActiveClaudeSessionSignal(subChatId, activeSessionSignal)
-  ) {
-    log("[claude] Session not found - clearing invalid sessionId from database")
-    db.update(subChats)
-      .set({ sessionId: null })
-      .where(eq(subChats.id, subChatId))
-      .run()
+  if (streamDiagnostic.isNativeResumeRejected) {
+    // Neutral native resume rejection (tasks 6.3): the existing session
+    // binding is left intact; binding expiry/repair is not decided here.
+    log("[claude] Native resume rejected; the session binding is unchanged")
   }
 
   if (!aborted) {
