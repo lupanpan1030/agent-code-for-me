@@ -179,6 +179,7 @@ function mapDesktopRunResult(result: DesktopRunResult): AgentRuntimeRunResult {
     sessionId: result.sessionId ?? null,
     usage: result.usage,
     error: result.error,
+    ...(result.nativeTerminal ? { nativeTerminal: result.nativeTerminal } : {}),
   }
 }
 

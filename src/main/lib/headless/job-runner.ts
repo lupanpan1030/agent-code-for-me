@@ -411,8 +411,31 @@ function isRecordedDenial(record: LedgerRecord): boolean {
 }
 
 /**
+ * The adapter-observed live native terminal of a Run, only when its
+ * observation was committed to the Run's ledger and the runner's result
+ * still reports that native status (a later host failure such as a close or
+ * cleanup error is host evidence, not the native terminal).
+ */
+function committedNativeTerminal(
+  result: AgentRuntimeRunResult | null,
+  records: readonly LedgerRecord[],
+): NonNullable<AgentRuntimeRunResult["nativeTerminal"]> | null {
+  const native = result?.nativeTerminal
+  if (!native || native.status !== result?.status) return null
+  const committed = records.some(
+    (record) =>
+      typeof record.factKey === "string" &&
+      record.factKey.startsWith(`${native.observationKey}:`),
+  )
+  return committed ? native : null
+}
+
+/**
  * OutcomeEvidence of one headless Run from its committed records and the
  * runner's host result (design "Error, Completion and Late-Event Policy").
+ * A native-protocol Run (Codex app-server) settles from the committed live
+ * native terminal; process batch and completion Runs, and an adapter
+ * failure before any native terminal, settle from the host result.
  * The ledger decides the outcome; a runner's default success needs output
  * evidence and no recorded denial (R1 DIRECT_NEW_STANDARD).
  */
@@ -444,6 +467,9 @@ function headlessOutcomeEvidence(input: {
     outputKeys.push("runner-result:finalMessage")
   }
   const status = input.result?.status
+  const nativeTerminal = input.failed
+    ? null
+    : committedNativeTerminal(input.result, input.records)
   const trigger: OutcomeEvidence["trigger"] = input.canceled
     ? { kind: "cancel", reason: "cancel_requested", observationKey }
     : status === "canceled"
@@ -454,12 +480,24 @@ function headlessOutcomeEvidence(input: {
             reason: input.result?.errorCode ?? "runtime_interrupted",
             observationKey,
           }
-        : {
-            kind: "host_result",
-            status:
-              !input.failed && status === "succeeded" ? "succeeded" : "failed",
-            observationKey,
-          }
+        : nativeTerminal
+          ? {
+              kind: "native_terminal",
+              status: nativeTerminal.status,
+              observationKey: nativeTerminal.observationKey,
+              origin: "live",
+              ...(nativeTerminal.code !== undefined
+                ? { code: nativeTerminal.code }
+                : {}),
+            }
+          : {
+              kind: "host_result",
+              status:
+                !input.failed && status === "succeeded"
+                  ? "succeeded"
+                  : "failed",
+              observationKey,
+            }
   return {
     trigger,
     policy: {

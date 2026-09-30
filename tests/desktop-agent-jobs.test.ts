@@ -437,6 +437,157 @@ describe("desktop agent jobs", () => {
     expect(events.map((event) => event.payloadJson).join("\n")).not.toContain(
       "transport_exit",
     )
+    // T2-7 / S-14: no native terminal was observed, so the finalizer's
+    // failure is host evidence, not a live native terminal.
+    expect(payload.reasons).toContain("host_failed")
+    expect(payload.reasons).not.toContain("native_failed")
+  })
+
+  test("settles desktop runs from the committed live native terminal (T2-7 / S-14)", async () => {
+    const finalize = async (input: {
+      runtime: "codex" | "claude-code"
+      runId: string
+      record: (
+        ledger: Awaited<ReturnType<typeof getOrCreateRunEventLedger>>,
+      ) => Promise<unknown>
+      sawError: boolean
+    }) => {
+      const db = createAgentJobTestDb()
+      seedChat(db)
+      const { job } = await createAndStartDesktopAgentJob(db, {
+        runtime: input.runtime,
+        mode: "agent",
+        chatId: "chat-1",
+        subChatId: "sub-chat-1",
+        cwd: "/tmp/project-worktree",
+        prompt: "Implement",
+        runId: input.runId,
+      })
+      const ledger = await getOrCreateRunEventLedger(db, job)
+      await ledger.bindExecutionProvenance(
+        input.runtime === "codex"
+          ? DESKTOP_CODEX_PROVENANCE
+          : {
+              ...DESKTOP_CODEX_PROVENANCE,
+              installationId: "inst-claude-desktop-test",
+              runtimeId: "claude-code",
+              adapterSource: "claude-agent-sdk",
+              protocolName: "claude-agent-sdk",
+              protocolVersion: "1",
+            },
+      )
+      await ledger.ingestRuntimeObservation({
+        observationKey: `output:${input.runId}`,
+        type: "assistant_delta",
+        payload: { text: "an answer" },
+      })
+      await input.record(ledger)
+      await completeDesktopChatAgentJobSafely(db, {
+        jobId: job.id,
+        runtime: input.runtime,
+        aborted: false,
+        reachedNaturalFinish: !input.sawError,
+        sawError: input.sawError,
+      })
+      const events = listAgentJobEvents(db, job.id)
+      const completed = events.find((event) => event.type === "completed")
+      return {
+        completed,
+        payload: JSON.parse(completed?.payloadJson ?? "{}"),
+        events,
+      }
+    }
+    const codexTurn =
+      (status: string) =>
+      async (ledger: {
+        ingestNotification: (boundary: unknown) => Promise<unknown>
+      }) => {
+        await ledger.ingestNotification({
+          observationKey: "codex-turn-started",
+          transportId: "t1",
+          receivedAt: "2026-09-04T00:00:00.000Z",
+          message: {
+            method: "turn/started",
+            params: {
+              threadId: "th",
+              turn: { id: "tu", status: "inProgress", error: null },
+            },
+          },
+        })
+        await ledger.ingestNotification({
+          observationKey: "codex-turn-completed",
+          transportId: "t1",
+          receivedAt: "2026-09-04T00:00:00.001Z",
+          message: {
+            method: "turn/completed",
+            params: {
+              threadId: "th",
+              turn: {
+                id: "tu",
+                status,
+                error: status === "failed" ? { message: "boom" } : null,
+              },
+            },
+          },
+        })
+      }
+
+    const codexFailed = await finalize({
+      runtime: "codex",
+      runId: "run-native-failed",
+      record: codexTurn("failed"),
+      sawError: true,
+    })
+    expect(codexFailed.payload.status).toBe("failed")
+    expect(codexFailed.payload.reasons).toContain("native_failed")
+    expect(codexFailed.completed?.factKey).toBe("settle:codex-turn-completed:0")
+
+    const codexSucceeded = await finalize({
+      runtime: "codex",
+      runId: "run-native-succeeded",
+      record: codexTurn("completed"),
+      sawError: false,
+    })
+    expect(codexSucceeded.payload.status).toBe("succeeded")
+    expect(codexSucceeded.completed?.factKey).toBe(
+      "settle:codex-turn-completed:0",
+    )
+
+    const claudeResult =
+      (isError: boolean) =>
+      async (ledger: {
+        ingestClaudeMessage: (input: unknown) => Promise<unknown>
+      }) => {
+        await ledger.ingestClaudeMessage({
+          observationKey: "claude-query:run:message:1",
+          queryId: "claude-query:run",
+          message: {
+            type: "result",
+            subtype: isError ? "error_during_execution" : "success",
+            ...(isError ? { is_error: true } : {}),
+          },
+        })
+      }
+    const claudeFailed = await finalize({
+      runtime: "claude-code",
+      runId: "run-claude-failed",
+      record: claudeResult(true),
+      sawError: true,
+    })
+    expect(claudeFailed.payload.reasons).toContain("native_failed")
+    expect(claudeFailed.completed?.factKey).toBe(
+      "settle:claude-query:run:message:1:0",
+    )
+    const claudeSucceeded = await finalize({
+      runtime: "claude-code",
+      runId: "run-claude-succeeded",
+      record: claudeResult(false),
+      sawError: false,
+    })
+    expect(claudeSucceeded.payload.status).toBe("succeeded")
+    expect(claudeSucceeded.completed?.factKey).toBe(
+      "settle:claude-query:run:message:1:0",
+    )
   })
 
   test("counts a completed-only assistant item as desktop output evidence (T2-6 / S-13)", async () => {

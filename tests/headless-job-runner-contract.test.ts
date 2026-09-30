@@ -173,4 +173,36 @@ describe("headless job runner terminal contract", () => {
     expect(result.job.status).toBe("failed")
     expect(result.outcome?.reasons).toContain("output_empty")
   })
+
+  test("settles process runs and uncommitted native claims from the host result (T2-7 / S-02)", async () => {
+    const { db, job } = await createTestJob()
+
+    const result = await runPersistedAgentJob({
+      db,
+      jobId: job.id,
+      runner: async () => ({
+        status: "failed",
+        exitCode: 1,
+        errorCode: "runtime_failed",
+        errorMessage: "boom",
+        // A native terminal whose observation never reached the Run's
+        // ledger is not live committed evidence.
+        nativeTerminal: {
+          observationKey: "never-committed",
+          status: "failed",
+          code: "x",
+        },
+      }),
+    })
+
+    const completed = listAgentJobEvents(db, job.id).find(
+      (event) => event.type === "completed",
+    )
+    const payload = JSON.parse(completed?.payloadJson ?? "{}")
+    expect(result.job.status).toBe("failed")
+    expect(payload.reasons).toContain("host_failed")
+    expect(payload.reasons).not.toContain("native_failed")
+    expect(payload.code).toBeUndefined()
+    expect(completed?.factKey).toBe(`settle:runner-result:${job.id}:0`)
+  })
 })

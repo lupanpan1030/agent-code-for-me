@@ -331,10 +331,56 @@ function isRecordObject(value: unknown): value is Record<string, unknown> {
 }
 
 /**
+ * The live native terminal a desktop runtime committed to the Run's ledger:
+ * the Codex `turn/completed` terminal candidate or the Claude Agent SDK
+ * `result` message. Its observation key comes from the committed fact key
+ * (`<observationKey>:<ordinal>`).
+ */
+function committedDesktopNativeTerminal(
+  records: readonly LedgerRecord[],
+): { observationKey: string; status: "succeeded" | "failed" } | null {
+  for (let index = records.length - 1; index >= 0; index -= 1) {
+    const record = records[index]
+    if (record.type !== "status" || !isRecordObject(record.payload)) continue
+    const payload = record.payload
+    let status: "succeeded" | "failed" | null = null
+    if (
+      payload.subtype === "turn_lifecycle" &&
+      payload.terminalCandidate === true
+    ) {
+      status =
+        payload.turnStatus === "completed"
+          ? "succeeded"
+          : payload.turnStatus === "failed"
+            ? "failed"
+            : null
+    } else if (payload.subtype === "runtime_result") {
+      status =
+        payload.isError === true ||
+        (typeof payload.messageSubtype === "string" &&
+          payload.messageSubtype.startsWith("error"))
+          ? "failed"
+          : "succeeded"
+    } else {
+      continue
+    }
+    const observationKey =
+      typeof record.factKey === "string"
+        ? record.factKey.replace(/:\d+$/, "")
+        : ""
+    return status && observationKey ? { observationKey, status } : null
+  }
+  return null
+}
+
+/**
  * Terminal evidence of a desktop chat Run (design "Error, Completion and
  * Late-Event Policy"): the safe finalizer observed the live stream's natural
  * finish or failure, a cancel or an interrupt; output and policy evidence are
- * the Run's committed records. The ledger decides the outcome.
+ * the Run's committed records. A committed live native terminal is
+ * `native_terminal` evidence; a finalizer status with no native terminal
+ * (a failure before the runtime's terminal) is host evidence. The ledger
+ * decides the outcome.
  */
 function desktopOutcomeEvidence(input: {
   jobId: string
@@ -342,6 +388,12 @@ function desktopOutcomeEvidence(input: {
   records: readonly LedgerRecord[]
 }): OutcomeEvidence {
   const observationKey = `desktop-finalize:${input.jobId}`
+  const native = committedDesktopNativeTerminal(input.records)
+  // A host-observed failure after a native success stays host evidence.
+  const nativeTrigger =
+    native && (input.status === "succeeded" || native.status === "failed")
+      ? native
+      : null
   const outputKeys = input.records
     .filter(
       (record) =>
@@ -361,12 +413,18 @@ function desktopOutcomeEvidence(input: {
         ? { kind: "cancel", reason: "desktop_cancel", observationKey }
         : input.status === "interrupted"
           ? { kind: "interrupt", reason: "desktop_interrupt", observationKey }
-          : {
-              kind: "native_terminal",
-              status: input.status,
-              observationKey,
-              origin: "live",
-            },
+          : nativeTrigger
+            ? {
+                kind: "native_terminal",
+                status: nativeTrigger.status,
+                observationKey: nativeTrigger.observationKey,
+                origin: "live",
+              }
+            : {
+                kind: "host_result",
+                status: input.status,
+                observationKey,
+              },
     policy: {
       denied: denials.length > 0,
       evidenceKeys:

@@ -791,9 +791,27 @@ export function createCodexAppServerAdapter({
         const turn = isRecordValue(params.turn) ? params.turn : {}
         const status = codexTurnTerminalStatus(turn.status)
         const errorMessage = codexTurnErrorMessage(turn)
+        const turnError = isRecordValue(turn.error) ? turn.error : null
+        const nativeCode =
+          typeof turnError?.code === "string" ||
+          typeof turnError?.code === "number"
+            ? turnError.code
+            : undefined
         settleTerminal({
           status,
           sessionId,
+          // The live native terminal this result derives from: the host
+          // settles the Run from it (native_terminal evidence linked to the
+          // committed turn/completed observation).
+          ...(status === "succeeded" || status === "failed"
+            ? {
+                nativeTerminal: {
+                  observationKey: boundary.observationKey,
+                  status,
+                  ...(nativeCode !== undefined ? { code: nativeCode } : {}),
+                },
+              }
+            : {}),
           ...(status === "failed"
             ? {
                 error: {

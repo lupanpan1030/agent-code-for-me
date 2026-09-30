@@ -308,6 +308,7 @@ async function runScriptedAppServerApiJob(
   const events = listAgentJobEvents(db, prepared.job.id).map((event) => ({
     sequence: event.sequence,
     type: event.type,
+    factKey: event.factKey,
     payload: JSON.parse(event.payloadJson) as Record<string, unknown>,
   }))
   return {
@@ -469,6 +470,111 @@ describe("Local Job API app-server terminal projection (T2-2 / S-01)", () => {
       })
       expect(JSON.stringify(events)).not.toContain("transport_exit")
       expect(frozenEventTypes(runDir).at(-1)).toBe("completed")
+    } finally {
+      rmSync(run.projectRoot, { recursive: true, force: true })
+    }
+  })
+})
+
+describe("Local Job API app-server native terminal evidence (T2-7 / S-02)", () => {
+  const turnNotifications =
+    (turn: Record<string, unknown>) => (threadId: string) => [
+      {
+        method: "turn/started",
+        params: {
+          threadId,
+          turn: { id: "turn-1", status: "inProgress", error: null },
+        },
+      },
+      {
+        method: "item/agentMessage/delta",
+        params: {
+          threadId,
+          turnId: "turn-1",
+          itemId: "item-1",
+          delta: "an answer",
+        },
+      },
+      {
+        method: "turn/completed",
+        params: { threadId, turn: { id: "turn-1", ...turn } },
+      },
+    ]
+
+  function nativeTerminalLink(
+    events: Awaited<ReturnType<typeof runScriptedAppServerApiJob>>["events"],
+  ) {
+    const turnCompleted = events.find(
+      (event) =>
+        event.type === "status" &&
+        event.payload.subtype === "turn_lifecycle" &&
+        event.payload.terminalCandidate === true,
+    )
+    const completed = events.filter((event) => event.type === "completed")
+    expect(turnCompleted?.factKey).toMatch(/:0$/)
+    expect(completed).toHaveLength(1)
+    return {
+      turnCompletedKey: String(turnCompleted?.factKey).replace(/:0$/, ""),
+      completed: completed[0],
+    }
+  }
+
+  test("a failed turn settles from the live native terminal with its code", async () => {
+    const run = await runScriptedAppServerApiJob(
+      "app-server-native-001",
+      () => ({
+        turnNotifications: turnNotifications({
+          status: "failed",
+          error: { message: "model overloaded", code: "server_overloaded" },
+        }),
+      }),
+    )
+    try {
+      const { result } = run
+      const { turnCompletedKey, completed } = nativeTerminalLink(run.events)
+      expect(result.job.status).toBe("failed")
+      expect(completed.payload.reasons).toContain("native_failed")
+      expect(completed.payload.reasons).not.toContain("host_failed")
+      expect(completed.payload.code).toBe("server_overloaded")
+      // The settlement is keyed on the committed turn/completed observation.
+      expect(completed.factKey).toBe(`settle:${turnCompletedKey}:0`)
+    } finally {
+      rmSync(run.projectRoot, { recursive: true, force: true })
+    }
+  })
+
+  test("a completed turn settles succeeded from the live native terminal", async () => {
+    const run = await runScriptedAppServerApiJob(
+      "app-server-native-002",
+      () => ({
+        turnNotifications: turnNotifications({
+          status: "completed",
+          error: null,
+        }),
+      }),
+    )
+    try {
+      const { turnCompletedKey, completed } = nativeTerminalLink(run.events)
+      expect(run.result.job.status).toBe("succeeded")
+      expect(completed.payload.reasons).toBeUndefined()
+      expect(completed.factKey).toBe(`settle:${turnCompletedKey}:0`)
+    } finally {
+      rmSync(run.projectRoot, { recursive: true, force: true })
+    }
+  })
+
+  test("an adapter failure before any native terminal stays host evidence", async () => {
+    const run = await runScriptedAppServerApiJob(
+      "app-server-native-003",
+      () => ({
+        initializeError: { code: -32600, message: "initialize rejected" },
+      }),
+    )
+    try {
+      const completed = run.events.find((event) => event.type === "completed")
+      expect(completed?.payload.reasons).toContain("host_failed")
+      expect(completed?.payload.reasons).not.toContain("native_failed")
+      expect(completed?.factKey).toMatch(/^settle:runner-result:/)
     } finally {
       rmSync(run.projectRoot, { recursive: true, force: true })
     }

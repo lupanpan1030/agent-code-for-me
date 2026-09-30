@@ -118,4 +118,16 @@ export type AgentRuntimeRunResultBase<
     message: string
     code?: string
   }
+  /**
+   * The live native terminal the adapter observed and submitted to the
+   * Run's ledger (e.g. Codex `turn/completed`): the observation key it was
+   * committed under, its status and the native code. Absent for
+   * process/completion runs and for an adapter failure before any native
+   * terminal; the host then settles from its own result evidence.
+   */
+  nativeTerminal?: {
+    observationKey: string
+    status: "succeeded" | "failed"
+    code?: string | number
+  }
 }
