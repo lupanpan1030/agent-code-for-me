@@ -15,7 +15,7 @@ import {
 } from "./ledger-ingress"
 import {
   createExactSecretStreamChannelRedactor,
-  redactRuntimePayload,
+  redactPersistedRunPayload,
 } from "./redaction"
 import type { CommittedRunEvent, JsonValue, RunEvent } from "./runtime-events"
 
@@ -1050,7 +1050,7 @@ class RunEventLedgerImpl {
 
   /** Stateless Run-scoped redaction of one payload (exact hints + rules). */
   private sanitize(value: JsonValue): { value: JsonValue; rules: string[] } {
-    const result = redactRuntimePayload(value, {
+    const result = redactPersistedRunPayload(value, {
       runtimeId: this.runtimeId as RunEvent["runtimeId"],
       runId: this.runId,
       source: "runtime-diagnostic",

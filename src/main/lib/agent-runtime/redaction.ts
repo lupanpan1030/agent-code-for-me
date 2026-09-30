@@ -52,6 +52,39 @@ const UNTRUSTED_DIAGNOSTIC_TEXT_PATTERNS: readonly SecretTextPattern[] = [
   ...SECRET_TEXT_PATTERNS,
 ]
 
+/**
+ * Free-text patterns for durable Run records (every committed ledger record
+ * and the terminal job-row projection). They extend the runtime patterns
+ * with the credential formats the job store used to scrub before the
+ * canonical ledger owned persistence: PEM private-key blocks, GitHub tokens,
+ * bare JWTs, Basic authorization, provider environment assignments and
+ * token-bearing URL query parameters.
+ */
+const PERSISTED_RECORD_TEXT_PATTERNS: readonly SecretTextPattern[] = [
+  {
+    pattern: /-----BEGIN [A-Z0-9 ]+-----[\s\S]*?-----END [A-Z0-9 ]+-----/g,
+    replace: () => "<redacted>",
+  },
+  { pattern: /gh[pousr]_[A-Za-z0-9_]{20,}/g, replace: () => "<redacted>" },
+  { pattern: /github_pat_[A-Za-z0-9_]{20,}/g, replace: () => "<redacted>" },
+  {
+    pattern: /eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g,
+    replace: () => "<redacted>",
+  },
+  {
+    pattern: /authorization\s*:\s*basic\s+[A-Za-z0-9+/=_-]+/gi,
+    replace: () => "Authorization: Basic <redacted>",
+  },
+  {
+    pattern:
+      /(?:anthropic_auth_token|openai_api_key|codex_api_key|github_token|npm_token|aws_secret_access_key|aws_session_token|id_token)["'=:\s]+["']?[^\s"',;]+/gi,
+  },
+  {
+    pattern: /[?&](?:code|access_token|refresh_token|id_token|token)=[^&#\s]+/gi,
+  },
+  ...SECRET_TEXT_PATTERNS,
+]
+
 function keepSecretKeyPrefix(match: string): string {
   const separatorIndex = Math.max(match.indexOf("="), match.indexOf(":"))
   if (separatorIndex > 0) {
@@ -345,6 +378,22 @@ export function redactRuntimePayload(
   context: RunEventRedactionContext,
 ): RuntimeRedactionResult {
   return redactPayloadWith(payload, context.secretHints, SECRET_TEXT_PATTERNS)
+}
+
+/**
+ * Redaction of a durable Run record payload or terminal job-row projection:
+ * the runtime rules plus {@link PERSISTED_RECORD_TEXT_PATTERNS}. The ledger
+ * applies it to every record it commits.
+ */
+export function redactPersistedRunPayload(
+  payload: JsonValue,
+  context: RunEventRedactionContext,
+): RuntimeRedactionResult {
+  return redactPayloadWith(
+    payload,
+    context.secretHints,
+    PERSISTED_RECORD_TEXT_PATTERNS,
+  )
 }
 
 /**
