@@ -84,6 +84,9 @@ export function LocalBrowserWorkbench({
   const webviewRef = useRef<WebviewElement | null>(null)
   const admissionRef = useRef<AdmittedPreview | null>(null)
   const requestCounterRef = useRef(0)
+  // Committed navigations of the current guest seen by this view. A capture
+  // started before a navigation is discarded when it resolves after it.
+  const navigationCountRef = useRef(0)
   const [urlInput, setUrlInput] = useState("localhost:3000")
   const [target, setTarget] = useState<PreviewTarget | null>(null)
   const [admission, setAdmission] = useState<AdmittedPreview | null>(null)
@@ -125,7 +128,15 @@ export function LocalBrowserWorkbench({
           setIsLoading(event.loading)
           return
         case "navigated":
+          // A committed navigation starts a new page: main already rejects a
+          // capture across navigation generations, and the cached report and
+          // page snapshot must not outlive the page they describe either.
+          navigationCountRef.current += 1
           setDisplayUrl(event.displayUrl)
+          setLastReport(null)
+          setScreenshot(null)
+          setDomSummary(null)
+          setLastClickedElement(null)
           return
         case "title":
           setPageTitle(event.title)
@@ -231,9 +242,14 @@ export function LocalBrowserWorkbench({
     const capture = window.desktopApi?.captureLocalBrowserDiagnostics
     if (!current || typeof capture !== "function") return null
 
+    const navigationCount = navigationCountRef.current
     setIsCapturing(true)
     try {
       const result = await capture({ generation: current.generation })
+      if (navigationCountRef.current !== navigationCount) {
+        toast.error(t("localBrowser.captureStale"))
+        return null
+      }
       if (!result.ok) {
         toast.error(
           result.code === "stale"

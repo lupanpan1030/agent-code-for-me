@@ -529,3 +529,131 @@ describe("remount and generation rules (D6, task 3.4)", () => {
     expect(webviews()).toHaveLength(1)
   })
 })
+
+describe("a navigation invalidates the cached report and page snapshot (D9 navigation generation)", () => {
+  function button(testId: string): HTMLButtonElement {
+    return testWindow.document.querySelector(
+      `[data-testid="${testId}"]`,
+    ) as unknown as HTMLButtonElement
+  }
+
+  async function click(testId: string) {
+    await act(async () => {
+      button(testId).dispatchEvent(
+        new testWindow.MouseEvent("click", {
+          bubbles: true,
+        }) as unknown as Event,
+      )
+    })
+    await flush(10)
+  }
+
+  function capturingPage(pages: string[]) {
+    bridge.capture = (request) => {
+      const page = pages.shift() ?? "unexpected"
+      return {
+        ok: true,
+        generation: request.generation,
+        displayUrl: `http://localhost:3000/${page}`,
+        title: `Title ${page}`,
+        domSummary: {
+          title: `Title ${page}`,
+          url: `http://localhost:3000/${page}`,
+          activeElement: null,
+          headings: [`Heading ${page}`],
+          buttons: [],
+          links: [],
+          inputs: [],
+          textSample: "",
+        },
+        selectedElement: `button#${page}`,
+        screenshot: null,
+      }
+    }
+  }
+
+  test("capture -> same-guest navigation -> insert captures the new page instead of reusing the stale report", async () => {
+    capturingPage(["first", "second"])
+    await mount()
+    await submit("localhost:3000")
+    const generation = bridge.issued[0]?.generation ?? 0
+
+    await click("local-browser-capture-button")
+    expect(bridge.captureRequests).toHaveLength(1)
+    expect(testWindow.document.body.textContent).toContain("Heading first")
+    expect(testWindow.document.body.textContent).toContain("button#first")
+
+    await bridge.emit({
+      generation,
+      kind: "navigated",
+      displayUrl: "http://localhost:3000/second",
+    })
+    const text = testWindow.document.body.textContent ?? ""
+    expect(text).not.toContain("Heading first")
+    expect(text).not.toContain("button#first")
+    expect(text).toContain("Capture diagnostics to read page structure.")
+    expect(text).toContain(
+      "Click an element in the preview, then capture to include it.",
+    )
+
+    await click("local-browser-insert-report-button")
+    expect(bridge.captureRequests).toEqual([{ generation }, { generation }])
+    expect(insertedReports).toHaveLength(1)
+    expect(insertedReports[0]).toContain("URL: http://localhost:3000/second")
+    expect(insertedReports[0]).not.toContain("/first")
+    expect(insertedReports[0]).not.toContain("button#first")
+  })
+
+  test("without a navigation the captured report is reused by insert (no extra capture)", async () => {
+    capturingPage(["only"])
+    await mount()
+    await submit("localhost:3000")
+    await click("local-browser-capture-button")
+    await click("local-browser-insert-report-button")
+    expect(bridge.captureRequests).toHaveLength(1)
+    expect(insertedReports).toHaveLength(1)
+    expect(insertedReports[0]).toContain("URL: http://localhost:3000/only")
+  })
+
+  test("a capture that resolves after a navigation is discarded, not cached or inserted", async () => {
+    await mount()
+    await submit("localhost:3000")
+    const generation = bridge.issued[0]?.generation ?? 0
+    let resolveCapture: ((result: CaptureResult) => void) | null = null
+    const desktopApi = (
+      testWindow as unknown as {
+        desktopApi: Record<string, unknown>
+      }
+    ).desktopApi
+    desktopApi.captureLocalBrowserDiagnostics = (
+      request: Record<string, unknown>,
+    ) => {
+      bridge.captureRequests.push(request)
+      return new Promise<CaptureResult>((resolve) => {
+        resolveCapture = resolve
+      })
+    }
+
+    await click("local-browser-insert-report-button")
+    expect(bridge.captureRequests).toHaveLength(1)
+    await bridge.emit({
+      generation,
+      kind: "navigated",
+      displayUrl: "http://localhost:3000/next",
+    })
+    await act(async () => {
+      resolveCapture?.({
+        ok: true,
+        generation,
+        displayUrl: "http://localhost:3000/before",
+        title: "Before",
+        domSummary: null,
+        selectedElement: "button#before",
+        screenshot: null,
+      })
+    })
+    await flush(10)
+    expect(insertedReports).toEqual([])
+    expect(testWindow.document.body.textContent).not.toContain("button#before")
+  })
+})
