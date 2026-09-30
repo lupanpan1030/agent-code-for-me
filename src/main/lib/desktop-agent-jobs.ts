@@ -3,10 +3,11 @@ import type { AgentJobMode } from "../../shared/agent-jobs"
 import type { AgentRuntimeId } from "../../shared/agent-runtime-capabilities"
 import type { DesktopPermissionPolicy } from "./agent-runtime/permission-policy"
 import { verifyDesktopRunPreflight } from "./agent-runtime/preflight"
-import type {
-  LedgerRecord,
-  OutcomeEvidence,
-  TerminalJobFields,
+import {
+  isReconciledAssistantOutput,
+  type LedgerRecord,
+  type OutcomeEvidence,
+  type TerminalJobFields,
 } from "./agent-runtime/run-event-ledger"
 import {
   getOrCreateRunEventLedger,
@@ -342,7 +343,12 @@ function desktopOutcomeEvidence(input: {
 }): OutcomeEvidence {
   const observationKey = `desktop-finalize:${input.jobId}`
   const outputKeys = input.records
-    .filter((record) => DESKTOP_OUTPUT_TYPES.has(record.type))
+    .filter(
+      (record) =>
+        DESKTOP_OUTPUT_TYPES.has(record.type) ||
+        // A completed-only assistant item (no delta) is output too.
+        isReconciledAssistantOutput(record),
+    )
     .map((record) => `record:${record.sequence}`)
   const denials = input.records.filter((record) => {
     if (record.type !== "permission_requested") return false

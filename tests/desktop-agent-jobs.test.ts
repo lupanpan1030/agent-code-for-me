@@ -439,6 +439,76 @@ describe("desktop agent jobs", () => {
     )
   })
 
+  test("counts a completed-only assistant item as desktop output evidence (T2-6 / S-13)", async () => {
+    const run = async (text: string) => {
+      const db = createAgentJobTestDb()
+      seedChat(db)
+      const { job } = await createAndStartDesktopAgentJob(db, {
+        runtime: "codex",
+        mode: "agent",
+        chatId: "chat-1",
+        subChatId: "sub-chat-1",
+        cwd: "/tmp/project-worktree",
+        prompt: "Implement",
+        runId: `run-completed-only-${text.length}`,
+      })
+      const ledger = await getOrCreateRunEventLedger(db, job)
+      await ledger.bindExecutionProvenance(DESKTOP_CODEX_PROVENANCE)
+      const notify = (
+        observationKey: string,
+        method: string,
+        params: unknown,
+      ) =>
+        ledger.ingestNotification({
+          observationKey,
+          transportId: "t1",
+          receivedAt: "2026-09-04T00:00:00.000Z",
+          message: { method, params },
+        })
+      await notify("n-started", "turn/started", {
+        threadId: "th",
+        turn: { id: "tu", status: "inProgress", error: null },
+      })
+      if (text) {
+        await notify("n-item", "item/completed", {
+          threadId: "th",
+          turnId: "tu",
+          item: { type: "agentMessage", id: "msg-1", text },
+        })
+      }
+      const completed = await completeDesktopChatAgentJobSafely(db, {
+        jobId: job.id,
+        runtime: "codex",
+        aborted: false,
+        reachedNaturalFinish: true,
+        sawError: false,
+      })
+      const events = listAgentJobEvents(db, job.id)
+      const terminal = events.find((event) => event.type === "completed")
+      return {
+        completed,
+        events,
+        payload: JSON.parse(terminal?.payloadJson ?? "{}"),
+      }
+    }
+
+    const withItem = await run("final answer without deltas")
+    const reconciliation = withItem.events.find(
+      (event) =>
+        event.type === "status" &&
+        JSON.parse(event.payloadJson).subtype === "item_reconciliation",
+    )
+    expect(reconciliation).toBeDefined()
+    expect(withItem.completed?.status).toBe("succeeded")
+    expect(withItem.payload.evidenceKeys).toContain(
+      `record:${reconciliation?.sequence}`,
+    )
+
+    const withoutOutput = await run("")
+    expect(withoutOutput.completed?.status).toBe("failed")
+    expect(withoutOutput.payload.reasons).toContain("output_empty")
+  })
+
   test("safely requests cancel only for unfinished desktop chat jobs", async () => {
     const db = createAgentJobTestDb()
     seedChat(db)

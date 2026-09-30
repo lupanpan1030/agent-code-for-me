@@ -11,6 +11,7 @@ import type { RunArtifactRunDir } from "../agent-runtime/run-artifacts"
 import {
   type CanonicalRunEventLedger,
   type CreateCanonicalRunEventLedgerOptions,
+  isReconciledAssistantOutput,
   type LedgerOutcome,
   type LedgerRecord,
   type OutcomeEvidence,
@@ -428,10 +429,12 @@ function headlessOutcomeEvidence(input: {
   const outputKeys = input.records
     .filter(
       (record) =>
-        record.type === "assistant_delta" &&
-        (textOf(record.payload).length > 0 ||
-          (isRecord(record.payload) &&
-            record.payload.structured !== undefined)),
+        (record.type === "assistant_delta" &&
+          (textOf(record.payload).length > 0 ||
+            (isRecord(record.payload) &&
+              record.payload.structured !== undefined))) ||
+        // A completed-only assistant item (no delta) is output too.
+        isReconciledAssistantOutput(record),
     )
     .map((record) => `record:${record.sequence}`)
   const finalMessage = isRecord(input.result?.result)

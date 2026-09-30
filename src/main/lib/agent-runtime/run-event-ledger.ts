@@ -3883,6 +3883,24 @@ class RunEventLedgerImpl {
 export type CanonicalRunEventLedger = RunEventLedgerImpl
 
 /**
+ * Output evidence of a completed-only assistant item: a committed
+ * `status/item_reconciliation` whose assistant channel carries non-empty
+ * final text (design "Final text wins for pre-seal item materialization";
+ * reconciliation `missing_local` materializes it without any delta).
+ */
+export function isReconciledAssistantOutput(record: LedgerRecord): boolean {
+  if (record.type !== "status" || !isObject(record.payload)) return false
+  const payload = record.payload as Record<string, unknown>
+  if (payload.subtype !== "item_reconciliation") return false
+  const item = isObject(payload.item) ? payload.item : null
+  return (
+    item?.channel === "assistant" &&
+    typeof item.text === "string" &&
+    item.text.trim().length > 0
+  )
+}
+
+/**
  * Creates the one ledger for an existing Run (durable job ID). Construction
  * validates provenance before any publication, reopens committed state from
  * the store, redelivers unacknowledged records to projections and, for a
