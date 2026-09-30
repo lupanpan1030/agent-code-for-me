@@ -1,0 +1,77 @@
+[
+  {
+    "file": "react-dangerously-set-inner-html.tsx.txt",
+    "expectedClasses": ["react-dangerouslySetInnerHTML"]
+  },
+  {
+    "file": "react-create-element-dangerously.ts.txt",
+    "expectedClasses": ["react-dangerouslySetInnerHTML"]
+  },
+  { "file": "inner-html-write.ts.txt", "expectedClasses": ["dom-html-write"] },
+  {
+    "file": "inner-html-bracket-write.js.txt",
+    "expectedClasses": ["dom-html-write"]
+  },
+  { "file": "outer-html-write.mjs.txt", "expectedClasses": ["dom-html-write"] },
+  {
+    "file": "inner-html-object-assign.cjs.txt",
+    "expectedClasses": ["dom-html-write"]
+  },
+  {
+    "file": "inner-html-empty-clear.ts.txt",
+    "expectedClasses": ["dom-html-empty-clear"]
+  },
+  {
+    "file": "insert-adjacent-html.jsx.txt",
+    "expectedClasses": ["insertAdjacentHTML"]
+  },
+  {
+    "file": "document-write.ts.txt",
+    "expectedClasses": ["document-write", "document-write"]
+  },
+  {
+    "file": "contextual-fragment.ts.txt",
+    "expectedClasses": ["contextual-fragment"]
+  },
+  { "file": "set-html-unsafe.ts.txt", "expectedClasses": ["set-html-unsafe"] },
+  { "file": "srcdoc-jsx.tsx.txt", "expectedClasses": ["srcdoc"] },
+  { "file": "srcdoc-property.js.txt", "expectedClasses": ["srcdoc"] },
+  {
+    "file": "dynamic-script-element.ts.txt",
+    "expectedClasses": ["dynamic-script", "script-src-assignment"]
+  },
+  {
+    "file": "script-src-assignment.ts.txt",
+    "expectedClasses": ["script-src-assignment"]
+  },
+  {
+    "file": "remote-dynamic-import.ts.txt",
+    "expectedClasses": ["remote-import"]
+  },
+  {
+    "file": "computed-dynamic-import.ts.txt",
+    "expectedClasses": ["remote-import"]
+  },
+  { "file": "import-scripts.js.txt", "expectedClasses": ["import-scripts"] },
+  {
+    "file": "dependency-unsafe-css.tsx.txt",
+    "expectedClasses": ["dependency-unsafeCSS"]
+  },
+  {
+    "file": "dependency-prerendered-html.tsx.txt",
+    "expectedClasses": ["dependency-prerenderedHTML"]
+  },
+  {
+    "file": "jsx-script-element.tsx.txt",
+    "expectedClasses": ["dynamic-script"]
+  },
+  {
+    "file": "remote-script-tag.html.txt",
+    "expectedClasses": ["html-remote-script"]
+  },
+  {
+    "file": "inline-handler.html.txt",
+    "expectedClasses": ["html-inline-handler"]
+  },
+  { "file": "clean-lookalikes.tsx.txt", "expectedClasses": [] }
+]

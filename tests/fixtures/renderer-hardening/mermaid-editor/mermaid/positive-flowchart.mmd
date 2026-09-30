@@ -1,0 +1,6 @@
+flowchart TD
+  A[Safe start] --> B{Decision}
+  B -->|yes| C[Done]
+  B -->|no| D[Retry]
+  classDef ok fill:#e0f2fe,stroke:#0369a1,stroke-width:2px
+  class C ok

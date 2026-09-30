@@ -1,0 +1,7 @@
+sequenceDiagram
+  participant Alice
+  participant Bob
+  Alice->>Bob: <script>alert(1)</script><img src=x onerror=alert(2)>hello
+  link Alice: Dashboard @ javascript:alert(3)
+  links Bob: {"Repo": "javascript:alert(4)", "Docs": "https://example.com/docs"}
+  Note over Alice,Bob: <a href="javascript:alert(5)">note link</a>

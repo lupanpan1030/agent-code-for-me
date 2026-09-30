@@ -1,0 +1,1 @@
+<meta charset="utf-8"><b data-rich-marker="RICH_HTML_MARKER" onmouseover="window.__editorRich = true">RICH_HTML_MARKER</b><img src="x" onerror="window.__editorRich = true"><a href="javascript:window.__editorRich = true">link</a><div style="position:fixed;inset:0">overlay</div>

@@ -1,0 +1,4 @@
+export function writeIt(markup: string) {
+  window.document.write(markup)
+  document.writeln(markup)
+}

@@ -1,0 +1,136 @@
+[
+  {
+    "id": "emphasis-strike-heading",
+    "markdown": "# Heading One\n\n**bold text** and _emphasis_ and ~~struck~~ words\n",
+    "expect": [
+      {
+        "selector": "h1",
+        "textIncludes": "Heading One"
+      },
+      {
+        "selector": "strong",
+        "textIncludes": "bold text"
+      },
+      {
+        "selector": "em",
+        "textIncludes": "emphasis"
+      },
+      {
+        "selector": "del",
+        "textIncludes": "struck"
+      }
+    ],
+    "forbidSelector": "script"
+  },
+  {
+    "id": "lists-and-blockquote",
+    "markdown": "- alpha\n- beta\n\n1. first\n\n> quoted line\n",
+    "expect": [
+      {
+        "selector": "ul li",
+        "textIncludes": "alpha"
+      },
+      {
+        "selector": "ol li",
+        "textIncludes": "first"
+      },
+      {
+        "selector": "blockquote",
+        "textIncludes": "quoted line"
+      }
+    ],
+    "forbidSelector": "script"
+  },
+  {
+    "id": "gfm-table",
+    "markdown": "| Name | Value |\n| --- | --- |\n| alpha | 1 |\n",
+    "expect": [
+      {
+        "selector": "table th",
+        "textIncludes": "Name"
+      },
+      {
+        "selector": "table td",
+        "textIncludes": "alpha"
+      }
+    ],
+    "forbidSelector": "script"
+  },
+  {
+    "id": "breaks-line",
+    "markdown": "line one\nline two\n",
+    "expect": [
+      {
+        "selector": "p br",
+        "textIncludes": ""
+      }
+    ],
+    "forbidSelector": "script"
+  },
+  {
+    "id": "inline-code-escapes-markup",
+    "markdown": "Use `a<b>c</b>` inline\n",
+    "expect": [
+      {
+        "textIncludes": "a<b>c</b>",
+        "selector": "p"
+      }
+    ],
+    "forbidSelector": "b"
+  },
+  {
+    "id": "fenced-code-escapes-markup",
+    "markdown": "```ts\nconst html = \"<img src=x onerror=alert(1)>\"\n```\n",
+    "expect": [
+      {
+        "selector": "pre code",
+        "textIncludes": "const html = \"<img src=x onerror=alert(1)>\""
+      }
+    ],
+    "forbidSelector": "img"
+  },
+  {
+    "id": "reviewed-https-link",
+    "markdown": "[Docs](https://example.com/docs)\n",
+    "expect": [
+      {
+        "selector": "a[href^='https://example.com/docs']",
+        "textIncludes": "Docs"
+      }
+    ],
+    "forbidSelector": "script"
+  },
+  {
+    "id": "reviewed-mailto-link",
+    "markdown": "[Mail](mailto:dev@example.com)\n",
+    "expect": [
+      {
+        "selector": "a[href='mailto:dev@example.com']",
+        "textIncludes": "Mail"
+      }
+    ],
+    "forbidSelector": "script"
+  },
+  {
+    "id": "gfm-autolink",
+    "markdown": "Visit https://example.com/auto today\n",
+    "expect": [
+      {
+        "selector": "a[href^='https://example.com/auto']",
+        "textIncludes": "https://example.com/auto"
+      }
+    ],
+    "forbidSelector": "script"
+  },
+  {
+    "id": "reviewed-https-image",
+    "markdown": "![Logo](https://example.com/logo.png)\n",
+    "expect": [
+      {
+        "selector": "img[src='https://example.com/logo.png']",
+        "textIncludes": ""
+      }
+    ],
+    "forbidSelector": "script"
+  }
+]

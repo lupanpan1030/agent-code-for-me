@@ -1,0 +1,3 @@
+module.exports = function assignMarkup(el, markup) {
+  Object.assign(el, { innerHTML: markup })
+}

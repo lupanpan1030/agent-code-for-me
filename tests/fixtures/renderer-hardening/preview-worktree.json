@@ -1,0 +1,11 @@
+{
+  "description": "Malicious file-preview worktree for the locus-preview broker (design D7 option (a), verification GP-05). 'site/index.html' is the admitted document; its default declared asset scope is the 'site/' subtree. 'secret-parent.txt' is out of scope (parent directory of the document), 'other/private.txt' is an out-of-scope sibling, and 'site/escape-assets' is created by the test as a directory symlink to a directory outside the registered root.",
+  "files": {
+    "site/index.html": "<!doctype html><html><head><script src=\"assets/app.js\"></script></head><body><iframe src=\"../other/private.txt\"></iframe><script>fetch('../secret-parent.txt');fetch('escape-assets/secret.txt');fetch('locus-preview://other-admission.preview.local/index.html')</script></body></html>",
+    "site/assets/app.js": "window.inScopeAssetLoaded = true;",
+    "secret-parent.txt": "PARENT-DIR-SECRET-7d1e",
+    "other/private.txt": "SIBLING-DIR-SECRET-3a9c"
+  },
+  "escapeLinkName": "escape-assets",
+  "outsideSecret": "OUTSIDE-ROOT-SECRET-5b2f"
+}
