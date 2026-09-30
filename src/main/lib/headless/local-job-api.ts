@@ -29,7 +29,9 @@ import {
   admitRunDirArtifacts,
   assertRunArtifactRunDir,
   describeRunArtifactFile,
+  discardRunArtifactFile,
   isRunArtifactNativeRole,
+  publishRunArtifactFile,
   type RunArtifactFileReceipt,
   type RunArtifactFilesystemHooks,
   type RunArtifactRunDir,
@@ -985,65 +987,139 @@ export function localJobApiNativeArtifacts(
   return artifacts
 }
 
-export function writeLocalJobApiFinalArtifacts(input: {
+type LocalJobApiFinalArtifactsInput = {
   runDir: LocalJobApiArtifactRunDir | null
   job: AgentJob
   events: AgentJobEvent[]
   /** Admitted native artifacts appended after the Locus run-dir files. */
   nativeArtifacts?: readonly LocalJobApiArtifact[]
   filesystemHooks?: LocalJobApiArtifactFilesystemHooks
-}): LocalJobApiArtifact[] {
-  if (!input.runDir) return []
+}
+
+/** Terminal run-dir files prepared under staged names, not yet visible. */
+export type StagedLocalJobApiFinalArtifacts = {
+  /** Refs of the final files (final paths, digests of the staged bytes). */
+  artifacts: LocalJobApiArtifact[]
+  /** Renames every staged file to its final name (after the SQL commit). */
+  publish(): void
+  /** Removes every staged file; the initial run-dir files stay intact. */
+  discard(): void
+}
+
+function stagedLocalJobApiArtifactName(fileName: string): string {
+  return `.${fileName}.locus-staged`
+}
+
+/**
+ * Prepares events.jsonl, result.json and artifacts.json under staged names
+ * inside the admitted run directory (design "Artifacts and Terminal Commit
+ * Order" steps 2 and 5): their digests are over the staged bytes and their
+ * refs carry the final paths. Nothing is visible under a final name until
+ * `publish()`; `discard()` leaves only the initial files.
+ */
+export function stageLocalJobApiFinalArtifacts(
+  input: LocalJobApiFinalArtifactsInput,
+): StagedLocalJobApiFinalArtifacts {
+  const runDir = input.runDir
+  if (!runDir) return { artifacts: [], publish() {}, discard() {} }
   const nativeArtifacts = [...(input.nativeArtifacts ?? [])]
+  const staged: Array<{ stagedName: string; finalName: string }> = []
+  const stage = (finalName: string, content: string): string => {
+    const stagedName = stagedLocalJobApiArtifactName(finalName)
+    writeRunArtifactFile(runDir, stagedName, content, input.filesystemHooks)
+    staged.push({ stagedName, finalName })
+    return stagedName
+  }
+  const describe = (
+    role: string,
+    finalName: string,
+    stagedName = finalName,
+  ): LocalJobApiArtifact => ({
+    ...describeRunArtifactFile(role, runDir, stagedName),
+    path: join(runDir.path, finalName),
+  })
+  const discard = () => {
+    for (const entry of staged.splice(0)) {
+      try {
+        discardRunArtifactFile(runDir, entry.stagedName)
+      } catch {
+        // A staged file that cannot be removed stays unreferenced.
+      }
+    }
+  }
   try {
-    assertRunArtifactRunDir(input.runDir)
-    writeRunArtifactFile(
-      input.runDir,
+    assertRunArtifactRunDir(runDir)
+    const eventsName = stage(
       "events.jsonl",
       input.events
         .map((event) => JSON.stringify(toLocalJobApiEventEnvelope(event)))
         .join("\n") + (input.events.length > 0 ? "\n" : ""),
-      input.filesystemHooks,
     )
     const artifacts: LocalJobApiArtifact[] = [
-      describeRunArtifactFile("request", input.runDir, "request.json"),
-      describeRunArtifactFile("events", input.runDir, "events.jsonl"),
+      describe("request", "request.json"),
+      describe("events", "events.jsonl", eventsName),
     ]
-    writeJsonFile(
-      input.runDir,
+    const resultName = stage(
       "result.json",
-      toLocalJobApiResultEnvelope(
-        input.job,
-        [...artifacts, ...nativeArtifacts],
-        input.events,
+      stableStringify(
+        toLocalJobApiResultEnvelope(
+          input.job,
+          [...artifacts, ...nativeArtifacts],
+          input.events,
+        ),
       ),
-      input.filesystemHooks,
     )
     artifacts.push(
-      describeRunArtifactFile("result", input.runDir, "result.json"),
+      describe("result", "result.json", resultName),
       ...nativeArtifacts,
     )
     const manifest: LocalJobApiArtifactManifest = {
       apiVersion: LOCAL_JOB_API_VERSION,
       jobId: input.job.id,
-      artifactBaseDir: input.runDir.path,
+      artifactBaseDir: runDir.path,
       artifacts,
       createdAt: new Date().toISOString(),
     }
-    writeJsonFile(
-      input.runDir,
-      "artifacts.json",
-      manifest,
-      input.filesystemHooks,
-    )
-    return [
-      ...artifacts,
-      describeRunArtifactFile("manifest", input.runDir, "artifacts.json"),
-    ]
+    const manifestName = stage("artifacts.json", stableStringify(manifest))
+    return {
+      artifacts: [
+        ...artifacts,
+        describe("manifest", "artifacts.json", manifestName),
+      ],
+      publish() {
+        try {
+          while (staged.length > 0) {
+            const entry = staged[0]
+            publishRunArtifactFile(
+              runDir,
+              entry.stagedName,
+              entry.finalName,
+              input.filesystemHooks,
+            )
+            staged.shift()
+          }
+        } catch (error) {
+          discard()
+          closeLocalJobApiArtifactRunDir(runDir)
+          throw error
+        }
+      },
+      discard,
+    }
   } catch (error) {
-    closeLocalJobApiArtifactRunDir(input.runDir)
+    discard()
+    closeLocalJobApiArtifactRunDir(runDir)
     throw error
   }
+}
+
+/** Stages and immediately publishes the final run-dir files. */
+export function writeLocalJobApiFinalArtifacts(
+  input: LocalJobApiFinalArtifactsInput,
+): LocalJobApiArtifact[] {
+  const staged = stageLocalJobApiFinalArtifacts(input)
+  staged.publish()
+  return staged.artifacts
 }
 
 /**
@@ -1154,18 +1230,29 @@ export function createLocalJobApiTerminalArtifacts(input: {
       completed: LedgerRecord
       jobMutation: Record<string, unknown>
     }): JsonValue[]
+    publish(): void
+    discard(): void
   }
   artifacts(): LocalJobApiArtifact[]
 } {
-  let prepared: LocalJobApiArtifact[] = []
+  // Published refs (visible only after the terminal commit).
+  let published: LocalJobApiArtifact[] = []
+  let staged: StagedLocalJobApiFinalArtifacts | null = null
   const runDir = input.runDir
   if (!runDir) return { artifacts: () => [] }
+  const discardStaged = () => {
+    const current = staged
+    staged = null
+    current?.discard()
+  }
   return {
     preparer: {
       prepare({ records, jobMutation }) {
+        // A rebased attempt regenerates the files from its own prefix.
+        discardStaged()
         const current = getAgentJob(input.db, input.jobId)
         if (!current) throw new Error(`Unknown job: ${input.jobId}`)
-        const artifacts = writeLocalJobApiFinalArtifacts({
+        staged = stageLocalJobApiFinalArtifacts({
           runDir,
           job: terminalJobProjection(current, jobMutation),
           events: records.map(toCommittedEventRow),
@@ -1176,11 +1263,18 @@ export function createLocalJobApiTerminalArtifacts(input: {
           ),
           filesystemHooks: input.filesystemHooks,
         })
-        prepared = artifacts
-        return artifacts as unknown as JsonValue[]
+        return staged.artifacts as unknown as JsonValue[]
       },
+      publish() {
+        const current = staged
+        staged = null
+        if (!current) return
+        current.publish()
+        published = current.artifacts
+      },
+      discard: discardStaged,
     },
-    artifacts: () => prepared,
+    artifacts: () => published,
   }
 }
 

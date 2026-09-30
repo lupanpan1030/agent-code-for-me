@@ -238,6 +238,18 @@ export type CreateCanonicalRunEventLedgerOptions = {
       /** Job-row fields the terminal commit will write with `completed`. */
       jobMutation: JsonObject
     }): JsonValue[] | Promise<JsonValue[]>
+    /**
+     * Makes the prepared (staged) files visible under their final names;
+     * called once after the terminal SQL commit. A failure leaves the
+     * committed ledger as the truth (files missing, never contradictory).
+     */
+    publish?(): void | Promise<void>
+    /**
+     * Removes the prepared files after a definite failure (preparation
+     * throw, refused commit, conflict exhaustion); the initial run-dir files
+     * stay intact.
+     */
+    discard?(): void | Promise<void>
   }
   /**
    * Host job-row projection of the terminal outcome for every settlement
@@ -258,6 +270,10 @@ export type TerminalProjectionRegistration = {
   terminalArtifacts?: CreateCanonicalRunEventLedgerOptions["terminalArtifacts"]
   terminalJobFields?: SettleOptions["jobFields"]
 }
+
+type TerminalArtifactPreparer = NonNullable<
+  CreateCanonicalRunEventLedgerOptions["terminalArtifacts"]
+>
 
 /** Sanitized ledger failure; carries no payload or secret material. */
 export class RunEventLedgerError extends Error {
@@ -1356,7 +1372,9 @@ class RunEventLedgerImpl {
         expectedHighWater + 1,
         task.occurredAt,
       )
-      const artifactRefs = await this.prepareTerminalArtifacts(records, plan)
+      const terminal = await this.prepareTerminalArtifacts(records, plan)
+      const artifactRefs = terminal.refs
+      let committedTerminal = false
       try {
         const result = await awaitable(
           this.store.appendExact({
@@ -1385,6 +1403,11 @@ class RunEventLedgerImpl {
           this.state.cancelRequested = true
         }
         for (const record of committed) this.reduce(record)
+        committedTerminal = true
+        // Design step 4: the terminal files are published only after the
+        // SQL commit that registered their refs.
+        if (terminal.preparer)
+          await this.publishTerminalArtifacts(terminal.preparer)
         this.preparedCache.delete(task.observationKey)
         task.onCommitted?.(committed)
         await this.deliverProjections()
@@ -1393,6 +1416,10 @@ class RunEventLedgerImpl {
         task.resolve(clone(committed))
         return
       } catch (error) {
+        if (!committedTerminal && terminal.preparer) {
+          // Nothing was committed: the prepared files never become visible.
+          await this.discardTerminalArtifacts(terminal.preparer)
+        }
         if (isJobPreconditionFailure(error)) {
           // The host revalidated job-row facts inside the commit and they
           // changed: nothing was committed and the intent is stale, so the
@@ -1452,12 +1479,16 @@ class RunEventLedgerImpl {
   private async prepareTerminalArtifacts(
     records: LedgerRecord[],
     plan: Extract<PlanResult, { kind: "commit" }>,
-  ): Promise<JsonValue[]> {
+  ): Promise<{
+    refs: JsonValue[]
+    /** The preparer whose staged files this commit publishes. */
+    preparer: TerminalArtifactPreparer | null
+  }> {
     const refs = [...(plan.artifactRefs ?? [])]
     const completed = records.find((record) => record.type === "completed")
     const preparer =
       plan.settleOptions?.terminalArtifacts ?? this.terminalArtifacts
-    if (!completed || !preparer) return refs
+    if (!completed || !preparer) return { refs, preparer: null }
     try {
       const prepared = await awaitable(
         preparer.prepare({
@@ -1471,8 +1502,13 @@ class RunEventLedgerImpl {
           jobMutation: clone(plan.jobMutation ?? {}),
         }),
       )
-      return [...refs, ...(Array.isArray(prepared) ? prepared : [])]
+      return {
+        refs: [...refs, ...(Array.isArray(prepared) ? prepared : [])],
+        preparer,
+      }
     } catch {
+      // A partial preparation leaves nothing under a final name.
+      await this.discardTerminalArtifacts(preparer)
       const payload = isObject(completed.payload)
         ? (completed.payload as JsonObject)
         : {}
@@ -1501,7 +1537,35 @@ class RunEventLedgerImpl {
         "LEDGER_TERMINAL_ARTIFACTS_FAILED",
         "terminal run-dir preparation failed; the Run settles without unverified refs",
       )
-      return refs
+      return { refs, preparer: null }
+    }
+  }
+
+  private async publishTerminalArtifacts(
+    preparer: TerminalArtifactPreparer,
+  ): Promise<void> {
+    try {
+      await awaitable(preparer.publish?.())
+    } catch {
+      // The committed ledger is the truth: the final files are missing,
+      // never contradictory (the run-dir readers use registered refs).
+      this.hostDiagnostic(
+        "LEDGER_TERMINAL_ARTIFACTS_PUBLISH_FAILED",
+        "terminal run-dir files were committed but could not be published",
+      )
+    }
+  }
+
+  private async discardTerminalArtifacts(
+    preparer: TerminalArtifactPreparer,
+  ): Promise<void> {
+    try {
+      await awaitable(preparer.discard?.())
+    } catch {
+      this.hostDiagnostic(
+        "LEDGER_TERMINAL_ARTIFACTS_DISCARD_FAILED",
+        "unpublished terminal run-dir files could not be removed",
+      )
     }
   }
 

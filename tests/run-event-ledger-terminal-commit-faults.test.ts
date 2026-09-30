@@ -9,7 +9,14 @@
  */
 import { afterEach, describe, expect, test } from "bun:test"
 import { createHash } from "node:crypto"
-import { mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs"
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+} from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import {
@@ -427,5 +434,166 @@ describe("S30 terminal files and completed become visible together (terminal-art
     ).toHaveLength(1)
     expect(projection.cursor()).toBe(completed[0].sequence)
     expect(committedCompleted(run.db, run.jobId)).toHaveLength(1)
+  })
+})
+
+describe("terminal files are staged, published after the commit and discarded on a definite failure (T2-9 / S-04)", () => {
+  const INITIAL_EVENTS = "initial-events\n"
+  const INITIAL_MANIFEST = `${JSON.stringify({ artifacts: ["initial"] })}\n`
+
+  /** A prepared API Run whose run dir also holds initial events/manifest. */
+  async function runWithInitialFiles() {
+    const run = await preparedApiRun()
+    writeRunArtifactFile(run.runDir, "events.jsonl", INITIAL_EVENTS)
+    writeRunArtifactFile(run.runDir, "artifacts.json", INITIAL_MANIFEST)
+    return run
+  }
+
+  function runDirState(runDirPath: string) {
+    const entries = readdirSync(runDirPath)
+    return {
+      staged: entries.filter((entry) => entry.includes(".locus-staged")),
+      result: existsSync(join(runDirPath, "result.json")),
+      events: readFileSync(join(runDirPath, "events.jsonl"), "utf8"),
+      manifest: readFileSync(join(runDirPath, "artifacts.json"), "utf8"),
+    }
+  }
+
+  async function settleWith(input: {
+    run: Awaited<ReturnType<typeof runWithInitialFiles>>
+    refuseCommits: number
+    failStagingOf?: string
+  }) {
+    const { run } = input
+    const store = createJobStoreDurableStore(run.db, run.jobId)
+    const atRefusal: ReturnType<typeof runDirState>[] = []
+    let refusals = input.refuseCommits
+    const faultyStore: DurableStorePort = {
+      ...store,
+      appendExact(storeInput) {
+        if (
+          refusals > 0 &&
+          storeInput.records.some((record) => record.type === "completed")
+        ) {
+          refusals -= 1
+          atRefusal.push(runDirState(run.runDirPath))
+          throw new Error("injected: SQL commit refused")
+        }
+        return store.appendExact(storeInput)
+      },
+    }
+    const terminal = createLocalJobApiTerminalArtifacts({
+      db: run.db,
+      runDir: run.runDir,
+      jobId: run.jobId,
+      ...(input.failStagingOf
+        ? {
+            filesystemHooks: {
+              beforeAtomicRename: ({ fileName }: { fileName: string }) => {
+                if (fileName.includes(String(input.failStagingOf))) {
+                  throw new Error("injected: staging fault")
+                }
+              },
+            },
+          }
+        : {}),
+    })
+    const diagnostics: string[] = []
+    const ledger = createCanonicalRunEventLedger({
+      runId: run.jobId,
+      runtimeId: "codex",
+      source: "api",
+      provenance: RUNTIME_TUPLE,
+      redactionContext: { secretHints: FIXTURE.secretHints },
+      durableStore: faultyStore,
+      ...(terminal.preparer ? { terminalArtifacts: terminal.preparer } : {}),
+      onHostDiagnostic: (diagnostic) => diagnostics.push(diagnostic.code),
+    })
+    for (const observation of FIXTURE.observations) {
+      await ledger.ingestRuntimeObservation(observation)
+    }
+    let settleError: unknown = null
+    try {
+      await ledger.settle(FIXTURE.evidence)
+    } catch (error) {
+      settleError = error
+    }
+    await ledger.whenIdle()
+    return { terminal, atRefusal, diagnostics, settleError }
+  }
+
+  test("a refused commit shows no final terminal file; staged files are discarded and the retry publishes once", async () => {
+    const run = await runWithInitialFiles()
+    const { atRefusal, terminal } = await settleWith({ run, refuseCommits: 1 })
+
+    // At the refused commit the terminal files exist only under staged
+    // names: no result.json, initial events/manifest unchanged.
+    expect(atRefusal).toHaveLength(1)
+    expect(atRefusal[0]).toMatchObject({
+      result: false,
+      events: INITIAL_EVENTS,
+      manifest: INITIAL_MANIFEST,
+    })
+    expect(atRefusal[0].staged.length).toBeGreaterThan(0)
+    // The retried commit published the four final files with the
+    // registered digests, and nothing staged is left behind.
+    expect(roles(terminal.artifacts())).toEqual([
+      "request",
+      "events",
+      "result",
+      "manifest",
+    ])
+    const after = runDirState(run.runDirPath)
+    expect(after.staged).toEqual([])
+    expect(after.result).toBe(true)
+    const registered = (
+      JSON.parse(getAgentJob(run.db, run.jobId)?.resultJson ?? "{}") as Json
+    ).artifactRefs as Array<{ role: string; path: string; sha256: string }>
+    for (const role of ["events", "result", "manifest"]) {
+      const ref = registered.find((entry) => entry.role === role)
+      expect(ref?.path.startsWith(run.runDirPath)).toBe(true)
+      expect(sha256(readFileSync(String(ref?.path)))).toBe(String(ref?.sha256))
+    }
+  })
+
+  test("exhausted commits leave only the initial files: no result.json, unchanged events/manifest, nothing staged", async () => {
+    const run = await runWithInitialFiles()
+    const { settleError, terminal } = await settleWith({
+      run,
+      refuseCommits: 10,
+    })
+
+    expect(settleError).not.toBeNull()
+    expect(committedCompleted(run.db, run.jobId)).toEqual([])
+    expect(terminal.artifacts()).toEqual([])
+    expect(runDirState(run.runDirPath)).toEqual({
+      staged: [],
+      result: false,
+      events: INITIAL_EVENTS,
+      manifest: INITIAL_MANIFEST,
+    })
+  })
+
+  test("a preparation fault leaves no partial terminal events.jsonl under the final name", async () => {
+    const run = await runWithInitialFiles()
+    const { terminal, diagnostics } = await settleWith({
+      run,
+      refuseCommits: 0,
+      failStagingOf: "result.json",
+    })
+
+    const completed = committedCompleted(run.db, run.jobId)
+    expect(completed).toHaveLength(1)
+    expect(
+      (JSON.parse(completed[0].payloadJson) as Json).reasons as string[],
+    ).toContain("terminal_artifact_preparation_failed")
+    expect(diagnostics).toContain("LEDGER_TERMINAL_ARTIFACTS_FAILED")
+    expect(terminal.artifacts()).toEqual([])
+    expect(runDirState(run.runDirPath)).toEqual({
+      staged: [],
+      result: false,
+      events: INITIAL_EVENTS,
+      manifest: INITIAL_MANIFEST,
+    })
   })
 })

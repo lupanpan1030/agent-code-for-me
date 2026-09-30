@@ -794,6 +794,84 @@ export function writeRunArtifactFile(
   }
 }
 
+/**
+ * Publishes a staged run-dir file under its final name (design "Artifacts
+ * and Terminal Commit Order": terminal files are prepared under staged names
+ * and published after the SQL commit). The staged file must still be the
+ * one this owner wrote; the final target must be absent or the file this
+ * owner last installed there; the rename is atomic and the installed file
+ * must keep the staged identity as a single-link regular file.
+ */
+export function publishRunArtifactFile(
+  runDir: RunArtifactRunDir,
+  stagedName: string,
+  finalName: string,
+  hooks?: RunArtifactFilesystemHooks,
+): string {
+  assertRunArtifactRunDir(runDir)
+  const targetPath = join(runDir.path, finalName)
+  const stagedReceipt = runDir.fileReceipts.get(stagedName)
+  const stagedOperationPath = stableDirectoryChildPath(runDir, stagedName)
+  if (
+    !stagedReceipt ||
+    !isSameArtifactFile(lstatSync(stagedOperationPath), stagedReceipt)
+  ) {
+    throw new Error(`Staged artifact identity changed: ${targetPath}`)
+  }
+  validateArtifactTargetBeforeWrite(runDir, finalName)
+  hooks?.beforeAtomicRename?.({
+    fileName: finalName,
+    runDirPath: runDir.path,
+  })
+  const targetOperationPath = stableDirectoryChildPath(runDir, finalName)
+  renameSync(stagedOperationPath, targetOperationPath)
+  runDir.fileReceipts.delete(stagedName)
+  fsyncStableDirectory(runDir, "Artifact run")
+  assertRunArtifactRunDir(runDir)
+  const installed = lstatSync(targetOperationPath)
+  if (
+    installed.isSymbolicLink() ||
+    !installed.isFile() ||
+    installed.nlink !== 1 ||
+    installed.dev !== stagedReceipt.dev ||
+    installed.ino !== stagedReceipt.ino ||
+    installed.size !== stagedReceipt.size ||
+    installed.mtimeMs !== stagedReceipt.mtimeMs
+  ) {
+    throw new Error(
+      `Installed artifact is not a single-link regular file: ${targetPath}`,
+    )
+  }
+  runDir.fileReceipts.set(finalName, artifactFileReceipt(installed))
+  return targetPath
+}
+
+/**
+ * Removes a staged run-dir file this owner wrote (identified by its
+ * receipt). A file that is no longer the staged one is left in place.
+ */
+export function discardRunArtifactFile(
+  runDir: RunArtifactRunDir,
+  stagedName: string,
+): void {
+  const receipt = runDir.fileReceipts.get(stagedName)
+  if (!receipt) return
+  runDir.fileReceipts.delete(stagedName)
+  if (runDir.closed) return
+  assertRunArtifactRunDir(runDir)
+  const operationPath = stableDirectoryChildPath(runDir, stagedName)
+  let stat: Stats
+  try {
+    stat = lstatSync(operationPath)
+  } catch (error) {
+    if (isMissingPathError(error)) return
+    throw error
+  }
+  if (!isSameArtifactFile(stat, receipt)) return
+  unlinkSync(operationPath)
+  fsyncStableDirectory(runDir, "Artifact run")
+}
+
 export function describeRunArtifactFile(
   role: string,
   runDir: RunArtifactRunDir,
