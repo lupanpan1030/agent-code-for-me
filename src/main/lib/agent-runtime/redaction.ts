@@ -269,10 +269,24 @@ export function redactRuntimePayload(
   payload: JsonValue,
   context: RunEventRedactionContext,
 ): RuntimeRedactionResult {
+  return redactUntrustedDiagnosticPayload(payload, context.secretHints)
+}
+
+/**
+ * Composition entry for main-process diagnostics that are not tied to an
+ * agent run (for example Local Browser guest diagnostics). It applies exactly
+ * the same provider-pattern, secret-key and exact-secret matching as
+ * {@link redactRuntimePayload} without fabricating a runtime/run identity, so
+ * callers never re-implement secret matching.
+ */
+export function redactUntrustedDiagnosticPayload(
+  payload: JsonValue,
+  secretHints?: readonly string[],
+): RuntimeRedactionResult {
   const appliedRules = new Set<string>()
-  const secretHints = normalizeExactSecretHints(context.secretHints)
+  const normalizedHints = normalizeExactSecretHints(secretHints)
   return {
-    payload: redactValue(payload, appliedRules, secretHints),
+    payload: redactValue(payload, appliedRules, normalizedHints),
     appliedRules: [...appliedRules].sort(),
   }
 }
