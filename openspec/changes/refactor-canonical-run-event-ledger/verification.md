@@ -42,9 +42,16 @@ implementer evidence only, not a verdict.
   item still streaming counts by its materialized text (evidence: its non-empty deltas);
   an item-less coarse `assistant_delta` and the runner `finalMessage` keep their host
   rules. `isReconciledAssistantOutput` is removed (both hosts were its only callers).
-  Consumer-visible effect: such a Run now settles `failed` with `output_empty`; a desktop
-  coarse text delta whose text is empty is no longer output evidence; output evidence keys
-  of a reconciled item cite the reconciliation record instead of its superseded deltas.
+  Consumer-visible effect: such a Run now settles `failed` with `output_empty`. The rule on
+  both hosts: output evidence of an assistant item (native or coarse correlation key) uses
+  the item's trimmed materialized final text (a completed item's final text, else its
+  streamed text), so whitespace-only output and output whose prefix was fully withheld by
+  stream redaction (`redactionPending`, published text `""`) count as empty. A desktop
+  coarse text delta whose text is empty is one instance: the desktop host formerly counted
+  every `assistant_delta` by type, while the headless host already required non-blank
+  text. Output evidence keys of a reconciled item cite the latest reconciliation carrying
+  its final text (an `ignoredDelta` or duplicate-completion echo restates it) instead of
+  its superseded deltas.
 - **P2 — response ingest order and omission.** When one stdio batch carried response →
   `item/completed` → `turn/completed`, the response fact entered the ledger after the
   notifications (the adapter recorded it only after the request promise settled; in the
@@ -68,6 +75,8 @@ T4 tests (file totals, `bun test --isolate`; "fix-sensitive" = fails with the it
 | T4-P1 | same file | "headless/desktop: a streamed item whose final text replaces the deltas cites the final text carrier"; "headless/desktop: an empty final item beside an independent non-empty item succeeds" | fix-sensitive |
 | T4-P1 | same file | "headless/desktop: a completed-only item with non-empty final text succeeds"; "… an item still streaming at the native terminal counts by its materialized text"; "… coarse assistant output without a native item still counts"; "headless: an item-less structured assistant_delta keeps counting" | control |
 | T4-P2 | `tests/codex-app-server-response-wire-order.test.ts` (3, new file; real stdio transport over a fake child, real adapter and ledger) | "the stdio transport observes a response before the notifications parsed after it"; "one stdout batch response -> item/completed -> turn/completed commits in wire order"; "a thread/start response parsed after cancel but before close is recorded" | fix-sensitive (all 3) |
+| T4 review P3 | `tests/run-event-ledger-output-evidence-parity.test.ts` (8, new file; real ledger over an in-memory store) | describe "assistantItemOutputRecords parity with readItem (T4 review P3)": streaming only; completed non-empty; completed empty after deltas; delta after completion (the `ignoredDelta` echo is the cited record); repeated completion (the suppressed-count echo is the cited record); withheld-prefix-only delta (`redactionPending`); coarse whitespace-only delta; all scenarios in one Run | parity (helper vs `readItem()` over the same committed records) |
+| T4 review P3 | `tests/run-event-ledger-final-text-output.test.ts` (15) | "headless/desktop: a whitespace-only coarse text delta is not output evidence and fails as output_empty" | desktop fix-sensitive (fails with the desktop by-type rule restored); headless control |
 
 T4 gates at `790ea4f5` (the docs commit that records T4 changes no `src/` or `tests/`
 file):
@@ -345,6 +354,22 @@ replaces the repository pins (CI never passes it); the `job-store.ts` ↔
 `run-event-ledger-host.ts` import cycle is intended. Re-review of `0e6d1273`: the
 disclosures above (Lens A P3-1…P3-4, Lens C P3-1/P3-2, Lens B P3-1/P3-2) and TICKET-127
 (Windows run-dir artifacts, `docs/tickets/TICKET-127-run-dir-artifacts-windows-stable-directory.md`).
+Reviews of the T4 candidate `7825837d` add two pre-existing P3s (recorded, not fixed; T4
+does not change either path):
+
+- **Server request dispatch one microtask late.** `src/main/lib/codex/app-server-transport.ts:374`
+  dispatches a parsed server request through `void Promise.resolve().then(...)` (since
+  before this change), while notifications parsed after it in the same stdout chunk reach
+  the adapter synchronously; the adapter's `ledger.ingestServerRequest` therefore commits
+  one microtask late, so a server request parsed before `turn/completed` in the same chunk
+  lands as `status/late_event` after the seal.
+- **Persisted history appends deltas after the final text.** `committedCodexAssistantText`
+  (`src/main/lib/codex/desktop-run-persistence.ts:214`, since `db3cc883`) appends every
+  committed `assistant_delta` of an item, including one after that item's final-text
+  `item_reconciliation`, while the ledger's item reduction ignores a delta for a completed
+  item, so persisted history and the outcome/read model can disagree. The live native
+  path commits such a delta as an `ignoredDelta` echo that restates the final text, which
+  this function reads as the unchanged final text.
 
 ### Touch-up T1 (gaps G1–G5), 2026-10-01
 
@@ -934,7 +959,7 @@ implementer test that covers the seam, or state what is not asserted (gap G5).
 | S19 | agent-runtime-core / Item Lifecycle Reconciliation / Reasoning channels and parts reconcile separately | `run-event-ledger-reconciliation.test.ts` S19 Reasoning channels and parts reconcile separately — RED at b8830be5<br>`run-event-ledger-reconciliation.test.ts` S19 Reasoning channels and parts reconcile separately — RED at b8830be5<br>`run-event-ledger-reconciliation.test.ts` S19 Reasoning channels and parts reconcile separately — RED at b8830be5<br>`run-event-ledger-reconciliation.test.ts` S19 Reasoning channels and parts reconcile separately — RED at b8830be5<br>`run-event-ledger-reconciliation.test.ts` S19 Reasoning channels and parts reconcile separately — RED at b8830be5<br>`run-event-ledger-reconciliation.test.ts` S19 Reasoning channels and parts reconcile separately — RED at b8830be5 / green at candidate: reconciliation 6/6; native-index variant waits on task 1.4 |
 | S20 | agent-runtime-core / Item Lifecycle Reconciliation / Tool item lifecycle is incomplete or repeated | `run-event-ledger-reconciliation.test.ts` S20 Tool item lifecycle is incomplete or repeated — RED at b8830be5<br>`run-event-ledger-reconciliation.test.ts` S20 Tool item lifecycle is incomplete or repeated — RED at b8830be5<br>`run-event-ledger-reconciliation.test.ts` S20 Tool item lifecycle is incomplete or repeated — RED at b8830be5 / green at candidate: reconciliation 3/3 |
 | S21 | agent-runtime-core / Diagnostic Error And Terminal Invariants / Retry error is followed by success | `run-event-ledger-terminal.test.ts` S21 Retry error is followed by success — RED at b8830be5 / green at candidate: terminal 1/1 |
-| S22 | agent-runtime-core / Diagnostic Error And Terminal Invariants / Denial rejection and empty output have deterministic outcomes | `run-event-ledger-terminal.test.ts` S22 Denial rejection and empty output have deterministic outcomes — RED at b8830be5 / green at candidate: terminal 1/1; completed-only assistant output counts and no output stays `output_empty` (T2-6): `headless-job-runner-contract.test.ts`, `desktop-agent-jobs.test.ts` |
+| S22 | agent-runtime-core / Diagnostic Error And Terminal Invariants / Denial rejection and empty output have deterministic outcomes | `run-event-ledger-terminal.test.ts` S22 Denial rejection and empty output have deterministic outcomes — RED at b8830be5 / green at candidate: terminal 1/1; completed-only assistant output counts and no output stays `output_empty` (T2-6): `headless-job-runner-contract.test.ts`, `desktop-agent-jobs.test.ts`; a non-empty delta superseded by an empty final text fails `output_empty` (T4-P1): `run-event-ledger-final-text-output.test.ts` "headless: a non-empty delta superseded by an empty final text fails as output_empty despite a native success" and its "desktop:" twin, and "headless/desktop: an empty final item beside an independent non-empty item succeeds"; whitespace-only coarse output is empty (T4 review P3): same file, "headless/desktop: a whitespace-only coarse text delta is not output evidence and fails as output_empty" |
 | S23 | agent-runtime-core / Diagnostic Error And Terminal Invariants / Transport exit synthesizes one terminal | `run-event-ledger-terminal.test.ts` S23 Transport exit synthesizes one terminal — RED at b8830be5<br>`run-event-ledger-terminal.test.ts` S23 Transport exit synthesizes one terminal — RED at b8830be5 / green at candidate: terminal 2/2; production path with the host terminal projection and no exit candidate from a Locus-initiated close (T2-2): `local-job-api-app-server-profile.test.ts` (terminal projection describe, 3 tests), `desktop-agent-jobs.test.ts`, `run-event-ledger-host.test.ts` |
 | S24 | agent-runtime-core / Diagnostic Error And Terminal Invariants / Pre-start cancel and dead-worker recovery settle through ledger | `run-event-ledger-terminal.test.ts` S24 Pre-start cancel and dead-worker recovery settle through ledger — RED at b8830be5<br>`run-event-ledger-terminal.test.ts` S24 Pre-start cancel and dead-worker recovery settle through ledger — RED at b8830be5<br>`run-event-ledger-terminal.test.ts` S24 Pre-start cancel and dead-worker recovery settle through ledger — RED at b8830be5<br>`run-event-ledger-terminal.test.ts` S24 Pre-start cancel and dead-worker recovery settle through ledger — RED at b8830be5<br>`run-event-ledger-terminal.test.ts` S24 Pre-start cancel and dead-worker recovery settle through ledger — RED at b8830be5<br>`run-event-ledger-terminal.test.ts` S24 Pre-start cancel and dead-worker recovery settle through ledger — GREEN by design at b8830be5<br>`run-event-ledger-terminal.test.ts` S24 Pre-start cancel and dead-worker recovery settle through ledger — RED at b8830be5 / green at candidate: terminal 7/7; variants (`00b33a13`): `run-event-ledger-recovery-variants.test.ts` 3/3 (supervisor-observed exit, unknown host, heartbeat or claim changed at commit) |
 | S25 | agent-runtime-core / Diagnostic Error And Terminal Invariants / Usage after completed is diagnostic only | `run-event-ledger-reconciliation.test.ts` S25 Usage after completed is diagnostic only — RED at b8830be5<br>`run-event-ledger-reconciliation.test.ts` S25 Usage after completed is diagnostic only — RED at b8830be5<br>`run-event-ledger-terminal.test.ts` S25 Usage after completed is diagnostic only — RED at b8830be5 / green at candidate: reconciliation 2/2, terminal 1/1 |
@@ -984,7 +1009,7 @@ implementer test that covers the seam, or state what is not asserted (gap G5).
 | check:full / strict / diff | Exit 0 at `b0f3e60d` (T1 gates), at `0e6d1273` (T2 gates table; coordinator reproduction 2736/0) and at `790ea4f5` (T4 gates table, 2760/0); T3 and the T4 docs commit change documentation only |
 | Manual/packaged | Host-blocked or not claimed; see the 8.5 smoke matrix and rerun commands |
 | Codex IMPLEMENTATION_VERIFIED | Not issued. Negotiation round 1 at `17e23529`: NOT_VERIFIED (P1 and P2, fixed by T4); round 2 is due on the T4 candidate SHA |
-| Claude fresh REVIEW_APPROVED | Four-lens review of `a32800b6`: CHANGES_REQUESTED (closed by T2). Targeted re-review of `0e6d1273`: Lens A and Lens C REVIEW_APPROVED; Lens B CHANGES_REQUESTED on the register only (closed by the docs-only T3); a diff-only re-check of T3 is due. S-06 approvals bind to `6b5bd62b`; after T4 a Claude targeted re-review is due on the T4 candidate SHA (same SHA as Codex round 2) |
+| Claude fresh REVIEW_APPROVED | Four-lens review of `a32800b6`: CHANGES_REQUESTED (closed by T2). Targeted re-review of `0e6d1273`: Lens A and Lens C REVIEW_APPROVED; Lens B CHANGES_REQUESTED on the register only (closed by the docs-only T3). S-06 approvals bound to `6b5bd62b`. The T4 rebinding (T4 section above) supersedes the T3 diff-only re-check and those approvals: a Claude targeted re-review is due on the T4 candidate SHA (same SHA as Codex round 2) |
 | Owner ACCEPTED | Not issued; explicit acceptance required after same-SHA technical evidence |
 | Merge/push/remote PR/release | Not authorized / not performed |
 
