@@ -177,12 +177,18 @@ const HIERARCHICAL_URL = /^([a-z][a-z0-9+.-]*):\/\/([^/?#]*)([^?#]*)/i
 const OPAQUE_URL = /^([a-z][a-z0-9+.-]*):/i
 
 /**
- * Drops URL credentials, query and fragment. Hierarchical URLs keep only
- * scheme, host (with port) and path; opaque URLs (`about:`, `data:`, `blob:`,
- * `javascript:`, `mailto:`...) keep only their scheme; relative references
- * keep only their path.
+ * Pre-redaction hard cap for one URL. A truncated URL drops its trailing
+ * partial path segment so a split secret prefix cannot survive redaction.
  */
-export function minimizeLocalBrowserUrl(value: unknown): string {
+function precapUrl(value: string): string {
+  const cap = LOCAL_BROWSER_DIAGNOSTIC_LIMITS.preRedactionChars
+  if (value.length <= cap) return value
+  const cut = value.slice(0, cap)
+  return cut.slice(0, cut.lastIndexOf("/") + 1)
+}
+
+/** Credential/query/fragment minimization without the final length bound. */
+function minimizeUrlForRedaction(value: unknown): string {
   if (typeof value !== "string") return ""
   const trimmed = value.trim()
   if (!trimmed) return ""
@@ -199,36 +205,67 @@ export function minimizeLocalBrowserUrl(value: unknown): string {
       ? `${(opaque[1] ?? "").toLowerCase()}:`
       : (trimmed.split(/[?#]/, 1)[0] ?? "")
   }
+  return precapUrl(minimized.replace(/\s+/g, ""))
+}
+
+/**
+ * Drops URL credentials, query and fragment. Hierarchical URLs keep only
+ * scheme, host (with port) and path; opaque URLs (`about:`, `data:`, `blob:`,
+ * `javascript:`, `mailto:`...) keep only their scheme; relative references
+ * keep only their path. Projections redact before this length bound
+ * (`shapeLocalBrowserDisplayUrl`); this unredacted form is bounded directly.
+ */
+export function minimizeLocalBrowserUrl(value: unknown): string {
   return boundLength(
-    minimized.replace(/\s+/g, ""),
+    minimizeUrlForRedaction(value),
     LOCAL_BROWSER_DIAGNOSTIC_LIMITS.urlChars,
   )
 }
 
-/**
- * Redacted origin for security logs and blocked-navigation diagnostics:
- * `scheme://host[:port]` for hierarchical URLs and only `scheme:` otherwise.
- */
-export function minimizeLocalBrowserOrigin(value: unknown): string {
+function originForRedaction(value: unknown): string {
   if (typeof value !== "string") return ""
   const trimmed = value.trim()
   const hierarchical = HIERARCHICAL_URL.exec(trimmed)
   if (hierarchical) {
     const authority = hierarchical[2] ?? ""
-    return boundLength(
+    return precapUrl(
       `${(hierarchical[1] ?? "").toLowerCase()}://${authority.slice(authority.lastIndexOf("@") + 1)}`,
-      LOCAL_BROWSER_DIAGNOSTIC_LIMITS.urlChars,
     )
   }
   const opaque = OPAQUE_URL.exec(trimmed)
   return opaque ? `${(opaque[1] ?? "").toLowerCase()}:` : ""
 }
 
+/**
+ * Origin for security logs and blocked-navigation diagnostics:
+ * `scheme://host[:port]` for hierarchical URLs and only `scheme:` otherwise.
+ * Unredacted; projections use `shapeLocalBrowserOrigin`.
+ */
+export function minimizeLocalBrowserOrigin(value: unknown): string {
+  return boundLength(
+    originForRedaction(value),
+    LOCAL_BROWSER_DIAGNOSTIC_LIMITS.urlChars,
+  )
+}
+
+/** Minimized origin, then main-composed redaction, then the length bound. */
+export function shapeLocalBrowserOrigin(
+  value: unknown,
+  redact: LocalBrowserTextRedactor,
+): string {
+  const origin = originForRedaction(value)
+  if (!origin) return ""
+  return boundLength(redact(origin), LOCAL_BROWSER_DIAGNOSTIC_LIMITS.urlChars)
+}
+
 const URL_IN_TEXT = /\b[a-z][a-z0-9+.-]*:\/\/[^\s"'<>()]+/gi
 
-/** Minimizes every absolute URL embedded in free page text. */
+/**
+ * Minimizes every absolute URL embedded in free page text. Length bounds
+ * apply only after redaction (`shapeLocalBrowserText`).
+ */
 export function minimizeUrlsInText(value: string): string {
-  return value.replace(URL_IN_TEXT, (match) => minimizeLocalBrowserUrl(match))
+  return value.replace(URL_IN_TEXT, (match) => minimizeUrlForRedaction(match))
 }
 
 /**
@@ -246,8 +283,9 @@ export function shapeLocalBrowserText(
   return boundLength(redact(minimized).replace(/\s+/g, " ").trim(), maxChars)
 }
 
+/** Minimize, redact, then bound: a length cut never precedes redaction. */
 function shapeUrl(value: unknown, redact: LocalBrowserTextRedactor): string {
-  const minimized = minimizeLocalBrowserUrl(value)
+  const minimized = minimizeUrlForRedaction(value)
   if (!minimized) return ""
   return boundLength(
     redact(minimized),
@@ -356,10 +394,6 @@ function shapeList(
   return shaped
 }
 
-function shapeRelativeOrAbsoluteReference(value: unknown): string {
-  return minimizeLocalBrowserUrl(value)
-}
-
 /**
  * Shapes a DOM-summary probe result. The probe runs in the page and its
  * result is page-controlled, so every field is re-validated here.
@@ -383,8 +417,7 @@ export function shapeLocalBrowserDomSummary(
       if (!item || typeof item !== "object") return ""
       const link = item as Record<string, unknown>
       const label = text(link.label)
-      const href = shapeRelativeOrAbsoluteReference(link.href)
-      const redactedHref = href ? redact(href) : ""
+      const redactedHref = shapeUrl(link.href, redact)
       const combined = label
         ? redactedHref
           ? `${label} -> ${redactedHref}`

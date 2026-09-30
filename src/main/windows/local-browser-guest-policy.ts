@@ -25,6 +25,7 @@ import {
   shapeLocalBrowserDisplayUrl,
   shapeLocalBrowserDomSummary,
   shapeLocalBrowserLoadFailure,
+  shapeLocalBrowserOrigin,
   shapeLocalBrowserSelectedElement,
   shapeLocalBrowserTitle,
 } from "../../shared/local-browser-diagnostics-policy"
@@ -1230,8 +1231,7 @@ export function createLocalBrowserGuestPolicy(
 
   /** Security log: reason codes and redacted origins only. */
   const securityLog = (event: string, reason: string, url?: string) => {
-    const origin = url ? minimizeLocalBrowserOrigin(url) : ""
-    const redactedOrigin = origin ? redact(origin) : ""
+    const redactedOrigin = url ? shapeLocalBrowserOrigin(url, redact) : ""
     log(
       `[LocalBrowserGuest] ${event}: ${reason}${redactedOrigin ? ` (${redactedOrigin})` : ""}`,
     )
@@ -1414,11 +1414,10 @@ export function createLocalBrowserGuestPolicy(
       securityLog("navigation denied", reason, url)
       const record = recordsByGuest.get(guest)
       if (!record) return
-      const origin = minimizeLocalBrowserOrigin(url)
       emit(record, {
         kind: "navigation-blocked",
         reason,
-        target: origin ? redact(origin) : "",
+        target: shapeLocalBrowserOrigin(url, redact),
       })
     }
 

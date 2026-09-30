@@ -22,6 +22,7 @@ import {
   shapeLocalBrowserDisplayUrl,
   shapeLocalBrowserDomSummary,
   shapeLocalBrowserLoadFailure,
+  shapeLocalBrowserOrigin,
   shapeLocalBrowserSelectedElement,
   shapeLocalBrowserText,
   shapeLocalBrowserTitle,
@@ -256,6 +257,71 @@ describe("free-text diagnostics: OAuth parameters, bare JWTs and scheme-less que
     const diagnostic = redactUntrustedDiagnosticPayload(text, [])
     expect(String(diagnostic.payload)).toBe("token <redacted> /cb?<redacted>")
     expect(diagnostic.appliedRules).toEqual(["secret-text"])
+  })
+})
+
+describe("URL projections are redacted before the length bound", () => {
+  const key = fixture.secrets.providerKey
+  const longPath = `http://localhost:3000/${"a".repeat(205)}`
+
+  test("a long display URL keeps no partial provider-key prefix", () => {
+    const shaped = shapeLocalBrowserDisplayUrl(`${longPath}/${key}`, redact)
+    expect(shaped.length).toBeLessThanOrEqual(
+      LOCAL_BROWSER_DIAGNOSTIC_LIMITS.urlChars,
+    )
+    expect(shaped).not.toContain("sk-")
+    expect(
+      shapeLocalBrowserDisplayUrl(`http://localhost:3000/x/${key}`, redact),
+    ).toBe("http://localhost:3000/x/<redacted>")
+  })
+
+  test("console sources, load-failure URLs, DOM links and URLs in text follow the same order", () => {
+    const url = `${longPath}/${key}`
+    const consoleMessage = shapeLocalBrowserConsoleMessage(
+      {
+        level: "error",
+        message: `failed ${url}`,
+        sourceId: url,
+        lineNumber: 1,
+      },
+      redact,
+      TIMESTAMP,
+    )
+    const failure = shapeLocalBrowserLoadFailure(
+      { errorCode: -105, errorDescription: "", validatedURL: url },
+      redact,
+      TIMESTAMP,
+    )
+    const summary = shapeLocalBrowserDomSummary(
+      { url, links: [{ label: "", href: url }] },
+      redact,
+    )
+    for (const value of [consoleMessage, failure, summary]) {
+      expect(JSON.stringify(value)).not.toContain("sk-")
+    }
+  })
+
+  test("a URL longer than the pre-redaction cap reaches the redactor without its trailing partial segment", () => {
+    const cap = LOCAL_BROWSER_DIAGNOSTIC_LIMITS.preRedactionChars
+    const prefix = `http://localhost:3000/${"b".repeat(cap - 33)}/`
+    const url = `${prefix}${key}`
+    expect(url.slice(0, cap).endsWith("/sk-guestdi")).toBe(true)
+    const seen: string[] = []
+    shapeLocalBrowserDisplayUrl(url, (text) => {
+      seen.push(text)
+      return redact(text)
+    })
+    expect(seen).toEqual([prefix])
+  })
+
+  test("blocked-navigation and log origins are redacted before the bound", () => {
+    expect(
+      shapeLocalBrowserOrigin(`https://u:p@${key}.example/phish?x=1`, redact),
+    ).toBe("https://<redacted>.example")
+    expect(shapeLocalBrowserOrigin("mailto:a@example.com", redact)).toBe(
+      "mailto:",
+    )
+    expect(shapeLocalBrowserOrigin(42, redact)).toBe("")
   })
 })
 
