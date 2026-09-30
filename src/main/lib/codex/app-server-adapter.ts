@@ -1114,18 +1114,49 @@ export function createCodexAppServerAdapter({
         const onSent = (id: CodexAppServerMessageId) => {
           sent.id = id
         }
-        try {
-          const result = options.cancellable
-            ? await requestWithCancellation(method, params, { onSent })
-            : await transport.request(method, params, { onSent })
+        // The response fact enters the ledger's serial ingress where the
+        // transport parses it (wire order with the notifications around
+        // it), independent of whether this Run still waits for it: a
+        // response parsed after a cancel but before close is recorded too.
+        let recorded = false
+        const record = (
+          outcome:
+            | { result: unknown }
+            | { error: { code?: string | number; message: string } },
+        ) => {
+          if (recorded) return
+          recorded = true
+          if ("error" in outcome) {
+            const code = outcome.error.code
+            if (typeof code !== "number" && typeof code !== "string") return
+            recordResponse({
+              method,
+              params,
+              context,
+              wireId: sent.id,
+              outcome: { error: { code, message: outcome.error.message } },
+            })
+            return
+          }
           const committed = recordResponse({
             method,
             params,
             context,
             wireId: sent.id,
-            outcome: { result },
+            outcome,
           })
           if (method === "thread/resume") resumeResponseCommitted = committed
+        }
+        const requestOptions: CodexAppServerRequestOptions = {
+          onSent,
+          onResponse: record,
+        }
+        try {
+          const result = options.cancellable
+            ? await requestWithCancellation(method, params, requestOptions)
+            : await transport.request(method, params, requestOptions)
+          // A transport without a parse-boundary observer settles first.
+          record({ result })
           return result
         } catch (error) {
           const code =
@@ -1133,16 +1164,10 @@ export function createCodexAppServerAdapter({
               ? (error as { code?: unknown }).code
               : undefined
           if (typeof code === "number" || typeof code === "string") {
-            recordResponse({
-              method,
-              params,
-              context,
-              wireId: sent.id,
-              outcome: {
-                error: {
-                  code,
-                  message: error instanceof Error ? error.message : "",
-                },
+            record({
+              error: {
+                code,
+                message: error instanceof Error ? error.message : "",
               },
             })
           }

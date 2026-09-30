@@ -65,6 +65,11 @@ export type CodexAppServerTransportExit = {
   error: Error
 }
 
+/** A client request's response as parsed off the wire (message redacted). */
+export type CodexAppServerResponseOutcome =
+  | { result: unknown }
+  | { error: { code?: number; message: string } }
+
 /** Per-request transport options. */
 export type CodexAppServerRequestOptions = {
   /**
@@ -73,6 +78,13 @@ export type CodexAppServerRequestOptions = {
    * records with the original request.
    */
   onSent?: (id: CodexAppServerMessageId) => void
+  /**
+   * Receives the request's response synchronously at the transport's parse
+   * boundary, before the returned promise settles: in wire order with the
+   * notifications parsed before and after it, and also when the caller has
+   * stopped waiting (a cancel) but the transport has not closed yet.
+   */
+  onResponse?: (outcome: CodexAppServerResponseOutcome) => void
 }
 
 export type CodexAppServerTransport = {
@@ -132,6 +144,7 @@ export function selectCodexAppServerServerRequestResult(
 type PendingRequest = {
   resolve: (value: unknown) => void
   reject: (error: Error) => void
+  onResponse?: (outcome: CodexAppServerResponseOutcome) => void
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -313,22 +326,34 @@ export function createCodexAppServerStdioTransport({
       if (!waiter) return
       pending.delete(id)
       const response = parsed as CodexAppServerProtocolResponse
+      const observeResponse = (outcome: CodexAppServerResponseOutcome) => {
+        try {
+          waiter.onResponse?.(outcome)
+        } catch {
+          // The response observer never blocks the protocol request.
+        }
+      }
       if (response.error) {
         // The native JSON-RPC error code (e.g. -32600/-32603) is kept for
         // the ledger's response boundary; the message stays redacted.
+        const message = redactedTransportText(
+          response.error.message || "Codex app-server request failed.",
+          "Codex app-server request failed.",
+          secretHints,
+        )
+        observeResponse({
+          error: {
+            ...(response.error.code !== undefined
+              ? { code: response.error.code }
+              : {}),
+            message,
+          },
+        })
         waiter.reject(
-          Object.assign(
-            new Error(
-              redactedTransportText(
-                response.error.message || "Codex app-server request failed.",
-                "Codex app-server request failed.",
-                secretHints,
-              ),
-            ),
-            { code: response.error.code },
-          ),
+          Object.assign(new Error(message), { code: response.error.code }),
         )
       } else {
+        observeResponse({ result: response.result })
         waiter.resolve(response.result)
       }
       return
@@ -504,7 +529,7 @@ export function createCodexAppServerStdioTransport({
         // The correlation observer never blocks the protocol request.
       }
       return new Promise((resolve, reject) => {
-        pending.set(id, { resolve, reject })
+        pending.set(id, { resolve, reject, onResponse: options?.onResponse })
         writeJsonLine(
           child,
           {
