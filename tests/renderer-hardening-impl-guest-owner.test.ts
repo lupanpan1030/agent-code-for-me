@@ -1218,6 +1218,25 @@ describe("D9 diagnostics relay and capture (GP-09)", () => {
     expect(projected.some((event) => "partition" in event)).toBe(false)
   })
 
+  test("free-text console/title payloads with bare JWTs, OAuth parameters and scheme-less queries are redacted by main's composition", async () => {
+    const harness = createHarness()
+    const embedder = harness.createAppWindow(94)
+    const admission = await admitHttp(harness, embedder)
+    const guest = attachGuest(harness, embedder, admission)
+    const { oauthCode, oauthState, oauthNonce, bearerJwt } = fixture.secrets
+    guest.emit("console-message", {
+      level: "warning",
+      message: `callback ?code=${oauthCode}&state=${oauthState} nonce=${oauthNonce} token ${bearerJwt} GET localhost:3000/cb?code=${oauthCode}`,
+      sourceId: "http://localhost:3000/app.js",
+      lineNumber: 7,
+    })
+    guest.emit("page-title-updated", {}, `t ${bearerJwt}`, true)
+    const projected = embedder.events()
+    expect(embedder.events("console")).toHaveLength(1)
+    expect(embedder.events("title")).toHaveLength(1)
+    expect(leaked(projected)).toEqual([])
+  })
+
   test("Electron console levels map explicitly; unknown levels fall back to log", async () => {
     const harness = createHarness()
     const embedder = harness.createAppWindow(92)

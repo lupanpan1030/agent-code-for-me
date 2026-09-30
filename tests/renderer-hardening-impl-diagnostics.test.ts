@@ -7,7 +7,10 @@
 import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
-import { redactUntrustedDiagnosticPayload } from "../src/main/lib/agent-runtime/redaction"
+import {
+  redactRuntimePayload,
+  redactUntrustedDiagnosticPayload,
+} from "../src/main/lib/agent-runtime/redaction"
 import {
   isAcceptableLocalBrowserScreenshot,
   LOCAL_BROWSER_DIAGNOSTIC_LIMITS,
@@ -198,6 +201,61 @@ describe("fixture payloads through shape + main redaction", () => {
       LOCAL_BROWSER_DIAGNOSTIC_LIMITS.titleChars,
     )
     expect(leaked(title)).toEqual([])
+  })
+})
+
+describe("free-text diagnostics: OAuth parameters, bare JWTs and scheme-less queries", () => {
+  const { oauthCode, oauthState, oauthNonce, bearerJwt, urlFragment } =
+    fixture.secrets
+
+  test.each([
+    [
+      "OAuth code/state/nonce outside a scheme URL",
+      `callback ?code=${oauthCode}&state=${oauthState} nonce=${oauthNonce}`,
+    ],
+    ["a bare JWT", `token ${bearerJwt}`],
+    ["a JWT as an id_token value", `id_token=${bearerJwt} received`],
+    ["a scheme-less URL query", `GET localhost:3000/cb?code=${oauthCode} 302`],
+    [
+      "a scheme-less fragment",
+      `redirect to localhost:3000/cb#access_token=${urlFragment}&state=${oauthState}`,
+    ],
+    ["a relative callback path", `/auth/callback?state=${oauthState}`],
+    [
+      "state and nonce pairs in free text",
+      `state=${oauthState}; nonce=${oauthNonce}`,
+    ],
+  ])("%s is redacted in console text, titles and DOM text", (_label, text) => {
+    const consoleText = shapeLocalBrowserText(text, redact, 600)
+    const title = shapeLocalBrowserTitle(`t ${text}`, redact)
+    const summary = shapeLocalBrowserDomSummary(
+      { textSample: text, headings: [text], links: [{ label: text }] },
+      redact,
+    )
+    const selected = shapeLocalBrowserSelectedElement(`div - ${text}`, redact)
+    expect(leaked([consoleText, title, summary, selected])).toEqual([])
+    expect(consoleText).toContain("<redacted>")
+  })
+
+  test("ordinary diagnostic text is not redacted by the page-text patterns", () => {
+    for (const text of [
+      "Render state: ready",
+      "Process exited with code 1",
+      "color #fff and #mermaid-1 .node",
+      "a ? b : c",
+      "value x=1 without a query",
+      "http://localhost:3000/callback 404",
+    ]) {
+      expect(shapeLocalBrowserText(text, redact, 600)).toBe(text)
+    }
+  })
+
+  test("the page-text patterns belong to diagnostics only: runtime payload redaction is unchanged", () => {
+    const text = `token ${bearerJwt} /cb?state=${oauthState}`
+    expect(String(redactRuntimePayload(text, {} as never).payload)).toBe(text)
+    const diagnostic = redactUntrustedDiagnosticPayload(text, [])
+    expect(String(diagnostic.payload)).toBe("token <redacted> /cb?<redacted>")
+    expect(diagnostic.appliedRules).toEqual(["secret-text"])
   })
 })
 
