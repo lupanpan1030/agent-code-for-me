@@ -167,6 +167,7 @@ describe("D3: reviewed Mermaid CSS value profile (owner)", () => {
       '#mermaid-t [data-look="neo"].node rect{stroke:url(#mermaid-t-gradient);}',
       "#mermaid-t :root{--mermaid-font-family:inherit;}",
       "#mermaid-t .ok>*{fill:#e0f2fe!important;}",
+      "@keyframes fade{from{position:relative;opacity:0}to{opacity:1}}",
     ]) {
       expect({ css, violations: reviewMermaidPaintCss(css, id) }).toEqual({
         css,
@@ -198,6 +199,22 @@ describe("D3: reviewed Mermaid CSS value profile (owner)", () => {
       "#mermaid-t .overlay>*{position:fixed!important}",
     ],
     ["position via var()", "#mermaid-t .n{position:var(--p)}"],
+    [
+      "keyframe frame position:fixed (root animation overlay)",
+      "#mermaid-t{animation:x 1s infinite}@keyframes x{from{position:fixed;top:0;left:0;width:100vw;height:100vh}to{position:fixed}}",
+    ],
+    [
+      "keyframe frame position:absolute",
+      "@keyframes x{50%{position:absolute}}",
+    ],
+    [
+      "-webkit-keyframes frame position:fixed!important",
+      "@-webkit-keyframes x{to{position:fixed!important}}",
+    ],
+    [
+      "keyframe frame position via var()",
+      "@keyframes x{to{position:var(--p)}}",
+    ],
     ["@font-face", "@font-face{font-family:x;src:local(x)}"],
     ["@media", "@media all{#mermaid-t .n{fill:red}}"],
     ["nested rule", "#mermaid-t .n{fill:red;& ~ x{display:none}}"],
@@ -272,6 +289,15 @@ describe("D3: adapter paint/attribute profile around DOMPurify and the DOMParser
     expect(kept?.getAttribute("marker-end")).toBe("url(#mermaid-f_end)")
     expect(dangling?.hasAttribute("marker-start")).toBe(false)
     expect(dangling?.getAttribute("fill")).toBe("url(#mermaid-f_end)")
+    expect(mermaidViolations(out)).toEqual([])
+  })
+
+  test("a paint <style> whose keyframe frame sets position:fixed is not retained", () => {
+    const out = sanitizeMermaidSvg(
+      '<svg id="mermaid-k" xmlns="http://www.w3.org/2000/svg"><style>#mermaid-k{animation:x 1s infinite}@keyframes x{from{position:fixed;top:0;left:0;width:100vw;height:100vh}to{position:fixed}}</style><g class="n"></g></svg>',
+    )
+    expect(paintOf(out)).toEqual([])
+    expect(hold(out).querySelector("g.n")).not.toBeNull()
     expect(mermaidViolations(out)).toEqual([])
   })
 

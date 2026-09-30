@@ -315,10 +315,15 @@ const MERMAID_ROOT_LEVEL_REMAINDERS: ReadonlySet<string> = new Set([
   " html",
   " body",
 ])
-/** `position` keywords admitted per rule scope; anything else fails. */
+/**
+ * `position` keywords admitted per rule scope; anything else fails. A
+ * `@keyframes` frame is not bound to a selector, and an animation may target
+ * the diagram root, so frame bodies get the root profile.
+ */
 const MERMAID_POSITION_VALUES = Object.freeze({
   descendant: Object.freeze(["static", "relative", "absolute", "sticky"]),
   root: Object.freeze(["static", "relative"]),
+  keyframe: Object.freeze(["static", "relative"]),
   inline: Object.freeze(["static", "relative"]),
 })
 
@@ -467,8 +472,9 @@ function positionViolations(
  * retained. Every selector is scoped to `#<diagramId>` (a descendant or the
  * root itself, never a sibling); only `@keyframes` at-rules are admitted; no
  * URL-bearing function, `@import`, `expression(`, `behavior:` or other
- * external reference; `position:fixed` nowhere and `position:absolute` not at
- * root level. Attacker `classDef`/`style` diagram statements also reach this
+ * external reference; `position:fixed` in no rule and no keyframe frame, and
+ * `position:absolute`/`sticky` neither at root level nor in a keyframe frame.
+ * Attacker `classDef`/`style` diagram statements also reach this
  * text (the `secure` directive list cannot suppress diagram syntax), so this
  * profile is their control too.
  */
@@ -521,7 +527,15 @@ export function reviewMermaidPaintCss(
           )
         ) {
           violations.push(`keyframe not admitted (${frame.prelude})`)
+          continue
         }
+        violations.push(
+          ...positionViolations(
+            frame.body,
+            MERMAID_POSITION_VALUES.keyframe,
+            `${where} ${frame.prelude}`,
+          ),
+        )
       }
       continue
     }
