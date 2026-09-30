@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm"
 import { normalizeCodexStreamChunk } from "../../../shared/codex-tool-normalizer"
+import { projectRunEventToRendererChunks } from "../agent-runtime/stream-event-mapper"
 import type { getDatabase } from "../db"
 import { subChats } from "../db"
 import { type ActiveCodexStream, getActiveCodexStream } from "./active-streams"
@@ -227,15 +228,55 @@ export function committedCodexAssistantText(
   return order.map((key) => texts.get(key) ?? "").join("")
 }
 
+/**
+ * Usage metadata of one Run from its last committed `usage_update`: the
+ * same message metadata the live renderer projection delivered for it
+ * (last and cumulative vectors including the cache members the committed
+ * vector carries, `modelContextWindow`, native thread/turn ids), so the
+ * persisted assistant message keeps what the stream showed after reload.
+ */
+export function committedCodexUsageMetadata(
+  records: readonly CommittedRunRecord[],
+): Record<string, unknown> {
+  for (let index = records.length - 1; index >= 0; index -= 1) {
+    const record = records[index]
+    if (record?.type !== "usage_update") continue
+    for (const chunk of projectRunEventToRendererChunks(record)) {
+      if (
+        chunk.type === "message-metadata" &&
+        isRecord(chunk.messageMetadata)
+      ) {
+        return { ...chunk.messageMetadata }
+      }
+    }
+  }
+  return {}
+}
+
+/**
+ * Persisted assistant metadata precedence (as for the former stream merge
+ * of the last message-metadata chunk and the finish metadata): committed
+ * usage metadata, then the Run's native context, then the route's run
+ * metadata (session), then the persisted model/provider override.
+ */
 export function buildCodexAppServerAssistantMessage(input: {
   records: readonly CommittedRunRecord[]
   metadata?: Record<string, unknown> | null
+  /** Host-only native context of the Run (ledger.readNativeContext()). */
+  nativeContext?: { threadId?: string | null; turnId?: string | null } | null
   model: string
   generateMessageId: () => string
   now?: () => Date
 }): unknown | null {
   const text = committedCodexAssistantText(input.records)
   const metadata = {
+    ...committedCodexUsageMetadata(input.records),
+    ...(input.nativeContext?.threadId
+      ? { threadId: input.nativeContext.threadId }
+      : {}),
+    ...(input.nativeContext?.turnId
+      ? { turnId: input.nativeContext.turnId }
+      : {}),
     ...(input.metadata ?? {}),
     model: input.model,
     provider: "codex",
@@ -259,6 +300,7 @@ export function persistCodexDesktopAssistantAfterNaturalFinish(input: {
   messagesForStream: unknown[]
   records: readonly CommittedRunRecord[]
   metadata?: Record<string, unknown> | null
+  nativeContext?: { threadId?: string | null; turnId?: string | null } | null
   model: string
   createId?: () => string
   now?: () => Date
@@ -267,6 +309,7 @@ export function persistCodexDesktopAssistantAfterNaturalFinish(input: {
   const assistantMessage = buildCodexAppServerAssistantMessage({
     records: input.records,
     metadata: input.metadata,
+    nativeContext: input.nativeContext,
     model: input.model,
     generateMessageId: input.createId ?? (() => crypto.randomUUID()),
     now: input.now,

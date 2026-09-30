@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { eq } from "drizzle-orm"
+import { createCanonicalRunEventLedger } from "../src/main/lib/agent-runtime/run-event-ledger"
 import {
   clearActiveCodexStreamsForTest,
   deleteActiveCodexStream,
@@ -17,6 +18,89 @@ import {
 } from "../src/main/lib/codex/desktop-run-persistence"
 import { chats, projects, subChats } from "../src/main/lib/db/schema"
 import { createAgentJobTestDb } from "./helpers/agent-job-test-db"
+
+const CODEX_TUPLE = {
+  kind: "runtime",
+  installationId: "inst-codex-0.139.0-persistence-test",
+  runtimeId: "codex",
+  adapterSource: "codex-app-server",
+  version: "0.139.0",
+  executableRef: "exe-persistence-test",
+  binarySha256: "a".repeat(64),
+  protocolName: "codex-app-server-jsonrpc",
+  protocolVersion: "v2",
+  schemaFiles: [{ path: "ServerNotification.ts", sha256: "b".repeat(64) }],
+} as const
+
+/**
+ * Committed records of one Codex desktop Run from the real ledger: an
+ * assistant delta and two `thread/tokenUsage/updated` snapshots (the last
+ * one carries the cache members and the model context window).
+ */
+async function committedCodexRunRecords() {
+  const rows: Array<Record<string, unknown>> = []
+  const ledger = createCanonicalRunEventLedger({
+    runId: "run-metadata",
+    runtimeId: "codex",
+    provenance: CODEX_TUPLE,
+    durableStore: {
+      appendExact(input: { records: Array<Record<string, unknown>> }) {
+        rows.push(...input.records)
+        return input.records
+      },
+      read(_runId: string, after = 0) {
+        return rows.filter((row) => Number(row.sequence) > after)
+      },
+    },
+  })
+  const notify = (observationKey: string, method: string, params: unknown) =>
+    ledger.ingestNotification({
+      observationKey,
+      transportId: "t1",
+      receivedAt: "2026-09-04T00:00:00.000Z",
+      message: { method, params },
+    })
+  const vector = (total: number, cached: number) => ({
+    totalTokens: total,
+    inputTokens: total - 2,
+    cachedInputTokens: cached,
+    outputTokens: 2,
+    reasoningOutputTokens: 1,
+  })
+  await notify("n-started", "turn/started", {
+    threadId: "thread-7",
+    turn: { id: "turn-3", status: "inProgress", error: null },
+  })
+  await notify("n-delta", "item/agentMessage/delta", {
+    threadId: "thread-7",
+    turnId: "turn-3",
+    itemId: "msg-1",
+    delta: "Hello world",
+  })
+  await notify("n-usage-1", "thread/tokenUsage/updated", {
+    threadId: "thread-7",
+    turnId: "turn-3",
+    tokenUsage: {
+      total: vector(10, 0),
+      last: vector(10, 0),
+      modelContextWindow: 200000,
+    },
+  })
+  await notify("n-usage-2", "thread/tokenUsage/updated", {
+    threadId: "thread-7",
+    turnId: "turn-3",
+    tokenUsage: {
+      total: vector(30, 4),
+      last: vector(20, 4),
+      modelContextWindow: 258400,
+    },
+  })
+  await ledger.whenIdle()
+  return {
+    records: rows,
+    nativeContext: await ledger.readNativeContext(),
+  }
+}
 
 function createPersistenceDb(): CodexDesktopRunPersistenceDatabase {
   const db = createAgentJobTestDb()
@@ -342,16 +426,23 @@ describe("Codex desktop run persistence owner", () => {
     expect(readUpdatedAt(db)).toEqual(initialUpdatedAt)
   })
 
-  test("builds assistant JSON with the established metadata precedence", () => {
-    // History is built from the committed item projection (refactor-
-    // canonical-run-event-ledger): the route supplies the run metadata and
-    // the persisted model/provider still take precedence over it.
+  test("builds assistant JSON with the established metadata precedence", async () => {
+    // History is built from the committed records (refactor-canonical-run-
+    // event-ledger, T2-5 / S-11): the last committed usage_update supplies
+    // the usage metadata the stream showed, the native context supplies the
+    // thread/turn, the route's run metadata overrides both (as the finish
+    // metadata once overrode message-metadata) and the persisted
+    // model/provider still take precedence over everything.
+    const { records, nativeContext } = await committedCodexRunRecords()
     expect(
       buildCodexAppServerAssistantMessage({
-        records: [assistantRecord(1, "Hello "), assistantRecord(2, "world")],
+        records,
+        nativeContext,
         metadata: {
+          provider: "stale-provider",
+          adapterSource: "codex-app-server",
           sessionId: "session-1",
-          usage: { inputTokens: 3 },
+          totalTokens: 999,
           model: "stale",
         },
         model: "gpt-5.4",
@@ -364,11 +455,70 @@ describe("Codex desktop run persistence owner", () => {
       createdAt: "2026-08-26T02:03:04.000Z",
       parts: [{ type: "text", text: "Hello world" }],
       metadata: {
+        adapterSource: "codex-app-server",
+        threadId: "thread-7",
+        turnId: "turn-3",
         sessionId: "session-1",
-        usage: { inputTokens: 3 },
+        inputTokens: 18,
+        outputTokens: 2,
+        totalTokens: 999,
+        cacheReadInputTokens: 4,
+        cachedInputTokens: 4,
+        reasoningOutputTokens: 1,
+        cumulativeInputTokens: 28,
+        cumulativeOutputTokens: 2,
+        cumulativeTotalTokens: 30,
+        modelContextWindow: 258400,
         model: "gpt-5.4",
         provider: "codex",
       },
+    })
+  })
+
+  test("persists committed usage, native context and session metadata for reload (T2-5 / S-11)", async () => {
+    const db = createPersistenceDb()
+    const owner = {
+      runId: "run-metadata",
+      controller: new AbortController(),
+      cancelRequested: false,
+    }
+    setActiveCodexStream("sub-1", owner)
+    const { records, nativeContext } = await committedCodexRunRecords()
+    expect(nativeContext).toEqual({ threadId: "thread-7", turnId: "turn-3" })
+
+    expect(
+      persistCodexDesktopAssistantAfterNaturalFinish({
+        db,
+        subChatId: "sub-1",
+        activeStreamOwner: owner,
+        messagesForStream: [],
+        records,
+        nativeContext,
+        metadata: {
+          provider: "codex",
+          adapterSource: "codex-app-server",
+          sessionId: "session-9",
+        },
+        model: "gpt-5.4",
+        createId: () => "assistant-1",
+        now: () => new Date("2026-08-26T03:04:05.000Z"),
+      }),
+    ).toBe(true)
+    const [persisted] = readMessages(db) as Array<{
+      metadata: Record<string, unknown>
+    }>
+    expect(persisted.metadata).toMatchObject({
+      provider: "codex",
+      model: "gpt-5.4",
+      sessionId: "session-9",
+      threadId: "thread-7",
+      turnId: "turn-3",
+      modelContextWindow: 258400,
+      cachedInputTokens: 4,
+      cacheReadInputTokens: 4,
+      inputTokens: 18,
+      totalTokens: 20,
+      cumulativeTotalTokens: 30,
     })
   })
 

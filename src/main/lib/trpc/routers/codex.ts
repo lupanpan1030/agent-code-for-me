@@ -828,11 +828,11 @@ export const codexRouter = router({
                     activeStreamOwner,
                     messagesForStream,
                     records: await runLedger.read(0),
+                    nativeContext: await runLedger.readNativeContext(),
                     metadata: {
                       provider: "codex",
                       adapterSource: "codex-app-server",
                       sessionId: adapterResult.sessionId ?? null,
-                      ...(adapterResult.usage ?? {}),
                     },
                     model: metadataModel,
                   })
