@@ -69,8 +69,12 @@ and `expandUnchanged: false`.
   formatting subset still renders
 - **AND** both app markdown modes SHALL use the same explicit raw/sanitize/
   harden chain, whose sanitizer schema derives from `rehype-sanitize`'s
-  `defaultSchema` and whose hardener options are non-wildcard; parity fixtures
-  SHALL cover the remark configuration as well as the replacing rehype chain
+  `defaultSchema` and whose hardener options carry no wildcard protocol (the
+  protocol allowlist is empty) and refuse data images; the hardener's `*`
+  link/image prefix is that library's absolute-`http(s)`-only mode and is
+  permitted because scheme and relative-URL policy is enforced by the reviewed
+  sanitizer schema; parity fixtures SHALL cover the remark configuration as
+  well as the replacing rehype chain
 - **AND** the wrapper's `code`/`pre` overrides SHALL keep Streamdown's built-in
   Mermaid renderer dormant, proven by the absence of its `aria-label="Mermaid
   chart"` element; custom-scheme and relative-link fixtures SHALL exercise the

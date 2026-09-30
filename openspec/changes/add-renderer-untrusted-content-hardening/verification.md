@@ -961,3 +961,23 @@ No dependencies were installed. Receipt-inclusive strict target/all validation
 and whitespace checks are repeated for the final ledger content; the handoff
 records the single local commit SHA and its diff stat against `efe3fb91`.
 The review remains bound to `efe3fb91`, under its explicit ledger-only exception.
+
+## Implementation-time clarifications (coordination, 2026-09-30)
+
+- **Harden options wording.** The Phase I implementer (Claude Opus 5.5) stopped on the
+  requirement text "hardener options are non-wildcard": in the pinned rehype-harden
+  1.1.7 a link/image prefix is origin-bound and only the `*` prefix admits arbitrary
+  absolute `http(s)` URLs, so a literal reading would block every ordinary chat link
+  and fail the approved positive controls. Coordinator ruling: the shipped options
+  (`allowedProtocols: []`, `allowDataImages: false`, `allowedLinkPrefixes` /
+  `allowedImagePrefixes: ["*"]`) are the intended reading; the requirement paragraph
+  and D2 now say so explicitly. No approved default and no fail-closed rule changed:
+  scheme and relative-URL policy is enforced by the reviewed sanitizer schema. This
+  wording change post-dates the Owner's exact-package re-confirmation and is listed
+  here for the freeze-time fresh review and for Owner ACCEPTED.
+- **Yellow (recorded, not done):** relative and footnote (`#fragment`) links now render
+  as harden's "[blocked]" span under the fail-closed markdown profile; a reviewed
+  same-document fragment allowance would be a later schema/oracle change.
+  Upper-case schemes (`HTTPS://`) fail closed (unchanged from the previous default
+  chain). `remark-gfm`/`remark-breaks` remain caret ranges (D2 pins only the rehype
+  packages).

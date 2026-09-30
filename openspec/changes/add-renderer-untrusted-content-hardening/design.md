@@ -305,9 +305,13 @@ The explicit chain is `[rehypeRaw, [rehypeSanitize, reviewedSchema],
 [harden, reviewedOptions]]`: `reviewedSchema` derives from `defaultSchema`
 imported from `rehype-sanitize` (no new package enters the tree; a direct exact
 declaration is still required), and harden receives
-reviewed non-wildcard protocol/image/link options. Current harden wildcard
-prefixes/protocols are not the load-bearing sanitizer; `rehype-sanitize`'s
-schema is. Parity characterization covers the remark chain too, including GFM
+reviewed options: an empty protocol allowlist (no `*` protocol), data images
+refused, and the `*` link/image prefix — which in the pinned rehype-harden
+1.1.7 admits only absolute `http:`/`https:` URLs, while any specific prefix is
+origin-bound and would block every ordinary chat link (implementation-time
+clarification 2026-09-30; the earlier "non-wildcard" wording mis-modelled the
+library's prefix semantics). Harden is defense in depth, not the load-bearing
+sanitizer; `rehype-sanitize`'s schema is. Parity characterization covers the remark chain too, including GFM
 and breaks. Both wrapper paths retain the app `code`/`pre` overrides so
 Streamdown's built-in Mermaid raw sink stays dormant; a fixture asserts that
 no element with `aria-label="Mermaid chart"` mounts.
