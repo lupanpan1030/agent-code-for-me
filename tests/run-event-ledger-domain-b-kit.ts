@@ -176,7 +176,7 @@ export function factKeyMentions(
   factKey: string,
   observationKey: string,
 ): boolean {
-  return factKey.split(/[^A-Za-z0-9_.\-]+/).includes(observationKey)
+  return factKey.split(/[^A-Za-z0-9_.-]+/).includes(observationKey)
 }
 
 /** Committed records whose fact key carries the given observationKey. */

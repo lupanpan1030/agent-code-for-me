@@ -72,6 +72,7 @@ const REPO_ROOT = join(import.meta.dir, "..")
 const MIGRATIONS_DIR = join(REPO_ROOT, "drizzle")
 const CLI_TEST_TIMEOUT_MS = 30_000
 
+// biome-ignore lint/suspicious/noExplicitAny: coordinator adjudication (CI PR-base lint ratchet) — untyped fixture JSON; no assertion changed
 type Json = any
 
 function fixture(name: string): Json {

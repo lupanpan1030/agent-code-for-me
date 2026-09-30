@@ -403,6 +403,14 @@ S42 66/10/16 exact).
    (7) the consumer-visible changes go into both consumer guides with a C7 check against the
    signed DIRECT_NEW_STANDARD scope. The final Phase II commit rewrote 32 baseline test files;
    the review must confirm no assertion was weakened.
+   Added 2026-10-01 (post-T1 lint adjudication, coordinator): CI's PR-base lint ratchet
+   (`BIOME_CHANGED_SINCE` = base) flagged two `type Json = any` declarations in
+   `tests/run-event-ledger-guards.test.ts` / `tests/run-event-ledger-projection.test.ts` and a
+   useless regex escape in `tests/run-event-ledger-domain-b-kit.ts:179`. Coordinator edits:
+   one `biome-ignore` comment above each `any` and `[^A-Za-z0-9_.\-]` → `[^A-Za-z0-9_.-]`
+   (identical character class). No assertion, fixture or test title changed; nine red files
+   remain 141/141. The immutable-set zero-diff baseline for review moves from `e63457a5` to
+   this adjudication commit.
 5. The green-by-design set (§4) is part of the acceptance gate: S39's gate-absence test will go
    red while `canonicalRunEventLedgerV1` exists and must be green again before acceptance.
 6. Fixture caveat carried from the authors: param shapes are schema-derived synthetic values

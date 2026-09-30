@@ -52,6 +52,7 @@ const ARCHITECTURE_FIXTURE_PATH =
 const GUARD_TIMEOUT_MS = 180_000
 const CLI_TEST_TIMEOUT_MS = 30_000
 
+// biome-ignore lint/suspicious/noExplicitAny: coordinator adjudication (CI PR-base lint ratchet) — untyped fixture JSON; no assertion changed
 type Json = any
 
 function fixture(name: string): Json {
