@@ -54,7 +54,11 @@ import {
   type StableDirectoryHandle,
   stableDirectoryChildPath,
 } from "../filesystem/stable-directory"
-import { serializeAgentJob, serializeAgentJobEvent } from "./cli-output"
+import {
+  parsePublicJobResult,
+  serializeAgentJob,
+  serializeAgentJobEvent,
+} from "./cli-output"
 import {
   type AgentJobDatabase,
   createAgentJob,
@@ -703,7 +707,9 @@ export function toLocalJobApiResultEnvelope(
         ]
       : [],
     resolvedProvider: resolvedProviderForJob(job, events),
-    result: parseJobResult(job),
+    // The public inner result never carries the ledger's internal
+    // registered-artifact refs (they stay a job-row reader detail).
+    result: parsePublicJobResult(job.resultJson),
   }
 }
 

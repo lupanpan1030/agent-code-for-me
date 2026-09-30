@@ -82,6 +82,33 @@ function parseJson(value: string | null | undefined): unknown {
   }
 }
 
+/**
+ * The public job result: the stored `result_json` without the ledger's
+ * internal `artifactRefs` member, which the terminal commit merges into the
+ * job-row result as registered-artifact metadata (job-store
+ * `mergeArtifactRefsIntoResult`). Public result serializers (Local Job API
+ * envelopes, `job.result`) stay byte-compatible with the runner's result;
+ * a result that carried nothing but the refs is `null`, as before the merge.
+ */
+export function parsePublicJobResult(
+  resultJson: string | null | undefined,
+): unknown {
+  const parsed = parseJson(resultJson)
+  if (
+    !parsed ||
+    typeof parsed !== "object" ||
+    Array.isArray(parsed) ||
+    !Object.hasOwn(parsed, "artifactRefs")
+  ) {
+    return parsed
+  }
+  const { artifactRefs: _internalRefs, ...rest } = parsed as Record<
+    string,
+    unknown
+  >
+  return Object.keys(rest).length > 0 ? rest : null
+}
+
 export function serializeAgentJob(job: AgentJob): SerializedAgentJob {
   return {
     id: job.id,
@@ -109,7 +136,7 @@ export function serializeAgentJob(job: AgentJob): SerializedAgentJob {
     exitCode: job.exitCode,
     errorCode: job.errorCode,
     errorMessage: job.errorMessage,
-    result: parseJson(job.resultJson),
+    result: parsePublicJobResult(job.resultJson),
     workerId: job.workerId,
     workerPid: job.workerPid,
     heartbeatAt: toIso(job.heartbeatAt),

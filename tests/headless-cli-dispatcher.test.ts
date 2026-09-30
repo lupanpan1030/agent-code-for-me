@@ -2028,6 +2028,99 @@ describe("headless CLI dispatcher", () => {
     expect(listAgentJobs(db, { source: "api" })).toHaveLength(0)
   })
 
+  test("keeps the ledger's registered artifact refs out of the public result (T2-4 / S-10)", async () => {
+    const db = createAgentJobTestDb()
+    const { packageDir, artifactBaseDir } = seedLocalPackageProject(db)
+    const apiRequest = (runExternalId: string) => ({
+      apiVersion: "locus.local-job.v1",
+      consumer: { id: "docs-workbench", runExternalId },
+      project: { cwd: packageDir },
+      runtime: { id: "codex" },
+      mode: "plan",
+      prompt: { text: "Review this local package." },
+      artifacts: { baseDir: artifactBaseDir, writePolicy: "metadata-only" },
+    })
+    const cli = async (argv: string[], stdin?: string) => {
+      const stdout = writer()
+      const stderr = writer()
+      const code = await runHeadlessCliCommand({
+        db,
+        argv: ["Locus", HEADLESS_CLI_MARKER, ...argv],
+        ...(stdin ? { stdin: Readable.from([stdin]) } : {}),
+        stdout: stdout.stream,
+        stderr: stderr.stream,
+        env: { LOCUS_HEADLESS_FAKE_RUNNER: "1" },
+        appVersion: "0.0.test",
+      })
+      expect(stderr.value()).toBe("")
+      return { code, json: JSON.parse(stdout.value()) }
+    }
+
+    const created = await cli(
+      ["api", "runs", "create", "--request", "-", "--json"],
+      JSON.stringify(apiRequest("refs-001")),
+    )
+    expect(created.code).toBe(0)
+    const jobId = created.json.job.id as string
+    const runDir = join(artifactBaseDir, jobId)
+    // The store keeps the refs merged into result_json (decision 6)…
+    expect(getAgentJob(db, jobId)?.resultJson).toContain('"artifactRefs"')
+    // …but every public result equals the runner's pre-merge result and the
+    // frozen result.json result.
+    const frozen = JSON.parse(
+      readFileSync(join(runDir, "result.json"), "utf-8"),
+    )
+    const expectedKeys = ["fake", "finalMessage", "resolvedProvider"]
+    expect(Object.keys(frozen.result).sort()).toEqual(expectedKeys)
+    expect(Object.keys(created.json.result.result).sort()).toEqual(expectedKeys)
+    expect(Object.keys(created.json.job.result).sort()).toEqual(expectedKeys)
+    expect(created.json.result.result).toEqual(frozen.result)
+    const result = await cli(["api", "runs", "result", jobId, "--json"])
+    expect(result.json.result).toEqual(frozen.result)
+    // The registered-refs reader is unchanged: the committed files are listed.
+    expect(
+      result.json.artifacts.map((artifact: { role: string }) => artifact.role),
+    ).toEqual(["request", "events", "result"])
+    const status = await cli(["api", "runs", "status", jobId, "--json"])
+    expect(status.json.job.result).toEqual(frozen.result)
+
+    // A Run whose result was null stays null after the refs merge.
+    const { createLocalJobApiJob, admitLocalJobApiInitialArtifacts } =
+      await import("../src/main/lib/headless/local-job-api")
+    const { assertLocalJobApiCreateRequest } = await import(
+      "../src/shared/local-job-api"
+    )
+    const prepared = await createLocalJobApiJob(
+      db,
+      assertLocalJobApiCreateRequest(apiRequest("refs-002")),
+      "0.0.test",
+    )
+    await admitLocalJobApiInitialArtifacts({ db, prepared })
+    await startAgentJob(db, { jobId: prepared.job.id, workerId: "worker-1" })
+    const failed = await settleJobFailed(db, prepared.job.id, {
+      exitCode: 1,
+      errorCode: "runtime_failed",
+    })
+    expect(failed.resultJson).toContain('"artifactRefs"')
+    const failedResult = await cli([
+      "api",
+      "runs",
+      "result",
+      prepared.job.id,
+      "--json",
+    ])
+    expect(failedResult.json.status).toBe("failed")
+    expect(failedResult.json.result).toBeNull()
+    const failedStatus = await cli([
+      "api",
+      "runs",
+      "status",
+      prepared.job.id,
+      "--json",
+    ])
+    expect(failedStatus.json.job.result).toBeNull()
+  })
+
   test("scopes Local Job API status/result commands to API jobs", async () => {
     const db = createAgentJobTestDb()
     const job = await createAgentJob(db, {
