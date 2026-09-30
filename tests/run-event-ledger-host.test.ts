@@ -1,9 +1,9 @@
 /**
- * Implementer unit tests for the Phase I host composition of the canonical
- * run event ledger (refactor-canonical-run-event-ledger): the SQLite
- * job-store durableStore adapter behind getOrCreateRunEventLedger, the
- * transition gate and the v0 history guard. The acceptance scenarios live in
- * the immutable run-event-ledger-*.test.ts red suite.
+ * Implementer unit tests for the host composition of the canonical run event
+ * ledger (refactor-canonical-run-event-ledger): the SQLite job-store
+ * durableStore adapter behind getOrCreateRunEventLedger, projections attached
+ * to a cached ledger and the v0 history guard. The acceptance scenarios live
+ * in the immutable run-event-ledger-*.test.ts red suite.
  */
 import { Database } from "bun:sqlite"
 import { afterEach, describe, expect, test } from "bun:test"
@@ -12,7 +12,6 @@ import { drizzle } from "drizzle-orm/bun-sqlite"
 import { migrate } from "drizzle-orm/bun-sqlite/migrator"
 import {
   bindRunExecutionProvenance,
-  canonicalRunEventLedgerV1,
   getOrCreateRunEventLedger,
   releaseRunEventLedger,
 } from "../src/main/lib/agent-runtime/run-event-ledger-host"
@@ -74,14 +73,10 @@ function job(sqlite: Database, jobId: string) {
   }
 }
 
-describe("run event ledger host (Phase I transition)", () => {
-  test("the build-time gate keeps every inventory caller on the legacy path", () => {
-    expect(canonicalRunEventLedgerV1).toBe(false)
-  })
-
+describe("run event ledger host", () => {
   test("the SQLite adapter commits exact batches with fact keys, binds provenance once, settles one completed and persists projection cursors", async () => {
     const { sqlite, db } = migratedDb()
-    const created = createAgentJob(db as never, {
+    const created = await createAgentJob(db as never, {
       source: "cli",
       runtime: "codex",
       mode: "plan",
@@ -181,7 +176,7 @@ describe("run event ledger host (Phase I transition)", () => {
 
   test("a projection cursor is acknowledged in agent_job_projection_cursors", async () => {
     const { sqlite, db } = migratedDb()
-    const created = createAgentJob(db as never, {
+    const created = await createAgentJob(db as never, {
       source: "api",
       runtime: "codex",
       mode: "plan",

@@ -122,6 +122,35 @@ export type OutcomeEvidence = {
   postRun: { credentialsSafe: boolean; evidenceKeys: string[] }
 }
 
+/** Host job-row projection written with the terminal commit. */
+export type TerminalJobFields = {
+  exitCode?: number | null
+  errorCode?: string | null
+  errorMessage?: string | null
+  result?: unknown
+}
+
+/**
+ * Host options of one settlement. They never change the ledger's outcome:
+ * `jobFields` projects the decided outcome onto the existing job-row result
+ * columns in the same commit, and `jobPrecondition` makes the store
+ * revalidate job-row facts (e.g. a recovered worker's identity/heartbeat)
+ * inside the commit transaction.
+ */
+export type SettleOptions = {
+  jobFields?: (outcome: {
+    status: string
+    reasons: string[]
+  }) => TerminalJobFields
+  jobPrecondition?: JsonObject
+  /**
+   * Terminal run-dir preparation for this settlement (overrides the
+   * construction-time preparer): the Run's admitted run directory is known
+   * to the settling host.
+   */
+  terminalArtifacts?: CreateCanonicalRunEventLedgerOptions["terminalArtifacts"]
+}
+
 export type ItemKey = (
   | { threadId: string; turnId: string; itemId: string }
   | { correlationKey: string }
@@ -165,6 +194,8 @@ export type DurableStorePort = {
     records: LedgerRecord[]
     expectedHighWater: number
     jobMutation?: JsonObject
+    /** Job-row facts revalidated inside the commit transaction. */
+    jobPrecondition?: JsonObject
     artifactRefs?: JsonValue[]
   }): unknown
   lookupFact?(observationKey: string): unknown
@@ -204,6 +235,8 @@ export type CreateCanonicalRunEventLedgerOptions = {
     prepare(input: {
       records: LedgerRecord[]
       completed: LedgerRecord
+      /** Job-row fields the terminal commit will write with `completed`. */
+      jobMutation: JsonObject
     }): JsonValue[] | Promise<JsonValue[]>
   }
   /** Sanitized host infrastructure diagnostics (never persisted). */
@@ -233,10 +266,13 @@ export type RunArtifactLedgerPort = {
   runId: string
   isSealed(): boolean
   containsSecretMaterial(text: string): boolean
+  /**
+   * Commits one `artifact_created` for already admitted files: one native
+   * candidate, or the lifecycle run-dir files of one preparation step.
+   */
   admit(input: {
     observationKey: string
-    artifact: JsonObject
-    ref: JsonObject
+    artifacts: JsonObject[]
     runDir: string
   }): Promise<LedgerRecord[]>
   reject(input: {
@@ -479,6 +515,7 @@ type LedgerState = {
   completed: LedgerRecord | null
   terminalCandidateSequence: number | null
   jobStatus: string | null
+  cancelRequested: boolean
   provenance: ExecutionProvenance
   sealedProvenance: boolean
   items: Map<string, ItemPart>
@@ -512,7 +549,9 @@ type PlanResult =
       kind: "commit"
       drafts: Draft[]
       jobMutation?: JsonObject
+      jobPrecondition?: JsonObject
       artifactRefs?: JsonValue[]
+      settleOptions?: SettleOptions
     }
   | { kind: "reject"; error: RunEventLedgerError }
   | { kind: "value"; value: unknown }
@@ -531,6 +570,8 @@ type Task = {
   requiresBinding?: boolean
   lateSummary?: () => LateSummary
   plan: (context: PlanContext) => PlanResult
+  /** Host-observed time of a lifecycle fact (defaults to the ledger clock). */
+  occurredAt?: string
   onCommitted?: (committed: LedgerRecord[]) => void
   afterCommit?: (committed: LedgerRecord[]) => Promise<void>
   resolve: (value: unknown) => void
@@ -591,6 +632,19 @@ function reconcileText(
   return { result: "mismatch", lossPossible: true }
 }
 
+function isJobPreconditionFailure(error: unknown): boolean {
+  return (
+    isObject(error) &&
+    (error as { code?: unknown }).code === "JOB_PRECONDITION_FAILED"
+  )
+}
+
+function isoTime(value: unknown): string | undefined {
+  if (value === undefined || value === null) return undefined
+  const date = value instanceof Date ? value : new Date(String(value))
+  return Number.isNaN(date.getTime()) ? undefined : date.toISOString()
+}
+
 // ---------------------------------------------------------------------------
 // Ledger
 // ---------------------------------------------------------------------------
@@ -600,9 +654,9 @@ class RunEventLedgerImpl {
   private readonly runtimeId: string
   private readonly source: string
   private readonly clock: LedgerClock | undefined
-  private readonly secretHints: readonly string[]
+  private secretHints: readonly string[]
   private readonly store: DurableStorePort
-  private readonly projections: readonly LedgerProjection[]
+  private projections: readonly LedgerProjection[]
   private readonly onHostDiagnostic: CreateCanonicalRunEventLedgerOptions["onHostDiagnostic"]
   private readonly terminalArtifacts: CreateCanonicalRunEventLedgerOptions["terminalArtifacts"]
   private readonly redactor = createExactSecretStreamChannelRedactor<string>()
@@ -648,6 +702,7 @@ class RunEventLedgerImpl {
       completed: null,
       terminalCandidateSequence: null,
       jobStatus: null,
+      cancelRequested: false,
       provenance,
       sealedProvenance: false,
       items: new Map(),
@@ -731,6 +786,11 @@ class RunEventLedgerImpl {
   private applyHeader(header: Record<string, unknown> | null): void {
     if (!header) return
     if (typeof header.status === "string") this.state.jobStatus = header.status
+    const cancelRequestedAt =
+      header.cancelRequestedAt ?? header.cancel_requested_at
+    if (cancelRequestedAt !== undefined && cancelRequestedAt !== null) {
+      this.state.cancelRequested = true
+    }
   }
 
   private async readHeader(): Promise<Record<string, unknown> | null> {
@@ -1087,8 +1147,10 @@ class RunEventLedgerImpl {
     observationKey: string,
     drafts: Draft[],
     firstSequence: number,
+    occurredAt?: string,
   ): LedgerRecord[] {
     const provenance = provenanceRef(this.state.provenance)
+    const createdAt = occurredAt ?? this.nowIso()
     return drafts.map((draft, ordinal) => {
       const sanitized = this.sanitize(draft.payload)
       const payload = isObject(sanitized.value)
@@ -1109,7 +1171,7 @@ class RunEventLedgerImpl {
         runtimeId: this.runtimeId as RunEvent["runtimeId"],
         sequence: firstSequence + ordinal,
         type: draft.type,
-        createdAt: this.nowIso(),
+        createdAt,
         payload,
         redaction,
         factKey,
@@ -1231,7 +1293,7 @@ class RunEventLedgerImpl {
         plan = task.plan({
           state,
           nextSequence: state.highWater + 1,
-          nowIso: this.nowIso(),
+          nowIso: task.occurredAt ?? this.nowIso(),
         })
       }
       if (plan.kind === "reject") {
@@ -1247,6 +1309,7 @@ class RunEventLedgerImpl {
         task.observationKey,
         plan.drafts,
         expectedHighWater + 1,
+        task.occurredAt,
       )
       const artifactRefs = await this.prepareTerminalArtifacts(records, plan)
       try {
@@ -1256,6 +1319,9 @@ class RunEventLedgerImpl {
             expectedHighWater,
             ...(plan.jobMutation
               ? { jobMutation: clone(plan.jobMutation) }
+              : {}),
+            ...(plan.jobPrecondition
+              ? { jobPrecondition: clone(plan.jobPrecondition) }
               : {}),
             ...(artifactRefs.length > 0
               ? { artifactRefs: clone(artifactRefs) }
@@ -1270,6 +1336,9 @@ class RunEventLedgerImpl {
         if (plan.jobMutation && typeof plan.jobMutation.status === "string") {
           this.state.jobStatus = plan.jobMutation.status
         }
+        if (plan.jobMutation?.cancelRequestedAt) {
+          this.state.cancelRequested = true
+        }
         for (const record of committed) this.reduce(record)
         this.preparedCache.delete(task.observationKey)
         task.onCommitted?.(committed)
@@ -1279,6 +1348,19 @@ class RunEventLedgerImpl {
         task.resolve(clone(committed))
         return
       } catch (error) {
+        if (isJobPreconditionFailure(error)) {
+          // The host revalidated job-row facts inside the commit and they
+          // changed: nothing was committed and the intent is stale, so the
+          // observation is rejected without retry or halt.
+          await this.reloadAfterFailure()
+          task.reject(
+            new RunEventLedgerError(
+              "JOB_PRECONDITION_FAILED",
+              "the job row changed before the commit",
+            ),
+          )
+          return
+        }
         const reloaded = await this.reloadAfterFailure()
         if (reloaded === null) {
           lastConflict = false
@@ -1328,10 +1410,12 @@ class RunEventLedgerImpl {
   ): Promise<JsonValue[]> {
     const refs = [...(plan.artifactRefs ?? [])]
     const completed = records.find((record) => record.type === "completed")
-    if (!completed || !this.terminalArtifacts) return refs
+    const preparer =
+      plan.settleOptions?.terminalArtifacts ?? this.terminalArtifacts
+    if (!completed || !preparer) return refs
     try {
       const prepared = await awaitable(
-        this.terminalArtifacts.prepare({
+        preparer.prepare({
           records: clone([
             ...this.state.records,
             ...records.filter(
@@ -1339,6 +1423,7 @@ class RunEventLedgerImpl {
             ),
           ]),
           completed: clone(completed),
+          jobMutation: clone(plan.jobMutation ?? {}),
         }),
       )
       return [...refs, ...(Array.isArray(prepared) ? prepared : [])]
@@ -1354,7 +1439,19 @@ class RunEventLedgerImpl {
         status: precedence ? payload.status : "failed",
         reasons: [...reasons, "terminal_artifact_preparation_failed"],
       }
-      if (plan.jobMutation && !precedence) plan.jobMutation.status = "failed"
+      if (plan.jobMutation && !precedence) {
+        plan.jobMutation = {
+          ...plan.jobMutation,
+          status: "failed",
+          ...this.terminalJobFields(
+            {
+              status: "failed",
+              reasons: (completed.payload as JsonObject).reasons as string[],
+            },
+            plan.settleOptions ?? {},
+          ),
+        }
+      }
       this.hostDiagnostic(
         "LEDGER_TERMINAL_ARTIFACTS_FAILED",
         "terminal run-dir preparation failed; the Run settles without unverified refs",
@@ -1537,10 +1634,69 @@ class RunEventLedgerImpl {
     }
   }
 
+  /**
+   * Attaches a host projection after construction (e.g. a live renderer
+   * subscription of an existing Run). It is delivered every committed record
+   * after its cursor in the serial order, like construction-time projections.
+   */
+  attachProjection(projection: LedgerProjection): Promise<void> {
+    return new Promise((resolve) => {
+      this.chain = this.chain.then(async () => {
+        this.projections = [
+          ...this.projections.filter(
+            (candidate) => candidate.name !== projection.name,
+          ),
+          projection,
+        ]
+        let cursor = 0
+        try {
+          cursor = Number(await awaitable(projection.cursor())) || 0
+        } catch {
+          cursor = 0
+        }
+        this.delivered.set(projection.name, cursor)
+        await this.deliverProjections()
+        resolve()
+      })
+    })
+  }
+
+  /** Detaches a host projection; committed records are unaffected. */
+  detachProjection(name: string): Promise<void> {
+    return new Promise((resolve) => {
+      this.chain = this.chain.then(() => {
+        this.projections = this.projections.filter(
+          (candidate) => candidate.name !== name,
+        )
+        this.delivered.delete(name)
+        resolve()
+      })
+    })
+  }
+
+  /** Resolves after every observation submitted so far was processed. */
+  whenIdle(): Promise<void> {
+    return this.chain.then(() => undefined)
+  }
+
+  /**
+   * Adds memory-only exact secret hints the host learned after construction
+   * (provider/gateway tokens resolved at launch). They are never persisted.
+   */
+  addSecretHints(hints: readonly string[]): void {
+    const next = hints.filter(
+      (hint): hint is string => typeof hint === "string" && hint.length > 0,
+    )
+    if (next.length === 0) return
+    this.secretHints = [...new Set([...this.secretHints, ...next])]
+  }
+
   appendSystemEvent(input: {
     observationKey: string
     type: string
     payload?: unknown
+    /** Host-observed time of the lifecycle fact. */
+    occurredAt?: string | Date
   }): Promise<unknown> {
     const type = input?.type
     if (!(AGENT_JOB_EVENT_TYPES as readonly string[]).includes(String(type))) {
@@ -1562,8 +1718,10 @@ class RunEventLedgerImpl {
       payload.subtype = "system_lifecycle"
     }
     const lifecycle = eventType === "job_created" || eventType === "job_started"
+    const occurredAt = isoTime(input.occurredAt)
     return this.enqueue({
       observationKey: input.observationKey,
+      ...(occurredAt ? { occurredAt } : {}),
       late: lifecycle ? "none" : "host",
       lateSummary: lifecycle
         ? undefined
@@ -1578,6 +1736,18 @@ class RunEventLedgerImpl {
             error: new RunEventLedgerError(
               "RUN_ALREADY_TERMINAL",
               `${eventType} cannot be recorded on a terminal Run`,
+            ),
+          }
+        }
+        if (
+          eventType === "job_started" &&
+          state.records.some((record) => record.type === "job_started")
+        ) {
+          return {
+            kind: "reject",
+            error: new RunEventLedgerError(
+              "RUN_ALREADY_CLAIMED",
+              "job_started was already recorded for this Run",
             ),
           }
         }
@@ -1632,7 +1802,10 @@ class RunEventLedgerImpl {
     return this.enqueue({
       observationKey,
       late: "native",
-      requiresBinding: true,
+      // Coarse output of an unbound runner is admitted with pending
+      // provenance (it claims no executable); usage is runtime accounting
+      // and waits for execution binding like native observations.
+      requiresBinding: decoded.type === "usage_update",
       lateSummary: () => ({
         originalType: decoded.type,
         observation: prepared().draft.payload,
@@ -3204,7 +3377,10 @@ class RunEventLedgerImpl {
     return drafts
   }
 
-  settle(evidence: OutcomeEvidence): Promise<unknown> {
+  settle(
+    evidence: OutcomeEvidence,
+    options: SettleOptions = {},
+  ): Promise<unknown> {
     const trigger = isObject(evidence?.trigger)
       ? (evidence.trigger as Record<string, unknown>)
       : null
@@ -3231,6 +3407,11 @@ class RunEventLedgerImpl {
         },
       }),
       plan: (context) => {
+        const requestedBy =
+          typeof trigger.requestedBy === "string" &&
+          trigger.requestedBy.length > 0
+            ? this.sanitizeString(trigger.requestedBy)
+            : null
         if (
           triggerKind === "cancel" &&
           trigger.reason === "queued_cancel" &&
@@ -3246,10 +3427,14 @@ class RunEventLedgerImpl {
                   subtype: "system_lifecycle",
                   status: "cancel_requested",
                   reason: "queued_cancel",
+                  ...(requestedBy ? { requestedBy } : {}),
                 },
               },
             ],
-            jobMutation: { cancelRequestedAt: context.nowIso },
+            jobMutation: this.cancelRequestMutation(
+              context.nowIso,
+              requestedBy,
+            ),
           }
         }
         if (
@@ -3265,13 +3450,66 @@ class RunEventLedgerImpl {
             ),
           }
         }
-        return this.planCompleted(
+        const completed = this.planCompleted(
           context,
           this.resolveOutcome(evidence, context.nowIso),
+          options,
         )
+        if (completed.kind !== "commit") return completed
+        return {
+          ...completed,
+          jobMutation: {
+            ...completed.jobMutation,
+            ...(triggerKind === "cancel"
+              ? this.cancelRequestMutation(context.nowIso, requestedBy)
+              : {}),
+          },
+          ...(options.jobPrecondition
+            ? { jobPrecondition: options.jobPrecondition }
+            : {}),
+          settleOptions: options,
+        }
       },
       afterCommit: () => this.flushLate(),
     })
+  }
+
+  private cancelRequestMutation(
+    nowIso: string,
+    requestedBy: string | null,
+  ): JsonObject {
+    if (this.state.cancelRequested) return {}
+    return {
+      cancelRequestedAt: nowIso,
+      ...(requestedBy ? { cancelRequestedBy: requestedBy } : {}),
+    }
+  }
+
+  private terminalJobFields(
+    outcome: { status: string; reasons: string[] },
+    options: SettleOptions,
+  ): JsonObject {
+    if (typeof options.jobFields !== "function") return {}
+    const fields = options.jobFields({
+      status: outcome.status,
+      reasons: [...outcome.reasons],
+    })
+    const text = (value: unknown): string | null =>
+      typeof value === "string" && value.length > 0
+        ? this.sanitizeString(value)
+        : null
+    return {
+      exitCode:
+        typeof fields.exitCode === "number" && Number.isFinite(fields.exitCode)
+          ? fields.exitCode
+          : null,
+      errorCode: text(fields.errorCode),
+      errorMessage: text(fields.errorMessage),
+      resultJson:
+        fields.result === undefined
+          ? null
+          : JSON.stringify(this.sanitize(toJson(fields.result)).value),
+    }
   }
 
   private resolveOutcome(
@@ -3385,6 +3623,7 @@ class RunEventLedgerImpl {
   private planCompleted(
     context: PlanContext,
     outcome: ReturnType<RunEventLedgerImpl["resolveOutcome"]>,
+    options: SettleOptions = {},
   ): PlanResult {
     this.sealStreams()
     const payload: JsonObject = {
@@ -3417,6 +3656,7 @@ class RunEventLedgerImpl {
         status: outcome.status,
         finishedAt: context.nowIso,
         heartbeatAt: context.nowIso,
+        ...this.terminalJobFields(outcome, options),
       },
       ...(refs.length > 0 ? { artifactRefs: refs } : {}),
     }
@@ -3448,7 +3688,7 @@ class RunEventLedgerImpl {
                   drafts: [
                     {
                       type: "artifact_created",
-                      payload: { artifacts: [input.artifact] },
+                      payload: { artifacts: [...input.artifacts] },
                     },
                   ],
                 },

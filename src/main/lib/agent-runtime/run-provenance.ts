@@ -29,11 +29,25 @@ export type CaptureRunExecutionProvenanceInput = {
   protocolVersion: string
   /** Absolute path of the executable the launch caller resolved. */
   executablePath: string
-  /** Root directory of the adapter's schema files. */
-  schemaRoot: string
-  /** Schema files (relative to schemaRoot) the adapter actually uses. */
-  schemaFiles: readonly string[]
-}
+} & (
+  | {
+      /** Root directory of the adapter's schema files. */
+      schemaRoot: string
+      /** Schema files (relative to schemaRoot) the adapter actually uses. */
+      schemaFiles: readonly string[]
+      schemaDocuments?: never
+    }
+  | {
+      schemaRoot?: never
+      schemaFiles?: never
+      /**
+       * Protocol schema documents compiled into the adapter (exact bytes
+       * with a portable logical path), for adapters that ship no schema
+       * files on disk.
+       */
+      schemaDocuments: readonly { path: string; content: string }[]
+    }
+)
 
 const executablePaths = new Map<string, string>()
 
@@ -82,6 +96,26 @@ export function fingerprintRunSchemaFiles(
         path: portable,
         sha256: sha256Hex(readRegularFile(target, "schema file")),
       }
+    })
+    .sort((left, right) => compareCodePoints(left.path, right.path))
+}
+
+/** Reproducible fingerprints of compiled-in schema documents, sorted. */
+export function fingerprintRunSchemaDocuments(
+  documents: readonly { path: string; content: string }[],
+): { path: string; sha256: string }[] {
+  if (documents.length === 0) {
+    throw new Error("Run provenance capture requires at least one schema file")
+  }
+  const seen = new Set<string>()
+  return documents
+    .map((document) => {
+      const path = requireText(document.path, "schema document path")
+      if (seen.has(path)) {
+        throw new Error("Run provenance schema documents repeat a path")
+      }
+      seen.add(path)
+      return { path, sha256: sha256Hex(document.content) }
     })
     .sort((left, right) => compareCodePoints(left.path, right.path))
 }
@@ -136,10 +170,10 @@ export async function captureRunExecutionProvenance(
     requireText(input.executablePath, "executablePath"),
   )
   const binarySha256 = sha256Hex(readRegularFile(executablePath, "executable"))
-  const schemaFiles = fingerprintRunSchemaFiles(
-    input.schemaRoot,
-    input.schemaFiles,
-  )
+  const schemaFiles =
+    input.schemaDocuments !== undefined
+      ? fingerprintRunSchemaDocuments(input.schemaDocuments)
+      : fingerprintRunSchemaFiles(input.schemaRoot, input.schemaFiles)
   const executableRef = `exe-${sha256Hex(
     JSON.stringify([runtimeId, executablePath]),
   ).slice(0, 24)}`

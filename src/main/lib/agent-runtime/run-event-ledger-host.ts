@@ -4,6 +4,7 @@ import {
   acknowledgeRunEventProjection,
   appendExactRunEventBatch,
   type ExactRunEventJobMutation,
+  type ExactRunEventJobPrecondition,
   type ExactRunEventRecord,
   getAgentJob,
   lookupCommittedRunEventFact,
@@ -11,6 +12,8 @@ import {
   readRunEventLedgerHeader,
   readRunEventProjectionCursor,
 } from "../headless/job-store"
+import { decodeDesktopStreamChunk } from "./ledger-ingress"
+import { redactRuntimePayload } from "./redaction"
 import {
   type CanonicalRunEventLedger,
   createCanonicalRunEventLedger,
@@ -18,8 +21,10 @@ import {
   type ExecutionProvenance,
   type LedgerClock,
   type LedgerProjection,
+  RunEventLedgerError,
 } from "./run-event-ledger"
-import type { JsonValue } from "./runtime-events"
+import type { JsonValue, RunEvent } from "./runtime-events"
+import { projectRunEventToRendererChunks } from "./stream-event-mapper"
 
 /**
  * Host composition of the canonical Run event ledger
@@ -33,14 +38,8 @@ import type { JsonValue } from "./runtime-events"
  * registry; the per-process map only ensures one ledger per Run in this host.
  */
 
-/**
- * @deprecated Temporary build-time selector of refactor-canonical-run-event-
- * ledger. `false` keeps every inventory caller on the unchanged legacy path;
- * the Phase II cutover converts all callers as one reviewed change, flips it
- * and then deletes this constant, the legacy branch and the transition guard
- * mode before acceptance. It has no renderer, environment or request control.
- */
-export const canonicalRunEventLedgerV1 = false
+/** The host-composed ledger a desktop runtime adapter ingests into. */
+export type CanonicalDesktopRunLedger = CanonicalRunEventLedger
 
 /** The durableStore port over the SQLite job store for one existing job. */
 export function createJobStoreDurableStore(
@@ -60,6 +59,12 @@ export function createJobStoreDurableStore(
         expectedHighWater: input.expectedHighWater,
         ...(input.jobMutation
           ? { jobMutation: input.jobMutation as ExactRunEventJobMutation }
+          : {}),
+        ...(input.jobPrecondition
+          ? {
+              jobPrecondition:
+                input.jobPrecondition as ExactRunEventJobPrecondition,
+            }
           : {}),
         ...(input.artifactRefs
           ? { artifactRefs: input.artifactRefs as JsonValue[] }
@@ -88,10 +93,38 @@ export function createJobStoreDurableStore(
   }
 }
 
-/** A host projector; the host delegates its cursor/ack to the job store. */
+/**
+ * A host projector. Durable projectors delegate cursor/ack to the job store;
+ * a transient projector (a live renderer subscription) supplies its own
+ * starting cursor and keeps no durable acknowledgement.
+ */
 export type HostRunEventProjector = {
   name: string
   deliver: LedgerProjection["deliver"]
+  transientCursor?: number
+}
+
+function hostProjection(
+  db: AgentJobDatabase,
+  jobId: string,
+  projector: HostRunEventProjector,
+): LedgerProjection {
+  if (projector.transientCursor !== undefined) {
+    const cursor = projector.transientCursor
+    return {
+      name: projector.name,
+      deliver: (record) => projector.deliver(record),
+      cursor: () => cursor,
+      ack: () => {},
+    }
+  }
+  return {
+    name: projector.name,
+    deliver: (record) => projector.deliver(record),
+    cursor: () => readRunEventProjectionCursor(db, jobId, projector.name),
+    ack: (sequence: number) =>
+      acknowledgeRunEventProjection(db, jobId, projector.name, sequence),
+  }
 }
 
 export type GetOrCreateRunEventLedgerOptions = {
@@ -137,7 +170,15 @@ export async function getOrCreateRunEventLedger(
     hostLedgers.set(db, ledgers)
   }
   const existing = ledgers.get(existingJob.id)
-  if (existing) return existing
+  if (existing) {
+    existing.addSecretHints(options.secretHints ?? [])
+    for (const projector of options.projections ?? []) {
+      await existing.attachProjection(
+        hostProjection(db, existingJob.id, projector),
+      )
+    }
+    return existing
+  }
   const job = getAgentJob(db, existingJob.id)
   if (!job) throw new Error(`Unknown job: ${existingJob.id}`)
   if (job.ledgerVersion !== 1) {
@@ -151,13 +192,9 @@ export async function getOrCreateRunEventLedger(
     ...(options.clock ? { clock: options.clock } : {}),
     redactionContext: { secretHints: [...(options.secretHints ?? [])] },
     durableStore: createJobStoreDurableStore(db, job.id),
-    projections: (options.projections ?? []).map((projector) => ({
-      name: projector.name,
-      deliver: (record) => projector.deliver(record),
-      cursor: () => readRunEventProjectionCursor(db, job.id, projector.name),
-      ack: (sequence: number) =>
-        acknowledgeRunEventProjection(db, job.id, projector.name, sequence),
-    })),
+    projections: (options.projections ?? []).map((projector) =>
+      hostProjection(db, job.id, projector),
+    ),
     artifactOwner: options.artifactOwner ?? null,
     ...(options.onHostDiagnostic
       ? { onHostDiagnostic: options.onHostDiagnostic }
@@ -184,4 +221,128 @@ export async function bindRunExecutionProvenance(
   provenance: ExecutionProvenance,
 ): Promise<void> {
   await ledger.bindExecutionProvenance(provenance)
+}
+
+// ---------------------------------------------------------------------------
+// Desktop live renderer channel (design "Current Owner to Target Mapping":
+// desktop Claude/Codex wiring uses the same host ledger and the committed
+// renderer projection).
+//
+// Durable stream input reaches the renderer only as the projection of the
+// records the Run's ledger committed (projectRunEventToRendererChunks), in
+// submission order; renderer framing and interaction chunks that carry no
+// durable fact are redacted with the Run's exact hints (redaction.ts) and
+// emitted at their place in that order. Before a desktop job exists (e.g. a
+// preflight blocker) there is no ledger and every chunk is renderer-only.
+// ---------------------------------------------------------------------------
+
+/** Projection chunks the chat renderer does not consume. */
+const NON_CHAT_PROJECTION_CHUNKS = new Set([
+  "data-run-event",
+  "data-item-reconciliation",
+])
+
+export type DesktopRendererChannel = {
+  /** Submits one renderer-bound chunk of the live desktop stream. */
+  submit(chunk: Record<string, unknown>): void
+  /**
+   * Emits the committed projection of records an adapter committed through
+   * a native ledger port, in order with submitted chunks.
+   */
+  deliverCommitted(committed: Promise<unknown>): void
+  /** Resolves after every submitted chunk was emitted or dropped. */
+  drain(): Promise<void>
+}
+
+export function createDesktopRendererChannel(input: {
+  runtimeId: RunEvent["runtimeId"]
+  runId: string
+  observationPrefix: string
+  getLedger: () => CanonicalRunEventLedger | null
+  getSecretHints?: () => readonly string[]
+  emit: (chunk: Record<string, unknown>) => void
+  onHostDiagnostic?: (message: string) => void
+}): DesktopRendererChannel {
+  let chain: Promise<void> = Promise.resolve()
+  let counter = 0
+  let pendingDurable = 0
+  const track = (work: () => Promise<void>) => {
+    pendingDurable += 1
+    chain = chain.then(work).finally(() => {
+      pendingDurable -= 1
+    })
+  }
+  const emitSafely = (chunk: Record<string, unknown>) => {
+    try {
+      input.emit(chunk)
+    } catch {
+      // The renderer sink owns its own inactive state.
+    }
+  }
+  const emitCommitted = async (committed: Promise<unknown>) => {
+    let records: unknown
+    try {
+      records = await committed
+    } catch (error) {
+      input.onHostDiagnostic?.(
+        `[desktop] stream observation was not recorded (${
+          error instanceof RunEventLedgerError ? error.code : "error"
+        }).`,
+      )
+      return
+    }
+    if (!Array.isArray(records)) return
+    for (const record of records) {
+      for (const chunk of projectRunEventToRendererChunks(record)) {
+        if (!NON_CHAT_PROJECTION_CHUNKS.has(chunk.type)) emitSafely(chunk)
+      }
+    }
+  }
+  const redactRendererOnly = (
+    chunk: Record<string, unknown>,
+  ): Record<string, unknown> => {
+    const redacted = redactRuntimePayload(
+      JSON.parse(JSON.stringify(chunk)) as JsonValue,
+      {
+        runtimeId: input.runtimeId,
+        runId: input.runId,
+        source: "runtime-diagnostic",
+        secretHints: input.getSecretHints?.() ?? [],
+      },
+    ).payload
+    return redacted && typeof redacted === "object" && !Array.isArray(redacted)
+      ? { ...(redacted as Record<string, unknown>), type: chunk.type }
+      : { type: chunk.type }
+  }
+  return {
+    submit(chunk) {
+      const ledger = input.getLedger()
+      const decoded = ledger
+        ? decodeDesktopStreamChunk(chunk)
+        : ({ kind: "renderer_only" } as const)
+      if (ledger && decoded.kind === "observation") {
+        counter += 1
+        const committed = ledger.ingestRuntimeObservation({
+          observationKey: `${input.observationPrefix}:${counter}`,
+          type: decoded.type,
+          payload: decoded.payload,
+        })
+        track(() => emitCommitted(committed))
+        return
+      }
+      const redacted = redactRendererOnly(chunk)
+      if (pendingDurable === 0) {
+        // Nothing durable is in flight: framing keeps its synchronous order.
+        emitSafely(redacted)
+        return
+      }
+      chain = chain.then(() => emitSafely(redacted))
+    },
+    deliverCommitted(committed) {
+      track(() => emitCommitted(committed))
+    },
+    drain() {
+      return chain
+    },
+  }
 }

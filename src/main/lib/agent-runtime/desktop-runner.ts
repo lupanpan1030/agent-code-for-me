@@ -1,7 +1,6 @@
 import type { AgentRuntimeId } from "../../../shared/agent-runtime-capabilities"
 import type { DesktopRunRequest, DesktopRunResult } from "./desktop-run-request"
 import type { DesktopPermissionRuntime } from "./permission-policy"
-import { createRunEvent } from "./runtime-events"
 
 export type DesktopRuntimeAdapterSource =
   | "claude-agent-sdk"
@@ -38,31 +37,30 @@ export function assertDesktopRuntimeAdapterMatchesRequest(
   }
 }
 
-export function emitDesktopRuntimeAdapterStarted(
+/**
+ * Records the adapter-started host fact through the Run's ledger (design:
+ * replaces the former sequence=0 direct RunEvent). A request without a
+ * durable job records nothing.
+ */
+export async function recordDesktopRuntimeAdapterStarted(
   request: DesktopRunRequest,
   metadata: DesktopRuntimeAdapterMetadata,
-): void {
+): Promise<void> {
   assertDesktopRuntimeAdapterMatchesRequest(request, metadata)
-
-  request.trace.emit(
-    createRunEvent({
-      runId: request.identity.runId,
-      jobId: request.identity.jobId,
-      runtimeId: request.context.runtimeId,
-      sequence: 0,
-      type: "status",
-      payload: {
-        status: "desktop_runtime_adapter_started",
-        adapterSource: metadata.source,
-        adapterLabel: metadata.label,
-        attempt: request.identity.attempt ?? 1,
-        temporaryFallback: metadata.temporaryFallback,
-        fallbackReason: metadata.fallbackReason ?? null,
-        defaultDisableCondition: metadata.defaultDisableCondition ?? null,
-        removalCondition: metadata.removalCondition ?? null,
-      },
-    }),
-  )
+  await request.ledger?.appendSystemEvent({
+    observationKey: `desktop-adapter-started:${request.identity.runId}:${metadata.source}`,
+    type: "status",
+    payload: {
+      status: "desktop_runtime_adapter_started",
+      adapterSource: metadata.source,
+      adapterLabel: metadata.label,
+      attempt: request.identity.attempt ?? 1,
+      temporaryFallback: metadata.temporaryFallback,
+      fallbackReason: metadata.fallbackReason ?? null,
+      defaultDisableCondition: metadata.defaultDisableCondition ?? null,
+      removalCondition: metadata.removalCondition ?? null,
+    },
+  })
 }
 
 function adapterKey(

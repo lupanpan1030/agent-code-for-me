@@ -16,6 +16,7 @@ import type {
   AgentRuntimeRunResultBase,
   AgentRuntimeTraceObserver,
 } from "./run-contract"
+import type { CanonicalDesktopRunLedger } from "./run-event-ledger-host"
 import type { RunEvent } from "./runtime-events"
 
 export type DesktopRunIdentity = AgentRuntimeRunIdentityBase & {
@@ -92,7 +93,17 @@ export type DesktopRunRequest = AgentRuntimeRunRequestBase<
   mcp: DesktopRunMcpReadiness
   mcpSessionServers?: DesktopRunMcpSessionServer[]
   attachments: DesktopRunAttachmentRef[]
-  trace: DesktopTraceObserver
+  /**
+   * The Run's host-composed ledger: the adapter submits native boundaries,
+   * lifecycle facts and stream observations here (null when the request has
+   * no durable job, e.g. isolated adapter tests).
+   */
+  ledger?: CanonicalDesktopRunLedger | null
+  /**
+   * Host consumer of already committed records (e.g. the headless wrapper);
+   * it never appends them again or mints a terminal.
+   */
+  trace?: DesktopTraceObserver
   session: {
     resumeSessionId?: string | null
     parentSessionId?: string | null

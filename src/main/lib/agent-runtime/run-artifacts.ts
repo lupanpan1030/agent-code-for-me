@@ -1,7 +1,10 @@
-import { createHash } from "node:crypto"
+import { createHash, randomUUID } from "node:crypto"
 import {
   closeSync,
+  constants,
+  fchmodSync,
   fstatSync,
+  fsyncSync,
   lstatSync,
   mkdirSync,
   openSync,
@@ -9,7 +12,10 @@ import {
   realpathSync,
   renameSync,
   rmSync,
+  type Stats,
+  unlinkSync,
   writeFileSync,
+  writeSync,
 } from "node:fs"
 import {
   basename,
@@ -19,6 +25,12 @@ import {
   relative,
   resolve,
 } from "node:path"
+import {
+  assertStableDirectoryPath,
+  fsyncStableDirectory,
+  type StableDirectoryHandle,
+  stableDirectoryChildPath,
+} from "../filesystem/stable-directory"
 import {
   type JsonObject,
   RUN_ARTIFACT_LEDGER_PORT,
@@ -234,11 +246,58 @@ export async function admitRunArtifactCandidate(
   }
   await port.admit({
     observationKey,
-    artifact,
-    ref: artifact,
+    artifacts: [artifact],
     runDir: runContext.allowedRunDir,
   })
   return admission
+}
+
+/**
+ * Admits already prepared lifecycle run-dir files (API create/retry initial
+ * request/events/manifest) as one `artifact_created` through the ledger's
+ * owner-gated port. Each descriptor is re-read inside the admitted run
+ * directory and must match its recorded digest and size; the admission
+ * claims no native artifact or binary and needs no execution binding.
+ */
+export async function admitRunDirArtifacts(input: {
+  runId: string
+  runDir: RunArtifactRunDir
+  artifacts: readonly RunDirArtifact[]
+  ledger: unknown
+}): Promise<void> {
+  const port = ledgerPort(input.ledger)
+  if (port.runId !== input.runId) {
+    throw new Error("Run artifact admission context belongs to another Run")
+  }
+  for (const artifact of input.artifacts) {
+    const name = relative(input.runDir.path, artifact.path)
+    if (name.length === 0 || name.startsWith("..") || isAbsolute(name)) {
+      throw new Error("Run-dir artifact escapes the admitted run directory")
+    }
+    const actual = describeRunArtifactFile(
+      artifact.role,
+      input.runDir,
+      name,
+      artifact.contentType,
+    )
+    if (
+      actual.sha256 !== artifact.sha256 ||
+      actual.sizeBytes !== artifact.sizeBytes
+    ) {
+      throw new Error("Run-dir artifact changed before admission")
+    }
+  }
+  const identity = JSON.stringify(
+    input.artifacts.map((artifact) => [artifact.role, artifact.sha256]),
+  )
+  await port.admit({
+    observationKey: `run-dir-artifacts-${createHash("sha256")
+      .update(`${input.runId}\u0000${identity}`)
+      .digest("hex")
+      .slice(0, 24)}`,
+    artifacts: input.artifacts.map((artifact) => ({ ...artifact })),
+    runDir: input.runDir.path,
+  })
 }
 
 export type RunTerminalArtifactFile = {
@@ -298,5 +357,287 @@ export function prepareRunTerminalArtifacts(input: {
   } catch (error) {
     for (const path of staged) rmSync(path, { force: true })
     throw error
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Hardened run-dir file writer/reader (moved from headless/local-job-api.ts;
+// the local-job-api serializers own the v1 file names, roles and contents and
+// hand the bytes to this owner, which writes, re-reads and digests them).
+// ---------------------------------------------------------------------------
+
+export type RunArtifactFileReceipt = {
+  dev: number
+  ino: number
+  size: number
+  mtimeMs: number
+  ctimeMs: number
+}
+
+/**
+ * A run directory is authority captured at exclusive creation time, not merely
+ * a pathname that an untrusted workspace process may later replace.
+ */
+export type RunArtifactRunDir = StableDirectoryHandle & {
+  fileReceipts: Map<string, RunArtifactFileReceipt>
+}
+
+export type RunArtifactFilesystemHooks = {
+  beforeAtomicRename?: (input: { fileName: string; runDirPath: string }) => void
+}
+
+/** Public descriptor of one prepared run-dir file (v1 artifact shape). */
+export type RunDirArtifact = {
+  role: string
+  path: string
+  sha256: string
+  contentType: string
+  sizeBytes: number
+}
+
+function isSameArtifactFile(
+  stat: Stats,
+  receipt: RunArtifactFileReceipt,
+): boolean {
+  return (
+    stat.isFile() &&
+    !stat.isSymbolicLink() &&
+    stat.nlink === 1 &&
+    stat.dev === receipt.dev &&
+    stat.ino === receipt.ino &&
+    stat.size === receipt.size &&
+    stat.mtimeMs === receipt.mtimeMs &&
+    stat.ctimeMs === receipt.ctimeMs
+  )
+}
+
+export function assertRunArtifactRunDir(runDir: RunArtifactRunDir): void {
+  assertStableDirectoryPath(runDir, "Artifact run")
+}
+
+export function readRunArtifactFile(
+  directory: StableDirectoryHandle,
+  childName: string,
+  expected?: RunArtifactFileReceipt,
+): Buffer {
+  const path = join(directory.path, childName)
+  assertStableDirectoryPath(directory, "Artifact directory")
+  const operationPath = stableDirectoryChildPath(directory, childName)
+  const before = lstatSync(operationPath)
+  if (before.isSymbolicLink() || !before.isFile() || before.nlink !== 1) {
+    throw new Error(`Artifact must be a single-link regular file: ${path}`)
+  }
+  if (expected && !isSameArtifactFile(before, expected)) {
+    throw new Error(`Artifact file identity changed during the run: ${path}`)
+  }
+
+  const fd = openSync(
+    operationPath,
+    constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0),
+  )
+  try {
+    const opened = fstatSync(fd)
+    const stableReceipt: RunArtifactFileReceipt = {
+      dev: before.dev,
+      ino: before.ino,
+      size: before.size,
+      mtimeMs: before.mtimeMs,
+      ctimeMs: before.ctimeMs,
+    }
+    if (!isSameArtifactFile(opened, stableReceipt)) {
+      throw new Error(`Artifact changed while opening it: ${path}`)
+    }
+    const chunks: Buffer[] = []
+    const buffer = Buffer.allocUnsafe(64 * 1024)
+    while (true) {
+      const bytesRead = readSync(fd, buffer, 0, buffer.length, null)
+      if (bytesRead === 0) break
+      chunks.push(Buffer.from(buffer.subarray(0, bytesRead)))
+    }
+    if (!isSameArtifactFile(fstatSync(fd), stableReceipt)) {
+      throw new Error(`Artifact changed while reading it: ${path}`)
+    }
+    assertStableDirectoryPath(directory, "Artifact directory")
+    return Buffer.concat(chunks)
+  } finally {
+    closeSync(fd)
+  }
+}
+
+function artifactFileReceipt(stat: Stats): RunArtifactFileReceipt {
+  return {
+    dev: stat.dev,
+    ino: stat.ino,
+    size: stat.size,
+    mtimeMs: stat.mtimeMs,
+    ctimeMs: stat.ctimeMs,
+  }
+}
+
+function validateArtifactTargetBeforeWrite(
+  runDir: RunArtifactRunDir,
+  fileName: string,
+): void {
+  const targetPath = join(runDir.path, fileName)
+  const operationPath = stableDirectoryChildPath(runDir, fileName)
+  const expected = runDir.fileReceipts.get(fileName)
+  let stat: Stats
+  try {
+    stat = lstatSync(operationPath)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
+    if (expected) {
+      throw new Error(`Artifact disappeared during the run: ${targetPath}`)
+    }
+    return
+  }
+  if (stat.isSymbolicLink() || !stat.isFile() || stat.nlink !== 1) {
+    throw new Error(
+      `Artifact target is not a single-link regular file: ${targetPath}`,
+    )
+  }
+  if (!expected) {
+    throw new Error(`Unexpected artifact target already exists: ${targetPath}`)
+  }
+  if (!isSameArtifactFile(stat, expected)) {
+    throw new Error(
+      `Artifact file identity changed during the run: ${targetPath}`,
+    )
+  }
+}
+
+export function writeRunArtifactFile(
+  runDir: RunArtifactRunDir,
+  fileName: string,
+  content: string,
+  hooks?: RunArtifactFilesystemHooks,
+): string {
+  assertRunArtifactRunDir(runDir)
+  validateArtifactTargetBeforeWrite(runDir, fileName)
+  const targetPath = join(runDir.path, fileName)
+  const targetOperationPath = stableDirectoryChildPath(runDir, fileName)
+  const tempName = `.${fileName}.locus-${process.pid}-${randomUUID()}.tmp`
+  const tempOperationPath = stableDirectoryChildPath(runDir, tempName)
+  let fd: number | null = null
+  let tempExists = false
+  let tempReceipt: RunArtifactFileReceipt | null = null
+
+  try {
+    fd = openSync(
+      tempOperationPath,
+      constants.O_CREAT |
+        constants.O_EXCL |
+        constants.O_WRONLY |
+        (constants.O_NOFOLLOW ?? 0),
+      0o600,
+    )
+    tempExists = true
+    fchmodSync(fd, 0o600)
+    const bytes = Buffer.from(content, "utf8")
+    let offset = 0
+    while (offset < bytes.length) {
+      const written = writeSync(
+        fd,
+        bytes,
+        offset,
+        bytes.length - offset,
+        offset,
+      )
+      if (written <= 0) {
+        throw new Error(
+          `Failed to make progress writing artifact: ${targetPath}`,
+        )
+      }
+      offset += written
+    }
+    const tempStat = fstatSync(fd)
+    if (!tempStat.isFile() || tempStat.nlink !== 1) {
+      throw new Error(`Artifact temp file link count changed: ${targetPath}`)
+    }
+    tempReceipt = artifactFileReceipt(tempStat)
+    fsyncSync(fd)
+    closeSync(fd)
+    fd = null
+
+    assertRunArtifactRunDir(runDir)
+    validateArtifactTargetBeforeWrite(runDir, fileName)
+    if (
+      !tempReceipt ||
+      !isSameArtifactFile(lstatSync(tempOperationPath), tempReceipt)
+    ) {
+      throw new Error(`Artifact temp file identity changed: ${targetPath}`)
+    }
+    hooks?.beforeAtomicRename?.({
+      fileName,
+      runDirPath: runDir.path,
+    })
+    renameSync(tempOperationPath, targetOperationPath)
+    tempExists = false
+
+    fsyncStableDirectory(runDir, "Artifact run")
+    assertRunArtifactRunDir(runDir)
+    const installed = lstatSync(targetOperationPath)
+    if (
+      installed.isSymbolicLink() ||
+      !installed.isFile() ||
+      installed.nlink !== 1 ||
+      !tempReceipt ||
+      installed.dev !== tempReceipt.dev ||
+      installed.ino !== tempReceipt.ino ||
+      installed.size !== tempReceipt.size ||
+      installed.mtimeMs !== tempReceipt.mtimeMs
+    ) {
+      throw new Error(
+        `Installed artifact is not a single-link regular file: ${targetPath}`,
+      )
+    }
+    runDir.fileReceipts.set(fileName, artifactFileReceipt(installed))
+    return targetPath
+  } catch (error) {
+    let cleanupError: unknown = null
+    if (fd !== null) {
+      try {
+        closeSync(fd)
+      } catch (error) {
+        cleanupError = error
+      }
+    }
+    if (tempExists) {
+      try {
+        unlinkSync(tempOperationPath)
+        fsyncStableDirectory(runDir, "Artifact run")
+      } catch (error) {
+        cleanupError ??= error
+      }
+    }
+    if (cleanupError) {
+      throw new Error("Failed to clean up an atomic artifact temp file", {
+        cause: cleanupError,
+      })
+    }
+    throw error
+  }
+}
+
+export function describeRunArtifactFile(
+  role: string,
+  runDir: RunArtifactRunDir,
+  fileName: string,
+  contentType = "application/json",
+): RunDirArtifact {
+  const publicPath = join(runDir.path, fileName)
+  const content = readRunArtifactFile(
+    runDir,
+    fileName,
+    runDir.fileReceipts.get(fileName),
+  )
+  const hash = createHash("sha256")
+  hash.update(content)
+  return {
+    role,
+    path: publicPath,
+    sha256: hash.digest("hex"),
+    contentType,
+    sizeBytes: content.byteLength,
   }
 }
