@@ -1,7 +1,9 @@
-import { relations } from "drizzle-orm"
+import { relations, sql } from "drizzle-orm"
 import {
+  check,
   index,
   integer,
+  primaryKey,
   sqliteTable,
   text,
   uniqueIndex,
@@ -373,6 +375,14 @@ export const agentJobs = sqliteTable(
     heartbeatAt: integer("heartbeat_at", { mode: "timestamp" }),
     cancelRequestedAt: integer("cancel_requested_at", { mode: "timestamp" }),
     cancelRequestedBy: text("cancel_requested_by"),
+    // Canonical run event ledger (refactor-canonical-run-event-ledger):
+    // 0 = pre-ledger history (legacy_unverified, never extended), 1 = ledger
+    // job. The migration labels every existing job 0; new jobs default to 1.
+    ledgerVersion: integer("ledger_version").notNull().default(1),
+    // Sealed execution provenance tuple; null while pending or for legacy.
+    ledgerProvenanceJson: text("ledger_provenance_json"),
+    // Sequence of the one v1 completed record; null while the Run is live.
+    ledgerSealedSequence: integer("ledger_sealed_sequence"),
   },
   (table) => [
     index("agent_jobs_status_idx").on(table.status),
@@ -401,6 +411,10 @@ export const agentJobEvents = sqliteTable(
     createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(
       () => new Date(),
     ),
+    // `<observationKey>:<ordinal>`; null only for pre-ledger history rows.
+    factKey: text("fact_key"),
+    // Record metadata (redaction, boundary/source, provenance ref); v1 only.
+    recordMetadataJson: text("record_metadata_json"),
   },
   (table) => [
     uniqueIndex("agent_job_events_job_sequence_idx").on(
@@ -410,6 +424,33 @@ export const agentJobEvents = sqliteTable(
     index("agent_job_events_job_created_at_idx").on(
       table.jobId,
       table.createdAt,
+    ),
+    uniqueIndex("agent_job_events_job_fact_key_idx").on(
+      table.jobId,
+      table.factKey,
+    ),
+    uniqueIndex("agent_job_events_v1_completed_idx")
+      .on(table.jobId)
+      .where(sql`${table.type} = 'completed' AND ${table.factKey} IS NOT NULL`),
+  ],
+)
+
+// Projection acknowledgement checkpoints of the canonical run event ledger.
+// The committed event rows plus these cursors are the replayable outbox.
+export const agentJobProjectionCursors = sqliteTable(
+  "agent_job_projection_cursors",
+  {
+    jobId: text("job_id")
+      .notNull()
+      .references(() => agentJobs.id, { onDelete: "cascade" }),
+    projectionName: text("projection_name").notNull(),
+    acknowledgedSequence: integer("acknowledged_sequence").notNull().default(0),
+  },
+  (table) => [
+    primaryKey({ columns: [table.jobId, table.projectionName] }),
+    check(
+      "agent_job_projection_cursors_acknowledged_sequence_check",
+      sql`${table.acknowledgedSequence} >= 0`,
     ),
   ],
 )
@@ -571,6 +612,8 @@ export type NewAgentProviderDefault = typeof agentProviderDefaults.$inferInsert
 export type AppAgent = typeof appAgents.$inferSelect
 export type NewAppAgent = typeof appAgents.$inferInsert
 export type AgentJob = typeof agentJobs.$inferSelect
+export type AgentJobProjectionCursor =
+  typeof agentJobProjectionCursors.$inferSelect
 export type NewAgentJob = typeof agentJobs.$inferInsert
 export type AgentJobEvent = typeof agentJobEvents.$inferSelect
 export type NewAgentJobEvent = typeof agentJobEvents.$inferInsert

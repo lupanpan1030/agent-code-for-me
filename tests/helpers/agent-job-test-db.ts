@@ -149,6 +149,9 @@ export function createAgentJobTestDb() {
       heartbeat_at integer,
       cancel_requested_at integer,
       cancel_requested_by text,
+      ledger_version integer DEFAULT 1 NOT NULL,
+      ledger_provenance_json text,
+      ledger_sealed_sequence integer,
       FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE set null,
       FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE set null,
       FOREIGN KEY (sub_chat_id) REFERENCES sub_chats(id) ON DELETE set null
@@ -169,10 +172,25 @@ export function createAgentJobTestDb() {
       type text NOT NULL,
       payload_json text DEFAULT '{}' NOT NULL,
       created_at integer,
+      fact_key text,
+      record_metadata_json text,
       FOREIGN KEY (job_id) REFERENCES agent_jobs(id) ON DELETE cascade
     );
     CREATE UNIQUE INDEX agent_job_events_job_sequence_idx
       ON agent_job_events (job_id, sequence);
+    CREATE UNIQUE INDEX agent_job_events_job_fact_key_idx
+      ON agent_job_events (job_id, fact_key);
+    CREATE UNIQUE INDEX agent_job_events_v1_completed_idx
+      ON agent_job_events (job_id)
+      WHERE type = 'completed' AND fact_key IS NOT NULL;
+    CREATE TABLE agent_job_projection_cursors (
+      job_id text NOT NULL,
+      projection_name text NOT NULL,
+      acknowledged_sequence integer DEFAULT 0 NOT NULL,
+      PRIMARY KEY (job_id, projection_name),
+      FOREIGN KEY (job_id) REFERENCES agent_jobs(id) ON DELETE cascade,
+      CHECK (acknowledged_sequence >= 0)
+    );
 	    CREATE INDEX agent_job_events_job_created_at_idx
 	      ON agent_job_events (job_id, created_at);
 	    CREATE TABLE agent_schedules (
