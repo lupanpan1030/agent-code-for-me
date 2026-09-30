@@ -126,6 +126,10 @@ function mermaidResidue(containers: HTMLElement[]): string[] {
   const residue: string[] = []
   for (const child of Array.from(doc.body.children) as HTMLElement[]) {
     if (containers.includes(child)) continue
+    // Other test-owned mounts (e.g. the control render of the same test) are
+    // not transient residue; residue means nodes left outside every mount.
+    // (Coordinator adjudication 2026-09-30, see red-receipt.md.)
+    if (child.hasAttribute("data-test-root")) continue
     const suspects = [
       child,
       ...Array.from(child.querySelectorAll("*")),

@@ -237,3 +237,11 @@ bun test --isolate tests/renderer-hardening-mermaid-editor.test.ts             #
 bun test --isolate tests/renderer-hardening-guest-policy.test.ts               # 5 / 26
 bun test --isolate tests/renderer-hardening-preview-broker.test.ts             # 7 / 5
 ```
+
+
+## Adjudications
+
+### 2026-09-30 — Mermaid residue helper vs the same test's control mount (mermaid-editor suite)
+
+- Raised by the Phase II implementer (Claude Opus 5.5): in "hostile themeCSS … retained paint equals the directive-free control", `mermaidResidue([container])` excludes only the hostile render's container while the control render from the same test stays mounted, so its diagram/toolbar SVGs are reported as residue; no implementation can pass it (verified: the control container is the only other body child, zero transient mermaid nodes).
+- Coordinator verdict: **fixture defect; the implementer is right.** Residue means nodes left outside every test-owned mount. Fix (fixture-only): the helper now skips every `[data-test-root]` container. No assertion changed; no other red file touched.
