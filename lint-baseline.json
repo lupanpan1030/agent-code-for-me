@@ -385,7 +385,7 @@
     "src/renderer/features/agents/ui/icons/cursor.svg": 1,
     "src/renderer/features/agents/ui/icons/gpt-model.svg": 1,
     "src/renderer/features/agents/ui/inline-edit.tsx": 2,
-    "src/renderer/features/agents/ui/local-browser-workbench.tsx": 10,
+    "src/renderer/features/agents/ui/local-browser-workbench.tsx": 3,
     "src/renderer/features/agents/ui/message-action-buttons.tsx": 10,
     "src/renderer/features/agents/ui/message-json-display.tsx": 3,
     "src/renderer/features/agents/ui/mobile-chat-header.tsx": 2,
