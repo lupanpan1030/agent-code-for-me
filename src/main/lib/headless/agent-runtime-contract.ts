@@ -23,15 +23,35 @@ import type {
   AgentRuntimeRunRequestBase,
   AgentRuntimeRunResultBase,
 } from "../agent-runtime/run-contract"
-import type { AgentJob, AgentJobEvent } from "../db/schema"
+import type { RuntimeExecutionProvenance } from "../agent-runtime/run-event-ledger"
+import type { CanonicalDesktopRunLedger } from "../agent-runtime/run-event-ledger-host"
+import type { AgentJob } from "../db/schema"
 
+/**
+ * Thin coarse ingress of one headless Run: `appendEvent` submits a coarse
+ * observation to the Run's host ledger (it returns nothing; the ledger owns
+ * sequence, redaction and the committed record).
+ */
 export type AgentRuntimeObserver = AgentRuntimePersistedObserver<
   AgentJobEventType,
-  AgentJobEvent,
+  void,
   AgentJob
 > & {
   /** Registers main-process-only exact secrets for this run's persistence boundary. */
   registerSecretHints(hints: readonly string[]): void
+  /**
+   * The launch caller hands the execution tuple it captured through
+   * run-provenance.ts at executable resolution; the host binds it to the Run
+   * before runtime execution. Observers without a host ledger omit it.
+   */
+  recordExecutionProvenance?(
+    provenance: RuntimeExecutionProvenance,
+  ): Promise<void>
+  /**
+   * The Run's host-composed ledger, for adapters that ingest native
+   * boundaries themselves (the Codex app-server wrapper).
+   */
+  runLedger?: CanonicalDesktopRunLedger
 }
 
 export const AGENT_RUNTIME_SECURITY_CLEANUP_ERROR_CODE =

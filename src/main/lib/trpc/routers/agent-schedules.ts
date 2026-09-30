@@ -64,9 +64,9 @@ export const agentSchedulesRouter = router({
 
   runNow: publicProcedure
     .input(z.object({ scheduleId: z.string() }))
-    .mutation(({ input }) => {
+    .mutation(async ({ input }) => {
       const db = getDatabase()
-      const fired = runAgentScheduleNow(db, input.scheduleId)
+      const fired = await runAgentScheduleNow(db, input.scheduleId)
       return {
         schedule: serializeAgentSchedule(fired.schedule),
         job: serializeAgentJob(fired.job),

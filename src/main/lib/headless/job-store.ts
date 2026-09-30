@@ -29,8 +29,9 @@ import {
   AGENT_RUNTIME_IDS,
   CONTRACT_RUNTIME_IDS,
 } from "../../../shared/agent-runtime-capabilities"
-import { createAgentJobRunEvent } from "../agent-runtime/job-event-bridge"
 import { redactExactSecretHints } from "../agent-runtime/redaction"
+import type { TerminalJobFields } from "../agent-runtime/run-event-ledger"
+import { getOrCreateRunEventLedger } from "../agent-runtime/run-event-ledger-host"
 import type {
   CommittedRunEvent,
   JsonValue,
@@ -76,23 +77,14 @@ export type StartAgentJobInput = {
   now?: Date
 }
 
-export type AppendAgentJobEventInput = {
-  jobId: string
-  type: AgentJobEventType
-  payload?: unknown
-  secretHints?: readonly string[]
+export type CancelAgentJobInput = {
+  requestedBy: string
   now?: Date
-}
-
-export type CompleteAgentJobInput = {
-  jobId: string
-  status: Exclude<AgentJobStatus, "queued" | "running">
-  exitCode?: number | null
-  errorCode?: string | null
-  errorMessage?: string | null
-  result?: unknown
-  secretHints?: readonly string[]
-  now?: Date
+  /**
+   * Job-row result fields for a queued job the ledger settles canceled before
+   * it started (the caller's existing exit metadata).
+   */
+  queuedCancelFields?: TerminalJobFields
 }
 
 export type ListAgentJobsInput = {
@@ -112,7 +104,6 @@ export type RetryAgentJobOptions =
     }
 
 const MAX_PROMPT_PREVIEW_LENGTH = 240
-const EVENT_SEQUENCE_RETRY_LIMIT = 5
 
 type AgentJobStoreExecutor = Pick<
   AgentJobDatabase,
@@ -238,29 +229,6 @@ function assertNonTerminal(job: AgentJob): void {
   }
 }
 
-function isEventSequenceConflict(error: unknown): boolean {
-  if (!(error instanceof Error)) return false
-  return (
-    /agent_job_events_job_sequence_idx/i.test(error.message) ||
-    /unique constraint failed: agent_job_events\.job_id,\s*agent_job_events\.sequence/i.test(
-      error.message,
-    )
-  )
-}
-
-function withEventSequenceRetry<T>(operation: () => T): T {
-  let lastError: unknown
-  for (let attempt = 0; attempt < EVENT_SEQUENCE_RETRY_LIMIT; attempt += 1) {
-    try {
-      return operation()
-    } catch (error) {
-      if (!isEventSequenceConflict(error)) throw error
-      lastError = error
-    }
-  }
-  throw lastError
-}
-
 function getJobFromExecutor(
   executor: AgentJobStoreExecutor,
   jobId: string,
@@ -274,52 +242,14 @@ function getJobFromExecutor(
   )
 }
 
-function insertAgentJobEventRecord(
-  executor: AgentJobStoreExecutor,
-  input: AppendAgentJobEventInput,
-  now: Date,
-): AgentJobEvent {
-  const db = executor as AgentJobDatabase
-  const eventId = createId()
-  const sequence = nextEventSequence(executor, input.jobId)
-  const job = getJobFromExecutor(executor, input.jobId)
-  if (!job) throw new Error(`Unknown job: ${input.jobId}`)
-  const bridged = createAgentJobRunEvent({
-    jobId: input.jobId,
-    runtimeId: job.runtime as AgentJobRuntime,
-    source: job.source as AgentJobSource,
-    sequence,
-    type: input.type,
-    payload: input.payload,
-    secretHints: input.secretHints,
-    createdAt: now,
-  })
-
-  db.insert(agentJobEvents)
-    .values({
-      id: eventId,
-      jobId: input.jobId,
-      sequence,
-      type: input.type,
-      payloadJson: toJson(bridged.persistedPayload, input.secretHints),
-      createdAt: now,
-    })
-    .run()
-
-  const event =
-    db
-      .select()
-      .from(agentJobEvents)
-      .where(eq(agentJobEvents.id, eventId))
-      .get() ?? null
-  if (!event) throw new Error(`Failed to append event ${eventId}`)
-  return event
-}
-
-export function createAgentJob(
+/**
+ * Lifecycle service: inserts the queued job row, then records `job_created`
+ * through the job's host ledger (pending provenance, fact-keyed v1 record).
+ */
+export async function createAgentJob(
   db: AgentJobDatabase,
   input: CreateAgentJobInput,
-): AgentJob {
+): Promise<AgentJob> {
   assertOneOf(AGENT_JOB_SOURCES, input.source, "job source")
   assertOneOf(AGENT_JOB_KINDS, input.kind ?? "agent", "job kind")
   assertCreateAgentJobRuntime(input)
@@ -370,19 +300,33 @@ export function createAgentJob(
 
   const job = getAgentJob(db, id)
   if (!job) throw new Error(`Failed to create job ${id}`)
-  appendAgentJobEvent(db, {
-    jobId: id,
-    type: "job_created",
-    payload: {
-      kind,
-      source: input.source,
-      runtime: input.runtime,
-      mode: input.mode,
-      cwd: input.cwd,
-    },
-    now,
+  await recordAgentJobCreated(db, job, {
+    kind,
+    source: input.source,
+    runtime: input.runtime,
+    mode: input.mode,
+    cwd: input.cwd,
   })
   return getAgentJob(db, id) ?? job
+}
+
+/**
+ * Records `job_created` of an existing queued job row through its host
+ * ledger (lifecycle services that mint the row in their own transaction,
+ * e.g. schedules, call this after that transaction commits).
+ */
+export async function recordAgentJobCreated(
+  db: AgentJobDatabase,
+  job: AgentJob,
+  payload: Record<string, unknown>,
+): Promise<void> {
+  const ledger = await getOrCreateRunEventLedger(db, job)
+  await ledger.appendSystemEvent({
+    observationKey: `lifecycle:job-created:${job.id}`,
+    type: "job_created",
+    payload,
+    occurredAt: job.createdAt ?? undefined,
+  })
 }
 
 export function getAgentJob(
@@ -434,10 +378,18 @@ export function listQueuedAgentJobsForSource(
   limit: number,
 ): AgentJob[] {
   const boundedLimit = Math.max(1, Math.min(limit, 200))
+  // Pre-ledger (ledger_version=0) rows drain with the old build; the ledger
+  // never starts or extends them.
   return db
     .select()
     .from(agentJobs)
-    .where(and(eq(agentJobs.source, source), eq(agentJobs.status, "queued")))
+    .where(
+      and(
+        eq(agentJobs.source, source),
+        eq(agentJobs.status, "queued"),
+        eq(agentJobs.ledgerVersion, 1),
+      ),
+    )
     .orderBy(asc(agentJobs.createdAt))
     .limit(boundedLimit)
     .all()
@@ -450,65 +402,43 @@ export function getAgentJobPrompt(db: AgentJobDatabase, jobId: string): string {
   return typeof input.prompt === "string" ? input.prompt : ""
 }
 
-export function startAgentJob(
+/**
+ * Worker claim: records `job_started` through the job's host ledger, which
+ * commits the running job-row fields in the same transaction and rejects a
+ * claim that is no longer queued (e.g. canceled first by another process).
+ */
+export async function startAgentJob(
   db: AgentJobDatabase,
   input: StartAgentJobInput,
-): AgentJob {
-  const now = input.now ?? new Date()
-  return withEventSequenceRetry(() => {
-    return db.transaction((tx: AgentJobTransaction) => {
-      const job = getJobFromExecutor(tx, input.jobId)
-      if (!job) throw new Error(`Unknown job: ${input.jobId}`)
-      assertNonTerminal(job)
-      if (job.status !== "queued") {
-        throw new Error(`Job ${job.id} cannot start from status ${job.status}`)
-      }
-
-      tx.update(agentJobs)
-        .set({
-          status: "running",
-          startedAt: now,
-          workerId: input.workerId,
-          workerPid: input.workerPid ?? null,
-          workerStartedAt: now,
-          heartbeatAt: now,
-        })
-        .where(eq(agentJobs.id, input.jobId))
-        .run()
-      insertAgentJobEventRecord(
-        tx,
-        {
-          jobId: input.jobId,
-          type: "job_started",
-          payload: {
-            workerId: input.workerId,
-            workerPid: input.workerPid ?? null,
-          },
-          now,
-        },
-        now,
+): Promise<AgentJob> {
+  const job = getAgentJob(db, input.jobId)
+  if (!job) throw new Error(`Unknown job: ${input.jobId}`)
+  assertNonTerminal(job)
+  if (job.status !== "queued") {
+    throw new Error(`Job ${job.id} cannot start from status ${job.status}`)
+  }
+  const ledger = await getOrCreateRunEventLedger(db, job)
+  try {
+    await ledger.appendSystemEvent({
+      observationKey: `lifecycle:job-started:${input.workerId}`,
+      type: "job_started",
+      payload: {
+        workerId: input.workerId,
+        workerPid: input.workerPid ?? null,
+      },
+      occurredAt: input.now ?? new Date(),
+    })
+  } catch (error) {
+    const current = getAgentJob(db, input.jobId)
+    if (current && current.status !== "queued") {
+      assertNonTerminal(current)
+      throw new Error(
+        `Job ${current.id} cannot start from status ${current.status}`,
       )
-
-      return getJobFromExecutor(tx, input.jobId) ?? job
-    })
-  })
-}
-
-export function appendAgentJobEvent(
-  db: AgentJobDatabase,
-  input: AppendAgentJobEventInput,
-): AgentJobEvent {
-  assertOneOf(AGENT_JOB_EVENT_TYPES, input.type, "job event type")
-  const now = input.now ?? new Date()
-
-  return withEventSequenceRetry(() => {
-    return db.transaction((tx: AgentJobTransaction) => {
-      const job = getJobFromExecutor(tx, input.jobId)
-      if (!job) throw new Error(`Unknown job: ${input.jobId}`)
-      assertNonTerminal(job)
-      return insertAgentJobEventRecord(tx, input, now)
-    })
-  })
+    }
+    throw error
+  }
+  return getAgentJob(db, input.jobId) ?? job
 }
 
 export function listAgentJobEvents(
@@ -555,177 +485,49 @@ export function heartbeatAgentJob(
   return getAgentJob(db, jobId) ?? job
 }
 
-export function requestCancelAgentJob(
+const CANCEL_EVIDENCE = {
+  policy: { denied: false, evidenceKeys: [] },
+  output: { valid: false, empty: true, allowEmpty: false, evidenceKeys: [] },
+  postRun: { credentialsSafe: true, evidenceKeys: [] },
+}
+
+/**
+ * Host cancel evidence for an existing job: the ledger settles a queued job
+ * `canceled` before it starts, or forwards the cancel request of a running
+ * job (cancel_requested + cancelRequestedAt) for its worker to observe.
+ * Terminal jobs are returned unchanged.
+ */
+export async function cancelAgentJob(
   db: AgentJobDatabase,
   jobId: string,
-  requestedBy: string,
-  now = new Date(),
-): AgentJob {
-  return withEventSequenceRetry(() => {
-    return db.transaction((tx: AgentJobTransaction) => {
-      const job = getJobFromExecutor(tx, jobId)
-      if (!job) throw new Error(`Unknown job: ${jobId}`)
-      if (isTerminalAgentJobStatus(job.status as AgentJobStatus)) return job
-
-      tx.update(agentJobs)
-        .set({
-          cancelRequestedAt: job.cancelRequestedAt ?? now,
-          cancelRequestedBy: job.cancelRequestedBy ?? requestedBy,
-        })
-        .where(eq(agentJobs.id, jobId))
-        .run()
-      insertAgentJobEventRecord(
-        tx,
-        {
-          jobId,
-          type: "status",
-          payload: { status: "cancel_requested", requestedBy },
-          now,
-        },
-        now,
-      )
-      return getJobFromExecutor(tx, jobId) ?? job
-    })
-  })
+  input: CancelAgentJobInput,
+): Promise<AgentJob> {
+  const job = getAgentJob(db, jobId)
+  if (!job) throw new Error(`Unknown job: ${jobId}`)
+  if (isTerminalAgentJobStatus(job.status as AgentJobStatus)) return job
+  const ledger = await getOrCreateRunEventLedger(db, job)
+  await ledger.settle(
+    {
+      trigger: {
+        kind: "cancel",
+        reason: "queued_cancel",
+        observationKey: `cancel:${createId()}`,
+        requestedBy: input.requestedBy,
+      },
+      ...CANCEL_EVIDENCE,
+    },
+    {
+      jobFields: () => input.queuedCancelFields ?? {},
+    },
+  )
+  return getAgentJob(db, jobId) ?? job
 }
 
-export function completeAgentJob(
-  db: AgentJobDatabase,
-  input: CompleteAgentJobInput,
-): AgentJob {
-  assertOneOf(AGENT_JOB_STATUSES, input.status, "job status")
-  const now = input.now ?? new Date()
-
-  return withEventSequenceRetry(() => {
-    return db.transaction((tx: AgentJobTransaction) => {
-      const job = getJobFromExecutor(tx, input.jobId)
-      if (!job) throw new Error(`Unknown job: ${input.jobId}`)
-      assertNonTerminal(job)
-
-      tx.update(agentJobs)
-        .set({
-          status: input.status,
-          finishedAt: now,
-          exitCode: input.exitCode ?? null,
-          errorCode: input.errorCode
-            ? redactSecretText(input.errorCode, input.secretHints)
-            : null,
-          errorMessage: input.errorMessage
-            ? redactSecretText(input.errorMessage, input.secretHints)
-            : null,
-          resultJson:
-            input.result === undefined
-              ? null
-              : toJson(input.result, input.secretHints),
-          heartbeatAt: now,
-        })
-        .where(eq(agentJobs.id, input.jobId))
-        .run()
-
-      insertAgentJobEventRecord(
-        tx,
-        {
-          jobId: input.jobId,
-          type: "completed",
-          payload: {
-            status: input.status,
-            exitCode: input.exitCode ?? null,
-            errorCode: input.errorCode ?? null,
-            errorMessage: input.errorMessage ?? null,
-            result: input.result ?? null,
-          },
-          secretHints: input.secretHints,
-          now,
-        },
-        now,
-      )
-
-      return getJobFromExecutor(tx, input.jobId) ?? job
-    })
-  })
-}
-
-function nextEventSequence(
-  executor: AgentJobStoreExecutor,
-  jobId: string,
-): number {
-  const latest = (executor as AgentJobDatabase)
-    .select({
-      maxSequence: sql<number>`coalesce(max(${agentJobEvents.sequence}), 0)`,
-    })
-    .from(agentJobEvents)
-    .where(eq(agentJobEvents.jobId, jobId))
-    .get()
-  return (latest?.maxSequence ?? 0) + 1
-}
-
-export function interruptStaleAgentJobs(
-  db: AgentJobDatabase,
-  staleBefore: Date,
-  now = new Date(),
-): AgentJob[] {
-  const staleJobs = db
-    .select()
-    .from(agentJobs)
-    .where(
-      and(
-        eq(agentJobs.status, "running"),
-        or(
-          isNull(agentJobs.heartbeatAt),
-          lt(agentJobs.heartbeatAt, staleBefore),
-        ),
-      ),
-    )
-    .all()
-
-  for (const job of staleJobs) {
-    withEventSequenceRetry(() => {
-      db.transaction((tx: AgentJobTransaction) => {
-        const current = getJobFromExecutor(tx, job.id)
-        if (
-          !current ||
-          current.status !== "running" ||
-          (current.heartbeatAt && current.heartbeatAt >= staleBefore)
-        ) {
-          return
-        }
-
-        tx.update(agentJobs)
-          .set({
-            status: "interrupted",
-            finishedAt: now,
-            errorCode: "worker_interrupted",
-            errorMessage: "Worker heartbeat was lost.",
-          })
-          .where(eq(agentJobs.id, job.id))
-          .run()
-        insertAgentJobEventRecord(
-          tx,
-          {
-            jobId: job.id,
-            type: "error",
-            payload: {
-              status: "interrupted",
-              errorCode: "worker_interrupted",
-            },
-            now,
-          },
-          now,
-        )
-      })
-    })
-  }
-
-  return staleJobs
-    .map((job) => getAgentJob(db, job.id))
-    .filter(Boolean) as AgentJob[]
-}
-
-export function retryAgentJob(
+export async function retryAgentJob(
   db: AgentJobDatabase,
   jobId: string,
   optionsOrNow: RetryAgentJobOptions = new Date(),
-): AgentJob {
+): Promise<AgentJob> {
   const options =
     optionsOrNow instanceof Date ? { now: optionsOrNow } : optionsOrNow
   const now = options.now ?? new Date()
@@ -769,15 +571,12 @@ export function retryAgentJob(
       createdByVersion: job.createdByVersion,
     })
     .run()
-  appendAgentJobEvent(db, {
-    jobId: retryId,
-    type: "job_created",
-    payload: {
-      kind: job.kind,
-      retryOfJobId: job.id,
-      attempt: job.attempt + 1,
-    },
-    now,
+  const created = getAgentJob(db, retryId)
+  if (!created) throw new Error(`Failed to create retry job ${retryId}`)
+  await recordAgentJobCreated(db, created, {
+    kind: job.kind,
+    retryOfJobId: job.id,
+    attempt: job.attempt + 1,
   })
   const retry = getAgentJob(db, retryId)
   if (!retry) throw new Error(`Failed to create retry job ${retryId}`)
@@ -815,11 +614,26 @@ export type ExactRunEventJobMutation = {
   ledgerProvenanceJson?: string | null
 }
 
+/** Job-row facts a ledger batch may require to be unchanged at commit. */
+export type ExactRunEventJobPrecondition = {
+  status?: string
+  workerId?: string | null
+  workerPid?: number | null
+  workerStartedAt?: string | null
+  heartbeatAt?: string | null
+}
+
 export type AppendExactRunEventBatchInput = {
   jobId: string
   records: readonly ExactRunEventRecord[]
   expectedHighWater: number
   jobMutation?: ExactRunEventJobMutation | null
+  /**
+   * Job-row facts revalidated inside the transaction (a recovery settles only
+   * the worker identity/start/heartbeat it probed). Timestamps compare as ISO
+   * strings; null means the column must be null.
+   */
+  jobPrecondition?: ExactRunEventJobPrecondition | null
   /** Final admitted artifact refs registered with the terminal commit. */
   artifactRefs?: readonly JsonValue[] | null
 }
@@ -832,6 +646,7 @@ export type RunEventStoreErrorCode =
   | "SEALED_RUN_APPEND_REJECTED"
   | "UNKNOWN_JOB"
   | "INVALID_RECORD"
+  | "JOB_PRECONDITION_FAILED"
 
 export class RunEventStoreError extends Error {
   readonly code: RunEventStoreErrorCode
@@ -921,6 +736,35 @@ function isoOrNull(value: Date | null | undefined): string | null {
   return value ? value.toISOString() : null
 }
 
+function assertJobPrecondition(
+  job: AgentJob,
+  precondition: ExactRunEventJobPrecondition | null | undefined,
+): void {
+  if (!precondition) return
+  const current: Record<string, unknown> = {
+    status: job.status,
+    workerId: job.workerId,
+    workerPid: job.workerPid,
+    workerStartedAt: isoOrNull(job.workerStartedAt),
+    heartbeatAt: isoOrNull(job.heartbeatAt),
+  }
+  for (const [key, expected] of Object.entries(precondition)) {
+    if (expected === undefined) continue
+    if (!(key in current)) {
+      throw new RunEventStoreError(
+        "INVALID_RECORD",
+        `job precondition field ${key} is not supported`,
+      )
+    }
+    if (current[key] !== expected) {
+      throw new RunEventStoreError(
+        "JOB_PRECONDITION_FAILED",
+        `job ${job.id} changed its ${key} before the commit`,
+      )
+    }
+  }
+}
+
 function parseStoredJson(value: string | null): JsonValue | undefined {
   if (value === null) return undefined
   try {
@@ -962,8 +806,19 @@ function eventRowToRunEvent(
   }
 }
 
-function eventHighWater(executor: AgentJobStoreExecutor, jobId: string) {
-  return nextEventSequence(executor, jobId) - 1
+/** Committed high-water of one job (the ledger allocates every sequence). */
+function eventHighWater(
+  executor: AgentJobStoreExecutor,
+  jobId: string,
+): number {
+  const latest = (executor as AgentJobDatabase)
+    .select({
+      maxSequence: sql<number>`coalesce(max(${agentJobEvents.sequence}), 0)`,
+    })
+    .from(agentJobEvents)
+    .where(eq(agentJobEvents.jobId, jobId))
+    .get()
+  return latest?.maxSequence ?? 0
 }
 
 function listEventRowsFromExecutor(
@@ -1110,6 +965,7 @@ export function appendExactRunEventBatch(
       )
     }
     const highWater = eventHighWater(tx, job.id)
+    assertJobPrecondition(job, input.jobPrecondition)
     if (input.expectedHighWater !== highWater) {
       throw new RunEventStoreError(
         "EXPECTED_HIGH_WATER_CONFLICT",

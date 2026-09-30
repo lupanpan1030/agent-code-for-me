@@ -45,20 +45,20 @@ import {
 } from "./job-runner"
 import {
   type AgentJobDatabase,
-  appendAgentJobEvent,
-  completeAgentJob,
+  cancelAgentJob,
   createAgentJob,
   getAgentJob,
   getAgentJobPrompt,
   listAgentJobEvents,
   listAgentJobs,
-  requestCancelAgentJob,
   retryAgentJob,
 } from "./job-store"
 import { runJobsStdioServer } from "./jobs-stdio"
 import {
+  admitLocalJobApiInitialArtifacts,
   closeLocalJobApiArtifactRunDir,
   createLocalJobApiJob,
+  createLocalJobApiTerminalArtifacts,
   getLocalJobApiEvents,
   getLocalJobApiJobOrThrow,
   type LocalJobApiRuntimeManifestEnvelopeOptions,
@@ -67,8 +67,6 @@ import {
   toLocalJobApiJobEnvelope,
   toLocalJobApiResultEnvelope,
   toLocalJobApiRuntimeManifestEnvelope,
-  writeLocalJobApiFinalArtifacts,
-  writeLocalJobApiInitialArtifacts,
 } from "./local-job-api"
 import {
   assertHeadlessProviderSelectionUsableAtCreate,
@@ -288,7 +286,7 @@ async function runCommand(
       runtime: command.runtime,
       providerProfileId: command.providerProfileId,
     })
-    job = createAgentJob(options.db, {
+    job = await createAgentJob(options.db, {
       source: command.daemon ? "daemon" : "cli",
       runtime: command.runtime,
       mode: command.mode,
@@ -394,31 +392,31 @@ async function logsCommand(
   return 0
 }
 
-function cancelCommand(
+const PRE_START_CANCEL_FIELDS = {
+  exitCode: HEADLESS_EXIT_CODES.canceled,
+  errorCode: "job_canceled",
+  errorMessage: "Job was canceled before it started.",
+}
+
+async function cancelCommand(
   command: Extract<HeadlessCliCommand, { kind: "jobs-cancel" }>,
   options: RunHeadlessCliCommandOptions,
-): number {
+): Promise<number> {
   const job = getAgentJob(options.db, command.jobId)
   if (!job)
     return commandError(options.stderr, `Unknown job: ${command.jobId}`, 3)
-  let updated = requestCancelAgentJob(options.db, command.jobId, "cli")
-  if (updated.status === "queued") {
-    updated = completeAgentJob(options.db, {
-      jobId: command.jobId,
-      status: "canceled",
-      exitCode: HEADLESS_EXIT_CODES.canceled,
-      errorCode: "job_canceled",
-      errorMessage: "Job was canceled before it started.",
-    })
-  }
+  const updated = await cancelAgentJob(options.db, command.jobId, {
+    requestedBy: "cli",
+    queuedCancelFields: PRE_START_CANCEL_FIELDS,
+  })
   outputJob(options.stdout, command.output, updated)
   return 0
 }
 
-function retryCommand(
+async function retryCommand(
   command: Extract<HeadlessCliCommand, { kind: "jobs-retry" }>,
   options: RunHeadlessCliCommandOptions,
-): number {
+): Promise<number> {
   const job = getAgentJob(options.db, command.jobId)
   if (!job)
     return commandError(options.stderr, `Unknown job: ${command.jobId}`, 3)
@@ -437,7 +435,7 @@ function retryCommand(
     )
   }
   getAgentJobPrompt(options.db, command.jobId)
-  const retry = retryAgentJob(options.db, command.jobId)
+  const retry = await retryAgentJob(options.db, command.jobId)
   outputJob(options.stdout, command.output, retry)
   return 0
 }
@@ -451,25 +449,16 @@ async function readApiRequestContent(
 }
 
 async function runPreparedLocalJobApiJob(
-  prepared: ReturnType<typeof createLocalJobApiJob>,
+  prepared: Awaited<ReturnType<typeof createLocalJobApiJob>>,
   options: RunHeadlessCliCommandOptions,
 ): Promise<RunPersistedAgentJobResult> {
   try {
-    const initialArtifacts = writeLocalJobApiInitialArtifacts({
+    await admitLocalJobApiInitialArtifacts({ db: options.db, prepared })
+    const terminal = createLocalJobApiTerminalArtifacts({
+      db: options.db,
       runDir: prepared.runDir,
-      request: prepared.request,
-      job: prepared.job,
-      events: listAgentJobEvents(options.db, prepared.job.id),
+      jobId: prepared.job.id,
     })
-    if (initialArtifacts.length > 0) {
-      appendAgentJobEvent(options.db, {
-        jobId: prepared.job.id,
-        type: "artifact_created",
-        payload: {
-          artifacts: initialArtifacts,
-        },
-      })
-    }
 
     const result =
       prepared.request.kind === "completion"
@@ -478,6 +467,10 @@ async function runPreparedLocalJobApiJob(
             jobId: prepared.job.id,
             fetchImpl: options.completionFetch,
             providerBindingDependencies: options.providerBindingDependencies,
+            locusBuild: options.appVersion ?? null,
+            ...(terminal.preparer
+              ? { terminalArtifacts: terminal.preparer }
+              : {}),
           })
         : await runPersistedAgentJob({
             db: options.db,
@@ -485,13 +478,12 @@ async function runPreparedLocalJobApiJob(
             runner: options.runner,
             env: options.env,
             providerBindingDependencies: options.providerBindingDependencies,
+            ...(terminal.preparer
+              ? { terminalArtifacts: terminal.preparer }
+              : {}),
           })
     const finalEvents = listAgentJobEvents(options.db, result.job.id)
-    const artifacts = writeLocalJobApiFinalArtifacts({
-      runDir: prepared.runDir,
-      job: result.job,
-      events: finalEvents,
-    })
+    const artifacts = terminal.artifacts()
     writeJson(options.stdout, {
       apiVersion: LOCAL_JOB_API_VERSION,
       job: toLocalJobApiJobEnvelope(result.job).job,
@@ -511,7 +503,7 @@ async function apiRunsCreateCommand(
     const request = parseLocalJobApiCreateRequestJson(
       await readApiRequestContent(command, options),
     )
-    const prepared = createLocalJobApiJob(
+    const prepared = await createLocalJobApiJob(
       options.db,
       request,
       options.appVersion,
@@ -848,22 +840,16 @@ async function apiRunsEventsCommand(
   }
 }
 
-function apiRunsCancelCommand(
+async function apiRunsCancelCommand(
   command: Extract<HeadlessCliCommand, { kind: "api-runs-cancel" }>,
   options: RunHeadlessCliCommandOptions,
-): number {
+): Promise<number> {
   try {
     const job = getLocalJobApiJobOrThrow(options.db, command.jobId)
-    let updated = requestCancelAgentJob(options.db, job.id, "api")
-    if (updated.status === "queued") {
-      updated = completeAgentJob(options.db, {
-        jobId: job.id,
-        status: "canceled",
-        exitCode: HEADLESS_EXIT_CODES.canceled,
-        errorCode: "job_canceled",
-        errorMessage: "Job was canceled before it started.",
-      })
-    }
+    const updated = await cancelAgentJob(options.db, job.id, {
+      requestedBy: "api",
+      queuedCancelFields: PRE_START_CANCEL_FIELDS,
+    })
     writeJson(options.stdout, toLocalJobApiJobEnvelope(updated))
     return HEADLESS_EXIT_CODES.success
   } catch (error) {
@@ -882,7 +868,7 @@ async function apiRunsRetryCommand(
   try {
     const job = getLocalJobApiJobOrThrow(options.db, command.jobId)
     const result = await runPreparedLocalJobApiJob(
-      retryLocalJobApiJob(options.db, job),
+      await retryLocalJobApiJob(options.db, job),
       options,
     )
     return result.exitCode
@@ -951,7 +937,7 @@ function schedulesCreateCommand(
   }
 }
 
-function schedulesMutationCommand(
+async function schedulesMutationCommand(
   command: Extract<
     HeadlessCliCommand,
     {
@@ -963,10 +949,10 @@ function schedulesMutationCommand(
     }
   >,
   options: RunHeadlessCliCommandOptions,
-): number {
+): Promise<number> {
   try {
     if (command.kind === "schedules-run") {
-      const fired = runAgentScheduleNow(
+      const fired = await runAgentScheduleNow(
         options.db,
         command.scheduleId,
         options.now,
@@ -1105,7 +1091,10 @@ export async function runHeadlessCliCommand(
     parsed.command.kind !== "daemon-run" &&
     parsed.command.kind !== "version"
   ) {
-    recoverStaleAgentJobs(options.db, options.now)
+    await recoverStaleAgentJobs(options.db, options.now, {
+      onDiagnostic: (diagnostic) =>
+        writeLine(options.stderr, diagnostic.message),
+    })
   }
 
   switch (parsed.command.kind) {

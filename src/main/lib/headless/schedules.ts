@@ -17,7 +17,6 @@ import {
   type AgentJob,
   type AgentSchedule,
   type AgentScheduleRun,
-  agentJobEvents,
   agentJobs,
   agentScheduleRuns,
   agentSchedules,
@@ -25,7 +24,7 @@ import {
 } from "../db/schema"
 import { createId } from "../db/utils"
 import { getRegisteredProjectForCwdOrThrow } from "../projects/registry"
-import type { AgentJobDatabase } from "./job-store"
+import { type AgentJobDatabase, recordAgentJobCreated } from "./job-store"
 import { assertHeadlessProviderSelectionUsableAtCreate } from "./provider-binding"
 
 export type CreateAgentScheduleInput = {
@@ -343,43 +342,26 @@ function createScheduleJobRecord(
     })
     .run()
 
-  db.insert(agentJobEvents)
-    .values({
-      id: createId(),
-      jobId,
-      sequence: 1,
-      type: "job_created",
-      payloadJson: toJson({
-        source: "schedule",
-        runtime: schedule.runtime,
-        mode: schedule.mode,
-        cwd: schedule.cwd,
-        scheduleId: schedule.id,
-        trigger,
-        scheduledFor: scheduledFor.toISOString(),
-      }),
-      createdAt: now,
-    })
-    .run()
-
   const job = getJobFromExecutor(db, jobId)
   if (!job) throw new Error(`Failed to create schedule job ${jobId}`)
   return job
 }
 
-function fireAgentSchedule(
+async function fireAgentSchedule(
   db: AgentJobDatabase,
   schedule: AgentSchedule,
   trigger: AgentScheduleTrigger,
   scheduledFor: Date,
   now: Date,
-): FiredAgentSchedule | null {
+): Promise<FiredAgentSchedule | null> {
   assertScheduleTrigger(trigger)
   assertOneOf(CONTRACT_RUNTIME_IDS, schedule.runtime, "job runtime")
   assertOneOf(AGENT_JOB_MODES, schedule.mode, "job mode")
   findRegisteredProjectForCwd(db, schedule.cwd, schedule.projectId)
 
-  return db.transaction((tx: AgentScheduleTransaction) => {
+  // The existing queue transaction mints the job row, schedule run and
+  // schedule update; job_created is then recorded by the host ledger.
+  const fired = db.transaction((tx: AgentScheduleTransaction) => {
     const current = getScheduleFromExecutor(tx, schedule.id)
     if (!current) throw new Error(`Unknown schedule: ${schedule.id}`)
     if (current.status === "disabled") {
@@ -422,6 +404,20 @@ function fireAgentSchedule(
     )
     return { schedule: updated, job, run }
   })
+  if (!fired) return null
+  await recordAgentJobCreated(db, fired.job, {
+    source: "schedule",
+    runtime: fired.job.runtime,
+    mode: fired.job.mode,
+    cwd: fired.job.cwd,
+    scheduleId: fired.schedule.id,
+    trigger,
+    scheduledFor: scheduledFor.toISOString(),
+  })
+  return {
+    ...fired,
+    job: getJobFromExecutor(db, fired.job.id) ?? fired.job,
+  }
 }
 
 export function createAgentSchedule(
@@ -595,22 +591,22 @@ export function deleteAgentSchedule(
   return disableAgentSchedule(db, scheduleId, now)
 }
 
-export function runAgentScheduleNow(
+export async function runAgentScheduleNow(
   db: AgentJobDatabase,
   scheduleId: string,
   now = new Date(),
-): FiredAgentSchedule {
+): Promise<FiredAgentSchedule> {
   const schedule = getAgentSchedule(db, scheduleId)
   if (!schedule) throw new Error(`Unknown schedule: ${scheduleId}`)
-  const fired = fireAgentSchedule(db, schedule, "manual", now, now)
+  const fired = await fireAgentSchedule(db, schedule, "manual", now, now)
   if (!fired) throw new Error(`Schedule ${scheduleId} is not runnable`)
   return fired
 }
 
-export function evaluateDueAgentSchedules(
+export async function evaluateDueAgentSchedules(
   db: AgentJobDatabase,
   input: EvaluateDueAgentSchedulesInput = {},
-): FiredAgentSchedule[] {
+): Promise<FiredAgentSchedule[]> {
   const now = input.now ?? new Date()
   const dueSchedules = db
     .select()
@@ -637,7 +633,7 @@ export function evaluateDueAgentSchedules(
       continue
     }
     try {
-      const firedSchedule = fireAgentSchedule(
+      const firedSchedule = await fireAgentSchedule(
         db,
         current,
         "due",

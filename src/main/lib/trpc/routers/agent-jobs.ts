@@ -5,12 +5,11 @@ import {
   isTerminalAgentJobStatus,
   type AgentJobStatus,
 } from "../../../../shared/agent-jobs"
-import { completeAgentJob } from "../../headless/job-store"
 import {
+  cancelAgentJob,
   getAgentJob,
   listAgentJobEvents,
   listAgentJobs,
-  requestCancelAgentJob,
   retryAgentJob,
 } from "../../headless/job-store"
 import {
@@ -77,29 +76,27 @@ export const agentJobsRouter = router({
 
   cancel: publicProcedure
     .input(z.object({ jobId: z.string() }))
-    .mutation(({ input }) => {
+    .mutation(async ({ input }) => {
       const db = getDatabase()
       const job = getAgentJob(db, input.jobId)
       if (!job) throw new Error(`Unknown job: ${input.jobId}`)
-      let updated =
+      const updated =
         job.source === "desktop"
-          ? requestCancelDesktopAgentJob(db, input.jobId, "desktop").job
-          : requestCancelAgentJob(db, input.jobId, "desktop")
-      if (updated.status === "queued") {
-        updated = completeAgentJob(db, {
-          jobId: input.jobId,
-          status: "canceled",
-          exitCode: 130,
-          errorCode: "job_canceled",
-          errorMessage: "Job was canceled before it started.",
-        })
-      }
+          ? (await requestCancelDesktopAgentJob(db, input.jobId, "desktop")).job
+          : await cancelAgentJob(db, input.jobId, {
+              requestedBy: "desktop",
+              queuedCancelFields: {
+                exitCode: 130,
+                errorCode: "job_canceled",
+                errorMessage: "Job was canceled before it started.",
+              },
+            })
       return { job: serializeAgentJob(updated) }
     }),
 
   retry: publicProcedure
     .input(z.object({ jobId: z.string() }))
-    .mutation(({ input }) => {
+    .mutation(async ({ input }) => {
       const db = getDatabase()
       const job = getAgentJob(db, input.jobId)
       if (!job) throw new Error(`Unknown job: ${input.jobId}`)
@@ -116,7 +113,7 @@ export const agentJobsRouter = router({
       if (!isTerminalAgentJobStatus(job.status as AgentJobStatus)) {
         throw new Error(`Job ${job.id} is not finished yet.`)
       }
-      const retry = retryAgentJob(db, input.jobId)
+      const retry = await retryAgentJob(db, input.jobId)
       return { job: serializeAgentJob(retry) }
     }),
 })

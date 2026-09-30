@@ -856,12 +856,17 @@ if (gotTheLock) {
     // Initialize database
     try {
       const db = initDatabase()
-      const interruptedJobs = recoverStaleAgentJobs(db)
-      if (interruptedJobs.length > 0) {
-        console.warn(
-          `[Headless] Marked ${interruptedJobs.length} stale agent job(s) as interrupted.`,
-        )
-      }
+      void recoverStaleAgentJobs(db)
+        .then((interruptedJobs) => {
+          if (interruptedJobs.length > 0) {
+            console.warn(
+              `[Headless] Marked ${interruptedJobs.length} stale agent job(s) as interrupted.`,
+            )
+          }
+        })
+        .catch((error) => {
+          console.warn("[Headless] Stale agent job recovery failed:", error)
+        })
       console.log("[App] Database initialized")
     } catch (error) {
       console.error("[App] Failed to initialize database:", error)
