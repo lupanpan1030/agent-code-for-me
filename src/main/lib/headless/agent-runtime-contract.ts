@@ -24,7 +24,10 @@ import type {
   AgentRuntimeRunResultBase,
 } from "../agent-runtime/run-contract"
 import type { RuntimeExecutionProvenance } from "../agent-runtime/run-event-ledger"
-import type { CanonicalDesktopRunLedger } from "../agent-runtime/run-event-ledger-host"
+import type {
+  CanonicalDesktopRunLedger,
+  RunArtifactCandidateSink,
+} from "../agent-runtime/run-event-ledger-host"
 import type { AgentJob } from "../db/schema"
 
 /**
@@ -52,6 +55,11 @@ export type AgentRuntimeObserver = AgentRuntimePersistedObserver<
    * boundaries themselves (the Codex app-server wrapper).
    */
   runLedger?: CanonicalDesktopRunLedger
+  /**
+   * The Run's host-composed native artifact candidate sink, present only
+   * when the Run has an admitted run directory (API runs).
+   */
+  artifactCandidates?: RunArtifactCandidateSink
 }
 
 export const AGENT_RUNTIME_SECURITY_CLEANUP_ERROR_CODE =

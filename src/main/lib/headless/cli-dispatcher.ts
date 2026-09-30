@@ -481,6 +481,7 @@ async function runPreparedLocalJobApiJob(
             ...(terminal.preparer
               ? { terminalArtifacts: terminal.preparer }
               : {}),
+            artifactRunDir: prepared.runDir,
           })
     const finalEvents = listAgentJobEvents(options.db, result.job.id)
     const artifacts = terminal.artifacts()

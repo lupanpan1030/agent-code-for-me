@@ -14,7 +14,7 @@ import {
   unlinkSync,
   writeSync,
 } from "node:fs"
-import { basename, isAbsolute, join, relative, resolve } from "node:path"
+import { extname, isAbsolute, join, relative, resolve } from "node:path"
 import {
   assertStableDirectoryPath,
   fsyncStableDirectory,
@@ -40,11 +40,39 @@ import {
  * content. It grants no new filesystem scope.
  */
 
+/**
+ * Roles of admitted native artifacts (proposal artifact row): a native file
+ * path, a generated image and a runtime-reported diff. Locus run-dir files
+ * keep their request/events/result/manifest roles.
+ */
+export const RUN_ARTIFACT_NATIVE_ROLES = [
+  "native-file",
+  "native-image",
+  "native-diff",
+] as const
+
+export type RunArtifactNativeRole = (typeof RUN_ARTIFACT_NATIVE_ROLES)[number]
+
+export function isRunArtifactNativeRole(
+  value: unknown,
+): value is RunArtifactNativeRole {
+  return (RUN_ARTIFACT_NATIVE_ROLES as readonly unknown[]).includes(value)
+}
+
 export type RunArtifactCandidate = {
   path: string
   ownerRunId: string
-  expectedSha256: string
+  /**
+   * Digest the native evidence independently claims. Absent when the native
+   * surface reports only a path: the admitted digest is then the one of the
+   * owner's own stable read.
+   */
+  expectedSha256?: string | null
   media: string
+  /** Admitted role (default `native-file`). */
+  role?: RunArtifactNativeRole
+  /** Native evidence identity (e.g. item id) distinguishing observations. */
+  sourceKey?: string
 }
 
 export type RunArtifactRunContext = {
@@ -64,10 +92,10 @@ export type RunArtifactAdmission =
   | {
       result: "admitted"
       artifact: {
+        path: string
         sha256: string
         sizeBytes: number
         contentType: string
-        name: string
       }
     }
   | { result: "rejected"; reason: RunArtifactRejectionReason }
@@ -92,6 +120,28 @@ function ledgerPort(ledger: unknown): RunArtifactLedgerPort {
   return port as RunArtifactLedgerPort
 }
 
+const MEDIA_BY_EXTENSION: Readonly<Record<string, string>> = {
+  ".diff": "text/x-diff",
+  ".gif": "image/gif",
+  ".jpeg": "image/jpeg",
+  ".jpg": "image/jpeg",
+  ".json": "application/json",
+  ".md": "text/markdown",
+  ".patch": "text/x-diff",
+  ".png": "image/png",
+  ".svg": "image/svg+xml",
+  ".txt": "text/plain",
+  ".webp": "image/webp",
+}
+
+/** Media type a native candidate path declares by its extension. */
+export function runArtifactMediaType(path: string): string {
+  return (
+    MEDIA_BY_EXTENSION[extname(path).toLowerCase()] ??
+    "application/octet-stream"
+  )
+}
+
 function candidateObservationKey(
   candidate: RunArtifactCandidate,
   runId: string,
@@ -100,8 +150,10 @@ function candidateObservationKey(
     runId,
     candidate.path,
     candidate.ownerRunId,
-    candidate.expectedSha256,
+    candidate.expectedSha256 ?? null,
     candidate.media,
+    candidate.role ?? "native-file",
+    candidate.sourceKey ?? null,
   ])
   return `artifact-${createHash("sha256").update(identity).digest("hex").slice(0, 24)}`
 }
@@ -182,7 +234,12 @@ export function evaluateRunArtifactCandidate(
   const bytes = readStableRegularFile(actual)
   if (!bytes) return { result: "rejected", reason: "missing" }
   const sha256 = createHash("sha256").update(bytes).digest("hex")
-  if (sha256 !== String(candidate.expectedSha256).toLowerCase()) {
+  const expected = candidate.expectedSha256
+  if (
+    expected !== undefined &&
+    expected !== null &&
+    sha256 !== String(expected).toLowerCase()
+  ) {
     return { result: "rejected", reason: "digest_mismatch" }
   }
   if (
@@ -191,16 +248,17 @@ export function evaluateRunArtifactCandidate(
   ) {
     return { result: "rejected", reason: "out_of_scope" }
   }
-  if (isRedactionUnsafe(bytes.toString("utf8"))) {
+  // The admitted path is published with the ref, so it is checked too.
+  if (isRedactionUnsafe(actual) || isRedactionUnsafe(bytes.toString("utf8"))) {
     return { result: "rejected", reason: "redaction_unsafe" }
   }
   return {
     result: "admitted",
     artifact: {
+      path: actual,
       sha256,
       sizeBytes: bytes.length,
       contentType: candidate.media,
-      name: basename(actual),
     },
   }
 }
@@ -223,23 +281,103 @@ export async function admitRunArtifactCandidate(
     (text) => port.containsSecretMaterial(text),
   )
   const observationKey = candidateObservationKey(candidate, runContext.runId)
+  const role = isRunArtifactNativeRole(candidate.role)
+    ? candidate.role
+    : "native-file"
   if (admission.result === "rejected") {
-    await port.reject({ observationKey, reason: admission.reason })
+    await port.reject({
+      observationKey,
+      reason: admission.reason,
+      role,
+      native: true,
+    })
     return admission
   }
   const artifact: JsonObject = {
-    role: "native",
+    role,
+    path: admission.artifact.path,
     sha256: admission.artifact.sha256,
-    sizeBytes: admission.artifact.sizeBytes,
     contentType: admission.artifact.contentType,
-    name: admission.artifact.name,
+    sizeBytes: admission.artifact.sizeBytes,
   }
   await port.admit({
     observationKey,
     artifacts: [artifact],
     runDir: runContext.allowedRunDir,
+    native: true,
   })
   return admission
+}
+
+/**
+ * Native evidence that carries content rather than a file (a runtime-reported
+ * diff): the owner stages the exact bytes as a new file inside the admitted
+ * run directory with its hardened writer, then admits it as a candidate whose
+ * expected digest is that content's digest. Content with exact secret
+ * material, or too large to stage, is rejected without writing anything; no
+ * filesystem scope outside the admitted run directory is used.
+ */
+export async function admitRunArtifactContent(
+  content: {
+    role: RunArtifactNativeRole
+    fileName: string
+    text: string
+    media: string
+    sourceKey?: string
+  },
+  runContext: { runId: string; runDir: RunArtifactRunDir; ledger: unknown },
+): Promise<RunArtifactAdmission> {
+  const port = ledgerPort(runContext.ledger)
+  if (port.runId !== runContext.runId) {
+    throw new Error("Run artifact admission context belongs to another Run")
+  }
+  const path = join(runContext.runDir.path, content.fileName)
+  const expectedSha256 = createHash("sha256")
+    .update(content.text, "utf8")
+    .digest("hex")
+  const candidate: RunArtifactCandidate = {
+    path,
+    ownerRunId: runContext.runId,
+    expectedSha256,
+    media: content.media,
+    role: content.role,
+    ...(content.sourceKey ? { sourceKey: content.sourceKey } : {}),
+  }
+  const rejectUnstaged = async (reason: RunArtifactRejectionReason) => {
+    await port.reject({
+      observationKey: candidateObservationKey(candidate, runContext.runId),
+      reason,
+      role: content.role,
+      native: true,
+    })
+    return { result: "rejected" as const, reason }
+  }
+  if (
+    basenameOnly(content.fileName) === null ||
+    Buffer.byteLength(content.text, "utf8") > MAX_ARTIFACT_BYTES
+  ) {
+    return rejectUnstaged("out_of_scope")
+  }
+  if (port.containsSecretMaterial(content.text)) {
+    return rejectUnstaged("redaction_unsafe")
+  }
+  try {
+    writeRunArtifactFile(runContext.runDir, content.fileName, content.text)
+  } catch {
+    return rejectUnstaged("out_of_scope")
+  }
+  return admitRunArtifactCandidate(candidate, {
+    runId: runContext.runId,
+    allowedRunDir: runContext.runDir.path,
+    ledger: runContext.ledger,
+  })
+}
+
+function basenameOnly(fileName: string): string | null {
+  return /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(fileName) &&
+    !fileName.includes("..")
+    ? fileName
+    : null
 }
 
 /**

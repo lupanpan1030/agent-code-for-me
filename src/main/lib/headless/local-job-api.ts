@@ -29,6 +29,7 @@ import {
   admitRunDirArtifacts,
   assertRunArtifactRunDir,
   describeRunArtifactFile,
+  isRunArtifactNativeRole,
   type RunArtifactFileReceipt,
   type RunArtifactFilesystemHooks,
   type RunArtifactRunDir,
@@ -867,13 +868,57 @@ export function writeLocalJobApiInitialArtifacts(input: {
   }
 }
 
+/**
+ * Admitted native artifact refs of one Run, from its committed
+ * `artifact_created` records (the run artifact owner already verified them
+ * inside the admitted run directory; their registered digests are reused).
+ */
+export function localJobApiNativeArtifacts(
+  records: readonly LedgerRecord[],
+): LocalJobApiArtifact[] {
+  const artifacts: LocalJobApiArtifact[] = []
+  for (const record of records) {
+    if (record.type !== "artifact_created") continue
+    const payload =
+      record.payload && typeof record.payload === "object"
+        ? (record.payload as Record<string, unknown>)
+        : {}
+    for (const entry of Array.isArray(payload.artifacts)
+      ? payload.artifacts
+      : []) {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue
+      const artifact = entry as Record<string, unknown>
+      if (
+        !isRunArtifactNativeRole(artifact.role) ||
+        typeof artifact.path !== "string" ||
+        typeof artifact.sha256 !== "string" ||
+        typeof artifact.contentType !== "string" ||
+        typeof artifact.sizeBytes !== "number"
+      ) {
+        continue
+      }
+      artifacts.push({
+        role: artifact.role,
+        path: artifact.path,
+        sha256: artifact.sha256,
+        contentType: artifact.contentType,
+        sizeBytes: artifact.sizeBytes,
+      })
+    }
+  }
+  return artifacts
+}
+
 export function writeLocalJobApiFinalArtifacts(input: {
   runDir: LocalJobApiArtifactRunDir | null
   job: AgentJob
   events: AgentJobEvent[]
+  /** Admitted native artifacts appended after the Locus run-dir files. */
+  nativeArtifacts?: readonly LocalJobApiArtifact[]
   filesystemHooks?: LocalJobApiArtifactFilesystemHooks
 }): LocalJobApiArtifact[] {
   if (!input.runDir) return []
+  const nativeArtifacts = [...(input.nativeArtifacts ?? [])]
   try {
     assertRunArtifactRunDir(input.runDir)
     writeRunArtifactFile(
@@ -884,18 +929,23 @@ export function writeLocalJobApiFinalArtifacts(input: {
         .join("\n") + (input.events.length > 0 ? "\n" : ""),
       input.filesystemHooks,
     )
-    const artifacts = [
+    const artifacts: LocalJobApiArtifact[] = [
       describeRunArtifactFile("request", input.runDir, "request.json"),
       describeRunArtifactFile("events", input.runDir, "events.jsonl"),
     ]
     writeJsonFile(
       input.runDir,
       "result.json",
-      toLocalJobApiResultEnvelope(input.job, artifacts, input.events),
+      toLocalJobApiResultEnvelope(
+        input.job,
+        [...artifacts, ...nativeArtifacts],
+        input.events,
+      ),
       input.filesystemHooks,
     )
     artifacts.push(
       describeRunArtifactFile("result", input.runDir, "result.json"),
+      ...nativeArtifacts,
     )
     const manifest: LocalJobApiArtifactManifest = {
       apiVersion: LOCAL_JOB_API_VERSION,
@@ -1041,6 +1091,7 @@ export function createLocalJobApiTerminalArtifacts(input: {
           runDir,
           job: terminalJobProjection(current, jobMutation),
           events: records.map(toCommittedEventRow),
+          nativeArtifacts: localJobApiNativeArtifacts(records),
           filesystemHooks: input.filesystemHooks,
         })
         prepared = artifacts

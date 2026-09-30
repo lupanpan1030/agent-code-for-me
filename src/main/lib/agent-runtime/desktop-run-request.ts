@@ -17,7 +17,10 @@ import type {
   AgentRuntimeTraceObserver,
 } from "./run-contract"
 import type { RuntimeExecutionProvenance } from "./run-event-ledger"
-import type { CanonicalDesktopRunLedger } from "./run-event-ledger-host"
+import type {
+  CanonicalDesktopRunLedger,
+  RunArtifactCandidateSink,
+} from "./run-event-ledger-host"
 import type { RunEvent } from "./runtime-events"
 
 export type DesktopRunIdentity = AgentRuntimeRunIdentityBase & {
@@ -106,6 +109,12 @@ export type DesktopRunRequest = AgentRuntimeRunRequestBase<
    * immediately before the spawn (capture-to-launch changes fail closed).
    */
   executionProvenance?: RuntimeExecutionProvenance | null
+  /**
+   * Host-composed native artifact candidate sink of a Run with an admitted
+   * run directory (null otherwise): adapters hand native file/image/diff
+   * evidence to the run artifact owner through it and never mint artifacts.
+   */
+  artifactCandidates?: RunArtifactCandidateSink | null
   /**
    * Host consumer of already committed records (e.g. the headless wrapper);
    * it never appends them again or mints a terminal.

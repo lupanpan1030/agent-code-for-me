@@ -7,6 +7,7 @@ import type {
 } from "../../../shared/agent-jobs"
 import { isTerminalAgentJobStatus } from "../../../shared/agent-jobs"
 import type { LocalJobApiResolvedProvider } from "../../../shared/local-job-api"
+import type { RunArtifactRunDir } from "../agent-runtime/run-artifacts"
 import {
   type CanonicalRunEventLedger,
   type CreateCanonicalRunEventLedgerOptions,
@@ -16,7 +17,9 @@ import {
 } from "../agent-runtime/run-event-ledger"
 import {
   bindRunExecutionProvenance,
+  createRunArtifactCandidateSink,
   getOrCreateRunEventLedger,
+  type RunArtifactCandidateSink,
   releaseRunEventLedger,
 } from "../agent-runtime/run-event-ledger-host"
 import type { AgentJob, AgentJobEvent } from "../db/schema"
@@ -72,6 +75,11 @@ export type RunPersistedAgentJobOptions = {
   providerBindingDependencies?: HeadlessProviderBindingDependencies
   /** Terminal run-dir preparation registered with the one completed. */
   terminalArtifacts?: CreateCanonicalRunEventLedgerOptions["terminalArtifacts"]
+  /**
+   * The Run's admitted run directory (API create/retry). Only with it does
+   * the host compose a native artifact candidate sink for the runner.
+   */
+  artifactRunDir?: RunArtifactRunDir | null
   /** Sanitized host diagnostics (never persisted as Run events). */
   onHostDiagnostic?: (message: string) => void
 }
@@ -170,6 +178,7 @@ function createObserver(input: {
   ledger: CanonicalRunEventLedger
   abortController: AbortController
   registerSecretHints: (hints: readonly string[]) => void
+  artifactCandidates?: RunArtifactCandidateSink | null
   onHostDiagnostic?: (message: string) => void
 }): HeadlessObserverController {
   let observationCounter = 0
@@ -235,11 +244,15 @@ function createObserver(input: {
       await bindRunExecutionProvenance(input.ledger, provenance)
     },
     runLedger: input.ledger,
+    ...(input.artifactCandidates
+      ? { artifactCandidates: input.artifactCandidates }
+      : {}),
   }
   return {
     observer,
     async drain() {
       await Promise.allSettled([...submissions])
+      await input.artifactCandidates?.drain()
       await input.ledger.whenIdle()
     },
   }
@@ -520,6 +533,17 @@ export async function runPersistedAgentJob(
     registerSecretHints: (hints) => {
       ledger.addSecretHints(hints.filter((hint) => Boolean(hint)))
     },
+    artifactCandidates: options.artifactRunDir
+      ? createRunArtifactCandidateSink({
+          ledger,
+          runId: job.id,
+          runDir: options.artifactRunDir,
+          cwd: job.cwd,
+          ...(options.onHostDiagnostic
+            ? { onHostDiagnostic: options.onHostDiagnostic }
+            : {}),
+        })
+      : null,
     onHostDiagnostic: options.onHostDiagnostic,
   })
   const observer = observerController.observer

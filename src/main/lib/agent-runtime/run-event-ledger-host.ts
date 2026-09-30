@@ -1,3 +1,4 @@
+import { isAbsolute, resolve } from "node:path"
 import type { AgentJob } from "../db/schema"
 import {
   type AgentJobDatabase,
@@ -14,6 +15,12 @@ import {
 } from "../headless/job-store"
 import { decodeDesktopStreamChunk } from "./ledger-ingress"
 import { redactRuntimePayload } from "./redaction"
+import {
+  admitRunArtifactCandidate,
+  admitRunArtifactContent,
+  type RunArtifactRunDir,
+  runArtifactMediaType,
+} from "./run-artifacts"
 import {
   type CanonicalRunEventLedger,
   createCanonicalRunEventLedger,
@@ -221,6 +228,133 @@ export async function bindRunExecutionProvenance(
   provenance: ExecutionProvenance,
 ): Promise<void> {
   await ledger.bindExecutionProvenance(provenance)
+}
+
+// ---------------------------------------------------------------------------
+// Native artifact candidates (design "Artifacts and Terminal Commit Order";
+// codex-runtime-parity: `turn/diff/updated`, `imageGeneration.savedPath` and
+// `fileChange` paths only feed artifact candidates). The host composes one
+// sink per Run that has an admitted run directory and hands every candidate
+// to the run artifact owner; it never mints an artifact event itself and
+// grants no filesystem scope beyond that directory.
+// ---------------------------------------------------------------------------
+
+/** Runtime-neutral native candidate evidence decoded by an adapter. */
+export type NativeArtifactEvidence =
+  | {
+      role: "native-file" | "native-image"
+      /** Native path (relative paths resolve against the Run's cwd). */
+      path: string
+      /** Native evidence identity (e.g. item id and change index). */
+      sourceKey: string
+    }
+  | {
+      role: "native-diff"
+      /** Turn whose latest cumulative diff this is. */
+      turnId: string
+      diff: string
+    }
+
+export type RunArtifactCandidateSink = {
+  /** Submits one piece of evidence; a diff is kept until its turn flushes. */
+  observe(evidence: NativeArtifactEvidence): void
+  /**
+   * Submits the latest diff of one turn. Adapters call it before they submit
+   * the turn's terminal notification, so the admission precedes completed.
+   */
+  flushTurn(turnId: string): void
+  /** Flushes every pending diff and resolves once all admissions settled. */
+  drain(): Promise<void>
+}
+
+export function createRunArtifactCandidateSink(input: {
+  ledger: CanonicalRunEventLedger
+  runId: string
+  runDir: RunArtifactRunDir
+  cwd: string
+  onHostDiagnostic?: (message: string) => void
+}): RunArtifactCandidateSink {
+  const pendingDiffs = new Map<string, string>()
+  const admissions = new Set<Promise<unknown>>()
+  let stagedDiffs = 0
+  const track = (admission: () => Promise<unknown>) => {
+    let promise: Promise<unknown>
+    try {
+      // Called synchronously so the owner's ledger submission is ordered
+      // with the adapter's own boundary submissions.
+      promise = admission()
+    } catch (error) {
+      promise = Promise.reject(error)
+    }
+    const settled = promise.then(
+      () => undefined,
+      (error: unknown) => {
+        input.onHostDiagnostic?.(
+          `[artifacts] native artifact candidate was not recorded (${
+            error instanceof RunEventLedgerError ? error.code : "error"
+          }).`,
+        )
+      },
+    )
+    admissions.add(settled)
+    void settled.finally(() => admissions.delete(settled))
+  }
+  const flushTurn = (turnId: string) => {
+    const diff = pendingDiffs.get(turnId)
+    pendingDiffs.delete(turnId)
+    if (diff === undefined || diff.length === 0) return
+    stagedDiffs += 1
+    const fileName = `native-diff-${stagedDiffs}.patch`
+    track(() =>
+      admitRunArtifactContent(
+        {
+          role: "native-diff",
+          fileName,
+          text: diff,
+          media: "text/x-diff",
+          sourceKey: `turn-diff:${stagedDiffs}`,
+        },
+        { runId: input.runId, runDir: input.runDir, ledger: input.ledger },
+      ),
+    )
+  }
+  return {
+    observe(evidence) {
+      if (evidence.role === "native-diff") {
+        pendingDiffs.set(evidence.turnId, evidence.diff)
+        return
+      }
+      if (typeof evidence.path !== "string" || evidence.path.length === 0) {
+        return
+      }
+      const path = isAbsolute(evidence.path)
+        ? evidence.path
+        : resolve(input.cwd, evidence.path)
+      track(() =>
+        admitRunArtifactCandidate(
+          {
+            path,
+            ownerRunId: input.runId,
+            media: runArtifactMediaType(path),
+            role: evidence.role,
+            sourceKey: evidence.sourceKey,
+          },
+          {
+            runId: input.runId,
+            allowedRunDir: input.runDir.path,
+            ledger: input.ledger,
+          },
+        ),
+      )
+    },
+    flushTurn,
+    async drain() {
+      for (const turnId of [...pendingDiffs.keys()]) flushTurn(turnId)
+      while (admissions.size > 0) {
+        await Promise.allSettled([...admissions])
+      }
+    },
+  }
 }
 
 // ---------------------------------------------------------------------------

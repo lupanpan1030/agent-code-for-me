@@ -674,6 +674,75 @@ export function decodeCodexNativeBoundary(
   return [invalidShape("unknown")]
 }
 
+/** Native artifact candidate evidence of one Codex boundary. */
+export type CodexNativeArtifactEvidence =
+  | {
+      role: "native-file" | "native-image"
+      path: string
+      sourceKey: string
+    }
+  | { role: "native-diff"; turnId: string; diff: string }
+
+function fileChangeTargetPath(change: DecoderRecord): string | undefined {
+  const kind = change.kind
+  const kindType =
+    typeof kind === "string" ? kind : stringField(asDecoderRecord(kind), "type")
+  if (kindType === "delete") return undefined
+  const moved = stringField(asDecoderRecord(kind), "move_path")
+  return moved ?? stringField(change, "path")
+}
+
+/**
+ * Candidate evidence the pinned disposition table routes to the artifact
+ * owner (codex-runtime-parity: `turn/diff/updated`, `imageGeneration.
+ * savedPath`, completed `fileChange` paths). Stateless: the output depends
+ * only on the notification, and it asserts nothing about the files; the
+ * artifact owner decides admission.
+ */
+export function codexNativeArtifactEvidence(
+  notification: unknown,
+): CodexNativeArtifactEvidence[] {
+  const message = asDecoderRecord(notification)
+  const method = stringField(message, "method")
+  const params = asDecoderRecord(message?.params)
+  if (!method || !params) return []
+  if (method === "turn/diff/updated") {
+    const turnId = stringField(params, "turnId")
+    const diff = params.diff
+    return turnId && typeof diff === "string" && diff.length > 0
+      ? [{ role: "native-diff", turnId, diff }]
+      : []
+  }
+  if (method !== "item/completed") return []
+  const item = asDecoderRecord(params.item)
+  const itemId = stringField(item, "id")
+  const itemType = stringField(item, "type")
+  if (!item || !itemId) return []
+  if (itemType === "imageGeneration") {
+    const savedPath = stringField(item, "savedPath")
+    return savedPath
+      ? [{ role: "native-image", path: savedPath, sourceKey: `item:${itemId}` }]
+      : []
+  }
+  if (itemType === "fileChange" && item.status === "completed") {
+    const changes = Array.isArray(item.changes) ? item.changes : []
+    const evidence: CodexNativeArtifactEvidence[] = []
+    changes.forEach((entry, index) => {
+      const change = asDecoderRecord(entry)
+      const path = change ? fileChangeTargetPath(change) : undefined
+      if (path) {
+        evidence.push({
+          role: "native-file",
+          path,
+          sourceKey: `item:${itemId}:${index}`,
+        })
+      }
+    })
+    return evidence
+  }
+  return []
+}
+
 /**
  * Stateless classification of the thread snapshot a `thread/resume` response
  * carries (design "Resume Validation and Snapshot Repair"): `recognized`

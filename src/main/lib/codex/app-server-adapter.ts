@@ -66,6 +66,7 @@ import {
 import {
   classifyCodexThreadSnapshot,
   codexAppServerSchemaDocuments,
+  codexNativeArtifactEvidence,
 } from "./app-server-stream-events"
 import {
   type CodexAppServerTransport,
@@ -566,6 +567,8 @@ export function createCodexAppServerAdapter({
           "request.mcpSessionServers",
           "request.ledger",
           "request.trace",
+          "request.artifactCandidates",
+          "request.executionProvenance",
         ],
       })
       const permission = assertCodexAppServerPermissionPolicyReady(request)
@@ -751,6 +754,13 @@ export function createCodexAppServerAdapter({
           receivedAt: receivedAt(),
           message: { method, params: notification.params },
         }
+        const artifactCandidates = request.artifactCandidates ?? null
+        if (artifactCandidates && method === "turn/completed") {
+          // The turn's latest diff candidate is submitted before its
+          // terminal notification, so an admission precedes completed.
+          const completedTurnId = stringAt(params, ["turn", "id"])
+          if (completedTurnId) artifactCandidates.flushTurn(completedTurnId)
+        }
         if (ledger) {
           recordCommitted(
             method === "serverRequest/resolved"
@@ -760,6 +770,13 @@ export function createCodexAppServerAdapter({
                 })
               : ledger.ingestNotification(boundary),
           )
+        }
+        if (artifactCandidates) {
+          for (const evidence of codexNativeArtifactEvidence(
+            boundary.message,
+          )) {
+            artifactCandidates.observe(evidence)
+          }
         }
         if (method === "thread/started") {
           threadId = stringAt(params, ["thread", "id"]) ?? threadId
@@ -1298,6 +1315,8 @@ export function createCodexAppServerAdapter({
           }
         }
 
+        // Native artifact candidates settle before the host settles the Run.
+        await request.artifactCandidates?.drain()
         // Usage is read after every submitted observation committed.
         if (ledger) await ledger.whenIdle()
         const usage = ledger ? await ledger.readUsage() : null

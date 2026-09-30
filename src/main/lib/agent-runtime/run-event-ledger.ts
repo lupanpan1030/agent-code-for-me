@@ -269,15 +269,21 @@ export type RunArtifactLedgerPort = {
   /**
    * Commits one `artifact_created` for already admitted files: one native
    * candidate, or the lifecycle run-dir files of one preparation step.
+   * Native candidate publication (`native: true`) waits for the Run's
+   * execution binding; lifecycle run-dir files do not.
    */
   admit(input: {
     observationKey: string
     artifacts: JsonObject[]
     runDir: string
+    native?: boolean
   }): Promise<LedgerRecord[]>
   reject(input: {
     observationKey: string
     reason: string
+    /** Native candidate role (no path or content is ever recorded). */
+    role?: string
+    native?: boolean
   }): Promise<LedgerRecord[]>
 }
 
@@ -3674,6 +3680,7 @@ class RunEventLedgerImpl {
         this.enqueue({
           observationKey: input.observationKey,
           late: "none",
+          ...(input.native === true ? { requiresBinding: true } : {}),
           plan: ({ state }) =>
             state.completed
               ? {
@@ -3696,16 +3703,22 @@ class RunEventLedgerImpl {
             this.state.admittedRunDir = input.runDir
           },
         }) as Promise<LedgerRecord[]>,
-      reject: (input) =>
-        this.enqueue({
+      reject: (input) => {
+        const role: JsonObject =
+          typeof input.role === "string" && input.role.length > 0
+            ? { role: this.sanitizeString(input.role) }
+            : {}
+        return this.enqueue({
           observationKey: input.observationKey,
           late: "host",
+          ...(input.native === true ? { requiresBinding: true } : {}),
           lateSummary: () => ({
             originalType: "status",
             observation: {
               kind: "artifact_admission",
               result: "rejected",
               reason: input.reason,
+              ...role,
             },
           }),
           plan: () => ({
@@ -3717,11 +3730,13 @@ class RunEventLedgerImpl {
                   subtype: "artifact_admission",
                   result: "rejected",
                   reason: input.reason,
+                  ...role,
                 },
               },
             ],
           }),
-        }) as Promise<LedgerRecord[]>,
+        }) as Promise<LedgerRecord[]>
+      },
     }
   }
 

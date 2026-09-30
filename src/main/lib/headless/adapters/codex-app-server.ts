@@ -137,6 +137,9 @@ function createDesktopRequestFromHeadless(
     // host ledger; its committed records are already persisted, so this
     // wrapper consumes them without a second observer append or terminal.
     ledger: observer.runLedger ?? null,
+    // Native file/image/diff candidates reach the run artifact owner only
+    // when the host admitted a run directory for this Run.
+    artifactCandidates: observer.artifactCandidates ?? null,
     trace: {
       emit() {},
     },
