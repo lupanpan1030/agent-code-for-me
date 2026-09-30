@@ -178,31 +178,6 @@ const INVENTORY: InventoryEntry[] = [
     value: /^PIERRE_DIFFS_THEME_CSS$/,
     behaviorTests: ["tests/renderer-hardening-content-diff.test.ts"],
   },
-  {
-    // Undo/redo replays captured editor DOM. Superseded by design D4: task
-    // 2.6 (Phase II of this change) replaces it with the canonical run model
-    // and deletes both writes and this entry. No producer is claimed.
-    construct: "dom-html-write",
-    file: "src/renderer/features/agents/mentions/agents-mentions-editor.tsx",
-    symbol: "handleKeyDown",
-    count: 2,
-    status: "superseded-pending-removal",
-    producer: "none (captured editor DOM; removal owned by task 2.6)",
-    producerImports: [],
-    value: /^state\.html$/,
-    behaviorTests: ["tests/renderer-hardening-mermaid-editor.test.ts"],
-  },
-  {
-    construct: "dom-html-empty-clear",
-    file: "src/renderer/features/agents/mentions/agents-mentions-editor.tsx",
-    symbol: "AgentsMentionsEditor",
-    count: 2,
-    status: "constant-clear",
-    producer: "constant empty string (no content)",
-    producerImports: [],
-    value: /^""$/,
-    behaviorTests: [],
-  },
 ]
 
 function inventoryKey(construct: string, file: string, symbol: string) {
@@ -279,14 +254,12 @@ describe("renderer HTML insertion sinks: exact inventory", () => {
     expect(missing).toEqual([])
   })
 
-  test("the only superseded entry is the mentions undo/redo restore owned by task 2.6", () => {
+  test("no superseded entry remains (mentions undo/redo restores removed by task 2.6)", () => {
     expect(
       INVENTORY.filter(
         (entry) => entry.status === "superseded-pending-removal",
       ).map((entry) => `${entry.construct} ${entry.file}#${entry.symbol}`),
-    ).toEqual([
-      "dom-html-write src/renderer/features/agents/mentions/agents-mentions-editor.tsx#handleKeyDown",
-    ])
+    ).toEqual([])
   })
 
   test("no dynamic script creation, script.src assignment, remote import() or importScripts (react-scan loader removed)", () => {

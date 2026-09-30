@@ -28,7 +28,7 @@
  *   Mermaid adapter enforces on returned SVG (design D3): one scoped paint
  *   `<style>`, reviewed `style` attributes, same-SVG `url(#id)` only.
  * - `RENDERER_MARKUP_PROFILES` defines the rendered-DOM oracle profiles
- *   (markdown, highlighted code, diff, Mermaid) that the shared test
+ *   (markdown, highlighted code, diff, Mermaid, editor) that the shared test
  *   helper `tests/helpers/renderer-executable-markup-oracle.ts` implements.
  *
  * This is deliberately not a generic `sanitize(anything)` helper: a new raw
@@ -690,6 +690,23 @@ export const RENDERER_MARKUP_PROFILES = Object.freeze({
     relativeUrlBase: null,
     allowFragmentUrls: true,
     allowedStyleElements: 1,
+  }),
+  /**
+   * The mentions editor's contentEditable root (design D4): only Text nodes,
+   * `br`, and atomic mention spans built by the editor's safe builder.
+   */
+  editor: Object.freeze({
+    linkSchemes: Object.freeze([]),
+    mediaSchemes: Object.freeze([]),
+    relativeUrlBase: null,
+    allowFragmentUrls: false,
+    allowedStyleElements: 0,
+    rootChildElements: Object.freeze(["br"]),
+    mentionElement: Object.freeze({
+      localName: "span",
+      idAttribute: "data-mention-id",
+      contentEditable: "false",
+    }),
   }),
 })
 
