@@ -3,6 +3,7 @@ import {
   buildClaudeEnv,
   createClaudeAgentSdkRuntimeEnv,
   getBundledClaudeBinaryPath,
+  readBundledClaudeBinaryVersion,
 } from "../../claude/env"
 import { buildClaudeProviderEnv } from "../../claude/provider-runtime-config"
 import {
@@ -15,7 +16,10 @@ import type {
   AgentRuntimeRunRequest,
   AgentRuntimeRunResult,
 } from "../agent-runtime-contract"
-import { runProcessAgentTask } from "../process-runner"
+import {
+  bindProcessRunExecutionProvenance,
+  runProcessAgentTask,
+} from "../process-runner"
 
 type BuildClaudeEnvFn = typeof buildClaudeEnv
 type GetValidClaudeCodeCredentialFn = () => Promise<{
@@ -177,10 +181,18 @@ export async function runClaudeCodeHeadlessTask(
 ): Promise<AgentRuntimeRunResult> {
   const env = await buildClaudeRuntimeEnv({ request })
   registerClaudeHeadlessRuntimeSecrets(observer, env)
+  const executable = getBundledClaudeBinaryPath()
+  await bindProcessRunExecutionProvenance({
+    observer,
+    runtimeId: "claude-code",
+    adapterSource: "claude-code",
+    version: readBundledClaudeBinaryVersion(executable),
+    executablePath: executable,
+  })
   return runProcessAgentTask({
     request,
     observer,
-    executable: getBundledClaudeBinaryPath(),
+    executable,
     args: buildClaudeArgs(request),
     env,
     label: "Claude Code",

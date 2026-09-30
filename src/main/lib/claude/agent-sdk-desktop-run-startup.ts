@@ -129,7 +129,7 @@ export async function prepareClaudeAgentSdkDesktopRunStartup(
       cleanup: cleanupRuntimeSecrets,
     })
     const desktopRunStartup: ClaudeAgentSdkDesktopRunStartup =
-      dependencies.createDesktopRunStartup({
+      await dependencies.createDesktopRunStartup({
         db: input.db,
         mode: input.mode,
         chatId: input.chatId,
@@ -153,7 +153,7 @@ export async function prepareClaudeAgentSdkDesktopRunStartup(
       })
     input.desktopRunState.setDesktopJob({
       jobId: desktopRunStartup.desktopJob.jobId,
-      streamEventMapper: desktopRunStartup.desktopJob.streamEventMapper,
+      ledger: desktopRunStartup.desktopJob.ledger,
     })
 
     const runtimeStartup = await dependencies.prepareRuntimeStartup({

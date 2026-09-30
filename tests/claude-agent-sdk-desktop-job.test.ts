@@ -1,20 +1,57 @@
 import { describe, expect, test } from "bun:test"
 import { resolveDesktopPermissionPolicy } from "../src/main/lib/agent-runtime/permission-policy"
+import type { RuntimeExecutionProvenance } from "../src/main/lib/agent-runtime/run-event-ledger"
+import type { getOrCreateRunEventLedger } from "../src/main/lib/agent-runtime/run-event-ledger-host"
 import {
   completeClaudeAgentSdkDesktopJobAfterRun,
   createClaudeAgentSdkDesktopJob,
   createClaudeAgentSdkDesktopRunStartup,
   requestCancelClaudeAgentSdkDesktopJob,
 } from "../src/main/lib/claude/agent-sdk-desktop-job"
+import type { DesktopAgentJobHandle } from "../src/main/lib/desktop-agent-jobs"
+
+const TEST_PROVENANCE = {
+  kind: "runtime",
+  installationId: "inst-claude-code-test",
+  runtimeId: "claude-code",
+  adapterSource: "claude-agent-sdk",
+  version: "2.1.5",
+  executableRef: "exe-claude-test",
+  binarySha256: "c".repeat(64),
+  protocolName: "claude-agent-sdk-stream-json",
+  protocolVersion: "1",
+  schemaFiles: [
+    {
+      path: "claude-agent-sdk/stream-json-messages.json",
+      sha256: "d".repeat(64),
+    },
+  ],
+} as const
+
+/**
+ * Host ledger stand-in: the desktop job setup composes the job's ledger and
+ * binds the captured execution tuple through it (the design replaced the
+ * former chunk mapper and trace emitter).
+ */
+function createLedgerStub(bound: unknown[] = []) {
+  return {
+    bindExecutionProvenance: async (tuple: unknown) => {
+      bound.push(tuple)
+      return []
+    },
+  }
+}
 
 describe("Claude Agent SDK desktop job setup", () => {
-  test("creates a Claude desktop job and matching stream event mapper", () => {
+  test("creates a Claude desktop job, composes its ledger and binds the captured execution tuple", async () => {
     const db = {} as any
     const registrations: any[] = []
-    const mapperInputs: any[] = []
+    const ledgerInputs: unknown[] = []
+    const bound: unknown[] = []
+    const ledger = createLedgerStub(bound)
     const cancel = () => {}
 
-    const setup = createClaudeAgentSdkDesktopJob({
+    const setup = await createClaudeAgentSdkDesktopJob({
       db,
       mode: "agent",
       chatId: "chat-1",
@@ -27,16 +64,22 @@ describe("Claude Agent SDK desktop job setup", () => {
       dependencies: {
         createAndRegisterDesktopChatAgentJob: (dbArg, input) => {
           registrations.push({ db: dbArg, input })
-          return {
+          return Promise.resolve({
             job: { id: "job-1" },
             workerId: "worker-1",
             cwd: input.cwd,
-          } as any
+          } as unknown as DesktopAgentJobHandle)
         },
-        createDesktopStreamEventMapper: (input) => {
-          mapperInputs.push(input)
-          return { map: () => [] }
-        },
+        getRunEventLedger: (async (
+          dbArg: unknown,
+          job: unknown,
+          options: unknown,
+        ) => {
+          ledgerInputs.push({ db: dbArg, job, options })
+          return ledger
+        }) as unknown as typeof getOrCreateRunEventLedger,
+        captureExecutionProvenance: async () =>
+          TEST_PROVENANCE as unknown as RuntimeExecutionProvenance,
       },
     })
 
@@ -57,27 +100,28 @@ describe("Claude Agent SDK desktop job setup", () => {
         },
       },
     ])
-    expect(mapperInputs).toEqual([
+    expect(ledgerInputs).toEqual([
       {
-        runtimeId: "claude-code",
-        runId: "run-1",
-        jobId: "job-1",
-        secretHints: ["run-secret-hint"],
+        db,
+        job: { id: "job-1" },
+        options: { secretHints: ["run-secret-hint"] },
       },
     ])
+    expect(setup.ledger).toBe(ledger as unknown as typeof setup.ledger)
+    expect(bound).toEqual([TEST_PROVENANCE])
   })
 
-  test("creates desktop job and DesktopRunRequest as one startup unit", () => {
+  test("creates desktop job and DesktopRunRequest as one startup unit", async () => {
     const db = {} as any
     const cancel = () => {}
-    const appended: any[] = []
+    const ledger = createLedgerStub()
     const abortController = new AbortController()
     const permissionPolicy = resolveDesktopPermissionPolicy({
       runtimeId: "claude-code",
       mode: "agent",
     })
 
-    const startup = createClaudeAgentSdkDesktopRunStartup({
+    const startup = await createClaudeAgentSdkDesktopRunStartup({
       db,
       mode: "agent",
       chatId: "chat-1",
@@ -104,16 +148,16 @@ describe("Claude Agent SDK desktop job setup", () => {
       signal: abortController.signal,
       existingSessionId: "session-1",
       dependencies: {
-        appendRunEventsToAgentJob: (dbArg, events) => {
-          appended.push({ db: dbArg, events })
-        },
         createAndRegisterDesktopChatAgentJob: (_dbArg, input) =>
-          ({
+          Promise.resolve({
             job: { id: "job-1" },
             workerId: "worker-1",
             cwd: input.cwd,
-          }) as any,
-        createDesktopStreamEventMapper: () => ({ map: () => [] }),
+          } as unknown as DesktopAgentJobHandle),
+        getRunEventLedger: (async () =>
+          ledger) as unknown as typeof getOrCreateRunEventLedger,
+        captureExecutionProvenance: async () =>
+          TEST_PROVENANCE as unknown as RuntimeExecutionProvenance,
       },
     })
 
@@ -142,22 +186,18 @@ describe("Claude Agent SDK desktop job setup", () => {
       resumeSessionId: "session-1",
       parentSessionId: "session-1",
     })
-    expect(startup.desktopRunRequest.trace.emit).toBeDefined()
-    startup.desktopRunRequest.trace.emit({ category: "status" } as any)
-    expect(appended).toEqual([
-      {
-        db,
-        events: [{ category: "status" }],
-      },
-    ])
+    // The request carries the job's host ledger instead of a trace emitter.
+    expect(startup.desktopRunRequest.ledger).toBe(
+      ledger as unknown as typeof startup.desktopRunRequest.ledger,
+    )
   })
 
-  test("completes Claude desktop jobs with runtime result metadata", () => {
+  test("completes Claude desktop jobs with runtime result metadata", async () => {
     const db = {} as any
     const completed: any[] = []
     const abortController = new AbortController()
 
-    completeClaudeAgentSdkDesktopJobAfterRun({
+    await completeClaudeAgentSdkDesktopJobAfterRun({
       db,
       jobId: "job-1",
       chatId: "chat-1",
@@ -166,8 +206,9 @@ describe("Claude Agent SDK desktop job setup", () => {
       reachedNaturalFinish: true,
       sawError: false,
       dependencies: {
-        completeDesktopChatAgentJobSafely: (dbArg, input) => {
+        completeDesktopChatAgentJobSafely: async (dbArg, input) => {
           completed.push({ db: dbArg, input })
+          return null
         },
       },
     })
@@ -201,8 +242,9 @@ describe("Claude Agent SDK desktop job setup", () => {
       reachedNaturalFinish: false,
       sawError: true,
       dependencies: {
-        requestCancelDesktopChatAgentJobSafely: (dbArg, input) => {
+        requestCancelDesktopChatAgentJobSafely: async (dbArg, input) => {
           canceled.push({ db: dbArg, input })
+          return null
         },
       },
     })

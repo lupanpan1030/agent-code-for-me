@@ -1,15 +1,16 @@
+import type { CanonicalDesktopRunLedger } from "../agent-runtime/run-event-ledger-host"
 import type { AgentJobDatabase } from "../headless/job-store"
-import type { DesktopStreamEventMapper } from "../agent-runtime/stream-event-mapper"
 
 export type ClaudeAgentSdkDesktopRunState = {
   setDb(db: AgentJobDatabase): void
   getDb(): AgentJobDatabase | null
   setDesktopJob(input: {
     jobId: string
-    streamEventMapper: DesktopStreamEventMapper
+    ledger: CanonicalDesktopRunLedger
   }): void
   getJobId(): string | null
-  getStreamEventMapper(): DesktopStreamEventMapper | null
+  /** The desktop job's host-composed ledger (null before the job exists). */
+  getLedger(): CanonicalDesktopRunLedger | null
   markFailed(): void
   sawError(): boolean
   setReachedNaturalFinish(reachedNaturalFinish: boolean): void
@@ -21,7 +22,7 @@ export type ClaudeAgentSdkDesktopRunState = {
 export function createClaudeAgentSdkDesktopRunState(): ClaudeAgentSdkDesktopRunState {
   let db: AgentJobDatabase | null = null
   let jobId: string | null = null
-  let streamEventMapper: DesktopStreamEventMapper | null = null
+  let ledger: CanonicalDesktopRunLedger | null = null
   let sawError = false
   let reachedNaturalFinish = false
   let observableActive = true
@@ -35,13 +36,13 @@ export function createClaudeAgentSdkDesktopRunState(): ClaudeAgentSdkDesktopRunS
     },
     setDesktopJob(input) {
       jobId = input.jobId
-      streamEventMapper = input.streamEventMapper
+      ledger = input.ledger
     },
     getJobId() {
       return jobId
     },
-    getStreamEventMapper() {
-      return streamEventMapper
+    getLedger() {
+      return ledger
     },
     markFailed() {
       sawError = true

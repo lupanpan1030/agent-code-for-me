@@ -21,8 +21,11 @@ import {
   type DesktopPermissionPolicy,
   resolveDesktopPermissionPolicy,
 } from "../src/main/lib/agent-runtime/permission-policy"
-import type { RunEvent } from "../src/main/lib/agent-runtime/runtime-events"
-import { appendRunEventsToAgentJob } from "../src/main/lib/agent-runtime/stream-event-mapper"
+import {
+  createCanonicalRunEventLedger,
+  type RuntimeExecutionProvenance,
+} from "../src/main/lib/agent-runtime/run-event-ledger"
+import { getOrCreateRunEventLedger } from "../src/main/lib/agent-runtime/run-event-ledger-host"
 import { createCodexAppServerAdapter } from "../src/main/lib/codex/app-server-adapter"
 import { CODEX_CONTROLLED_EDIT_DIFF_CHAR_LIMIT } from "../src/main/lib/codex/app-server-controlled-edit"
 import type {
@@ -41,6 +44,51 @@ import {
 } from "../src/main/lib/headless/job-store"
 import { EXACT_SECRET_REDACTION_MARKER } from "../src/shared/secret-redaction-policy"
 import { createAgentJobTestDb } from "./helpers/agent-job-test-db"
+
+// Execution provenance an injected transport binds to the Run's ledger: native
+// app-server boundaries are only committed once the Run has a bound tuple.
+const RUNTIME_TUPLE: RuntimeExecutionProvenance = {
+  kind: "runtime",
+  installationId: "inst-codex-app-server-adapter-test",
+  runtimeId: "codex",
+  adapterSource: "codex-app-server",
+  version: "0.139.0",
+  executableRef: "exe-app-server-adapter-test",
+  binarySha256: "a".repeat(64),
+  protocolName: "codex-app-server-jsonrpc",
+  protocolVersion: "v2",
+  schemaFiles: [{ path: "ServerNotification.ts", sha256: "b".repeat(64) }],
+}
+
+const captureExecutionProvenance = async () => RUNTIME_TUPLE
+
+type LedgerRow = { sequence: number } & Record<string, unknown>
+
+function memoryStore() {
+  const rows: LedgerRow[] = []
+  return {
+    rows,
+    appendExact(input: { records: LedgerRow[] }) {
+      rows.push(...input.records)
+      return input.records
+    },
+    read(_runId: string, after = 0) {
+      return rows.filter((row) => row.sequence > after)
+    },
+  }
+}
+
+/** In-memory canonical ledger for one Run (records land in `rows`). */
+function createTestLedger(runId = "run-app-server") {
+  const store = memoryStore()
+  const ledger = createCanonicalRunEventLedger({
+    runId,
+    runtimeId: "codex",
+    provenance: { kind: "pending", runtimeId: "codex" },
+    durableStore: store,
+  })
+  return { ledger, rows: store.rows }
+}
 
 function createRequest(
   permissionPolicy = resolveDesktopPermissionPolicy({
@@ -70,7 +118,6 @@ function createRequest(
       blockers: [],
     },
     attachments: [],
-    trace: overrides.trace ?? { emit: () => {} },
     signal: overrides.signal ?? new AbortController().signal,
     session: {},
     ...overrides,
@@ -420,16 +467,13 @@ describe("Codex app-server adapter", () => {
 
   test("accepts only the shared app-server permission mapping before transport startup", async () => {
     const transport = new FakeCodexAppServerTransport()
-    const events: RunEvent[] = []
+    const { ledger, rows } = createTestLedger()
 
     const result = await createCodexAppServerAdapter({
       enabled: true,
       createTransport: () => transport,
-    }).run(
-      createRequest(appServerPolicy(), {
-        trace: { emit: (event) => events.push(event) },
-      }),
-    )
+      captureExecutionProvenance,
+    }).run(createRequest(appServerPolicy(), { ledger }))
 
     expect(result).toMatchObject({
       status: "succeeded",
@@ -444,9 +488,22 @@ describe("Codex app-server adapter", () => {
     ])
     expect(transport.notifications).toEqual([{ method: "initialized" }])
     expect(transport.closed).toBe(true)
-    expect(events.map((event) => event.type)).toContain("assistant_delta")
-    expect(events.map((event) => event.type)).toContain("usage_update")
-    expect(events.map((event) => event.type)).toContain("completed")
+    const committedTypes = rows.map((row) => row.type)
+    expect(committedTypes).toContain("assistant_delta")
+    expect(committedTypes).toContain("usage_update")
+    // The native turn/completed is committed as a terminal candidate; the
+    // Run's `completed` is minted only by the ledger's settlement.
+    expect(rows).toContainEqual(
+      expect.objectContaining({
+        type: "status",
+        payload: expect.objectContaining({
+          method: "turn/completed",
+          terminalCandidate: true,
+          turnStatus: "completed",
+        }),
+      }),
+    )
+    expect(committedTypes).not.toContain("completed")
   })
 
   test("returns canceled and closes transport when already aborted before listener registration", async () => {
@@ -562,17 +619,14 @@ describe("Codex app-server adapter", () => {
     const transport = new FakeCodexAppServerTransport()
     transport.completedTurnStatus = "inProgress"
     const chunks: Record<string, unknown>[] = []
-    const events: RunEvent[] = []
+    const { ledger, rows } = createTestLedger()
 
     const result = await createCodexAppServerAdapter({
       enabled: true,
       createTransport: () => transport,
+      captureExecutionProvenance,
       emit: (chunk) => chunks.push(chunk),
-    }).run(
-      createRequest(appServerPolicy(), {
-        trace: { emit: (event) => events.push(event) },
-      }),
-    )
+    }).run(createRequest(appServerPolicy(), { ledger }))
 
     expect(result).toMatchObject({
       status: "failed",
@@ -583,11 +637,20 @@ describe("Codex app-server adapter", () => {
     expect(chunks.filter((chunk) => chunk.type === "finish")).toEqual([
       expect.objectContaining({ type: "finish", status: "failed" }),
     ])
-    expect(events.filter((event) => event.type === "completed")).toEqual([
+    // The non-terminal native status is committed once as the terminal
+    // candidate; the adapter never mints the Run's `completed`.
+    expect(
+      rows.filter((row) => row.payload?.terminalCandidate === true),
+    ).toEqual([
       expect.objectContaining({
-        payload: expect.objectContaining({ status: "failed" }),
+        type: "status",
+        payload: expect.objectContaining({
+          method: "turn/completed",
+          turnStatus: "inProgress",
+        }),
       }),
     ])
+    expect(rows.map((row) => row.type)).not.toContain("completed")
   })
 
   test("settles failed when app-server exits after turn start", async () => {
@@ -636,21 +699,23 @@ describe("Codex app-server adapter", () => {
       }
     }
     const chunks: Record<string, unknown>[] = []
-    const events: RunEvent[] = []
     const db = createAgentJobTestDb()
-    const job = createAgentJob(db, {
+    const job = await createAgentJob(db, {
       source: "desktop",
       runtime: "codex",
       mode: "plan",
       cwd: "/repo",
       prompt: "echo canary",
     })
+    // The Run's host-composed ledger persists committed records to the job.
+    const ledger = await getOrCreateRunEventLedger(db, job)
 
     const result = await createCodexAppServerAdapter({
       enabled: true,
       providerGatewayToken: gatewayToken,
       secretHints: [upstreamToken],
       createTransport: () => transport,
+      captureExecutionProvenance,
       emit: (chunk) => chunks.push(chunk),
     }).run(
       createRequest(appServerPolicy(), {
@@ -665,36 +730,33 @@ describe("Codex app-server adapter", () => {
             "http://127.0.0.1:4321/profile/profile-1/responses/v1",
           model: "gpt-test",
         },
-        trace: {
-          emit: (event) => {
-            events.push(event)
-            appendRunEventsToAgentJob(db, [event])
-          },
-        },
+        ledger,
       }),
     )
 
+    await ledger.whenIdle()
+    const committed = (await ledger.read(0)) as LedgerRow[]
     const adapterOutput = JSON.stringify({
       result,
       chunks,
-      events,
+      committed,
       persistedEvents: listAgentJobEvents(db, job.id),
     })
     const assistantChunks = chunks.filter(
       (chunk) => chunk.type === "text-delta",
     )
-    const assistantEvents = events.filter(
+    const assistantEvents = committed.filter(
       (event) => event.type === "assistant_delta",
     )
-    const toolChunks = chunks.filter(
-      (chunk) => chunk.type === "file-change-delta",
-    )
+    // Native tool output is a committed tool_delta record (the renderer
+    // projection carries no file-change-delta chunk for it).
+    const toolEvents = committed.filter((event) => event.type === "tool_delta")
 
     expect(result.status).toBe("succeeded")
     expect(assistantChunks.map((chunk) => chunk.delta).join("")).toBe(
       `successful child echoed ${EXACT_SECRET_REDACTION_MARKER} and ${EXACT_SECRET_REDACTION_MARKER}`,
     )
-    expect(toolChunks.map((chunk) => chunk.delta).join("")).toBe(
+    expect(toolEvents.map((event) => event.payload.output).join("")).toBe(
       `tool output echoed ${EXACT_SECRET_REDACTION_MARKER}`,
     )
     expect(
@@ -784,13 +846,18 @@ describe("Codex app-server adapter", () => {
     ).toMatchObject({
       threadId: "thread-resume-1",
     })
-    expect(chunks.find((chunk) => chunk.type === "session-init")).toMatchObject(
-      {
+    // No thread/started is fabricated for a resumed thread, so no session-init
+    // chunk is projected; the resumed identity comes from the thread/resume
+    // response and reaches the renderer through the finish framing.
+    expect(chunks.map((chunk) => chunk.type)).not.toContain("session-init")
+    expect(chunks.find((chunk) => chunk.type === "finish")).toMatchObject({
+      status: "succeeded",
+      messageMetadata: {
         threadId: "thread-resume-1",
         sessionId: "thread-resume-1",
         adapterSource: "codex-app-server",
       },
-    )
+    })
   })
 
   test("queries app-server MCP status and emits non-empty readiness summary", async () => {
@@ -1178,7 +1245,7 @@ describe("Codex app-server adapter", () => {
         symlinkSync(outsideSnapshot, join(snapshotDir, "unverified.sh"))
       }
       const chunks: Record<string, unknown>[] = []
-      const events: RunEvent[] = []
+      const { ledger, rows } = createTestLedger()
 
       const result = await createCodexAppServerAdapter({
         enabled: true,
@@ -1189,10 +1256,11 @@ describe("Codex app-server adapter", () => {
           PATH: "/usr/bin",
         },
         createTransport: () => transport,
+        captureExecutionProvenance,
         emit: (chunk) => chunks.push(chunk),
       }).run(
         createRequest(appServerPolicy(), {
-          trace: { emit: (event) => events.push(event) },
+          ledger,
           providerBinding: {
             authMode: "app-managed",
             model: "gpt-5-codex",
@@ -1215,12 +1283,9 @@ describe("Codex app-server adapter", () => {
               ?.component === "security",
         ),
       ).toBe(true)
-      const completedEvents = events.filter(
-        (event) => event.type === "completed",
-      )
-      expect(completedEvents).toHaveLength(1)
-      expect(completedEvents[0]?.payload).toMatchObject({ status: "failed" })
-      expect(events.at(-1)?.type).toBe("completed")
+      // The adapter's only terminal publication is the renderer finish above;
+      // the Run's `completed` is minted by the host's ledger settlement.
+      expect(rows.map((row) => row.type)).not.toContain("completed")
     } finally {
       rmSync(codexHome, { recursive: true, force: true })
     }
@@ -1424,13 +1489,17 @@ describe("Codex app-server adapter", () => {
     const transport = new FakeCodexAppServerTransport()
     const controller = new AbortController()
     transport.onTurnStart = () => controller.abort()
+    // The interrupt target is the Run's native context owned by its ledger.
+    const { ledger } = createTestLedger()
 
     await createCodexAppServerAdapter({
       enabled: true,
       createTransport: () => transport,
+      captureExecutionProvenance,
     }).run(
       createRequest(appServerPolicy(), {
         signal: controller.signal,
+        ledger,
       }),
     )
 

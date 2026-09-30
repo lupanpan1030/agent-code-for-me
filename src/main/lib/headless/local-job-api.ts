@@ -1,21 +1,4 @@
-import { createHash, randomUUID } from "node:crypto"
-import {
-  closeSync,
-  constants,
-  existsSync,
-  fchmodSync,
-  fstatSync,
-  fsyncSync,
-  lstatSync,
-  mkdirSync,
-  openSync,
-  readSync,
-  realpathSync,
-  renameSync,
-  type Stats,
-  unlinkSync,
-  writeSync,
-} from "node:fs"
+import { existsSync, lstatSync, mkdirSync, realpathSync } from "node:fs"
 import {
   basename,
   dirname,
@@ -43,6 +26,23 @@ import {
   type NormalizedLocalJobApiCreateRequest,
 } from "../../../shared/local-job-api"
 import {
+  admitRunDirArtifacts,
+  assertRunArtifactRunDir,
+  describeRunArtifactFile,
+  discardRunArtifactFile,
+  isRunArtifactNativeRole,
+  publishRunArtifactFile,
+  type RunArtifactFileReceipt,
+  type RunArtifactFilesystemHooks,
+  type RunArtifactRunDir,
+  readRunArtifactFile,
+  verifyRunDirArtifactRef,
+  writeRunArtifactFile,
+} from "../agent-runtime/run-artifacts"
+import type { LedgerRecord } from "../agent-runtime/run-event-ledger"
+import { getOrCreateRunEventLedger } from "../agent-runtime/run-event-ledger-host"
+import type { JsonValue } from "../agent-runtime/runtime-events"
+import {
   checkRegisteredAgentRuntimeCapability,
   listRegisteredAgentRuntimeManifests,
 } from "../agent-runtime/runtime-registry"
@@ -57,7 +57,11 @@ import {
   type StableDirectoryHandle,
   stableDirectoryChildPath,
 } from "../filesystem/stable-directory"
-import { serializeAgentJob, serializeAgentJobEvent } from "./cli-output"
+import {
+  parsePublicJobResult,
+  serializeAgentJob,
+  serializeAgentJobEvent,
+} from "./cli-output"
 import {
   type AgentJobDatabase,
   createAgentJob,
@@ -83,25 +87,14 @@ export type LocalJobApiCreatePrepared = {
   runDir: LocalJobApiArtifactRunDir | null
 }
 
-type LocalJobApiArtifactFileReceipt = {
-  dev: number
-  ino: number
-  size: number
-  mtimeMs: number
-  ctimeMs: number
-}
-
 /**
  * A run directory is authority captured at exclusive creation time, not merely
- * a pathname that an untrusted workspace process may later replace.
+ * a pathname that an untrusted workspace process may later replace. The file
+ * writer/reader lives with the run artifact owner (run-artifacts.ts).
  */
-export type LocalJobApiArtifactRunDir = StableDirectoryHandle & {
-  fileReceipts: Map<string, LocalJobApiArtifactFileReceipt>
-}
+export type LocalJobApiArtifactRunDir = RunArtifactRunDir
 
-export type LocalJobApiArtifactFilesystemHooks = {
-  beforeAtomicRename?: (input: { fileName: string; runDirPath: string }) => void
-}
+export type LocalJobApiArtifactFilesystemHooks = RunArtifactFilesystemHooks
 
 export type LocalJobApiJobEnvelope = {
   apiVersion: typeof LOCAL_JOB_API_VERSION
@@ -340,7 +333,7 @@ export function prepareLocalJobApiArtifactRunDir(
       throw new Error("Artifact run directory escaped project.cwd")
     }
     return Object.assign(directory, {
-      fileReceipts: new Map<string, LocalJobApiArtifactFileReceipt>(),
+      fileReceipts: new Map<string, RunArtifactFileReceipt>(),
     })
   } catch (error) {
     closeStableDirectory(directory)
@@ -352,264 +345,13 @@ function stableStringify(value: unknown): string {
   return `${JSON.stringify(value, null, 2)}\n`
 }
 
-function isSameArtifactFile(
-  stat: Stats,
-  receipt: LocalJobApiArtifactFileReceipt,
-): boolean {
-  return (
-    stat.isFile() &&
-    !stat.isSymbolicLink() &&
-    stat.nlink === 1 &&
-    stat.dev === receipt.dev &&
-    stat.ino === receipt.ino &&
-    stat.size === receipt.size &&
-    stat.mtimeMs === receipt.mtimeMs &&
-    stat.ctimeMs === receipt.ctimeMs
-  )
-}
-
-function assertArtifactRunDir(runDir: LocalJobApiArtifactRunDir): void {
-  assertStableDirectoryPath(runDir, "Artifact run")
-}
-
-function readStableRegularArtifactFile(
-  directory: StableDirectoryHandle,
-  childName: string,
-  expected?: LocalJobApiArtifactFileReceipt,
-): Buffer {
-  const path = join(directory.path, childName)
-  assertStableDirectoryPath(directory, "Artifact directory")
-  const operationPath = stableDirectoryChildPath(directory, childName)
-  const before = lstatSync(operationPath)
-  if (before.isSymbolicLink() || !before.isFile() || before.nlink !== 1) {
-    throw new Error(`Artifact must be a single-link regular file: ${path}`)
-  }
-  if (expected && !isSameArtifactFile(before, expected)) {
-    throw new Error(`Artifact file identity changed during the run: ${path}`)
-  }
-
-  const fd = openSync(
-    operationPath,
-    constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0),
-  )
-  try {
-    const opened = fstatSync(fd)
-    const stableReceipt: LocalJobApiArtifactFileReceipt = {
-      dev: before.dev,
-      ino: before.ino,
-      size: before.size,
-      mtimeMs: before.mtimeMs,
-      ctimeMs: before.ctimeMs,
-    }
-    if (!isSameArtifactFile(opened, stableReceipt)) {
-      throw new Error(`Artifact changed while opening it: ${path}`)
-    }
-    const chunks: Buffer[] = []
-    const buffer = Buffer.allocUnsafe(64 * 1024)
-    while (true) {
-      const bytesRead = readSync(fd, buffer, 0, buffer.length, null)
-      if (bytesRead === 0) break
-      chunks.push(Buffer.from(buffer.subarray(0, bytesRead)))
-    }
-    if (!isSameArtifactFile(fstatSync(fd), stableReceipt)) {
-      throw new Error(`Artifact changed while reading it: ${path}`)
-    }
-    assertStableDirectoryPath(directory, "Artifact directory")
-    return Buffer.concat(chunks)
-  } finally {
-    closeSync(fd)
-  }
-}
-
-function artifactFileReceipt(stat: Stats): LocalJobApiArtifactFileReceipt {
-  return {
-    dev: stat.dev,
-    ino: stat.ino,
-    size: stat.size,
-    mtimeMs: stat.mtimeMs,
-    ctimeMs: stat.ctimeMs,
-  }
-}
-
-function validateArtifactTargetBeforeWrite(
-  runDir: LocalJobApiArtifactRunDir,
-  fileName: string,
-): void {
-  const targetPath = join(runDir.path, fileName)
-  const operationPath = stableDirectoryChildPath(runDir, fileName)
-  const expected = runDir.fileReceipts.get(fileName)
-  let stat: Stats
-  try {
-    stat = lstatSync(operationPath)
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
-    if (expected) {
-      throw new Error(`Artifact disappeared during the run: ${targetPath}`)
-    }
-    return
-  }
-  if (stat.isSymbolicLink() || !stat.isFile() || stat.nlink !== 1) {
-    throw new Error(
-      `Artifact target is not a single-link regular file: ${targetPath}`,
-    )
-  }
-  if (!expected) {
-    throw new Error(`Unexpected artifact target already exists: ${targetPath}`)
-  }
-  if (!isSameArtifactFile(stat, expected)) {
-    throw new Error(
-      `Artifact file identity changed during the run: ${targetPath}`,
-    )
-  }
-}
-
-function writeArtifactFileAtomically(
-  runDir: LocalJobApiArtifactRunDir,
-  fileName: string,
-  content: string,
-  hooks?: LocalJobApiArtifactFilesystemHooks,
-): string {
-  assertArtifactRunDir(runDir)
-  validateArtifactTargetBeforeWrite(runDir, fileName)
-  const targetPath = join(runDir.path, fileName)
-  const targetOperationPath = stableDirectoryChildPath(runDir, fileName)
-  const tempName = `.${fileName}.locus-${process.pid}-${randomUUID()}.tmp`
-  const tempOperationPath = stableDirectoryChildPath(runDir, tempName)
-  let fd: number | null = null
-  let tempExists = false
-  let tempReceipt: LocalJobApiArtifactFileReceipt | null = null
-
-  try {
-    fd = openSync(
-      tempOperationPath,
-      constants.O_CREAT |
-        constants.O_EXCL |
-        constants.O_WRONLY |
-        (constants.O_NOFOLLOW ?? 0),
-      0o600,
-    )
-    tempExists = true
-    fchmodSync(fd, 0o600)
-    const bytes = Buffer.from(content, "utf8")
-    let offset = 0
-    while (offset < bytes.length) {
-      const written = writeSync(
-        fd,
-        bytes,
-        offset,
-        bytes.length - offset,
-        offset,
-      )
-      if (written <= 0) {
-        throw new Error(
-          `Failed to make progress writing artifact: ${targetPath}`,
-        )
-      }
-      offset += written
-    }
-    const tempStat = fstatSync(fd)
-    if (!tempStat.isFile() || tempStat.nlink !== 1) {
-      throw new Error(`Artifact temp file link count changed: ${targetPath}`)
-    }
-    tempReceipt = artifactFileReceipt(tempStat)
-    fsyncSync(fd)
-    closeSync(fd)
-    fd = null
-
-    assertArtifactRunDir(runDir)
-    validateArtifactTargetBeforeWrite(runDir, fileName)
-    if (
-      !tempReceipt ||
-      !isSameArtifactFile(lstatSync(tempOperationPath), tempReceipt)
-    ) {
-      throw new Error(`Artifact temp file identity changed: ${targetPath}`)
-    }
-    hooks?.beforeAtomicRename?.({
-      fileName,
-      runDirPath: runDir.path,
-    })
-    renameSync(tempOperationPath, targetOperationPath)
-    tempExists = false
-
-    fsyncStableDirectory(runDir, "Artifact run")
-    assertArtifactRunDir(runDir)
-    const installed = lstatSync(targetOperationPath)
-    if (
-      installed.isSymbolicLink() ||
-      !installed.isFile() ||
-      installed.nlink !== 1 ||
-      !tempReceipt ||
-      installed.dev !== tempReceipt.dev ||
-      installed.ino !== tempReceipt.ino ||
-      installed.size !== tempReceipt.size ||
-      installed.mtimeMs !== tempReceipt.mtimeMs
-    ) {
-      throw new Error(
-        `Installed artifact is not a single-link regular file: ${targetPath}`,
-      )
-    }
-    runDir.fileReceipts.set(fileName, artifactFileReceipt(installed))
-    return targetPath
-  } catch (error) {
-    let cleanupError: unknown = null
-    if (fd !== null) {
-      try {
-        closeSync(fd)
-      } catch (error) {
-        cleanupError = error
-      }
-    }
-    if (tempExists) {
-      try {
-        unlinkSync(tempOperationPath)
-        fsyncStableDirectory(runDir, "Artifact run")
-      } catch (error) {
-        cleanupError ??= error
-      }
-    }
-    if (cleanupError) {
-      throw new Error("Failed to clean up an atomic artifact temp file", {
-        cause: cleanupError,
-      })
-    }
-    throw error
-  }
-}
-
-function fileArtifact(
-  role: string,
-  runDir: LocalJobApiArtifactRunDir,
-  fileName: string,
-): LocalJobApiArtifact {
-  const publicPath = join(runDir.path, fileName)
-  const content = readStableRegularArtifactFile(
-    runDir,
-    fileName,
-    runDir.fileReceipts.get(fileName),
-  )
-  const hash = createHash("sha256")
-  hash.update(content)
-  return {
-    role,
-    path: publicPath,
-    sha256: hash.digest("hex"),
-    contentType: "application/json",
-    sizeBytes: content.byteLength,
-  }
-}
-
 function writeJsonFile(
   runDir: LocalJobApiArtifactRunDir,
   fileName: string,
   value: unknown,
   hooks?: LocalJobApiArtifactFilesystemHooks,
 ): string {
-  return writeArtifactFileAtomically(
-    runDir,
-    fileName,
-    stableStringify(value),
-    hooks,
-  )
+  return writeRunArtifactFile(runDir, fileName, stableStringify(value), hooks)
 }
 
 function eventCreatedAt(event: AgentJobEvent): string | null {
@@ -630,21 +372,33 @@ function parsePayload(event: AgentJobEvent): unknown {
   }
 }
 
+/**
+ * Internal event types outside the 12 public v1 types project to `status` at
+ * the same sequence with `payload.subtype` set to the original internal type
+ * name. Object payload members are preserved (no double wrap); non-object
+ * historical payloads are returned unchanged.
+ */
+function coercedStatusPayload(internalType: string, payload: unknown): unknown {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return payload
+  }
+  return { ...(payload as Record<string, unknown>), subtype: internalType }
+}
+
 export function toLocalJobApiEventEnvelope(
   event: AgentJobEvent,
 ): LocalJobApiEventEnvelope {
-  const type = (LOCAL_JOB_API_EVENT_TYPES as readonly string[]).includes(
-    event.type,
-  )
-    ? (event.type as LocalJobApiEventType)
-    : "status"
+  const isPublicType = (
+    LOCAL_JOB_API_EVENT_TYPES as readonly string[]
+  ).includes(event.type)
+  const payload = parsePayload(event)
   return {
     apiVersion: LOCAL_JOB_API_VERSION,
     jobId: event.jobId,
     sequence: event.sequence,
-    type,
+    type: isPublicType ? (event.type as LocalJobApiEventType) : "status",
     createdAt: eventCreatedAt(event),
-    payload: parsePayload(event),
+    payload: isPublicType ? payload : coercedStatusPayload(event.type, payload),
   }
 }
 
@@ -809,7 +563,7 @@ function readArtifacts(path: string | null): LocalJobApiArtifact[] {
       "Local Job artifact manifest directory",
     )
     const parsed = JSON.parse(
-      readStableRegularArtifactFile(directory, basename(path)).toString("utf8"),
+      readRunArtifactFile(directory, basename(path)).toString("utf8"),
     ) as {
       artifacts?: unknown
     }
@@ -882,9 +636,55 @@ function resolvedProviderForJob(
   }
 }
 
+function registeredArtifactKey(entry: unknown): string | null {
+  if (!isRecord(entry)) return null
+  return typeof entry.role === "string" && typeof entry.sha256 === "string"
+    ? `${entry.role}\u0000${entry.sha256}`
+    : null
+}
+
+/**
+ * Manifest entries a result reader may expose (design "Artifacts and
+ * Terminal Commit Order": no prospective terminal or unregistered final ref
+ * is readable before its commit). A ledger job lists only manifest entries
+ * whose role and digest the ledger registered: the refs committed with its
+ * one completed, or the committed `artifact_created` refs before it. A final
+ * manifest prepared for a terminal that has not committed is therefore not
+ * exposed. Pre-ledger (v0) jobs keep reading their historical manifest.
+ */
+function readRegisteredArtifacts(
+  job: AgentJob,
+  events: readonly AgentJobEvent[] | undefined,
+): LocalJobApiArtifact[] {
+  const artifacts = readArtifacts(job.artifactManifestPath)
+  if (job.ledgerVersion === 0) return artifacts
+  const registered = new Set<string>()
+  const register = (list: unknown) => {
+    for (const entry of Array.isArray(list) ? list : []) {
+      const key = registeredArtifactKey(entry)
+      if (key) registered.add(key)
+    }
+  }
+  const result = parseJobResult(job)
+  if (isRecord(result)) register(result.artifactRefs)
+  for (const event of events ?? []) {
+    if (event.type !== "artifact_created") continue
+    try {
+      const payload = JSON.parse(event.payloadJson) as unknown
+      if (isRecord(payload)) register(payload.artifacts)
+    } catch {
+      // A malformed row registers nothing.
+    }
+  }
+  return artifacts.filter((artifact) => {
+    const key = registeredArtifactKey(artifact)
+    return key !== null && registered.has(key)
+  })
+}
+
 export function toLocalJobApiResultEnvelope(
   job: AgentJob,
-  artifacts: LocalJobApiArtifact[] = readArtifacts(job.artifactManifestPath),
+  artifacts?: LocalJobApiArtifact[],
   events?: AgentJobEvent[],
 ): LocalJobApiResultEnvelope {
   return {
@@ -900,7 +700,7 @@ export function toLocalJobApiResultEnvelope(
         }
       : null,
     artifactManifestPath: job.artifactManifestPath,
-    artifacts,
+    artifacts: artifacts ?? readRegisteredArtifacts(job, events),
     diagnostics: job.errorCode
       ? [
           {
@@ -910,7 +710,9 @@ export function toLocalJobApiResultEnvelope(
         ]
       : [],
     resolvedProvider: resolvedProviderForJob(job, events),
-    result: parseJobResult(job),
+    // The public inner result never carries the ledger's internal
+    // registered-artifact refs (they stay a job-row reader detail).
+    result: parsePublicJobResult(job.resultJson),
   }
 }
 
@@ -929,11 +731,11 @@ export function validateLocalJobApiRequiredCapabilities(
   }
 }
 
-export function createLocalJobApiJob(
+export async function createLocalJobApiJob(
   db: AgentJobDatabase,
   request: NormalizedLocalJobApiCreateRequest,
   appVersion: string | null | undefined,
-): LocalJobApiCreatePrepared {
+): Promise<LocalJobApiCreatePrepared> {
   if (request.kind === "completion") {
     resolveExplicitHeadlessProviderProfile({
       db,
@@ -941,7 +743,7 @@ export function createLocalJobApiJob(
       providerProfileId: request.provider.profileId,
       modelOverride: request.provider.model,
     })
-    const job = createAgentJob(db, {
+    const job = await createAgentJob(db, {
       id: createId(),
       kind: "completion",
       source: "api",
@@ -990,7 +792,7 @@ export function createLocalJobApiJob(
   )
   const manifestPath = runDir ? join(runDir.path, "artifacts.json") : null
   try {
-    const job = createAgentJob(db, {
+    const job = await createAgentJob(db, {
       id: jobId,
       source: "api",
       runtime: request.runtime.id,
@@ -1025,10 +827,10 @@ export function createLocalJobApiJob(
   }
 }
 
-export function retryLocalJobApiJob(
+export async function retryLocalJobApiJob(
   db: AgentJobDatabase,
   job: AgentJob,
-): LocalJobApiCreatePrepared {
+): Promise<LocalJobApiCreatePrepared> {
   const request = getLocalJobApiStoredRequest(job)
   if (request.kind === "completion") {
     resolveExplicitHeadlessProviderProfile({
@@ -1037,7 +839,7 @@ export function retryLocalJobApiJob(
       providerProfileId: request.provider.profileId,
       modelOverride: request.provider.model,
     })
-    const retry = retryAgentJob(db, job.id, {
+    const retry = await retryAgentJob(db, job.id, {
       id: createId(),
       artifactBaseDir: null,
       artifactManifestPath: null,
@@ -1058,7 +860,7 @@ export function retryLocalJobApiJob(
     project.cwd,
   )
   try {
-    const retry = retryAgentJob(db, job.id, {
+    const retry = await retryAgentJob(db, job.id, {
       id: retryId,
       artifactBaseDir: runDir?.path ?? request.artifacts.baseDir,
       artifactManifestPath: runDir ? join(runDir.path, "artifacts.json") : null,
@@ -1079,14 +881,14 @@ export function writeLocalJobApiInitialArtifacts(input: {
 }): LocalJobApiArtifact[] {
   if (!input.runDir) return []
   try {
-    assertArtifactRunDir(input.runDir)
+    assertRunArtifactRunDir(input.runDir)
     writeJsonFile(
       input.runDir,
       "request.json",
       input.request,
       input.filesystemHooks,
     )
-    writeArtifactFileAtomically(
+    writeRunArtifactFile(
       input.runDir,
       "events.jsonl",
       input.events
@@ -1095,8 +897,8 @@ export function writeLocalJobApiInitialArtifacts(input: {
       input.filesystemHooks,
     )
     const artifacts = [
-      fileArtifact("request", input.runDir, "request.json"),
-      fileArtifact("events", input.runDir, "events.jsonl"),
+      describeRunArtifactFile("request", input.runDir, "request.json"),
+      describeRunArtifactFile("events", input.runDir, "events.jsonl"),
     ]
     const manifest: LocalJobApiArtifactManifest = {
       apiVersion: LOCAL_JOB_API_VERSION,
@@ -1113,7 +915,7 @@ export function writeLocalJobApiInitialArtifacts(input: {
     )
     return [
       ...artifacts,
-      fileArtifact("manifest", input.runDir, "artifacts.json"),
+      describeRunArtifactFile("manifest", input.runDir, "artifacts.json"),
     ]
   } catch (error) {
     closeLocalJobApiArtifactRunDir(input.runDir)
@@ -1121,53 +923,358 @@ export function writeLocalJobApiInitialArtifacts(input: {
   }
 }
 
-export function writeLocalJobApiFinalArtifacts(input: {
+/**
+ * Admitted native artifact refs of one Run, from its committed
+ * `artifact_created` records, as published in the terminal run-dir files.
+ * Entries are collapsed by path (the last admission of a file wins: a file
+ * edited twice is one entry with its latest digest), and each one is
+ * re-read through the run directory handle and must still match its
+ * registered digest and size; a stale or missing file is not listed (the
+ * committed `artifact_created` facts stay, the drop is a host diagnostic).
+ */
+export function localJobApiNativeArtifacts(
+  records: readonly LedgerRecord[],
+  runDir: LocalJobApiArtifactRunDir,
+  onDropped?: (message: string) => void,
+): LocalJobApiArtifact[] {
+  const latestByPath = new Map<string, LocalJobApiArtifact>()
+  for (const record of records) {
+    if (record.type !== "artifact_created") continue
+    const payload =
+      record.payload && typeof record.payload === "object"
+        ? (record.payload as Record<string, unknown>)
+        : {}
+    for (const entry of Array.isArray(payload.artifacts)
+      ? payload.artifacts
+      : []) {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue
+      const artifact = entry as Record<string, unknown>
+      if (
+        !isRunArtifactNativeRole(artifact.role) ||
+        typeof artifact.path !== "string" ||
+        typeof artifact.sha256 !== "string" ||
+        typeof artifact.contentType !== "string" ||
+        typeof artifact.sizeBytes !== "number"
+      ) {
+        continue
+      }
+      latestByPath.delete(artifact.path)
+      latestByPath.set(artifact.path, {
+        role: artifact.role,
+        path: artifact.path,
+        sha256: artifact.sha256,
+        contentType: artifact.contentType,
+        sizeBytes: artifact.sizeBytes,
+      })
+    }
+  }
+  const artifacts: LocalJobApiArtifact[] = []
+  for (const artifact of latestByPath.values()) {
+    if (
+      verifyRunDirArtifactRef(runDir, {
+        path: artifact.path,
+        sha256: artifact.sha256 ?? "",
+        sizeBytes: artifact.sizeBytes ?? -1,
+      })
+    ) {
+      artifacts.push(artifact)
+    } else {
+      onDropped?.(
+        `[artifacts] a ${artifact.role} ref no longer matches its file and is not listed.`,
+      )
+    }
+  }
+  return artifacts
+}
+
+type LocalJobApiFinalArtifactsInput = {
   runDir: LocalJobApiArtifactRunDir | null
   job: AgentJob
   events: AgentJobEvent[]
+  /** Admitted native artifacts appended after the Locus run-dir files. */
+  nativeArtifacts?: readonly LocalJobApiArtifact[]
   filesystemHooks?: LocalJobApiArtifactFilesystemHooks
-}): LocalJobApiArtifact[] {
-  if (!input.runDir) return []
+}
+
+/** Terminal run-dir files prepared under staged names, not yet visible. */
+export type StagedLocalJobApiFinalArtifacts = {
+  /** Refs of the final files (final paths, digests of the staged bytes). */
+  artifacts: LocalJobApiArtifact[]
+  /** Renames every staged file to its final name (after the SQL commit). */
+  publish(): void
+  /** Removes every staged file; the initial run-dir files stay intact. */
+  discard(): void
+}
+
+function stagedLocalJobApiArtifactName(fileName: string): string {
+  return `.${fileName}.locus-staged`
+}
+
+/**
+ * Prepares events.jsonl, result.json and artifacts.json under staged names
+ * inside the admitted run directory (design "Artifacts and Terminal Commit
+ * Order" steps 2 and 5): their digests are over the staged bytes and their
+ * refs carry the final paths. Nothing is visible under a final name until
+ * `publish()`; `discard()` leaves only the initial files.
+ */
+export function stageLocalJobApiFinalArtifacts(
+  input: LocalJobApiFinalArtifactsInput,
+): StagedLocalJobApiFinalArtifacts {
+  const runDir = input.runDir
+  if (!runDir) return { artifacts: [], publish() {}, discard() {} }
+  const nativeArtifacts = [...(input.nativeArtifacts ?? [])]
+  const staged: Array<{ stagedName: string; finalName: string }> = []
+  const stage = (finalName: string, content: string): string => {
+    const stagedName = stagedLocalJobApiArtifactName(finalName)
+    writeRunArtifactFile(runDir, stagedName, content, input.filesystemHooks)
+    staged.push({ stagedName, finalName })
+    return stagedName
+  }
+  const describe = (
+    role: string,
+    finalName: string,
+    stagedName = finalName,
+  ): LocalJobApiArtifact => ({
+    ...describeRunArtifactFile(role, runDir, stagedName),
+    path: join(runDir.path, finalName),
+  })
+  const discard = () => {
+    for (const entry of staged.splice(0)) {
+      try {
+        discardRunArtifactFile(runDir, entry.stagedName)
+      } catch {
+        // A staged file that cannot be removed stays unreferenced.
+      }
+    }
+  }
   try {
-    assertArtifactRunDir(input.runDir)
-    writeArtifactFileAtomically(
-      input.runDir,
+    assertRunArtifactRunDir(runDir)
+    const eventsName = stage(
       "events.jsonl",
       input.events
         .map((event) => JSON.stringify(toLocalJobApiEventEnvelope(event)))
         .join("\n") + (input.events.length > 0 ? "\n" : ""),
-      input.filesystemHooks,
     )
-    const artifacts = [
-      fileArtifact("request", input.runDir, "request.json"),
-      fileArtifact("events", input.runDir, "events.jsonl"),
+    const artifacts: LocalJobApiArtifact[] = [
+      describe("request", "request.json"),
+      describe("events", "events.jsonl", eventsName),
     ]
-    writeJsonFile(
-      input.runDir,
+    const resultName = stage(
       "result.json",
-      toLocalJobApiResultEnvelope(input.job, artifacts, input.events),
-      input.filesystemHooks,
+      stableStringify(
+        toLocalJobApiResultEnvelope(
+          input.job,
+          [...artifacts, ...nativeArtifacts],
+          input.events,
+        ),
+      ),
     )
-    artifacts.push(fileArtifact("result", input.runDir, "result.json"))
+    artifacts.push(
+      describe("result", "result.json", resultName),
+      ...nativeArtifacts,
+    )
     const manifest: LocalJobApiArtifactManifest = {
       apiVersion: LOCAL_JOB_API_VERSION,
       jobId: input.job.id,
-      artifactBaseDir: input.runDir.path,
+      artifactBaseDir: runDir.path,
       artifacts,
       createdAt: new Date().toISOString(),
     }
-    writeJsonFile(
-      input.runDir,
-      "artifacts.json",
-      manifest,
-      input.filesystemHooks,
-    )
-    return [
-      ...artifacts,
-      fileArtifact("manifest", input.runDir, "artifacts.json"),
-    ]
-  } finally {
-    closeLocalJobApiArtifactRunDir(input.runDir)
+    const manifestName = stage("artifacts.json", stableStringify(manifest))
+    return {
+      artifacts: [
+        ...artifacts,
+        describe("manifest", "artifacts.json", manifestName),
+      ],
+      publish() {
+        try {
+          while (staged.length > 0) {
+            const entry = staged[0]
+            publishRunArtifactFile(
+              runDir,
+              entry.stagedName,
+              entry.finalName,
+              input.filesystemHooks,
+            )
+            staged.shift()
+          }
+        } catch (error) {
+          discard()
+          closeLocalJobApiArtifactRunDir(runDir)
+          throw error
+        }
+      },
+      discard,
+    }
+  } catch (error) {
+    discard()
+    closeLocalJobApiArtifactRunDir(runDir)
+    throw error
+  }
+}
+
+/** Stages and immediately publishes the final run-dir files. */
+export function writeLocalJobApiFinalArtifacts(
+  input: LocalJobApiFinalArtifactsInput,
+): LocalJobApiArtifact[] {
+  const staged = stageLocalJobApiFinalArtifacts(input)
+  staged.publish()
+  return staged.artifacts
+}
+
+/**
+ * Writes the initial run-dir files (lifecycle output of API create/retry)
+ * and admits them through the run artifact owner, so the one initial
+ * `artifact_created` commits before `job_started`.
+ */
+export async function admitLocalJobApiInitialArtifacts(input: {
+  db: AgentJobDatabase
+  prepared: LocalJobApiCreatePrepared
+  filesystemHooks?: LocalJobApiArtifactFilesystemHooks
+}): Promise<LocalJobApiArtifact[]> {
+  const { prepared } = input
+  if (!prepared.runDir) return []
+  const artifacts = writeLocalJobApiInitialArtifacts({
+    runDir: prepared.runDir,
+    request: prepared.request,
+    job: prepared.job,
+    events: listAgentJobEvents(input.db, prepared.job.id),
+    filesystemHooks: input.filesystemHooks,
+  })
+  if (artifacts.length === 0) return artifacts
+  const ledger = await getOrCreateRunEventLedger(input.db, prepared.job)
+  await admitRunDirArtifacts({
+    runId: prepared.job.id,
+    runDir: prepared.runDir,
+    artifacts: artifacts.map((artifact) => ({
+      role: artifact.role,
+      path: artifact.path,
+      sha256: artifact.sha256 ?? "",
+      contentType: artifact.contentType ?? "application/octet-stream",
+      sizeBytes: artifact.sizeBytes ?? -1,
+    })),
+    ledger,
+  })
+  return artifacts
+}
+
+function toCommittedEventRow(record: LedgerRecord): AgentJobEvent {
+  const createdMs = Date.parse(String(record.createdAt))
+  return {
+    id: `${record.runId}:${record.sequence}`,
+    jobId: record.jobId ?? record.runId,
+    sequence: record.sequence,
+    type: record.type,
+    payloadJson: JSON.stringify(record.payload ?? {}),
+    // The job store keeps second precision; the frozen files match it.
+    createdAt: Number.isNaN(createdMs)
+      ? null
+      : new Date(Math.floor(createdMs / 1000) * 1000),
+    factKey: null,
+    recordMetadataJson: null,
+  }
+}
+
+function terminalJobProjection(
+  job: AgentJob,
+  jobMutation: Record<string, unknown>,
+): AgentJob {
+  const date = (value: unknown): Date | null => {
+    if (value === undefined || value === null) return null
+    const parsed = new Date(String(value))
+    return Number.isNaN(parsed.getTime())
+      ? null
+      : new Date(Math.floor(parsed.getTime() / 1000) * 1000)
+  }
+  const text = (value: unknown, fallback: string | null) =>
+    value === undefined ? fallback : (value as string | null)
+  return {
+    ...job,
+    status: text(jobMutation.status, job.status) ?? job.status,
+    finishedAt:
+      jobMutation.finishedAt === undefined
+        ? job.finishedAt
+        : date(jobMutation.finishedAt),
+    heartbeatAt:
+      jobMutation.heartbeatAt === undefined
+        ? job.heartbeatAt
+        : date(jobMutation.heartbeatAt),
+    exitCode:
+      jobMutation.exitCode === undefined
+        ? job.exitCode
+        : (jobMutation.exitCode as number | null),
+    errorCode: text(jobMutation.errorCode, job.errorCode),
+    errorMessage: text(jobMutation.errorMessage, job.errorMessage),
+    resultJson: text(jobMutation.resultJson, job.resultJson),
+  }
+}
+
+/**
+ * Terminal run-dir preparation of one API Run (design "Artifacts and
+ * Terminal Commit Order"): the ledger hands the frozen public prefix with the
+ * candidate `completed` and the terminal job-row fields; these serializers
+ * produce events.jsonl, result.json and artifacts.json, the run artifact
+ * owner writes and digests them, and the refs join the completed commit.
+ */
+export function createLocalJobApiTerminalArtifacts(input: {
+  db: AgentJobDatabase
+  runDir: LocalJobApiArtifactRunDir | null
+  jobId: string
+  filesystemHooks?: LocalJobApiArtifactFilesystemHooks
+  /** Sanitized host diagnostics (never persisted). */
+  onHostDiagnostic?: (message: string) => void
+}): {
+  preparer?: {
+    prepare(prepareInput: {
+      records: LedgerRecord[]
+      completed: LedgerRecord
+      jobMutation: Record<string, unknown>
+    }): JsonValue[]
+    publish(): void
+    discard(): void
+  }
+  artifacts(): LocalJobApiArtifact[]
+} {
+  // Published refs (visible only after the terminal commit).
+  let published: LocalJobApiArtifact[] = []
+  let staged: StagedLocalJobApiFinalArtifacts | null = null
+  const runDir = input.runDir
+  if (!runDir) return { artifacts: () => [] }
+  const discardStaged = () => {
+    const current = staged
+    staged = null
+    current?.discard()
+  }
+  return {
+    preparer: {
+      prepare({ records, jobMutation }) {
+        // A rebased attempt regenerates the files from its own prefix.
+        discardStaged()
+        const current = getAgentJob(input.db, input.jobId)
+        if (!current) throw new Error(`Unknown job: ${input.jobId}`)
+        staged = stageLocalJobApiFinalArtifacts({
+          runDir,
+          job: terminalJobProjection(current, jobMutation),
+          events: records.map(toCommittedEventRow),
+          nativeArtifacts: localJobApiNativeArtifacts(
+            records,
+            runDir,
+            input.onHostDiagnostic,
+          ),
+          filesystemHooks: input.filesystemHooks,
+        })
+        return staged.artifacts as unknown as JsonValue[]
+      },
+      publish() {
+        const current = staged
+        staged = null
+        if (!current) return
+        current.publish()
+        published = current.artifacts
+      },
+      discard: discardStaged,
+    },
+    artifacts: () => published,
   }
 }
 

@@ -6,6 +6,18 @@ import type {
   LocalJobApiResponseFormat,
 } from "../../../shared/local-job-api"
 import type { ProviderProfileProtocol } from "../../../shared/provider-profile-types"
+import type {
+  CreateCanonicalRunEventLedgerOptions,
+  LedgerOutcome,
+  OutcomeEvidence,
+  TerminalJobFields,
+} from "../agent-runtime/run-event-ledger"
+import {
+  bindRunExecutionProvenance,
+  getOrCreateRunEventLedger,
+  releaseRunEventLedger,
+} from "../agent-runtime/run-event-ledger-host"
+import { captureLocusCompletionProvenance } from "../agent-runtime/run-provenance"
 import type { AgentJob, AgentJobEvent } from "../db/schema"
 import type { ProviderProfileRuntimeConfig } from "../provider-profiles/storage"
 import {
@@ -14,11 +26,9 @@ import {
   buildUtilityProviderHeaders,
   redactAndTruncateUtilityProviderText,
 } from "../utility-chat-completion"
-import { HEADLESS_EXIT_CODES, normalizeHeadlessExitCode } from "./job-runner"
+import { normalizeHeadlessExitCode } from "./job-runner"
 import {
   type AgentJobDatabase,
-  appendAgentJobEvent,
-  completeAgentJob,
   getAgentJob,
   listAgentJobEvents,
   startAgentJob,
@@ -43,12 +53,18 @@ export type RunPersistedCompletionJobOptions = {
   workerPid?: number | null
   signal?: AbortSignal
   providerBindingDependencies?: HeadlessProviderBindingDependencies
+  /** Locus build that executes the provider-only completion. */
+  locusBuild?: string | null
+  /** Terminal run-dir preparation registered with the one completed. */
+  terminalArtifacts?: CreateCanonicalRunEventLedgerOptions["terminalArtifacts"]
 }
 
 export type RunPersistedCompletionJobResult = {
   job: AgentJob
   events: AgentJobEvent[]
   exitCode: number
+  /** The committed outcome from `readOutcome()` (see RunPersistedAgentJobResult). */
+  outcome: LedgerOutcome | null
 }
 
 type CompletionProviderRequest = {
@@ -454,6 +470,69 @@ function completionResult(input: {
   }
 }
 
+const COMPLETION_PROTOCOL_NAME = "locus-local-job-api-completion"
+
+function completionOutcomeEvidence(input: {
+  jobId: string
+  status: "succeeded" | "failed" | "canceled"
+  content: unknown
+}): OutcomeEvidence {
+  const observationKey = `completion-result:${input.jobId}`
+  const hasContent =
+    input.content !== undefined &&
+    input.content !== null &&
+    !(typeof input.content === "string" && input.content.trim().length === 0)
+  return {
+    trigger:
+      input.status === "canceled"
+        ? { kind: "cancel", reason: "job_canceled", observationKey }
+        : { kind: "host_result", status: input.status, observationKey },
+    policy: { denied: false, evidenceKeys: ["policy:provider-only"] },
+    output: {
+      valid: input.status === "succeeded",
+      empty: !hasContent,
+      allowEmpty: false,
+      evidenceKeys: hasContent ? ["completion:content"] : [],
+    },
+    postRun: {
+      credentialsSafe: true,
+      evidenceKeys: ["postrun:provider-only"],
+    },
+  }
+}
+
+/** Job-row projection of a completion Run's decided outcome. */
+function completionJobFields(
+  outcome: { status: string; reasons: string[] },
+  input: {
+    errorCode: string | null
+    errorMessage: string | null
+    result: unknown
+  },
+): TerminalJobFields {
+  const errorCode =
+    outcome.status === "succeeded"
+      ? null
+      : outcome.status === "canceled"
+        ? "job_canceled"
+        : (input.errorCode ?? outcome.reasons[0] ?? "runtime_error")
+  return {
+    exitCode: normalizeHeadlessExitCode({
+      status: outcome.status as "succeeded" | "failed" | "canceled",
+      errorCode,
+    }),
+    errorCode,
+    errorMessage:
+      outcome.status === "succeeded"
+        ? null
+        : outcome.status === "canceled"
+          ? "Job was canceled."
+          : (input.errorMessage ??
+            `Run outcome ${outcome.status}: ${outcome.reasons.join(", ")}.`),
+    result: input.result,
+  }
+}
+
 export async function runPersistedCompletionJob(
   options: RunPersistedCompletionJobOptions,
 ): Promise<RunPersistedCompletionJobResult> {
@@ -471,12 +550,57 @@ export async function runPersistedCompletionJob(
     options.workerId ?? `completion:${process.pid}:${Date.now()}:${initial.id}`
   const workerPid =
     options.workerPid === undefined ? process.pid : options.workerPid
-  const job = startAgentJob(options.db, {
+  const job = await startAgentJob(options.db, {
     jobId: initial.id,
     workerId,
     workerPid,
   })
-  let secretHints: readonly string[] = []
+  // The executing host registers the Run's terminal projection once; every
+  // settlement without its own job-row fields uses it.
+  const ledger = await getOrCreateRunEventLedger(options.db, job, {
+    ...(options.terminalArtifacts
+      ? { terminalArtifacts: options.terminalArtifacts }
+      : {}),
+    terminalJobFields: (outcome) =>
+      completionJobFields(outcome, {
+        errorCode: null,
+        errorMessage: null,
+        result: {},
+      }),
+  })
+
+  const settleCompletion = async (input: {
+    status: "succeeded" | "failed" | "canceled"
+    content: unknown
+    errorCode: string | null
+    errorMessage: string | null
+    result: unknown
+  }): Promise<RunPersistedCompletionJobResult> => {
+    await ledger.settle(
+      completionOutcomeEvidence({
+        jobId: job.id,
+        status: input.status,
+        content: input.content,
+      }),
+      {
+        jobFields: (outcome) => completionJobFields(outcome, input),
+        ...(options.terminalArtifacts
+          ? { terminalArtifacts: options.terminalArtifacts }
+          : {}),
+      },
+    )
+    const outcome = await ledger.readOutcome()
+    const completed = getAgentJob(options.db, job.id) ?? job
+    return {
+      job: completed,
+      events: listAgentJobEvents(options.db, job.id),
+      exitCode: normalizeHeadlessExitCode({
+        status: completed.status as "succeeded" | "failed" | "canceled",
+        errorCode: completed.errorCode,
+      }),
+      outcome,
+    }
+  }
 
   try {
     const provider = resolveExplicitHeadlessProviderProfile({
@@ -486,7 +610,21 @@ export async function runPersistedCompletionJob(
       modelOverride: request.provider.model,
       dependencies: options.providerBindingDependencies,
     })
-    secretHints = provider.profile.token ? [provider.profile.token] : []
+    ledger.addSecretHints(
+      provider.profile.token ? [provider.profile.token] : [],
+    )
+    await bindRunExecutionProvenance(
+      ledger,
+      captureLocusCompletionProvenance({
+        runtimeId: job.runtime,
+        locusBuild: options.locusBuild || job.createdByVersion || "unknown",
+        protocolName: `${COMPLETION_PROTOCOL_NAME}:${provider.profile.protocol}`,
+        schemaDocument: JSON.stringify({
+          protocol: provider.profile.protocol,
+          responseFormat: request.responseFormat.type,
+        }),
+      }),
+    )
     const model =
       provider.resolvedProvider.model ?? provider.profile.defaultModel
     const result = await performCompletion({
@@ -499,49 +637,37 @@ export async function runPersistedCompletionJob(
       fetchImpl: options.fetchImpl ?? fetch,
       signal: options.signal,
     })
-    appendAgentJobEvent(options.db, {
-      jobId: job.id,
+    await ledger.ingestRuntimeObservation({
+      observationKey: `completion-usage:${job.id}`,
       type: "usage_update",
       payload: {
         usage: result.usage,
         resolvedProvider: provider.resolvedProvider,
       },
-      secretHints,
     })
-    const completed = completeAgentJob(options.db, {
-      jobId: job.id,
+    return await settleCompletion({
       status: "succeeded",
-      exitCode: HEADLESS_EXIT_CODES.success,
+      content: result.content,
+      errorCode: null,
+      errorMessage: null,
       result: completionResult({
         content: result.content,
         usage: result.usage,
         resolvedProvider: provider.resolvedProvider,
       }),
-      secretHints,
     })
-    return {
-      job: completed,
-      events: listAgentJobEvents(options.db, job.id),
-      exitCode: HEADLESS_EXIT_CODES.success,
-    }
   } catch (error) {
     const errorCode = errorCodeForCompletion(error)
     const status = errorCode === "job_canceled" ? "canceled" : "failed"
     const message = error instanceof Error ? error.message : String(error)
-    const completed = completeAgentJob(options.db, {
-      jobId: job.id,
+    return await settleCompletion({
       status,
-      exitCode: normalizeHeadlessExitCode({ status, errorCode }),
+      content: null,
       errorCode,
-      errorMessage:
-        errorCode === "job_canceled" ? "Job was canceled." : message,
+      errorMessage: message,
       result: null,
-      secretHints,
     })
-    return {
-      job: completed,
-      events: listAgentJobEvents(options.db, job.id),
-      exitCode: normalizeHeadlessExitCode({ status, errorCode }),
-    }
+  } finally {
+    releaseRunEventLedger(options.db, job.id)
   }
 }

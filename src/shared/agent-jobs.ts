@@ -70,3 +70,28 @@ export function isTerminalAgentJobStatus(status: AgentJobStatus): boolean {
     status === "interrupted"
   )
 }
+
+/**
+ * The public view of a job result: the value without the ledger's internal
+ * `artifactRefs` member, which the terminal commit merges into the job-row
+ * result as registered-artifact metadata (job-store
+ * `mergeArtifactRefsIntoResult`). A result that carried nothing but the refs
+ * is `null`, as before the merge. Every public reader of a job result (Local
+ * Job API envelopes, `job.result`, the terminal `completed.payload.result`)
+ * goes through this one rule.
+ */
+export function toPublicJobResult(value: unknown): unknown {
+  if (
+    !value ||
+    typeof value !== "object" ||
+    Array.isArray(value) ||
+    !Object.hasOwn(value, "artifactRefs")
+  ) {
+    return value
+  }
+  const { artifactRefs: _internalRefs, ...rest } = value as Record<
+    string,
+    unknown
+  >
+  return Object.keys(rest).length > 0 ? rest : null
+}

@@ -1,0 +1,927 @@
+{
+  "fixtureVersion": 1,
+  "evidenceClass": "synthetic",
+  "sourceRefs": [
+    "design \u00a7Error, Completion and Late-Event Policy (settle precedence)",
+    "design Test-facing Contract (OutcomeEvidence)",
+    "design \u00a7Durable Schema and Store Invariants (job-recovery liveness)",
+    "trace [EVENT-03] retryable error params",
+    "tasks 7.4"
+  ],
+  "provenance": {
+    "runtimeId": "codex",
+    "version": "0.139.0",
+    "binarySha256": "0729aedf4fe72971d81ef6803c817b850d711254d3c82ecc756a52f3b533c9f8",
+    "binarySha256Source": "trace \u00a71 table / [ENV-02]",
+    "idsMeasured": false,
+    "author": "independent test author (Domain B), 2026-09-30, test-first red suite"
+  },
+  "cases": [
+    {
+      "caseId": "retry-then-success",
+      "scenario": "S21",
+      "steps": [
+        {
+          "port": "ingestNotification",
+          "observationKey": "te-retry-ts",
+          "transportId": "t1",
+          "receivedAt": "2026-09-04T00:00:00.001Z",
+          "input": {
+            "message": {
+              "method": "turn/started",
+              "params": {
+                "threadId": "th",
+                "turn": {
+                  "id": "tu",
+                  "items": [],
+                  "status": "inProgress",
+                  "error": null
+                }
+              }
+            }
+          }
+        },
+        {
+          "port": "ingestNotification",
+          "observationKey": "te-retry-err",
+          "transportId": "t1",
+          "receivedAt": "2026-09-04T00:00:00.002Z",
+          "input": {
+            "message": {
+              "method": "error",
+              "params": {
+                "threadId": "th",
+                "turnId": "tu",
+                "error": {
+                  "message": "temporary",
+                  "code": "retryable"
+                },
+                "willRetry": true
+              }
+            }
+          }
+        },
+        {
+          "port": "ingestNotification",
+          "observationKey": "te-retry-delta",
+          "transportId": "t1",
+          "receivedAt": "2026-09-04T00:00:00.003Z",
+          "input": {
+            "message": {
+              "method": "item/agentMessage/delta",
+              "params": {
+                "threadId": "th",
+                "turnId": "tu",
+                "itemId": "msg",
+                "delta": "hello"
+              }
+            }
+          }
+        },
+        {
+          "port": "ingestNotification",
+          "observationKey": "te-retry-term",
+          "transportId": "t1",
+          "receivedAt": "2026-09-04T00:00:00.004Z",
+          "input": {
+            "message": {
+              "method": "turn/completed",
+              "params": {
+                "threadId": "th",
+                "turn": {
+                  "id": "tu",
+                  "items": [],
+                  "status": "completed",
+                  "error": null,
+                  "durationMs": 1200
+                }
+              }
+            }
+          }
+        }
+      ],
+      "evidence": {
+        "trigger": {
+          "kind": "native_terminal",
+          "status": "succeeded",
+          "observationKey": "te-retry-term",
+          "origin": "live"
+        },
+        "policy": {
+          "denied": false,
+          "evidenceKeys": ["policy:allow"]
+        },
+        "output": {
+          "valid": true,
+          "empty": false,
+          "allowEmpty": false,
+          "evidenceKeys": ["output:msg"]
+        },
+        "postRun": {
+          "credentialsSafe": true,
+          "evidenceKeys": ["postrun:credentials-ok"]
+        }
+      },
+      "expected": {
+        "status": "succeeded",
+        "completedCount": 1,
+        "error": {
+          "classification": "retryable",
+          "willRetry": true,
+          "code": "retryable",
+          "native": {
+            "threadId": "th",
+            "turnId": "tu"
+          }
+        }
+      }
+    },
+    {
+      "caseId": "denial",
+      "scenario": "S22",
+      "steps": [
+        {
+          "port": "ingestNotification",
+          "observationKey": "te-denial-ts",
+          "transportId": "t1",
+          "receivedAt": "2026-09-04T00:00:00.001Z",
+          "input": {
+            "message": {
+              "method": "turn/started",
+              "params": {
+                "threadId": "th",
+                "turn": {
+                  "id": "tu",
+                  "items": [],
+                  "status": "inProgress",
+                  "error": null
+                }
+              }
+            }
+          }
+        },
+        {
+          "port": "ingestNotification",
+          "observationKey": "te-denial-delta",
+          "transportId": "t1",
+          "receivedAt": "2026-09-04T00:00:00.002Z",
+          "input": {
+            "message": {
+              "method": "item/agentMessage/delta",
+              "params": {
+                "threadId": "th",
+                "turnId": "tu",
+                "itemId": "msg",
+                "delta": "hello"
+              }
+            }
+          }
+        },
+        {
+          "port": "ingestNotification",
+          "observationKey": "te-denial-term",
+          "transportId": "t1",
+          "receivedAt": "2026-09-04T00:00:00.003Z",
+          "input": {
+            "message": {
+              "method": "turn/completed",
+              "params": {
+                "threadId": "th",
+                "turn": {
+                  "id": "tu",
+                  "items": [],
+                  "status": "completed",
+                  "error": null,
+                  "durationMs": 1200
+                }
+              }
+            }
+          }
+        }
+      ],
+      "evidence": {
+        "trigger": {
+          "kind": "native_terminal",
+          "status": "succeeded",
+          "observationKey": "te-denial-term",
+          "origin": "live"
+        },
+        "policy": {
+          "denied": true,
+          "evidenceKeys": ["policy:denied:apply-patch"]
+        },
+        "output": {
+          "valid": true,
+          "empty": false,
+          "allowEmpty": false,
+          "evidenceKeys": ["output:msg"]
+        },
+        "postRun": {
+          "credentialsSafe": true,
+          "evidenceKeys": ["postrun:credentials-ok"]
+        }
+      },
+      "expected": {
+        "status": "failed",
+        "evidenceKeys": ["policy:denied:apply-patch"]
+      }
+    },
+    {
+      "caseId": "output-invalid",
+      "scenario": "S22",
+      "steps": [
+        {
+          "port": "ingestNotification",
+          "observationKey": "te-invalid-ts",
+          "transportId": "t1",
+          "receivedAt": "2026-09-04T00:00:00.001Z",
+          "input": {
+            "message": {
+              "method": "turn/started",
+              "params": {
+                "threadId": "th",
+                "turn": {
+                  "id": "tu",
+                  "items": [],
+                  "status": "inProgress",
+                  "error": null
+                }
+              }
+            }
+          }
+        },
+        {
+          "port": "ingestNotification",
+          "observationKey": "te-invalid-delta",
+          "transportId": "t1",
+          "receivedAt": "2026-09-04T00:00:00.002Z",
+          "input": {
+            "message": {
+              "method": "item/agentMessage/delta",
+              "params": {
+                "threadId": "th",
+                "turnId": "tu",
+                "itemId": "msg",
+                "delta": "hello"
+              }
+            }
+          }
+        },
+        {
+          "port": "ingestNotification",
+          "observationKey": "te-invalid-term",
+          "transportId": "t1",
+          "receivedAt": "2026-09-04T00:00:00.003Z",
+          "input": {
+            "message": {
+              "method": "turn/completed",
+              "params": {
+                "threadId": "th",
+                "turn": {
+                  "id": "tu",
+                  "items": [],
+                  "status": "completed",
+                  "error": null,
+                  "durationMs": 1200
+                }
+              }
+            }
+          }
+        }
+      ],
+      "evidence": {
+        "trigger": {
+          "kind": "native_terminal",
+          "status": "succeeded",
+          "observationKey": "te-invalid-term",
+          "origin": "live"
+        },
+        "policy": {
+          "denied": false,
+          "evidenceKeys": ["policy:allow"]
+        },
+        "output": {
+          "valid": false,
+          "empty": false,
+          "allowEmpty": false,
+          "evidenceKeys": ["output:schema-invalid"]
+        },
+        "postRun": {
+          "credentialsSafe": true,
+          "evidenceKeys": ["postrun:credentials-ok"]
+        }
+      },
+      "expected": {
+        "status": "failed",
+        "evidenceKeys": ["output:schema-invalid"]
+      }
+    },
+    {
+      "caseId": "empty-not-allowed",
+      "scenario": "S22",
+      "steps": [
+        {
+          "port": "ingestNotification",
+          "observationKey": "te-empty-ts",
+          "transportId": "t1",
+          "receivedAt": "2026-09-04T00:00:00.001Z",
+          "input": {
+            "message": {
+              "method": "turn/started",
+              "params": {
+                "threadId": "th",
+                "turn": {
+                  "id": "tu",
+                  "items": [],
+                  "status": "inProgress",
+                  "error": null
+                }
+              }
+            }
+          }
+        },
+        {
+          "port": "ingestNotification",
+          "observationKey": "te-empty-term",
+          "transportId": "t1",
+          "receivedAt": "2026-09-04T00:00:00.002Z",
+          "input": {
+            "message": {
+              "method": "turn/completed",
+              "params": {
+                "threadId": "th",
+                "turn": {
+                  "id": "tu",
+                  "items": [],
+                  "status": "completed",
+                  "error": null,
+                  "durationMs": 1200
+                }
+              }
+            }
+          }
+        }
+      ],
+      "evidence": {
+        "trigger": {
+          "kind": "native_terminal",
+          "status": "succeeded",
+          "observationKey": "te-empty-term",
+          "origin": "live"
+        },
+        "policy": {
+          "denied": false,
+          "evidenceKeys": ["policy:allow"]
+        },
+        "output": {
+          "valid": true,
+          "empty": true,
+          "allowEmpty": false,
+          "evidenceKeys": ["output:empty"]
+        },
+        "postRun": {
+          "credentialsSafe": true,
+          "evidenceKeys": ["postrun:credentials-ok"]
+        }
+      },
+      "expected": {
+        "status": "failed",
+        "evidenceKeys": ["output:empty"]
+      }
+    },
+    {
+      "caseId": "empty-allowed",
+      "scenario": "S22",
+      "steps": [
+        {
+          "port": "ingestNotification",
+          "observationKey": "te-empty-ok-ts",
+          "transportId": "t1",
+          "receivedAt": "2026-09-04T00:00:00.001Z",
+          "input": {
+            "message": {
+              "method": "turn/started",
+              "params": {
+                "threadId": "th",
+                "turn": {
+                  "id": "tu",
+                  "items": [],
+                  "status": "inProgress",
+                  "error": null
+                }
+              }
+            }
+          }
+        },
+        {
+          "port": "ingestNotification",
+          "observationKey": "te-empty-ok-term",
+          "transportId": "t1",
+          "receivedAt": "2026-09-04T00:00:00.002Z",
+          "input": {
+            "message": {
+              "method": "turn/completed",
+              "params": {
+                "threadId": "th",
+                "turn": {
+                  "id": "tu",
+                  "items": [],
+                  "status": "completed",
+                  "error": null,
+                  "durationMs": 1200
+                }
+              }
+            }
+          }
+        }
+      ],
+      "evidence": {
+        "trigger": {
+          "kind": "native_terminal",
+          "status": "succeeded",
+          "observationKey": "te-empty-ok-term",
+          "origin": "live"
+        },
+        "policy": {
+          "denied": false,
+          "evidenceKeys": ["policy:allow"]
+        },
+        "output": {
+          "valid": true,
+          "empty": true,
+          "allowEmpty": true,
+          "evidenceKeys": ["output:empty-allowed-internal-request"]
+        },
+        "postRun": {
+          "credentialsSafe": true,
+          "evidenceKeys": ["postrun:credentials-ok"]
+        }
+      },
+      "expected": {
+        "status": "succeeded",
+        "evidenceKeys": ["output:empty-allowed-internal-request"]
+      }
+    },
+    {
+      "caseId": "credential-failed",
+      "scenario": "S22",
+      "steps": [
+        {
+          "port": "ingestNotification",
+          "observationKey": "te-cred-ts",
+          "transportId": "t1",
+          "receivedAt": "2026-09-04T00:00:00.001Z",
+          "input": {
+            "message": {
+              "method": "turn/started",
+              "params": {
+                "threadId": "th",
+                "turn": {
+                  "id": "tu",
+                  "items": [],
+                  "status": "inProgress",
+                  "error": null
+                }
+              }
+            }
+          }
+        },
+        {
+          "port": "ingestNotification",
+          "observationKey": "te-cred-delta",
+          "transportId": "t1",
+          "receivedAt": "2026-09-04T00:00:00.002Z",
+          "input": {
+            "message": {
+              "method": "item/agentMessage/delta",
+              "params": {
+                "threadId": "th",
+                "turnId": "tu",
+                "itemId": "msg",
+                "delta": "hello"
+              }
+            }
+          }
+        },
+        {
+          "port": "ingestNotification",
+          "observationKey": "te-cred-term",
+          "transportId": "t1",
+          "receivedAt": "2026-09-04T00:00:00.003Z",
+          "input": {
+            "message": {
+              "method": "turn/completed",
+              "params": {
+                "threadId": "th",
+                "turn": {
+                  "id": "tu",
+                  "items": [],
+                  "status": "completed",
+                  "error": null,
+                  "durationMs": 1200
+                }
+              }
+            }
+          }
+        }
+      ],
+      "evidence": {
+        "trigger": {
+          "kind": "native_terminal",
+          "status": "succeeded",
+          "observationKey": "te-cred-term",
+          "origin": "live"
+        },
+        "policy": {
+          "denied": false,
+          "evidenceKeys": ["policy:allow"]
+        },
+        "output": {
+          "valid": true,
+          "empty": false,
+          "allowEmpty": false,
+          "evidenceKeys": ["output:msg"]
+        },
+        "postRun": {
+          "credentialsSafe": false,
+          "evidenceKeys": ["postrun:credential-leak-check-failed"]
+        }
+      },
+      "expected": {
+        "status": "failed",
+        "evidenceKeys": ["postrun:credential-leak-check-failed"]
+      }
+    },
+    {
+      "caseId": "cancel",
+      "scenario": "S22",
+      "steps": [
+        {
+          "port": "ingestNotification",
+          "observationKey": "te-cancel-ts",
+          "transportId": "t1",
+          "receivedAt": "2026-09-04T00:00:00.001Z",
+          "input": {
+            "message": {
+              "method": "turn/started",
+              "params": {
+                "threadId": "th",
+                "turn": {
+                  "id": "tu",
+                  "items": [],
+                  "status": "inProgress",
+                  "error": null
+                }
+              }
+            }
+          }
+        }
+      ],
+      "evidence": {
+        "trigger": {
+          "kind": "cancel",
+          "observationKey": "te-cancel-req",
+          "reason": "user_cancel"
+        },
+        "policy": {
+          "denied": false,
+          "evidenceKeys": ["policy:allow"]
+        },
+        "output": {
+          "valid": false,
+          "empty": true,
+          "allowEmpty": false,
+          "evidenceKeys": []
+        },
+        "postRun": {
+          "credentialsSafe": true,
+          "evidenceKeys": ["postrun:credentials-ok"]
+        }
+      },
+      "expected": {
+        "status": "canceled"
+      }
+    },
+    {
+      "caseId": "interrupt",
+      "scenario": "S22",
+      "steps": [
+        {
+          "port": "ingestNotification",
+          "observationKey": "te-int-ts",
+          "transportId": "t1",
+          "receivedAt": "2026-09-04T00:00:00.001Z",
+          "input": {
+            "message": {
+              "method": "turn/started",
+              "params": {
+                "threadId": "th",
+                "turn": {
+                  "id": "tu",
+                  "items": [],
+                  "status": "inProgress",
+                  "error": null
+                }
+              }
+            }
+          }
+        }
+      ],
+      "evidence": {
+        "trigger": {
+          "kind": "interrupt",
+          "observationKey": "te-int-req",
+          "reason": "user_interrupt"
+        },
+        "policy": {
+          "denied": false,
+          "evidenceKeys": ["policy:allow"]
+        },
+        "output": {
+          "valid": false,
+          "empty": true,
+          "allowEmpty": false,
+          "evidenceKeys": []
+        },
+        "postRun": {
+          "credentialsSafe": true,
+          "evidenceKeys": ["postrun:credentials-ok"]
+        }
+      },
+      "expected": {
+        "status": "interrupted"
+      }
+    },
+    {
+      "caseId": "success-missing-output-evidence",
+      "scenario": "S22",
+      "steps": [
+        {
+          "port": "ingestNotification",
+          "observationKey": "te-noout-ts",
+          "transportId": "t1",
+          "receivedAt": "2026-09-04T00:00:00.001Z",
+          "input": {
+            "message": {
+              "method": "turn/started",
+              "params": {
+                "threadId": "th",
+                "turn": {
+                  "id": "tu",
+                  "items": [],
+                  "status": "inProgress",
+                  "error": null
+                }
+              }
+            }
+          }
+        },
+        {
+          "port": "ingestNotification",
+          "observationKey": "te-noout-delta",
+          "transportId": "t1",
+          "receivedAt": "2026-09-04T00:00:00.002Z",
+          "input": {
+            "message": {
+              "method": "item/agentMessage/delta",
+              "params": {
+                "threadId": "th",
+                "turnId": "tu",
+                "itemId": "msg",
+                "delta": "hello"
+              }
+            }
+          }
+        },
+        {
+          "port": "ingestNotification",
+          "observationKey": "te-noout-term",
+          "transportId": "t1",
+          "receivedAt": "2026-09-04T00:00:00.003Z",
+          "input": {
+            "message": {
+              "method": "turn/completed",
+              "params": {
+                "threadId": "th",
+                "turn": {
+                  "id": "tu",
+                  "items": [],
+                  "status": "completed",
+                  "error": null,
+                  "durationMs": 1200
+                }
+              }
+            }
+          }
+        }
+      ],
+      "evidence": {
+        "trigger": {
+          "kind": "native_terminal",
+          "status": "succeeded",
+          "observationKey": "te-noout-term",
+          "origin": "live"
+        },
+        "policy": {
+          "denied": false,
+          "evidenceKeys": ["policy:allow"]
+        },
+        "output": {
+          "valid": true,
+          "empty": false,
+          "allowEmpty": false,
+          "evidenceKeys": []
+        },
+        "postRun": {
+          "credentialsSafe": true,
+          "evidenceKeys": ["postrun:credentials-ok"]
+        }
+      },
+      "expected": {
+        "status": "failed",
+        "notStatus": "succeeded"
+      }
+    },
+    {
+      "caseId": "queued-cancel",
+      "scenario": "S24",
+      "provenance": "pending",
+      "headerStatus": "queued",
+      "steps": [
+        {
+          "port": "appendSystemEvent",
+          "observationKey": "te-qc-created",
+          "input": {
+            "type": "job_created",
+            "payload": {
+              "kind": "agent",
+              "source": "api",
+              "runtime": "codex",
+              "mode": "plan"
+            }
+          }
+        }
+      ],
+      "evidence": {
+        "trigger": {
+          "kind": "cancel",
+          "observationKey": "te-qc-cancel",
+          "reason": "queued_cancel"
+        },
+        "policy": {
+          "denied": false,
+          "evidenceKeys": ["policy:allow"]
+        },
+        "output": {
+          "valid": false,
+          "empty": true,
+          "allowEmpty": false,
+          "evidenceKeys": []
+        },
+        "postRun": {
+          "credentialsSafe": true,
+          "evidenceKeys": ["postrun:credentials-ok"]
+        }
+      },
+      "expected": {
+        "status": "canceled",
+        "syntheticSource": "cancel",
+        "provenanceKind": "pending"
+      }
+    },
+    {
+      "caseId": "dead-worker-recovery-executed",
+      "scenario": "S24",
+      "provenance": "runtime",
+      "headerStatus": "running",
+      "steps": [
+        {
+          "port": "ingestNotification",
+          "observationKey": "te-rec-ts",
+          "transportId": "t1",
+          "receivedAt": "2026-09-04T00:00:00.001Z",
+          "input": {
+            "message": {
+              "method": "turn/started",
+              "params": {
+                "threadId": "th",
+                "turn": {
+                  "id": "tu",
+                  "items": [],
+                  "status": "inProgress",
+                  "error": null
+                }
+              }
+            }
+          }
+        }
+      ],
+      "evidence": {
+        "trigger": {
+          "kind": "recovery",
+          "observationKey": "te-rec",
+          "reason": "confirmed_dead_worker"
+        },
+        "policy": {
+          "denied": false,
+          "evidenceKeys": ["policy:allow"]
+        },
+        "output": {
+          "valid": false,
+          "empty": true,
+          "allowEmpty": false,
+          "evidenceKeys": []
+        },
+        "postRun": {
+          "credentialsSafe": true,
+          "evidenceKeys": ["postrun:credentials-ok"]
+        }
+      },
+      "expected": {
+        "status": "interrupted",
+        "syntheticSource": "recovery",
+        "provenanceKind": "runtime"
+      }
+    }
+  ],
+  "recovery": {
+    "staleThresholdMs": 120000,
+    "note": "DB-level cases for headless/job-recovery.ts recoverStaleAgentJobs(db, now). workerPid tokens: $EXITED_PID = a PID spawned and reaped by the test (probe => ESRCH); $SELF_PID = the test process (probe => alive); 1 = init (non-root probe => EPERM). heartbeatAgeMs null means heartbeat_at NULL.",
+    "cases": [
+      {
+        "caseId": "stale-esrch",
+        "claimed": true,
+        "workerPid": "$EXITED_PID",
+        "heartbeatAgeMs": 121000,
+        "expected": {
+          "settled": true,
+          "status": "interrupted",
+          "confidence": "confirmed"
+        }
+      },
+      {
+        "caseId": "null-heartbeat-esrch",
+        "claimed": true,
+        "workerPid": "$EXITED_PID",
+        "heartbeatAgeMs": null,
+        "expected": {
+          "settled": true,
+          "status": "interrupted",
+          "confidence": "confirmed"
+        }
+      },
+      {
+        "caseId": "never-claimed",
+        "claimed": false,
+        "workerPid": null,
+        "heartbeatAgeMs": null,
+        "expected": {
+          "settled": true,
+          "status": "interrupted",
+          "confidence": "confirmed",
+          "ledgerProvenanceJson": null
+        }
+      },
+      {
+        "caseId": "alive-self",
+        "claimed": true,
+        "workerPid": "$SELF_PID",
+        "heartbeatAgeMs": 121000,
+        "expected": {
+          "settled": false,
+          "status": "running"
+        }
+      },
+      {
+        "caseId": "eperm-init",
+        "claimed": true,
+        "workerPid": 1,
+        "heartbeatAgeMs": 121000,
+        "expected": {
+          "settled": false,
+          "status": "running"
+        }
+      },
+      {
+        "caseId": "claimed-missing-pid",
+        "claimed": true,
+        "workerPid": null,
+        "heartbeatAgeMs": 121000,
+        "expected": {
+          "settled": false,
+          "status": "running"
+        }
+      },
+      {
+        "caseId": "fresh-boundary-120s",
+        "claimed": true,
+        "workerPid": "$EXITED_PID",
+        "heartbeatAgeMs": 120000,
+        "expected": {
+          "settled": false,
+          "status": "running"
+        }
+      }
+    ]
+  }
+}

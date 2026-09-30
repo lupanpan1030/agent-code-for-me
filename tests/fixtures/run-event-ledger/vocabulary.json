@@ -1,0 +1,358 @@
+{
+  "fixtureVersion": 1,
+  "evidenceClass": "synthetic",
+  "sourceRefs": [
+    "specs/agent-runtime-core Normalized Agent Events / Event type is emitted",
+    "tasks 7.17 (vocabulary.json cases carry port=ingestRuntimeObservation|admitRunArtifactCandidate|settle)",
+    "src/shared/agent-jobs.ts AGENT_JOB_EVENT_TYPES (the 21 internal types)",
+    "design Test-facing Contract (appendSystemEvent lifecycle, ingestRuntimeObservation coarse, settle OutcomeEvidence, admitRunArtifactCandidate)",
+    "red-receipt §8 (coarse ID-less ingestRuntimeObservation shape, per-call usage DTO, admitRunArtifactCandidate context, artifact_created.payload.artifacts)"
+  ],
+  "provenance": {
+    "runtimeId": "codex",
+    "executionProvenanceRef": "identity-provenance.json#provenanceVariants.runtime",
+    "author": "independent test author (follow-up red slice A), 2026-10-01",
+    "note": "Payload members of the nine status-projected types reuse public-vocabulary.json values. job_created/job_started are host lifecycle facts driven through appendSystemEvent exactly as the first suite does (provenance-resume S15); every other non-artifact, non-terminal type enters through ingestRuntimeObservation. The artifact case writes `content` to <allowedRunDir>/<fileName> in a per-test temp dir; $RUN_ID is replaced by the test's runId. The settle case is a coarse host_result (process batch) OutcomeEvidence. Secret hint is memory-only (redactionContext.secretHints)."
+  },
+  "runId": "run-slice-a-vocabulary",
+  "runtimeId": "codex",
+  "source": "api",
+  "secretHints": ["provider-secret-123"],
+  "allowedTypes": [
+    "job_created",
+    "job_started",
+    "assistant_delta",
+    "reasoning_delta",
+    "tool_started",
+    "tool_delta",
+    "tool_finished",
+    "guard_decision",
+    "permission_requested",
+    "scope_expansion_requested",
+    "question_pending",
+    "question_result",
+    "mcp_needs_auth",
+    "usage_update",
+    "command_started",
+    "command_output",
+    "command_finished",
+    "artifact_created",
+    "status",
+    "error",
+    "completed"
+  ],
+  "cases": [
+    {
+      "caseId": "voc-job-created",
+      "port": "appendSystemEvent",
+      "observationKey": "voc-job-created",
+      "input": {
+        "type": "job_created",
+        "payload": {
+          "kind": "agent",
+          "source": "api",
+          "runtime": "codex",
+          "mode": "agent"
+        }
+      },
+      "expectedType": "job_created",
+      "preservesPayload": true
+    },
+    {
+      "caseId": "voc-job-started",
+      "port": "appendSystemEvent",
+      "observationKey": "voc-job-started",
+      "input": { "type": "job_started", "payload": { "workerId": "w1" } },
+      "expectedType": "job_started",
+      "preservesPayload": true
+    },
+    {
+      "caseId": "voc-assistant",
+      "port": "ingestRuntimeObservation",
+      "observationKey": "voc-assistant",
+      "input": { "type": "assistant_delta", "payload": { "text": "hello" } },
+      "expectedType": "assistant_delta",
+      "preservesPayload": true
+    },
+    {
+      "caseId": "voc-reasoning",
+      "port": "ingestRuntimeObservation",
+      "observationKey": "voc-reasoning",
+      "input": { "type": "reasoning_delta", "payload": { "text": "thinking" } },
+      "expectedType": "reasoning_delta",
+      "preservesPayload": true
+    },
+    {
+      "caseId": "voc-tool-started",
+      "port": "ingestRuntimeObservation",
+      "observationKey": "voc-tool-started",
+      "input": {
+        "type": "tool_started",
+        "payload": { "toolCallId": "call-v1", "toolName": "Bash" }
+      },
+      "expectedType": "tool_started",
+      "preservesPayload": true
+    },
+    {
+      "caseId": "voc-tool-delta",
+      "port": "ingestRuntimeObservation",
+      "observationKey": "voc-tool-delta",
+      "input": {
+        "type": "tool_delta",
+        "payload": {
+          "toolCallId": "call-v1",
+          "toolName": "Bash",
+          "output": "a"
+        }
+      },
+      "expectedType": "tool_delta",
+      "preservesPayload": true
+    },
+    {
+      "caseId": "voc-tool-finished",
+      "port": "ingestRuntimeObservation",
+      "observationKey": "voc-tool-finished",
+      "input": {
+        "type": "tool_finished",
+        "payload": {
+          "toolCallId": "call-v1",
+          "toolName": "Bash",
+          "status": "completed"
+        }
+      },
+      "expectedType": "tool_finished",
+      "preservesPayload": true
+    },
+    {
+      "caseId": "voc-guard-decision",
+      "port": "ingestRuntimeObservation",
+      "observationKey": "voc-guard-decision",
+      "input": {
+        "type": "guard_decision",
+        "payload": { "decision": "deny", "ruleId": "rule-1" }
+      },
+      "expectedType": "guard_decision",
+      "preservesPayload": true
+    },
+    {
+      "caseId": "voc-permission-requested",
+      "port": "ingestRuntimeObservation",
+      "observationKey": "voc-permission-requested",
+      "input": {
+        "type": "permission_requested",
+        "payload": { "permission": "write", "path": "/fixture/workspace" }
+      },
+      "expectedType": "permission_requested",
+      "preservesPayload": true
+    },
+    {
+      "caseId": "voc-scope-expansion-requested",
+      "port": "ingestRuntimeObservation",
+      "observationKey": "voc-scope-expansion-requested",
+      "input": {
+        "type": "scope_expansion_requested",
+        "payload": { "requestedRoot": "/fixture/other" }
+      },
+      "expectedType": "scope_expansion_requested",
+      "preservesPayload": true
+    },
+    {
+      "caseId": "voc-question-pending",
+      "port": "ingestRuntimeObservation",
+      "observationKey": "voc-question-pending",
+      "input": {
+        "type": "question_pending",
+        "payload": { "questionId": "q1", "prompt": "Proceed?" }
+      },
+      "expectedType": "question_pending",
+      "preservesPayload": true
+    },
+    {
+      "caseId": "voc-question-result",
+      "port": "ingestRuntimeObservation",
+      "observationKey": "voc-question-result",
+      "input": {
+        "type": "question_result",
+        "payload": { "questionId": "q1", "answer": "yes" }
+      },
+      "expectedType": "question_result",
+      "preservesPayload": true
+    },
+    {
+      "caseId": "voc-mcp-needs-auth",
+      "port": "ingestRuntimeObservation",
+      "observationKey": "voc-mcp-needs-auth",
+      "input": { "type": "mcp_needs_auth", "payload": { "server": "docs" } },
+      "expectedType": "mcp_needs_auth",
+      "preservesPayload": true
+    },
+    {
+      "caseId": "voc-usage-update",
+      "port": "ingestRuntimeObservation",
+      "observationKey": "voc-usage-update",
+      "input": {
+        "type": "usage_update",
+        "payload": {
+          "callId": "call-usage-1",
+          "revision": 1,
+          "usage": { "inputTokens": 8, "outputTokens": 2, "totalTokens": 10 }
+        }
+      },
+      "expectedType": "usage_update",
+      "preservesPayload": false,
+      "note": "usage payload is normalized by the ledger's usage owner (total/last/baseline/delta); only the type and sanitization are asserted"
+    },
+    {
+      "caseId": "voc-command-started",
+      "port": "ingestRuntimeObservation",
+      "observationKey": "voc-command-started",
+      "input": { "type": "command_started", "payload": { "command": "ls" } },
+      "expectedType": "command_started",
+      "preservesPayload": true
+    },
+    {
+      "caseId": "voc-command-output",
+      "port": "ingestRuntimeObservation",
+      "observationKey": "voc-command-output",
+      "input": {
+        "type": "command_output",
+        "payload": {
+          "stream": "stdout",
+          "text": "token=provider-secret-123 done"
+        }
+      },
+      "expectedType": "command_output",
+      "preservesPayload": false,
+      "note": "carries the exact secret hint; asserted sanitized, not preserved"
+    },
+    {
+      "caseId": "voc-command-finished",
+      "port": "ingestRuntimeObservation",
+      "observationKey": "voc-command-finished",
+      "input": {
+        "type": "command_finished",
+        "payload": { "command": "ls", "exitCode": 0 }
+      },
+      "expectedType": "command_finished",
+      "preservesPayload": true
+    },
+    {
+      "caseId": "voc-status",
+      "port": "ingestRuntimeObservation",
+      "observationKey": "voc-status",
+      "input": { "type": "status", "payload": { "message": "runtime ready" } },
+      "expectedType": "status",
+      "preservesPayload": true
+    },
+    {
+      "caseId": "voc-error",
+      "port": "ingestRuntimeObservation",
+      "observationKey": "voc-error",
+      "input": {
+        "type": "error",
+        "payload": {
+          "message": "transient warning",
+          "classification": "diagnostic",
+          "willRetry": true
+        }
+      },
+      "expectedType": "error",
+      "preservesPayload": false,
+      "note": "error classification is ledger-owned (classification/willRetry/code); only the type and sanitization are asserted"
+    },
+    {
+      "caseId": "voc-artifact",
+      "port": "admitRunArtifactCandidate",
+      "input": {
+        "fileName": "vocabulary-report.txt",
+        "content": "vocabulary artifact body\n",
+        "candidate": {
+          "ownerRunId": "$RUN_ID",
+          "expectedSha256": "4fd5a4419251557e732d193d6f9785dcaed12fbe7ffae9ae755076c9c2cda9cf",
+          "media": "text/plain"
+        }
+      },
+      "expectedType": "artifact_created",
+      "expectedArtifact": {
+        "sha256": "4fd5a4419251557e732d193d6f9785dcaed12fbe7ffae9ae755076c9c2cda9cf",
+        "sizeBytes": 25,
+        "contentType": "text/plain"
+      }
+    },
+    {
+      "caseId": "voc-completed",
+      "port": "settle",
+      "input": {
+        "trigger": {
+          "kind": "host_result",
+          "status": "succeeded",
+          "observationKey": "voc-completed"
+        },
+        "policy": { "denied": false, "evidenceKeys": ["policy:allow"] },
+        "output": {
+          "valid": true,
+          "empty": false,
+          "allowEmpty": false,
+          "evidenceKeys": ["output:voc-assistant"]
+        },
+        "postRun": {
+          "credentialsSafe": true,
+          "evidenceKeys": ["postrun:credentials-ok"]
+        }
+      },
+      "expectedType": "completed"
+    }
+  ],
+  "rawMintAttempts": [
+    {
+      "caseId": "mint-completed-runtime",
+      "port": "ingestRuntimeObservation",
+      "observationKey": "voc-mint-completed-runtime",
+      "input": { "type": "completed", "payload": { "status": "succeeded" } },
+      "forbiddenType": "completed"
+    },
+    {
+      "caseId": "mint-completed-system",
+      "port": "appendSystemEvent",
+      "observationKey": "voc-mint-completed-system",
+      "input": { "type": "completed", "payload": { "status": "succeeded" } },
+      "forbiddenType": "completed"
+    },
+    {
+      "caseId": "mint-artifact-runtime",
+      "port": "ingestRuntimeObservation",
+      "observationKey": "voc-mint-artifact-runtime",
+      "input": {
+        "type": "artifact_created",
+        "payload": {
+          "artifacts": [
+            {
+              "sha256": "4fd5a4419251557e732d193d6f9785dcaed12fbe7ffae9ae755076c9c2cda9cf",
+              "sizeBytes": 25,
+              "contentType": "text/plain"
+            }
+          ]
+        }
+      },
+      "forbiddenType": "artifact_created"
+    },
+    {
+      "caseId": "mint-artifact-system",
+      "port": "appendSystemEvent",
+      "observationKey": "voc-mint-artifact-system",
+      "input": {
+        "type": "artifact_created",
+        "payload": {
+          "artifacts": [
+            {
+              "sha256": "4fd5a4419251557e732d193d6f9785dcaed12fbe7ffae9ae755076c9c2cda9cf",
+              "sizeBytes": 25,
+              "contentType": "text/plain"
+            }
+          ]
+        }
+      },
+      "forbiddenType": "artifact_created"
+    }
+  ]
+}

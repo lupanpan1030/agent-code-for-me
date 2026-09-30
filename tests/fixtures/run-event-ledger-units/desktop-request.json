@@ -1,0 +1,154 @@
+{
+  "fixtureVersion": 1,
+  "evidenceClass": "synthetic",
+  "sourceRefs": [
+    "specs/agent-runtime-core Desktop Run Request Contract / Adapter receives desktop request",
+    "specs/agent-runtime-core Desktop Run Request Contract / Adapter emits normalized events",
+    "tasks 7.17 (desktop-request.json: validated request DTO and raw sentinel, fake ports/spies)",
+    "src/main/lib/claude/desktop-run-request.ts createClaudeDesktopRunRequestFromRuntimeStartup",
+    "src/main/lib/agent-runtime/desktop-runner.ts DesktopRuntimeAdapterFactory / recordDesktopRuntimeAdapterStarted",
+    "red-receipt §6 (S08/S09 implementer-unit: desktop request ledger ports and desktop-runner ledger injection)"
+  ],
+  "provenance": {
+    "author": "implementer unit fixture (refactor-canonical-run-event-ledger touch-up T1), 2026-10-01",
+    "measured": false,
+    "note": "Implementer-unit fixture kept outside the immutable tests/fixtures/run-event-ledger/ root. startup is the runtime-startup DTO handed to the desktop request factory; rawSentinels are plaintext provider/OAuth/gateway tokens, raw headers and arbitrary renderer env smuggled into that DTO, none of which may reach the request. secretHints are the Run's memory-only exact hints; they enter only the host redactor."
+  },
+  "secretHints": ["provider-secret-123", "gateway-secret-456"],
+  "rawSentinels": [
+    "provider-secret-123",
+    "gateway-secret-456",
+    "oauth-refresh-789",
+    "Bearer gateway-secret-456",
+    "RENDERER_ONLY_ENV_VALUE"
+  ],
+  "startup": {
+    "runId": "run-desktop-request",
+    "streamId": "stream-desktop-request",
+    "mode": "agent",
+    "prompt": "Summarize the workspace.",
+    "cwd": "/fixture/project",
+    "chatId": "chat-desktop",
+    "subChatId": "sub-desktop",
+    "projectId": "project-desktop",
+    "customConfig": {
+      "model": "profile-model",
+      "baseUrl": "https://provider.example.com",
+      "token": "provider-secret-123",
+      "oauthRefreshToken": "oauth-refresh-789",
+      "headers": { "Authorization": "Bearer gateway-secret-456" },
+      "env": { "RENDERER_ONLY": "RENDERER_ONLY_ENV_VALUE" }
+    },
+    "requestedModel": "request-model",
+    "modelSource": "provider:profile-desktop",
+    "selectedProviderProfileId": "profile-desktop",
+    "images": [
+      {
+        "attachmentId": "att-image",
+        "localRef": "local-image-1",
+        "mediaType": "image/png",
+        "filename": "screen.png",
+        "sizeBytes": 42
+      }
+    ],
+    "longTextAttachments": [
+      {
+        "attachmentId": "att-text",
+        "localRef": "local-text-1",
+        "filename": "notes.txt",
+        "byteLength": 128
+      }
+    ],
+    "existingSessionId": "session-desktop"
+  },
+  "expected": {
+    "identity": {
+      "runId": "run-desktop-request",
+      "streamId": "stream-desktop-request"
+    },
+    "context": {
+      "runtimeId": "claude-code",
+      "mode": "agent",
+      "source": "desktop",
+      "executionProfile": "interactive",
+      "workspaceKind": "project",
+      "projectId": "project-desktop",
+      "chatId": "chat-desktop",
+      "subChatId": "sub-desktop",
+      "cwd": "/fixture/project"
+    },
+    "providerBinding": {
+      "model": "profile-model",
+      "modelSource": "provider:profile-desktop",
+      "providerProfileId": "profile-desktop",
+      "gatewayEndpoint": "https://provider.example.com",
+      "authMode": "provider-profile"
+    },
+    "mcp": { "status": "skipped", "serverNames": [], "blockers": [] },
+    "attachments": [
+      {
+        "kind": "image",
+        "attachmentId": "att-image",
+        "localRef": "local-image-1",
+        "mediaType": "image/png",
+        "filename": "screen.png",
+        "byteLength": 42
+      },
+      {
+        "kind": "long-text",
+        "attachmentId": "att-text",
+        "localRef": "local-text-1",
+        "filename": "notes.txt",
+        "byteLength": 128
+      }
+    ],
+    "session": {
+      "resumeSessionId": "session-desktop",
+      "parentSessionId": "session-desktop"
+    }
+  },
+  "events": [
+    {
+      "category": "assistant",
+      "type": "assistant_delta",
+      "payload": { "text": "The workspace has two packages." }
+    },
+    {
+      "category": "reasoning",
+      "type": "reasoning_delta",
+      "payload": { "text": "Listing packages." }
+    },
+    {
+      "category": "tool",
+      "type": "tool_started",
+      "payload": {
+        "toolCallId": "call-desktop",
+        "toolName": "Bash",
+        "input": { "command": "ls packages" }
+      }
+    },
+    {
+      "category": "tool",
+      "type": "tool_finished",
+      "payload": {
+        "toolCallId": "call-desktop",
+        "toolName": "Bash",
+        "output": "api\nweb\n",
+        "status": "completed"
+      }
+    },
+    {
+      "category": "status",
+      "type": "status",
+      "payload": { "status": "runtime-status", "ok": true }
+    },
+    {
+      "category": "diagnostic",
+      "type": "error",
+      "payload": {
+        "errorCode": "runtime_warning",
+        "errorMessage": "Gateway token gateway-secret-456 is near expiry."
+      }
+    }
+  ]
+}

@@ -3095,40 +3095,26 @@ function assertGuardDecisionSingleOwner() {
 const RUNTIME_EVENT_SYMBOL_OWNERS = new Map([
   ["createRunEvent", "src/main/lib/agent-runtime/runtime-events.ts"],
   [
-    "mapDesktopStreamChunkToRunEvents",
-    "src/main/lib/agent-runtime/stream-event-mapper.ts",
+    "createCanonicalRunEventLedger",
+    "src/main/lib/agent-runtime/run-event-ledger.ts",
   ],
   [
-    "createDesktopStreamEventMapper",
-    "src/main/lib/agent-runtime/stream-event-mapper.ts",
+    "getOrCreateRunEventLedger",
+    "src/main/lib/agent-runtime/run-event-ledger-host.ts",
   ],
   [
-    "appendRunEventsToAgentJob",
+    "projectRunEventToRendererChunks",
     "src/main/lib/agent-runtime/stream-event-mapper.ts",
   ],
-  [
-    "redactRendererDiagnosticChunk",
-    "src/main/lib/agent-runtime/stream-event-mapper.ts",
-  ],
-  [
-    "redactRendererRuntimeChunk",
-    "src/main/lib/agent-runtime/stream-event-mapper.ts",
-  ],
-  [
-    "createRuntimeRendererChunkEmitter",
-    "src/main/lib/agent-runtime/stream-event-mapper.ts",
-  ],
-  ["createAgentJobRunEvent", "src/main/lib/agent-runtime/job-event-bridge.ts"],
   ["redactRuntimePayload", "src/main/lib/agent-runtime/redaction.ts"],
   ["redactExactSecretHints", "src/main/lib/agent-runtime/redaction.ts"],
 ])
 const JOB_EVENT_STORE_OWNER = "src/main/lib/headless/job-store.ts"
-const APPEND_AGENT_JOB_EVENT_IMPORTERS = [
-  "src/main/lib/agent-runtime/stream-event-mapper.ts",
-  "src/main/lib/desktop-agent-jobs.ts",
-  "src/main/lib/headless/cli-dispatcher.ts",
-  "src/main/lib/headless/completion-runner.ts",
-  "src/main/lib/headless/job-runner.ts",
+const JOB_EVENT_STORE_APPEND = "appendExactRunEventBatch"
+const JOB_EVENT_STORE_INSERT = "insertExactRunEventRecord"
+/** The host's exact store adapter is the only raw event writer importer. */
+const APPEND_EXACT_RUN_EVENT_BATCH_IMPORTERS = [
+  "src/main/lib/agent-runtime/run-event-ledger-host.ts",
 ]
 const RUNTIME_EVENT_OWNERSHIP_SECTION =
   'docs/OWNERSHIP_MAP.md "Runtime Events, Trace, And Redaction"'
@@ -3365,13 +3351,13 @@ function assertRuntimeEventSinglePathSelfTest() {
   )
   const rawImport = importsNamedSymbolFrom(
     "src/main/lib/disallowed.ts",
-    'import { appendAgentJobEvent } from "./headless/job-store"',
+    'import { appendExactRunEventBatch } from "./headless/job-store"',
     JOB_EVENT_STORE_OWNER,
-    "appendAgentJobEvent",
+    JOB_EVENT_STORE_APPEND,
   )
   const clean = collectTrackedSymbolFacts(
     "src/main/lib/clean.ts",
-    'import { createAgentJobRunEvent as bridge } from "./agent-runtime/job-event-bridge"; void bridge',
+    'import { getOrCreateRunEventLedger as host } from "./agent-runtime/run-event-ledger-host"; void host',
     new Set(RUNTIME_EVENT_SYMBOL_OWNERS.keys()),
   )
   const privateOwner = collectTrackedSymbolFacts(
@@ -3385,37 +3371,37 @@ function assertRuntimeEventSinglePathSelfTest() {
     new Set(RUNTIME_EVENT_SYMBOL_OWNERS.keys()),
   )
   const rawImportFixtures = [
-    'import { appendAgentJobEvent } from "./headless/job-store"',
-    'import * as store from "./headless/job-store"; store.appendAgentJobEvent',
-    'const store = await import("./headless/job-store"); store.appendAgentJobEvent',
-    'import store = require("./headless/job-store"); store.appendAgentJobEvent',
-    'const { appendAgentJobEvent } = require("./headless/job-store")',
-    'const store = module.require("./headless/job-store"); store["appendAgentJobEvent"]',
-    'import { createRequire } from "node:module"; const load = createRequire(import.meta.url); const store = load("./headless/job-store"); store.appendAgentJobEvent',
+    'import { appendExactRunEventBatch } from "./headless/job-store"',
+    'import * as store from "./headless/job-store"; store.appendExactRunEventBatch',
+    'const store = await import("./headless/job-store"); store.appendExactRunEventBatch',
+    'import store = require("./headless/job-store"); store.appendExactRunEventBatch',
+    'const { appendExactRunEventBatch } = require("./headless/job-store")',
+    'const store = module.require("./headless/job-store"); store["appendExactRunEventBatch"]',
+    'import { createRequire } from "node:module"; const load = createRequire(import.meta.url); const store = load("./headless/job-store"); store.appendExactRunEventBatch',
   ]
   const detectsEveryRawImportSyntax = rawImportFixtures.every((content) =>
     importsNamedSymbolFrom(
       "src/main/lib/disallowed.ts",
       content,
       JOB_EVENT_STORE_OWNER,
-      "appendAgentJobEvent",
+      JOB_EVENT_STORE_APPEND,
     ),
   )
   const ignoresOtherJobStoreImports = !importsNamedSymbolFrom(
     "src/main/lib/clean-job-store-import.ts",
-    'import { getAgentJob } from "./headless/job-store"; const example = "appendAgentJobEvent"; void getAgentJob; void example',
+    'import { getAgentJob } from "./headless/job-store"; const example = "appendExactRunEventBatch"; void getAgentJob; void example',
     JOB_EVENT_STORE_OWNER,
-    "appendAgentJobEvent",
+    JOB_EVENT_STORE_APPEND,
   )
   const aliasedAppendExports = collectActualExportNamesForSymbol(
     JOB_EVENT_STORE_OWNER,
-    "const rawWrite = appendAgentJobEvent; export const rawWriteAgain = rawWrite; export { appendAgentJobEvent, rawWrite }; export default rawWriteAgain",
-    "appendAgentJobEvent",
+    "const rawWrite = appendExactRunEventBatch; export const rawWriteAgain = rawWrite; export { appendExactRunEventBatch, rawWrite }; export default rawWriteAgain",
+    JOB_EVENT_STORE_APPEND,
   )
   const defaultInsertExport = collectActualExportNamesForSymbol(
     JOB_EVENT_STORE_OWNER,
-    "export const rawInsert = insertAgentJobEventRecord; export default rawInsert",
-    "insertAgentJobEventRecord",
+    "export const rawInsert = insertExactRunEventRecord; export default rawInsert",
+    JOB_EVENT_STORE_INSERT,
   )
   if (
     !duplicate.definitions.has("createRunEvent") ||
@@ -3430,7 +3416,7 @@ function assertRuntimeEventSinglePathSelfTest() {
     !ignoresOtherJobStoreImports ||
     JSON.stringify(aliasedAppendExports) !==
       JSON.stringify([
-        "appendAgentJobEvent",
+        "appendExactRunEventBatch",
         "default",
         "rawWrite",
         "rawWriteAgain",
@@ -3439,7 +3425,7 @@ function assertRuntimeEventSinglePathSelfTest() {
       JSON.stringify(["default", "rawInsert"])
   ) {
     fail(
-      "Canonical runtime-event single-path self-test must detect duplicate definitions and raw-write imports while accepting a bridge consumer.",
+      "Canonical runtime-event single-path self-test must detect duplicate definitions and raw-write imports while accepting a host ledger consumer.",
     )
   }
 }
@@ -3448,8 +3434,8 @@ function assertRuntimeEventSinglePath() {
   assertRuntimeEventSinglePathSelfTest()
   const tracked = new Set([
     ...RUNTIME_EVENT_SYMBOL_OWNERS.keys(),
-    "appendAgentJobEvent",
-    "insertAgentJobEventRecord",
+    JOB_EVENT_STORE_APPEND,
+    JOB_EVENT_STORE_INSERT,
   ])
   const definitionSites = new Map(
     [...RUNTIME_EVENT_SYMBOL_OWNERS.keys()].map((symbol) => [symbol, []]),
@@ -3480,7 +3466,7 @@ function assertRuntimeEventSinglePath() {
         exportSites.get(symbol).push(filePath)
     }
     if (
-      facts.exports.has("appendAgentJobEvent") ||
+      facts.exports.has(JOB_EVENT_STORE_APPEND) ||
       reexportsWholeModuleFrom(filePath, content, JOB_EVENT_STORE_OWNER)
     )
       exportedAppendSites.push(filePath)
@@ -3488,15 +3474,15 @@ function assertRuntimeEventSinglePath() {
       canonicalAppendExportNames = collectActualExportNamesForSymbol(
         filePath,
         content,
-        "appendAgentJobEvent",
+        JOB_EVENT_STORE_APPEND,
       )
       canonicalInsertExportNames = collectActualExportNamesForSymbol(
         filePath,
         content,
-        "insertAgentJobEventRecord",
+        JOB_EVENT_STORE_INSERT,
       )
     }
-    if (facts.exports.has("insertAgentJobEventRecord"))
+    if (facts.exports.has(JOB_EVENT_STORE_INSERT))
       exportedInsertSites.push(filePath)
     if (
       filePath !== JOB_EVENT_STORE_OWNER &&
@@ -3504,7 +3490,7 @@ function assertRuntimeEventSinglePath() {
         filePath,
         content,
         JOB_EVENT_STORE_OWNER,
-        "appendAgentJobEvent",
+        JOB_EVENT_STORE_APPEND,
       )
     ) {
       directImporters.push(filePath)
@@ -3530,47 +3516,36 @@ function assertRuntimeEventSinglePath() {
     exportedAppendSites[0] !== JOB_EVENT_STORE_OWNER
   ) {
     fail(
-      `appendAgentJobEvent must be exported only from ${JOB_EVENT_STORE_OWNER}; found ${exportedAppendSites.join(", ") || "none"}.`,
+      `${JOB_EVENT_STORE_APPEND} must be exported only from ${JOB_EVENT_STORE_OWNER}; found ${exportedAppendSites.join(", ") || "none"}.`,
     )
   }
   if (
     JSON.stringify(canonicalAppendExportNames) !==
-    JSON.stringify(["appendAgentJobEvent"])
+    JSON.stringify([JOB_EVENT_STORE_APPEND])
   ) {
     fail(
-      `appendAgentJobEvent must not gain an alias or default export in ${JOB_EVENT_STORE_OWNER}; found export names ${canonicalAppendExportNames.join(", ") || "none"}.`,
+      `${JOB_EVENT_STORE_APPEND} must not gain an alias or default export in ${JOB_EVENT_STORE_OWNER}; found export names ${canonicalAppendExportNames.join(", ") || "none"}.`,
     )
   }
   if (exportedInsertSites.length > 0) {
     fail(
-      `insertAgentJobEventRecord must remain module-private in ${JOB_EVENT_STORE_OWNER}; exported from ${exportedInsertSites.join(", ")}.`,
+      `${JOB_EVENT_STORE_INSERT} must remain module-private in ${JOB_EVENT_STORE_OWNER}; exported from ${exportedInsertSites.join(", ")}.`,
     )
   }
   if (canonicalInsertExportNames.length > 0) {
     fail(
-      `insertAgentJobEventRecord must remain module-private in ${JOB_EVENT_STORE_OWNER}; found export names ${canonicalInsertExportNames.join(", ")}.`,
+      `${JOB_EVENT_STORE_INSERT} must remain module-private in ${JOB_EVENT_STORE_OWNER}; found export names ${canonicalInsertExportNames.join(", ")}.`,
     )
   }
 
   const measuredImporters = sortedUnique(directImporters)
-  const expectedImporters = [...APPEND_AGENT_JOB_EVENT_IMPORTERS].sort(
+  const expectedImporters = [...APPEND_EXACT_RUN_EVENT_BATCH_IMPORTERS].sort(
     compareCodePoints,
   )
   if (JSON.stringify(measuredImporters) !== JSON.stringify(expectedImporters)) {
     fail(
-      `appendAgentJobEvent direct importers must match the frozen only-shrink allowlist. Expected ${expectedImporters.join(", ")}; found ${measuredImporters.join(", ") || "none"}. Routes and runtime adapters must consume appendRunEventsToAgentJob/createAgentJobRunEvent instead.`,
+      `${JOB_EVENT_STORE_APPEND} direct importers must be exactly the host store adapter. Expected ${expectedImporters.join(", ")}; found ${measuredImporters.join(", ") || "none"}. Callers must submit observations and evidence through getOrCreateRunEventLedger.`,
     )
-  }
-  for (const filePath of measuredImporters) {
-    if (
-      filePath.startsWith("src/main/lib/trpc/routers/") ||
-      filePath.startsWith("src/main/lib/codex/") ||
-      filePath.startsWith("src/main/lib/claude/")
-    ) {
-      fail(
-        `${filePath} must not import appendAgentJobEvent directly; consume appendRunEventsToAgentJob/createAgentJobRunEvent instead.`,
-      )
-    }
   }
 }
 
@@ -4240,6 +4215,343 @@ function assertCanonicalVocabularyI18n() {
   assertDictionaryValuesExclude(dictionaryEntries, retiredAgentTerms, "Agent")
 }
 
+// ---------------------------------------------------------------------------
+// Canonical run event ledger (refactor-canonical-run-event-ledger)
+//
+// The fixture-driven rules pin the ledger owners of
+// docs/OWNERSHIP_MAP.md "Runtime Events, Trace, And Redaction". Their
+// self-test consumes RUN_EVENT_LEDGER_ARCHITECTURE_FIXTURE_PATH, and the
+// repository is always enforced in the canonical end state: every pinned
+// owner defines and exports its symbol, no legacy writer/mapper symbol,
+// direct agent_job_events insert, second store importer or provenance binding
+// outside the host remains.
+// ---------------------------------------------------------------------------
+
+const RUN_EVENT_LEDGER_ARCHITECTURE_FIXTURE_PATH =
+  "tests/fixtures/run-event-ledger/architecture-fixtures.json"
+const RUN_EVENT_LEDGER_FIXTURE_FLAG = "--run-event-ledger-fixtures="
+const RUN_EVENT_LEDGER_BIND_METHOD = "bindExecutionProvenance"
+const RUN_EVENT_LEDGER_STORE_APPEND = "appendExactRunEventBatch"
+
+function runEventLedgerOption(flag) {
+  const argument = process.argv.find((entry) => entry.startsWith(flag))
+  return argument ? argument.slice(flag.length) : null
+}
+
+function loadRunEventLedgerArchitectureFixture() {
+  const fixturePath =
+    runEventLedgerOption(RUN_EVENT_LEDGER_FIXTURE_FLAG) ??
+    RUN_EVENT_LEDGER_ARCHITECTURE_FIXTURE_PATH
+  const absolutePath = path.isAbsolute(fixturePath)
+    ? fixturePath
+    : path.join(repoRoot, fixturePath)
+  if (!existsSync(absolutePath)) {
+    fail(`${fixturePath} is missing.`)
+    return null
+  }
+  try {
+    return JSON.parse(readFileSync(absolutePath, "utf8"))
+  } catch (error) {
+    fail(`${fixturePath} is not valid JSON: ${String(error)}`)
+    return null
+  }
+}
+
+function collectRunEventLedgerSourceFacts(filePath, content) {
+  const sourceFile = ts.createSourceFile(
+    filePath,
+    content,
+    ts.ScriptTarget.Latest,
+    true,
+  )
+  const facts = {
+    definitions: new Set(),
+    reexports: new Set(),
+    identifiers: new Set(),
+    exportedNames: new Set(),
+    eventInsertFunctions: new Set(),
+    eventInsertCount: 0,
+    bindCalls: 0,
+  }
+  const eventTableAliases = new Set(["agentJobEvents"])
+  for (const statement of sourceFile.statements) {
+    if (
+      ts.isImportDeclaration(statement) &&
+      statement.importClause?.namedBindings &&
+      ts.isNamedImports(statement.importClause.namedBindings)
+    ) {
+      for (const element of statement.importClause.namedBindings.elements) {
+        if ((element.propertyName ?? element.name).text === "agentJobEvents") {
+          eventTableAliases.add(element.name.text)
+        }
+      }
+    }
+  }
+  function enclosingFunctionName(node) {
+    let current = node.parent
+    while (current) {
+      if (ts.isFunctionDeclaration(current) && current.name) {
+        return current.name.text
+      }
+      if (
+        (ts.isFunctionExpression(current) || ts.isArrowFunction(current)) &&
+        current.parent &&
+        ts.isVariableDeclaration(current.parent) &&
+        ts.isIdentifier(current.parent.name)
+      ) {
+        return current.parent.name.text
+      }
+      current = current.parent
+    }
+    return null
+  }
+  function visit(node) {
+    if (
+      (ts.isFunctionDeclaration(node) || ts.isClassDeclaration(node)) &&
+      node.name
+    ) {
+      facts.definitions.add(node.name.text)
+      if (hasModifier(node, ts.SyntaxKind.ExportKeyword)) {
+        facts.exportedNames.add(node.name.text)
+      }
+    }
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
+      facts.definitions.add(node.name.text)
+      const statement = node.parent?.parent
+      if (
+        statement &&
+        ts.isVariableStatement(statement) &&
+        hasModifier(statement, ts.SyntaxKind.ExportKeyword)
+      ) {
+        facts.exportedNames.add(node.name.text)
+      }
+    }
+    if (
+      ts.isExportDeclaration(node) &&
+      node.exportClause &&
+      ts.isNamedExports(node.exportClause)
+    ) {
+      for (const element of node.exportClause.elements) {
+        const local = (element.propertyName ?? element.name).text
+        if (node.moduleSpecifier) {
+          facts.reexports.add(local)
+        } else {
+          facts.exportedNames.add(local)
+        }
+      }
+    }
+    if (ts.isIdentifier(node)) facts.identifiers.add(node.text)
+    if (
+      ts.isElementAccessExpression(node) &&
+      stringLiteralValue(node.argumentExpression)
+    ) {
+      facts.identifiers.add(stringLiteralValue(node.argumentExpression))
+    }
+    if (ts.isCallExpression(node)) {
+      const callee = node.expression
+      const calleeName = ts.isPropertyAccessExpression(callee)
+        ? callee.name.text
+        : ts.isElementAccessExpression(callee)
+          ? stringLiteralValue(callee.argumentExpression)
+          : null
+      if (calleeName === RUN_EVENT_LEDGER_BIND_METHOD) facts.bindCalls += 1
+      if (calleeName === "insert" && node.arguments.length > 0) {
+        const target = node.arguments[0]
+        const targetName = ts.isIdentifier(target)
+          ? target.text
+          : ts.isPropertyAccessExpression(target)
+            ? target.name.text
+            : null
+        if (targetName && eventTableAliases.has(targetName)) {
+          facts.eventInsertCount += 1
+          const owner = enclosingFunctionName(node)
+          if (owner) facts.eventInsertFunctions.add(owner)
+        }
+      }
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(sourceFile)
+  return facts
+}
+
+function collectRunEventLedgerFindings(files, fixture) {
+  const ownerSection = fixture.ownerSection
+  const pins = fixture.pinnedOwners ?? {}
+  const legacySymbols = fixture.legacySymbols ?? []
+  const storeOwner = pins[RUN_EVENT_LEDGER_STORE_APPEND]
+  const storeImporter = fixture.storeAppendImporter
+  const findings = []
+  for (const { filePath, content } of files) {
+    const facts = collectRunEventLedgerSourceFacts(filePath, content)
+    for (const [symbol, owner] of Object.entries(pins)) {
+      if (filePath === owner) continue
+      if (facts.definitions.has(symbol)) {
+        findings.push({
+          rule: "duplicate-definition",
+          file: filePath,
+          symbol,
+          owner,
+          ownerSection,
+        })
+      }
+      if (facts.reexports.has(symbol)) {
+        findings.push({
+          rule: "duplicate-reexport",
+          file: filePath,
+          symbol,
+          owner,
+          ownerSection,
+        })
+      }
+    }
+    if (
+      filePath !== storeOwner &&
+      filePath !== storeImporter &&
+      importsNamedSymbolFrom(
+        filePath,
+        content,
+        storeOwner,
+        RUN_EVENT_LEDGER_STORE_APPEND,
+      )
+    ) {
+      findings.push({
+        rule: "forbidden-store-import",
+        file: filePath,
+        symbol: RUN_EVENT_LEDGER_STORE_APPEND,
+        owner: storeImporter,
+        ownerSection,
+      })
+    }
+    if (filePath === storeOwner) {
+      for (const name of facts.eventInsertFunctions) {
+        if (
+          name !== RUN_EVENT_LEDGER_STORE_APPEND &&
+          facts.exportedNames.has(name)
+        ) {
+          findings.push({
+            rule: "exported-record-insert",
+            file: filePath,
+            symbol: name,
+            owner: storeOwner,
+            ownerSection,
+          })
+        }
+      }
+    } else if (facts.eventInsertCount > 0) {
+      findings.push({
+        rule: "direct-event-insert",
+        file: filePath,
+        symbol: "agentJobEvents",
+        owner: storeOwner,
+        ownerSection,
+      })
+    }
+    for (const symbol of legacySymbols) {
+      if (
+        facts.definitions.has(symbol) ||
+        facts.reexports.has(symbol) ||
+        facts.identifiers.has(symbol)
+      ) {
+        findings.push({
+          rule: "legacy-symbol",
+          file: filePath,
+          symbol,
+          ownerSection,
+        })
+      }
+    }
+    if (filePath !== storeImporter && facts.bindCalls > 0) {
+      findings.push({
+        rule: "provenance-binding-outside-host",
+        file: filePath,
+        symbol: RUN_EVENT_LEDGER_BIND_METHOD,
+        owner: storeImporter,
+        ownerSection,
+      })
+    }
+  }
+  return findings
+}
+
+function runEventLedgerFindingKey(finding) {
+  return JSON.stringify(
+    Object.keys(finding)
+      .sort(compareCodePoints)
+      .map((key) => [key, finding[key]]),
+  )
+}
+
+/**
+ * Fixture-driven self-test: every case's files are scanned as if they were
+ * the repository files at their paths; the produced finding set must equal
+ * expectedFindings exactly, so a missing or an unexpected finding fails.
+ * Returns an inspectable summary.
+ */
+function assertRunEventLedgerGuardSelfTest(fixture) {
+  const summary = { cases: 0, matched: 0, mismatches: [] }
+  for (const entry of fixture?.cases ?? []) {
+    summary.cases += 1
+    const produced = collectRunEventLedgerFindings(entry.files ?? [], fixture)
+      .map(runEventLedgerFindingKey)
+      .sort(compareCodePoints)
+    const expected = (entry.expectedFindings ?? [])
+      .map(runEventLedgerFindingKey)
+      .sort(compareCodePoints)
+    const missing = expected.filter((key) => !produced.includes(key))
+    const unexpected = produced.filter((key) => !expected.includes(key))
+    if (missing.length === 0 && unexpected.length === 0) {
+      summary.matched += 1
+      continue
+    }
+    summary.mismatches.push({ caseId: entry.caseId, missing, unexpected })
+    fail(
+      `Run event ledger guard self-test case ${entry.caseId} (${entry.category}) missed ${missing.join(", ") || "nothing"} and produced unexpected ${unexpected.join(", ") || "nothing"}. See ${RUNTIME_EVENT_OWNERSHIP_SECTION}.`,
+    )
+  }
+  if (summary.cases === 0) {
+    fail(
+      `${RUN_EVENT_LEDGER_ARCHITECTURE_FIXTURE_PATH} must provide run event ledger guard self-test cases.`,
+    )
+  }
+  return summary
+}
+
+function assertRunEventLedgerOwnership(fixture) {
+  const files = walkFiles("src", RUNTIME_CORE_SOURCE_EXTENSIONS).map(
+    (absolutePath) => ({
+      filePath: relative(absolutePath),
+      content: readFileSync(absolutePath, "utf8"),
+    }),
+  )
+  for (const [symbol, owner] of Object.entries(fixture.pinnedOwners ?? {})) {
+    const ownerFile = files.find((file) => file.filePath === owner)
+    const facts = ownerFile
+      ? collectRunEventLedgerSourceFacts(owner, ownerFile.content)
+      : null
+    if (!facts?.definitions.has(symbol) || !facts.exportedNames.has(symbol)) {
+      fail(
+        `${symbol} must be defined and exported by ${owner}. See ${RUNTIME_EVENT_OWNERSHIP_SECTION}.`,
+      )
+    }
+  }
+  for (const finding of collectRunEventLedgerFindings(files, fixture)) {
+    fail(
+      `Run event ledger ${finding.rule}: ${finding.file} ${finding.symbol}${finding.owner ? ` (owner ${finding.owner})` : ""}. See ${RUNTIME_EVENT_OWNERSHIP_SECTION}.`,
+    )
+  }
+}
+
+function assertRunEventLedgerGuards() {
+  const fixture = loadRunEventLedgerArchitectureFixture()
+  if (!fixture) return
+  const summary = assertRunEventLedgerGuardSelfTest(fixture)
+  assertRunEventLedgerOwnership(fixture)
+  console.log(
+    `Run event ledger guard self-test: ${summary.matched}/${summary.cases} fixture cases matched; repository ownership enforced.`,
+  )
+}
+
 if (updateArchitectureBaselines) {
   updateArchitectureBaselineRegistry()
 } else {
@@ -4271,6 +4583,7 @@ if (updateArchitectureBaselines) {
   assertEngineIdSingleOwner()
   assertGuardDecisionSingleOwner()
   assertRuntimeEventSinglePath()
+  assertRunEventLedgerGuards()
   assertRuntimeEventStateOwner()
   assertChatMessageModelOwner()
   assertChatSessionBindingSingleOwner()

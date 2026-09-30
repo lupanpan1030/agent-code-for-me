@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test"
+import type { DesktopRunRequest } from "../src/main/lib/agent-runtime/desktop-run-request"
 import { resolveDesktopPermissionPolicy } from "../src/main/lib/agent-runtime/permission-policy"
+import { getOrCreateRunEventLedger } from "../src/main/lib/agent-runtime/run-event-ledger-host"
+import { createCodexAppServerAdapter } from "../src/main/lib/codex/app-server-adapter"
 import { chats, projects, subChats } from "../src/main/lib/db/schema"
 import {
   completeDesktopAgentJobSafely,
@@ -17,6 +20,22 @@ import {
   listAgentJobEvents,
 } from "../src/main/lib/headless/job-store"
 import { createAgentJobTestDb } from "./helpers/agent-job-test-db"
+import { ScriptedCodexAppServerTransport } from "./helpers/codex-app-server-scripted-transport"
+
+const DESKTOP_CODEX_PROVENANCE = {
+  kind: "runtime",
+  installationId: "inst-codex-0.139.0-desktop-test",
+  runtimeId: "codex",
+  adapterSource: "codex-app-server",
+  version: "0.139.0",
+  executableRef: "exe-desktop-test",
+  binarySha256: "a".repeat(64),
+  protocolName: "codex-app-server-jsonrpc",
+  protocolVersion: "v2",
+  schemaFiles: [
+    { path: "codex-app-server/v2/dispositions.json", sha256: "b".repeat(64) },
+  ],
+} as const
 
 function seedChat(db: ReturnType<typeof createAgentJobTestDb>) {
   db.insert(projects)
@@ -41,8 +60,24 @@ function seedChat(db: ReturnType<typeof createAgentJobTestDb>) {
     .run()
 }
 
+/**
+ * A succeeded desktop Run needs committed output evidence (R1 DIRECT_NEW_
+ * STANDARD): record one assistant output through the job's host ledger.
+ */
+async function recordDesktopOutput(
+  db: ReturnType<typeof createAgentJobTestDb>,
+  jobId: string,
+) {
+  const ledger = await getOrCreateRunEventLedger(db, { id: jobId })
+  await ledger.ingestRuntimeObservation({
+    observationKey: `desktop-output:${jobId}`,
+    type: "assistant_delta",
+    payload: { text: "done" },
+  })
+}
+
 describe("desktop agent jobs", () => {
-  test("creates a linked running desktop job without duplicating the full prompt", () => {
+  test("creates a linked running desktop job without duplicating the full prompt", async () => {
     const db = createAgentJobTestDb()
     seedChat(db)
 
@@ -51,7 +86,7 @@ describe("desktop agent jobs", () => {
       runtimeId: "codex",
       mode: "plan",
     })
-    const { job, workerId, cwd } = createAndStartDesktopAgentJob(db, {
+    const { job, workerId, cwd } = await createAndStartDesktopAgentJob(db, {
       runtime: "codex",
       mode: "plan",
       chatId: "chat-1",
@@ -115,7 +150,7 @@ describe("desktop agent jobs", () => {
     ])
   })
 
-  test("rejects renderer-supplied cwd and sub-chat mismatches", () => {
+  test("rejects renderer-supplied cwd and sub-chat mismatches", async () => {
     const db = createAgentJobTestDb()
     seedChat(db)
     db.insert(chats)
@@ -126,7 +161,7 @@ describe("desktop agent jobs", () => {
       })
       .run()
 
-    expect(() =>
+    await expect(
       createAndStartDesktopAgentJob(db, {
         runtime: "claude-code",
         mode: "agent",
@@ -135,9 +170,9 @@ describe("desktop agent jobs", () => {
         cwd: "/tmp/other",
         prompt: "Run elsewhere",
       }),
-    ).toThrow("Desktop job cwd mismatch")
+    ).rejects.toThrow("Desktop job cwd mismatch")
 
-    expect(() =>
+    await expect(
       createAndStartDesktopAgentJob(db, {
         runtime: "claude-code",
         mode: "agent",
@@ -146,13 +181,13 @@ describe("desktop agent jobs", () => {
         cwd: "/tmp/project-worktree",
         prompt: "Wrong chat",
       }),
-    ).toThrow("does not belong to chat")
+    ).rejects.toThrow("does not belong to chat")
   })
 
-  test("routes cancellation through the active desktop job registration", () => {
+  test("routes cancellation through the active desktop job registration", async () => {
     const db = createAgentJobTestDb()
     seedChat(db)
-    const { job } = createAndStartDesktopAgentJob(db, {
+    const { job } = await createAndStartDesktopAgentJob(db, {
       runtime: "claude-code",
       mode: "agent",
       chatId: "chat-1",
@@ -174,16 +209,24 @@ describe("desktop agent jobs", () => {
       },
     })
 
-    const result = requestCancelDesktopAgentJob(db, job.id, "desktop")
+    const result = await requestCancelDesktopAgentJob(db, job.id, "desktop")
     expect(result.activeCancelDelivered).toBe(true)
     expect(result.job.cancelRequestedBy).toBe("desktop")
     expect(cancelCount).toBe(1)
+    // Host cancel evidence for a running job is a committed cancel_requested
+    // status (refactor-canonical-run-event-ledger queued_cancel semantics).
     expect(
-      listAgentJobEvents(db, job.id).map((event) => ({
-        type: event.type,
-        payload: JSON.parse(event.payloadJson || "{}"),
-      })),
-    ).toContainEqual({
+      listAgentJobEvents(db, job.id)
+        .map((event) => ({
+          type: event.type,
+          payload: JSON.parse(event.payloadJson || "{}"),
+        }))
+        .find(
+          (event) =>
+            event.type === "status" &&
+            event.payload.status === "cancel_requested",
+        ),
+    ).toMatchObject({
       type: "status",
       payload: { status: "cancel_requested", requestedBy: "desktop" },
     })
@@ -191,12 +234,12 @@ describe("desktop agent jobs", () => {
     unregisterActiveDesktopAgentJob(job.id)
   })
 
-  test("creates and registers a desktop chat job in one owner call", () => {
+  test("creates and registers a desktop chat job in one owner call", async () => {
     const db = createAgentJobTestDb()
     seedChat(db)
     let cancelCount = 0
 
-    const { job, workerId } = createAndRegisterDesktopChatAgentJob(db, {
+    const { job, workerId } = await createAndRegisterDesktopChatAgentJob(db, {
       runtime: "claude-code",
       mode: "agent",
       chatId: "chat-1",
@@ -210,7 +253,7 @@ describe("desktop agent jobs", () => {
     })
 
     expect(workerId).toBe("desktop:claude-code:stream-registered")
-    const canceled = requestCancelDesktopAgentJob(db, job.id, "desktop")
+    const canceled = await requestCancelDesktopAgentJob(db, job.id, "desktop")
     expect(canceled.activeCancelDelivered).toBe(true)
     expect(cancelCount).toBe(1)
     unregisterActiveDesktopAgentJob(job.id)
@@ -219,7 +262,7 @@ describe("desktop agent jobs", () => {
   test("refreshes heartbeat while a desktop job is active", async () => {
     const db = createAgentJobTestDb()
     seedChat(db)
-    const { job, workerId } = createAndStartDesktopAgentJob(db, {
+    const { job, workerId } = await createAndStartDesktopAgentJob(db, {
       runtime: "codex",
       mode: "plan",
       chatId: "chat-1",
@@ -250,10 +293,10 @@ describe("desktop agent jobs", () => {
     expect(refreshedHeartbeat).toBeGreaterThanOrEqual(initialHeartbeat)
   })
 
-  test("completes running desktop jobs safely and ignores terminal jobs", () => {
+  test("completes running desktop jobs safely and ignores terminal jobs", async () => {
     const db = createAgentJobTestDb()
     seedChat(db)
-    const { job } = createAndStartDesktopAgentJob(db, {
+    const { job } = await createAndStartDesktopAgentJob(db, {
       runtime: "codex",
       mode: "plan",
       chatId: "chat-1",
@@ -263,7 +306,8 @@ describe("desktop agent jobs", () => {
       runId: "run-1",
     })
 
-    const completed = completeDesktopAgentJobSafely(db, {
+    await recordDesktopOutput(db, job.id)
+    const completed = await completeDesktopAgentJobSafely(db, {
       jobId: job.id,
       status: "succeeded",
       exitCode: 0,
@@ -273,7 +317,7 @@ describe("desktop agent jobs", () => {
       type: "completed",
     })
 
-    const ignored = completeDesktopAgentJobSafely(db, {
+    const ignored = await completeDesktopAgentJobSafely(db, {
       jobId: job.id,
       status: "failed",
       exitCode: 1,
@@ -281,10 +325,10 @@ describe("desktop agent jobs", () => {
     expect(ignored?.status).toBe("succeeded")
   })
 
-  test("completes desktop chat jobs with shared runtime completion semantics", () => {
+  test("completes desktop chat jobs with shared runtime completion semantics", async () => {
     const db = createAgentJobTestDb()
     seedChat(db)
-    const { job } = createAndStartDesktopAgentJob(db, {
+    const { job } = await createAndStartDesktopAgentJob(db, {
       runtime: "claude-code",
       mode: "agent",
       chatId: "chat-1",
@@ -294,7 +338,8 @@ describe("desktop agent jobs", () => {
       runId: "run-complete",
     })
 
-    const completed = completeDesktopChatAgentJobSafely(db, {
+    await recordDesktopOutput(db, job.id)
+    const completed = await completeDesktopChatAgentJobSafely(db, {
       jobId: job.id,
       runtime: "claude-code",
       aborted: false,
@@ -319,10 +364,306 @@ describe("desktop agent jobs", () => {
     })
   })
 
-  test("safely requests cancel only for unfinished desktop chat jobs", () => {
+  test("a Codex initialize error with the child alive finalizes failed, not a transport-exit interrupt (T2-2 / S-01)", async () => {
     const db = createAgentJobTestDb()
     seedChat(db)
-    const { job } = createAndStartDesktopAgentJob(db, {
+    const permissionPolicy = resolveDesktopPermissionPolicy({
+      runtimeId: "codex",
+      mode: "agent",
+    })
+    const { job } = await createAndStartDesktopAgentJob(db, {
+      runtime: "codex",
+      mode: "agent",
+      chatId: "chat-1",
+      subChatId: "sub-chat-1",
+      cwd: "/tmp/project-worktree",
+      prompt: "Implement",
+      runId: "run-init-error",
+      permissionPolicy,
+    })
+    const ledger = await getOrCreateRunEventLedger(db, job)
+    // Like the stdio transport, close() ends the child and fires every
+    // still-attached exit handler.
+    const transport = new ScriptedCodexAppServerTransport({
+      initializeError: { code: -32600, message: "initialize rejected" },
+      exitOnClose: true,
+    })
+    const adapter = createCodexAppServerAdapter({
+      enabled: true,
+      createTransport: () => transport,
+      captureExecutionProvenance: async () => DESKTOP_CODEX_PROVENANCE,
+    })
+    const request: DesktopRunRequest = {
+      identity: { runId: "run-init-error", jobId: job.id },
+      context: {
+        runtimeId: "codex",
+        mode: "agent",
+        projectId: "project-1",
+        chatId: "chat-1",
+        subChatId: "sub-chat-1",
+        cwd: "/tmp/project-worktree",
+      },
+      prompt: "Implement",
+      permissionPolicy,
+      providerBinding: { authMode: "runtime-managed" },
+      mcp: { status: "skipped", serverNames: [], blockers: [] },
+      attachments: [],
+      ledger,
+      signal: new AbortController().signal,
+      session: {},
+    }
+    const adapterResult = await adapter.run(request)
+    expect(adapterResult.status).toBe("failed")
+    expect(transport.closed).toBe(true)
+
+    const completed = await completeDesktopChatAgentJobSafely(db, {
+      jobId: job.id,
+      runtime: "codex",
+      aborted: false,
+      reachedNaturalFinish: true,
+      sawError: true,
+    })
+    expect(completed).toMatchObject({
+      status: "failed",
+      exitCode: 1,
+      errorCode: "desktop_chat_failed",
+    })
+    const events = listAgentJobEvents(db, job.id)
+    const terminal = events.filter((event) => event.type === "completed")
+    expect(terminal).toHaveLength(1)
+    const payload = JSON.parse(terminal[0].payloadJson)
+    expect(payload.status).toBe("failed")
+    expect(payload.synthetic).toBeUndefined()
+    expect(events.map((event) => event.payloadJson).join("\n")).not.toContain(
+      "transport_exit",
+    )
+    // T2-7 / S-14: no native terminal was observed, so the finalizer's
+    // failure is host evidence, not a live native terminal.
+    expect(payload.reasons).toContain("host_failed")
+    expect(payload.reasons).not.toContain("native_failed")
+  })
+
+  test("settles desktop runs from the committed live native terminal (T2-7 / S-14)", async () => {
+    const finalize = async (input: {
+      runtime: "codex" | "claude-code"
+      runId: string
+      record: (
+        ledger: Awaited<ReturnType<typeof getOrCreateRunEventLedger>>,
+      ) => Promise<unknown>
+      sawError: boolean
+    }) => {
+      const db = createAgentJobTestDb()
+      seedChat(db)
+      const { job } = await createAndStartDesktopAgentJob(db, {
+        runtime: input.runtime,
+        mode: "agent",
+        chatId: "chat-1",
+        subChatId: "sub-chat-1",
+        cwd: "/tmp/project-worktree",
+        prompt: "Implement",
+        runId: input.runId,
+      })
+      const ledger = await getOrCreateRunEventLedger(db, job)
+      await ledger.bindExecutionProvenance(
+        input.runtime === "codex"
+          ? DESKTOP_CODEX_PROVENANCE
+          : {
+              ...DESKTOP_CODEX_PROVENANCE,
+              installationId: "inst-claude-desktop-test",
+              runtimeId: "claude-code",
+              adapterSource: "claude-agent-sdk",
+              protocolName: "claude-agent-sdk",
+              protocolVersion: "1",
+            },
+      )
+      await ledger.ingestRuntimeObservation({
+        observationKey: `output:${input.runId}`,
+        type: "assistant_delta",
+        payload: { text: "an answer" },
+      })
+      await input.record(ledger)
+      await completeDesktopChatAgentJobSafely(db, {
+        jobId: job.id,
+        runtime: input.runtime,
+        aborted: false,
+        reachedNaturalFinish: !input.sawError,
+        sawError: input.sawError,
+      })
+      const events = listAgentJobEvents(db, job.id)
+      const completed = events.find((event) => event.type === "completed")
+      return {
+        completed,
+        payload: JSON.parse(completed?.payloadJson ?? "{}"),
+        events,
+      }
+    }
+    const codexTurn =
+      (status: string) =>
+      async (ledger: {
+        ingestNotification: (boundary: unknown) => Promise<unknown>
+      }) => {
+        await ledger.ingestNotification({
+          observationKey: "codex-turn-started",
+          transportId: "t1",
+          receivedAt: "2026-09-04T00:00:00.000Z",
+          message: {
+            method: "turn/started",
+            params: {
+              threadId: "th",
+              turn: { id: "tu", status: "inProgress", error: null },
+            },
+          },
+        })
+        await ledger.ingestNotification({
+          observationKey: "codex-turn-completed",
+          transportId: "t1",
+          receivedAt: "2026-09-04T00:00:00.001Z",
+          message: {
+            method: "turn/completed",
+            params: {
+              threadId: "th",
+              turn: {
+                id: "tu",
+                status,
+                error: status === "failed" ? { message: "boom" } : null,
+              },
+            },
+          },
+        })
+      }
+
+    const codexFailed = await finalize({
+      runtime: "codex",
+      runId: "run-native-failed",
+      record: codexTurn("failed"),
+      sawError: true,
+    })
+    expect(codexFailed.payload.status).toBe("failed")
+    expect(codexFailed.payload.reasons).toContain("native_failed")
+    expect(codexFailed.completed?.factKey).toBe("settle:codex-turn-completed:0")
+
+    const codexSucceeded = await finalize({
+      runtime: "codex",
+      runId: "run-native-succeeded",
+      record: codexTurn("completed"),
+      sawError: false,
+    })
+    expect(codexSucceeded.payload.status).toBe("succeeded")
+    expect(codexSucceeded.completed?.factKey).toBe(
+      "settle:codex-turn-completed:0",
+    )
+
+    const claudeResult =
+      (isError: boolean) =>
+      async (ledger: {
+        ingestClaudeMessage: (input: unknown) => Promise<unknown>
+      }) => {
+        await ledger.ingestClaudeMessage({
+          observationKey: "claude-query:run:message:1",
+          queryId: "claude-query:run",
+          message: {
+            type: "result",
+            subtype: isError ? "error_during_execution" : "success",
+            ...(isError ? { is_error: true } : {}),
+          },
+        })
+      }
+    const claudeFailed = await finalize({
+      runtime: "claude-code",
+      runId: "run-claude-failed",
+      record: claudeResult(true),
+      sawError: true,
+    })
+    expect(claudeFailed.payload.reasons).toContain("native_failed")
+    expect(claudeFailed.completed?.factKey).toBe(
+      "settle:claude-query:run:message:1:0",
+    )
+    const claudeSucceeded = await finalize({
+      runtime: "claude-code",
+      runId: "run-claude-succeeded",
+      record: claudeResult(false),
+      sawError: false,
+    })
+    expect(claudeSucceeded.payload.status).toBe("succeeded")
+    expect(claudeSucceeded.completed?.factKey).toBe(
+      "settle:claude-query:run:message:1:0",
+    )
+  })
+
+  test("counts a completed-only assistant item as desktop output evidence (T2-6 / S-13)", async () => {
+    const run = async (text: string) => {
+      const db = createAgentJobTestDb()
+      seedChat(db)
+      const { job } = await createAndStartDesktopAgentJob(db, {
+        runtime: "codex",
+        mode: "agent",
+        chatId: "chat-1",
+        subChatId: "sub-chat-1",
+        cwd: "/tmp/project-worktree",
+        prompt: "Implement",
+        runId: `run-completed-only-${text.length}`,
+      })
+      const ledger = await getOrCreateRunEventLedger(db, job)
+      await ledger.bindExecutionProvenance(DESKTOP_CODEX_PROVENANCE)
+      const notify = (
+        observationKey: string,
+        method: string,
+        params: unknown,
+      ) =>
+        ledger.ingestNotification({
+          observationKey,
+          transportId: "t1",
+          receivedAt: "2026-09-04T00:00:00.000Z",
+          message: { method, params },
+        })
+      await notify("n-started", "turn/started", {
+        threadId: "th",
+        turn: { id: "tu", status: "inProgress", error: null },
+      })
+      if (text) {
+        await notify("n-item", "item/completed", {
+          threadId: "th",
+          turnId: "tu",
+          item: { type: "agentMessage", id: "msg-1", text },
+        })
+      }
+      const completed = await completeDesktopChatAgentJobSafely(db, {
+        jobId: job.id,
+        runtime: "codex",
+        aborted: false,
+        reachedNaturalFinish: true,
+        sawError: false,
+      })
+      const events = listAgentJobEvents(db, job.id)
+      const terminal = events.find((event) => event.type === "completed")
+      return {
+        completed,
+        events,
+        payload: JSON.parse(terminal?.payloadJson ?? "{}"),
+      }
+    }
+
+    const withItem = await run("final answer without deltas")
+    const reconciliation = withItem.events.find(
+      (event) =>
+        event.type === "status" &&
+        JSON.parse(event.payloadJson).subtype === "item_reconciliation",
+    )
+    expect(reconciliation).toBeDefined()
+    expect(withItem.completed?.status).toBe("succeeded")
+    expect(withItem.payload.evidenceKeys).toContain(
+      `record:${reconciliation?.sequence}`,
+    )
+
+    const withoutOutput = await run("")
+    expect(withoutOutput.completed?.status).toBe("failed")
+    expect(withoutOutput.payload.reasons).toContain("output_empty")
+  })
+
+  test("safely requests cancel only for unfinished desktop chat jobs", async () => {
+    const db = createAgentJobTestDb()
+    seedChat(db)
+    const { job } = await createAndStartDesktopAgentJob(db, {
       runtime: "codex",
       mode: "plan",
       chatId: "chat-1",
@@ -344,7 +685,7 @@ describe("desktop agent jobs", () => {
       },
     })
 
-    const canceled = requestCancelDesktopChatAgentJobSafely(db, {
+    const canceled = await requestCancelDesktopChatAgentJobSafely(db, {
       jobId: job.id,
       sawError: false,
       reachedNaturalFinish: false,
@@ -354,7 +695,7 @@ describe("desktop agent jobs", () => {
     expect(canceled?.activeCancelDelivered).toBe(true)
     expect(cancelCount).toBe(1)
     expect(
-      requestCancelDesktopChatAgentJobSafely(db, {
+      await requestCancelDesktopChatAgentJobSafely(db, {
         jobId: job.id,
         sawError: true,
         reachedNaturalFinish: false,
@@ -364,7 +705,7 @@ describe("desktop agent jobs", () => {
     unregisterActiveDesktopAgentJob(job.id)
   })
 
-  test("resolves desktop chat completion status consistently across runtimes", () => {
+  test("resolves desktop chat completion status consistently across runtimes", async () => {
     for (const [runtime, label] of [
       ["claude-code", "Claude"],
       ["codex", "Codex"],

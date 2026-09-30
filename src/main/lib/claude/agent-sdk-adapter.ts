@@ -1,3 +1,4 @@
+import { realpathSync } from "node:fs"
 import { CLAUDE_AGENT_SDK_DESKTOP_ADAPTER_METADATA } from "../agent-runtime/desktop-adapter-metadata"
 import type {
   DesktopRunRequest,
@@ -5,8 +6,9 @@ import type {
 } from "../agent-runtime/desktop-run-request"
 import {
   type DesktopRuntimeAdapter,
-  emitDesktopRuntimeAdapterStarted,
+  recordDesktopRuntimeAdapterStarted,
 } from "../agent-runtime/desktop-runner"
+import { assertRunExecutableUnchanged } from "../agent-runtime/run-provenance"
 import { isActiveClaudeSessionSignal } from "./active-sessions"
 import {
   type ClaudeAgentSdkQuery,
@@ -62,6 +64,105 @@ export class ClaudeAgentSdkQueryStartError extends Error {
   }
 }
 
+/**
+ * Pre-spawn executable check (tasks 6.1, design "Test-facing Contract"
+ * two-stage provenance): the SDK spawns `pathToClaudeCodeExecutable`, so the
+ * Run's bound tuple is re-checked right before the query starts, like the
+ * process runner and the Codex app-server launch. Changed executable bytes,
+ * an unknown executable reference or a different executable path fail
+ * closed; no other binary is substituted.
+ */
+export function assertClaudeAgentSdkExecutableUnchanged(
+  request: DesktopRunRequest,
+  queryOptions: ClaudeAgentSdkQueryParams,
+): void {
+  const provenance = request.executionProvenance
+  if (!provenance) return
+  const captured = assertRunExecutableUnchanged(provenance)
+  const configured = (queryOptions.options as Record<string, unknown>)
+    .pathToClaudeCodeExecutable
+  let launched: string | null = null
+  try {
+    launched =
+      typeof configured === "string" && configured.length > 0
+        ? realpathSync(configured)
+        : null
+  } catch {
+    launched = null
+  }
+  if (launched !== captured) {
+    throw new Error(
+      "Claude executable differs from the executable captured for this Run",
+    )
+  }
+}
+
+/**
+ * SDK message ingress of the correlated resume facts (design "Resume
+ * Validation and Snapshot Repair"): the query's system/init and result
+ * messages are submitted to the Run's ledger with the query's resume intent;
+ * the ledger records native_resume_validated/rejected. Only the fields the
+ * predicate needs are forwarded; the stream itself is passed through
+ * unchanged to the existing consumer.
+ */
+async function* withCorrelatedInitIngress(
+  request: DesktopRunRequest,
+  queryOptions: ClaudeAgentSdkQueryParams,
+  stream: ClaudeAgentSdkStream,
+): ClaudeAgentSdkStream {
+  const ledger = request.ledger ?? null
+  const options = queryOptions.options as Record<string, unknown>
+  const queryId = `claude-query:${request.identity.runId}`
+  const resumeIntent =
+    typeof options.resume === "string" && options.resume.length > 0
+      ? {
+          queryId,
+          resume: options.resume,
+          forkSession: options.forkSession === true,
+          ...(typeof options.resumeSessionAt === "string"
+            ? { resumeSessionAt: options.resumeSessionAt }
+            : {}),
+        }
+      : undefined
+  let messageCounter = 0
+  for await (const message of stream) {
+    if (
+      ledger &&
+      message &&
+      typeof message === "object" &&
+      ((message.type === "system" && message.subtype === "init") ||
+        message.type === "result")
+    ) {
+      messageCounter += 1
+      void ledger
+        .ingestClaudeMessage({
+          observationKey: `${queryId}:message:${messageCounter}`,
+          queryId,
+          message: {
+            type: message.type,
+            ...(typeof message.subtype === "string"
+              ? { subtype: message.subtype }
+              : {}),
+            ...(typeof message.session_id === "string"
+              ? { session_id: message.session_id }
+              : {}),
+            ...(message.is_error === true ? { is_error: true } : {}),
+            ...(Array.isArray(message.errors)
+              ? {
+                  errors: message.errors.filter(
+                    (entry: unknown) => typeof entry === "string",
+                  ),
+                }
+              : {}),
+          },
+          ...(resumeIntent ? { resumeIntent } : {}),
+        })
+        .catch(() => {})
+    }
+    yield message
+  }
+}
+
 export function createClaudeAgentSdkAdapter({
   query,
   loadQuery = getClaudeAgentSdkQuery,
@@ -90,19 +191,23 @@ export function createClaudeAgentSdkAdapter({
         return { status: "canceled" }
       }
 
-      emitDesktopRuntimeAdapterStarted(
+      await recordDesktopRuntimeAdapterStarted(
         request,
         CLAUDE_AGENT_SDK_DESKTOP_ADAPTER_METADATA,
       )
 
       let stream: ClaudeAgentSdkStream
       try {
+        assertClaudeAgentSdkExecutableUnchanged(request, queryOptions)
         stream = sdkQuery(queryOptions) as ClaudeAgentSdkStream
       } catch (error) {
         throw new ClaudeAgentSdkQueryStartError(error)
       }
 
-      return consumeStream({ request, stream })
+      return consumeStream({
+        request,
+        stream: withCorrelatedInitIngress(request, queryOptions, stream),
+      })
     },
   }
 }

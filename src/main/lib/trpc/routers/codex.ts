@@ -27,10 +27,11 @@ import {
 import { reserveDesktopRunAdmission } from "../../agent-runtime/desktop-run-admission-generation"
 import { resolveDesktopPermissionPolicy } from "../../agent-runtime/permission-policy"
 import { verifyDesktopRunPreflight } from "../../agent-runtime/preflight"
+import { redactRuntimePayload } from "../../agent-runtime/redaction"
 import {
-  appendRunEventsToAgentJob,
-  redactRendererRuntimeChunk,
-} from "../../agent-runtime/stream-event-mapper"
+  createDesktopRendererChannel,
+  getOrCreateRunEventLedger,
+} from "../../agent-runtime/run-event-ledger-host"
 import { prepareChatImageAttachmentsForDesktopRun } from "../../chat-attachments"
 import { admitCodexChatSessionBindingRun } from "../../chat-session-binding"
 import {
@@ -53,7 +54,7 @@ import {
   validateCodexApiKey,
 } from "../../codex/api-key-validation"
 import { runCodexAppServerDesktopAdapter } from "../../codex/app-server-adapter-runner"
-import { createCodexAppServerFinishGate } from "../../codex/app-server-finish-gate"
+import { createCodexDesktopRouteRenderer } from "../../codex/app-server-finish-gate"
 import { getLastCodexSessionId } from "../../codex/chat-history"
 import { codexChatInputSchema } from "../../codex/chat-input-schema"
 import { resolveBundledCodexCliPath } from "../../codex/cli-path"
@@ -416,17 +417,16 @@ export const codexRouter = router({
           },
         )
         if (!initialBindingAdmission.ok) {
+          // No durable job exists yet: every chunk is renderer-only framing.
+          const preflightChannel = createDesktopRendererChannel({
+            runtimeId: "codex",
+            runId: input.runId,
+            observationPrefix: `codex-preflight:${input.runId}`,
+            getLedger: () => null,
+            emit: (chunk) => emit.next(chunk),
+          })
           const { emitPreflightBlocker } = createCodexDesktopRunPreflightStage({
-            emit: (chunk) => {
-              emit.next(
-                redactRendererRuntimeChunk({
-                  runtimeId: "codex",
-                  runId: input.runId,
-                  jobId: null,
-                  chunk,
-                }),
-              )
-            },
+            emit: (chunk) => preflightChannel.submit(chunk),
             complete: () => emit.complete(),
           })
           emitPreflightBlocker({
@@ -449,51 +449,25 @@ export const codexRouter = router({
         let ownsActiveStream = false
         let runMaintenanceBlocker: ChatMaintenanceRunBlocker | null = null
         const desktopRunState = createCodexDesktopRunState()
-        const appServerPersistenceChunks: Record<string, unknown>[] = []
         const providerBindingStage = createCodexDesktopRunProviderBindingStage()
         const providerSecretHints = providerBindingStage.getSecretHints
 
-        const emitRendererChunk = (chunk: Record<string, unknown>) => {
-          if (!isActive) return
-          try {
-            const rendererChunk = redactRendererRuntimeChunk({
-              runtimeId: "codex",
-              runId: input.runId,
-              jobId: desktopRunState.getJobId(),
-              chunk,
-              secretHints: providerSecretHints(),
-            })
-            emit.next(rendererChunk)
-          } catch {
-            isActive = false
-          }
-        }
-
-        const appServerFinishGate = createCodexAppServerFinishGate({
-          enabled: () => true,
-          emit: emitRendererChunk,
+        const routeRenderer = createCodexDesktopRouteRenderer({
+          runId: input.runId,
+          getSecretHints: providerSecretHints,
+          markSawError: desktopRunState.markSawError,
+          emit: (chunk) => {
+            if (!isActive) return
+            try {
+              emit.next(chunk)
+            } catch {
+              isActive = false
+            }
+          },
         })
-
-        const safeEmit = (chunk: Record<string, unknown>) => {
-          const redactedChunk = redactRendererRuntimeChunk({
-            runtimeId: "codex",
-            runId: input.runId,
-            jobId: desktopRunState.getJobId(),
-            chunk,
-            secretHints: providerSecretHints(),
-          }) as Record<string, unknown>
-          appServerPersistenceChunks.push(redactedChunk)
-          if (
-            redactedChunk?.type === "error" ||
-            redactedChunk?.type === "auth-error" ||
-            redactedChunk?.type === "capability-error" ||
-            (redactedChunk?.type === "runtime-status" &&
-              redactedChunk?.ok === false)
-          ) {
-            desktopRunState.markSawError()
-          }
-          appServerFinishGate.emit(redactedChunk)
-        }
+        const appServerFinishGate = routeRenderer.finishGate
+        const deliverRendererChunk = routeRenderer.deliver
+        const safeEmit = routeRenderer.submit
 
         const safeComplete = () => {
           if (!isActive) return
@@ -760,7 +734,7 @@ export const codexRouter = router({
               return
             }
 
-            const desktopJob = createAndRegisterCodexDesktopRunJob({
+            const desktopJob = await createAndRegisterCodexDesktopRunJob({
               db,
               state: desktopRunState,
               mode: input.mode,
@@ -773,6 +747,11 @@ export const codexRouter = router({
               permissionPolicy,
             })
             const desktopJobId = desktopJob.job.id
+            const runLedger = await getOrCreateRunEventLedger(
+              db,
+              desktopJob.job,
+              { secretHints: providerSecretHints() },
+            )
 
             const persistedCodexSessionId =
               getLastCodexSessionId(existingMessages) ?? null
@@ -792,9 +771,7 @@ export const codexRouter = router({
                 ? null
                 : persistedCodexSessionId,
               parentSessionId: persistedCodexSessionId,
-              emitTrace: (event) => {
-                appendRunEventsToAgentJob(db, [event])
-              },
+              ledger: runLedger,
             })
 
             await appServerFinishGate.runWithDeferredFinish(
@@ -809,7 +786,7 @@ export const codexRouter = router({
                   isCurrentRunOwner: () =>
                     getActiveCodexStream(input.subChatId) ===
                       activeStreamOwner && !abortController.signal.aborted,
-                  emit: safeEmit,
+                  emit: deliverRendererChunk,
                   registerPendingQuestion: (approvalId, pending) => {
                     setCodexPendingToolApproval(approvalId, pending)
                   },
@@ -817,20 +794,16 @@ export const codexRouter = router({
                     return deleteCodexPendingToolApproval(approvalId, pending)
                   },
                 }),
-              (adapterResult) => {
+              async (adapterResult) => {
                 desktopRunState.setAdapterFailed(
                   adapterResult.status === "failed",
                 )
                 if (desktopRunState.adapterFailed()) {
                   desktopRunState.markSawError()
                   const adapterAlreadyEmittedError =
-                    appServerPersistenceChunks.some(
-                      (chunk) => chunk?.type === "error",
-                    )
+                    routeRenderer.emittedError()
                   const adapterAlreadyEmittedFinish =
-                    appServerPersistenceChunks.some(
-                      (chunk) => chunk?.type === "finish",
-                    )
+                    routeRenderer.emittedFinish()
                   if (!adapterAlreadyEmittedError) {
                     safeEmit({
                       type: "error",
@@ -848,12 +821,19 @@ export const codexRouter = router({
                     !desktopRunState.sawError(),
                 )
                 if (desktopRunState.reachedNaturalFinish()) {
+                  await runLedger.whenIdle()
                   persistCodexDesktopAssistantAfterNaturalFinish({
                     db,
                     subChatId: input.subChatId,
                     activeStreamOwner,
                     messagesForStream,
-                    chunks: appServerPersistenceChunks,
+                    records: await runLedger.read(0),
+                    nativeContext: await runLedger.readNativeContext(),
+                    metadata: {
+                      provider: "codex",
+                      adapterSource: "codex-app-server",
+                      sessionId: adapterResult.sessionId ?? null,
+                    },
                     model: metadataModel,
                   })
                 }
@@ -862,17 +842,21 @@ export const codexRouter = router({
             safeComplete()
           } catch (error) {
             const normalized = extractCodexError(error)
-            const redactedDiagnostics = redactRendererRuntimeChunk({
-              runtimeId: "codex",
-              runId: input.runId,
-              jobId: desktopRunState.getJobId(),
-              chunk: {
-                subChatId: input.subChatId.slice(-8),
-                ...getCodexErrorDiagnostics(error),
-                message: normalized.message,
+            const redactedDiagnostics = redactRuntimePayload(
+              JSON.parse(
+                JSON.stringify({
+                  subChatId: input.subChatId.slice(-8),
+                  ...getCodexErrorDiagnostics(error),
+                  message: normalized.message,
+                }),
+              ),
+              {
+                runtimeId: "codex",
+                runId: input.runId,
+                source: "runtime-diagnostic",
+                secretHints: providerSecretHints(),
               },
-              secretHints: providerSecretHints(),
-            })
+            ).payload
 
             console.error("[codex] chat stream error", redactedDiagnostics)
             if (isCodexAuthError(normalized)) {
@@ -886,7 +870,7 @@ export const codexRouter = router({
             releaseDesktopRunAdmissionWithMaintenanceFence(runAdmission)
             try {
               if (ownsActiveStream) {
-                finalizeCodexDesktopRunAfterLifecycle({
+                await finalizeCodexDesktopRunAfterLifecycle({
                   state: desktopRunState,
                   activeStreamOwner,
                   guardedContract,

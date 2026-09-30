@@ -1,0 +1,95 @@
+{
+  "fixtureVersion": 1,
+  "evidenceClass": "synthetic",
+  "sourceRefs": [
+    "specs/agent-runtime-core Canonical Artifact Admission / Terminal files and completed become visible together",
+    "design §Artifacts and Terminal Commit Order (steps 1-5, finite dependency graph)",
+    "tasks 7.13 (terminal-artifacts.json: frozen terminal candidate / file preparation / commit faults)",
+    "src/main/lib/headless/local-job-api.ts createLocalJobApiTerminalArtifacts / writeLocalJobApiFinalArtifacts",
+    "red-receipt §6 (S25/S30 implementer-unit: prepare-fail hooks)"
+  ],
+  "provenance": {
+    "author": "implementer unit fixture (refactor-canonical-run-event-ledger touch-up T1), 2026-10-01",
+    "measured": false,
+    "note": "Implementer-unit fixture kept outside the immutable tests/fixtures/run-event-ledger/ root. One API Run commits the observations, then settles with the frozen evidence while a fault is injected at failAt: before_file_preparation (the preparer's first atomic rename throws), before_sql_commit (the durable store rejects the terminal batch once, before SQL), after_commit_before_projection (the committed completed is not delivered to the projection once). lateObservation arrives after the commit."
+  },
+  "runtimeId": "codex",
+  "secretHints": ["provider-secret-123"],
+  "observations": [
+    {
+      "observationKey": "ta-assistant",
+      "type": "assistant_delta",
+      "payload": { "text": "Package reviewed." }
+    }
+  ],
+  "evidence": {
+    "trigger": {
+      "kind": "host_result",
+      "status": "succeeded",
+      "observationKey": "ta-terminal"
+    },
+    "policy": {
+      "denied": false,
+      "evidenceKeys": ["policy:no-recorded-denial"]
+    },
+    "output": {
+      "valid": true,
+      "empty": false,
+      "allowEmpty": false,
+      "evidenceKeys": ["record:ta-assistant"]
+    },
+    "postRun": {
+      "credentialsSafe": true,
+      "evidenceKeys": ["postrun:security-cleanup-ok"]
+    }
+  },
+  "lateObservation": {
+    "observationKey": "ta-late",
+    "type": "status",
+    "payload": {
+      "status": "late-diagnostic",
+      "detail": "arrived after the seal"
+    }
+  },
+  "cases": [
+    {
+      "caseId": "clean",
+      "failAt": null,
+      "expected": {
+        "completedStatus": "succeeded",
+        "finalRoles": ["request", "events", "result", "manifest"],
+        "resultFileRoles": ["request", "events"],
+        "manifestFileRoles": ["request", "events", "result"]
+      }
+    },
+    {
+      "caseId": "file-preparation-fault",
+      "failAt": "before_file_preparation",
+      "expected": {
+        "completedStatus": "failed",
+        "reason": "terminal_artifact_preparation_failed",
+        "finalRoles": []
+      }
+    },
+    {
+      "caseId": "sql-commit-fault",
+      "failAt": "before_sql_commit",
+      "expected": {
+        "completedStatus": "succeeded",
+        "finalRoles": ["request", "events", "result", "manifest"],
+        "resultFileRoles": ["request", "events"],
+        "manifestFileRoles": ["request", "events", "result"]
+      }
+    },
+    {
+      "caseId": "projection-fault",
+      "failAt": "after_commit_before_projection",
+      "expected": {
+        "completedStatus": "succeeded",
+        "finalRoles": ["request", "events", "result", "manifest"],
+        "resultFileRoles": ["request", "events"],
+        "manifestFileRoles": ["request", "events", "result"]
+      }
+    }
+  ]
+}

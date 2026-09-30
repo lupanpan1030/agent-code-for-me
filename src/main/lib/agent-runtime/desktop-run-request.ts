@@ -16,6 +16,11 @@ import type {
   AgentRuntimeRunResultBase,
   AgentRuntimeTraceObserver,
 } from "./run-contract"
+import type { RuntimeExecutionProvenance } from "./run-event-ledger"
+import type {
+  CanonicalDesktopRunLedger,
+  RunArtifactCandidateSink,
+} from "./run-event-ledger-host"
 import type { RunEvent } from "./runtime-events"
 
 export type DesktopRunIdentity = AgentRuntimeRunIdentityBase & {
@@ -92,7 +97,29 @@ export type DesktopRunRequest = AgentRuntimeRunRequestBase<
   mcp: DesktopRunMcpReadiness
   mcpSessionServers?: DesktopRunMcpSessionServer[]
   attachments: DesktopRunAttachmentRef[]
-  trace: DesktopTraceObserver
+  /**
+   * The Run's host-composed ledger: the adapter submits native boundaries,
+   * lifecycle facts and stream observations here (null when the request has
+   * no durable job, e.g. isolated adapter tests).
+   */
+  ledger?: CanonicalDesktopRunLedger | null
+  /**
+   * Host-only execution tuple the host bound to this Run's ledger at launch
+   * capture; an adapter that spawns the runtime itself re-checks it
+   * immediately before the spawn (capture-to-launch changes fail closed).
+   */
+  executionProvenance?: RuntimeExecutionProvenance | null
+  /**
+   * Host-composed native artifact candidate sink of a Run with an admitted
+   * run directory (null otherwise): adapters hand native file/image/diff
+   * evidence to the run artifact owner through it and never mint artifacts.
+   */
+  artifactCandidates?: RunArtifactCandidateSink | null
+  /**
+   * Host consumer of already committed records (e.g. the headless wrapper);
+   * it never appends them again or mints a terminal.
+   */
+  trace?: DesktopTraceObserver
   session: {
     resumeSessionId?: string | null
     parentSessionId?: string | null

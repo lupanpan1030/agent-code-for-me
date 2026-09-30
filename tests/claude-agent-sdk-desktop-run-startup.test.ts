@@ -119,7 +119,7 @@ describe("Claude Agent SDK desktop run startup", () => {
       type: "provider" | "job" | "runtime"
       input: unknown
     }> = []
-    const streamEventMapper = { map: () => [] }
+    const ledger = { runLedger: true } as never
     const desktopRunRequest = { id: "desktop-request-1" } as any
     const runtimeStartup = {
       finalEnv: { ANTHROPIC_AUTH_TOKEN: "token-1" },
@@ -165,7 +165,7 @@ describe("Claude Agent SDK desktop run startup", () => {
           return {
             desktopJob: {
               jobId: "job-1",
-              streamEventMapper,
+              ledger,
             },
             desktopRunRequest,
             resumeSessionId: "resume-session",
@@ -206,7 +206,7 @@ describe("Claude Agent SDK desktop run startup", () => {
     expect(base.desktopJobs).toEqual([
       {
         jobId: "job-1",
-        streamEventMapper,
+        ledger,
       },
     ])
     expect(calls.map((call) => call.type)).toEqual([

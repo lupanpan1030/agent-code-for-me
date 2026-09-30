@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test"
 import type { DesktopRunRequest } from "../src/main/lib/agent-runtime/desktop-run-request"
-import { createRunEvent } from "../src/main/lib/agent-runtime/runtime-events"
 import type {
   CodexAppServerClientNotificationMethod,
   CodexAppServerClientRequestMethod,
@@ -189,7 +188,22 @@ class FakeCodexAppServerTransport implements CodexAppServerTransport {
 
 describe("headless Codex app-server adapter", () => {
   test("bridges a policy-grant headless request into the desktop app-server adapter", async () => {
-    const { observer: runtimeObserver, events } = observer()
+    const { observer: baseObserver, events } = observer()
+    // The Run's host ledger the headless observer carries (a recording
+    // stub): the wrapper hands this same ledger to the desktop adapter.
+    const ledgerCalls: Array<{ port: string; input: unknown }> = []
+    const record = (port: string) => async (input: unknown) => {
+      ledgerCalls.push({ port, input })
+      return []
+    }
+    const runLedger = {
+      appendSystemEvent: record("appendSystemEvent"),
+      ingestRuntimeObservation: record("ingestRuntimeObservation"),
+    }
+    const runtimeObserver: AgentRuntimeObserver = {
+      ...baseObserver,
+      runLedger: runLedger as never,
+    }
     let desktopRequest: DesktopRunRequest | null = null
     const runner = createCodexAppServerHeadlessTaskRunner({
       createDesktopAdapter: () => ({
@@ -201,36 +215,18 @@ describe("headless Codex app-server adapter", () => {
         },
         async run(request) {
           desktopRequest = request
-          request.trace.emit(
-            createRunEvent({
-              runId: request.identity.runId,
-              jobId: request.identity.jobId,
-              runtimeId: "codex",
-              sequence: 1,
-              type: "status",
-              payload: { status: "desktop_runtime_adapter_started" },
-            }),
-          )
-          request.trace.emit(
-            createRunEvent({
-              runId: request.identity.runId,
-              jobId: request.identity.jobId,
-              runtimeId: "codex",
-              sequence: 2,
-              type: "assistant_delta",
-              payload: { text: "hello from app-server" },
-            }),
-          )
-          request.trace.emit(
-            createRunEvent({
-              runId: request.identity.runId,
-              jobId: request.identity.jobId,
-              runtimeId: "codex",
-              sequence: 3,
-              type: "completed",
-              payload: { status: "succeeded" },
-            }),
-          )
+          // Like the real adapter, write through the Run's ledger.
+          const ledger = request.ledger as unknown as typeof runLedger
+          await ledger.appendSystemEvent({
+            observationKey: "fake:started",
+            type: "status",
+            payload: { status: "desktop_runtime_adapter_started" },
+          })
+          await ledger.ingestRuntimeObservation({
+            observationKey: "fake:assistant",
+            type: "assistant_delta",
+            payload: { text: "hello from app-server" },
+          })
           return {
             status: "succeeded",
             sessionId: "session-1",
@@ -254,16 +250,16 @@ describe("headless Codex app-server adapter", () => {
         adapterSource: "codex-app-server",
       },
     })
-    expect(events).toEqual([
-      {
-        type: "status",
-        payload: { status: "desktop_runtime_adapter_started" },
-      },
-      {
-        type: "assistant_delta",
-        payload: { text: "hello from app-server" },
-      },
+    // refactor-canonical-run-event-ledger S46 (APPROVED design): the adapter
+    // commits its records to the Run's own ledger (the observer's runLedger,
+    // handed over unchanged), so the headless wrapper consumes them without
+    // a second observer append or terminal mint.
+    expect(desktopRequest?.ledger).toBe(runLedger as never)
+    expect(ledgerCalls.map((call) => call.port)).toEqual([
+      "appendSystemEvent",
+      "ingestRuntimeObservation",
     ])
+    expect(events).toEqual([])
     expect(desktopRequest?.context).toMatchObject({
       runtimeId: "codex",
       source: "desktop",

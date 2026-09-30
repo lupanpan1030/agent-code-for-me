@@ -2,23 +2,23 @@ import { z } from "zod"
 import {
   AGENT_JOB_SOURCES,
   AGENT_JOB_STATUSES,
-  isTerminalAgentJobStatus,
   type AgentJobStatus,
+  isTerminalAgentJobStatus,
 } from "../../../../shared/agent-jobs"
-import { completeAgentJob } from "../../headless/job-store"
-import {
-  getAgentJob,
-  listAgentJobEvents,
-  listAgentJobs,
-  requestCancelAgentJob,
-  retryAgentJob,
-} from "../../headless/job-store"
+import { getDatabase } from "../../db"
+import { requestCancelDesktopAgentJob } from "../../desktop-agent-jobs"
 import {
   serializeAgentJob,
   serializeAgentJobEvent,
 } from "../../headless/cli-output"
-import { requestCancelDesktopAgentJob } from "../../desktop-agent-jobs"
-import { getDatabase } from "../../db"
+import {
+  cancelAgentJob,
+  getAgentJob,
+  listAgentJobEvents,
+  listAgentJobs,
+  retryAgentJob,
+  runEventHistoryQuality,
+} from "../../headless/job-store"
 import { publicProcedure, router } from "../index"
 
 const sourceSchema = z.enum(AGENT_JOB_SOURCES)
@@ -72,34 +72,34 @@ export const agentJobsRouter = router({
       return {
         job: serializeAgentJob(job),
         events: events.map(serializeAgentJobEvent),
+        // Internal Workbench read metadata only (never a public envelope).
+        historyQuality: runEventHistoryQuality(job),
       }
     }),
 
   cancel: publicProcedure
     .input(z.object({ jobId: z.string() }))
-    .mutation(({ input }) => {
+    .mutation(async ({ input }) => {
       const db = getDatabase()
       const job = getAgentJob(db, input.jobId)
       if (!job) throw new Error(`Unknown job: ${input.jobId}`)
-      let updated =
+      const updated =
         job.source === "desktop"
-          ? requestCancelDesktopAgentJob(db, input.jobId, "desktop").job
-          : requestCancelAgentJob(db, input.jobId, "desktop")
-      if (updated.status === "queued") {
-        updated = completeAgentJob(db, {
-          jobId: input.jobId,
-          status: "canceled",
-          exitCode: 130,
-          errorCode: "job_canceled",
-          errorMessage: "Job was canceled before it started.",
-        })
-      }
+          ? (await requestCancelDesktopAgentJob(db, input.jobId, "desktop")).job
+          : await cancelAgentJob(db, input.jobId, {
+              requestedBy: "desktop",
+              queuedCancelFields: {
+                exitCode: 130,
+                errorCode: "job_canceled",
+                errorMessage: "Job was canceled before it started.",
+              },
+            })
       return { job: serializeAgentJob(updated) }
     }),
 
   retry: publicProcedure
     .input(z.object({ jobId: z.string() }))
-    .mutation(({ input }) => {
+    .mutation(async ({ input }) => {
       const db = getDatabase()
       const job = getAgentJob(db, input.jobId)
       if (!job) throw new Error(`Unknown job: ${input.jobId}`)
@@ -116,7 +116,7 @@ export const agentJobsRouter = router({
       if (!isTerminalAgentJobStatus(job.status as AgentJobStatus)) {
         throw new Error(`Job ${job.id} is not finished yet.`)
       }
-      const retry = retryAgentJob(db, input.jobId)
+      const retry = await retryAgentJob(db, input.jobId)
       return { job: serializeAgentJob(retry) }
     }),
 })

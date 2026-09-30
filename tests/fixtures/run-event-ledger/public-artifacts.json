@@ -1,0 +1,81 @@
+{
+  "fixtureVersion": 1,
+  "evidenceClass": "synthetic",
+  "sourceRefs": [
+    "openspec/changes/refactor-canonical-run-event-ledger/specs/local-job-api/spec.md#Run Result and Artifact Manifest / Run artifact directory is configured",
+    "openspec/changes/refactor-canonical-run-event-ledger/design.md Artifacts and Terminal Commit Order (finite digest graph)",
+    "openspec/changes/refactor-canonical-run-event-ledger/proposal.md C7 rows 5/8 (initial artifact_created before job_started)"
+  ],
+  "provenance": {
+    "author": "independent red-suite author (domain C)",
+    "measured": false,
+    "note": "<ARTIFACT_BASE_DIR> is replaced by a fresh temporary directory inside the registered project; no real runtime or network is used."
+  },
+  "cases": [
+    {
+      "caseId": "public-artifacts",
+      "request": {
+        "apiVersion": "locus.local-job.v1",
+        "consumer": {
+          "id": "artifacts-consumer",
+          "runExternalId": "artifacts-001"
+        },
+        "project": {
+          "cwd": "<PROJECT_CWD>"
+        },
+        "runtime": {
+          "id": "codex"
+        },
+        "mode": "agent",
+        "prompt": {
+          "text": "Write the answer."
+        },
+        "artifacts": {
+          "baseDir": "<ARTIFACT_BASE_DIR>",
+          "writePolicy": "metadata-only"
+        }
+      },
+      "runnerEvents": [
+        {
+          "type": "assistant_delta",
+          "payload": {
+            "text": "hello"
+          }
+        }
+      ],
+      "runnerResult": {
+        "status": "succeeded",
+        "exitCode": 0,
+        "result": {
+          "finalMessage": "hello"
+        }
+      },
+      "expected": {
+        "runDirFiles": [
+          "artifacts.json",
+          "events.jsonl",
+          "request.json",
+          "result.json"
+        ],
+        "initialArtifactRoles": ["request", "events", "manifest"],
+        "finalManifestFileRoles": ["request", "events", "result"],
+        "resultEnvelopeRoles": ["request", "events", "result", "manifest"],
+        "forbiddenRunDirEntries": ["final"]
+      },
+      "lateRecords": [
+        {
+          "type": "status",
+          "payload": {
+            "subtype": "late_event",
+            "originalType": "status",
+            "nativeMethod": "warning",
+            "diagnosticOnly": true,
+            "observation": {
+              "message": "late warning after terminal"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

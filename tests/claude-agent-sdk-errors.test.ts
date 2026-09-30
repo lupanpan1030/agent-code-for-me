@@ -22,9 +22,7 @@ describe("Claude Agent SDK error diagnostics", () => {
       }),
     ).toBe("rate_limit_exceeded")
 
-    expect(extractClaudeAgentSdkEmbeddedErrorText({})).toBe(
-      "Unknown SDK error",
-    )
+    expect(extractClaudeAgentSdkEmbeddedErrorText({})).toBe("Unknown SDK error")
   })
 
   test("distinguishes OAuth auth reconnect from API key auth failure", () => {
@@ -127,16 +125,19 @@ describe("Claude Agent SDK error diagnostics", () => {
     ).toBe(false)
   })
 
-  test("classifies streaming session expiry from stderr", () => {
+  // refactor-canonical-run-event-ledger tasks 6.3 (APPROVED design; red-receipt
+  // §8.4): "No conversation found" is a neutral native resume rejection, not a
+  // session expiry.
+  test("classifies a streaming native resume rejection from stderr", () => {
     expect(
       classifyClaudeAgentSdkStreamError({
         error: new Error("stream failed"),
         stderrOutput: "No conversation found with session ID abc-123",
       }),
     ).toEqual({
-      category: "SESSION_EXPIRED",
-      context: "Previous session expired. Please try again.",
-      isSessionNotFound: true,
+      category: "NATIVE_RESUME_REJECTED",
+      context: "Claude could not resume the previous session",
+      isNativeResumeRejected: true,
     })
   })
 

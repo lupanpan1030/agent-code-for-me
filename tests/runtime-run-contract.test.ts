@@ -5,7 +5,6 @@ import type {
   AgentRuntimePersistedObserver,
   AgentRuntimeProviderReference,
   AgentRuntimeRunRequestBase,
-  AgentRuntimeTraceObserver,
 } from "../src/main/lib/agent-runtime/run-contract"
 import { createCodexDesktopRunRequest } from "../src/main/lib/codex/desktop-run-request"
 import {
@@ -27,7 +26,7 @@ describe("runtime run contract", () => {
       runtimeId: "codex",
       mode: "plan",
     })
-    const emitted: unknown[] = []
+    const ledger = { runLedger: true } as never
     const request = createCodexDesktopRunRequest({
       runId: "run-1",
       jobId: "job-1",
@@ -56,19 +55,15 @@ describe("runtime run contract", () => {
         },
       ],
       signal: new AbortController().signal,
-      emitTrace: (event) => emitted.push(event),
+      ledger,
     })
 
-    const shared:
-      AgentRuntimeRunRequestBase<
-        DesktopRunIdentity,
-        DesktopRunContext,
-        DesktopPermissionPolicy,
-        DesktopRunProviderBinding
-      > = request
-    const trace: AgentRuntimeTraceObserver = request.trace
-
-    trace.emit({ type: "status" })
+    const shared: AgentRuntimeRunRequestBase<
+      DesktopRunIdentity,
+      DesktopRunContext,
+      DesktopPermissionPolicy,
+      DesktopRunProviderBinding
+    > = request
 
     expect(shared.identity).toMatchObject({ runId: "run-1", jobId: "job-1" })
     expect(shared.context).toMatchObject({
@@ -96,7 +91,9 @@ describe("runtime run contract", () => {
     ])
     expect(request.providerBinding).not.toHaveProperty("apiKey")
     expect(request.providerBinding).not.toHaveProperty("headers")
-    expect(emitted).toEqual([{ type: "status" }])
+    // Desktop runs ingest into the Run's host-composed ledger; the request
+    // carries it instead of a trace emitter.
+    expect(request.ledger).toBe(ledger)
   })
 
   test("headless request extends the shared base without desktop fields", () => {
@@ -114,13 +111,12 @@ describe("runtime run contract", () => {
       artifactManifestPath: "/artifacts/run-1/artifacts.json",
     })
 
-    const shared:
-      AgentRuntimeRunRequestBase<
-        AgentRuntimeRunIdentity,
-        AgentRuntimeRunContext,
-        AgentRuntimePermissionPolicySummary,
-        AgentRuntimeProviderReference | null
-      > = request
+    const shared: AgentRuntimeRunRequestBase<
+      AgentRuntimeRunIdentity,
+      AgentRuntimeRunContext,
+      AgentRuntimePermissionPolicySummary,
+      AgentRuntimeProviderReference | null
+    > = request
 
     expect(shared.identity).toEqual({ jobId: "job-1", attempt: undefined })
     expect(shared.context).toMatchObject({

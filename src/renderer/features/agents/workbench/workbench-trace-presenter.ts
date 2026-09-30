@@ -7,6 +7,13 @@ import type { TranslationKey } from "../../../lib/i18n"
 
 export type WorkbenchTraceTextValues = Record<string, string | number>
 
+/**
+ * Internal read metadata of a job's persisted history, supplied by the
+ * store-backed Workbench read (tRPC `agentJobs.logs`), never by a public
+ * envelope: pre-ledger (`ledger_version=0`) rows are `legacy_unverified`.
+ */
+export type WorkbenchTraceHistoryQuality = "legacy_unverified" | "ledger"
+
 export type WorkbenchTraceEvent = {
   id: string
   jobId: string
@@ -14,6 +21,7 @@ export type WorkbenchTraceEvent = {
   type: string
   payload: unknown
   createdAt: Date | string | null
+  historyQuality?: WorkbenchTraceHistoryQuality
 }
 
 export type WorkbenchTraceKind =
@@ -88,6 +96,7 @@ export type WorkbenchTraceRow = {
   usage?: WorkbenchTraceUsage
   error?: WorkbenchTraceError
   createdAt: Date | string | null
+  historyQuality?: WorkbenchTraceHistoryQuality
 }
 
 export const JOB_EVENT_LABEL_KEYS: Record<string, TranslationKey> = {
@@ -199,9 +208,27 @@ export function formatTracePayload(payload: unknown): string {
   }
 }
 
+/**
+ * Stamps the store read's history metadata onto each event of one job so the
+ * single versioned reader decodes by persisted version, not by payload shape.
+ */
+export function withWorkbenchHistoryQuality<T extends WorkbenchTraceEvent>(
+  events: readonly T[] | null | undefined,
+  historyQuality: WorkbenchTraceHistoryQuality | null | undefined,
+): T[] {
+  const list = [...(events ?? [])]
+  if (historyQuality !== "legacy_unverified" && historyQuality !== "ledger") {
+    return list
+  }
+  return list.map((event) => ({ ...event, historyQuality }))
+}
+
 export function getWorkbenchSemanticPayload(
   event: WorkbenchTraceEvent,
 ): unknown {
+  // Ledger rows are committed bare payloads and are never unwrapped; only
+  // pre-ledger desktop wrapper rows carry the historical wrapper shape.
+  if (event.historyQuality === "ledger") return event.payload
   if (isRecord(event.payload) && "runEventSequence" in event.payload) {
     return event.payload.payload
   }
@@ -319,7 +346,23 @@ function getMcpStatus(payload: unknown): string | undefined {
 
 function getUsagePayload(payload: unknown): Record<string, unknown> {
   if (!isRecord(payload)) return {}
-  return isRecord(payload.messageMetadata) ? payload.messageMetadata : payload
+  if (isRecord(payload.messageMetadata)) return payload.messageMetadata
+  // A committed ledger usage snapshot (v1) carries the per-turn vector in
+  // `last` and the native runtime identities in a namespaced extension.
+  if (payload.kind === "snapshot" && isRecord(payload.last)) {
+    const extensions = isRecord(payload.extensions) ? payload.extensions : {}
+    const codex = isRecord(extensions["runtime.codex.v1"])
+    return {
+      ...(codex
+        ? { provider: "codex", adapterSource: "codex-app-server" }
+        : {}),
+      ...payload.last,
+      cacheReadInputTokens:
+        payload.last.cacheReadInputTokens ?? payload.last.cachedInputTokens,
+      modelContextWindow: payload.modelContextWindow,
+    }
+  }
+  return payload
 }
 
 function getUsage(payload: unknown): WorkbenchTraceUsage | undefined {
@@ -754,6 +797,7 @@ export function getWorkbenchTraceRow(
     rawPayload: event.payload,
     hasRawPayload: !samePayload(event.payload, semanticPayload),
     createdAt: event.createdAt,
+    ...(event.historyQuality ? { historyQuality: event.historyQuality } : {}),
     ...parts,
   }
 }

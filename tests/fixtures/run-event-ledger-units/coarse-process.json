@@ -1,0 +1,152 @@
+{
+  "fixtureVersion": 1,
+  "evidenceClass": "synthetic",
+  "sourceRefs": [
+    "specs/agent-runtime-core Normalized Agent Events / Headless process emits coarse output",
+    "tasks 7.17 (coarse-process.json: coarse process {kind,text,exitCode} descriptors)",
+    "src/main/lib/headless/process-runner.ts runProcessAgentTask (command_started / assistant_delta / command_output / command_finished)",
+    "src/main/lib/headless/adapters/codex.ts and codex-app-server.ts (coarse error {errorCode,errorMessage})",
+    "red-receipt §6 (S06 implementer-unit: coarse ingress return value in ledger-ingress.ts)"
+  ],
+  "provenance": {
+    "author": "implementer unit fixture (refactor-canonical-run-event-ledger touch-up T1), 2026-10-01",
+    "measured": false,
+    "note": "Implementer-unit fixture kept outside the immutable tests/fixtures/run-event-ledger/ root. Each case is one coarse process descriptor {kind,text,exitCode} and the coarse observation the process runner submits for it; the host-result case is the runner's terminal result handed to settle. secretHints are memory-only exact hints; the sentinel must never persist."
+  },
+  "runId": "run-coarse-process",
+  "runtimeId": "claude-code",
+  "secretHints": ["provider-secret-123"],
+  "cases": [
+    {
+      "caseId": "command-started",
+      "descriptor": {
+        "kind": "command",
+        "text": "claude -p",
+        "exitCode": null
+      },
+      "observation": {
+        "type": "command_started",
+        "payload": {
+          "label": "Claude Code",
+          "executable": "claude",
+          "args": ["-p", "--output-format", "text"],
+          "cwd": "/fixture/project"
+        }
+      },
+      "expected": {
+        "type": "command_started",
+        "preserved": { "label": "Claude Code", "executable": "claude" }
+      }
+    },
+    {
+      "caseId": "assistant-output",
+      "descriptor": {
+        "kind": "assistant",
+        "text": "Reviewed the package.\n",
+        "exitCode": null
+      },
+      "observation": {
+        "type": "assistant_delta",
+        "payload": { "text": "Reviewed the package.\n" }
+      },
+      "expected": {
+        "type": "assistant_delta",
+        "preserved": { "text": "Reviewed the package.\n" }
+      }
+    },
+    {
+      "caseId": "stderr-diagnostic",
+      "descriptor": {
+        "kind": "command",
+        "text": "warning: token provider-secret-123 expires soon",
+        "exitCode": null
+      },
+      "observation": {
+        "type": "command_output",
+        "payload": {
+          "stream": "stderr",
+          "text": "warning: token provider-secret-123 expires soon"
+        }
+      },
+      "expected": {
+        "type": "command_output",
+        "preserved": { "stream": "stderr" },
+        "retainedSafeText": "expires soon",
+        "carriesSecret": true
+      }
+    },
+    {
+      "caseId": "runner-status",
+      "descriptor": { "kind": "status", "text": "running", "exitCode": null },
+      "observation": {
+        "type": "status",
+        "payload": { "status": "running", "runtime": "claude-code" }
+      },
+      "expected": {
+        "type": "status",
+        "preserved": { "status": "running", "runtime": "claude-code" }
+      }
+    },
+    {
+      "caseId": "runtime-error",
+      "descriptor": {
+        "kind": "error",
+        "text": "Claude Code exited with code 2.",
+        "exitCode": 2
+      },
+      "observation": {
+        "type": "error",
+        "payload": {
+          "errorCode": "runtime_process_failed",
+          "errorMessage": "Claude Code exited with code 2."
+        }
+      },
+      "expected": {
+        "type": "error",
+        "preserved": { "errorCode": "runtime_process_failed" }
+      }
+    },
+    {
+      "caseId": "command-finished",
+      "descriptor": { "kind": "command", "text": "claude -p", "exitCode": 2 },
+      "observation": {
+        "type": "command_finished",
+        "payload": { "label": "Claude Code", "exitCode": 2, "status": "failed" }
+      },
+      "expected": {
+        "type": "command_finished",
+        "preserved": {
+          "label": "Claude Code",
+          "exitCode": 2,
+          "status": "failed"
+        }
+      }
+    },
+    {
+      "caseId": "host-result",
+      "descriptor": { "kind": "host-result", "text": null, "exitCode": 2 },
+      "settle": {
+        "trigger": {
+          "kind": "host_result",
+          "status": "failed",
+          "observationKey": "coarse-host-result"
+        },
+        "policy": {
+          "denied": false,
+          "evidenceKeys": ["policy:no-recorded-denial"]
+        },
+        "output": {
+          "valid": false,
+          "empty": false,
+          "allowEmpty": false,
+          "evidenceKeys": ["record:assistant-output"]
+        },
+        "postRun": {
+          "credentialsSafe": true,
+          "evidenceKeys": ["postrun:security-cleanup-ok"]
+        }
+      },
+      "expected": { "type": "completed", "status": "failed" }
+    }
+  ]
+}

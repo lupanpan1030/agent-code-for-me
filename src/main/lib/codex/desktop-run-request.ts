@@ -8,7 +8,7 @@ import {
 } from "../agent-runtime/desktop-run-request"
 import type { DesktopPermissionPolicy } from "../agent-runtime/permission-policy"
 import type { DesktopRunPreflightResult } from "../agent-runtime/preflight"
-import type { RunEvent } from "../agent-runtime/runtime-events"
+import type { CanonicalDesktopRunLedger } from "../agent-runtime/run-event-ledger-host"
 
 export type CodexDesktopRunImageAttachment = {
   attachmentId?: string
@@ -41,7 +41,8 @@ export type CreateCodexDesktopRunRequestInput = {
   signal: AbortSignal
   resumeSessionId?: string | null
   parentSessionId?: string | null
-  emitTrace: (event: RunEvent) => void
+  /** The Run's host-composed ledger the adapter ingests into. */
+  ledger?: CanonicalDesktopRunLedger | null
 }
 
 export function createCodexDesktopRunRequest({
@@ -58,7 +59,7 @@ export function createCodexDesktopRunRequest({
   signal,
   resumeSessionId,
   parentSessionId,
-  emitTrace,
+  ledger = null,
 }: CreateCodexDesktopRunRequestInput): DesktopRunRequest {
   return {
     identity: {
@@ -100,9 +101,7 @@ export function createCodexDesktopRunRequest({
         byteLength: attachment.byteLength,
       })),
     ],
-    trace: {
-      emit: emitTrace,
-    },
+    ledger,
     signal,
     session: {
       resumeSessionId,

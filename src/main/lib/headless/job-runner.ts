@@ -7,10 +7,24 @@ import type {
 } from "../../../shared/agent-jobs"
 import { isTerminalAgentJobStatus } from "../../../shared/agent-jobs"
 import type { LocalJobApiResolvedProvider } from "../../../shared/local-job-api"
+import type { RunArtifactRunDir } from "../agent-runtime/run-artifacts"
 import {
-  createExactSecretStreamChannelRedactor,
-  type ExactSecretStreamFragment,
-} from "../agent-runtime/redaction"
+  assistantItemOutputRecords,
+  type CanonicalRunEventLedger,
+  type CreateCanonicalRunEventLedgerOptions,
+  isAssistantItemRecord,
+  type LedgerOutcome,
+  type LedgerRecord,
+  type OutcomeEvidence,
+  RunEventLedgerError,
+} from "../agent-runtime/run-event-ledger"
+import {
+  bindRunExecutionProvenance,
+  createRunArtifactCandidateSink,
+  getOrCreateRunEventLedger,
+  type RunArtifactCandidateSink,
+  releaseRunEventLedger,
+} from "../agent-runtime/run-event-ledger-host"
 import type { AgentJob, AgentJobEvent } from "../db/schema"
 import type {
   AgentRuntimeObserver,
@@ -24,8 +38,6 @@ import {
 } from "./agent-runtime-contract"
 import {
   type AgentJobDatabase,
-  appendAgentJobEvent,
-  completeAgentJob,
   getAgentJob,
   getAgentJobPrompt,
   heartbeatAgentJob,
@@ -64,12 +76,27 @@ export type RunPersistedAgentJobOptions = {
   workerPid?: number | null
   signal?: AbortSignal
   providerBindingDependencies?: HeadlessProviderBindingDependencies
+  /** Terminal run-dir preparation registered with the one completed. */
+  terminalArtifacts?: CreateCanonicalRunEventLedgerOptions["terminalArtifacts"]
+  /**
+   * The Run's admitted run directory (API create/retry). Only with it does
+   * the host compose a native artifact candidate sink for the runner.
+   */
+  artifactRunDir?: RunArtifactRunDir | null
+  /** Sanitized host diagnostics (never persisted as Run events). */
+  onHostDiagnostic?: (message: string) => void
 }
 
 export type RunPersistedAgentJobResult = {
   job: AgentJob
   events: AgentJobEvent[]
   exitCode: number
+  /**
+   * The Run's committed outcome from the ledger's `readOutcome()`: the final
+   * status and the sequence of its one `completed` (records after it are
+   * diagnostic-only).
+   */
+  outcome: LedgerOutcome | null
 }
 
 export function isFakeRunnerEnabled(
@@ -139,179 +166,105 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value)
 }
 
-type HeadlessStreamEvent = {
-  eventType: AgentJobEventType
-  payload: unknown
-}
-
-type HeadlessStreamTextDescriptor =
-  ExactSecretStreamFragment<HeadlessStreamEvent>
-
-function headlessStreamTextDescriptor(
-  type: AgentJobEventType,
-  payload: unknown,
-): HeadlessStreamTextDescriptor | null {
-  if (!isRecord(payload)) return null
-  const id =
-    type === "tool_delta"
-      ? typeof payload.toolCallId === "string"
-        ? payload.toolCallId
-        : typeof payload.id === "string"
-          ? payload.id
-          : "default"
-      : typeof payload.id === "string"
-        ? payload.id
-        : "default"
-  if (
-    type === "assistant_delta" ||
-    type === "reasoning_delta" ||
-    type === "tool_delta"
-  ) {
-    const field =
-      typeof payload.delta === "string"
-        ? "delta"
-        : typeof payload.text === "string"
-          ? "text"
-          : null
-    if (!field) return null
-    const family =
-      type === "assistant_delta"
-        ? "assistant"
-        : type === "reasoning_delta"
-          ? "reasoning"
-          : "tool"
-    return {
-      channel: `${family}:${id}`,
-      value: payload[field] as string,
-      withValue: (value) => ({
-        eventType: type,
-        payload: { ...payload, [field]: value },
-      }),
-    }
-  }
-  if (type === "command_output" && typeof payload.text === "string") {
-    const stream =
-      typeof payload.stream === "string" ? payload.stream : "default"
-    return {
-      channel: `command-output:${stream}`,
-      value: payload.text,
-      withValue: (value) => ({
-        eventType: type,
-        payload: { ...payload, text: value },
-      }),
-    }
-  }
-  if (
-    type === "status" &&
-    payload.chunkType === "file-change-delta" &&
-    isRecord(payload.data) &&
-    typeof payload.data.delta === "string"
-  ) {
-    const dataDelta = payload.data.delta
-    const data = payload.data
-    const fileChangeId = typeof data.id === "string" ? data.id : "default"
-    return {
-      channel: `file-change:${fileChangeId}`,
-      value: dataDelta,
-      withValue: (value) => ({
-        eventType: type,
-        payload: {
-          ...payload,
-          data: { ...data, delta: value },
-        },
-      }),
-    }
-  }
-  return null
-}
-
-function headlessStreamBoundary(
-  type: AgentJobEventType,
-  payload: unknown,
-): "all" | string[] | null {
-  if (type === "completed" || type === "command_finished") return "all"
-  if (type !== "tool_finished") return null
-
-  const toolCallId =
-    isRecord(payload) && typeof payload.toolCallId === "string"
-      ? payload.toolCallId
-      : isRecord(payload) && typeof payload.id === "string"
-        ? payload.id
-        : "default"
-  return [`tool:${toolCallId}`]
-}
-
 type HeadlessObserverController = {
   observer: AgentRuntimeObserver
-  flush: () => void
+  /** Resolves after every submitted coarse observation was processed. */
+  drain: () => Promise<void>
 }
 
-function createObserver(
-  db: AgentJobDatabase,
-  jobId: string,
-  workerId: string,
-  abortController: AbortController,
-  getSecretHints: () => readonly string[],
-  registerSecretHints: (hints: readonly string[]) => void,
-): HeadlessObserverController {
-  const streamSecretRedactor =
-    createExactSecretStreamChannelRedactor<HeadlessStreamEvent>()
+const LEDGER_RESUBMIT_LIMIT = 3
 
-  const appendDirect = (type: AgentJobEventType, payload: unknown) =>
-    appendAgentJobEvent(db, {
-      jobId,
-      type,
-      payload,
-      secretHints: getSecretHints(),
-    })
+/**
+ * Thin coarse ingress (design "Headless Runtime Event Convergence"): each
+ * runner observation is submitted once to the Run's host ledger under its
+ * own observation key. The ledger owns decoding, the Run-scoped exact-secret
+ * redaction, sequence allocation and the committed record.
+ */
+function createObserver(input: {
+  db: AgentJobDatabase
+  jobId: string
+  workerId: string
+  ledger: CanonicalRunEventLedger
+  abortController: AbortController
+  registerSecretHints: (hints: readonly string[]) => void
+  artifactCandidates?: RunArtifactCandidateSink | null
+  onHostDiagnostic?: (message: string) => void
+}): HeadlessObserverController {
+  let observationCounter = 0
+  const submissions = new Set<Promise<void>>()
 
-  const flush = () => {
-    const secretHints = getSecretHints()
-    for (const redacted of streamSecretRedactor.flush(secretHints)) {
-      appendDirect(redacted.value.eventType, redacted.value.payload)
+  const submit = (
+    observationKey: string,
+    type: AgentJobEventType,
+    payload: unknown,
+  ) => {
+    const run = async () => {
+      for (let attempt = 1; ; attempt += 1) {
+        try {
+          await input.ledger.ingestRuntimeObservation({
+            observationKey,
+            type,
+            payload: payload ?? {},
+          })
+          return
+        } catch (error) {
+          const code =
+            error instanceof RunEventLedgerError ? error.code : "UNKNOWN"
+          if (
+            code === "LEDGER_APPEND_FAILED" &&
+            attempt < LEDGER_RESUBMIT_LIMIT
+          ) {
+            continue
+          }
+          input.onHostDiagnostic?.(
+            `[headless] ${type} observation was not recorded (${code}).`,
+          )
+          return
+        }
+      }
     }
-  }
-
-  const flushChannels = (channels: readonly string[]) => {
-    const secretHints = getSecretHints()
-    for (const redacted of streamSecretRedactor.flushChannels(
-      channels,
-      secretHints,
-    )) {
-      appendDirect(redacted.value.eventType, redacted.value.payload)
-    }
+    const promise = run()
+    submissions.add(promise)
+    void promise.finally(() => submissions.delete(promise))
   }
 
   const observer: AgentRuntimeObserver = {
     appendEvent(type, payload) {
-      const current = getAgentJob(db, jobId)
-      if (current?.cancelRequestedAt) abortController.abort()
-      const boundary = headlessStreamBoundary(type, payload)
-      if (boundary === "all") flush()
-      else if (boundary) flushChannels(boundary)
-
-      const descriptor = headlessStreamTextDescriptor(type, payload)
-      if (!descriptor) return appendDirect(type, payload)
-
-      const redacted = streamSecretRedactor.push(descriptor, getSecretHints())
-      return appendDirect(redacted.value.eventType, redacted.value.payload)
+      const current = getAgentJob(input.db, input.jobId)
+      if (current?.cancelRequestedAt) input.abortController.abort()
+      observationCounter += 1
+      submit(`observer:${input.jobId}:${observationCounter}`, type, payload)
     },
     heartbeat() {
-      const job = heartbeatAgentJob(db, jobId, workerId)
-      if (job.cancelRequestedAt) abortController.abort()
+      const job = heartbeatAgentJob(input.db, input.jobId, input.workerId)
+      if (job.cancelRequestedAt) input.abortController.abort()
       return job
     },
     isCancelRequested() {
-      const job = getAgentJob(db, jobId)
+      const job = getAgentJob(input.db, input.jobId)
       const requested = !!job?.cancelRequestedAt
-      if (requested) abortController.abort()
+      if (requested) input.abortController.abort()
       return requested
     },
     registerSecretHints(hints) {
-      registerSecretHints(hints)
+      input.registerSecretHints(hints)
+    },
+    async recordExecutionProvenance(provenance) {
+      await bindRunExecutionProvenance(input.ledger, provenance)
+    },
+    runLedger: input.ledger,
+    ...(input.artifactCandidates
+      ? { artifactCandidates: input.artifactCandidates }
+      : {}),
+  }
+  return {
+    observer,
+    async drain() {
+      await Promise.allSettled([...submissions])
+      await input.artifactCandidates?.drain()
+      await input.ledger.whenIdle()
     },
   }
-  return { observer, flush }
 }
 
 class InvalidAgentRuntimeRunResultError extends Error {
@@ -421,23 +374,180 @@ function resolvedProviderForError(
   }
 }
 
-function appendResolvedProviderEvent(input: {
-  db: AgentJobDatabase
+async function recordResolvedProvider(input: {
+  ledger: CanonicalRunEventLedger
   jobId: string
   resolvedProvider: LocalJobApiResolvedProvider
-  secretHints?: readonly string[]
-}): void {
+}): Promise<void> {
   if (input.resolvedProvider.source !== "default-profile") return
-  appendAgentJobEvent(input.db, {
-    jobId: input.jobId,
+  await input.ledger.appendSystemEvent({
+    observationKey: `host:provider-binding:${input.jobId}`,
     type: "status",
     payload: {
       providerBinding: {
         resolvedProvider: input.resolvedProvider,
       },
     },
-    secretHints: input.secretHints,
   })
+}
+
+function textOf(payload: unknown): string {
+  if (!isRecord(payload)) return ""
+  for (const key of ["text", "delta"]) {
+    const value = payload[key]
+    if (typeof value === "string" && value.trim().length > 0) return value
+  }
+  return ""
+}
+
+function isRecordedDenial(record: LedgerRecord): boolean {
+  if (
+    record.type !== "permission_requested" &&
+    record.type !== "guard_decision"
+  )
+    return false
+  const payload = isRecord(record.payload) ? record.payload : {}
+  const event = isRecord(payload.event) ? payload.event : {}
+  return payload.decision === "deny" || event.decision === "deny"
+}
+
+/**
+ * The adapter-observed live native terminal of a Run, only when its
+ * observation was committed to the Run's ledger and the runner's result
+ * still reports that native status (a later host failure such as a close or
+ * cleanup error is host evidence, not the native terminal).
+ */
+function committedNativeTerminal(
+  result: AgentRuntimeRunResult | null,
+  records: readonly LedgerRecord[],
+): NonNullable<AgentRuntimeRunResult["nativeTerminal"]> | null {
+  const native = result?.nativeTerminal
+  if (!native || native.status !== result?.status) return null
+  const committed = records.some(
+    (record) =>
+      typeof record.factKey === "string" &&
+      record.factKey.startsWith(`${native.observationKey}:`),
+  )
+  return committed ? native : null
+}
+
+/**
+ * OutcomeEvidence of one headless Run from its committed records and the
+ * runner's host result (design "Error, Completion and Late-Event Policy").
+ * A native-protocol Run (Codex app-server) settles from the committed live
+ * native terminal; process batch and completion Runs, and an adapter
+ * failure before any native terminal, settle from the host result.
+ * The ledger decides the outcome; a runner's default success needs output
+ * evidence and no recorded denial (R1 DIRECT_NEW_STANDARD).
+ */
+function headlessOutcomeEvidence(input: {
+  jobId: string
+  records: readonly LedgerRecord[]
+  result: AgentRuntimeRunResult | null
+  canceled: boolean
+  credentialsSafe: boolean
+  failed: boolean
+}): OutcomeEvidence {
+  const observationKey = `runner-result:${input.jobId}`
+  const denials = input.records.filter(isRecordedDenial)
+  // Assistant items count by their final item state (final text wins); an
+  // item-less coarse assistant_delta counts by its own text.
+  const outputKeys = [
+    ...assistantItemOutputRecords(input.records),
+    ...input.records.filter(
+      (record) =>
+        record.type === "assistant_delta" &&
+        !isAssistantItemRecord(record) &&
+        (textOf(record.payload).length > 0 ||
+          (isRecord(record.payload) &&
+            record.payload.structured !== undefined)),
+    ),
+  ]
+    .sort((left, right) => left.sequence - right.sequence)
+    .map((record) => `record:${record.sequence}`)
+  const finalMessage = isRecord(input.result?.result)
+    ? input.result.result.finalMessage
+    : undefined
+  if (typeof finalMessage === "string" && finalMessage.trim().length > 0) {
+    outputKeys.push("runner-result:finalMessage")
+  }
+  const status = input.result?.status
+  const nativeTerminal = input.failed
+    ? null
+    : committedNativeTerminal(input.result, input.records)
+  const trigger: OutcomeEvidence["trigger"] = input.canceled
+    ? { kind: "cancel", reason: "cancel_requested", observationKey }
+    : status === "canceled"
+      ? { kind: "cancel", reason: "runtime_canceled", observationKey }
+      : status === "interrupted"
+        ? {
+            kind: "interrupt",
+            reason: input.result?.errorCode ?? "runtime_interrupted",
+            observationKey,
+          }
+        : nativeTerminal
+          ? {
+              kind: "native_terminal",
+              status: nativeTerminal.status,
+              observationKey: nativeTerminal.observationKey,
+              origin: "live",
+              ...(nativeTerminal.code !== undefined
+                ? { code: nativeTerminal.code }
+                : {}),
+            }
+          : {
+              kind: "host_result",
+              status:
+                !input.failed && status === "succeeded"
+                  ? "succeeded"
+                  : "failed",
+              observationKey,
+            }
+  return {
+    trigger,
+    policy: {
+      denied: denials.length > 0,
+      evidenceKeys:
+        denials.length > 0
+          ? denials.map((record) => `record:${record.sequence}`)
+          : ["policy:no-recorded-denial"],
+    },
+    output: {
+      valid: !input.failed,
+      empty: outputKeys.length === 0,
+      allowEmpty: false,
+      evidenceKeys: outputKeys,
+    },
+    postRun: {
+      credentialsSafe: input.credentialsSafe,
+      evidenceKeys: [
+        input.credentialsSafe
+          ? "postrun:security-cleanup-ok"
+          : "postrun:security-cleanup-failed",
+      ],
+    },
+  }
+}
+
+function outcomeErrorCode(
+  outcome: { status: string; reasons: string[] },
+  runnerErrorCode: string | null | undefined,
+): string | null {
+  if (outcome.status === "succeeded") return null
+  if (outcome.status === "canceled") return "job_canceled"
+  return runnerErrorCode ?? outcome.reasons[0] ?? "runtime_error"
+}
+
+function outcomeErrorMessage(
+  outcome: { status: string; reasons: string[] },
+  runnerErrorMessage: string | null | undefined,
+): string | null {
+  if (outcome.status === "succeeded") return null
+  if (outcome.status === "canceled") return "Job was canceled."
+  return (
+    runnerErrorMessage ??
+    `Run outcome ${outcome.status}: ${outcome.reasons.join(", ") || "no success evidence"}.`
+  )
 }
 
 export async function runPersistedAgentJob(
@@ -449,10 +559,35 @@ export async function runPersistedAgentJob(
     options.workerId ?? `headless:${process.pid}:${Date.now()}:${initial.id}`
   const workerPid =
     options.workerPid === undefined ? process.pid : options.workerPid
-  const job = startAgentJob(options.db, {
+  const job = await startAgentJob(options.db, {
     jobId: initial.id,
     workerId,
     workerPid,
+  })
+  let providerResolution: HeadlessProviderBindingResolution | null = null
+  // The executing host registers the Run's terminal projection once, so a
+  // settlement minted by another port (a transport exit ingested by the
+  // adapter) still writes the job-row diagnostics, result and final run-dir
+  // files. The runner's own settle keeps passing its own evidence.
+  const ledger = await getOrCreateRunEventLedger(options.db, job, {
+    ...(options.terminalArtifacts
+      ? { terminalArtifacts: options.terminalArtifacts }
+      : {}),
+    terminalJobFields: (outcome) => {
+      const errorCode = outcomeErrorCode(outcome, null)
+      return {
+        exitCode: normalizeHeadlessExitCode({
+          status: outcome.status as AgentJobStatus,
+          errorCode,
+        }),
+        errorCode,
+        errorMessage: outcomeErrorMessage(outcome, null),
+        result: resultWithResolvedProvider(
+          {},
+          resolvedProviderForError(null, job, providerResolution),
+        ),
+      }
+    },
   })
   const prompt = getAgentJobPrompt(options.db, job.id)
   const runner = await resolveRunner(options.runner, options.env)
@@ -465,28 +600,81 @@ export async function runPersistedAgentJob(
       once: true,
     })
   }
-  let providerResolution: HeadlessProviderBindingResolution | null = null
-  const dynamicSecretHints = new Set<string>()
-  const runSecretHints = () => [
-    ...new Set([
-      ...providerSecretHints(providerResolution),
-      ...dynamicSecretHints,
-    ]),
-  ]
-  const observerController = createObserver(
-    options.db,
-    job.id,
+  const observerController = createObserver({
+    db: options.db,
+    jobId: job.id,
     workerId,
+    ledger,
     abortController,
-    runSecretHints,
-    (hints) => {
-      for (const hint of hints) {
-        if (hint) dynamicSecretHints.add(hint)
-      }
+    registerSecretHints: (hints) => {
+      ledger.addSecretHints(hints.filter((hint) => Boolean(hint)))
     },
-  )
+    artifactCandidates: options.artifactRunDir
+      ? createRunArtifactCandidateSink({
+          ledger,
+          runId: job.id,
+          runDir: options.artifactRunDir,
+          cwd: job.cwd,
+          ...(options.onHostDiagnostic
+            ? { onHostDiagnostic: options.onHostDiagnostic }
+            : {}),
+        })
+      : null,
+    onHostDiagnostic: options.onHostDiagnostic,
+  })
   const observer = observerController.observer
   const runtimeOptions = localJobApiRuntimeOptions(job)
+
+  const settleRun = async (input: {
+    result: AgentRuntimeRunResult | null
+    canceled: boolean
+    credentialsSafe: boolean
+    failed: boolean
+    errorCode: string | null | undefined
+    errorMessage: string | null | undefined
+    resultValue: Record<string, unknown>
+  }): Promise<RunPersistedAgentJobResult> => {
+    await observerController.drain()
+    const records = (await ledger.read(0)) as LedgerRecord[]
+    await ledger.settle(
+      headlessOutcomeEvidence({
+        jobId: job.id,
+        records,
+        result: input.result,
+        canceled: input.canceled,
+        credentialsSafe: input.credentialsSafe,
+        failed: input.failed,
+      }),
+      {
+        jobFields: (outcome) => {
+          const errorCode = outcomeErrorCode(outcome, input.errorCode)
+          return {
+            exitCode: normalizeHeadlessExitCode({
+              status: outcome.status as AgentJobStatus,
+              errorCode,
+            }),
+            errorCode,
+            errorMessage: outcomeErrorMessage(outcome, input.errorMessage),
+            result: input.resultValue,
+          }
+        },
+        ...(options.terminalArtifacts
+          ? { terminalArtifacts: options.terminalArtifacts }
+          : {}),
+      },
+    )
+    const outcome = await ledger.readOutcome()
+    const completed = getAgentJob(options.db, job.id) ?? job
+    return {
+      job: completed,
+      events: listAgentJobEvents(options.db, job.id),
+      exitCode: normalizeHeadlessExitCode({
+        status: completed.status as AgentJobStatus,
+        errorCode: completed.errorCode,
+      }),
+      outcome,
+    }
+  }
 
   try {
     providerResolution = await resolveHeadlessProviderBinding({
@@ -496,11 +684,11 @@ export async function runPersistedAgentJob(
       modelOverride: job.modelOverride,
       dependencies: options.providerBindingDependencies,
     })
-    appendResolvedProviderEvent({
-      db: options.db,
+    ledger.addSecretHints(providerSecretHints(providerResolution))
+    await recordResolvedProvider({
+      ledger,
       jobId: job.id,
       resolvedProvider: providerResolution.resolvedProvider,
-      secretHints: providerSecretHints(providerResolution),
     })
     const result = abortController.signal.aborted
       ? canceledRunResult()
@@ -527,79 +715,58 @@ export async function runPersistedAgentJob(
           observer,
         )
     assertAgentRuntimeRunResult(result)
-    observerController.flush()
     const securityCleanupFailed = isRuntimeSecurityCleanupFailure(result)
     const canceled =
       !securityCleanupFailed &&
       (observer.isCancelRequested() || abortController.signal.aborted)
-    const status = canceled ? "canceled" : result.status
-    const errorCode = canceled ? "job_canceled" : (result.errorCode ?? null)
-    const exitCode = normalizeHeadlessExitCode({ status, errorCode })
-    const completed = completeAgentJob(options.db, {
-      jobId: job.id,
-      status,
-      exitCode,
-      errorCode,
-      errorMessage: canceled
-        ? "Job was canceled."
-        : (result.errorMessage ?? null),
-      result: resultWithResolvedProvider(
+    return await settleRun({
+      result,
+      canceled,
+      credentialsSafe: !securityCleanupFailed,
+      failed: securityCleanupFailed,
+      errorCode: result.errorCode ?? null,
+      errorMessage: result.errorMessage ?? null,
+      resultValue: resultWithResolvedProvider(
         result.result,
         providerResolution.resolvedProvider,
       ),
-      secretHints: runSecretHints(),
     })
-    return {
-      job: completed,
-      events: listAgentJobEvents(options.db, job.id),
-      exitCode,
-    }
   } catch (error) {
-    observerController.flush()
     const message = error instanceof Error ? error.message : String(error)
+    const securityCleanupFailed = isRuntimeSecurityCleanupFailure(error)
     const forcedFailure =
       error instanceof InvalidAgentRuntimeRunResultError ||
-      isRuntimeSecurityCleanupFailure(error)
-    const status =
-      abortController.signal.aborted && !forcedFailure ? "canceled" : "failed"
+      securityCleanupFailed
+    const canceled = abortController.signal.aborted && !forcedFailure
     const errorCode =
       error instanceof InvalidAgentRuntimeRunResultError
         ? "runtime_result_invalid"
-        : isRuntimeSecurityCleanupFailure(error)
+        : securityCleanupFailed
           ? AGENT_RUNTIME_SECURITY_CLEANUP_ERROR_CODE
-          : abortController.signal.aborted
+          : canceled
             ? "job_canceled"
             : error instanceof HeadlessProviderBindingError
               ? error.code
               : "runtime_error"
-    const exitCode = normalizeHeadlessExitCode({ status, errorCode })
-    const completed = completeAgentJob(options.db, {
-      jobId: job.id,
-      status,
-      exitCode,
+    return await settleRun({
+      result: null,
+      canceled,
+      credentialsSafe: !securityCleanupFailed,
+      failed: true,
       errorCode,
-      errorMessage:
-        abortController.signal.aborted && !forcedFailure
-          ? "Job was canceled."
-          : message,
-      result: resultWithResolvedProvider(
+      errorMessage: canceled ? "Job was canceled." : message,
+      resultValue: resultWithResolvedProvider(
         null,
         resolvedProviderForError(error, job, providerResolution),
       ),
-      secretHints: runSecretHints(),
     })
-    return {
-      job: completed,
-      events: listAgentJobEvents(options.db, job.id),
-      exitCode,
-    }
   } finally {
     try {
       providerResolution?.cleanup()
     } catch {
       // Terminal job state has already been recorded; cleanup must not mask it.
     }
-    dynamicSecretHints.clear()
+    releaseRunEventLedger(options.db, job.id)
     options.signal?.removeEventListener("abort", abortFromExternalSignal)
   }
 }

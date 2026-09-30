@@ -4,10 +4,11 @@ This ledger records execution state only. Current product truth remains in
 `openspec/specs/` plus the checked-out code; future direction remains in the
 ratified strategy and interoperability contract.
 
-Updated: 2026-09-30 (Pacific/Auckland); previous: 2026-09-09 (Pacific/Auckland)
+Updated: 2026-10-01 (Pacific/Auckland); previous: 2026-09-30 (Pacific/Auckland)
 
 | Change | State | Concrete next gate |
 | --- | --- | --- |
+| `refactor-canonical-run-event-ledger` | ACCEPTED 2026-10-01 @ source `f5704cb6`; local merge in progress; runtime smoke host-blocked and macOS/Windows packaged evidence not claimed | Codex IMPLEMENTATION_VERIFIED and Claude REVIEW_APPROVED bind to `f5704cb6`; Owner accepted the documented limitations. Complete local merge, post-merge gates, archive and coordination-dispatched `main` push. |
 
 Parked proposals are indexed in [`deferred/README.md`](deferred/README.md) and
 do not appear in the active list.

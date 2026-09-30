@@ -1,0 +1,64 @@
+{
+  "fixtureVersion": 1,
+  "evidenceClass": "synthetic",
+  "sourceRefs": [
+    "openspec/changes/refactor-canonical-run-event-ledger/specs/local-job-api/spec.md#Discovery Feature Advertisement",
+    "openspec/changes/refactor-canonical-run-event-ledger/proposal.md C7 row 10 (closed discoveryFeature enum extended in the same change)",
+    "openspec/changes/refactor-canonical-run-event-ledger/tasks.md 7.16 / 8.2",
+    "docs/local-job-api-v1.schema.json $defs.runtimeManifestEnvelope"
+  ],
+  "provenance": {
+    "author": "independent red-suite author (domain C)",
+    "measured": false,
+    "note": "Readiness dependencies are injected through the existing RuntimeReadinessResolverDependencies seam; probe=false keeps the reader offline."
+  },
+  "cases": [
+    {
+      "caseId": "discovery",
+      "readiness": {
+        "codexExecutableStatus": {
+          "ok": true,
+          "path": "/fixture/bin/codex",
+          "exists": true,
+          "isExecutable": true,
+          "error": null,
+          "hint": null
+        },
+        "codexRuntimeComponents": [
+          {
+            "id": "login-cli",
+            "status": "ready",
+            "error": null,
+            "hint": null
+          },
+          {
+            "id": "login",
+            "status": "ready",
+            "error": null,
+            "hint": null
+          }
+        ],
+        "claudeConnected": false
+      },
+      "expected": {
+        "existingFeatures": [
+          "runtime-readiness",
+          "provider-binding",
+          "completion"
+        ],
+        "ledgerFeature": "canonical-run-ledger",
+        "readinessStates": ["ready", "needs-auth", "unavailable", "unknown"],
+        "extension": {
+          "namespace": "runtime.codex.v1",
+          "schemaVersion": 1,
+          "maturity": "experimental"
+        }
+      },
+      "olderBuildEnvelope": {
+        "apiVersion": "locus.local-job.v1",
+        "features": ["runtime-readiness", "provider-binding", "completion"],
+        "runtimes": []
+      }
+    }
+  ]
+}

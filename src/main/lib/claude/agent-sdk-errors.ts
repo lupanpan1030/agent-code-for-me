@@ -20,7 +20,7 @@ export type ClaudeAgentSdkEmbeddedErrorDiagnostic = {
 
 export type ClaudeAgentSdkStreamErrorCategory =
   | "UNKNOWN"
-  | "SESSION_EXPIRED"
+  | "NATIVE_RESUME_REJECTED"
   | "PROCESS_CRASH"
   | "EXECUTABLE_NOT_FOUND"
   | "AUTH_FAILURE"
@@ -31,7 +31,11 @@ export type ClaudeAgentSdkStreamErrorCategory =
 export type ClaudeAgentSdkStreamErrorDiagnostic = {
   category: ClaudeAgentSdkStreamErrorCategory
   context: string
-  isSessionNotFound: boolean
+  /**
+   * The native runtime refused to resume the requested session. This is a
+   * neutral rejection fact: it claims no expiry and changes no binding.
+   */
+  isNativeResumeRejected: boolean
 }
 
 export function getClaudePolicyRetryDelayMs(policyRetryCount: number): number {
@@ -126,15 +130,15 @@ export function classifyClaudeAgentSdkStreamError(input: {
 }): ClaudeAgentSdkStreamErrorDiagnostic {
   const message = input.error.message || ""
   const stderrOutput = input.stderrOutput || ""
-  const isSessionNotFound = stderrOutput.includes(
+  const isNativeResumeRejected = stderrOutput.includes(
     "No conversation found with session ID",
   )
 
-  if (isSessionNotFound) {
+  if (isNativeResumeRejected) {
     return {
-      category: "SESSION_EXPIRED",
-      context: "Previous session expired. Please try again.",
-      isSessionNotFound: true,
+      category: "NATIVE_RESUME_REJECTED",
+      context: "Claude could not resume the previous session",
+      isNativeResumeRejected: true,
     }
   }
 
@@ -142,7 +146,7 @@ export function classifyClaudeAgentSdkStreamError(input: {
     return {
       category: "PROCESS_CRASH",
       context: "Claude Code process crashed",
-      isSessionNotFound: false,
+      isNativeResumeRejected: false,
     }
   }
 
@@ -150,7 +154,7 @@ export function classifyClaudeAgentSdkStreamError(input: {
     return {
       category: "EXECUTABLE_NOT_FOUND",
       context: "Required executable not found in PATH",
-      isSessionNotFound: false,
+      isNativeResumeRejected: false,
     }
   }
 
@@ -158,7 +162,7 @@ export function classifyClaudeAgentSdkStreamError(input: {
     return {
       category: "AUTH_FAILURE",
       context: "Authentication failed - check your API key",
-      isSessionNotFound: false,
+      isNativeResumeRejected: false,
     }
   }
 
@@ -170,7 +174,7 @@ export function classifyClaudeAgentSdkStreamError(input: {
     return {
       category: "INVALID_API_KEY",
       context: "Invalid API key",
-      isSessionNotFound: false,
+      isNativeResumeRejected: false,
     }
   }
 
@@ -178,7 +182,7 @@ export function classifyClaudeAgentSdkStreamError(input: {
     return {
       category: "RATE_LIMIT",
       context: "Session limit reached",
-      isSessionNotFound: false,
+      isNativeResumeRejected: false,
     }
   }
 
@@ -190,13 +194,13 @@ export function classifyClaudeAgentSdkStreamError(input: {
     return {
       category: "NETWORK_ERROR",
       context: "Network error - check your connection",
-      isSessionNotFound: false,
+      isNativeResumeRejected: false,
     }
   }
 
   return {
     category: "UNKNOWN",
     context: "Claude streaming error",
-    isSessionNotFound: false,
+    isNativeResumeRejected: false,
   }
 }

@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test"
 import { resolveDesktopPermissionPolicy } from "../src/main/lib/agent-runtime/permission-policy"
-import { createRunEvent } from "../src/main/lib/agent-runtime/runtime-events"
 import {
   createClaudeDesktopProviderBinding,
   createClaudeDesktopRunRequest,
@@ -58,7 +57,9 @@ describe("Claude desktop run request", () => {
   })
 
   test("maps verified route inputs into the shared DesktopRunRequest contract", () => {
-    const emitted: any[] = []
+    // The desktop request carries the Run's host-composed ledger (the former
+    // trace emitter is replaced by ledger ingestion in the adapter).
+    const ledger = { runLedger: true } as never
     const permissionPolicy = resolveDesktopPermissionPolicy({
       runtimeId: "claude-code",
       mode: "agent",
@@ -106,7 +107,7 @@ describe("Claude desktop run request", () => {
       signal: abortController.signal,
       resumeSessionId: "session-1",
       parentSessionId: "parent-1",
-      emitTrace: (event) => emitted.push(event),
+      ledger,
     })
 
     expect(request.identity).toEqual({
@@ -168,17 +169,8 @@ describe("Claude desktop run request", () => {
     })
     expect(request.signal).toBe(abortController.signal)
 
-    const event = createRunEvent({
-      runId: "run-1",
-      jobId: "job-1",
-      runtimeId: "claude-code",
-      sequence: 1,
-      type: "started",
-      createdAt: "2026-06-07T00:00:00.000Z",
-      payload: { message: "started" },
-    })
-    request.trace.emit(event)
-    expect(emitted).toEqual([event])
+    expect(request.ledger).toBe(ledger)
+    expect(Object.hasOwn(request, "trace")).toBe(false)
   })
 
   test("creates DesktopRunRequest from runtime startup metadata", () => {
@@ -211,7 +203,6 @@ describe("Claude desktop run request", () => {
       selectedProviderProfileId: "profile-1",
       signal: abortController.signal,
       existingSessionId: "existing-session",
-      emitTrace: () => {},
     })
 
     expect(request.providerBinding).toMatchObject({

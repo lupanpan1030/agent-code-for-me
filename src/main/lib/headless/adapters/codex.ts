@@ -3,7 +3,10 @@ import {
   assertCodexAppServerShellSnapshotsScrubbed,
   scrubCodexAppServerShellSnapshots,
 } from "../../codex/app-server-shell-snapshots"
-import { resolveBundledCodexCliPath } from "../../codex/cli-path"
+import {
+  BUNDLED_CODEX_CLI_VERSION,
+  resolveBundledCodexCliPath,
+} from "../../codex/cli-path"
 import {
   buildCodexProviderEnv,
   buildCodexProviderProfileArgs,
@@ -14,7 +17,10 @@ import type {
   AgentRuntimeRunResult,
 } from "../agent-runtime-contract"
 import { AGENT_RUNTIME_SECURITY_CLEANUP_ERROR_CODE } from "../agent-runtime-contract"
-import { runProcessAgentTask } from "../process-runner"
+import {
+  bindProcessRunExecutionProvenance,
+  runProcessAgentTask,
+} from "../process-runner"
 
 export type CodexHeadlessTaskRunnerDependencies = {
   buildRuntimeEnv?: typeof buildCodexEnv
@@ -109,10 +115,18 @@ export function createCodexHeadlessTaskRunner(
     let processResult: AgentRuntimeRunResult | null = null
     let processFailure: { error: unknown } | null = null
     try {
+      const executable = resolveExecutable()
+      await bindProcessRunExecutionProvenance({
+        observer,
+        runtimeId: "codex",
+        adapterSource: "codex",
+        version: BUNDLED_CODEX_CLI_VERSION,
+        executablePath: executable,
+      })
       processResult = await runProcess({
         request,
         observer,
-        executable: resolveExecutable(),
+        executable,
         args: buildCodexArgs(request),
         env: runtimeEnv,
         stderrFilter: filterCodexStderr,

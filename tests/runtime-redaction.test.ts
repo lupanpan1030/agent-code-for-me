@@ -4,8 +4,23 @@ import {
   redactExactSecretHints,
   redactRuntimePayload,
 } from "../src/main/lib/agent-runtime/redaction"
-import { redactRendererRuntimeChunk } from "../src/main/lib/agent-runtime/stream-event-mapper"
+import { createCanonicalRunEventLedger } from "../src/main/lib/agent-runtime/run-event-ledger"
+import { createDesktopRendererChannel } from "../src/main/lib/agent-runtime/run-event-ledger-host"
 import { EXACT_SECRET_REDACTION_MARKER } from "../src/shared/secret-redaction-policy"
+
+function memoryStore() {
+  const rows: Array<Record<string, unknown>> = []
+  return {
+    rows,
+    appendExact(input: { records: Array<Record<string, unknown>> }) {
+      rows.push(...input.records)
+      return input.records
+    },
+    read(_runId: string, after = 0) {
+      return rows.filter((row) => Number(row.sequence) > after)
+    },
+  }
+}
 
 describe("runtime trace redaction", () => {
   test("redacts exact secrets split across stream fragments without losing normal suffixes", () => {
@@ -20,12 +35,15 @@ describe("runtime trace redaction", () => {
     expect(output).toBe(`normal ${EXACT_SECRET_REDACTION_MARKER} tail`)
     expect(output).not.toContain(secret)
 
+    // refactor-canonical-run-event-ledger (red-slice adjudication 6, tasks
+    // 1.5): "upstream" is a withheld potential prefix of the secret; the
+    // terminal flush drops it instead of releasing it and reports the loss.
     const normalRedactor = createExactSecretStreamRedactor()
-    const normalOutput = [
-      normalRedactor.push("kept upstream", [secret]).value,
-      normalRedactor.flush([secret]).value,
-    ].join("")
-    expect(normalOutput).toBe("kept upstream")
+    const normalPush = normalRedactor.push("kept upstream", [secret])
+    const normalFlush = normalRedactor.flush([secret])
+    const normalOutput = [normalPush.value, normalFlush.value].join("")
+    expect(normalOutput).toBe("kept ")
+    expect(normalFlush.droppedPendingLength).toBe("upstream".length)
   })
 
   test("uses an exact-secret marker that cannot contain a valid credential", () => {
@@ -132,6 +150,33 @@ describe("runtime trace redaction", () => {
     expect(result.appliedRules).toEqual(["secret-text"])
   })
 
+  test("keeps the runtime path unchanged for the persisted-only store rules (renderer parity)", () => {
+    // T2-1 / S-05: the job store's generic arm and `*token*` key rule apply
+    // to durable Run records only; runtime/renderer redaction is unchanged.
+    const payload = {
+      output: [
+        "DB_PASSWORD=hunter2",
+        "client_secret=abc$def!ghi",
+        'config {"password":"p@ssw0rd!"}',
+        "api_key hunter22hunter22",
+        "secret=short",
+        "DB password = s3cr3t",
+      ].join("\n"),
+      sessionToken: "session-token-value",
+      githubToken: "github-token-value",
+      idToken: "id-token-value",
+      apiToken: "api-token-value",
+    }
+    const result = redactRuntimePayload(payload, {
+      runtimeId: "codex",
+      runId: "run-1",
+      source: "desktop-adapter",
+    })
+
+    expect(result.payload).toEqual(payload)
+    expect(result.appliedRules).toEqual([])
+  })
+
   test("redacts exact secret hints even when the text has no secret prefix", () => {
     const runtimeToken =
       "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
@@ -160,39 +205,63 @@ describe("runtime trace redaction", () => {
     expect(result.appliedRules).toEqual(["secret-hint"])
   })
 
-  test("redacts renderer runtime chunks beyond diagnostic chunk types", () => {
-    const chunk = redactRendererRuntimeChunk({
-      runtimeId: "codex",
+  // refactor-canonical-run-event-ledger: the deleted redactRendererRuntimeChunk
+  // is replaced by the host renderer channel, which redacts every
+  // renderer-only chunk with redaction.ts (no ledger: preflight/route framing;
+  // with a ledger: chunk kinds that carry no durable fact).
+  test("redacts renderer runtime chunks beyond diagnostic chunk types", async () => {
+    const ledger = createCanonicalRunEventLedger({
       runId: "run-1",
-      source: "runtime-diagnostic",
-      chunk: {
+      runtimeId: "codex",
+      provenance: { kind: "pending", runtimeId: "codex" },
+      durableStore: memoryStore(),
+    })
+    for (const getLedger of [() => null, () => ledger]) {
+      const emitted: Record<string, unknown>[] = []
+      const channel = createDesktopRendererChannel({
+        runtimeId: "codex",
+        runId: "run-1",
+        observationPrefix: "redaction-test",
+        getLedger,
+        emit: (chunk) => emitted.push(chunk),
+      })
+      channel.submit({
         type: "ask-user-answer",
         delta: "provider returned Bearer abc.def.ghi with api_key=xyz123",
-      },
-    })
+      })
+      await channel.drain()
 
-    expect(chunk).toEqual({
-      type: "ask-user-answer",
-      delta: "provider returned <redacted> with api_key=<redacted>",
-    })
+      expect(emitted).toEqual([
+        {
+          type: "ask-user-answer",
+          delta: "provider returned <redacted> with api_key=<redacted>",
+        },
+      ])
+    }
   })
 
-  test("redacts secret hints from renderer runtime chunks", () => {
+  test("redacts secret hints from renderer runtime chunks", async () => {
     const gatewayToken = "gateway-token-secret-value"
-    const chunk = redactRendererRuntimeChunk({
+    const emitted: Record<string, unknown>[] = []
+    const channel = createDesktopRendererChannel({
       runtimeId: "claude-code",
       runId: "run-1",
-      source: "runtime-diagnostic",
-      secretHints: [gatewayToken],
-      chunk: {
-        type: "runtime-status",
-        ok: false,
-        blocker: {
-          message: `profile gateway rejected ${gatewayToken}`,
-        },
+      observationPrefix: "redaction-test",
+      getLedger: () => null,
+      getSecretHints: () => [gatewayToken],
+      emit: (chunk) => emitted.push(chunk),
+    })
+    channel.submit({
+      type: "runtime-status",
+      ok: false,
+      blocker: {
+        message: `profile gateway rejected ${gatewayToken}`,
       },
     })
+    await channel.drain()
 
+    expect(emitted).toHaveLength(1)
+    const [chunk] = emitted
     expect(JSON.stringify(chunk)).not.toContain(gatewayToken)
     expect(chunk).toMatchObject({
       type: "runtime-status",

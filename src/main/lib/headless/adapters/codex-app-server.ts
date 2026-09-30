@@ -3,7 +3,6 @@ import type {
   DesktopRunResult,
 } from "../../agent-runtime/desktop-run-request"
 import { resolveDesktopPermissionPolicy } from "../../agent-runtime/permission-policy"
-import type { RunEvent } from "../../agent-runtime/runtime-events"
 import type { CodexDesktopAdapter } from "../../codex/adapter-types"
 import {
   type CreateCodexAppServerAdapterInput,
@@ -77,14 +76,6 @@ function assertAppServerPolicyGrantRequest(
   return null
 }
 
-function appendTraceEvent(
-  observer: AgentRuntimeObserver,
-  event: RunEvent,
-): void {
-  if (event.type === "completed") return
-  observer.appendEvent(event.type, event.payload ?? {})
-}
-
 function createDesktopRequestFromHeadless(
   request: AgentRuntimeRunRequest,
   observer: AgentRuntimeObserver,
@@ -142,10 +133,15 @@ function createDesktopRequestFromHeadless(
       blockers: [],
     },
     attachments: [],
+    // The app-server adapter ingests native boundaries into the Run's own
+    // host ledger; its committed records are already persisted, so this
+    // wrapper consumes them without a second observer append or terminal.
+    ledger: observer.runLedger ?? null,
+    // Native file/image/diff candidates reach the run artifact owner only
+    // when the host admitted a run directory for this Run.
+    artifactCandidates: observer.artifactCandidates ?? null,
     trace: {
-      emit(event) {
-        appendTraceEvent(observer, event)
-      },
+      emit() {},
     },
     signal: request.signal,
     session: {},
@@ -183,6 +179,7 @@ function mapDesktopRunResult(result: DesktopRunResult): AgentRuntimeRunResult {
     sessionId: result.sessionId ?? null,
     usage: result.usage,
     error: result.error,
+    ...(result.nativeTerminal ? { nativeTerminal: result.nativeTerminal } : {}),
   }
 }
 

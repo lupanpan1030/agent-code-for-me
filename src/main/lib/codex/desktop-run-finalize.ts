@@ -98,7 +98,7 @@ export function createCodexDesktopRunState(): CodexDesktopRunState {
   }
 }
 
-export function createAndRegisterCodexDesktopRunJob(input: {
+export async function createAndRegisterCodexDesktopRunJob(input: {
   db: AgentJobDatabase
   state: CodexDesktopRunState
   mode: AgentJobMode
@@ -110,9 +110,9 @@ export function createAndRegisterCodexDesktopRunJob(input: {
   activeStreamOwner: ActiveCodexStream
   permissionPolicy: DesktopPermissionPolicy
   dependencies?: Partial<CodexDesktopRunFinalizeDependencies>
-}): DesktopAgentJobHandle {
+}): Promise<DesktopAgentJobHandle> {
   const dependencies = withDefaultDependencies(input.dependencies)
-  const handle = dependencies.createAndRegisterDesktopJob(input.db, {
+  const handle = await dependencies.createAndRegisterDesktopJob(input.db, {
     runtime: "codex",
     mode: input.mode,
     chatId: input.chatId,
@@ -133,7 +133,7 @@ export function createAndRegisterCodexDesktopRunJob(input: {
   return handle
 }
 
-export function finalizeCodexDesktopRunAfterLifecycle(input: {
+export async function finalizeCodexDesktopRunAfterLifecycle(input: {
   state: CodexDesktopRunState
   activeStreamOwner: ActiveCodexStream
   guardedContract: ValidatedAgentScopeContract | null
@@ -144,13 +144,14 @@ export function finalizeCodexDesktopRunAfterLifecycle(input: {
   revokeProviderBinding: () => void
   clearProviderSecrets: () => void
   dependencies?: Partial<CodexDesktopRunFinalizeDependencies>
-}): void {
+}): Promise<void> {
   const dependencies = withDefaultDependencies(input.dependencies)
 
   input.revokeProviderBinding()
   const jobId = input.state.getJobId()
   if (jobId) {
-    dependencies.completeDesktopJob(
+    // Safe finalizer: submits the live terminal evidence to the Run's ledger.
+    await dependencies.completeDesktopJob(
       input.state.getDb() ?? input.getFallbackDb(),
       {
         jobId,
@@ -197,7 +198,7 @@ export function cleanupCodexDesktopRunSubscription(input: {
   const dependencies = withDefaultDependencies(input.dependencies)
 
   input.markInactive()
-  dependencies.requestCancelDesktopJob(
+  void dependencies.requestCancelDesktopJob(
     input.state.getDb() ?? input.getFallbackDb(),
     {
       jobId: input.state.getJobId(),

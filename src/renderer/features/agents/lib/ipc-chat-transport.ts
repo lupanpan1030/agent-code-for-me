@@ -154,10 +154,9 @@ const ERROR_TOAST_CONFIG: Record<
     description:
       "The Claude process exited unexpectedly. Try sending your message again or rollback.",
   },
-  SESSION_EXPIRED: {
-    title: "Session expired",
-    description:
-      "Your previous chat session expired. Send your message again to start fresh.",
+  NATIVE_RESUME_REJECTED: {
+    title: "Session resume rejected",
+    description: "Claude could not resume the previous session for this chat.",
   },
   EXECUTABLE_NOT_FOUND: {
     title: "Claude runtime missing",

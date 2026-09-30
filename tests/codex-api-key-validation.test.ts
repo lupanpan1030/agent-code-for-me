@@ -221,10 +221,7 @@ describe("Codex API key validation", () => {
       "utf-8",
     )
     const providerBindingSource = readFileSync(
-      join(
-        process.cwd(),
-        "src/main/lib/codex/desktop-run-provider-binding.ts",
-      ),
+      join(process.cwd(), "src/main/lib/codex/desktop-run-provider-binding.ts"),
       "utf-8",
     )
 
@@ -247,7 +244,7 @@ describe("Codex API key validation", () => {
       "const providerBindingResult = await providerBindingStage.resolve",
     )
     const jobCreationIndex = codexRouterSource.indexOf(
-      "const desktopJob = createAndRegisterCodexDesktopRunJob",
+      "const desktopJob = await createAndRegisterCodexDesktopRunJob",
     )
     const adapterCreationIndex = codexRouterSource.indexOf(
       "runCodexAppServerDesktopAdapter({",

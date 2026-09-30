@@ -59,7 +59,7 @@ describe("Codex desktop run finalization owner", () => {
     clearCodexPendingToolApprovalsForTest()
   })
 
-  test("keeps job flags and database state together", () => {
+  test("keeps job flags and database state together", async () => {
     const state = createCodexDesktopRunState()
     expect(state.getDb()).toBeNull()
     expect(state.getJobId()).toBeNull()
@@ -80,7 +80,7 @@ describe("Codex desktop run finalization owner", () => {
     expect(state.reachedNaturalFinish()).toBe(true)
   })
 
-  test("registers an exact-stream-owner-fenced cancel callback", () => {
+  test("registers an exact-stream-owner-fenced cancel callback", async () => {
     const state = createCodexDesktopRunState()
     const candidateController = new AbortController()
     const replacementController = new AbortController()
@@ -98,7 +98,7 @@ describe("Codex desktop run finalization owner", () => {
     let registeredCancel: (() => void) | undefined
     let activeStream = replacementOwner
 
-    createAndRegisterCodexDesktopRunJob({
+    await createAndRegisterCodexDesktopRunJob({
       db: fakeDb,
       state,
       mode: "agent",
@@ -123,11 +123,11 @@ describe("Codex desktop run finalization owner", () => {
           })
           expect(input.permissionPolicy).toBe(permissionPolicy)
           registeredCancel = input.cancel
-          return {
+          return Promise.resolve({
             job: { id: "job-1" },
             workerId: "worker",
             cwd: "/repo",
-          } as unknown as DesktopAgentJobHandle
+          } as unknown as DesktopAgentJobHandle)
         },
         getActiveStream: () => activeStream,
         clearPendingApprovals: (...args) => clearCalls.push(args),
@@ -147,7 +147,7 @@ describe("Codex desktop run finalization owner", () => {
     expect(clearCalls).toEqual([["Session cancelled.", "sub-1"]])
   })
 
-  test("finalizes in revoke, job, approval, stream, secret order", () => {
+  test("finalizes in revoke, job, approval, stream, secret order", async () => {
     const calls: string[] = []
     const state = createCodexDesktopRunState()
     const abortController = new AbortController()
@@ -162,7 +162,7 @@ describe("Codex desktop run finalization owner", () => {
       cancelRequested: false,
     }
 
-    finalizeCodexDesktopRunAfterLifecycle({
+    await finalizeCodexDesktopRunAfterLifecycle({
       state,
       activeStreamOwner,
       guardedContract: null,
@@ -190,7 +190,7 @@ describe("Codex desktop run finalization owner", () => {
               runId: "run-1",
             },
           })
-          return null
+          return Promise.resolve(null)
         },
         getActiveStream: () => activeStreamOwner,
         clearPendingApprovals: () => calls.push("clear-approvals"),
@@ -212,7 +212,7 @@ describe("Codex desktop run finalization owner", () => {
     ])
   })
 
-  test("preserves successful-natural-finish flags and aborted cancellation", () => {
+  test("preserves successful-natural-finish flags and aborted cancellation", async () => {
     const state = createCodexDesktopRunState()
     const abortController = new AbortController()
     abortController.abort()
@@ -225,7 +225,7 @@ describe("Codex desktop run finalization owner", () => {
       cancelRequested: false,
     }
 
-    finalizeCodexDesktopRunAfterLifecycle({
+    await finalizeCodexDesktopRunAfterLifecycle({
       state,
       activeStreamOwner,
       guardedContract: null,
@@ -245,14 +245,14 @@ describe("Codex desktop run finalization owner", () => {
             reachedNaturalFinish: true,
             sawError: false,
           })
-          return null
+          return Promise.resolve(null)
         },
         getActiveStream: () => null,
       },
     })
   })
 
-  test("does not clear approvals or delete a stale or missing stream", () => {
+  test("does not clear approvals or delete a stale or missing stream", async () => {
     const staleOwner = {
       runId: "run-shared",
       controller: new AbortController(),
@@ -265,7 +265,7 @@ describe("Codex desktop run finalization owner", () => {
     }
     for (const activeStream of [replacementOwner, null]) {
       const calls: string[] = []
-      finalizeCodexDesktopRunAfterLifecycle({
+      await finalizeCodexDesktopRunAfterLifecycle({
         state: createCodexDesktopRunState(),
         activeStreamOwner: staleOwner,
         guardedContract: null,
@@ -293,7 +293,7 @@ describe("Codex desktop run finalization owner", () => {
     }
   })
 
-  test("stale finalization preserves the installed same-run-id owner and its approval", () => {
+  test("stale finalization preserves the installed same-run-id owner and its approval", async () => {
     const staleOwner = {
       runId: "run-shared",
       controller: new AbortController(),
@@ -315,7 +315,7 @@ describe("Codex desktop run finalization owner", () => {
       resolve: (decision) => decisions.push(decision),
     })
 
-    finalizeCodexDesktopRunAfterLifecycle({
+    await finalizeCodexDesktopRunAfterLifecycle({
       state: createCodexDesktopRunState(),
       activeStreamOwner: staleOwner,
       guardedContract: null,
@@ -346,7 +346,7 @@ describe("Codex desktop run finalization owner", () => {
     const idCase =
       replacementId === "contract-shared" ? "same ID" : "different ID"
 
-    test(`stale finalize and unsubscribe preserve a newer ${idCase} guarded owner`, () => {
+    test(`stale finalize and unsubscribe preserve a newer ${idCase} guarded owner`, async () => {
       const staleOwner = {
         runId: "run-shared",
         controller: new AbortController(),
@@ -374,7 +374,7 @@ describe("Codex desktop run finalization owner", () => {
         replacementContract,
       )
 
-      finalizeCodexDesktopRunAfterLifecycle({
+      await finalizeCodexDesktopRunAfterLifecycle({
         state: createCodexDesktopRunState(),
         activeStreamOwner: staleOwner,
         guardedContract: staleContract,
@@ -409,7 +409,7 @@ describe("Codex desktop run finalization owner", () => {
     })
   }
 
-  test("subscription cleanup requests cancellation before abort and revoke", () => {
+  test("subscription cleanup requests cancellation before abort and revoke", async () => {
     const calls: string[] = []
     const state = createCodexDesktopRunState()
     const abortController = new AbortController()
@@ -441,7 +441,7 @@ describe("Codex desktop run finalization owner", () => {
             reachedNaturalFinish: false,
             requestedBy: "desktop-chat",
           })
-          return null
+          return Promise.resolve(null)
         },
         getActiveStream: () => {
           calls.push("get-active")
@@ -461,7 +461,7 @@ describe("Codex desktop run finalization owner", () => {
     expect(activeStream.cancelRequested).toBe(true)
   })
 
-  test("stale subscription cleanup cannot mark or abort a replacement with the same run id", () => {
+  test("stale subscription cleanup cannot mark or abort a replacement with the same run id", async () => {
     const staleOwner = {
       runId: "run-shared",
       controller: new AbortController(),
@@ -498,7 +498,7 @@ describe("Codex desktop run finalization owner", () => {
     expect(replacementOwner.cancelRequested).toBe(false)
   })
 
-  test("subscription cleanup prefers state DB and forwards job flags", () => {
+  test("subscription cleanup prefers state DB and forwards job flags", async () => {
     const state = createCodexDesktopRunState()
     const activeStreamOwner = {
       runId: "run-1",
@@ -529,7 +529,7 @@ describe("Codex desktop run finalization owner", () => {
             reachedNaturalFinish: true,
             requestedBy: "desktop-chat",
           })
-          return null
+          return Promise.resolve(null)
         },
         getActiveStream: () => null,
       },

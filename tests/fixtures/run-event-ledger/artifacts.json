@@ -1,0 +1,110 @@
+{
+  "fixtureVersion": 1,
+  "evidenceClass": "synthetic",
+  "sourceRefs": [
+    "design \u00a7Artifacts and Terminal Commit Order",
+    "trace \u00a76 artifact_created row (native path/diff/image are candidates only)",
+    "tasks 7.13"
+  ],
+  "provenance": {
+    "runtimeId": "codex",
+    "version": "0.139.0",
+    "author": "independent test author (Domain B), 2026-09-30",
+    "note": "$RUN_ID is replaced by the test's runId; location run_dir = inside the temporary allowedRunDir, outside = a sibling temp directory. Candidate path = <location>/<fileName>."
+  },
+  "secretHints": ["provider-secret-123", "gateway-secret-456"],
+  "cases": [
+    {
+      "caseId": "valid",
+      "location": "run_dir",
+      "fileName": "report.txt",
+      "content": "artifact body from a native imageGeneration.savedPath candidate\n",
+      "candidate": {
+        "ownerRunId": "$RUN_ID",
+        "expectedSha256": "b6b1cc47201dee055a71068434f22f4470d8e73e6d916cc63ffe821069dc2bbc",
+        "media": "text/plain"
+      },
+      "expected": {
+        "result": "admitted",
+        "sha256": "b6b1cc47201dee055a71068434f22f4470d8e73e6d916cc63ffe821069dc2bbc",
+        "sizeBytes": 64,
+        "contentType": "text/plain"
+      }
+    },
+    {
+      "caseId": "missing",
+      "location": "run_dir",
+      "fileName": "absent-output.txt",
+      "content": null,
+      "candidate": {
+        "ownerRunId": "$RUN_ID",
+        "expectedSha256": "b6b1cc47201dee055a71068434f22f4470d8e73e6d916cc63ffe821069dc2bbc",
+        "media": "text/plain"
+      },
+      "expected": {
+        "result": "rejected",
+        "reason": "missing"
+      }
+    },
+    {
+      "caseId": "out-of-scope",
+      "location": "outside",
+      "fileName": "provider-secret-123-notes.txt",
+      "content": "artifact body from a native imageGeneration.savedPath candidate\n",
+      "candidate": {
+        "ownerRunId": "$RUN_ID",
+        "expectedSha256": "b6b1cc47201dee055a71068434f22f4470d8e73e6d916cc63ffe821069dc2bbc",
+        "media": "text/plain"
+      },
+      "expected": {
+        "result": "rejected",
+        "reason": "out_of_scope"
+      }
+    },
+    {
+      "caseId": "wrong-owner",
+      "location": "run_dir",
+      "fileName": "foreign.txt",
+      "content": "artifact body from a native imageGeneration.savedPath candidate\n",
+      "candidate": {
+        "ownerRunId": "run-other",
+        "expectedSha256": "b6b1cc47201dee055a71068434f22f4470d8e73e6d916cc63ffe821069dc2bbc",
+        "media": "text/plain"
+      },
+      "expected": {
+        "result": "rejected",
+        "reason": "ownership_mismatch"
+      }
+    },
+    {
+      "caseId": "digest-mismatch",
+      "location": "run_dir",
+      "fileName": "tampered.txt",
+      "content": "artifact body from a native imageGeneration.savedPath candidate\n",
+      "candidate": {
+        "ownerRunId": "$RUN_ID",
+        "expectedSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "media": "text/plain"
+      },
+      "expected": {
+        "result": "rejected",
+        "reason": "digest_mismatch"
+      }
+    },
+    {
+      "caseId": "unsafe-redaction",
+      "location": "run_dir",
+      "fileName": "leak.txt",
+      "content": "token=provider-secret-123\n",
+      "candidate": {
+        "ownerRunId": "$RUN_ID",
+        "expectedSha256": "788fba35b74b6ba26c96c3eb7060479854cfbfb1696a1d2b8b02e4657f8ad726",
+        "media": "text/plain"
+      },
+      "expected": {
+        "result": "rejected",
+        "reason": "redaction_unsafe"
+      }
+    }
+  ]
+}

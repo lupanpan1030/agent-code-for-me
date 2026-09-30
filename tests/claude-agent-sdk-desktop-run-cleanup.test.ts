@@ -83,13 +83,13 @@ describe("Claude Agent SDK desktop run cleanup", () => {
     clearClaudePendingToolApprovalsForTest()
   })
 
-  test("cleans owned active sessions, guard contracts, pending approvals, jobs, and stream id", () => {
+  test("cleans owned active sessions, guard contracts, pending approvals, jobs, and stream id", async () => {
     const { db, updates } = createDbRecorder()
     const controller = new AbortController()
     const desktopRunState = createClaudeAgentSdkDesktopRunState()
     desktopRunState.setDesktopJob({
       jobId: "job-1",
-      streamEventMapper: { map: () => [] },
+      ledger: { runLedger: true } as never,
     })
     desktopRunState.markFailed()
     const deletedSessions: any[] = []
@@ -161,7 +161,7 @@ describe("Claude Agent SDK desktop run cleanup", () => {
     ])
   })
 
-  test("keeps pending approvals and stream id when cleanup does not own the active session", () => {
+  test("keeps pending approvals and stream id when cleanup does not own the active session", async () => {
     const { db, updates } = createDbRecorder()
     const controller = new AbortController()
     const desktopRunState = createClaudeAgentSdkDesktopRunState()
@@ -202,7 +202,7 @@ describe("Claude Agent SDK desktop run cleanup", () => {
     ])
   })
 
-  test("late unsubscribe cleanup preserves a newer same-ID guard winner", () => {
+  test("late unsubscribe cleanup preserves a newer same-ID guard winner", async () => {
     const { db } = createDbRecorder()
     const oldController = new AbortController()
     const winnerController = new AbortController()
@@ -238,7 +238,7 @@ describe("Claude Agent SDK desktop run cleanup", () => {
     expect(isActiveGuardedContract(winnerContract)).toBe(true)
   })
 
-  test("retains a draining owner until exact lifecycle finalization, including same run IDs", () => {
+  test("retains a draining owner until exact lifecycle finalization, including same run IDs", async () => {
     const { db } = createDbRecorder()
     const controllerA = new AbortController()
     const controllerB = new AbortController()
@@ -280,7 +280,7 @@ describe("Claude Agent SDK desktop run cleanup", () => {
       controller: controllerB,
       runId: "run-shared",
     })
-    finalizeClaudeAgentSdkDesktopRunAfterLifecycle({
+    await finalizeClaudeAgentSdkDesktopRunAfterLifecycle({
       chatId: "chat-1",
       subChatId: "sub-1",
       abortController: controllerA,
@@ -294,7 +294,7 @@ describe("Claude Agent SDK desktop run cleanup", () => {
       error: { activeRunId: "run-shared", reason: "active-run" },
     })
 
-    finalizeClaudeAgentSdkDesktopRunAfterLifecycle({
+    await finalizeClaudeAgentSdkDesktopRunAfterLifecycle({
       chatId: "chat-1",
       subChatId: "sub-1",
       abortController: controllerB,
@@ -310,21 +310,21 @@ describe("Claude Agent SDK desktop run cleanup", () => {
     }
   })
 
-  test("finalizes lifecycle cleanup with the existing job db and guard teardown", () => {
+  test("finalizes lifecycle cleanup with the existing job db and guard teardown", async () => {
     const { db } = createDbRecorder()
     const controller = new AbortController()
     const desktopRunState = createClaudeAgentSdkDesktopRunState()
     desktopRunState.setDb(db)
     desktopRunState.setDesktopJob({
       jobId: "job-1",
-      streamEventMapper: { map: () => [] },
+      ledger: { runLedger: true } as never,
     })
     desktopRunState.markFailed()
     const completedJobs: any[] = []
     const deletedSessions: any[] = []
     const deletedContracts: string[] = []
 
-    finalizeClaudeAgentSdkDesktopRunAfterLifecycle({
+    await finalizeClaudeAgentSdkDesktopRunAfterLifecycle({
       chatId: "chat-1",
       subChatId: "sub-1",
       abortController: controller,
@@ -334,7 +334,7 @@ describe("Claude Agent SDK desktop run cleanup", () => {
       },
       desktopRunState,
       dependencies: {
-        completeClaudeAgentSdkDesktopJobAfterRun: (input) => {
+        completeClaudeAgentSdkDesktopJobAfterRun: async (input) => {
           completedJobs.push(input)
         },
         deleteActiveClaudeSessionIfController: (subChatId, abortController) => {
@@ -365,7 +365,7 @@ describe("Claude Agent SDK desktop run cleanup", () => {
     expect(deletedContracts).toEqual(["contract-1"])
   })
 
-  test("finalizes lifecycle cleanup without loading a db when no job exists", () => {
+  test("finalizes lifecycle cleanup without loading a db when no job exists", async () => {
     const controller = new AbortController()
     const desktopRunState = createClaudeAgentSdkDesktopRunState()
     desktopRunState.setReachedNaturalFinish(true)
@@ -373,7 +373,7 @@ describe("Claude Agent SDK desktop run cleanup", () => {
     const deletedSessions: any[] = []
     let loadedFallbackDb = false
 
-    finalizeClaudeAgentSdkDesktopRunAfterLifecycle({
+    await finalizeClaudeAgentSdkDesktopRunAfterLifecycle({
       chatId: "chat-1",
       subChatId: "sub-1",
       abortController: controller,
@@ -384,7 +384,7 @@ describe("Claude Agent SDK desktop run cleanup", () => {
       },
       desktopRunState,
       dependencies: {
-        completeClaudeAgentSdkDesktopJobAfterRun: (input) => {
+        completeClaudeAgentSdkDesktopJobAfterRun: async (input) => {
           completedJobs.push(input)
         },
         deleteActiveClaudeSessionIfController: (subChatId, abortController) => {
@@ -401,7 +401,7 @@ describe("Claude Agent SDK desktop run cleanup", () => {
     ])
   })
 
-  test("late lifecycle finalization preserves a newer same-ID guard winner", () => {
+  test("late lifecycle finalization preserves a newer same-ID guard winner", async () => {
     const oldController = new AbortController()
     const winnerController = new AbortController()
     const oldContract = createGuardedContract("run-old")
@@ -416,7 +416,7 @@ describe("Claude Agent SDK desktop run cleanup", () => {
     )
     const desktopRunState = createClaudeAgentSdkDesktopRunState()
 
-    finalizeClaudeAgentSdkDesktopRunAfterLifecycle({
+    await finalizeClaudeAgentSdkDesktopRunAfterLifecycle({
       chatId: "chat-1",
       subChatId: "sub-1",
       abortController: oldController,
@@ -432,7 +432,7 @@ describe("Claude Agent SDK desktop run cleanup", () => {
     expect(isActiveGuardedContract(winnerContract)).toBe(true)
   })
 
-  test("aborts a desktop run request and clears pending approvals", () => {
+  test("aborts a desktop run request and clears pending approvals", async () => {
     const controller = new AbortController()
     const clearedApprovals: any[] = []
     setActiveClaudeSession("sub-1", { controller, runId: "run-1" })
@@ -453,7 +453,7 @@ describe("Claude Agent SDK desktop run cleanup", () => {
     ])
   })
 
-  test("stale same-run-id job cancellation aborts only A and preserves B approvals", () => {
+  test("stale same-run-id job cancellation aborts only A and preserves B approvals", async () => {
     const controllerA = new AbortController()
     const controllerB = new AbortController()
     setActiveClaudeSession("sub-1", {
@@ -487,7 +487,7 @@ describe("Claude Agent SDK desktop run cleanup", () => {
     expect(approvalResolution).toBeNull()
   })
 
-  test("late A unsubscribe job cancellation preserves B pending approval", () => {
+  test("late A unsubscribe job cancellation preserves B pending approval", async () => {
     const { db } = createDbRecorder()
     const controllerA = new AbortController()
     const controllerB = new AbortController()
@@ -512,7 +512,7 @@ describe("Claude Agent SDK desktop run cleanup", () => {
     const desktopRunState = createClaudeAgentSdkDesktopRunState()
     desktopRunState.setDesktopJob({
       jobId: "job-a",
-      streamEventMapper: { map: () => [] },
+      ledger: { runLedger: true } as never,
     })
 
     const result = cleanupClaudeAgentSdkDesktopRunSubscription({

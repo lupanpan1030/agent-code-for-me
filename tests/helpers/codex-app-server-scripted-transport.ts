@@ -1,0 +1,209 @@
+import type {
+  CodexAppServerClientNotificationMethod,
+  CodexAppServerClientRequestMethod,
+  CodexAppServerMessageId,
+  CodexAppServerRequestOptions,
+  CodexAppServerTransport,
+  CodexAppServerTransportExit,
+  CodexAppServerTransportNotification,
+  CodexAppServerTransportServerRequest,
+  CodexAppServerTransportServerRequestResponse,
+} from "../../src/main/lib/codex/app-server-transport"
+import { selectCodexAppServerServerRequestResult } from "../../src/main/lib/codex/app-server-transport"
+
+/**
+ * Minimal scripted Codex app-server transport for implementer unit tests:
+ * `thread/start` / `thread/resume` / `turn/start` answer from the script and
+ * `turn/start` emits the scripted notifications synchronously, like the
+ * stdio transport delivering buffered lines before the response resolves.
+ */
+export type CodexAppServerScript = {
+  threadResume?: (params: Record<string, unknown>) => unknown
+  turnNotifications?: (
+    threadId: string,
+  ) => CodexAppServerTransportNotification[]
+  /**
+   * Asynchronous turn body (replaces turnNotifications): it may emit
+   * notifications and await server requests before turn/start resolves.
+   */
+  turn?: (
+    transport: ScriptedCodexAppServerTransport,
+    threadId: string,
+  ) => Promise<void>
+  /** Rejects `initialize` with a coded JSON-RPC error (child stays alive). */
+  initializeError?: { code: number; message: string }
+  /**
+   * Like the stdio transport, `close()` ends the child and invokes every
+   * still-attached exit handler (the deliberate shutdown is observable).
+   */
+  exitOnClose?: boolean
+}
+
+export function defaultCodexTurnNotifications(
+  threadId: string,
+  text = "hello from the scripted turn",
+): CodexAppServerTransportNotification[] {
+  return [
+    {
+      method: "turn/started",
+      params: {
+        threadId,
+        turn: { id: "turn-1", status: "inProgress", error: null },
+      },
+    },
+    {
+      method: "item/agentMessage/delta",
+      params: { threadId, turnId: "turn-1", itemId: "item-1", delta: text },
+    },
+    {
+      method: "turn/completed",
+      params: {
+        threadId,
+        turn: { id: "turn-1", status: "completed", error: null },
+      },
+    },
+  ]
+}
+
+export class ScriptedCodexAppServerTransport
+  implements CodexAppServerTransport
+{
+  /** Every request with the JSON-RPC id it was sent under on the wire. */
+  readonly requests: Array<{
+    method: string
+    params: unknown
+    id: CodexAppServerMessageId
+  }> = []
+  private nextId = 1
+  readonly notified: string[] = []
+  closed = false
+  private notificationHandler:
+    | ((notification: CodexAppServerTransportNotification) => void)
+    | null = null
+  private exitHandler: ((exit: CodexAppServerTransportExit) => void) | null =
+    null
+  private serverRequestHandler:
+    | ((
+        request: CodexAppServerTransportServerRequest,
+      ) =>
+        | CodexAppServerTransportServerRequestResponse
+        | Promise<CodexAppServerTransportServerRequestResponse>)
+    | null = null
+  private threadId = "thread-1"
+
+  constructor(private readonly script: CodexAppServerScript = {}) {}
+
+  async request(
+    method: CodexAppServerClientRequestMethod,
+    params: unknown,
+    options?: CodexAppServerRequestOptions,
+  ): Promise<unknown> {
+    // Like the stdio transport, the wire id is allocated per request and
+    // handed to the caller before the request is written.
+    const id = this.nextId++
+    options?.onSent?.(id)
+    this.requests.push({ method, params, id })
+    const record = (params ?? {}) as Record<string, unknown>
+    switch (method) {
+      case "initialize":
+        if (this.script.initializeError) {
+          throw Object.assign(new Error(this.script.initializeError.message), {
+            code: this.script.initializeError.code,
+          })
+        }
+        return { userAgent: "codex-scripted" }
+      case "thread/start":
+        this.threadId = "thread-1"
+        this.emit({
+          method: "thread/started",
+          params: { thread: { id: this.threadId, sessionId: "session-1" } },
+        })
+        return { thread: { id: this.threadId, sessionId: "session-1" } }
+      case "thread/resume": {
+        this.threadId = String(record.threadId)
+        return this.script.threadResume
+          ? this.script.threadResume(record)
+          : { thread: { id: this.threadId, sessionId: this.threadId } }
+      }
+      case "mcpServerStatus/list":
+        return { data: [], nextCursor: null }
+      case "turn/start":
+        if (this.script.turn) {
+          await this.script.turn(this, this.threadId)
+          return { turn: { id: "turn-1" } }
+        }
+        for (const notification of (
+          this.script.turnNotifications ?? defaultCodexTurnNotifications
+        )(this.threadId)) {
+          this.emit(notification)
+        }
+        return { turn: { id: "turn-1" } }
+      case "turn/interrupt":
+        return {}
+      default:
+        throw new Error(`unexpected method ${method}`)
+    }
+  }
+
+  notify(method: CodexAppServerClientNotificationMethod): void {
+    this.notified.push(method)
+  }
+
+  onNotification(
+    handler: (notification: CodexAppServerTransportNotification) => void,
+  ): () => void {
+    this.notificationHandler = handler
+    return () => {
+      this.notificationHandler = null
+    }
+  }
+
+  onServerRequest(
+    handler: (
+      request: CodexAppServerTransportServerRequest,
+    ) =>
+      | CodexAppServerTransportServerRequestResponse
+      | Promise<CodexAppServerTransportServerRequestResponse>,
+  ): () => void {
+    this.serverRequestHandler = handler
+    return () => {
+      this.serverRequestHandler = null
+    }
+  }
+
+  /** Delivers one server request and resolves with the written result. */
+  async emitServerRequest(
+    request: CodexAppServerTransportServerRequest,
+  ): Promise<unknown> {
+    if (!this.serverRequestHandler) return undefined
+    const response = await this.serverRequestHandler(request)
+    return selectCodexAppServerServerRequestResult(response)
+  }
+
+  onExit(handler: (exit: CodexAppServerTransportExit) => void): () => void {
+    this.exitHandler = handler
+    return () => {
+      this.exitHandler = null
+    }
+  }
+
+  emit(notification: CodexAppServerTransportNotification): void {
+    this.notificationHandler?.(notification)
+  }
+
+  emitExit(error = new Error("Codex app-server exited unexpectedly")): void {
+    this.exitHandler?.({ code: 1, signal: null, error })
+  }
+
+  close(): Promise<void> {
+    this.closed = true
+    if (this.script.exitOnClose) {
+      this.exitHandler?.({
+        code: null,
+        signal: "SIGTERM",
+        error: new Error("Codex app-server exited after close"),
+      })
+    }
+    return Promise.resolve()
+  }
+}

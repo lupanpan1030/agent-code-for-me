@@ -186,7 +186,10 @@ export async function runLocalAgentDaemon(
   }
 
   try {
-    const interrupted = recoverStaleAgentJobs(options.db, options.now)
+    const interrupted = await recoverStaleAgentJobs(options.db, options.now, {
+      onDiagnostic: (diagnostic) =>
+        writeLine(options.stderr, `[Daemon] ${diagnostic.message}`),
+    })
     result.interruptedJobs = interrupted.length
     writeLine(
       options.stderr,
@@ -202,7 +205,7 @@ export async function runLocalAgentDaemon(
     while (!options.signal?.aborted) {
       const available = concurrency - active.size
       if (available > 0) {
-        const scheduled = evaluateDueAgentSchedules(options.db, {
+        const scheduled = await evaluateDueAgentSchedules(options.db, {
           now: options.now,
           limit: available,
         })

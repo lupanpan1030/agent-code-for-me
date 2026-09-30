@@ -435,9 +435,9 @@ describe("Local Job API v1 shared contract", () => {
     }
   })
 
-  test("persists sanitized API metadata on local jobs", () => {
+  test("persists sanitized API metadata on local jobs", async () => {
     const db = createAgentJobTestDb()
-    const job = createAgentJob(db, {
+    const job = await createAgentJob(db, {
       source: "api",
       runtime: "codex",
       mode: "plan",
@@ -461,7 +461,7 @@ describe("Local Job API v1 shared contract", () => {
     })
   })
 
-  test("Local Job API create persists provider references only", () => {
+  test("Local Job API create persists provider references only", async () => {
     const db = createAgentJobTestDb()
     db.insert(projects)
       .values({
@@ -498,7 +498,7 @@ describe("Local Job API v1 shared contract", () => {
 
     expect(parsed.ok).toBe(true)
     if (!parsed.ok) return
-    const prepared = createLocalJobApiJob(db, parsed.request, "test")
+    const prepared = await createLocalJobApiJob(db, parsed.request, "test")
     expect(prepared.job).toMatchObject({
       providerProfileId: "codex-main",
       modelOverride: "gpt-5.4",
@@ -511,7 +511,7 @@ describe("Local Job API v1 shared contract", () => {
     })
   })
 
-  test("Local Job API completion create persists generic completion metadata", () => {
+  test("Local Job API completion create persists generic completion metadata", async () => {
     const db = createAgentJobTestDb()
     db.insert(agentProviderProfiles)
       .values({
@@ -541,7 +541,7 @@ describe("Local Job API v1 shared contract", () => {
 
     expect(parsed.ok).toBe(true)
     if (!parsed.ok) return
-    const prepared = createLocalJobApiJob(db, parsed.request, "test")
+    const prepared = await createLocalJobApiJob(db, parsed.request, "test")
     expect(prepared.runDir).toBe(null)
     expect(prepared.job).toMatchObject({
       kind: "completion",

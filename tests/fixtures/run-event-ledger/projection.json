@@ -1,0 +1,186 @@
+{
+  "fixtureVersion": 1,
+  "evidenceClass": "synthetic",
+  "sourceRefs": [
+    "specs/agent-runtime-core Normalized Agent Events / Event is serialized for CLI",
+    "specs/agent-runtime-core Normalized Agent Events / Event compatibility is required (protocol half)",
+    "tasks 7.17 (projection.json: precommitted RunEvent inputs and expected surface envelopes)",
+    "src/main/lib/headless/cli-dispatcher.ts outputEvents stream-json branch ({event: serializeAgentJobEvent(row)} per line) and the pre-command recoverStaleAgentJobs pass",
+    "src/main/lib/headless/cli-output.ts serializeAgentJobEvent (six-field envelope used by tRPC agentJobs.logs and jobs-stdio job/event)",
+    "src/main/lib/headless/jobs-stdio.ts (locus-jobs-stdio.v1 job/event notification)",
+    "src/renderer/features/agents/workbench/workbench-trace-presenter.ts getWorkbenchTraceRow (desktop decoder of the protocol envelope)",
+    "design Headless recovery (alive/unknown stale rows stay unsettled with host diagnostic recovery.confidence=heartbeat_only)"
+  ],
+  "provenance": {
+    "runtimeId": "codex",
+    "executionProvenanceRef": "identity-provenance.json#provenanceVariants.runtime",
+    "author": "independent test author (follow-up red slice A), 2026-10-01",
+    "note": "<PROJECT_CWD> is replaced by a per-test registered temp project. $SELF_PID is the test process PID (alive on this host), matching terminal S24's alive-self construction (worker id headless:<pid>:1:<jobId>). committedRecord rows are seeded as already-committed agent_job_events rows (the CLI/protocol serializers only read committed rows). Native param shapes follow native-dispositions.json (codex-cli 0.159.2 stand-in; 0.139.0 closure not vendored)."
+  },
+  "cases": [
+    {
+      "caseId": "cli-stream-json-committed",
+      "scenario": "S05",
+      "job": {
+        "id": "job-proj-cli",
+        "source": "cli",
+        "runtime": "codex",
+        "mode": "agent",
+        "status": "succeeded",
+        "cwd": "/fixture/workspace",
+        "promptPreview": "projection"
+      },
+      "committedRecord": {
+        "id": "evt-proj-cli-1",
+        "sequence": 1,
+        "type": "assistant_delta",
+        "payload": { "text": "hello" },
+        "createdAt": "2026-09-04T00:10:00.000Z"
+      },
+      "argv": ["jobs", "logs", "job-proj-cli", "--output", "stream-json"],
+      "expected": {
+        "stdoutObjects": [
+          {
+            "event": {
+              "id": "evt-proj-cli-1",
+              "jobId": "job-proj-cli",
+              "sequence": 1,
+              "type": "assistant_delta",
+              "payload": { "text": "hello" },
+              "createdAt": "2026-09-04T00:10:00.000Z"
+            }
+          }
+        ],
+        "stderr": ""
+      }
+    },
+    {
+      "caseId": "cli-stream-json-host-diagnostic",
+      "scenario": "S05",
+      "job": {
+        "source": "cli",
+        "runtime": "codex",
+        "mode": "plan",
+        "prompt": "projection host diagnostic"
+      },
+      "worker": { "workerPid": "$SELF_PID", "heartbeatAgeMs": 600000 },
+      "committedRecord": {
+        "type": "assistant_delta",
+        "payload": { "text": "hello" },
+        "createdAt": "2026-09-04T00:50:00.000Z"
+      },
+      "now": "2026-09-04T01:00:00.000Z",
+      "hostDiagnostic": {
+        "source": "job-recovery (runHeadlessCliCommand pre-command recoverStaleAgentJobs pass)",
+        "confidence": "heartbeat_only",
+        "stderrIncludes": "heartbeat_only",
+        "stdoutExcludes": [
+          "heartbeat_only",
+          "worker_interrupted",
+          "Worker heartbeat was lost"
+        ]
+      }
+    },
+    {
+      "caseId": "protocol-envelope-desktop",
+      "scenario": "S07",
+      "runId": "run-slice-a-protocol",
+      "runtimeId": "codex",
+      "source": "desktop",
+      "observations": [
+        {
+          "port": "ingestNotification",
+          "observationKey": "proto-turn-started",
+          "transportId": "t1",
+          "receivedAt": "2026-09-04T00:00:00.001Z",
+          "input": {
+            "message": {
+              "method": "turn/started",
+              "params": {
+                "threadId": "th-proto",
+                "turn": {
+                  "id": "tu-proto",
+                  "items": [],
+                  "status": "inProgress",
+                  "error": null
+                }
+              }
+            }
+          }
+        },
+        {
+          "port": "ingestNotification",
+          "observationKey": "proto-delta",
+          "transportId": "t1",
+          "receivedAt": "2026-09-04T00:00:00.002Z",
+          "input": {
+            "message": {
+              "method": "item/agentMessage/delta",
+              "params": {
+                "threadId": "th-proto",
+                "turnId": "tu-proto",
+                "itemId": "msg-proto",
+                "delta": "hello"
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "envelopeKeys": [
+          "createdAt",
+          "id",
+          "jobId",
+          "payload",
+          "sequence",
+          "type"
+        ],
+        "forbiddenPayloadKeys": [
+          "runId",
+          "runEventSequence",
+          "redaction",
+          "payload"
+        ],
+        "assistantObservationKey": "proto-delta",
+        "assistantText": "hello"
+      }
+    },
+    {
+      "caseId": "protocol-jobs-stdio",
+      "scenario": "S07",
+      "request": {
+        "runtime": "codex",
+        "mode": "agent",
+        "cwd": "<PROJECT_CWD>",
+        "prompt": "protocol projection"
+      },
+      "runnerEvents": [
+        { "type": "assistant_delta", "payload": { "text": "hello" } }
+      ],
+      "runnerResult": {
+        "status": "succeeded",
+        "exitCode": 0,
+        "result": { "finalMessage": "hello" }
+      },
+      "expected": {
+        "protocolVersion": "locus-jobs-stdio.v1",
+        "notificationMethod": "job/event",
+        "envelopeKeys": [
+          "createdAt",
+          "id",
+          "jobId",
+          "payload",
+          "sequence",
+          "type"
+        ],
+        "forbiddenPayloadKeys": [
+          "runId",
+          "runEventSequence",
+          "redaction",
+          "payload"
+        ],
+        "assistantText": "hello"
+      }
+    }
+  ]
+}

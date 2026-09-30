@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, test } from "bun:test"
+import { spawnSync } from "node:child_process"
 import { randomBytes } from "node:crypto"
 import {
   existsSync,
@@ -11,6 +12,7 @@ import {
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Readable } from "node:stream"
+import { getOrCreateRunEventLedger } from "../src/main/lib/agent-runtime/run-event-ledger-host"
 import { agentProviderProfiles, projects } from "../src/main/lib/db/schema"
 import { HEADLESS_CLI_MARKER } from "../src/main/lib/headless/cli-args"
 import {
@@ -18,7 +20,6 @@ import {
   runHeadlessCliCommand,
 } from "../src/main/lib/headless/cli-dispatcher"
 import {
-  completeAgentJob,
   createAgentJob,
   getAgentJob,
   listAgentJobEvents,
@@ -120,6 +121,38 @@ function parseJsonLines(value: string): any[] {
     .split("\n")
     .filter(Boolean)
     .map((line) => JSON.parse(line))
+}
+
+async function settleJobFailed(
+  db: ReturnType<typeof createAgentJobTestDb>,
+  jobId: string,
+  fields: { exitCode?: number; errorCode: string; errorMessage?: string },
+) {
+  const job = getAgentJob(db, jobId)
+  if (!job) throw new Error(`Unknown job: ${jobId}`)
+  const ledger = await getOrCreateRunEventLedger(db, job)
+  await ledger.settle(
+    {
+      trigger: {
+        kind: "host_result",
+        status: "failed",
+        observationKey: `test-failed:${jobId}`,
+      },
+      policy: { denied: false, evidenceKeys: [] },
+      output: { valid: true, empty: true, allowEmpty: false, evidenceKeys: [] },
+      postRun: { credentialsSafe: true, evidenceKeys: [] },
+    },
+    {
+      jobFields: () => ({
+        exitCode: fields.exitCode ?? null,
+        errorCode: fields.errorCode,
+        errorMessage: fields.errorMessage ?? null,
+      }),
+    },
+  )
+  const settled = getAgentJob(db, jobId)
+  if (!settled) throw new Error(`Unknown job: ${jobId}`)
+  return settled
 }
 
 function codexExecutableStatus(ok = true) {
@@ -1441,7 +1474,7 @@ describe("headless CLI dispatcher", () => {
       stderr: writer().stream,
     })
     const project = JSON.parse(registerStdout.value()).project
-    const job = createAgentJob(db, {
+    const job = await createAgentJob(db, {
       source: "api",
       runtime: "codex",
       mode: "plan",
@@ -1995,9 +2028,102 @@ describe("headless CLI dispatcher", () => {
     expect(listAgentJobs(db, { source: "api" })).toHaveLength(0)
   })
 
+  test("keeps the ledger's registered artifact refs out of the public result (T2-4 / S-10)", async () => {
+    const db = createAgentJobTestDb()
+    const { packageDir, artifactBaseDir } = seedLocalPackageProject(db)
+    const apiRequest = (runExternalId: string) => ({
+      apiVersion: "locus.local-job.v1",
+      consumer: { id: "docs-workbench", runExternalId },
+      project: { cwd: packageDir },
+      runtime: { id: "codex" },
+      mode: "plan",
+      prompt: { text: "Review this local package." },
+      artifacts: { baseDir: artifactBaseDir, writePolicy: "metadata-only" },
+    })
+    const cli = async (argv: string[], stdin?: string) => {
+      const stdout = writer()
+      const stderr = writer()
+      const code = await runHeadlessCliCommand({
+        db,
+        argv: ["Locus", HEADLESS_CLI_MARKER, ...argv],
+        ...(stdin ? { stdin: Readable.from([stdin]) } : {}),
+        stdout: stdout.stream,
+        stderr: stderr.stream,
+        env: { LOCUS_HEADLESS_FAKE_RUNNER: "1" },
+        appVersion: "0.0.test",
+      })
+      expect(stderr.value()).toBe("")
+      return { code, json: JSON.parse(stdout.value()) }
+    }
+
+    const created = await cli(
+      ["api", "runs", "create", "--request", "-", "--json"],
+      JSON.stringify(apiRequest("refs-001")),
+    )
+    expect(created.code).toBe(0)
+    const jobId = created.json.job.id as string
+    const runDir = join(artifactBaseDir, jobId)
+    // The store keeps the refs merged into result_json (decision 6)…
+    expect(getAgentJob(db, jobId)?.resultJson).toContain('"artifactRefs"')
+    // …but every public result equals the runner's pre-merge result and the
+    // frozen result.json result.
+    const frozen = JSON.parse(
+      readFileSync(join(runDir, "result.json"), "utf-8"),
+    )
+    const expectedKeys = ["fake", "finalMessage", "resolvedProvider"]
+    expect(Object.keys(frozen.result).sort()).toEqual(expectedKeys)
+    expect(Object.keys(created.json.result.result).sort()).toEqual(expectedKeys)
+    expect(Object.keys(created.json.job.result).sort()).toEqual(expectedKeys)
+    expect(created.json.result.result).toEqual(frozen.result)
+    const result = await cli(["api", "runs", "result", jobId, "--json"])
+    expect(result.json.result).toEqual(frozen.result)
+    // The registered-refs reader is unchanged: the committed files are listed.
+    expect(
+      result.json.artifacts.map((artifact: { role: string }) => artifact.role),
+    ).toEqual(["request", "events", "result"])
+    const status = await cli(["api", "runs", "status", jobId, "--json"])
+    expect(status.json.job.result).toEqual(frozen.result)
+
+    // A Run whose result was null stays null after the refs merge.
+    const { createLocalJobApiJob, admitLocalJobApiInitialArtifacts } =
+      await import("../src/main/lib/headless/local-job-api")
+    const { assertLocalJobApiCreateRequest } = await import(
+      "../src/shared/local-job-api"
+    )
+    const prepared = await createLocalJobApiJob(
+      db,
+      assertLocalJobApiCreateRequest(apiRequest("refs-002")),
+      "0.0.test",
+    )
+    await admitLocalJobApiInitialArtifacts({ db, prepared })
+    await startAgentJob(db, { jobId: prepared.job.id, workerId: "worker-1" })
+    const failed = await settleJobFailed(db, prepared.job.id, {
+      exitCode: 1,
+      errorCode: "runtime_failed",
+    })
+    expect(failed.resultJson).toContain('"artifactRefs"')
+    const failedResult = await cli([
+      "api",
+      "runs",
+      "result",
+      prepared.job.id,
+      "--json",
+    ])
+    expect(failedResult.json.status).toBe("failed")
+    expect(failedResult.json.result).toBeNull()
+    const failedStatus = await cli([
+      "api",
+      "runs",
+      "status",
+      prepared.job.id,
+      "--json",
+    ])
+    expect(failedStatus.json.job.result).toBeNull()
+  })
+
   test("scopes Local Job API status/result commands to API jobs", async () => {
     const db = createAgentJobTestDb()
-    const job = createAgentJob(db, {
+    const job = await createAgentJob(db, {
       source: "cli",
       runtime: "codex",
       mode: "plan",
@@ -2029,7 +2155,7 @@ describe("headless CLI dispatcher", () => {
   test("cancels and retries only Local Job API jobs", async () => {
     const db = createAgentJobTestDb()
     seedCurrentProject(db)
-    const queued = createAgentJob(db, {
+    const queued = await createAgentJob(db, {
       source: "api",
       runtime: "codex",
       mode: "plan",
@@ -2060,20 +2186,20 @@ describe("headless CLI dispatcher", () => {
       status: "canceled",
     })
 
-    const failed = completeAgentJob(db, {
-      jobId: createAgentJob(db, {
-        source: "api",
-        runtime: "codex",
-        mode: "plan",
-        cwd: process.cwd(),
-        prompt: "Retryable API job",
-        apiConsumerId: "docs-workbench",
-        apiConsumerRunId: "retry-001",
-      }).id,
-      status: "failed",
+    const retryable = await createAgentJob(db, {
+      source: "api",
+      runtime: "codex",
+      mode: "plan",
+      cwd: process.cwd(),
+      prompt: "Retryable API job",
+      apiConsumerId: "docs-workbench",
+      apiConsumerRunId: "retry-001",
+    })
+    const failed = await settleJobFailed(db, retryable.id, {
       errorCode: "test_failure",
       errorMessage: "failed before retry",
     })
+    expect(failed.status).toBe("failed")
     const retryStdout = writer()
     const retryCode = await runHeadlessCliCommand({
       db,
@@ -2302,14 +2428,14 @@ describe("headless CLI dispatcher", () => {
 
   test("runs daemon once and claims only daemon queued jobs", async () => {
     const db = createAgentJobTestDb()
-    const cliJob = createAgentJob(db, {
+    const cliJob = await createAgentJob(db, {
       source: "cli",
       runtime: "codex",
       mode: "agent",
       cwd: process.cwd(),
       prompt: "Leave this one-shot retry queued",
     })
-    const daemonJob = createAgentJob(db, {
+    const daemonJob = await createAgentJob(db, {
       source: "daemon",
       runtime: "claude-code",
       mode: "plan",
@@ -2706,7 +2832,7 @@ describe("headless CLI dispatcher", () => {
   test("jobs-stdio cancel is limited to jobs created by the current stdio session", async () => {
     const db = createAgentJobTestDb()
     seedCurrentProject(db)
-    const daemonJob = createAgentJob(db, {
+    const daemonJob = await createAgentJob(db, {
       source: "daemon",
       runtime: "codex",
       mode: "agent",
@@ -2805,20 +2931,37 @@ describe("headless CLI dispatcher", () => {
 
   test("daemon command reports stale running jobs it interrupts", async () => {
     const db = createAgentJobTestDb()
-    const staleJob = createAgentJob(db, {
+    // Only a confirmed-stopped worker is interrupted: its claimed PID is gone.
+    const exitedWorkerPid = spawnSync(process.execPath, ["-e", ""]).pid
+    const staleJob = await createAgentJob(db, {
       source: "daemon",
       runtime: "codex",
       mode: "agent",
       cwd: process.cwd(),
       prompt: "Recover me",
     })
-    startAgentJob(db, {
+    await startAgentJob(db, {
       jobId: staleJob.id,
       workerId: "daemon:stale",
+      workerPid: exitedWorkerPid,
+      now: new Date("2026-06-03T00:00:00.000Z"),
+    })
+    // A claimed row without a PID is not confirmed stopped: heartbeat_only.
+    const unknownWorkerJob = await createAgentJob(db, {
+      source: "daemon",
+      runtime: "codex",
+      mode: "agent",
+      cwd: process.cwd(),
+      prompt: "Leave me running",
+    })
+    await startAgentJob(db, {
+      jobId: unknownWorkerJob.id,
+      workerId: "daemon:unknown",
       now: new Date("2026-06-03T00:00:00.000Z"),
     })
 
     const stdout = writer()
+    const stderr = writer()
     const code = await runHeadlessCliCommand({
       db,
       argv: [
@@ -2833,7 +2976,7 @@ describe("headless CLI dispatcher", () => {
         "json",
       ],
       stdout: stdout.stream,
-      stderr: writer().stream,
+      stderr: stderr.stream,
       now: new Date("2026-06-03T00:03:00.000Z"),
       env: { LOCUS_HEADLESS_FAKE_RUNNER: "1" },
     })
@@ -2844,7 +2987,29 @@ describe("headless CLI dispatcher", () => {
       interruptedJobs: 1,
       stoppedBy: "once",
     })
-    expect(getAgentJob(db, staleJob.id)?.status).toBe("interrupted")
+    expect(getAgentJob(db, staleJob.id)).toMatchObject({
+      status: "interrupted",
+      errorCode: "worker_interrupted",
+    })
+    const completed = listAgentJobEvents(db, staleJob.id).find(
+      (event) => event.type === "completed",
+    )
+    expect(JSON.parse(completed?.payloadJson ?? "{}")).toMatchObject({
+      status: "interrupted",
+      synthetic: { source: "recovery" },
+    })
+    expect(stderr.value()).toContain(
+      "Marked 1 stale running job(s) interrupted",
+    )
+
+    expect(getAgentJob(db, unknownWorkerJob.id)?.status).toBe("running")
+    expect(
+      listAgentJobEvents(db, unknownWorkerJob.id).map((event) => event.type),
+    ).toEqual(["job_created", "job_started"])
+    expect(stderr.value()).toContain(
+      `Job ${unknownWorkerJob.id} has a stale heartbeat`,
+    )
+    expect(stderr.value()).toContain("heartbeat_only")
   })
 
   test("cancels queued jobs and retries terminal jobs", async () => {
@@ -2923,7 +3088,7 @@ describe("headless CLI dispatcher", () => {
 
   test("does not retry desktop chat jobs from the generic CLI retry path", async () => {
     const db = createAgentJobTestDb()
-    const desktopJob = createAgentJob(db, {
+    const desktopJob = await createAgentJob(db, {
       source: "desktop",
       runtime: "codex",
       mode: "agent",
@@ -2931,13 +3096,15 @@ describe("headless CLI dispatcher", () => {
       prompt: "Desktop chat prompt",
       input: { kind: "desktop-chat", promptSha256: "hash" },
     })
-    startAgentJob(db, { jobId: desktopJob.id, workerId: "desktop:codex:run-1" })
-    completeAgentJob(db, {
+    await startAgentJob(db, {
       jobId: desktopJob.id,
-      status: "failed",
+      workerId: "desktop:codex:run-1",
+    })
+    const failedDesktopJob = await settleJobFailed(db, desktopJob.id, {
       exitCode: 1,
       errorCode: "desktop_chat_failed",
     })
+    expect(failedDesktopJob.status).toBe("failed")
 
     const stdout = writer()
     const stderr = writer()

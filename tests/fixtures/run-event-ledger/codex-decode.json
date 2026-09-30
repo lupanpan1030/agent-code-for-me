@@ -1,0 +1,315 @@
+{
+  "fixtureVersion": 1,
+  "evidenceClass": "synthetic",
+  "sourceRefs": [
+    "specs/codex-runtime-parity Codex Native Boundary Forwarding And Disposition / Decoder retains channel and native error fields",
+    "design Native Method and Item Disposition (fixture-only decode shape {kind, native:{threadId?,sessionId?,turnId?,itemId?}, channel?, partIndex?, text?, fields?, total?, last?, code?, willRetry?})",
+    "design Item Reconciliation and Redaction (Inferred indexing policy: decoder forwards a schema-proven index and otherwise omits it; summary boundary state and inferred fallback belong to the ledger)",
+    "tasks 7.7 (codex-decode.json: reasoning channel and error/usage vectors)",
+    "native-dispositions.json / terminal-evidence.json param conventions (error.code, willRetry, tokenUsage total/last)"
+  ],
+  "provenance": {
+    "runtimeId": "codex",
+    "version": "0.139.0",
+    "shapeReference": "Param shapes are schema-derived synthetic values cross-checked against a local `codex app-server generate-ts` output of codex-cli 0.159.2 as a stand-in (v2/ReasoningTextDeltaNotification {threadId,turnId,itemId,delta,contentIndex}, v2/ReasoningSummaryTextDeltaNotification {...,summaryIndex}, v2/ReasoningSummaryPartAddedNotification {threadId,turnId,itemId,summaryIndex}, v2/ErrorNotification {error,willRetry,threadId,turnId}, v2/ThreadTokenUsageUpdatedNotification {threadId,turnId,tokenUsage:{total,last,modelContextWindow}}); the pinned 0.139.0 TypeScript closure is NOT vendored here (tasks 1.4 remains open). The *-native-index cases carry the 0.159.2 index fields as the schema-proven variant; the *-index-absent cases model the pinned repository delta DTO that has no part-index field. error.code follows the repository DTO (src/main/lib/codex/app-server-stream-events.ts error {message?, code?}) and the first suite's fixtures; 0.159.2 TurnError has no `code` member (it carries codexErrorInfo, kept null here). TokenUsageBreakdown omits 0.159.2's cacheWriteInputTokens to match native-dispositions.json.",
+    "idsMeasured": false,
+    "author": "independent test author (follow-up red slice A), 2026-10-01"
+  },
+  "cases": [
+    {
+      "caseId": "reasoning-text-native-index",
+      "method": "item/reasoning/textDelta",
+      "indexEvidence": "schema-proven",
+      "input": {
+        "message": {
+          "method": "item/reasoning/textDelta",
+          "params": {
+            "threadId": "th-dec",
+            "turnId": "tu-dec",
+            "itemId": "r-dec",
+            "delta": "analysis",
+            "contentIndex": 1
+          }
+        }
+      },
+      "expectedType": "reasoning_delta",
+      "expected": {
+        "native": {
+          "threadId": "th-dec",
+          "turnId": "tu-dec",
+          "itemId": "r-dec"
+        },
+        "channel": "text",
+        "partIndex": 1,
+        "text": "analysis"
+      },
+      "absentKeys": []
+    },
+    {
+      "caseId": "reasoning-text-index-absent",
+      "method": "item/reasoning/textDelta",
+      "indexEvidence": "absent",
+      "input": {
+        "message": {
+          "method": "item/reasoning/textDelta",
+          "params": {
+            "threadId": "th-dec",
+            "turnId": "tu-dec",
+            "itemId": "r-dec",
+            "delta": "analysis"
+          }
+        }
+      },
+      "expectedType": "reasoning_delta",
+      "expected": {
+        "native": {
+          "threadId": "th-dec",
+          "turnId": "tu-dec",
+          "itemId": "r-dec"
+        },
+        "channel": "text",
+        "text": "analysis"
+      },
+      "absentKeys": ["partIndex"]
+    },
+    {
+      "caseId": "reasoning-summary-native-index",
+      "method": "item/reasoning/summaryTextDelta",
+      "indexEvidence": "schema-proven",
+      "input": {
+        "message": {
+          "method": "item/reasoning/summaryTextDelta",
+          "params": {
+            "threadId": "th-dec",
+            "turnId": "tu-dec",
+            "itemId": "r-dec",
+            "delta": "next",
+            "summaryIndex": 1
+          }
+        }
+      },
+      "expectedType": "reasoning_delta",
+      "expected": {
+        "native": {
+          "threadId": "th-dec",
+          "turnId": "tu-dec",
+          "itemId": "r-dec"
+        },
+        "channel": "summary",
+        "partIndex": 1,
+        "text": "next"
+      },
+      "absentKeys": []
+    },
+    {
+      "caseId": "reasoning-summary-index-absent",
+      "method": "item/reasoning/summaryTextDelta",
+      "indexEvidence": "absent",
+      "input": {
+        "message": {
+          "method": "item/reasoning/summaryTextDelta",
+          "params": {
+            "threadId": "th-dec",
+            "turnId": "tu-dec",
+            "itemId": "r-dec",
+            "delta": "short"
+          }
+        }
+      },
+      "expectedType": "reasoning_delta",
+      "expected": {
+        "native": {
+          "threadId": "th-dec",
+          "turnId": "tu-dec",
+          "itemId": "r-dec"
+        },
+        "channel": "summary",
+        "text": "short"
+      },
+      "absentKeys": ["partIndex"]
+    },
+    {
+      "caseId": "reasoning-summary-part-added",
+      "method": "item/reasoning/summaryPartAdded",
+      "indexEvidence": "schema-proven",
+      "input": {
+        "message": {
+          "method": "item/reasoning/summaryPartAdded",
+          "params": {
+            "threadId": "th-dec",
+            "turnId": "tu-dec",
+            "itemId": "r-dec",
+            "summaryIndex": 1
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "reasoning_part",
+      "expected": {
+        "native": {
+          "threadId": "th-dec",
+          "turnId": "tu-dec",
+          "itemId": "r-dec"
+        },
+        "channel": "summary",
+        "partIndex": 1
+      },
+      "absentKeys": []
+    },
+    {
+      "caseId": "error-retryable",
+      "method": "error",
+      "input": {
+        "message": {
+          "method": "error",
+          "params": {
+            "error": {
+              "message": "temporary",
+              "code": "retryable",
+              "codexErrorInfo": null,
+              "additionalDetails": null
+            },
+            "willRetry": true,
+            "threadId": "th-dec",
+            "turnId": "tu-dec"
+          }
+        }
+      },
+      "expectedType": "error",
+      "expected": {
+        "native": { "threadId": "th-dec", "turnId": "tu-dec" },
+        "code": "retryable",
+        "willRetry": true
+      },
+      "absentKeys": []
+    },
+    {
+      "caseId": "error-not-retried",
+      "method": "error",
+      "input": {
+        "message": {
+          "method": "error",
+          "params": {
+            "error": {
+              "message": "stream closed",
+              "code": "internal_error",
+              "codexErrorInfo": null,
+              "additionalDetails": null
+            },
+            "willRetry": false,
+            "threadId": "th-dec",
+            "turnId": "tu-dec"
+          }
+        }
+      },
+      "expectedType": "error",
+      "expected": {
+        "native": { "threadId": "th-dec", "turnId": "tu-dec" },
+        "code": "internal_error",
+        "willRetry": false
+      },
+      "absentKeys": []
+    },
+    {
+      "caseId": "usage-vectors",
+      "method": "thread/tokenUsage/updated",
+      "input": {
+        "message": {
+          "method": "thread/tokenUsage/updated",
+          "params": {
+            "threadId": "th-dec",
+            "turnId": "tu-dec",
+            "tokenUsage": {
+              "total": {
+                "totalTokens": 25,
+                "inputTokens": 20,
+                "cachedInputTokens": 4,
+                "outputTokens": 5,
+                "reasoningOutputTokens": 1
+              },
+              "last": {
+                "totalTokens": 5,
+                "inputTokens": 3,
+                "cachedInputTokens": 0,
+                "outputTokens": 2,
+                "reasoningOutputTokens": 0
+              },
+              "modelContextWindow": 200000
+            }
+          }
+        }
+      },
+      "expectedType": "usage_update",
+      "expected": {
+        "native": { "threadId": "th-dec", "turnId": "tu-dec" },
+        "total": {
+          "totalTokens": 25,
+          "inputTokens": 20,
+          "cachedInputTokens": 4,
+          "outputTokens": 5,
+          "reasoningOutputTokens": 1
+        },
+        "last": {
+          "totalTokens": 5,
+          "inputTokens": 3,
+          "cachedInputTokens": 0,
+          "outputTokens": 2,
+          "reasoningOutputTokens": 0
+        }
+      },
+      "absentKeys": []
+    }
+  ],
+  "statefulnessProbe": {
+    "note": "Boundaries decoded between two decodes of the same index-less summary delta. A stateless decoder returns deep-equal output both times, never assigns the earlier summaryPartAdded index, and never attaches the earlier thread/started sessionId or thread/turn IDs to later descriptors.",
+    "probeCaseId": "reasoning-summary-index-absent",
+    "interleaved": [
+      {
+        "message": {
+          "method": "thread/started",
+          "params": {
+            "thread": {
+              "id": "th-other",
+              "sessionId": "session-other",
+              "ephemeral": false,
+              "cliVersion": "0.139.0",
+              "turns": []
+            }
+          }
+        }
+      },
+      {
+        "message": {
+          "method": "turn/started",
+          "params": {
+            "threadId": "th-other",
+            "turn": {
+              "id": "tu-other",
+              "items": [],
+              "status": "inProgress",
+              "error": null
+            }
+          }
+        }
+      },
+      {
+        "message": {
+          "method": "item/reasoning/summaryPartAdded",
+          "params": {
+            "threadId": "th-dec",
+            "turnId": "tu-dec",
+            "itemId": "r-dec",
+            "summaryIndex": 1
+          }
+        }
+      }
+    ],
+    "laterCaseIds": [
+      "reasoning-summary-index-absent",
+      "reasoning-text-index-absent",
+      "error-retryable",
+      "usage-vectors"
+    ],
+    "leakedValues": ["session-other", "th-other", "tu-other"]
+  }
+}

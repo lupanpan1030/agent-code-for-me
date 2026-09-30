@@ -1,5 +1,9 @@
 import { type ChildProcess, spawn } from "node:child_process"
 import { basename } from "node:path"
+import {
+  assertRunExecutableUnchanged,
+  captureRunExecutionProvenance,
+} from "../agent-runtime/run-provenance"
 import type {
   AgentRuntimeObserver,
   AgentRuntimeRunRequest,
@@ -450,4 +454,51 @@ export async function runProcessAgentTask(
       }
     }
   })
+}
+
+/**
+ * Coarse process protocol the process runner decodes (stdout text becomes
+ * assistant output, stderr command output, plus command start/finish): the
+ * compiled-in schema identity of headless exec adapters.
+ */
+const PROCESS_RUNNER_SCHEMA_DOCUMENTS = [
+  {
+    path: "locus-process-runner/stdio-observations.json",
+    content: JSON.stringify({
+      protocol: "locus-process-stdio",
+      observations: [
+        "assistant_delta",
+        "command_finished",
+        "command_output",
+        "command_started",
+      ],
+    }),
+  },
+]
+
+/**
+ * Launch caller of a headless exec adapter (tasks 6.1): captures the
+ * executable it actually resolved and hands the tuple to the Run's host,
+ * which binds it before the process starts; the executable bytes are
+ * re-checked right before spawn. Observers without a host ledger skip it.
+ */
+export async function bindProcessRunExecutionProvenance(input: {
+  observer: Pick<AgentRuntimeObserver, "recordExecutionProvenance">
+  runtimeId: string
+  adapterSource: string
+  version: string
+  executablePath: string
+}): Promise<void> {
+  if (!input.observer.recordExecutionProvenance) return
+  const provenance = await captureRunExecutionProvenance({
+    runtimeId: input.runtimeId,
+    adapterSource: input.adapterSource,
+    version: input.version,
+    protocolName: "locus-process-stdio",
+    protocolVersion: "1",
+    executablePath: input.executablePath,
+    schemaDocuments: PROCESS_RUNNER_SCHEMA_DOCUMENTS,
+  })
+  await input.observer.recordExecutionProvenance(provenance)
+  assertRunExecutableUnchanged(provenance)
 }

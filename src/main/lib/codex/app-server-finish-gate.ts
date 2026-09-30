@@ -1,3 +1,5 @@
+import { createDesktopRendererChannel } from "../agent-runtime/run-event-ledger-host"
+
 export type CodexAppServerFinishGateChunk = Record<string, unknown>
 
 export type CodexAppServerFinishGate = {
@@ -76,5 +78,55 @@ export function createCodexAppServerFinishGate(input: {
   return {
     emit,
     runWithDeferredFinish,
+  }
+}
+
+/**
+ * Renderer sink of one Codex desktop chat route: chunks the adapter already
+ * projected/redacted (committed records and renderer framing) pass through
+ * the finish gate; the route's own framing chunks are redacted with the
+ * Run's exact hints first (renderer-only, no durable fact).
+ */
+export function createCodexDesktopRouteRenderer(input: {
+  runId: string
+  getSecretHints: () => readonly string[]
+  markSawError: () => void
+  emit: (chunk: CodexAppServerFinishGateChunk) => void
+}) {
+  const finishGate = createCodexAppServerFinishGate({
+    enabled: () => true,
+    emit: input.emit,
+  })
+  let emittedError = false
+  let emittedFinish = false
+  const deliver = (chunk: CodexAppServerFinishGateChunk) => {
+    if (chunk.type === "error") emittedError = true
+    if (chunk.type === "finish") emittedFinish = true
+    if (
+      chunk.type === "error" ||
+      chunk.type === "auth-error" ||
+      chunk.type === "capability-error" ||
+      (chunk.type === "runtime-status" && chunk.ok === false)
+    ) {
+      input.markSawError()
+    }
+    finishGate.emit(chunk)
+  }
+  const routeChannel = createDesktopRendererChannel({
+    runtimeId: "codex",
+    runId: input.runId,
+    observationPrefix: `codex-route:${input.runId}`,
+    getLedger: () => null,
+    getSecretHints: input.getSecretHints,
+    emit: deliver,
+  })
+  return {
+    finishGate,
+    deliver,
+    submit: (chunk: CodexAppServerFinishGateChunk) => {
+      routeChannel.submit(chunk)
+    },
+    emittedError: () => emittedError,
+    emittedFinish: () => emittedFinish,
   }
 }

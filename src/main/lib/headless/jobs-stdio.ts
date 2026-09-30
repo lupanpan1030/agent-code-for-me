@@ -10,9 +10,9 @@ import { serializeAgentJob, serializeAgentJobEvent } from "./cli-output"
 import { HEADLESS_EXIT_CODES, runPersistedAgentJob } from "./job-runner"
 import {
   type AgentJobDatabase,
+  cancelAgentJob,
   createAgentJob,
   listAgentJobEvents,
-  requestCancelAgentJob,
 } from "./job-store"
 import { findRegisteredProjectForCwdWithCanonicalPath } from "./schedules"
 
@@ -265,12 +265,12 @@ function handleInitialize(
   )
 }
 
-function handleJobRun(
+async function handleJobRun(
   id: JsonRpcId,
   request: JsonRpcRequest,
   options: RunJobsStdioServerOptions,
   activeJobs: Map<string, ActiveProtocolJob>,
-): void {
+): Promise<void> {
   assertNoProtocolSecrets(request.params)
   const params = jobRunParamsSchema.parse(request.params ?? {})
   const { project, cwd } = findRegisteredProjectForCwdWithCanonicalPath(
@@ -279,7 +279,7 @@ function handleJobRun(
     null,
     "Protocol job cwd",
   )
-  const job = createAgentJob(options.db, {
+  const job = await createAgentJob(options.db, {
     source: "protocol",
     runtime: params.runtime as AgentJobContractRuntime,
     mode: params.mode,
@@ -319,12 +319,12 @@ function handleJobRun(
   writeJsonLine(options.stdout, response(id, { job: serializeAgentJob(job) }))
 }
 
-function handleJobCancel(
+async function handleJobCancel(
   id: JsonRpcId,
   request: JsonRpcRequest,
   options: RunJobsStdioServerOptions,
   activeJobs: Map<string, ActiveProtocolJob>,
-): void {
+): Promise<void> {
   const params = jobCancelParamsSchema.parse(request.params ?? {})
   const activeJob = activeJobs.get(params.jobId)
   if (!activeJob) {
@@ -338,18 +338,20 @@ function handleJobCancel(
     )
     return
   }
-  const job = requestCancelAgentJob(options.db, params.jobId, "protocol")
+  const job = await cancelAgentJob(options.db, params.jobId, {
+    requestedBy: "protocol",
+  })
   activeJob.abortController.abort()
   writeJsonLine(options.stdout, response(id, { job: serializeAgentJob(job) }))
 }
 
-function cancelActiveProtocolJobs(
+async function cancelActiveProtocolJobs(
   options: RunJobsStdioServerOptions,
   activeJobs: Map<string, ActiveProtocolJob>,
-): void {
+): Promise<void> {
   for (const job of activeJobs.values()) {
     try {
-      requestCancelAgentJob(options.db, job.jobId, "protocol")
+      await cancelAgentJob(options.db, job.jobId, { requestedBy: "protocol" })
     } catch {}
     job.abortController.abort()
   }
@@ -376,11 +378,11 @@ async function stopActiveProtocolStreams(
   await Promise.allSettled(remaining.map((job) => job.streamPromise))
 }
 
-function handleRequest(
+async function handleRequest(
   request: JsonRpcRequest,
   options: RunJobsStdioServerOptions,
   activeJobs: Map<string, ActiveProtocolJob>,
-): boolean {
+): Promise<boolean> {
   const id = request.id ?? null
   try {
     if (request.method === "initialize") {
@@ -388,11 +390,11 @@ function handleRequest(
       return false
     }
     if (request.method === "job.run") {
-      handleJobRun(id, request, options, activeJobs)
+      await handleJobRun(id, request, options, activeJobs)
       return false
     }
     if (request.method === "job.cancel") {
-      handleJobCancel(id, request, options, activeJobs)
+      await handleJobCancel(id, request, options, activeJobs)
       return false
     }
     if (request.method === "shutdown") {
@@ -442,11 +444,15 @@ export async function runJobsStdioServer(
         )
         continue
       }
-      shouldShutdown = handleRequest(requestResult.data, options, activeJobs)
+      shouldShutdown = await handleRequest(
+        requestResult.data,
+        options,
+        activeJobs,
+      )
       if (shouldShutdown) break
     }
     await drainActiveProtocolJobs(activeJobs, 250)
-    cancelActiveProtocolJobs(options, activeJobs)
+    await cancelActiveProtocolJobs(options, activeJobs)
     await drainActiveProtocolJobs(activeJobs, 250)
     await stopActiveProtocolStreams(activeJobs)
     return HEADLESS_EXIT_CODES.success
@@ -454,7 +460,7 @@ export async function runJobsStdioServer(
     const message = error instanceof Error ? error.message : String(error)
     writeStderr(options.stderr, `[jobs-stdio] ${message}`)
     writeJsonLine(options.stdout, errorResponse(null, -32600, message))
-    cancelActiveProtocolJobs(options, activeJobs)
+    await cancelActiveProtocolJobs(options, activeJobs)
     await drainActiveProtocolJobs(activeJobs, 250)
     await stopActiveProtocolStreams(activeJobs)
     return HEADLESS_EXIT_CODES.invalidArguments

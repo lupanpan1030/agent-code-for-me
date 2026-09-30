@@ -1,3 +1,4 @@
+import { toPublicJobResult } from "../../../shared/agent-jobs"
 import type { AgentJob, AgentJobEvent, AgentSchedule } from "../db/schema"
 
 export type SerializedAgentJob = {
@@ -82,6 +83,17 @@ function parseJson(value: string | null | undefined): unknown {
   }
 }
 
+/**
+ * The public job result: the stored `result_json` through the shared public
+ * result rule ({@link toPublicJobResult}), so Local Job API envelopes and
+ * `job.result` stay byte-compatible with the runner's result.
+ */
+export function parsePublicJobResult(
+  resultJson: string | null | undefined,
+): unknown {
+  return toPublicJobResult(parseJson(resultJson))
+}
+
 export function serializeAgentJob(job: AgentJob): SerializedAgentJob {
   return {
     id: job.id,
@@ -109,7 +121,7 @@ export function serializeAgentJob(job: AgentJob): SerializedAgentJob {
     exitCode: job.exitCode,
     errorCode: job.errorCode,
     errorMessage: job.errorMessage,
-    result: parseJson(job.resultJson),
+    result: parsePublicJobResult(job.resultJson),
     workerId: job.workerId,
     workerPid: job.workerPid,
     heartbeatAt: toIso(job.heartbeatAt),

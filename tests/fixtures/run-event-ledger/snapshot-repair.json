@@ -1,0 +1,233 @@
+{
+  "fixtureVersion": 1,
+  "evidenceClass": "synthetic",
+  "sourceRefs": [
+    "trace \u00a76.1 snapshot is not event replay",
+    "trace \u00a77.4 resume repair marking",
+    "design \u00a7Resume Validation and Snapshot Repair",
+    "tasks 7.10"
+  ],
+  "provenance": {
+    "runtimeId": "codex",
+    "version": "0.139.0",
+    "ledgerProvenance": {
+      "kind": "runtime",
+      "installationId": "inst-codex-0.139.0-linux-x64-0729aedf",
+      "runtimeId": "codex",
+      "adapterSource": "codex-app-server",
+      "version": "0.139.0",
+      "executableRef": "exe-ref-codex-01390",
+      "binarySha256": "0729aedf4fe72971d81ef6803c817b850d711254d3c82ecc756a52f3b533c9f8",
+      "protocolName": "codex-app-server-jsonrpc",
+      "protocolVersion": "v2",
+      "schemaFiles": [
+        {
+          "path": "v2/ThreadResumeResponse.json",
+          "sha256": "9454a8c554557f825f60adc725558b04df928b872bdb5091a37de5e2bf4b47e9"
+        },
+        {
+          "path": "v2/ThreadItem.ts",
+          "sha256": "1aef9163c636246a0d1baec611da798a3e77790b7b8819480162b6e734324038"
+        }
+      ]
+    },
+    "idsMeasured": false,
+    "author": "independent test author (Domain B), 2026-09-30"
+  },
+  "cases": [
+    {
+      "caseId": "prefix-hel",
+      "localSteps": [
+        {
+          "port": "ingestNotification",
+          "observationKey": "sr-p-start",
+          "transportId": "t1",
+          "input": {
+            "message": {
+              "method": "item/started",
+              "params": {
+                "threadId": "th",
+                "turnId": "tu",
+                "item": {
+                  "type": "agentMessage",
+                  "id": "msg",
+                  "text": ""
+                }
+              }
+            }
+          }
+        },
+        {
+          "port": "ingestNotification",
+          "observationKey": "sr-p-delta",
+          "transportId": "t1",
+          "input": {
+            "message": {
+              "method": "item/agentMessage/delta",
+              "params": {
+                "threadId": "th",
+                "turnId": "tu",
+                "itemId": "msg",
+                "delta": "hel"
+              }
+            }
+          }
+        }
+      ],
+      "repair": {
+        "observationKey": "sr-p-repair",
+        "snapshot": {
+          "id": "th",
+          "sessionId": "session",
+          "status": {
+            "type": "idle"
+          },
+          "ephemeral": false,
+          "path": "/fixture/codex-home/sessions/rollout-th.jsonl",
+          "cliVersion": "0.139.0",
+          "turns": [
+            {
+              "id": "tu",
+              "status": "completed",
+              "error": null,
+              "items": [
+                {
+                  "type": "agentMessage",
+                  "id": "msg",
+                  "text": "hello"
+                }
+              ]
+            }
+          ]
+        },
+        "sourceProvenance": {
+          "kind": "runtime",
+          "installationId": "inst-codex-0.139.0-linux-x64-0729aedf",
+          "runtimeId": "codex",
+          "adapterSource": "codex-app-server",
+          "version": "0.139.0",
+          "executableRef": "exe-ref-codex-01390",
+          "binarySha256": "0729aedf4fe72971d81ef6803c817b850d711254d3c82ecc756a52f3b533c9f8",
+          "protocolName": "codex-app-server-jsonrpc",
+          "protocolVersion": "v2",
+          "schemaFiles": [
+            {
+              "path": "v2/ThreadResumeResponse.json",
+              "sha256": "9454a8c554557f825f60adc725558b04df928b872bdb5091a37de5e2bf4b47e9"
+            },
+            {
+              "path": "v2/ThreadItem.ts",
+              "sha256": "1aef9163c636246a0d1baec611da798a3e77790b7b8819480162b6e734324038"
+            }
+          ]
+        },
+        "schemaDisposition": "recognized",
+        "targetTurnId": "tu"
+      },
+      "itemKey": {
+        "threadId": "th",
+        "turnId": "tu",
+        "itemId": "msg",
+        "channel": "assistant",
+        "partIndex": 0
+      },
+      "expected": {
+        "state": "completed",
+        "text": "hello",
+        "result": "suffix_repaired",
+        "lossPossible": true,
+        "repairSource": "snapshot",
+        "readOutcome": null
+      }
+    },
+    {
+      "caseId": "no-local-item",
+      "localSteps": [
+        {
+          "port": "ingestNotification",
+          "observationKey": "sr-n-ts",
+          "transportId": "t1",
+          "input": {
+            "message": {
+              "method": "turn/started",
+              "params": {
+                "threadId": "th",
+                "turn": {
+                  "id": "tu",
+                  "items": [],
+                  "status": "inProgress",
+                  "error": null
+                }
+              }
+            }
+          }
+        }
+      ],
+      "repair": {
+        "observationKey": "sr-n-repair",
+        "snapshot": {
+          "id": "th",
+          "sessionId": "session",
+          "status": {
+            "type": "idle"
+          },
+          "ephemeral": false,
+          "path": "/fixture/codex-home/sessions/rollout-th.jsonl",
+          "cliVersion": "0.139.0",
+          "turns": [
+            {
+              "id": "tu",
+              "status": "completed",
+              "error": null,
+              "items": [
+                {
+                  "type": "agentMessage",
+                  "id": "msg",
+                  "text": "hello"
+                }
+              ]
+            }
+          ]
+        },
+        "sourceProvenance": {
+          "kind": "runtime",
+          "installationId": "inst-codex-0.139.0-linux-x64-0729aedf",
+          "runtimeId": "codex",
+          "adapterSource": "codex-app-server",
+          "version": "0.139.0",
+          "executableRef": "exe-ref-codex-01390",
+          "binarySha256": "0729aedf4fe72971d81ef6803c817b850d711254d3c82ecc756a52f3b533c9f8",
+          "protocolName": "codex-app-server-jsonrpc",
+          "protocolVersion": "v2",
+          "schemaFiles": [
+            {
+              "path": "v2/ThreadResumeResponse.json",
+              "sha256": "9454a8c554557f825f60adc725558b04df928b872bdb5091a37de5e2bf4b47e9"
+            },
+            {
+              "path": "v2/ThreadItem.ts",
+              "sha256": "1aef9163c636246a0d1baec611da798a3e77790b7b8819480162b6e734324038"
+            }
+          ]
+        },
+        "schemaDisposition": "recognized",
+        "targetTurnId": "tu"
+      },
+      "itemKey": {
+        "threadId": "th",
+        "turnId": "tu",
+        "itemId": "msg",
+        "channel": "assistant",
+        "partIndex": 0
+      },
+      "expected": {
+        "state": "completed",
+        "text": "hello",
+        "result": "missing_local",
+        "lossPossible": true,
+        "repairSource": "snapshot",
+        "readOutcome": null
+      }
+    }
+  ]
+}

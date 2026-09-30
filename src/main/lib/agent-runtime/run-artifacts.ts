@@ -1,0 +1,896 @@
+import { createHash, randomUUID } from "node:crypto"
+import {
+  closeSync,
+  constants,
+  fchmodSync,
+  fstatSync,
+  fsyncSync,
+  lstatSync,
+  openSync,
+  readSync,
+  realpathSync,
+  renameSync,
+  type Stats,
+  unlinkSync,
+  writeSync,
+} from "node:fs"
+import {
+  basename,
+  dirname,
+  extname,
+  isAbsolute,
+  join,
+  relative,
+  resolve,
+  sep,
+} from "node:path"
+import {
+  assertStableDirectoryPath,
+  closeStableDirectory,
+  fsyncStableDirectory,
+  openRegisteredStableDirectory,
+  openStableDirectoryChild,
+  type StableDirectoryHandle,
+  stableDirectoryChildPath,
+} from "../filesystem/stable-directory"
+import {
+  type JsonObject,
+  RUN_ARTIFACT_LEDGER_PORT,
+  type RunArtifactLedgerPort,
+} from "./run-event-ledger"
+
+/**
+ * Canonical Run artifact owner (refactor-canonical-run-event-ledger, design
+ * "Artifacts and Terminal Commit Order").
+ *
+ * Native file/diff/image/path observations are only candidate evidence. This
+ * owner checks existence, a stable regular-file read inside the admitted run
+ * directory, Run ownership, the expected SHA-256 digest, media and exact
+ * secret redaction before asking the ledger's owner-gated port for
+ * `artifact_created`. A rejected candidate becomes
+ * `status/artifact_admission {result:"rejected", reason}` with no path or
+ * content. It grants no new filesystem scope.
+ */
+
+/**
+ * Roles of admitted native artifacts (proposal artifact row): a native file
+ * path, a generated image and a runtime-reported diff. Locus run-dir files
+ * keep their request/events/result/manifest roles.
+ */
+export const RUN_ARTIFACT_NATIVE_ROLES = [
+  "native-file",
+  "native-image",
+  "native-diff",
+] as const
+
+export type RunArtifactNativeRole = (typeof RUN_ARTIFACT_NATIVE_ROLES)[number]
+
+export function isRunArtifactNativeRole(
+  value: unknown,
+): value is RunArtifactNativeRole {
+  return (RUN_ARTIFACT_NATIVE_ROLES as readonly unknown[]).includes(value)
+}
+
+export type RunArtifactCandidate = {
+  path: string
+  ownerRunId: string
+  /**
+   * Digest the native evidence independently claims. Absent when the native
+   * surface reports only a path: the admitted digest is then the one of the
+   * owner's own stable read.
+   */
+  expectedSha256?: string | null
+  media: string
+  /** Admitted role (default `native-file`). */
+  role?: RunArtifactNativeRole
+  /** Native evidence identity (e.g. item id) distinguishing observations. */
+  sourceKey?: string
+}
+
+/**
+ * Admission context of one Run. The host passes the run directory's stable
+ * handle (`runDir`, authority captured at exclusive creation time); a bare
+ * pathname (`allowedRunDir`) is anchored to a directory handle for that one
+ * admission. Either way the candidate is read through the anchored
+ * directory, never through a re-resolved pathname.
+ */
+export type RunArtifactRunContext = {
+  runId: string
+  runDir?: StableDirectoryHandle
+  allowedRunDir?: string
+  ledger: unknown
+}
+
+export type RunArtifactRejectionReason =
+  | "missing"
+  | "out_of_scope"
+  | "ownership_mismatch"
+  | "digest_mismatch"
+  | "redaction_unsafe"
+
+export type RunArtifactAdmission =
+  | {
+      result: "admitted"
+      artifact: {
+        path: string
+        sha256: string
+        sizeBytes: number
+        contentType: string
+      }
+    }
+  | { result: "rejected"; reason: RunArtifactRejectionReason }
+
+/** Largest candidate the owner reads into memory for digest/redaction. */
+const MAX_ARTIFACT_BYTES = 64 * 1024 * 1024
+const MEDIA_TYPE = /^[a-z0-9][a-z0-9.+-]*\/[a-z0-9][a-z0-9.+-]*$/i
+
+function ledgerPort(ledger: unknown): RunArtifactLedgerPort {
+  const port =
+    ledger && typeof ledger === "object"
+      ? (ledger as Record<PropertyKey, unknown>)[RUN_ARTIFACT_LEDGER_PORT]
+      : undefined
+  if (!port || typeof port !== "object") {
+    throw new Error("Run artifact admission requires the canonical ledger")
+  }
+  return port as RunArtifactLedgerPort
+}
+
+const MEDIA_BY_EXTENSION: Readonly<Record<string, string>> = {
+  ".diff": "text/x-diff",
+  ".gif": "image/gif",
+  ".jpeg": "image/jpeg",
+  ".jpg": "image/jpeg",
+  ".json": "application/json",
+  ".md": "text/markdown",
+  ".patch": "text/x-diff",
+  ".png": "image/png",
+  ".svg": "image/svg+xml",
+  ".txt": "text/plain",
+  ".webp": "image/webp",
+}
+
+/** Media type a native candidate path declares by its extension. */
+export function runArtifactMediaType(path: string): string {
+  return (
+    MEDIA_BY_EXTENSION[extname(path).toLowerCase()] ??
+    "application/octet-stream"
+  )
+}
+
+function candidateObservationKey(
+  candidate: RunArtifactCandidate,
+  runId: string,
+): string {
+  const identity = JSON.stringify([
+    runId,
+    candidate.path,
+    candidate.ownerRunId,
+    candidate.expectedSha256 ?? null,
+    candidate.media,
+    candidate.role ?? "native-file",
+    candidate.sourceKey ?? null,
+  ])
+  return `artifact-${createHash("sha256").update(identity).digest("hex").slice(0, 24)}`
+}
+
+/** Path components of `target` below `root`, or null when outside it. */
+function runDirComponents(root: string, target: string): string[] | null {
+  const path = relative(root, target)
+  if (path === "" || path.startsWith("..") || isAbsolute(path)) return null
+  const components = path.split(sep)
+  return components.every(
+    (component) => component.length > 0 && component !== "..",
+  )
+    ? components
+    : null
+}
+
+/**
+ * Name of a candidate below the anchored run directory. The candidate's
+ * pathname only selects a name: a lexical match against the handle path (or
+ * the pathname it was admitted under), else the real parent directory (a
+ * symlinked prefix such as macOS /tmp). The bytes are always read through
+ * the anchored directory, so an alias can only select a file that is really
+ * inside the admitted run directory.
+ */
+function candidateRunDirComponents(
+  runDir: StableDirectoryHandle,
+  requested: string,
+  alias: string | undefined,
+): string[] | null {
+  for (const root of [runDir.path, ...(alias ? [resolve(alias)] : [])]) {
+    const components = runDirComponents(root, requested)
+    if (components) return components
+  }
+  try {
+    const parent = realpathSync(dirname(requested))
+    return runDirComponents(runDir.path, join(parent, basename(requested)))
+  } catch {
+    return null
+  }
+}
+
+type RunDirFileRead =
+  | { result: "read"; path: string; bytes: Buffer }
+  | { result: "rejected"; reason: "missing" | "out_of_scope" }
+
+function isMissingPathError(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException | null)?.code
+  return code === "ENOENT" || code === "ENOTDIR"
+}
+
+/**
+ * Reads one file of an admitted run directory through its stable handle:
+ * every intermediate directory is opened without following symlinks, the
+ * file must be a single-link regular file (no hard link to an outside file,
+ * no final symlink), is opened `O_NOFOLLOW`, and the run directory path must
+ * keep its identity before and after the read. The published path is the
+ * admitted run-dir path of that file.
+ */
+export function readRunDirArtifactCandidate(
+  runDir: StableDirectoryHandle,
+  path: string,
+  alias?: string,
+): RunDirFileRead {
+  const components = candidateRunDirComponents(runDir, resolve(path), alias)
+  if (!components) return { result: "rejected", reason: "out_of_scope" }
+  const opened: StableDirectoryHandle[] = []
+  try {
+    assertStableDirectoryPath(runDir, "Artifact run")
+    let directory = runDir
+    for (const component of components.slice(0, -1)) {
+      directory = openStableDirectoryChild(directory, component, "Artifact")
+      opened.push(directory)
+    }
+    const name = components[components.length - 1]
+    const stat = lstatSync(stableDirectoryChildPath(directory, name))
+    if (stat.isSymbolicLink() || !stat.isFile() || stat.nlink !== 1) {
+      return { result: "rejected", reason: "out_of_scope" }
+    }
+    if (stat.size > MAX_ARTIFACT_BYTES) {
+      return { result: "rejected", reason: "missing" }
+    }
+    const bytes = readRunArtifactFile(directory, name)
+    assertStableDirectoryPath(runDir, "Artifact run")
+    return { result: "read", path: join(runDir.path, ...components), bytes }
+  } catch (error) {
+    return {
+      result: "rejected",
+      reason: isMissingPathError(error) ? "missing" : "out_of_scope",
+    }
+  } finally {
+    for (const directory of opened) closeStableDirectory(directory)
+  }
+}
+
+/**
+ * Re-verifies an admitted native artifact ref at terminal preparation: the
+ * file is re-read through the run directory handle and must still match the
+ * registered digest and size.
+ */
+export function verifyRunDirArtifactRef(
+  runDir: StableDirectoryHandle,
+  ref: { path: string; sha256: string; sizeBytes: number },
+): boolean {
+  const read = readRunDirArtifactCandidate(runDir, ref.path)
+  if (read.result !== "read" || read.path !== ref.path) return false
+  return (
+    read.bytes.length === ref.sizeBytes &&
+    createHash("sha256").update(read.bytes).digest("hex") === ref.sha256
+  )
+}
+
+/**
+ * Validates one candidate without touching the ledger. It only reads the
+ * candidate through the admitted run directory's stable handle.
+ */
+export function evaluateRunArtifactCandidate(
+  candidate: RunArtifactCandidate,
+  context: {
+    runId: string
+    runDir?: StableDirectoryHandle
+    allowedRunDir?: string
+  },
+  isRedactionUnsafe: (text: string) => boolean,
+): RunArtifactAdmission {
+  if (typeof candidate?.path !== "string" || candidate.path.length === 0) {
+    return { result: "rejected", reason: "missing" }
+  }
+  let runDir = context.runDir ?? null
+  let transient: StableDirectoryHandle | null = null
+  if (!runDir) {
+    if (typeof context.allowedRunDir !== "string") {
+      return { result: "rejected", reason: "out_of_scope" }
+    }
+    try {
+      transient = openRegisteredStableDirectory(
+        context.allowedRunDir,
+        "Artifact run",
+      )
+    } catch {
+      return { result: "rejected", reason: "out_of_scope" }
+    }
+    runDir = transient
+  }
+  try {
+    const components = candidateRunDirComponents(
+      runDir,
+      resolve(candidate.path),
+      context.allowedRunDir,
+    )
+    if (!components) return { result: "rejected", reason: "out_of_scope" }
+    if (candidate.ownerRunId !== context.runId) {
+      try {
+        lstatSync(resolve(candidate.path))
+      } catch {
+        return { result: "rejected", reason: "missing" }
+      }
+      return { result: "rejected", reason: "ownership_mismatch" }
+    }
+    const read = readRunDirArtifactCandidate(
+      runDir,
+      candidate.path,
+      context.allowedRunDir,
+    )
+    if (read.result === "rejected") return read
+    const bytes = read.bytes
+    const sha256 = createHash("sha256").update(bytes).digest("hex")
+    const expected = candidate.expectedSha256
+    if (
+      expected !== undefined &&
+      expected !== null &&
+      sha256 !== String(expected).toLowerCase()
+    ) {
+      return { result: "rejected", reason: "digest_mismatch" }
+    }
+    if (
+      typeof candidate.media !== "string" ||
+      !MEDIA_TYPE.test(candidate.media)
+    ) {
+      return { result: "rejected", reason: "out_of_scope" }
+    }
+    // The admitted path is published with the ref, so it is checked too.
+    if (
+      isRedactionUnsafe(read.path) ||
+      isRedactionUnsafe(bytes.toString("utf8"))
+    ) {
+      return { result: "rejected", reason: "redaction_unsafe" }
+    }
+    return {
+      result: "admitted",
+      artifact: {
+        path: read.path,
+        sha256,
+        sizeBytes: bytes.length,
+        contentType: candidate.media,
+      },
+    }
+  } finally {
+    if (transient) closeStableDirectory(transient)
+  }
+}
+
+/**
+ * Admits (or rejects) one native artifact candidate for a live Run and asks
+ * the ledger's owner-gated port to commit the matching record.
+ */
+export async function admitRunArtifactCandidate(
+  candidate: RunArtifactCandidate,
+  runContext: RunArtifactRunContext,
+): Promise<RunArtifactAdmission> {
+  const port = ledgerPort(runContext.ledger)
+  if (port.runId !== runContext.runId) {
+    throw new Error("Run artifact admission context belongs to another Run")
+  }
+  const admission = evaluateRunArtifactCandidate(
+    candidate,
+    runContext,
+    (text) => port.containsSecretMaterial(text),
+  )
+  const observationKey = candidateObservationKey(candidate, runContext.runId)
+  const role = isRunArtifactNativeRole(candidate.role)
+    ? candidate.role
+    : "native-file"
+  if (admission.result === "rejected") {
+    await port.reject({
+      observationKey,
+      reason: admission.reason,
+      role,
+      native: true,
+    })
+    return admission
+  }
+  const artifact: JsonObject = {
+    role,
+    path: admission.artifact.path,
+    sha256: admission.artifact.sha256,
+    contentType: admission.artifact.contentType,
+    sizeBytes: admission.artifact.sizeBytes,
+  }
+  await port.admit({
+    observationKey,
+    artifacts: [artifact],
+    runDir: runContext.runDir?.path ?? runContext.allowedRunDir ?? "",
+    native: true,
+  })
+  return admission
+}
+
+/**
+ * Native evidence that carries content rather than a file (a runtime-reported
+ * diff): the owner stages the exact bytes as a new file inside the admitted
+ * run directory with its hardened writer, then admits it as a candidate whose
+ * expected digest is that content's digest. Content with exact secret
+ * material, or too large to stage, is rejected without writing anything; no
+ * filesystem scope outside the admitted run directory is used.
+ */
+export async function admitRunArtifactContent(
+  content: {
+    role: RunArtifactNativeRole
+    fileName: string
+    text: string
+    media: string
+    sourceKey?: string
+  },
+  runContext: { runId: string; runDir: RunArtifactRunDir; ledger: unknown },
+): Promise<RunArtifactAdmission> {
+  const port = ledgerPort(runContext.ledger)
+  if (port.runId !== runContext.runId) {
+    throw new Error("Run artifact admission context belongs to another Run")
+  }
+  const path = join(runContext.runDir.path, content.fileName)
+  const expectedSha256 = createHash("sha256")
+    .update(content.text, "utf8")
+    .digest("hex")
+  const candidate: RunArtifactCandidate = {
+    path,
+    ownerRunId: runContext.runId,
+    expectedSha256,
+    media: content.media,
+    role: content.role,
+    ...(content.sourceKey ? { sourceKey: content.sourceKey } : {}),
+  }
+  const rejectUnstaged = async (reason: RunArtifactRejectionReason) => {
+    await port.reject({
+      observationKey: candidateObservationKey(candidate, runContext.runId),
+      reason,
+      role: content.role,
+      native: true,
+    })
+    return { result: "rejected" as const, reason }
+  }
+  if (
+    basenameOnly(content.fileName) === null ||
+    Buffer.byteLength(content.text, "utf8") > MAX_ARTIFACT_BYTES
+  ) {
+    return rejectUnstaged("out_of_scope")
+  }
+  if (port.containsSecretMaterial(content.text)) {
+    return rejectUnstaged("redaction_unsafe")
+  }
+  try {
+    writeRunArtifactFile(runContext.runDir, content.fileName, content.text)
+  } catch {
+    return rejectUnstaged("out_of_scope")
+  }
+  return admitRunArtifactCandidate(candidate, {
+    runId: runContext.runId,
+    runDir: runContext.runDir,
+    ledger: runContext.ledger,
+  })
+}
+
+function basenameOnly(fileName: string): string | null {
+  return /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(fileName) &&
+    !fileName.includes("..")
+    ? fileName
+    : null
+}
+
+/**
+ * Admits already prepared lifecycle run-dir files (API create/retry initial
+ * request/events/manifest) as one `artifact_created` through the ledger's
+ * owner-gated port. Each descriptor is re-read inside the admitted run
+ * directory and must match its recorded digest and size; the admission
+ * claims no native artifact or binary and needs no execution binding.
+ */
+export async function admitRunDirArtifacts(input: {
+  runId: string
+  runDir: RunArtifactRunDir
+  artifacts: readonly RunDirArtifact[]
+  ledger: unknown
+}): Promise<void> {
+  const port = ledgerPort(input.ledger)
+  if (port.runId !== input.runId) {
+    throw new Error("Run artifact admission context belongs to another Run")
+  }
+  for (const artifact of input.artifacts) {
+    const name = relative(input.runDir.path, artifact.path)
+    if (name.length === 0 || name.startsWith("..") || isAbsolute(name)) {
+      throw new Error("Run-dir artifact escapes the admitted run directory")
+    }
+    const actual = describeRunArtifactFile(
+      artifact.role,
+      input.runDir,
+      name,
+      artifact.contentType,
+    )
+    if (
+      actual.sha256 !== artifact.sha256 ||
+      actual.sizeBytes !== artifact.sizeBytes
+    ) {
+      throw new Error("Run-dir artifact changed before admission")
+    }
+  }
+  const identity = JSON.stringify(
+    input.artifacts.map((artifact) => [artifact.role, artifact.sha256]),
+  )
+  await port.admit({
+    observationKey: `run-dir-artifacts-${createHash("sha256")
+      .update(`${input.runId}\u0000${identity}`)
+      .digest("hex")
+      .slice(0, 24)}`,
+    artifacts: input.artifacts.map((artifact) => ({ ...artifact })),
+    runDir: input.runDir.path,
+  })
+}
+
+// ---------------------------------------------------------------------------
+// Hardened run-dir file writer/reader (moved from headless/local-job-api.ts;
+// the local-job-api serializers own the v1 file names, roles and contents and
+// hand the bytes to this owner, which writes, re-reads and digests them).
+// ---------------------------------------------------------------------------
+
+export type RunArtifactFileReceipt = {
+  dev: number
+  ino: number
+  size: number
+  mtimeMs: number
+  ctimeMs: number
+}
+
+/**
+ * A run directory is authority captured at exclusive creation time, not merely
+ * a pathname that an untrusted workspace process may later replace.
+ */
+export type RunArtifactRunDir = StableDirectoryHandle & {
+  fileReceipts: Map<string, RunArtifactFileReceipt>
+}
+
+export type RunArtifactFilesystemHooks = {
+  beforeAtomicRename?: (input: { fileName: string; runDirPath: string }) => void
+}
+
+/** Public descriptor of one prepared run-dir file (v1 artifact shape). */
+export type RunDirArtifact = {
+  role: string
+  path: string
+  sha256: string
+  contentType: string
+  sizeBytes: number
+}
+
+function isSameArtifactFile(
+  stat: Stats,
+  receipt: RunArtifactFileReceipt,
+): boolean {
+  return (
+    stat.isFile() &&
+    !stat.isSymbolicLink() &&
+    stat.nlink === 1 &&
+    stat.dev === receipt.dev &&
+    stat.ino === receipt.ino &&
+    stat.size === receipt.size &&
+    stat.mtimeMs === receipt.mtimeMs &&
+    stat.ctimeMs === receipt.ctimeMs
+  )
+}
+
+export function assertRunArtifactRunDir(runDir: RunArtifactRunDir): void {
+  assertStableDirectoryPath(runDir, "Artifact run")
+}
+
+export function readRunArtifactFile(
+  directory: StableDirectoryHandle,
+  childName: string,
+  expected?: RunArtifactFileReceipt,
+): Buffer {
+  const path = join(directory.path, childName)
+  assertStableDirectoryPath(directory, "Artifact directory")
+  const operationPath = stableDirectoryChildPath(directory, childName)
+  const before = lstatSync(operationPath)
+  if (before.isSymbolicLink() || !before.isFile() || before.nlink !== 1) {
+    throw new Error(`Artifact must be a single-link regular file: ${path}`)
+  }
+  if (expected && !isSameArtifactFile(before, expected)) {
+    throw new Error(`Artifact file identity changed during the run: ${path}`)
+  }
+
+  const fd = openSync(
+    operationPath,
+    constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0),
+  )
+  try {
+    const opened = fstatSync(fd)
+    const stableReceipt: RunArtifactFileReceipt = {
+      dev: before.dev,
+      ino: before.ino,
+      size: before.size,
+      mtimeMs: before.mtimeMs,
+      ctimeMs: before.ctimeMs,
+    }
+    if (!isSameArtifactFile(opened, stableReceipt)) {
+      throw new Error(`Artifact changed while opening it: ${path}`)
+    }
+    const chunks: Buffer[] = []
+    const buffer = Buffer.allocUnsafe(64 * 1024)
+    while (true) {
+      const bytesRead = readSync(fd, buffer, 0, buffer.length, null)
+      if (bytesRead === 0) break
+      chunks.push(Buffer.from(buffer.subarray(0, bytesRead)))
+    }
+    if (!isSameArtifactFile(fstatSync(fd), stableReceipt)) {
+      throw new Error(`Artifact changed while reading it: ${path}`)
+    }
+    assertStableDirectoryPath(directory, "Artifact directory")
+    return Buffer.concat(chunks)
+  } finally {
+    closeSync(fd)
+  }
+}
+
+function artifactFileReceipt(stat: Stats): RunArtifactFileReceipt {
+  return {
+    dev: stat.dev,
+    ino: stat.ino,
+    size: stat.size,
+    mtimeMs: stat.mtimeMs,
+    ctimeMs: stat.ctimeMs,
+  }
+}
+
+function validateArtifactTargetBeforeWrite(
+  runDir: RunArtifactRunDir,
+  fileName: string,
+): void {
+  const targetPath = join(runDir.path, fileName)
+  const operationPath = stableDirectoryChildPath(runDir, fileName)
+  const expected = runDir.fileReceipts.get(fileName)
+  let stat: Stats
+  try {
+    stat = lstatSync(operationPath)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
+    if (expected) {
+      throw new Error(`Artifact disappeared during the run: ${targetPath}`)
+    }
+    return
+  }
+  if (stat.isSymbolicLink() || !stat.isFile() || stat.nlink !== 1) {
+    throw new Error(
+      `Artifact target is not a single-link regular file: ${targetPath}`,
+    )
+  }
+  if (!expected) {
+    throw new Error(`Unexpected artifact target already exists: ${targetPath}`)
+  }
+  if (!isSameArtifactFile(stat, expected)) {
+    throw new Error(
+      `Artifact file identity changed during the run: ${targetPath}`,
+    )
+  }
+}
+
+export function writeRunArtifactFile(
+  runDir: RunArtifactRunDir,
+  fileName: string,
+  content: string,
+  hooks?: RunArtifactFilesystemHooks,
+): string {
+  assertRunArtifactRunDir(runDir)
+  validateArtifactTargetBeforeWrite(runDir, fileName)
+  const targetPath = join(runDir.path, fileName)
+  const targetOperationPath = stableDirectoryChildPath(runDir, fileName)
+  const tempName = `.${fileName}.locus-${process.pid}-${randomUUID()}.tmp`
+  const tempOperationPath = stableDirectoryChildPath(runDir, tempName)
+  let fd: number | null = null
+  let tempExists = false
+  let tempReceipt: RunArtifactFileReceipt | null = null
+
+  try {
+    fd = openSync(
+      tempOperationPath,
+      constants.O_CREAT |
+        constants.O_EXCL |
+        constants.O_WRONLY |
+        (constants.O_NOFOLLOW ?? 0),
+      0o600,
+    )
+    tempExists = true
+    fchmodSync(fd, 0o600)
+    const bytes = Buffer.from(content, "utf8")
+    let offset = 0
+    while (offset < bytes.length) {
+      const written = writeSync(
+        fd,
+        bytes,
+        offset,
+        bytes.length - offset,
+        offset,
+      )
+      if (written <= 0) {
+        throw new Error(
+          `Failed to make progress writing artifact: ${targetPath}`,
+        )
+      }
+      offset += written
+    }
+    const tempStat = fstatSync(fd)
+    if (!tempStat.isFile() || tempStat.nlink !== 1) {
+      throw new Error(`Artifact temp file link count changed: ${targetPath}`)
+    }
+    tempReceipt = artifactFileReceipt(tempStat)
+    fsyncSync(fd)
+    closeSync(fd)
+    fd = null
+
+    assertRunArtifactRunDir(runDir)
+    validateArtifactTargetBeforeWrite(runDir, fileName)
+    if (
+      !tempReceipt ||
+      !isSameArtifactFile(lstatSync(tempOperationPath), tempReceipt)
+    ) {
+      throw new Error(`Artifact temp file identity changed: ${targetPath}`)
+    }
+    hooks?.beforeAtomicRename?.({
+      fileName,
+      runDirPath: runDir.path,
+    })
+    renameSync(tempOperationPath, targetOperationPath)
+    tempExists = false
+
+    fsyncStableDirectory(runDir, "Artifact run")
+    assertRunArtifactRunDir(runDir)
+    const installed = lstatSync(targetOperationPath)
+    if (
+      installed.isSymbolicLink() ||
+      !installed.isFile() ||
+      installed.nlink !== 1 ||
+      !tempReceipt ||
+      installed.dev !== tempReceipt.dev ||
+      installed.ino !== tempReceipt.ino ||
+      installed.size !== tempReceipt.size ||
+      installed.mtimeMs !== tempReceipt.mtimeMs
+    ) {
+      throw new Error(
+        `Installed artifact is not a single-link regular file: ${targetPath}`,
+      )
+    }
+    runDir.fileReceipts.set(fileName, artifactFileReceipt(installed))
+    return targetPath
+  } catch (error) {
+    let cleanupError: unknown = null
+    if (fd !== null) {
+      try {
+        closeSync(fd)
+      } catch (error) {
+        cleanupError = error
+      }
+    }
+    if (tempExists) {
+      try {
+        unlinkSync(tempOperationPath)
+        fsyncStableDirectory(runDir, "Artifact run")
+      } catch (error) {
+        cleanupError ??= error
+      }
+    }
+    if (cleanupError) {
+      throw new Error("Failed to clean up an atomic artifact temp file", {
+        cause: cleanupError,
+      })
+    }
+    throw error
+  }
+}
+
+/**
+ * Publishes a staged run-dir file under its final name (design "Artifacts
+ * and Terminal Commit Order": terminal files are prepared under staged names
+ * and published after the SQL commit). The staged file must still be the
+ * one this owner wrote; the final target must be absent or the file this
+ * owner last installed there; the rename is atomic and the installed file
+ * must keep the staged identity as a single-link regular file.
+ */
+export function publishRunArtifactFile(
+  runDir: RunArtifactRunDir,
+  stagedName: string,
+  finalName: string,
+  hooks?: RunArtifactFilesystemHooks,
+): string {
+  assertRunArtifactRunDir(runDir)
+  const targetPath = join(runDir.path, finalName)
+  const stagedReceipt = runDir.fileReceipts.get(stagedName)
+  const stagedOperationPath = stableDirectoryChildPath(runDir, stagedName)
+  if (
+    !stagedReceipt ||
+    !isSameArtifactFile(lstatSync(stagedOperationPath), stagedReceipt)
+  ) {
+    throw new Error(`Staged artifact identity changed: ${targetPath}`)
+  }
+  validateArtifactTargetBeforeWrite(runDir, finalName)
+  hooks?.beforeAtomicRename?.({
+    fileName: finalName,
+    runDirPath: runDir.path,
+  })
+  const targetOperationPath = stableDirectoryChildPath(runDir, finalName)
+  renameSync(stagedOperationPath, targetOperationPath)
+  runDir.fileReceipts.delete(stagedName)
+  fsyncStableDirectory(runDir, "Artifact run")
+  assertRunArtifactRunDir(runDir)
+  const installed = lstatSync(targetOperationPath)
+  if (
+    installed.isSymbolicLink() ||
+    !installed.isFile() ||
+    installed.nlink !== 1 ||
+    installed.dev !== stagedReceipt.dev ||
+    installed.ino !== stagedReceipt.ino ||
+    installed.size !== stagedReceipt.size ||
+    installed.mtimeMs !== stagedReceipt.mtimeMs
+  ) {
+    throw new Error(
+      `Installed artifact is not a single-link regular file: ${targetPath}`,
+    )
+  }
+  runDir.fileReceipts.set(finalName, artifactFileReceipt(installed))
+  return targetPath
+}
+
+/**
+ * Removes a staged run-dir file this owner wrote (identified by its
+ * receipt). A file that is no longer the staged one is left in place.
+ */
+export function discardRunArtifactFile(
+  runDir: RunArtifactRunDir,
+  stagedName: string,
+): void {
+  const receipt = runDir.fileReceipts.get(stagedName)
+  if (!receipt) return
+  runDir.fileReceipts.delete(stagedName)
+  if (runDir.closed) return
+  assertRunArtifactRunDir(runDir)
+  const operationPath = stableDirectoryChildPath(runDir, stagedName)
+  let stat: Stats
+  try {
+    stat = lstatSync(operationPath)
+  } catch (error) {
+    if (isMissingPathError(error)) return
+    throw error
+  }
+  if (!isSameArtifactFile(stat, receipt)) return
+  unlinkSync(operationPath)
+  fsyncStableDirectory(runDir, "Artifact run")
+}
+
+export function describeRunArtifactFile(
+  role: string,
+  runDir: RunArtifactRunDir,
+  fileName: string,
+  contentType = "application/json",
+): RunDirArtifact {
+  const publicPath = join(runDir.path, fileName)
+  const content = readRunArtifactFile(
+    runDir,
+    fileName,
+    runDir.fileReceipts.get(fileName),
+  )
+  const hash = createHash("sha256")
+  hash.update(content)
+  return {
+    role,
+    path: publicPath,
+    sha256: hash.digest("hex"),
+    contentType,
+    sizeBytes: content.byteLength,
+  }
+}

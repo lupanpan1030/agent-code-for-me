@@ -1,13 +1,14 @@
 import type { AgentJobMode } from "../../../shared/agent-jobs"
 import {
   createDesktopRunContextFromPreflight,
-  getDesktopRunRequestedCapabilities,
   type DesktopRunProviderBinding,
   type DesktopRunRequest,
+  getDesktopRunRequestedCapabilities,
 } from "../agent-runtime/desktop-run-request"
 import type { DesktopPermissionPolicy } from "../agent-runtime/permission-policy"
 import type { DesktopRunPreflightResult } from "../agent-runtime/preflight"
-import type { RunEvent } from "../agent-runtime/runtime-events"
+import type { RuntimeExecutionProvenance } from "../agent-runtime/run-event-ledger"
+import type { CanonicalDesktopRunLedger } from "../agent-runtime/run-event-ledger-host"
 
 export type ClaudeDesktopRunImageAttachment = {
   attachmentId?: string
@@ -38,7 +39,10 @@ export type CreateClaudeDesktopRunRequestInput = {
   signal: AbortSignal
   resumeSessionId?: string | null
   parentSessionId?: string | null
-  emitTrace: (event: RunEvent) => void
+  /** The desktop job's host-composed ledger. */
+  ledger?: CanonicalDesktopRunLedger | null
+  /** The execution tuple the host bound to that ledger (host-only). */
+  executionProvenance?: RuntimeExecutionProvenance | null
 }
 
 export type CreateClaudeDesktopRunRequestFromRuntimeStartupInput = Omit<
@@ -85,7 +89,8 @@ export function createClaudeDesktopRunRequest({
   signal,
   resumeSessionId,
   parentSessionId,
-  emitTrace,
+  ledger = null,
+  executionProvenance = null,
 }: CreateClaudeDesktopRunRequestInput): DesktopRunRequest {
   return {
     identity: {
@@ -131,9 +136,8 @@ export function createClaudeDesktopRunRequest({
         byteLength: attachment.byteLength,
       })),
     ],
-    trace: {
-      emit: emitTrace,
-    },
+    ledger,
+    ...(executionProvenance ? { executionProvenance } : {}),
     signal,
     session: {
       resumeSessionId,

@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, mock, test } from "bun:test"
 import type { DesktopRunRequest } from "../src/main/lib/agent-runtime/desktop-run-request"
 import { resolveDesktopPermissionPolicy } from "../src/main/lib/agent-runtime/permission-policy"
-import type { RunEvent } from "../src/main/lib/agent-runtime/runtime-events"
 import {
   clearClaudeActiveSessionsForTest,
   getActiveClaudeSession,
@@ -15,7 +14,23 @@ import {
 import type { ClaudeAgentSdkQuery } from "../src/main/lib/claude/agent-sdk-query-loader"
 import type { ClaudeAgentSdkQueryParams } from "../src/main/lib/claude/agent-sdk-query-options"
 
-function createRequest(emittedEvents: RunEvent[] = []): DesktopRunRequest {
+type LedgerCall = { port: string; input: Record<string, unknown> }
+
+/** Spy for the Run's host ledger ports the adapter submits to. */
+function createLedgerSpy(calls: LedgerCall[] = []) {
+  return {
+    appendSystemEvent: async (input: Record<string, unknown>) => {
+      calls.push({ port: "appendSystemEvent", input })
+      return []
+    },
+    ingestClaudeMessage: async (input: Record<string, unknown>) => {
+      calls.push({ port: "ingestClaudeMessage", input })
+      return []
+    },
+  }
+}
+
+function createRequest(ledgerCalls: LedgerCall[] = []): DesktopRunRequest {
   const controller = new AbortController()
   setActiveClaudeSession("sub-1", { controller, runId: "run-1" })
   return {
@@ -36,7 +51,7 @@ function createRequest(emittedEvents: RunEvent[] = []): DesktopRunRequest {
     providerBinding: {},
     mcp: { status: "skipped", serverNames: [], blockers: [] },
     attachments: [],
-    trace: { emit: (event) => emittedEvents.push(event) },
+    ledger: createLedgerSpy(ledgerCalls) as never,
     signal: controller.signal,
     session: {},
   }
@@ -52,8 +67,8 @@ describe("Claude Agent SDK adapter", () => {
   })
 
   test("starts the SDK query inside DesktopRuntimeAdapter.run and hands off the stream", async () => {
-    const emittedEvents: RunEvent[] = []
-    const request = createRequest(emittedEvents)
+    const ledgerCalls: LedgerCall[] = []
+    const request = createRequest(ledgerCalls)
     const queryOptions = { prompt: "hello", options: {} } as any
     const queryCalls: any[] = []
     const consumedMessages: any[] = []
@@ -83,26 +98,76 @@ describe("Claude Agent SDK adapter", () => {
     })
     expect(queryCalls).toEqual([queryOptions])
     expect(consumedMessages).toEqual([{ type: "message", text: "hello" }])
-    expect(emittedEvents).toHaveLength(1)
-    expect(emittedEvents[0]).toMatchObject({
-      runId: "run-1",
-      jobId: "job-1",
-      runtimeId: "claude-code",
-      sequence: 0,
-      type: "status",
-      payload: {
-        status: "desktop_runtime_adapter_started",
-        adapterSource: "claude-agent-sdk",
-        adapterLabel: "Claude Agent SDK",
-        attempt: 1,
-        temporaryFallback: false,
-        fallbackReason: null,
-      },
-      redaction: {
-        status: "not-required",
-        appliedRules: [],
+    // refactor-canonical-run-event-ledger (APPROVED design): the adapter-started
+    // host fact goes through the Run ledger's appendSystemEvent instead of a
+    // sequence=0 RunEvent; the ledger assigns sequence and redaction.
+    expect(ledgerCalls).toHaveLength(1)
+    expect(ledgerCalls[0]).toMatchObject({
+      port: "appendSystemEvent",
+      input: {
+        type: "status",
+        payload: {
+          status: "desktop_runtime_adapter_started",
+          adapterSource: "claude-agent-sdk",
+          adapterLabel: "Claude Agent SDK",
+          attempt: 1,
+          temporaryFallback: false,
+          fallbackReason: null,
+        },
       },
     })
+  })
+
+  test("forwards the query's correlated system/init and result messages with the resume intent to the Run ledger", async () => {
+    const ledgerCalls: LedgerCall[] = []
+    const request = createRequest(ledgerCalls)
+    const adapter = createClaudeAgentSdkAdapter({
+      query: (() =>
+        (async function* () {
+          yield {
+            type: "system",
+            subtype: "init",
+            session_id: "session-1",
+            tools: ["Read"],
+          }
+          yield { type: "assistant", message: { content: [] } }
+          yield {
+            type: "result",
+            subtype: "success",
+            is_error: false,
+            result: "done",
+          }
+        })()) as unknown as ClaudeAgentSdkQuery,
+      queryOptions: {
+        prompt: "hello",
+        options: { resume: "session-1", forkSession: false },
+      } as unknown as ClaudeAgentSdkQueryParams,
+      consumeStream: async ({ stream }) => {
+        for await (const _message of stream) {
+          // consume
+        }
+        return { status: "succeeded", sessionId: "session-1" }
+      },
+    })
+
+    await adapter.run(request)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    const forwarded = ledgerCalls.filter(
+      (call) => call.port === "ingestClaudeMessage",
+    )
+    expect(forwarded.map((call) => call.input.message)).toEqual([
+      { type: "system", subtype: "init", session_id: "session-1" },
+      { type: "result", subtype: "success" },
+    ])
+    for (const call of forwarded) {
+      expect(call.input.queryId).toBe("claude-query:run-1")
+      expect(call.input.resumeIntent).toEqual({
+        queryId: "claude-query:run-1",
+        resume: "session-1",
+        forkSession: false,
+      })
+    }
   })
 
   test("loads the SDK query inside the adapter when a query is not injected", async () => {

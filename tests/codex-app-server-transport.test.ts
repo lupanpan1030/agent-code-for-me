@@ -286,6 +286,39 @@ describe("Codex app-server stdio transport", () => {
     await transport.close()
   })
 
+  test("hands each request's JSON-RPC wire id to onSent before writing it (T2-8 / S-03)", async () => {
+    const child = new FakeChildProcess()
+    const transport = createCodexAppServerStdioTransport({
+      executable: "/bin/codex",
+      spawnProcess: fakeSpawn(child),
+    })
+    const sent: Array<string | number> = []
+    const firstWritten = nextWrittenProtocolMessage(child)
+    const first = transport.request(
+      "initialize",
+      { clientInfo: { name: "test" }, capabilities: {} },
+      { onSent: (id) => sent.push(id) },
+    )
+    const firstMessage = await firstWritten
+    const secondWritten = nextWrittenProtocolMessage(child)
+    const second = transport.request(
+      "mcpServerStatus/list",
+      {},
+      { onSent: (id) => sent.push(id) },
+    )
+    const secondMessage = await secondWritten
+    expect(sent).toEqual([firstMessage.id, secondMessage.id])
+    expect(firstMessage.id).not.toBe(secondMessage.id)
+
+    child.stdout.write(`${JSON.stringify({ id: sent[0], result: {} })}\n`)
+    child.stdout.write(
+      `${JSON.stringify({ id: sent[1], error: { code: -32601, message: "nope" } })}\n`,
+    )
+    await expect(first).resolves.toEqual({})
+    await expect(second).rejects.toMatchObject({ code: -32601 })
+    await transport.close()
+  })
+
   test("rejects requests made after the app-server has already exited", async () => {
     const child = new FakeChildProcess()
     const transport = createCodexAppServerStdioTransport({

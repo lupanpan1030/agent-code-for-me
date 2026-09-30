@@ -1,0 +1,188 @@
+{
+  "fixtureVersion": 1,
+  "evidenceClass": "synthetic",
+  "sourceRefs": [
+    "openspec/changes/refactor-canonical-run-event-ledger/design.md Durable Schema and Store Invariants; Migration Plan; D9 history",
+    "openspec/changes/refactor-canonical-run-event-ledger/specs/agent-runtime-core/spec.md#Historical rows remain explicitly unverified",
+    "src/main/lib/agent-runtime/stream-event-mapper.ts persistedPayloadForRunEvent (pre-ledger desktop wrapper shape)",
+    "drizzle/ 0000-0023 (pre-ledger schema)"
+  ],
+  "provenance": {
+    "author": "independent red-suite author (domain C)",
+    "measured": false,
+    "note": "Pre-ledger rows inserted with the 0000-0023 schema before the ledger migration is applied. tasks 7.15 names legacy-store.json for the ledger-open scenario; that file is left to the core-domain author, so this migration-cutover input is kept separate. Payload strings are exact bytes (including non-canonical spacing) that must survive the migration unchanged."
+  },
+  "cases": [
+    {
+      "caseId": "legacy-migration",
+      "lastPreLedgerMigrationIdx": 23,
+      "jobs": [
+        {
+          "id": "job-legacy-desktop",
+          "source": "desktop",
+          "runtime": "claude-code",
+          "status": "succeeded",
+          "mode": "agent",
+          "cwd": "/fixture/legacy",
+          "created_at": 1785000000,
+          "finished_at": 1785000010,
+          "result_json": null
+        },
+        {
+          "id": "job-legacy-api",
+          "source": "api",
+          "runtime": "codex",
+          "status": "succeeded",
+          "mode": "agent",
+          "cwd": "/fixture/legacy",
+          "created_at": 1785000100,
+          "finished_at": 1785000110,
+          "result_json": "{\"finalMessage\":\"hello\"}",
+          "api_consumer_id": "legacy-consumer",
+          "api_consumer_run_id": "legacy-001"
+        },
+        {
+          "id": "job-legacy-incomplete",
+          "source": "api",
+          "runtime": "codex",
+          "status": "interrupted",
+          "mode": "agent",
+          "cwd": "/fixture/legacy",
+          "created_at": 1785000200,
+          "finished_at": 1785000260,
+          "result_json": null,
+          "api_consumer_id": "legacy-consumer",
+          "api_consumer_run_id": "legacy-002",
+          "error_code": "worker_interrupted",
+          "error_message": "Worker heartbeat was lost."
+        }
+      ],
+      "events": [
+        {
+          "id": "legacy-d-1",
+          "job_id": "job-legacy-desktop",
+          "sequence": 1,
+          "type": "job_created",
+          "payload_json": "{\"kind\":\"agent\",\"source\":\"desktop\",\"runtime\":\"claude-code\"}",
+          "created_at": 1785000000
+        },
+        {
+          "id": "legacy-d-2",
+          "job_id": "job-legacy-desktop",
+          "sequence": 2,
+          "type": "job_started",
+          "payload_json": "{\"workerId\":\"desktop\"}",
+          "created_at": 1785000001
+        },
+        {
+          "id": "legacy-d-3",
+          "job_id": "job-legacy-desktop",
+          "sequence": 3,
+          "type": "assistant_delta",
+          "payload_json": "{\"runId\":\"desktop-run-legacy\",\"runtimeId\":\"claude-code\",\"runEventSequence\":7,\"redaction\":{\"status\":\"not-required\",\"appliedRules\":[]},\"payload\":{\"id\":\"text-1\",\"delta\":\"legacy hello\"}}",
+          "created_at": 1785000002
+        },
+        {
+          "id": "legacy-d-4",
+          "job_id": "job-legacy-desktop",
+          "sequence": 4,
+          "type": "completed",
+          "payload_json": "{\"runId\":\"desktop-run-legacy\",\"runtimeId\":\"claude-code\",\"runEventSequence\":9,\"redaction\":{\"status\":\"not-required\",\"appliedRules\":[]},\"payload\":{\"status\":\"succeeded\"}}",
+          "created_at": 1785000010
+        },
+        {
+          "id": "legacy-a-1",
+          "job_id": "job-legacy-api",
+          "sequence": 1,
+          "type": "job_created",
+          "payload_json": "{\"kind\":\"agent\",\"source\":\"api\",\"runtime\":\"codex\"}",
+          "created_at": 1785000100
+        },
+        {
+          "id": "legacy-a-2",
+          "job_id": "job-legacy-api",
+          "sequence": 2,
+          "type": "artifact_created",
+          "payload_json": "{\"artifacts\":[]}",
+          "created_at": 1785000101
+        },
+        {
+          "id": "legacy-a-3",
+          "job_id": "job-legacy-api",
+          "sequence": 3,
+          "type": "job_started",
+          "payload_json": "{\"workerId\":\"legacy-worker\"}",
+          "created_at": 1785000102
+        },
+        {
+          "id": "legacy-a-4",
+          "job_id": "job-legacy-api",
+          "sequence": 4,
+          "type": "assistant_delta",
+          "payload_json": "{\"text\": \"hello\"}",
+          "created_at": 1785000103
+        },
+        {
+          "id": "legacy-a-5",
+          "job_id": "job-legacy-api",
+          "sequence": 5,
+          "type": "command_started",
+          "payload_json": "{\"command\":\"ls\"}",
+          "created_at": 1785000104
+        },
+        {
+          "id": "legacy-a-6",
+          "job_id": "job-legacy-api",
+          "sequence": 6,
+          "type": "completed",
+          "payload_json": "{\"status\":\"succeeded\",\"exitCode\":0}",
+          "created_at": 1785000110
+        },
+        {
+          "id": "legacy-a-7",
+          "job_id": "job-legacy-api",
+          "sequence": 7,
+          "type": "completed",
+          "payload_json": "{\"status\":\"succeeded\",\"note\":\"historical duplicate terminal row kept as-is\"}",
+          "created_at": 1785000111
+        },
+        {
+          "id": "legacy-i-1",
+          "job_id": "job-legacy-incomplete",
+          "sequence": 1,
+          "type": "job_created",
+          "payload_json": "{\"kind\":\"agent\",\"source\":\"api\",\"runtime\":\"codex\"}",
+          "created_at": 1785000200
+        },
+        {
+          "id": "legacy-i-2",
+          "job_id": "job-legacy-incomplete",
+          "sequence": 2,
+          "type": "job_started",
+          "payload_json": "{\"workerId\":\"legacy-worker-2\"}",
+          "created_at": 1785000201
+        },
+        {
+          "id": "legacy-i-3",
+          "job_id": "job-legacy-incomplete",
+          "sequence": 3,
+          "type": "error",
+          "payload_json": "{\"status\":\"interrupted\",\"errorCode\":\"worker_interrupted\"}",
+          "created_at": 1785000260
+        }
+      ],
+      "expected": {
+        "ledgerVersion": 0,
+        "historyQuality": "legacy_unverified",
+        "newAgentJobsColumns": [
+          "ledger_version",
+          "ledger_provenance_json",
+          "ledger_sealed_sequence"
+        ],
+        "newAgentJobEventsColumns": ["fact_key", "record_metadata_json"],
+        "cursorTable": "agent_job_projection_cursors",
+        "cursorColumns": ["job_id", "projection_name", "acknowledged_sequence"]
+      }
+    }
+  ]
+}
