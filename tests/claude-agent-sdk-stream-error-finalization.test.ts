@@ -131,7 +131,10 @@ describe("Claude Agent SDK stream error finalization", () => {
     })
   })
 
-  test("clears expired session ids before preserving empty error stream state", async () => {
+  // refactor-canonical-run-event-ledger tasks 6.3 (APPROVED design; red-receipt
+  // §8.4): a native resume rejection keeps the existing session binding; the
+  // former expiry inference and sessionId clearing are removed.
+  test("keeps the session id on a native resume rejection while preserving empty error stream state", async () => {
     const db = createAgentJobTestDb()
     seedChat(db)
     const input = {
@@ -147,20 +150,23 @@ describe("Claude Agent SDK stream error finalization", () => {
     ).resolves.toMatchObject({
       status: "failed",
       error: {
-        message: "Previous session expired. Please try again.",
-        code: "SESSION_EXPIRED",
+        message: "Claude could not resume the previous session",
+        code: "NATIVE_RESUME_REJECTED",
       },
     })
 
     expect(input.log).toHaveBeenCalledWith(
-      "[claude] Session not found - clearing invalid sessionId from database",
+      "[claude] Native resume rejected; the session binding is unchanged",
     )
     expect(
       db.select().from(subChats).where(eq(subChats.id, "sub-1")).get(),
     ).toMatchObject({
-      sessionId: null,
+      sessionId: "old-session",
       streamId: "stream-1",
     })
+    expect(JSON.stringify(input.emit.mock.calls).toLowerCase()).not.toContain(
+      "expired",
+    )
   })
 
   test("passes exact run secret hints through partial error persistence", async () => {
