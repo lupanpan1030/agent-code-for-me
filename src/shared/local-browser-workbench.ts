@@ -318,56 +318,6 @@ export const LOCAL_BROWSER_DIAGNOSTIC_PROBES = Object.freeze({
 export type LocalBrowserDiagnosticProbe =
   keyof typeof LOCAL_BROWSER_DIAGNOSTIC_PROBES
 
-export function createLocalBrowserDomSummaryScript(): string {
-  return `(() => {
-    const textOf = (element) => (element.innerText || element.textContent || element.getAttribute("aria-label") || element.getAttribute("title") || "").replace(/\\s+/g, " ").trim().slice(0, 160);
-    const collect = (selector, limit) => Array.from(document.querySelectorAll(selector)).map(textOf).filter(Boolean).slice(0, limit);
-    const active = document.activeElement && document.activeElement !== document.body ? textOf(document.activeElement) || document.activeElement.tagName.toLowerCase() : null;
-    return {
-      title: document.title || "",
-      url: location.href,
-      activeElement: active,
-      headings: collect("h1, h2, h3", 12),
-      buttons: collect("button, [role='button']", 12),
-      links: Array.from(document.querySelectorAll("a")).map((element) => {
-        const label = textOf(element);
-        const href = element.getAttribute("href") || "";
-        return label ? href ? label + " -> " + href : label : href;
-      }).filter(Boolean).slice(0, 12),
-      inputs: Array.from(document.querySelectorAll("input, textarea, select")).map((element) => {
-        const label = element.getAttribute("aria-label") || element.getAttribute("placeholder") || element.getAttribute("name") || element.id || element.tagName.toLowerCase();
-        return String(label).replace(/\\s+/g, " ").trim().slice(0, 160);
-      }).filter(Boolean).slice(0, 12),
-      textSample: (document.body ? document.body.innerText : "").replace(/\\s+/g, " ").trim().slice(0, 600),
-    };
-  })()`
-}
-
-export function createLocalBrowserClickTrackerScript(): string {
-  return `(() => {
-    if (window.__LOCUS_LOCAL_BROWSER_CLICK_TRACKER__) return true;
-    window.__LOCUS_LOCAL_BROWSER_CLICK_TRACKER__ = true;
-    const describe = (node) => {
-      const element = node && node.nodeType === Node.ELEMENT_NODE ? node : node?.parentElement;
-      if (!element) return null;
-      const parts = [element.tagName.toLowerCase()];
-      const id = element.getAttribute("id");
-      if (id) parts.push("#" + id);
-      const testId = element.getAttribute("data-testid");
-      if (testId) parts.push("[data-testid='" + testId + "']");
-      const role = element.getAttribute("role");
-      if (role) parts.push("[role='" + role + "']");
-      const label = element.getAttribute("aria-label") || element.getAttribute("title") || element.innerText || element.textContent || "";
-      const text = String(label).replace(/\\s+/g, " ").trim().slice(0, 140);
-      return text ? parts.join("") + " - " + text : parts.join("");
-    };
-    document.addEventListener("click", (event) => {
-      window.__LOCUS_LAST_CLICKED_ELEMENT__ = describe(event.target);
-    }, true);
-    return true;
-  })()`
-}
-
 function withDefaultScheme(input: string): string {
   if (/^\d{2,5}$/.test(input)) return `http://localhost:${input}`
   if (input.startsWith("[::1]") || input.startsWith("localhost") || input.startsWith("127.0.0.1")) {
