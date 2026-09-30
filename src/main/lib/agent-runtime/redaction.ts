@@ -7,10 +7,42 @@ import type { JsonValue, RunEventRedactionContext } from "./runtime-events"
 const SECRET_KEY_PATTERN =
   /(?:api[_-]?key|(?:^|[_-])token(?:$|[_-])|access[_-]?token|refresh[_-]?token|auth[_-]?token|gateway[_-]?token|authorization|cookie|password|secret|client[_-]?secret|oauth)/i
 
+/**
+ * Durable-record key rule: the job store's storage key rule, kept after the
+ * ledger took ownership of persistence. It is broader than
+ * {@link SECRET_KEY_PATTERN} (camelCase `*Token` keys, `DB_PASSWORD`, …) and
+ * applies to persisted Run records only; runtime and renderer redaction keep
+ * {@link SECRET_KEY_PATTERN} unchanged.
+ */
+const PERSISTED_SECRET_KEY_PATTERN =
+  /token|authorization|api[-_]?key|secret|password/i
+
+/**
+ * Numeric token-count members (usage vectors and job results) are counts, not
+ * credentials: the store's exemption keeps `inputTokens`, `totalTokens`, …
+ * and the usage-vector counts (`cachedInputTokens`, `reasoningOutputTokens`,
+ * snake_case `input_tokens`) readable when their value is a number.
+ */
+const PERSISTED_TOKEN_COUNT_KEY_PATTERN = /tokens$/i
+
+function isPersistedSecretKey(key: string, value: JsonValue): boolean {
+  if (value === null) return false
+  if (
+    typeof value === "number" &&
+    PERSISTED_TOKEN_COUNT_KEY_PATTERN.test(key)
+  ) {
+    return false
+  }
+  return PERSISTED_SECRET_KEY_PATTERN.test(key)
+}
+
 type SecretTextPattern = {
   pattern: RegExp
-  /** Replacement for one match; defaults to keeping a `key=`/`key:` prefix. */
-  replace?: (match: string) => string
+  /**
+   * Replacement for one match (receives the capture groups); defaults to
+   * keeping a `key=`/`key:` prefix.
+   */
+  replace?: (match: string, ...groups: string[]) => string
 }
 
 const SECRET_TEXT_PATTERNS: readonly SecretTextPattern[] = [
@@ -57,8 +89,8 @@ const UNTRUSTED_DIAGNOSTIC_TEXT_PATTERNS: readonly SecretTextPattern[] = [
  * and the terminal job-row projection). They extend the runtime patterns
  * with the credential formats the job store used to scrub before the
  * canonical ledger owned persistence: PEM private-key blocks, GitHub tokens,
- * bare JWTs, Basic authorization, provider environment assignments and
- * token-bearing URL query parameters.
+ * bare JWTs, Basic authorization, the generic provider/`api_key`/`secret`/
+ * `password` assignment arm and token-bearing URL query parameters.
  */
 const PERSISTED_RECORD_TEXT_PATTERNS: readonly SecretTextPattern[] = [
   {
@@ -75,9 +107,16 @@ const PERSISTED_RECORD_TEXT_PATTERNS: readonly SecretTextPattern[] = [
     pattern: /authorization\s*:\s*basic\s+[A-Za-z0-9+/=_-]+/gi,
     replace: () => "Authorization: Basic <redacted>",
   },
+  // The job store's generic credential arm with its original permissive
+  // separator (quotes, `=`, `:`, whitespace) and value classes: it covers
+  // provider environment assignments and generic `api_key`/`secret`/
+  // `password` values of any length (`DB_PASSWORD=hunter2`,
+  // `{"password":"p@ssw0rd!"}`, `api_key hunter22`). The key and separator
+  // are kept; only the value is replaced.
   {
     pattern:
-      /(?:anthropic_auth_token|openai_api_key|codex_api_key|github_token|npm_token|aws_secret_access_key|aws_session_token|id_token)["'=:\s]+["']?[^\s"',;]+/gi,
+      /((?:access_token|refresh_token|id_token|anthropic_auth_token|openai_api_key|codex_api_key|github_token|npm_token|aws_secret_access_key|aws_session_token|api[-_]?key|secret|password)["'=:\s]+)["']?[^\s"',;]+/gi,
+    replace: (_match, prefix) => `${prefix}<redacted>`,
   },
   {
     pattern:
@@ -333,30 +372,39 @@ function redactString(
   return redacted
 }
 
+type RedactionRules = {
+  textPatterns: readonly SecretTextPattern[]
+  /** Extra key rule beyond {@link SECRET_KEY_PATTERN} (persisted path only). */
+  isExtraSecretKey?: (key: string, value: JsonValue) => boolean
+}
+
 function redactValue(
   value: JsonValue,
   appliedRules: Set<string>,
   secretHints: readonly string[],
-  textPatterns: readonly SecretTextPattern[],
+  rules: RedactionRules,
 ): JsonValue {
   if (typeof value === "string") {
-    return redactString(value, appliedRules, secretHints, textPatterns)
+    return redactString(value, appliedRules, secretHints, rules.textPatterns)
   }
   if (Array.isArray(value)) {
     return value.map((item) =>
-      redactValue(item, appliedRules, secretHints, textPatterns),
+      redactValue(item, appliedRules, secretHints, rules),
     )
   }
   if (!isJsonObject(value)) return value
 
   const output: { [key: string]: JsonValue } = {}
   for (const [key, child] of Object.entries(value)) {
-    if (SECRET_KEY_PATTERN.test(key)) {
+    if (
+      SECRET_KEY_PATTERN.test(key) ||
+      rules.isExtraSecretKey?.(key, child) === true
+    ) {
       appliedRules.add("secret-key")
       output[key] = "<redacted>"
       continue
     }
-    output[key] = redactValue(child, appliedRules, secretHints, textPatterns)
+    output[key] = redactValue(child, appliedRules, secretHints, rules)
   }
   return output
 }
@@ -364,12 +412,12 @@ function redactValue(
 function redactPayloadWith(
   payload: JsonValue,
   secretHints: readonly string[] | undefined,
-  textPatterns: readonly SecretTextPattern[],
+  rules: RedactionRules,
 ): RuntimeRedactionResult {
   const appliedRules = new Set<string>()
   const normalizedHints = normalizeExactSecretHints(secretHints)
   return {
-    payload: redactValue(payload, appliedRules, normalizedHints, textPatterns),
+    payload: redactValue(payload, appliedRules, normalizedHints, rules),
     appliedRules: [...appliedRules].sort(),
   }
 }
@@ -378,23 +426,25 @@ export function redactRuntimePayload(
   payload: JsonValue,
   context: RunEventRedactionContext,
 ): RuntimeRedactionResult {
-  return redactPayloadWith(payload, context.secretHints, SECRET_TEXT_PATTERNS)
+  return redactPayloadWith(payload, context.secretHints, {
+    textPatterns: SECRET_TEXT_PATTERNS,
+  })
 }
 
 /**
  * Redaction of a durable Run record payload or terminal job-row projection:
- * the runtime rules plus {@link PERSISTED_RECORD_TEXT_PATTERNS}. The ledger
- * applies it to every record it commits.
+ * the runtime rules plus {@link PERSISTED_RECORD_TEXT_PATTERNS} and the job
+ * store's key rule ({@link PERSISTED_SECRET_KEY_PATTERN}, numeric token
+ * counts exempt). The ledger applies it to every record it commits.
  */
 export function redactPersistedRunPayload(
   payload: JsonValue,
   context: RunEventRedactionContext,
 ): RuntimeRedactionResult {
-  return redactPayloadWith(
-    payload,
-    context.secretHints,
-    PERSISTED_RECORD_TEXT_PATTERNS,
-  )
+  return redactPayloadWith(payload, context.secretHints, {
+    textPatterns: PERSISTED_RECORD_TEXT_PATTERNS,
+    isExtraSecretKey: isPersistedSecretKey,
+  })
 }
 
 /**
@@ -410,9 +460,7 @@ export function redactUntrustedDiagnosticPayload(
   payload: JsonValue,
   secretHints?: readonly string[],
 ): RuntimeRedactionResult {
-  return redactPayloadWith(
-    payload,
-    secretHints,
-    UNTRUSTED_DIAGNOSTIC_TEXT_PATTERNS,
-  )
+  return redactPayloadWith(payload, secretHints, {
+    textPatterns: UNTRUSTED_DIAGNOSTIC_TEXT_PATTERNS,
+  })
 }

@@ -433,5 +433,92 @@ describe("agent job store", () => {
       .join("\\n")
     expect(eventPayloads).not.toContain("plain-openai-token")
     expect(eventPayloads).not.toContain("PRIVATE KEY")
+
+    // T2-1 / S-05: the job store's generic `api_key|secret|password` arm
+    // (permissive separator and value) and its `*token*` key rule, with the
+    // numeric token-count exemption, still hold for every durable record and
+    // the terminal job-row projection now that the ledger owns persistence.
+    const genericSecrets = [
+      "DB_PASSWORD=hunter2",
+      "client_secret=abc$def!ghi",
+      'config {"password":"p@ssw0rd!"}',
+      "api_key hunter22hunter22",
+      "secret=short",
+      "DB password = s3cr3t",
+    ]
+    const leakedValues = [
+      "hunter2",
+      "abc$def!ghi",
+      "p@ssw0rd!",
+      "hunter22hunter22",
+      "short",
+      "s3cr3t",
+      "session-token-value",
+      "github-token-value",
+      "id-token-value",
+      "api-token-value",
+    ]
+    const secretKeyed = {
+      sessionToken: "session-token-value",
+      githubToken: "github-token-value",
+      idToken: "id-token-value",
+      apiToken: "api-token-value",
+      inputTokens: 12,
+      outputTokens: 3,
+      totalTokens: 15,
+      cachedInputTokens: 4,
+      reasoningOutputTokens: 1,
+    }
+    await ingestRuntimeObservation(
+      db,
+      job,
+      "runtime-generic-secrets",
+      "command_output",
+      { output: genericSecrets.join("\n"), ...secretKeyed },
+    )
+    const settled = await settleHostResult(db, job, {
+      status: "failed",
+      jobFields: {
+        exitCode: 1,
+        errorCode: "runtime_failed",
+        errorMessage: genericSecrets.join(" "),
+        result: { finalMessage: genericSecrets.join(" "), ...secretKeyed },
+      },
+    })
+    const genericRecord = listAgentJobEvents(db, job.id).find(
+      (event) => event.type === "command_output",
+    )
+    expect(genericRecord).toBeDefined()
+    const storedPayload = JSON.parse(genericRecord?.payloadJson ?? "{}")
+    expect(storedPayload).toMatchObject({
+      sessionToken: "<redacted>",
+      githubToken: "<redacted>",
+      idToken: "<redacted>",
+      apiToken: "<redacted>",
+      inputTokens: 12,
+      outputTokens: 3,
+      totalTokens: 15,
+      cachedInputTokens: 4,
+      reasoningOutputTokens: 1,
+    })
+    expect(storedPayload.output).toContain("DB_PASSWORD=<redacted>")
+    expect(storedPayload.output).toContain('{"password":"<redacted>"}')
+    expect(storedPayload.output).toContain("api_key <redacted>")
+    const storedResult = JSON.parse(settled?.resultJson ?? "{}")
+    expect(storedResult).toMatchObject({
+      sessionToken: "<redacted>",
+      apiToken: "<redacted>",
+      inputTokens: 12,
+      totalTokens: 15,
+    })
+    const durable = [
+      genericRecord?.payloadJson ?? "",
+      settled?.resultJson ?? "",
+      settled?.errorMessage ?? "",
+    ].join("\n")
+    for (const value of leakedValues) {
+      expect(durable).not.toContain(value)
+    }
+    expect(durable).toContain("<redacted>")
   })
 })

@@ -150,6 +150,33 @@ describe("runtime trace redaction", () => {
     expect(result.appliedRules).toEqual(["secret-text"])
   })
 
+  test("keeps the runtime path unchanged for the persisted-only store rules (renderer parity)", () => {
+    // T2-1 / S-05: the job store's generic arm and `*token*` key rule apply
+    // to durable Run records only; runtime/renderer redaction is unchanged.
+    const payload = {
+      output: [
+        "DB_PASSWORD=hunter2",
+        "client_secret=abc$def!ghi",
+        'config {"password":"p@ssw0rd!"}',
+        "api_key hunter22hunter22",
+        "secret=short",
+        "DB password = s3cr3t",
+      ].join("\n"),
+      sessionToken: "session-token-value",
+      githubToken: "github-token-value",
+      idToken: "id-token-value",
+      apiToken: "api-token-value",
+    }
+    const result = redactRuntimePayload(payload, {
+      runtimeId: "codex",
+      runId: "run-1",
+      source: "desktop-adapter",
+    })
+
+    expect(result.payload).toEqual(payload)
+    expect(result.appliedRules).toEqual([])
+  })
+
   test("redacts exact secret hints even when the text has no secret prefix", () => {
     const runtimeToken =
       "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
