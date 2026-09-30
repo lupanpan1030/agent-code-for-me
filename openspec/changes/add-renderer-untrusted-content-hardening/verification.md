@@ -1826,3 +1826,33 @@ removed pending clauses) keep every WHEN/THEN/AND bullet.
   - **T12 (re-review P3-3):** tasks 5.1/5.2 now point to "GUI observations added by this slice" (fixed in this docs commit).
   - **Observation:** any main-frame error −20 while the guest is live tears it down, including non-gate sources (fail-closed; availability only); GUI 5.2 records whether a non-gate −20 appears.
 - Status: **IMPLEMENTATION_CANDIDATE — all fresh reviews approved; GUI tracks 5.1–5.5 pending a GUI host; awaiting Owner ACCEPTED (task 6.5).**
+
+## Owner ACCEPTED 2026-09-30
+
+The Owner accepted `add-renderer-untrusted-content-hardening` for frozen product
+source `5ca5a17aaa7c4ac4cd5d13b41fd528886a1c22ef` at evidence head
+`3de915c00c9c2f6d62569cd1404d3c606af1d5cf`. The technical verdict chain is
+Codex `REVIEW_APPROVED` and Claude `REVIEW_APPROVED` for source
+`8f4181a4a9f0d6267396781e2df48883d29aad1e`, followed by targeted Claude
+`REVIEW_APPROVED` for `5ca5a17aaa7c4ac4cd5d13b41fd528886a1c22ef`.
+All three reviews are recorded above; acceptance does not claim GUI execution or
+`IMPLEMENTATION_VERIFIED` under task 6.4.
+
+The Owner accepted Yellow 15: main currently supplies no exact-secret hints to
+guest diagnostics, while the hint hook remains available. The Owner also accepted
+Yellow 4: the harden-options wording was clarified after exact-package approval
+to match the pinned package. The Owner knowingly accepted the four disclosures:
+removal of the remote react-scan loader; residual preview external-network
+egress, including the disclosed loopback listeners (MCP auth callback, OAuth
+callback, provider gateway, development Vite/HMR); Windows file preview disabled
+in the first release; and a new admission for every preview top-level link,
+including an in-scope file link.
+
+The Owner chose **integrate first, open a ticket for GUI reruns**. Tasks 5.1–5.5
+remain open and unobserved. [TICKET-126](../../../docs/tickets/TICKET-126-renderer-hardening-gui-tracks.md)
+carries development and packaged matrices, the two GUI observation sections above,
+the T10 payload and TICKET-114 CSP linkage. Results must be appended to that
+ticket and this verification record after archive, bound to the actual tested
+source/build SHA; they cannot retroactively prove the frozen source was run in
+GUI. The coordination dispatch separately authorizes local integration, archive
+and a single `origin/main` push.

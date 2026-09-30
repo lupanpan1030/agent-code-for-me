@@ -7,12 +7,13 @@
 > edits remain gated; Owner **APPROVED the Q9 compromise on 2026-09-07**.
 > Task 2.11 ticket registration is also complete; implementation remains open.
 >
-> **IMPLEMENTATION_CANDIDATE (2026-09-30)** — unit half complete; GUI tracks
-> 5.1–5.3 pending a GUI host. Both fresh reviews of the first freeze
+> **Owner ACCEPTED (2026-09-30)** — unit half complete; GUI tracks
+> 5.1–5.5 are deferred to TICKET-126 for a dual-track rerun after integration.
+> Both fresh reviews of the first freeze
 > `8f4181a4` returned `REVIEW_APPROVED` (0 P0/P1); the post-freeze touch-up
 > applied their P2/P3 dispositions and re-froze. Frozen source SHA
 > `5ca5a17aaa7c4ac4cd5d13b41fd528886a1c22ef`; sections 1–4 and 6.1–6.3 carry
-> receipts, while 5.x, 6.4 and 6.5 stay open. Ledger: verification.md
+> receipts, while 5.x and 6.4 stay open; Owner acceptance is in 6.5. Ledger: verification.md
 > "Implementation record" and "Post-freeze touch-up slice".
 > `IMPLEMENTATION_VERIFIED` is not claimed.
 
@@ -672,7 +673,21 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       `8f4181a4`; a targeted re-review of the touch-up at `5ca5a17a` is
       pending). `IMPLEMENTATION_VERIFIED` still also requires GUI 5.1–5.3
       under approved default 8 and is not claimed.
-- [ ] 6.5 Stop for explicit Owner `ACCEPTED` before local integration/archive.
+- [x] 6.5 Owner `ACCEPTED` on 2026-09-30 for frozen product source
+      `5ca5a17aaa7c4ac4cd5d13b41fd528886a1c22ef` and evidence head
+      `3de915c00c9c2f6d62569cd1404d3c606af1d5cf`. The Owner chose
+      integration followed by GUI dual-track reruns in TICKET-126 for 5.1–5.5;
+      those checks remain unexecuted and 6.4 `IMPLEMENTATION_VERIFIED` is not
+      claimed. The Owner accepted Y15 (main does not yet provide exact-secret
+      hints; the hook remains) and Y4 (the post-exact-package harden-options
+      wording clarification), and knowingly accepted all four disclosures:
+      remote react-scan loader removal; preview's residual external-network
+      egress, including the named loopback listeners; Windows file preview
+      disabled in the first release; every preview top-level link requires a
+      fresh admission. Three technical reviews are `REVIEW_APPROVED` (Codex
+      and Claude at `8f4181a4`, targeted Claude at `5ca5a17a`); see
+      `verification.md` for their exact SHAs. Explicit coordination dispatch
+      separately authorizes local integration/archive and one `origin/main` push.
       Push, remote PR mutation/merge, release, or repository-rule changes require
       separate explicit authorization and are never implied by acceptance.
       Owner acknowledgements to record at `ACCEPTED` (no separate record exists

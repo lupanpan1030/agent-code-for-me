@@ -131,3 +131,12 @@ TICKET-124 属已归档的默认分支修复，本票使用 TICKET-125。
 | 工单 | 标题 | 级别 | 状态 |
 |------|------|------|------|
 | [TICKET-125](TICKET-125-monaco-xterm-dom-producers.md) | Monaco 文件查看器 / xterm 终端 DOM producer 覆盖 | 🟡 Yellow（安全边界） | 待设计 / 未授权实施 |
+
+## 第九批 — Renderer hardening GUI 双轨补跑（2026-09-30）
+
+Owner 对 `add-renderer-untrusted-content-hardening` 选择先合入、开票补跑；
+开发态与打包态真实 Electron 观察仍未执行，TICKET-114 CSP 两轨需分别留证。
+
+| 工单 | 标题 | 级别 | 状态 |
+|------|------|------|------|
+| [TICKET-126](TICKET-126-renderer-hardening-gui-tracks.md) | Renderer hardening 开发态/打包态 GUI 双轨与 CSP 补跑 | 🟡 验证跟进 | 待 GUI 补跑 |

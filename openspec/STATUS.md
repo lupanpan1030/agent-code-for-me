@@ -8,7 +8,7 @@ Updated: 2026-09-30 (Pacific/Auckland); previous: 2026-09-09 (Pacific/Auckland)
 
 | Change | State | Concrete next gate |
 | --- | --- | --- |
-| `add-renderer-untrusted-content-hardening` | IMPLEMENTATION_CANDIDATE at source `5ca5a17a` — Claude review, Codex cross-review and targeted re-review all REVIEW_APPROVED (0 P0/P1) | Owner `ACCEPTED` (task 6.5: four acknowledgements + Y4 wording + Y15 exact-secret hints) with a disposition for GUI tracks 5.1–5.5 (pending a GUI host); then local integration, archive and push |
+| `add-renderer-untrusted-content-hardening` | Owner ACCEPTED 2026-09-30 at frozen source `5ca5a17a`, evidence head `3de915c0`; three technical reviews REVIEW_APPROVED | Integrate and archive; GUI 5.1–5.5 remain open under TICKET-126 for development and packaged reruns |
 
 Parked proposals are indexed in [`deferred/README.md`](deferred/README.md) and
 do not appear in the active list.
