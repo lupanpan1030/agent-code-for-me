@@ -1,17 +1,23 @@
 import { createHash, randomUUID } from "node:crypto"
-import type { AgentRuntimeId } from "../../shared/agent-runtime-capabilities"
 import type { AgentJobMode } from "../../shared/agent-jobs"
-import type { AgentJob } from "./db/schema"
+import type { AgentRuntimeId } from "../../shared/agent-runtime-capabilities"
 import type { DesktopPermissionPolicy } from "./agent-runtime/permission-policy"
 import { verifyDesktopRunPreflight } from "./agent-runtime/preflight"
+import type {
+  LedgerRecord,
+  OutcomeEvidence,
+} from "./agent-runtime/run-event-ledger"
+import {
+  getOrCreateRunEventLedger,
+  releaseRunEventLedger,
+} from "./agent-runtime/run-event-ledger-host"
+import type { AgentJob } from "./db/schema"
 import type { AgentJobDatabase } from "./headless/job-store"
 import {
-  appendAgentJobEvent,
-  completeAgentJob,
+  cancelAgentJob,
   createAgentJob,
   getAgentJob,
   heartbeatAgentJob,
-  requestCancelAgentJob,
   startAgentJob,
 } from "./headless/job-store"
 
@@ -118,15 +124,15 @@ function createDesktopPermissionPolicySnapshot(
   }
 }
 
-export function createAndStartDesktopAgentJob(
+export async function createAndStartDesktopAgentJob(
   db: AgentJobDatabase,
   input: CreateDesktopAgentJobInput,
-): DesktopAgentJobHandle {
+): Promise<DesktopAgentJobHandle> {
   assertDesktopRuntime(input.runtime)
   const context = verifyDesktopRunPreflight(db, input)
   const workerId = `desktop:${input.runtime}:${input.runId || randomUUID()}`
   const prompt = input.prompt
-  const job = createAgentJob(db, {
+  const job = await createAgentJob(db, {
     source: "desktop",
     runtime: input.runtime,
     mode: input.mode,
@@ -150,13 +156,14 @@ export function createAndStartDesktopAgentJob(
     subChatId: context.subChat.id,
   })
 
-  const running = startAgentJob(db, {
+  const running = await startAgentJob(db, {
     jobId: job.id,
     workerId,
     workerPid: process.pid,
   })
-  appendAgentJobEvent(db, {
-    jobId: job.id,
+  const ledger = await getOrCreateRunEventLedger(db, running)
+  await ledger.appendSystemEvent({
+    observationKey: `desktop:stream-started:${job.id}`,
     type: "status",
     payload: {
       status: "desktop_chat_stream_started",
@@ -166,7 +173,11 @@ export function createAndStartDesktopAgentJob(
     },
   })
 
-  return { job: running, workerId, cwd: context.cwd }
+  return {
+    job: getAgentJob(db, job.id) ?? running,
+    workerId,
+    cwd: context.cwd,
+  }
 }
 
 export function registerActiveDesktopAgentJob(
@@ -191,11 +202,11 @@ export function registerActiveDesktopAgentJob(
   })
 }
 
-export function createAndRegisterDesktopChatAgentJob(
+export async function createAndRegisterDesktopChatAgentJob(
   db: AgentJobDatabase,
   input: CreateAndRegisterDesktopChatAgentJobInput,
-): DesktopAgentJobHandle {
-  const handle = createAndStartDesktopAgentJob(db, input)
+): Promise<DesktopAgentJobHandle> {
+  const handle = await createAndStartDesktopAgentJob(db, input)
   registerActiveDesktopAgentJob({
     jobId: handle.job.id,
     runtime: input.runtime,
@@ -224,14 +235,14 @@ export function cancelActiveDesktopAgentJob(jobId: string): boolean {
   return true
 }
 
-export function requestCancelDesktopAgentJob(
+export async function requestCancelDesktopAgentJob(
   db: AgentJobDatabase,
   jobId: string,
   requestedBy: string,
-): { job: AgentJob; activeCancelDelivered: boolean } {
+): Promise<{ job: AgentJob; activeCancelDelivered: boolean }> {
   const job = getAgentJob(db, jobId)
   if (!job) throw new Error(`Unknown job: ${jobId}`)
-  const updated = requestCancelAgentJob(db, jobId, requestedBy)
+  const updated = await cancelAgentJob(db, jobId, { requestedBy })
   return {
     job: updated,
     activeCancelDelivered: cancelActiveDesktopAgentJob(jobId),
@@ -275,7 +286,80 @@ export function resolveDesktopChatJobCompletion({
   }
 }
 
-export function completeDesktopAgentJobSafely(
+const DESKTOP_OUTPUT_TYPES = new Set([
+  "assistant_delta",
+  "reasoning_delta",
+  "tool_started",
+  "tool_delta",
+  "tool_finished",
+  "command_started",
+  "command_output",
+  "command_finished",
+  "artifact_created",
+])
+
+function isRecordObject(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value)
+}
+
+/**
+ * Terminal evidence of a desktop chat Run (design "Error, Completion and
+ * Late-Event Policy"): the safe finalizer observed the live stream's natural
+ * finish or failure, a cancel or an interrupt; output and policy evidence are
+ * the Run's committed records. The ledger decides the outcome.
+ */
+function desktopOutcomeEvidence(input: {
+  jobId: string
+  status: "succeeded" | "failed" | "canceled" | "interrupted"
+  records: readonly LedgerRecord[]
+}): OutcomeEvidence {
+  const observationKey = `desktop-finalize:${input.jobId}`
+  const outputKeys = input.records
+    .filter((record) => DESKTOP_OUTPUT_TYPES.has(record.type))
+    .map((record) => `record:${record.sequence}`)
+  const denials = input.records.filter((record) => {
+    if (record.type !== "permission_requested") return false
+    const payload = isRecordObject(record.payload) ? record.payload : {}
+    return payload.decision === "deny" && payload.controlLevel === "enforce"
+  })
+  return {
+    trigger:
+      input.status === "canceled"
+        ? { kind: "cancel", reason: "desktop_cancel", observationKey }
+        : input.status === "interrupted"
+          ? { kind: "interrupt", reason: "desktop_interrupt", observationKey }
+          : {
+              kind: "native_terminal",
+              status: input.status,
+              observationKey,
+              origin: "live",
+            },
+    policy: {
+      denied: denials.length > 0,
+      evidenceKeys:
+        denials.length > 0
+          ? denials.map((record) => `record:${record.sequence}`)
+          : ["policy:no-recorded-denial"],
+    },
+    output: {
+      valid: true,
+      empty: outputKeys.length === 0,
+      allowEmpty: false,
+      evidenceKeys: outputKeys,
+    },
+    postRun: {
+      credentialsSafe: true,
+      evidenceKeys: ["postrun:desktop-finalizer"],
+    },
+  }
+}
+
+/**
+ * Desktop safe finalizer: submits terminal evidence for a still-running
+ * desktop job to its host ledger (never throws; a job that is already
+ * terminal is returned unchanged).
+ */
+export async function completeDesktopAgentJobSafely(
   db: AgentJobDatabase,
   input: {
     jobId: string | null | undefined
@@ -285,24 +369,50 @@ export function completeDesktopAgentJobSafely(
     errorMessage?: string | null
     result?: unknown
   },
-): AgentJob | null {
+): Promise<AgentJob | null> {
   if (!input.jobId) return null
   const current = getAgentJob(db, input.jobId)
   if (!current || current.status !== "running") return current
-  return completeAgentJob(db, {
-    jobId: input.jobId,
-    status: input.status,
-    exitCode: input.exitCode,
-    errorCode: input.errorCode,
-    errorMessage: input.errorMessage,
-    result: input.result,
-  })
+  try {
+    const ledger = await getOrCreateRunEventLedger(db, current)
+    await ledger.whenIdle()
+    const records = (await ledger.read(0)) as LedgerRecord[]
+    await ledger.settle(
+      desktopOutcomeEvidence({
+        jobId: input.jobId,
+        status: input.status,
+        records,
+      }),
+      {
+        jobFields: (outcome) =>
+          outcome.status === input.status
+            ? {
+                exitCode: input.exitCode ?? null,
+                errorCode: input.errorCode ?? null,
+                errorMessage: input.errorMessage ?? null,
+                result: input.result,
+              }
+            : {
+                exitCode: outcome.status === "succeeded" ? 0 : 1,
+                errorCode: outcome.reasons[0] ?? "desktop_chat_failed",
+                errorMessage: `Desktop run outcome ${outcome.status}: ${outcome.reasons.join(", ")}.`,
+                result: input.result,
+              },
+      },
+    )
+  } catch {
+    // The finalizer is best effort: a concurrent terminal or a store failure
+    // leaves the committed state as the authority.
+  } finally {
+    releaseRunEventLedger(db, input.jobId)
+  }
+  return getAgentJob(db, input.jobId)
 }
 
-export function completeDesktopChatAgentJobSafely(
+export async function completeDesktopChatAgentJobSafely(
   db: AgentJobDatabase,
   input: CompleteDesktopChatAgentJobSafelyInput,
-): AgentJob | null {
+): Promise<AgentJob | null> {
   if (!input.jobId) return null
   const completion = resolveDesktopChatJobCompletion({
     runtime: input.runtime,
@@ -310,7 +420,7 @@ export function completeDesktopChatAgentJobSafely(
     reachedNaturalFinish: input.reachedNaturalFinish,
     sawError: input.sawError,
   })
-  const completed = completeDesktopAgentJobSafely(db, {
+  const completed = await completeDesktopAgentJobSafely(db, {
     jobId: input.jobId,
     ...completion,
     result: input.result,
@@ -319,15 +429,19 @@ export function completeDesktopChatAgentJobSafely(
   return completed
 }
 
-export function requestCancelDesktopChatAgentJobSafely(
+export async function requestCancelDesktopChatAgentJobSafely(
   db: AgentJobDatabase,
   input: RequestCancelDesktopChatAgentJobSafelyInput,
-): ReturnType<typeof requestCancelDesktopAgentJob> | null {
+): Promise<Awaited<ReturnType<typeof requestCancelDesktopAgentJob>> | null> {
   if (!input.jobId || input.sawError || input.reachedNaturalFinish) {
     return null
   }
   try {
-    return requestCancelDesktopAgentJob(db, input.jobId, input.requestedBy)
+    return await requestCancelDesktopAgentJob(
+      db,
+      input.jobId,
+      input.requestedBy,
+    )
   } catch {
     // Job may already be terminal if cleanup raced with stream finish.
     return null

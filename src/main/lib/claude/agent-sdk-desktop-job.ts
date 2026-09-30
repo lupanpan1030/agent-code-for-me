@@ -1,12 +1,13 @@
 import type { AgentJobMode } from "../../../shared/agent-jobs"
 import type { DesktopRunRequest } from "../agent-runtime/desktop-run-request"
 import type { DesktopPermissionPolicy } from "../agent-runtime/permission-policy"
-import type { RunEvent } from "../agent-runtime/runtime-events"
+import type { RuntimeExecutionProvenance } from "../agent-runtime/run-event-ledger"
 import {
-  appendRunEventsToAgentJob,
-  createDesktopStreamEventMapper,
-  type DesktopStreamEventMapper,
-} from "../agent-runtime/stream-event-mapper"
+  bindRunExecutionProvenance,
+  type CanonicalDesktopRunLedger,
+  getOrCreateRunEventLedger,
+} from "../agent-runtime/run-event-ledger-host"
+import { captureRunExecutionProvenance } from "../agent-runtime/run-provenance"
 import {
   completeDesktopChatAgentJobSafely,
   createAndRegisterDesktopChatAgentJob,
@@ -18,13 +19,51 @@ import {
   type CreateClaudeDesktopRunRequestFromRuntimeStartupInput,
   createClaudeDesktopRunRequestFromRuntimeStartup,
 } from "./desktop-run-request"
+import {
+  getBundledClaudeBinaryPath,
+  readBundledClaudeBinaryVersion,
+} from "./env"
+
+/**
+ * The Claude Agent SDK message protocol this adapter decodes (system/init,
+ * assistant, user, stream_event and result messages): the compiled-in schema
+ * identity run-provenance.ts fingerprints for the Run.
+ */
+const CLAUDE_AGENT_SDK_SCHEMA_DOCUMENTS = [
+  {
+    path: "claude-agent-sdk/stream-json-messages.json",
+    content: JSON.stringify({
+      protocol: "claude-agent-sdk-stream-json",
+      messageTypes: ["assistant", "result", "stream_event", "system", "user"],
+      correlatedInit: { type: "system", subtype: "init" },
+    }),
+  },
+]
+
+/**
+ * Launch caller of the bundled Claude executable (tasks 6.1): captures the
+ * executable the SDK query will spawn (getBundledClaudeBinaryPath) without
+ * changing its selection.
+ */
+export async function captureClaudeAgentSdkExecutionProvenance(): Promise<RuntimeExecutionProvenance> {
+  const executablePath = getBundledClaudeBinaryPath()
+  return captureRunExecutionProvenance({
+    runtimeId: "claude-code",
+    adapterSource: "claude-agent-sdk",
+    version: readBundledClaudeBinaryVersion(executablePath),
+    protocolName: "claude-agent-sdk-stream-json",
+    protocolVersion: "1",
+    executablePath,
+    schemaDocuments: CLAUDE_AGENT_SDK_SCHEMA_DOCUMENTS,
+  })
+}
 
 export type CreateClaudeAgentSdkDesktopJobDependencies = {
   createAndRegisterDesktopChatAgentJob: typeof createAndRegisterDesktopChatAgentJob
   completeDesktopChatAgentJobSafely: typeof completeDesktopChatAgentJobSafely
   requestCancelDesktopChatAgentJobSafely: typeof requestCancelDesktopChatAgentJobSafely
-  createDesktopStreamEventMapper: typeof createDesktopStreamEventMapper
-  appendRunEventsToAgentJob: typeof appendRunEventsToAgentJob
+  getRunEventLedger: typeof getOrCreateRunEventLedger
+  captureExecutionProvenance: typeof captureClaudeAgentSdkExecutionProvenance
 }
 
 export type CreateClaudeAgentSdkDesktopJobInput = {
@@ -44,16 +83,15 @@ export type CreateClaudeAgentSdkDesktopJobInput = {
 export type ClaudeAgentSdkDesktopJobSetup = {
   handle: DesktopAgentJobHandle
   jobId: string
-  streamEventMapper: DesktopStreamEventMapper
+  ledger: CanonicalDesktopRunLedger
 }
 
 export type CreateClaudeAgentSdkDesktopRunStartupInput =
   CreateClaudeAgentSdkDesktopJobInput &
     Omit<
       CreateClaudeDesktopRunRequestFromRuntimeStartupInput,
-      "jobId" | "runId" | "mode" | "prompt" | "emitTrace"
+      "jobId" | "runId" | "mode" | "prompt" | "ledger"
     > & {
-      emitTrace?: (event: RunEvent) => void
       createDesktopRunRequest?: typeof createClaudeDesktopRunRequestFromRuntimeStartup
     }
 
@@ -83,10 +121,10 @@ export type RequestCancelClaudeAgentSdkDesktopJobInput = {
 }
 
 const defaultDependencies: CreateClaudeAgentSdkDesktopJobDependencies = {
-  appendRunEventsToAgentJob,
+  captureExecutionProvenance: captureClaudeAgentSdkExecutionProvenance,
   completeDesktopChatAgentJobSafely,
   createAndRegisterDesktopChatAgentJob,
-  createDesktopStreamEventMapper,
+  getRunEventLedger: getOrCreateRunEventLedger,
   requestCancelDesktopChatAgentJobSafely,
 }
 
@@ -96,9 +134,14 @@ function withDefaultDependencies(
   return { ...defaultDependencies, ...dependencies }
 }
 
-export function createClaudeAgentSdkDesktopJob(
+/**
+ * Creates the desktop job, composes its host ledger and binds the execution
+ * tuple of the executable the SDK query will launch, before any runtime
+ * record.
+ */
+export async function createClaudeAgentSdkDesktopJob(
   input: CreateClaudeAgentSdkDesktopJobInput,
-): ClaudeAgentSdkDesktopJobSetup {
+): Promise<ClaudeAgentSdkDesktopJobSetup> {
   const dependencies = withDefaultDependencies(input.dependencies)
   const jobInput: Parameters<typeof createAndRegisterDesktopChatAgentJob>[1] = {
     runtime: "claude-code",
@@ -113,41 +156,33 @@ export function createClaudeAgentSdkDesktopJob(
   if (input.permissionPolicy) {
     jobInput.permissionPolicy = input.permissionPolicy
   }
-  const handle = dependencies.createAndRegisterDesktopChatAgentJob(
+  const handle = await dependencies.createAndRegisterDesktopChatAgentJob(
     input.db,
     jobInput,
   )
   const jobId = handle.job.id
+  const ledger = await dependencies.getRunEventLedger(input.db, handle.job, {
+    secretHints: input.secretHints ?? [],
+  })
+  await bindRunExecutionProvenance(
+    ledger,
+    await dependencies.captureExecutionProvenance(),
+  )
 
   return {
     handle,
     jobId,
-    streamEventMapper: dependencies.createDesktopStreamEventMapper({
-      runtimeId: "claude-code",
-      runId: input.runId,
-      jobId,
-      secretHints: input.secretHints,
-    }),
+    ledger,
   }
 }
 
-export function createClaudeAgentSdkDesktopRunTraceEmitter(input: {
-  db: AgentJobDatabase
-  dependencies?: Partial<CreateClaudeAgentSdkDesktopJobDependencies>
-}): (event: RunEvent) => void {
-  const dependencies = withDefaultDependencies(input.dependencies)
-  return (event) => {
-    dependencies.appendRunEventsToAgentJob(input.db, [event])
-  }
-}
-
-export function completeClaudeAgentSdkDesktopJobAfterRun(
+export async function completeClaudeAgentSdkDesktopJobAfterRun(
   input: CompleteClaudeAgentSdkDesktopJobAfterRunInput,
-): void {
+): Promise<void> {
   if (!input.jobId) return
 
   const dependencies = withDefaultDependencies(input.dependencies)
-  dependencies.completeDesktopChatAgentJobSafely(input.db, {
+  await dependencies.completeDesktopChatAgentJobSafely(input.db, {
     jobId: input.jobId,
     runtime: "claude-code",
     aborted: input.abortSignal.aborted,
@@ -165,7 +200,7 @@ export function requestCancelClaudeAgentSdkDesktopJob(
   input: RequestCancelClaudeAgentSdkDesktopJobInput,
 ): void {
   const dependencies = withDefaultDependencies(input.dependencies)
-  dependencies.requestCancelDesktopChatAgentJobSafely(input.db, {
+  void dependencies.requestCancelDesktopChatAgentJobSafely(input.db, {
     jobId: input.jobId,
     sawError: input.sawError,
     reachedNaturalFinish: input.reachedNaturalFinish,
@@ -173,17 +208,11 @@ export function requestCancelClaudeAgentSdkDesktopJob(
   })
 }
 
-export function createClaudeAgentSdkDesktopRunStartup({
+export async function createClaudeAgentSdkDesktopRunStartup({
   createDesktopRunRequest = createClaudeDesktopRunRequestFromRuntimeStartup,
   ...input
-}: CreateClaudeAgentSdkDesktopRunStartupInput): ClaudeAgentSdkDesktopRunStartup {
-  const desktopJob = createClaudeAgentSdkDesktopJob(input)
-  const emitTrace =
-    input.emitTrace ??
-    createClaudeAgentSdkDesktopRunTraceEmitter({
-      db: input.db,
-      dependencies: input.dependencies,
-    })
+}: CreateClaudeAgentSdkDesktopRunStartupInput): Promise<ClaudeAgentSdkDesktopRunStartup> {
+  const desktopJob = await createClaudeAgentSdkDesktopJob(input)
   const desktopRunRequest = createDesktopRunRequest({
     runId: input.runId,
     streamId: input.streamId,
@@ -200,7 +229,7 @@ export function createClaudeAgentSdkDesktopRunStartup({
     longTextAttachments: input.longTextAttachments,
     signal: input.signal,
     existingSessionId: input.existingSessionId,
-    emitTrace,
+    ledger: desktopJob.ledger,
   })
 
   return {

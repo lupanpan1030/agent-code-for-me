@@ -65,7 +65,7 @@ export async function superviseClaudeAgentSdkDesktopRun(
     })
   } finally {
     try {
-      dependencies.finalizeAfterLifecycle({
+      await dependencies.finalizeAfterLifecycle({
         chatId: input.chatId,
         subChatId: input.subChatId,
         abortController: input.abortController,

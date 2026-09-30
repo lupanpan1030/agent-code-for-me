@@ -10,16 +10,22 @@ import type {
   DesktopRunRequest,
   DesktopRunResult,
 } from "../agent-runtime/desktop-run-request"
-import { emitDesktopRuntimeAdapterStarted } from "../agent-runtime/desktop-runner"
+import { recordDesktopRuntimeAdapterStarted } from "../agent-runtime/desktop-runner"
 import {
   type CodexAppServerPermissionMapping,
   getCodexAppServerPermissionMapping,
 } from "../agent-runtime/permission-policy"
+import { redactRuntimePayload } from "../agent-runtime/redaction"
+import type { RuntimeExecutionProvenance } from "../agent-runtime/run-event-ledger"
 import {
-  createRuntimeStreamChunkSecretRedactor,
-  mapDesktopStreamChunkToRunEvents,
-  redactRendererRuntimeChunk,
-} from "../agent-runtime/stream-event-mapper"
+  bindRunExecutionProvenance,
+  type CanonicalDesktopRunLedger,
+  createDesktopRendererChannel,
+} from "../agent-runtime/run-event-ledger-host"
+import {
+  assertRunExecutableUnchanged,
+  captureRunExecutionProvenance,
+} from "../agent-runtime/run-provenance"
 import type { CodexDesktopAdapter } from "./adapter-types"
 import {
   type CodexAppServerApplyPatchApprovalParams,
@@ -57,10 +63,7 @@ import {
   assertCodexAppServerShellSnapshotsScrubbed,
   scrubCodexAppServerShellSnapshots,
 } from "./app-server-shell-snapshots"
-import {
-  type CodexAppServerNotification,
-  createCodexAppServerRuntimeEventMapper,
-} from "./app-server-stream-events"
+import { codexAppServerSchemaDocuments } from "./app-server-stream-events"
 import {
   type CodexAppServerTransport,
   type CodexAppServerTransportServerRequest,
@@ -75,6 +78,10 @@ import {
   createCodexAppServerUserInteractionBridge,
 } from "./app-server-user-interaction"
 import type { CodexAskUserQuestionPending } from "./ask-user-question"
+import {
+  BUNDLED_CODEX_CLI_VERSION,
+  resolveBundledCodexCliPath,
+} from "./cli-path"
 
 export type CreateCodexAppServerAdapterInput = {
   enabled?: boolean
@@ -116,6 +123,11 @@ export type CreateCodexAppServerAdapterInput = {
   ) => boolean
   userInputTimeoutMs?: number
   prepareRuntimePrompt?: typeof prepareCodexAppServerRuntimePrompt
+  /**
+   * Execution provenance of an injected transport (tests/smoke). The stdio
+   * transport captures the tuple from the executable it actually resolves.
+   */
+  captureExecutionProvenance?: () => Promise<RuntimeExecutionProvenance>
 }
 
 export class CodexAppServerAdapterDisabledError extends Error {
@@ -176,6 +188,92 @@ function sandboxForRequest(request: DesktopRunRequest) {
       excludeSlashTmp: true,
     },
   } as const
+}
+
+function isRecordValue(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function codexTurnTerminalStatus(
+  status: unknown,
+): "succeeded" | "failed" | "interrupted" {
+  if (status === "completed") return "succeeded"
+  if (status === "interrupted") return "interrupted"
+  // turn/completed carrying inProgress (or an unknown value) is a protocol
+  // violation, not evidence of success.
+  return "failed"
+}
+
+function codexTurnErrorMessage(turn: Record<string, unknown>): string | null {
+  const error = isRecordValue(turn.error) ? turn.error : null
+  const message =
+    typeof error?.message === "string"
+      ? error.message
+      : typeof error?.code === "string"
+        ? error.code
+        : null
+  if (message) return message
+  if (turn.status === "inProgress") {
+    return "Codex app-server returned non-terminal status inProgress for turn/completed."
+  }
+  if (
+    turn.status !== "completed" &&
+    turn.status !== "interrupted" &&
+    turn.status !== "failed"
+  ) {
+    return `Codex app-server returned unknown terminal status ${String(turn.status)}.`
+  }
+  return null
+}
+
+/**
+ * Launch caller of the Codex app-server executable (tasks 6.1): the actual
+ * resolved executable is captured through run-provenance.ts and the host
+ * binds the tuple to the Run before the process starts; the executable bytes
+ * are re-checked right before spawn. An injected transport binds the tuple
+ * its caller supplies.
+ */
+async function launchCodexAppServerTransport(input: {
+  request: DesktopRunRequest
+  ledger: CanonicalDesktopRunLedger | null
+  providerBinding: CodexAppServerProviderBinding
+  secretHints: readonly string[]
+  createTransport: CreateCodexAppServerAdapterInput["createTransport"]
+  captureExecutionProvenance: CreateCodexAppServerAdapterInput["captureExecutionProvenance"]
+}): Promise<CodexAppServerTransport> {
+  if (input.createTransport) {
+    if (input.ledger && input.captureExecutionProvenance) {
+      await bindRunExecutionProvenance(
+        input.ledger,
+        await input.captureExecutionProvenance(),
+      )
+    }
+    return input.createTransport({
+      request: input.request,
+      providerBinding: input.providerBinding,
+      secretHints: input.secretHints,
+    })
+  }
+  const executable = resolveBundledCodexCliPath()
+  if (input.ledger) {
+    const provenance = await captureRunExecutionProvenance({
+      runtimeId: "codex",
+      adapterSource: "codex-app-server",
+      version: BUNDLED_CODEX_CLI_VERSION,
+      protocolName: "codex-app-server-jsonrpc",
+      protocolVersion: "v2",
+      executablePath: executable,
+      schemaDocuments: codexAppServerSchemaDocuments(),
+    })
+    await bindRunExecutionProvenance(input.ledger, provenance)
+    assertRunExecutableUnchanged(provenance)
+  }
+  return createCodexAppServerStdioTransport({
+    executable,
+    cwd: input.request.context.cwd,
+    env: input.providerBinding.runtimeEnv,
+    secretHints: input.secretHints,
+  })
 }
 
 function stringAt(value: unknown, path: string[]): string | null {
@@ -389,6 +487,7 @@ export function createCodexAppServerAdapter({
   unregisterPendingQuestion,
   userInputTimeoutMs,
   prepareRuntimePrompt = prepareCodexAppServerRuntimePrompt,
+  captureExecutionProvenance,
 }: CreateCodexAppServerAdapterInput = {}): CodexDesktopAdapter {
   return {
     metadata: CODEX_APP_SERVER_DESKTOP_ADAPTER_METADATA,
@@ -402,7 +501,7 @@ export function createCodexAppServerAdapter({
           return false
         }
       }
-      emitDesktopRuntimeAdapterStarted(
+      await recordDesktopRuntimeAdapterStarted(
         request,
         CODEX_APP_SERVER_DESKTOP_ADAPTER_METADATA,
       )
@@ -475,42 +574,48 @@ export function createCodexAppServerAdapter({
           ),
         ),
       ]
-      const transport =
-        createTransport?.({
-          request,
-          providerBinding: appServerProviderBinding,
-          secretHints: runtimeSecretHints,
-        }) ??
-        createCodexAppServerStdioTransport({
-          cwd: request.context.cwd,
-          env: appServerProviderBinding.runtimeEnv,
-          secretHints: runtimeSecretHints,
-        })
-      const streamSecretRedactor = createRuntimeStreamChunkSecretRedactor()
-      const redactRuntimeChunk = (
-        chunk: Record<string, unknown>,
-      ): Record<string, unknown> =>
-        redactRendererRuntimeChunk({
-          runtimeId: "codex",
-          runId: request.identity.runId,
-          jobId: request.identity.jobId,
-          chunk,
-          secretHints: runtimeSecretHints,
-        }) as Record<string, unknown>
-      const emitRuntimeChunk = (
-        chunk: Record<string, unknown>,
-      ): Record<string, unknown> => {
-        const redactedChunk = redactRuntimeChunk(chunk)
-        emit?.(redactedChunk)
-        return redactedChunk
+      const ledger = request.ledger ?? null
+      ledger?.addSecretHints(runtimeSecretHints)
+      const renderer = createDesktopRendererChannel({
+        runtimeId: "codex",
+        runId: request.identity.runId,
+        observationPrefix: `codex-desktop:${request.identity.runId}:stream`,
+        getLedger: () => ledger,
+        getSecretHints: () => runtimeSecretHints,
+        emit: (chunk) => emit?.(chunk),
+      })
+      const emitRuntimeChunk = (chunk: Record<string, unknown>): void => {
+        renderer.submit(chunk)
       }
       const redactRuntimeErrorMessage = (message: string): string => {
-        const redacted = redactRuntimeChunk({ type: "error", message })
-        return typeof redacted.message === "string"
-          ? redacted.message
+        const redacted = redactRuntimePayload(message, {
+          runtimeId: "codex",
+          runId: request.identity.runId,
+          source: "runtime-diagnostic",
+          secretHints: runtimeSecretHints,
+        }).payload
+        return typeof redacted === "string" && redacted.length > 0
+          ? redacted
           : "Codex app-server failed."
       }
-      const runtimeMapper = createCodexAppServerRuntimeEventMapper()
+      const transport = await launchCodexAppServerTransport({
+        request,
+        ledger,
+        providerBinding: appServerProviderBinding,
+        secretHints: runtimeSecretHints,
+        createTransport,
+        captureExecutionProvenance,
+      })
+      const transportId = `codex-app-server:${request.identity.runId}`
+      let observationCounter = 0
+      const observationKey = (kind: string) => {
+        observationCounter += 1
+        return `codex:${request.identity.runId}:${kind}:${observationCounter}`
+      }
+      const receivedAt = () => new Date().toISOString()
+      const recordCommitted = (committed: Promise<unknown> | undefined) => {
+        if (committed) renderer.deliverCommitted(committed)
+      }
       const { threadSandbox, turnSandbox } = sandboxForRequest(request)
       const controlledEditToolEnabled =
         controlledEditEnabled &&
@@ -557,56 +662,11 @@ export function createCodexAppServerAdapter({
           emitRuntimeChunk({ type: "observed-tool-decision", ...event })
         },
       })
-      let sequence = 0
-      let lastError: DesktopRunResult["error"] | null = null
-      let pendingTerminalChunk: Record<string, unknown> | null = null
-      const emittedSessionInitThreadIds = new Set<string>()
-
-      const emitMappedChunk = (
-        chunk: Record<string, unknown>,
-        preAppliedRules: readonly string[] = [],
-      ): Record<string, unknown> | null => {
-        if (chunk.type === "session-init") {
-          const threadId =
-            typeof chunk.threadId === "string" ? chunk.threadId : null
-          if (threadId && emittedSessionInitThreadIds.has(threadId)) {
-            return null
-          }
-          if (threadId) {
-            emittedSessionInitThreadIds.add(threadId)
-          }
-        }
-        const redactedChunk = emitRuntimeChunk(chunk)
-        const events = mapDesktopStreamChunkToRunEvents({
-          runtimeId: "codex",
-          runId: request.identity.runId,
-          jobId: request.identity.jobId,
-          sequence: ++sequence,
-          chunk,
-          secretHints: runtimeSecretHints,
-          preAppliedRules,
-        })
-        for (const event of events) {
-          request.trace.emit(event)
-        }
-        return redactedChunk
-      }
-      const emitChunk = (
-        chunk: Record<string, unknown>,
-      ): Record<string, unknown>[] => {
-        const emittedChunks: Record<string, unknown>[] = []
-        for (const streamChunk of streamSecretRedactor.push(
-          chunk,
-          runtimeSecretHints,
-        )) {
-          const emitted = emitMappedChunk(
-            streamChunk.chunk as Record<string, unknown>,
-            streamChunk.appliedRules,
-          )
-          if (emitted) emittedChunks.push(emitted)
-        }
-        return emittedChunks
-      }
+      // Native identity observed on this Run's responses/notifications; the
+      // interrupt target itself is read from the ledger's native context.
+      let sessionId: string | null = null
+      let threadId: string | null = null
+      let turnId: string | null = null
 
       let resolveTerminal: (result: DesktopRunResult) => void = () => {}
       const terminal = new Promise<DesktopRunResult>((resolve) => {
@@ -626,74 +686,73 @@ export function createCodexAppServerAdapter({
       }
 
       removeTerminalNotification = transport.onNotification((notification) => {
-        const chunks = runtimeMapper.map(
-          notification as CodexAppServerNotification,
-        )
-        for (const chunk of chunks) {
-          if (chunk.type === "finish") {
-            // A runtime finish is only provisional until post-run credential
-            // cleanup succeeds. Hold both the renderer chunk and durable
-            // completed RunEvent so downstream consumers see one
-            // authoritative terminal state.
-            const redactedChunk = redactRuntimeChunk(chunk)
-            pendingTerminalChunk = redactedChunk
-            const metadata = redactedChunk.messageMetadata as
-              | {
-                  sessionId?: string | null
-                  inputTokens?: number
-                  outputTokens?: number
-                  totalTokens?: number
-                }
-              | undefined
-            const status =
-              redactedChunk.status === "failed" ||
-              redactedChunk.status === "canceled" ||
-              redactedChunk.status === "interrupted" ||
-              redactedChunk.status === "succeeded"
-                ? redactedChunk.status
-                : "failed"
-            const terminalMessage =
-              typeof redactedChunk.message === "string" &&
-              redactedChunk.message.trim()
-                ? redactedChunk.message
-                : "Codex app-server returned an invalid terminal status."
-            const terminalError =
-              lastError ??
-              (status === "failed" ? { message: terminalMessage } : null)
-            settleTerminal({
-              status,
-              sessionId:
-                runtimeMapper.getSessionId() ?? metadata?.sessionId ?? null,
-              usage: {
-                inputTokens: metadata?.inputTokens,
-                outputTokens: metadata?.outputTokens,
-                totalTokens: metadata?.totalTokens,
-              },
-              ...(terminalError ? { error: terminalError } : {}),
-            })
-            continue
-          }
-          for (const redactedChunk of emitChunk(chunk)) {
-            if (redactedChunk.type === "error") {
-              lastError = {
-                message:
-                  typeof redactedChunk.errorText === "string"
-                    ? redactedChunk.errorText
-                    : "Codex app-server error",
-              }
-            }
-          }
+        const method = notification.method
+        const params = isRecordValue(notification.params)
+          ? notification.params
+          : {}
+        const boundary = {
+          observationKey: observationKey("notification"),
+          transportId,
+          receivedAt: receivedAt(),
+          message: { method, params: notification.params },
         }
+        if (ledger) {
+          recordCommitted(
+            method === "serverRequest/resolved"
+              ? ledger.recordServerRequestResolved({
+                  ...boundary,
+                  requestId: params.requestId as string | number,
+                })
+              : ledger.ingestNotification(boundary),
+          )
+        }
+        if (method === "thread/started") {
+          threadId = stringAt(params, ["thread", "id"]) ?? threadId
+          sessionId = stringAt(params, ["thread", "sessionId"]) ?? sessionId
+        }
+        if (method === "turn/started") {
+          turnId = stringAt(params, ["turn", "id"]) ?? turnId
+        }
+        if (method !== "turn/completed") return
+        // The native terminal notification only ends this adapter's wait;
+        // the Run's outcome is settled by the host from committed evidence.
+        const turn = isRecordValue(params.turn) ? params.turn : {}
+        const status = codexTurnTerminalStatus(turn.status)
+        const errorMessage = codexTurnErrorMessage(turn)
+        settleTerminal({
+          status,
+          sessionId,
+          ...(status === "failed"
+            ? {
+                error: {
+                  message: redactRuntimeErrorMessage(
+                    errorMessage ??
+                      "Codex app-server returned an invalid terminal status.",
+                  ),
+                },
+              }
+            : {}),
+        })
       })
       removeTransportExit = transport.onExit((exit) => {
         transportExitError = exit.error
         for (const rejectPendingRequest of [...pendingTransportExitRejectors]) {
           rejectPendingRequest(exit.error)
         }
+        if (ledger) {
+          recordCommitted(
+            ledger.ingestTransportExit({
+              observationKey: observationKey("transport-exit"),
+              transportId,
+              exitCode: exit.code ?? null,
+              signal: exit.signal ?? null,
+            }),
+          )
+        }
         const message = redactRuntimeErrorMessage(exit.error.message)
         settleTerminal({
           status: request.signal.aborted ? "canceled" : "failed",
-          sessionId: runtimeMapper.getSessionId(),
+          sessionId,
           ...(request.signal.aborted ? {} : { error: { message } }),
         })
       })
@@ -701,6 +760,32 @@ export function createCodexAppServerAdapter({
 
       const removeServerRequest = transport.onServerRequest((serverRequest) => {
         let response: unknown
+        if (ledger) {
+          recordCommitted(
+            ledger.ingestServerRequest({
+              observationKey: observationKey("server-request"),
+              transportId,
+              receivedAt: receivedAt(),
+              message: {
+                id: serverRequest.id,
+                method: serverRequest.method,
+                params: serverRequest.params,
+              },
+            }),
+          )
+        }
+        const recordSend = (result: "sent" | "failed") => {
+          if (!ledger) return
+          recordCommitted(
+            ledger.recordServerResponseSend({
+              observationKey: observationKey("response-send"),
+              transportId,
+              receivedAt: receivedAt(),
+              requestId: serverRequest.id,
+              result,
+            }),
+          )
+        }
         return dispatchCodexAppServerServerRequest({
           request: {
             method: serverRequest.method,
@@ -787,13 +872,20 @@ export function createCodexAppServerAdapter({
             return response
           },
         }).then(
-          (): CodexAppServerTransportServerRequestResponse => ({
-            result: response,
-            failClosedResult: failClosedServerRequestResponse(serverRequest),
-            isResponseStillAuthorized: () =>
-              runOwnerIsCurrent() &&
-              (!guardedContract || isActiveGuardedContract(guardedContract)),
-          }),
+          (): CodexAppServerTransportServerRequestResponse => {
+            recordSend("sent")
+            return {
+              result: response,
+              failClosedResult: failClosedServerRequestResponse(serverRequest),
+              isResponseStillAuthorized: () =>
+                runOwnerIsCurrent() &&
+                (!guardedContract || isActiveGuardedContract(guardedContract)),
+            }
+          },
+          (error: unknown) => {
+            recordSend("failed")
+            throw error
+          },
         )
       })
 
@@ -801,15 +893,22 @@ export function createCodexAppServerAdapter({
       const abortHandler = () => {
         if (abortHandled) return
         abortHandled = true
-        const interrupt = runtimeMapper.buildInterruptRequest()
-        if (interrupt) {
-          void transport
-            .request(interrupt.method, interrupt.params)
-            .catch(() => {})
-        }
+        void (async () => {
+          // The interrupt target is the Run's native context owned by the
+          // ledger; without an observed turn there is nothing to interrupt.
+          const target = ledger ? await ledger.readNativeContext() : null
+          if (target?.threadId && target.turnId) {
+            await transport
+              .request("turn/interrupt", {
+                threadId: target.threadId,
+                turnId: target.turnId,
+              })
+              .catch(() => {})
+          }
+        })()
         settleTerminal({
           status: "canceled",
-          sessionId: runtimeMapper.getSessionId(),
+          sessionId,
         })
       }
       request.signal.addEventListener("abort", abortHandler, { once: true })
@@ -856,6 +955,68 @@ export function createCodexAppServerAdapter({
           if (request.signal.aborted) onAbort()
           else if (transportExitError) onTransportExit(transportExitError)
         })
+      }
+
+      // Records the correlated response boundary of one client request so
+      // the ledger owns resume validation and the native context.
+      let responseCounter = 0
+      const requestWithResponseBoundary = async (
+        method: "thread/start" | "thread/resume" | "turn/start",
+        params: unknown,
+        context: { intent?: "start" | "resume"; expectedSessionId?: string },
+      ): Promise<unknown> => {
+        responseCounter += 1
+        const correlationId = `locus-${responseCounter}`
+        const boundaryRequest = {
+          id: correlationId,
+          method,
+          params,
+          ...(context.intent ? { intent: context.intent } : {}),
+          ...(context.expectedSessionId
+            ? { expectedSessionId: context.expectedSessionId }
+            : {}),
+        }
+        try {
+          const result = await requestWithCancellation(method, params)
+          if (ledger) {
+            recordCommitted(
+              ledger.ingestResponse({
+                observationKey: observationKey("response"),
+                transportId,
+                receivedAt: receivedAt(),
+                request: boundaryRequest,
+                message: { id: correlationId, result },
+              }),
+            )
+          }
+          return result
+        } catch (error) {
+          const code =
+            error && typeof error === "object" && "code" in error
+              ? (error as { code?: unknown }).code
+              : undefined
+          if (
+            ledger &&
+            (typeof code === "number" || typeof code === "string")
+          ) {
+            recordCommitted(
+              ledger.ingestResponse({
+                observationKey: observationKey("response"),
+                transportId,
+                receivedAt: receivedAt(),
+                request: boundaryRequest,
+                message: {
+                  id: correlationId,
+                  error: {
+                    code,
+                    message: error instanceof Error ? error.message : "",
+                  },
+                },
+              }),
+            )
+          }
+          throw error
+        }
       }
 
       let runResult: DesktopRunResult = {
@@ -906,7 +1067,7 @@ export function createCodexAppServerAdapter({
 
         const resumeThreadId = request.session.resumeSessionId ?? null
         const threadStart = resumeThreadId
-          ? await requestWithCancellation(
+          ? await requestWithResponseBoundary(
               "thread/resume",
               buildThreadResumeParams({
                 request,
@@ -916,8 +1077,9 @@ export function createCodexAppServerAdapter({
                 config: appServerConfig,
                 threadId: resumeThreadId,
               }),
+              { intent: "resume", expectedSessionId: resumeThreadId },
             )
-          : await requestWithCancellation(
+          : await requestWithResponseBoundary(
               "thread/start",
               buildThreadStartParams({
                 request,
@@ -932,24 +1094,12 @@ export function createCodexAppServerAdapter({
                   ? codexControlledEditDeveloperInstructions()
                   : null,
               }),
+              { intent: "start" },
             )
-        const responseThreadId = stringAt(threadStart, ["thread", "id"])
-        if (!runtimeMapper.getThreadId() && responseThreadId) {
-          const responseSessionId =
-            stringAt(threadStart, ["thread", "sessionId"]) ?? responseThreadId
-          for (const chunk of runtimeMapper.map({
-            method: "thread/started",
-            params: {
-              thread: {
-                id: responseThreadId,
-                sessionId: responseSessionId,
-              },
-            },
-          } as CodexAppServerNotification)) {
-            emitChunk(chunk)
-          }
-        }
-        const threadId = responseThreadId ?? runtimeMapper.getThreadId()
+        // No thread/started is fabricated for a resumed thread: the response
+        // is the native fact, and a missing session id stays missing.
+        threadId = stringAt(threadStart, ["thread", "id"]) ?? threadId
+        sessionId = stringAt(threadStart, ["thread", "sessionId"]) ?? sessionId
         if (!threadId) {
           throw new Error("Codex app-server did not return a thread id.")
         }
@@ -961,7 +1111,7 @@ export function createCodexAppServerAdapter({
               detail: "toolsAndAuthOnly",
             },
           )
-          emitChunk({
+          emitRuntimeChunk({
             type: "runtime-status",
             ok: true,
             blocker: {
@@ -995,17 +1145,20 @@ export function createCodexAppServerAdapter({
           })
         }
 
-        const turnStart = await requestWithCancellation("turn/start", {
-          threadId,
-          input,
-          cwd: request.context.cwd,
-          approvalPolicy: permission.appServerApprovalPolicy,
-          approvalsReviewer: "user",
-          sandboxPolicy: turnSandbox,
-          model: request.providerBinding.model ?? null,
-        })
-        const turnId =
-          stringAt(turnStart, ["turn", "id"]) ?? runtimeMapper.getTurnId()
+        const turnStart = await requestWithResponseBoundary(
+          "turn/start",
+          {
+            threadId,
+            input,
+            cwd: request.context.cwd,
+            approvalPolicy: permission.appServerApprovalPolicy,
+            approvalsReviewer: "user",
+            sandboxPolicy: turnSandbox,
+            model: request.providerBinding.model ?? null,
+          },
+          {},
+        )
+        turnId = stringAt(turnStart, ["turn", "id"]) ?? turnId
         if (!turnId) {
           throw new Error("Codex app-server did not return a turn id.")
         }
@@ -1017,7 +1170,7 @@ export function createCodexAppServerAdapter({
         )
         runResult = {
           status: runOwnerIsCurrent() ? "failed" : "canceled",
-          sessionId: runtimeMapper.getSessionId(),
+          sessionId,
           error: {
             message,
           },
@@ -1035,20 +1188,12 @@ export function createCodexAppServerAdapter({
           )
           runResult = {
             status: "failed",
-            sessionId: runtimeMapper.getSessionId(),
+            sessionId,
             error: { message },
           }
         }
         removeTerminalNotification()
         removeTransportExit()
-        for (const streamChunk of streamSecretRedactor.flush(
-          runtimeSecretHints,
-        )) {
-          emitMappedChunk(
-            streamChunk.chunk as Record<string, unknown>,
-            streamChunk.appliedRules,
-          )
-        }
         try {
           assertCodexAppServerShellSnapshotsScrubbed(
             scrubCodexAppServerShellSnapshots({
@@ -1061,7 +1206,7 @@ export function createCodexAppServerAdapter({
             scrubError instanceof Error
               ? redactRuntimeErrorMessage(scrubError.message)
               : redactRuntimeErrorMessage(String(scrubError))
-          emitChunk({
+          emitRuntimeChunk({
             type: "runtime-status",
             ok: false,
             blocker: {
@@ -1073,19 +1218,47 @@ export function createCodexAppServerAdapter({
           })
           runResult = {
             status: "failed",
-            sessionId: runtimeMapper.getSessionId(),
+            sessionId,
             error: { message },
           }
         }
 
-        emitChunk({
-          ...(pendingTerminalChunk ?? { type: "finish" }),
+        const usage = ledger ? await ledger.readUsage() : null
+        const last = usage?.last ?? null
+        const total = usage?.total ?? null
+        if (last) {
+          runResult = {
+            ...runResult,
+            usage: {
+              inputTokens: last.inputTokens,
+              outputTokens: last.outputTokens,
+              totalTokens: last.totalTokens,
+            },
+          }
+        }
+        // Renderer framing only: the Run's terminal is settled by the host
+        // from committed evidence; this chunk carries no durable fact.
+        emitRuntimeChunk({
           type: "finish",
           status: runResult.status,
           ...(runResult.error?.message
             ? { message: runResult.error.message }
             : {}),
+          messageMetadata: {
+            provider: "codex",
+            adapterSource: "codex-app-server",
+            threadId,
+            turnId,
+            sessionId,
+            inputTokens: last?.inputTokens,
+            outputTokens: last?.outputTokens,
+            totalTokens: last?.totalTokens,
+            cumulativeInputTokens: total?.inputTokens,
+            cumulativeOutputTokens: total?.outputTokens,
+            cumulativeTotalTokens: total?.totalTokens,
+          },
         })
+        await renderer.drain()
       }
       return runResult
     },

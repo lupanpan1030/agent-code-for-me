@@ -11,7 +11,7 @@
       "exports": ["claudeRouter", "clearClaudeCaches", "getAllMcpConfigHandler"]
     },
     "src/main/lib/trpc/routers/codex.ts": {
-      "lines": 957,
+      "lines": 941,
       "exports": ["codexRouter"]
     }
   },

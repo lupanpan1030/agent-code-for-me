@@ -154,6 +154,27 @@ let binaryPathComputed = false
  * Returns the path to the native Claude executable bundled with the app.
  * CACHED - only computes path once and logs verbose info on first call.
  */
+/**
+ * Version of the bundled Claude executable, from the VERSION file the binary
+ * download script writes beside the platform binaries. An unversioned
+ * development binary reports "unversioned" (never a guessed version).
+ */
+export function readBundledClaudeBinaryVersion(binaryPath: string): string {
+  for (const candidate of [
+    path.join(path.dirname(binaryPath), "VERSION"),
+    path.join(path.dirname(path.dirname(binaryPath)), "VERSION"),
+  ]) {
+    try {
+      const firstLine = fs.readFileSync(candidate, "utf8").split("\n")[0]
+      const version = firstLine?.trim()
+      if (version) return version
+    } catch {
+      // Try the next candidate.
+    }
+  }
+  return "unversioned"
+}
+
 export function getBundledClaudeBinaryPath(): string {
   // Return cached path if already computed
   if (binaryPathComputed) {

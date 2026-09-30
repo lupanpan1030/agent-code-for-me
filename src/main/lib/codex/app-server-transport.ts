@@ -303,13 +303,18 @@ export function createCodexAppServerStdioTransport({
       pending.delete(id)
       const response = parsed as CodexAppServerProtocolResponse
       if (response.error) {
+        // The native JSON-RPC error code (e.g. -32600/-32603) is kept for
+        // the ledger's response boundary; the message stays redacted.
         waiter.reject(
-          new Error(
-            redactedTransportText(
-              response.error.message || "Codex app-server request failed.",
-              "Codex app-server request failed.",
-              secretHints,
+          Object.assign(
+            new Error(
+              redactedTransportText(
+                response.error.message || "Codex app-server request failed.",
+                "Codex app-server request failed.",
+                secretHints,
+              ),
             ),
+            { code: response.error.code },
           ),
         )
       } else {

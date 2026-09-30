@@ -170,32 +170,73 @@ export function persistCodexDesktopRunUserMessage(input: {
   return { authoritative: true, isDuplicatePrompt, messagesForStream }
 }
 
+type CommittedRunRecord = {
+  sequence?: unknown
+  type?: unknown
+  payload?: unknown
+}
+
+/**
+ * Assistant text of one Run from its committed records (design: history uses
+ * the committed item projection, not raw text-delta joins): each assistant
+ * item's authoritative final text from its item_reconciliation replaces the
+ * streamed deltas of that item.
+ */
+export function committedCodexAssistantText(
+  records: readonly CommittedRunRecord[],
+): string {
+  const order: string[] = []
+  const texts = new Map<string, string>()
+  const itemKey = (payload: Record<string, unknown>): string | null => {
+    const item = isRecord(payload.item) ? payload.item : null
+    if (!item) return null
+    const identity =
+      typeof item.itemId === "string"
+        ? `${String(item.threadId)}:${String(item.turnId)}:${item.itemId}`
+        : typeof item.correlationKey === "string"
+          ? item.correlationKey
+          : null
+    return identity
+  }
+  for (const record of records) {
+    const payload = isRecord(record.payload) ? record.payload : {}
+    const key = itemKey(payload)
+    if (!key) continue
+    if (record.type === "assistant_delta") {
+      const delta =
+        typeof payload.text === "string"
+          ? payload.text
+          : typeof payload.delta === "string"
+            ? payload.delta
+            : ""
+      if (!texts.has(key)) order.push(key)
+      texts.set(key, `${texts.get(key) ?? ""}${delta}`)
+      continue
+    }
+    const item = isRecord(payload.item) ? payload.item : {}
+    if (
+      record.type === "status" &&
+      payload.subtype === "item_reconciliation" &&
+      item.channel === "assistant" &&
+      typeof item.text === "string"
+    ) {
+      if (!texts.has(key)) order.push(key)
+      texts.set(key, item.text)
+    }
+  }
+  return order.map((key) => texts.get(key) ?? "").join("")
+}
+
 export function buildCodexAppServerAssistantMessage(input: {
-  chunks: Record<string, unknown>[]
+  records: readonly CommittedRunRecord[]
+  metadata?: Record<string, unknown> | null
   model: string
   generateMessageId: () => string
   now?: () => Date
 }): unknown | null {
-  const text = input.chunks
-    .filter((chunk) => chunk?.type === "text-delta")
-    .map((chunk) => (typeof chunk.delta === "string" ? chunk.delta : ""))
-    .join("")
-  const metadataChunks = input.chunks.flatMap((chunk) =>
-    chunk.type === "message-metadata" && isRecord(chunk.messageMetadata)
-      ? [chunk.messageMetadata]
-      : [],
-  )
-  const finishMetadata = [...input.chunks]
-    .reverse()
-    .flatMap((chunk) =>
-      chunk.type === "finish" && isRecord(chunk.messageMetadata)
-        ? [chunk.messageMetadata]
-        : [],
-    )
-    .at(0)
+  const text = committedCodexAssistantText(input.records)
   const metadata = {
-    ...metadataChunks.at(-1),
-    ...(finishMetadata || {}),
+    ...(input.metadata ?? {}),
     model: input.model,
     provider: "codex",
   }
@@ -216,14 +257,16 @@ export function persistCodexDesktopAssistantAfterNaturalFinish(input: {
   subChatId: string
   activeStreamOwner: ActiveCodexStream
   messagesForStream: unknown[]
-  chunks: Record<string, unknown>[]
+  records: readonly CommittedRunRecord[]
+  metadata?: Record<string, unknown> | null
   model: string
   createId?: () => string
   now?: () => Date
   dependencies?: Partial<CodexDesktopRunPersistenceDependencies>
 }): boolean {
   const assistantMessage = buildCodexAppServerAssistantMessage({
-    chunks: input.chunks,
+    records: input.records,
+    metadata: input.metadata,
     model: input.model,
     generateMessageId: input.createId ?? (() => crypto.randomUUID()),
     now: input.now,

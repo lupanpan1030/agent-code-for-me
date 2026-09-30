@@ -134,14 +134,15 @@ export function cleanupClaudeAgentSdkDesktopRunSubscription(
   return { ownsActiveSession }
 }
 
-export function finalizeClaudeAgentSdkDesktopRunAfterLifecycle(
+export async function finalizeClaudeAgentSdkDesktopRunAfterLifecycle(
   input: FinalizeClaudeAgentSdkDesktopRunAfterLifecycleInput,
-): void {
+): Promise<void> {
   const dependencies = withDefaultDependencies(input.dependencies)
   const desktopJobId = input.desktopRunState.getJobId()
 
   if (desktopJobId) {
-    dependencies.completeClaudeAgentSdkDesktopJobAfterRun({
+    // Safe finalizer: submits the live terminal evidence to the Run's ledger.
+    await dependencies.completeClaudeAgentSdkDesktopJobAfterRun({
       db: input.desktopRunState.getDb() ?? input.getDb(),
       jobId: desktopJobId,
       chatId: input.chatId,
