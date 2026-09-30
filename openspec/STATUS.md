@@ -8,7 +8,7 @@ Updated: 2026-09-30 (Pacific/Auckland); previous: 2026-09-09 (Pacific/Auckland)
 
 | Change | State | Concrete next gate |
 | --- | --- | --- |
-| `refactor-canonical-run-event-ledger` | IMPLEMENTATION CANDIDATE — frozen 2026-10-01 on `codex/refactor-canonical-run-event-ledger-draft` (exact SHA in the handoff); runtime smoke host-blocked | Red suite 141/141 green and `check:full` exit 0 at the candidate; product source unchanged since `e7198bc7`. Next gate: Codex IMPLEMENTATION_VERIFIED and a fresh-context Claude review on the same exact SHA (headless app-server `host_result` settlement and gaps G1–G3 referred to it), then Owner ACCEPTED. No push. |
+| `refactor-canonical-run-event-ledger` | IMPLEMENTATION CANDIDATE — re-frozen 2026-10-01 after touch-up T1 on `codex/refactor-canonical-run-event-ledger-draft` (exact SHA: see handoff); runtime smoke host-blocked | Red suite 141/141 green and `check:full` exit 0 at the candidate; T1 closed verification gaps G1–G5 with implementer tests. Next gate: Codex IMPLEMENTATION_VERIFIED and a fresh-context Claude review on the same exact SHA (headless app-server `host_result` settlement referred to it), then Owner ACCEPTED. No push. |
 
 Parked proposals are indexed in [`deferred/README.md`](deferred/README.md) and
 do not appear in the active list.

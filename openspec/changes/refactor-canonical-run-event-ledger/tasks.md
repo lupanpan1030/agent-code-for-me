@@ -1,10 +1,12 @@
 # Tasks
 
 Status: **APPROVED 2026-09-07 (Owner; bound to 9ebe6c34); implementation candidate frozen
-2026-10-01**. Independent red suite `339c4e6e` + slice `b8830be5`; implementation Phase I
-(`645d89d3`..`84643c99`), Phase II (`12d75c50`..`c9bc12a8`) and Phase III documentation on
-branch `codex/refactor-canonical-run-event-ledger-draft`. Product source is unchanged since
-`e7198bc7`; the frozen candidate is the last commit of that branch (named in the handoff).
+2026-10-01 after touch-up T1**. Independent red suite `339c4e6e` + slice `b8830be5`;
+implementation Phase I (`645d89d3`..`84643c99`), Phase II (`12d75c50`..`c9bc12a8`), Phase III
+documentation (`e536febd`..`2d0b0da0`) and touch-up T1 closing verification gaps G1–G5
+(`77003130`..`10fd4482` source and tests, then documentation) on branch
+`codex/refactor-canonical-run-event-ledger-draft`. The frozen candidate is the last commit of
+that branch (named in the handoff).
 A checked box is implemented with evidence in verification.md "Implementation Candidate
 Evidence"; an open box states what is missing. Next gate: Codex IMPLEMENTATION_VERIFIED and
 a fresh-context Claude review on the same exact SHA, then Owner ACCEPTED (8.6).
@@ -38,8 +40,10 @@ a fresh-context Claude review on the same exact SHA, then Owner ACCEPTED (8.6).
   Open: the independent red author materialized the catalog (red-receipt §1, red-slice-receipt
   §1), but the three pinned 0.139 TypeScript union surfaces (or a generated closure with
   manifest) are not vendored, so the trace §5.1 SHA-256 check and the reasoning-index check
-  against that closure have not run; `terminal-artifacts.json`, `desktop-request.json` and
-  `coarse-process.json` are not materialized (see 7.13 and 7.17).
+  against that closure have not run. `terminal-artifacts.json`, `desktop-request.json` and
+  `coarse-process.json` are materialized by touch-up T1 in the implementer fixture root
+  `tests/fixtures/run-event-ledger-units/` (see 7.13 and 7.17), because the independent
+  author's `tests/fixtures/run-event-ledger/` root is immutable.
 - [x] 1.5 Independently author at least one Bun test per Scenario before implementation:
   unique test ID → exactly one capability/Requirement/Scenario; use a table test where
   one scenario enumerates variants. Expand the verification scenario register with file,
@@ -110,9 +114,10 @@ a fresh-context Claude review on the same exact SHA, then Owner ACCEPTED (8.6).
   verifies zero queued/running v0 rows; unresolved rows block cutover, never a new v0 writer.
   Exercise desktop wrapper and API bare history readers; historyQuality is internal only.
   Evidence: `645d89d3`, `93c338e2`; S13/S24 green; v0 append rejected
-  (`LEDGER_V0_APPEND_REJECTED`). Open for review: no reader exposes
-  `historyQuality=legacy_unverified` (verification gap G1). The real-profile drain is an
-  Owner release step.
+  (`LEDGER_V0_APPEND_REJECTED`). Internal read metadata (gap G1 closed in `77003130`):
+  `runEventHistoryQuality` labels v0 jobs `legacy_unverified` in the store header and the
+  Workbench read only; `tests/run-event-ledger-history-quality.test.ts`. The real-profile
+  drain is an Owner release step.
 - [x] 2.10 Replace withEventSequenceRetry with ledger-owned expectedHighWater/state conflict
   reconciliation: reload/rebuild, fact-key lookup, re-evaluate intent, re-reserve uncommitted
   dense sequences and resubmit at most three times. Cover both cross-process queued-cancel/
@@ -161,8 +166,10 @@ a fresh-context Claude review on the same exact SHA, then Owner ACCEPTED (8.6).
   ESRCH/supervised exit or never-claimed/no-PID confirmation, with alive/EPERM/unknown
   variants and transaction revalidation of worker identity/start/heartbeat. Claimed missing
   PID is unknown. Record confirmed basis or host-only heartbeat_only diagnostic; no lease/fencing.
-  Evidence: `93c338e2`, `db3cc883`; S24/S56 green. Referred to review: headless app-server
-  runs settle with `host_result` (decision 3).
+  Evidence: `93c338e2`, `db3cc883`; S24/S56 green. The supervised-exit basis
+  (`worker_exit_observed`) and the unknown-host and changed-claim-at-commit variants are
+  asserted in `tests/run-event-ledger-recovery-variants.test.ts` (`00b33a13`). Referred to
+  review: headless app-server runs settle with `host_result` (decision 3).
 - [x] 4.4 Every transport exit supplies synthetic interrupted evidence with provenance;
   no beginTransportReplacement/bindReplacementTransport mechanism. Reopen durable Locus
   records for recovery; starting a native process again requires a separate existing new Run.
@@ -180,7 +187,9 @@ a fresh-context Claude review on the same exact SHA, then Owner ACCEPTED (8.6).
 - [x] 4.7 Move artifact validation/preparation into run-artifacts.ts; exact stable-file scope,
   digest/ownership/media/redaction checks and status/artifact_admission rejections. Remove
   dispatcher artifact minting and duplicate API file admission implementation.
-  Evidence: `47d0fe4d`, `93c338e2`, `365e16f3`; S28/S29/S52 green.
+  Evidence: `47d0fe4d`, `93c338e2`, `365e16f3`; S28/S29/S52 green. Native roles
+  `native-file`/`native-image`/`native-diff`, content staging inside the admitted run dir and
+  the result reader's registered-refs filter: `5b1ffd3e`, `316859e3`.
 - [x] 4.8 Prepare terminal files from the frozen completed candidate; register final refs
   before or with completed in one durable commit. Runtime artifact events precede terminal;
   terminal projection files emit no artifact_created, preserve the finite digest dependency
@@ -196,8 +205,9 @@ a fresh-context Claude review on the same exact SHA, then Owner ACCEPTED (8.6).
 - [x] 5.2 Freeze and implement the codex-runtime-parity delta's inlined exhaustive
   66 notification / 10 request / 16 item disposition table, including plan/hook/model-verification/review/userMessage, process,
   realtime/remote-control/windows; observed_deferred does not promote capability support.
-  Evidence: `1fc092f5`; S42 green. Open for review: the table's candidate-evidence
-  forwarding to the artifact owner has no production caller (verification gap G2).
+  Evidence: `1fc092f5`; S42 green. Candidate-evidence forwarding to the artifact owner
+  (gap G2 closed in `5b1ffd3e`): `codexNativeArtifactEvidence` → host sink →
+  `admitRunArtifactCandidate`; `tests/run-event-ledger-native-artifacts.test.ts`.
 - [x] 5.3 Project all nine non-v1 internal event types to status with subtype=internal type,
   preserving payload members, and restricted records to redacted_observation at the same
   sequence. Every v1 sequence remains dense, so there is no unexplained gap policy.
@@ -221,7 +231,9 @@ a fresh-context Claude review on the same exact SHA, then Owner ACCEPTED (8.6).
   persists the tuple before runtime execution/publication and seals it for the Run.
   Lifecycle pending jobs remain null, provider completion binds its actual source;
   missing runtime fields or capture-to-launch executable changes fail closed.
-  Evidence: `22472096`, `93c338e2`, `db3cc883`; S15 green. Disclosure: `schemaFiles`
+  Evidence: `22472096`, `93c338e2`, `db3cc883`; S15 green. The Claude Agent SDK path
+  re-checks the bound executable immediately before the SDK spawn (gap G4 closed in
+  `771d3f63`; `tests/claude-agent-sdk-executable-check.test.ts`). Disclosure: `schemaFiles`
   fingerprints the schema documents compiled into each adapter (decision 4).
 - [x] 6.2 Record Codex correlated successful response equality, independent session identity,
   durability fields/provenance and neutral native_resume_validated/rejected; preserve -32600/
@@ -241,8 +253,9 @@ a fresh-context Claude review on the same exact SHA, then Owner ACCEPTED (8.6).
 - [x] 6.4 Repair snapshots with fresh Locus sequence, source=snapshot, lossPossible and
   reconciliation. Durable failed/error wins over degraded native history; no durable
   terminal means the snapshot cannot alone settle succeeded or grant live owner authority.
-  Evidence: `7722b596`; S35/S36 green. Note for review: `repairFromSnapshot` has no
-  production caller (verification gap G3).
+  Evidence: `7722b596`; S35/S36 green. Production caller (gap G3 closed in `be098376`):
+  the Codex resume path submits a validated `thread/resume` snapshot
+  (`repairFromValidatedResumeSnapshot`); `tests/codex-app-server-resume-snapshot.test.ts`.
 - [x] 6.5 Label counter reset, incompatible schema and native resume-not-replay as
   inference/policy; keep trace §6.2 dynamics and Phase 5 replacement/fencing/CAS follow-ups
   separate, without a Run identity convergence guard hidden in this slice.
@@ -376,13 +389,15 @@ fixtures as synthetic, never attribute the completed body to EVENT-01..03 or COD
   failed outcome and late diagnostic. Also test no-durable-terminal snapshot → no success.
   There is no Locus rollout writer; the upstream write-layer negative is a runtime limitation.
   Evidence: materialized by the independent red author and consumed by the acceptance suite.
-- [ ] 7.13 `artifacts.json`, `terminal-artifacts.json`: temporary allowedRunDir, candidate
+- [x] 7.13 `artifacts.json`, `terminal-artifacts.json`: temporary allowedRunDir, candidate
   path/ownerRunId/expectedSha256/media, valid file and five rejection variants; frozen
   terminal candidate/file preparation/commit faults from design's finite dependency graph.
   Assert SHA-256 bytes, manifest membership, commit visibility, immutable terminal snapshot.
-  Open: `artifacts.json` is materialized (S28/S29); `terminal-artifacts.json` is not. S30
-  preparation/failure behavior is asserted inline in `run-event-ledger-units.test.ts`;
-  before-SQL-commit and after-commit-before-projection fault injection is not asserted.
+  Evidence: `artifacts.json` by the independent red author (S28/S29).
+  `terminal-artifacts.json` by touch-up T1 (`316859e3`) in the implementer fixture root
+  `tests/fixtures/run-event-ledger-units/` (the red root is immutable), driving
+  `tests/run-event-ledger-terminal-commit-faults.test.ts`: clean, file-preparation fault,
+  refused SQL commit and projection fault after commit (S30).
 - [x] 7.14 `split-secrets.json`: memory-only hints "provider-secret-123" / "gateway-secret-456",
   split at each boundary across assistant/reasoning/command/tool channels, plus incomplete
   terminal prefix; assert absence in concatenated records/renderer/result/stderr and safe flush.
@@ -412,7 +427,7 @@ fixtures as synthetic, never attribute the completed body to EVENT-01..03 or COD
   reader and generic absent-feature envelope contract, not an invented preflight helper.
   Assert no public job.ledger.historyQuality addition; only internal legacy readers mark it.
   Evidence: materialized by the independent red author and consumed by the acceptance suite.
-- [ ] 7.17 `projection.json`, `desktop-projection.json`, `headless-projection.json`,
+- [x] 7.17 `projection.json`, `desktop-projection.json`, `headless-projection.json`,
   `desktop-request.json`, `normalized-output.json`, `vocabulary.json`, `coarse-process.json`,
   `architecture-fixtures.json`: precommitted RunEvent inputs and expected surface envelopes,
   direct schedules-style db.insert(agentJobEvents) violating source, fake ports/spies, validated request DTO and raw sentinel, every existing normalized type,
@@ -422,8 +437,12 @@ fixtures as synthetic, never attribute the completed body to EVENT-01..03 or COD
   expected static symbol/import findings. Include captureRunExecutionProvenance clean-owner,
   duplicate-definition and re-export fixtures pinning it to agent-runtime/run-provenance.ts,
   with host-only composition/binding checks; no fake behavioral assertion by a source scanner.
-  Open: all named files except `desktop-request.json` and `coarse-process.json` are
-  materialized (S08/S09/S06 partial, see register). Amended per red-slice adjudication 1:
+  Evidence: the independent red author materialized all named files except
+  `desktop-request.json` and `coarse-process.json`; touch-up T1 materialized those two in the
+  implementer fixture root `tests/fixtures/run-event-ledger-units/` (the red root is
+  immutable), driving `tests/run-event-ledger-desktop-request.test.ts` (S08/S09, `10fd4482`)
+  and `tests/run-event-ledger-runner-facade.test.ts` (S06, `e9170cd4`). Amended per
+  red-slice adjudication 1:
   `vocabulary.json` also drives `job_created`/`job_started` through `appendSystemEvent`, and
   its terminal case settles with a `host_result` trigger.
 - [x] 7.18 Register harness-conformance follow-up for actual 66-method dynamics, trailing
@@ -437,7 +456,8 @@ fixtures as synthetic, never attribute the completed body to EVENT-01..03 or COD
 - [x] 8.1 Run all scenario tests against the frozen source; record red and green evidence
   plus temporary-SQLite/schema/reopen, artifact and cursor fault injection results.
   Evidence: verification "Implementation Candidate Evidence" (141/141 green; temporary
-  SQLite, reopen, artifact and cursor fault results from S11/S12/S52/S56 and the implementer tests).
+  SQLite, reopen, artifact and cursor fault results from S11/S12/S52/S56 and the implementer tests,
+  including touch-up T1's S30 before-SQL-commit and after-commit-before-projection faults).
 - [x] 8.2 Update docs/local-job-api-v1-consumer-guide.md, its zh-CN counterpart,
   docs/local-job-api-v1.schema.json and src/shared/local-job-api.ts in the implementing
   change for feature id, optional native metadata/maturity, exact status dispositions,
@@ -449,7 +469,9 @@ fixtures as synthetic, never attribute the completed body to EVENT-01..03 or COD
   no bounded per-Run event-count assumption. Keep v1 requests/12 types unchanged;
   no unsupported extension-negotiation claim.
   Evidence: schema enum, `eventPayloadExtensions` and shared types in `400d34b9`; both
-  guides in the Phase III documentation commit.
+  guides in the Phase III documentation commit; native artifact roles and registered result
+  refs in touch-up T1 `583fb3a1` (the public artifact role stays an open string, so no
+  schema change).
 - [x] 8.3 Audit every inventory row and terminal mint site, including job-event-bridge.ts,
   createAgentJobRunEvent, system appends, recovery, pre-start cancel, completion and Claude
   startup/state/job wiring, agent-jobs.ts queued cancel, schedules.ts direct event INSERT
@@ -465,13 +487,14 @@ fixtures as synthetic, never attribute the completed body to EVENT-01..03 or COD
   capability and headless/local-job-api.ts serializers own the v1 paths/roles/schema and
   consumer contract (writer consumes those definitions, never forks them). Update architecture pins; all five old raw
   writer allowlist entries disappear, leaving only the host's exact store adapter import.
-  Evidence: grep audit in verification; OWNERSHIP_MAP sections in `9c3e58d9` and the Phase III
-  ownership commit; neutral card in `85dc3b6d`.
+  Evidence: grep audit in verification; OWNERSHIP_MAP sections in `9c3e58d9`, the Phase III
+  ownership commit and touch-up T1 `06e73bcd`; neutral card in `85dc3b6d`.
 - [x] 8.4 Delete canonicalRunEventLedgerV1/legacy branch/transition guard mode before the
   final source freeze; re-run static guards and scenario tests. A later source edit
   invalidates verification and independent review.
-  Evidence: `9c3e58d9`; grep evidence in verification. No product source changed after
-  `e7198bc7`.
+  Evidence: `9c3e58d9`; grep evidence in verification, rerun after touch-up T1. T1 changed
+  product source to close G1–G5, so the earlier freeze at `e7198bc7` no longer applies and
+  the review binds to the new candidate.
 - [ ] 8.5 Run bun run check:full plus exact strict validate and git diff --check; execute
   Desktop/Workbench Claude+Codex, headless exec/app-server/completion and API create/events/
   follow/result/retry/artifact smoke in disposable profiles. Record macOS/Windows packaged
