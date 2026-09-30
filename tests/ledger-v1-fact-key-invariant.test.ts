@@ -2,11 +2,19 @@
  * Implementer invariant test (refactor-canonical-run-event-ledger, Phase II
  * coordinator ruling): once every writer goes through the canonical ledger,
  * no path may append a record without a fact key or record metadata to a
- * ledger_version=1 job. One migrated database is driven through every
- * lifecycle writer that exists today — CLI run (fake runner), queued run +
- * cancel, API create (agent and completion) and retry, desktop job creation,
- * completion and cancel, schedules, jobs recovery (confirmed-stopped worker)
- * and the daemon — and every committed row of a v1 job is then checked.
+ * ledger_version=1 job. One migrated database is driven through these
+ * lifecycle writers: CLI run (fake runner), queued run + CLI cancel, API
+ * create (agent with a run dir, and completion), API cancel and retry,
+ * jobs-stdio run and cancel, desktop job creation, output, completion and
+ * cancel (host ledger ports), a schedule fired now and drained by one daemon
+ * pass, and jobs recovery of a confirmed-stopped worker. Every committed row
+ * of a v1 job is then checked.
+ *
+ * Not driven here: the desktop renderer channel, the adapter-started fact
+ * and the Codex app-server headless wrapper (they reach the same host ledger;
+ * architecture:check enforces that run-event-ledger-host.ts is the only
+ * importer of the store's exact batch writer, so every path is fact-keyed by
+ * construction, and their own tests pin their records).
  */
 import { Database } from "bun:sqlite"
 import { afterEach, describe, expect, test } from "bun:test"
@@ -14,7 +22,7 @@ import { spawnSync } from "node:child_process"
 import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { Readable } from "node:stream"
+import { PassThrough, Readable } from "node:stream"
 import { drizzle } from "drizzle-orm/bun-sqlite"
 import { migrate } from "drizzle-orm/bun-sqlite/migrator"
 import { getOrCreateRunEventLedger } from "../src/main/lib/agent-runtime/run-event-ledger-host"
@@ -92,6 +100,14 @@ async function cli(
     stderr: { write: () => true },
     env: { LOCUS_HEADLESS_FAKE_RUNNER: "1" },
     appVersion: "0.0.test",
+    completionFetch: async () =>
+      new Response(
+        JSON.stringify({
+          output_text: "completion done",
+          usage: { input_tokens: 4, output_tokens: 2 },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
   })
   return { code, stdout }
 }
@@ -170,7 +186,136 @@ describe("canonical run event ledger v1 fact-key invariant", () => {
     expect(
       (await cli(db, ["api", "runs", "cancel", queuedApi.id, "--json"])).code,
     ).toBe(0)
-    await cli(db, ["api", "runs", "retry", queuedApi.id, "--json"])
+    expect(
+      (await cli(db, ["api", "runs", "retry", queuedApi.id, "--json"])).code,
+    ).toBe(0)
+
+    // API completion create (the completion runner binds locus-completion
+    // provenance and settles through the same ledger).
+    db.insert(schema.agentProviderProfiles)
+      .values({
+        id: "completion-v1",
+        name: "completion-v1",
+        protocol: "openai-responses",
+        baseUrl: "https://provider.example.com/v1",
+        defaultModel: "provider-default-model",
+        authMode: "none",
+        encryptedToken: null,
+        targetRuntimesJson: JSON.stringify(["codex"]),
+        capabilitiesJson: "{}",
+      })
+      .run()
+    const completion = await cli(
+      db,
+      ["api", "runs", "create", "--request", "-", "--json"],
+      JSON.stringify({
+        apiVersion: "locus.local-job.v1",
+        kind: "completion",
+        consumer: { id: "v1-invariant", runExternalId: "completion-1" },
+        runtime: { id: "codex" },
+        provider: { profileId: "completion-v1" },
+        messages: [{ role: "user", content: "Return short text." }],
+        responseFormat: { type: "text" },
+      }),
+    )
+    expect(completion.code).toBe(0)
+    expect(JSON.parse(completion.stdout).job).toMatchObject({
+      kind: "completion",
+      status: "succeeded",
+    })
+
+    // jobs-stdio: a protocol job run, then a cancel of that session's job.
+    const stdio = await cli(
+      db,
+      ["jobs-stdio"],
+      `${[
+        {
+          jsonrpc: "2.0",
+          id: 1,
+          method: "job.run",
+          params: {
+            runtime: "codex",
+            mode: "agent",
+            cwd: packageDir,
+            prompt: "stdio run",
+          },
+        },
+        { jsonrpc: "2.0", id: 3, method: "shutdown", params: {} },
+      ]
+        .map((line) => JSON.stringify(line))
+        .join("\n")}\n`,
+    )
+    expect(stdio.code).toBe(0)
+    const stdioJobId = stdio.stdout
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line))
+      .find((line) => line.id === 1)?.result.job.id as string
+    expect(stdioJobId).toBeTruthy()
+    // A second session cancels its own running protocol job.
+    const stdin = new PassThrough()
+    let stdioOut = ""
+    let runAcknowledged: () => void = () => {}
+    const acknowledged = new Promise<void>((resolve) => {
+      runAcknowledged = resolve
+    })
+    const stdioSession = runHeadlessCliCommand({
+      db: db as never,
+      argv: ["Locus", HEADLESS_CLI_MARKER, "jobs-stdio"],
+      stdin,
+      stdout: {
+        write(chunk: string) {
+          stdioOut += chunk
+          if (stdioOut.includes('"id":1')) runAcknowledged()
+        },
+      },
+      stderr: { write: () => true },
+      runner: async (request, observer) => {
+        observer.appendEvent("assistant_delta", { text: "working" })
+        await new Promise((resolve) => {
+          if (request.signal.aborted) resolve(null)
+          request.signal.addEventListener("abort", () => resolve(null), {
+            once: true,
+          })
+        })
+        return { status: "canceled", exitCode: 5 }
+      },
+    })
+    stdin.write(
+      `${JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "job.run",
+        params: {
+          runtime: "codex",
+          mode: "agent",
+          cwd: packageDir,
+          prompt: "stdio cancel",
+        },
+      })}\n`,
+    )
+    await acknowledged
+    const cancelJobId = JSON.parse(
+      stdioOut
+        .trim()
+        .split("\n")
+        .find((line) => line.includes('"id":1')) ?? "{}",
+    ).result.job.id as string
+    stdin.write(
+      `${JSON.stringify({
+        jsonrpc: "2.0",
+        id: 2,
+        method: "job.cancel",
+        params: { jobId: cancelJobId },
+      })}\n${JSON.stringify({ jsonrpc: "2.0", id: 3, method: "shutdown", params: {} })}\n`,
+    )
+    stdin.end()
+    expect(await stdioSession).toBe(0)
+    expect(
+      sqlite
+        .query("SELECT status FROM agent_jobs WHERE id = ?")
+        .get(cancelJobId),
+    ).toEqual({ status: "canceled" })
 
     // Desktop job: created, started, one output, completed; a second one
     // canceled while running.
@@ -268,8 +413,12 @@ describe("canonical run event ledger v1 fact-key invariant", () => {
           WHERE j.ledger_version = 1`,
       )
       .get() as { jobs: number; rows: number; completed: number }
-    expect(summary.jobs).toBeGreaterThanOrEqual(9)
-    expect(summary.completed).toBeGreaterThanOrEqual(7)
+    // Exact counts: 12 v1 jobs (CLI run, queued CLI run, API agent create,
+    // queued API run, its retry, API completion, two jobs-stdio jobs, two
+    // desktop jobs, the schedule job, the recovered job); every one but the
+    // desktop job whose cancel was only requested (still running) completed.
+    expect(summary.jobs).toBe(12)
+    expect(summary.completed).toBe(11)
     expect(
       sqlite
         .query(

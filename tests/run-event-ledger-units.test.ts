@@ -7,7 +7,7 @@
  */
 import { afterEach, describe, expect, test } from "bun:test"
 import { createHash } from "node:crypto"
-import { mkdtempSync, rmSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { decodeCoarseRuntimeObservation } from "../src/main/lib/agent-runtime/ledger-ingress"
@@ -294,6 +294,29 @@ describe("terminal artifact preparation (design Artifacts and Terminal Commit Or
     expect(created).toHaveLength(1)
     expect(created[0]?.payload).toMatchObject({ artifacts: [request] })
     closeStableDirectory(handle)
+  })
+
+  test("the run-dir writer refuses a path that escapes the admitted run directory (T2-13 / S-24)", () => {
+    const parent = mkdtempSync(join(tmpdir(), "run-units-escape-"))
+    tempDirs.push(parent)
+    const runDir = join(parent, "run")
+    mkdirSync(runDir)
+    const handle: RunArtifactRunDir = Object.assign(
+      openStableDirectory(runDir, "Artifact run"),
+      { fileReceipts: new Map() },
+    )
+    try {
+      expect(() =>
+        writeRunArtifactFile(handle, "../escape.json", "{}"),
+      ).toThrow("single path component")
+      expect(() =>
+        writeRunArtifactFile(handle, "nested/escape.json", "{}"),
+      ).toThrow("single path component")
+      expect(existsSync(join(parent, "escape.json"))).toBe(false)
+      expect(existsSync(join(runDir, "nested"))).toBe(false)
+    } finally {
+      closeStableDirectory(handle)
+    }
   })
 })
 

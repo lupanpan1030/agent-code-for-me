@@ -79,7 +79,14 @@ describe("headless runtime event bridge", () => {
     ])
     // The ledger keeps the bare payload and adds its ID-less item correlation
     // (refactor-canonical-run-event-ledger, coarse assistant item key).
-    expect(payloads[3]).toMatchObject({ text: "hello <redacted>" })
+    expect(payloads[3]).toEqual({
+      text: "hello <redacted>",
+      item: {
+        correlationKey: expect.stringMatching(/^corr-[0-9a-f]+$/),
+        channel: "assistant",
+        partIndex: 0,
+      },
+    })
     expect(payloads[3]).not.toHaveProperty("runId")
     expect(payloads[3]).not.toHaveProperty("runEventSequence")
     expect(payloads[4]).toMatchObject({
@@ -169,7 +176,16 @@ describe("headless runtime event bridge", () => {
       "error",
       "completed",
     ])
-    expect(assistant?.payload).toMatchObject({ text: "hello" })
+    // Exact public v1 payload (a leak guard): the text plus the ledger's
+    // ID-less assistant item correlation.
+    expect(assistant?.payload).toEqual({
+      text: "hello",
+      item: {
+        correlationKey: expect.stringMatching(/^corr-[0-9a-f]+$/),
+        channel: "assistant",
+        partIndex: 0,
+      },
+    })
     // refactor-canonical-run-event-ledger tasks 5.3 (APPROVED design, Native
     // Method and Item Disposition): coerced internal types keep their payload
     // members and carry payload.subtype = the original internal type name.

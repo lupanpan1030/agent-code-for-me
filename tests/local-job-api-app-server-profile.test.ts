@@ -208,8 +208,13 @@ describe("Local Job API Codex app-server profile", () => {
         status: "desktop_runtime_adapter_started",
         adapterSource: "codex-app-server",
       })
-      expect(apiEvents[4].payload).toMatchObject({
+      expect(apiEvents[4].payload).toEqual({
         text: "app-server local job response",
+        item: {
+          correlationKey: expect.stringMatching(/^corr-[0-9a-f]+$/),
+          channel: "assistant",
+          partIndex: 0,
+        },
       })
       expect(apiEvents[5].payload).toMatchObject({
         inputTokens: 5,
