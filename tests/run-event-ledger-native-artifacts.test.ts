@@ -14,11 +14,15 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { createHash } from "node:crypto"
 import {
   existsSync,
+  linkSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   realpathSync,
+  renameSync,
   rmSync,
+  symlinkSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs"
 import { tmpdir } from "node:os"
@@ -45,6 +49,7 @@ import { createCodexAppServerHeadlessTaskRunner } from "../src/main/lib/headless
 import { HEADLESS_CLI_MARKER } from "../src/main/lib/headless/cli-args"
 import { runHeadlessCliCommand } from "../src/main/lib/headless/cli-dispatcher"
 import { listAgentJobEvents } from "../src/main/lib/headless/job-store"
+import { localJobApiNativeArtifacts } from "../src/main/lib/headless/local-job-api"
 import { createAgentJobTestDb } from "./helpers/agent-job-test-db"
 import {
   type CodexAppServerScript,
@@ -731,3 +736,126 @@ describe("Codex app-server API run native artifacts", () => {
     }
   })
 })
+
+describe("native admission through the run directory handle (T2-11 / S-08, S-09)", () => {
+  test("a hard link inside the run dir to an outside file is rejected out_of_scope", async () => {
+    const dir = tempDir("native-art-rundir-")
+    const outside = tempDir("native-art-outside-")
+    const target = join(outside, "config.json")
+    writeFileSync(target, '{"auths":{"r":{"auth":"x"}}}')
+    linkSync(target, join(dir, "linked.json"))
+    const runDir = runDirHandle(dir)
+    const { ledger, rows } = memoryLedger("run-native-hardlink")
+    // The production host sink hands its run directory handle to the owner.
+    const sink = createRunArtifactCandidateSink({
+      ledger,
+      runId: "run-native-hardlink",
+      runDir,
+      cwd: dir,
+    })
+    sink.observe({
+      role: "native-file",
+      path: join(dir, "linked.json"),
+      sourceKey: "item:fc-1",
+    })
+    await sink.drain()
+
+    expect(artifactsOf(rows)).toEqual([])
+    expect(admissionsOf(rows)).toEqual([
+      {
+        subtype: "artifact_admission",
+        result: "rejected",
+        reason: "out_of_scope",
+        role: "native-file",
+      },
+    ])
+    expect(JSON.stringify(rows)).not.toContain(outside)
+  })
+
+  test("a run dir swapped for a symlink to an outside directory admits nothing and publishes no outside path", async () => {
+    const parent = tempDir("native-art-parent-")
+    const dir = join(parent, "run")
+    mkdirSync(dir)
+    const runDir = runDirHandle(dir)
+    const outside = tempDir("native-art-outside-")
+    writeFileSync(join(outside, "report.txt"), "outside bytes\n")
+    renameSync(dir, join(parent, "run-moved"))
+    symlinkSync(outside, dir)
+    const { ledger, rows } = memoryLedger("run-native-swap")
+    const sink = createRunArtifactCandidateSink({
+      ledger,
+      runId: "run-native-swap",
+      runDir,
+      cwd: parent,
+    })
+    sink.observe({
+      role: "native-file",
+      path: join(dir, "report.txt"),
+      sourceKey: "item:fc-1",
+    })
+    await sink.drain()
+
+    expect(admissionsOf(rows).map((row) => row.result)).toEqual(["rejected"])
+    expect(artifactsOf(rows)).toEqual([])
+    expect(JSON.stringify(rows)).not.toContain(outside)
+    expect(JSON.stringify(rows)).not.toContain("outside bytes")
+  })
+
+  test("terminal preparation lists a file edited twice once with its last digest and drops a file deleted after admission", async () => {
+    const dir = tempDir("native-art-rundir-")
+    const runDir = runDirHandle(dir)
+    const { ledger, rows } = memoryLedger("run-native-stale")
+    const context = { runId: "run-native-stale", runDir, ledger }
+    const output = join(dir, "output.json")
+    const gone = join(dir, "gone.txt")
+    const candidate = (path: string, sourceKey: string) => ({
+      path,
+      ownerRunId: "run-native-stale",
+      media: runArtifactMedia(path),
+      sourceKey,
+    })
+
+    writeFileSync(output, '{"draft":1}')
+    await admitRunArtifactCandidate(candidate(output, "item:fc-1"), context)
+    writeFileSync(output, '{"final":2}')
+    await admitRunArtifactCandidate(candidate(output, "item:fc-2"), context)
+    writeFileSync(gone, "temporary\n")
+    await admitRunArtifactCandidate(candidate(gone, "item:fc-3"), context)
+    unlinkSync(gone)
+    await ledger.settle(SUCCESS_EVIDENCE)
+
+    // The committed facts stay: three admissions.
+    expect(artifactsOf(rows).map((artifact) => artifact.path)).toEqual([
+      output,
+      output,
+      gone,
+    ])
+    const dropped: string[] = []
+    const listed = localJobApiNativeArtifacts(
+      rows as never,
+      runDir,
+      (message) => dropped.push(message),
+    )
+    expect(listed).toEqual([
+      {
+        role: "native-file",
+        path: output,
+        sha256: sha256('{"final":2}'),
+        contentType: "application/json",
+        sizeBytes: Buffer.byteLength('{"final":2}'),
+      },
+    ])
+    expect(dropped).toHaveLength(1)
+    expect(dropped[0]).not.toContain(gone)
+    const completed = rows.find((row) => row.type === "completed")
+    for (const row of rows.filter(
+      (entry) => entry.type === "artifact_created",
+    )) {
+      expect(row.sequence).toBeLessThan(completed?.sequence ?? 0)
+    }
+  })
+})
+
+function runArtifactMedia(path: string): string {
+  return path.endsWith(".json") ? "application/json" : "text/plain"
+}

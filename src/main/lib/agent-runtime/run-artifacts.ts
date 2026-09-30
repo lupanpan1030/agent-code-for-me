@@ -14,10 +14,22 @@ import {
   unlinkSync,
   writeSync,
 } from "node:fs"
-import { extname, isAbsolute, join, relative, resolve } from "node:path"
+import {
+  basename,
+  dirname,
+  extname,
+  isAbsolute,
+  join,
+  relative,
+  resolve,
+  sep,
+} from "node:path"
 import {
   assertStableDirectoryPath,
+  closeStableDirectory,
   fsyncStableDirectory,
+  openRegisteredStableDirectory,
+  openStableDirectoryChild,
   type StableDirectoryHandle,
   stableDirectoryChildPath,
 } from "../filesystem/stable-directory"
@@ -75,9 +87,17 @@ export type RunArtifactCandidate = {
   sourceKey?: string
 }
 
+/**
+ * Admission context of one Run. The host passes the run directory's stable
+ * handle (`runDir`, authority captured at exclusive creation time); a bare
+ * pathname (`allowedRunDir`) is anchored to a directory handle for that one
+ * admission. Either way the candidate is read through the anchored
+ * directory, never through a re-resolved pathname.
+ */
 export type RunArtifactRunContext = {
   runId: string
-  allowedRunDir: string
+  runDir?: StableDirectoryHandle
+  allowedRunDir?: string
   ledger: unknown
 }
 
@@ -103,11 +123,6 @@ export type RunArtifactAdmission =
 /** Largest candidate the owner reads into memory for digest/redaction. */
 const MAX_ARTIFACT_BYTES = 64 * 1024 * 1024
 const MEDIA_TYPE = /^[a-z0-9][a-z0-9.+-]*\/[a-z0-9][a-z0-9.+-]*$/i
-
-function isInside(parent: string, child: string): boolean {
-  const path = relative(parent, child)
-  return path === "" || (!path.startsWith("..") && !isAbsolute(path))
-}
 
 function ledgerPort(ledger: unknown): RunArtifactLedgerPort {
   const port =
@@ -158,108 +173,200 @@ function candidateObservationKey(
   return `artifact-${createHash("sha256").update(identity).digest("hex").slice(0, 24)}`
 }
 
-/** Reads a stable regular file (same inode before and after the read). */
-function readStableRegularFile(path: string): Buffer | null {
-  let fd: number | null = null
+/** Path components of `target` below `root`, or null when outside it. */
+function runDirComponents(root: string, target: string): string[] | null {
+  const path = relative(root, target)
+  if (path === "" || path.startsWith("..") || isAbsolute(path)) return null
+  const components = path.split(sep)
+  return components.every(
+    (component) => component.length > 0 && component !== "..",
+  )
+    ? components
+    : null
+}
+
+/**
+ * Name of a candidate below the anchored run directory. The candidate's
+ * pathname only selects a name: a lexical match against the handle path (or
+ * the pathname it was admitted under), else the real parent directory (a
+ * symlinked prefix such as macOS /tmp). The bytes are always read through
+ * the anchored directory, so an alias can only select a file that is really
+ * inside the admitted run directory.
+ */
+function candidateRunDirComponents(
+  runDir: StableDirectoryHandle,
+  requested: string,
+  alias: string | undefined,
+): string[] | null {
+  for (const root of [runDir.path, ...(alias ? [resolve(alias)] : [])]) {
+    const components = runDirComponents(root, requested)
+    if (components) return components
+  }
   try {
-    fd = openSync(path, "r")
-    const before = fstatSync(fd)
-    if (!before.isFile() || before.size > MAX_ARTIFACT_BYTES) return null
-    const buffer = Buffer.alloc(before.size)
-    let offset = 0
-    while (offset < before.size) {
-      const read = readSync(fd, buffer, offset, before.size - offset, offset)
-      if (read === 0) break
-      offset += read
-    }
-    const after = fstatSync(fd)
-    if (
-      offset !== before.size ||
-      after.size !== before.size ||
-      after.ino !== before.ino ||
-      after.mtimeMs !== before.mtimeMs
-    ) {
-      return null
-    }
-    return buffer
+    const parent = realpathSync(dirname(requested))
+    return runDirComponents(runDir.path, join(parent, basename(requested)))
   } catch {
     return null
+  }
+}
+
+type RunDirFileRead =
+  | { result: "read"; path: string; bytes: Buffer }
+  | { result: "rejected"; reason: "missing" | "out_of_scope" }
+
+function isMissingPathError(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException | null)?.code
+  return code === "ENOENT" || code === "ENOTDIR"
+}
+
+/**
+ * Reads one file of an admitted run directory through its stable handle:
+ * every intermediate directory is opened without following symlinks, the
+ * file must be a single-link regular file (no hard link to an outside file,
+ * no final symlink), is opened `O_NOFOLLOW`, and the run directory path must
+ * keep its identity before and after the read. The published path is the
+ * admitted run-dir path of that file.
+ */
+export function readRunDirArtifactCandidate(
+  runDir: StableDirectoryHandle,
+  path: string,
+  alias?: string,
+): RunDirFileRead {
+  const components = candidateRunDirComponents(runDir, resolve(path), alias)
+  if (!components) return { result: "rejected", reason: "out_of_scope" }
+  const opened: StableDirectoryHandle[] = []
+  try {
+    assertStableDirectoryPath(runDir, "Artifact run")
+    let directory = runDir
+    for (const component of components.slice(0, -1)) {
+      directory = openStableDirectoryChild(directory, component, "Artifact")
+      opened.push(directory)
+    }
+    const name = components[components.length - 1]
+    const stat = lstatSync(stableDirectoryChildPath(directory, name))
+    if (stat.isSymbolicLink() || !stat.isFile() || stat.nlink !== 1) {
+      return { result: "rejected", reason: "out_of_scope" }
+    }
+    if (stat.size > MAX_ARTIFACT_BYTES) {
+      return { result: "rejected", reason: "missing" }
+    }
+    const bytes = readRunArtifactFile(directory, name)
+    assertStableDirectoryPath(runDir, "Artifact run")
+    return { result: "read", path: join(runDir.path, ...components), bytes }
+  } catch (error) {
+    return {
+      result: "rejected",
+      reason: isMissingPathError(error) ? "missing" : "out_of_scope",
+    }
   } finally {
-    if (fd !== null) closeSync(fd)
+    for (const directory of opened) closeStableDirectory(directory)
   }
 }
 
 /**
- * Validates one candidate without touching the ledger. Pure with respect to
- * the filesystem: it only reads the candidate inside the admitted run dir.
+ * Re-verifies an admitted native artifact ref at terminal preparation: the
+ * file is re-read through the run directory handle and must still match the
+ * registered digest and size.
+ */
+export function verifyRunDirArtifactRef(
+  runDir: StableDirectoryHandle,
+  ref: { path: string; sha256: string; sizeBytes: number },
+): boolean {
+  const read = readRunDirArtifactCandidate(runDir, ref.path)
+  if (read.result !== "read" || read.path !== ref.path) return false
+  return (
+    read.bytes.length === ref.sizeBytes &&
+    createHash("sha256").update(read.bytes).digest("hex") === ref.sha256
+  )
+}
+
+/**
+ * Validates one candidate without touching the ledger. It only reads the
+ * candidate through the admitted run directory's stable handle.
  */
 export function evaluateRunArtifactCandidate(
   candidate: RunArtifactCandidate,
-  context: { runId: string; allowedRunDir: string },
+  context: {
+    runId: string
+    runDir?: StableDirectoryHandle
+    allowedRunDir?: string
+  },
   isRedactionUnsafe: (text: string) => boolean,
 ): RunArtifactAdmission {
   if (typeof candidate?.path !== "string" || candidate.path.length === 0) {
     return { result: "rejected", reason: "missing" }
   }
-  let allowedRoot: string
+  let runDir = context.runDir ?? null
+  let transient: StableDirectoryHandle | null = null
+  if (!runDir) {
+    if (typeof context.allowedRunDir !== "string") {
+      return { result: "rejected", reason: "out_of_scope" }
+    }
+    try {
+      transient = openRegisteredStableDirectory(
+        context.allowedRunDir,
+        "Artifact run",
+      )
+    } catch {
+      return { result: "rejected", reason: "out_of_scope" }
+    }
+    runDir = transient
+  }
   try {
-    allowedRoot = realpathSync(context.allowedRunDir)
-  } catch {
-    return { result: "rejected", reason: "out_of_scope" }
-  }
-  const requested = resolve(candidate.path)
-  if (
-    !isInside(allowedRoot, requested) &&
-    !isInside(resolve(context.allowedRunDir), requested)
-  ) {
-    return { result: "rejected", reason: "out_of_scope" }
-  }
-  try {
-    lstatSync(requested)
-  } catch {
-    return { result: "rejected", reason: "missing" }
-  }
-  let actual: string
-  try {
-    actual = realpathSync(requested)
-  } catch {
-    return { result: "rejected", reason: "missing" }
-  }
-  if (!isInside(allowedRoot, actual)) {
-    return { result: "rejected", reason: "out_of_scope" }
-  }
-  if (candidate.ownerRunId !== context.runId) {
-    return { result: "rejected", reason: "ownership_mismatch" }
-  }
-  const bytes = readStableRegularFile(actual)
-  if (!bytes) return { result: "rejected", reason: "missing" }
-  const sha256 = createHash("sha256").update(bytes).digest("hex")
-  const expected = candidate.expectedSha256
-  if (
-    expected !== undefined &&
-    expected !== null &&
-    sha256 !== String(expected).toLowerCase()
-  ) {
-    return { result: "rejected", reason: "digest_mismatch" }
-  }
-  if (
-    typeof candidate.media !== "string" ||
-    !MEDIA_TYPE.test(candidate.media)
-  ) {
-    return { result: "rejected", reason: "out_of_scope" }
-  }
-  // The admitted path is published with the ref, so it is checked too.
-  if (isRedactionUnsafe(actual) || isRedactionUnsafe(bytes.toString("utf8"))) {
-    return { result: "rejected", reason: "redaction_unsafe" }
-  }
-  return {
-    result: "admitted",
-    artifact: {
-      path: actual,
-      sha256,
-      sizeBytes: bytes.length,
-      contentType: candidate.media,
-    },
+    const components = candidateRunDirComponents(
+      runDir,
+      resolve(candidate.path),
+      context.allowedRunDir,
+    )
+    if (!components) return { result: "rejected", reason: "out_of_scope" }
+    if (candidate.ownerRunId !== context.runId) {
+      try {
+        lstatSync(resolve(candidate.path))
+      } catch {
+        return { result: "rejected", reason: "missing" }
+      }
+      return { result: "rejected", reason: "ownership_mismatch" }
+    }
+    const read = readRunDirArtifactCandidate(
+      runDir,
+      candidate.path,
+      context.allowedRunDir,
+    )
+    if (read.result === "rejected") return read
+    const bytes = read.bytes
+    const sha256 = createHash("sha256").update(bytes).digest("hex")
+    const expected = candidate.expectedSha256
+    if (
+      expected !== undefined &&
+      expected !== null &&
+      sha256 !== String(expected).toLowerCase()
+    ) {
+      return { result: "rejected", reason: "digest_mismatch" }
+    }
+    if (
+      typeof candidate.media !== "string" ||
+      !MEDIA_TYPE.test(candidate.media)
+    ) {
+      return { result: "rejected", reason: "out_of_scope" }
+    }
+    // The admitted path is published with the ref, so it is checked too.
+    if (
+      isRedactionUnsafe(read.path) ||
+      isRedactionUnsafe(bytes.toString("utf8"))
+    ) {
+      return { result: "rejected", reason: "redaction_unsafe" }
+    }
+    return {
+      result: "admitted",
+      artifact: {
+        path: read.path,
+        sha256,
+        sizeBytes: bytes.length,
+        contentType: candidate.media,
+      },
+    }
+  } finally {
+    if (transient) closeStableDirectory(transient)
   }
 }
 
@@ -303,7 +410,7 @@ export async function admitRunArtifactCandidate(
   await port.admit({
     observationKey,
     artifacts: [artifact],
-    runDir: runContext.allowedRunDir,
+    runDir: runContext.runDir?.path ?? runContext.allowedRunDir ?? "",
     native: true,
   })
   return admission
@@ -368,7 +475,7 @@ export async function admitRunArtifactContent(
   }
   return admitRunArtifactCandidate(candidate, {
     runId: runContext.runId,
-    allowedRunDir: runContext.runDir.path,
+    runDir: runContext.runDir,
     ledger: runContext.ledger,
   })
 }

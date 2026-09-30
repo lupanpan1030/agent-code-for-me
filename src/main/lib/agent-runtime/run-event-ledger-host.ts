@@ -354,7 +354,8 @@ export function createRunArtifactCandidateSink(input: {
           },
           {
             runId: input.runId,
-            allowedRunDir: input.runDir.path,
+            // The run directory's stable handle is the admission authority.
+            runDir: input.runDir,
             ledger: input.ledger,
           },
         ),

@@ -34,6 +34,7 @@ import {
   type RunArtifactFilesystemHooks,
   type RunArtifactRunDir,
   readRunArtifactFile,
+  verifyRunDirArtifactRef,
   writeRunArtifactFile,
 } from "../agent-runtime/run-artifacts"
 import type { LedgerRecord } from "../agent-runtime/run-event-ledger"
@@ -922,13 +923,19 @@ export function writeLocalJobApiInitialArtifacts(input: {
 
 /**
  * Admitted native artifact refs of one Run, from its committed
- * `artifact_created` records (the run artifact owner already verified them
- * inside the admitted run directory; their registered digests are reused).
+ * `artifact_created` records, as published in the terminal run-dir files.
+ * Entries are collapsed by path (the last admission of a file wins: a file
+ * edited twice is one entry with its latest digest), and each one is
+ * re-read through the run directory handle and must still match its
+ * registered digest and size; a stale or missing file is not listed (the
+ * committed `artifact_created` facts stay, the drop is a host diagnostic).
  */
 export function localJobApiNativeArtifacts(
   records: readonly LedgerRecord[],
+  runDir: LocalJobApiArtifactRunDir,
+  onDropped?: (message: string) => void,
 ): LocalJobApiArtifact[] {
-  const artifacts: LocalJobApiArtifact[] = []
+  const latestByPath = new Map<string, LocalJobApiArtifact>()
   for (const record of records) {
     if (record.type !== "artifact_created") continue
     const payload =
@@ -949,13 +956,30 @@ export function localJobApiNativeArtifacts(
       ) {
         continue
       }
-      artifacts.push({
+      latestByPath.delete(artifact.path)
+      latestByPath.set(artifact.path, {
         role: artifact.role,
         path: artifact.path,
         sha256: artifact.sha256,
         contentType: artifact.contentType,
         sizeBytes: artifact.sizeBytes,
       })
+    }
+  }
+  const artifacts: LocalJobApiArtifact[] = []
+  for (const artifact of latestByPath.values()) {
+    if (
+      verifyRunDirArtifactRef(runDir, {
+        path: artifact.path,
+        sha256: artifact.sha256 ?? "",
+        sizeBytes: artifact.sizeBytes ?? -1,
+      })
+    ) {
+      artifacts.push(artifact)
+    } else {
+      onDropped?.(
+        `[artifacts] a ${artifact.role} ref no longer matches its file and is not listed.`,
+      )
     }
   }
   return artifacts
@@ -1121,6 +1145,8 @@ export function createLocalJobApiTerminalArtifacts(input: {
   runDir: LocalJobApiArtifactRunDir | null
   jobId: string
   filesystemHooks?: LocalJobApiArtifactFilesystemHooks
+  /** Sanitized host diagnostics (never persisted). */
+  onHostDiagnostic?: (message: string) => void
 }): {
   preparer?: {
     prepare(prepareInput: {
@@ -1143,7 +1169,11 @@ export function createLocalJobApiTerminalArtifacts(input: {
           runDir,
           job: terminalJobProjection(current, jobMutation),
           events: records.map(toCommittedEventRow),
-          nativeArtifacts: localJobApiNativeArtifacts(records),
+          nativeArtifacts: localJobApiNativeArtifacts(
+            records,
+            runDir,
+            input.onHostDiagnostic,
+          ),
           filesystemHooks: input.filesystemHooks,
         })
         prepared = artifacts
