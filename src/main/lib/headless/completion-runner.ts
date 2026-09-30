@@ -8,6 +8,7 @@ import type {
 import type { ProviderProfileProtocol } from "../../../shared/provider-profile-types"
 import type {
   CreateCanonicalRunEventLedgerOptions,
+  LedgerOutcome,
   OutcomeEvidence,
 } from "../agent-runtime/run-event-ledger"
 import {
@@ -61,6 +62,8 @@ export type RunPersistedCompletionJobResult = {
   job: AgentJob
   events: AgentJobEvent[]
   exitCode: number
+  /** The committed outcome from `readOutcome()` (see RunPersistedAgentJobResult). */
+  outcome: LedgerOutcome | null
 }
 
 type CompletionProviderRequest = {
@@ -563,6 +566,7 @@ export async function runPersistedCompletionJob(
           : {}),
       },
     )
+    const outcome = await ledger.readOutcome()
     const completed = getAgentJob(options.db, job.id) ?? job
     return {
       job: completed,
@@ -571,6 +575,7 @@ export async function runPersistedCompletionJob(
         status: completed.status as "succeeded" | "failed" | "canceled",
         errorCode: completed.errorCode,
       }),
+      outcome,
     }
   }
 

@@ -11,6 +11,7 @@ import type { RunArtifactRunDir } from "../agent-runtime/run-artifacts"
 import {
   type CanonicalRunEventLedger,
   type CreateCanonicalRunEventLedgerOptions,
+  type LedgerOutcome,
   type LedgerRecord,
   type OutcomeEvidence,
   RunEventLedgerError,
@@ -88,6 +89,12 @@ export type RunPersistedAgentJobResult = {
   job: AgentJob
   events: AgentJobEvent[]
   exitCode: number
+  /**
+   * The Run's committed outcome from the ledger's `readOutcome()`: the final
+   * status and the sequence of its one `completed` (records after it are
+   * diagnostic-only).
+   */
+  outcome: LedgerOutcome | null
 }
 
 export function isFakeRunnerEnabled(
@@ -587,6 +594,7 @@ export async function runPersistedAgentJob(
           : {}),
       },
     )
+    const outcome = await ledger.readOutcome()
     const completed = getAgentJob(options.db, job.id) ?? job
     return {
       job: completed,
@@ -595,6 +603,7 @@ export async function runPersistedAgentJob(
         status: completed.status as AgentJobStatus,
         errorCode: completed.errorCode,
       }),
+      outcome,
     }
   }
 
