@@ -1,6 +1,6 @@
 # Verification
 
-Status: **APPROVED 2026-09-07 (Owner; bound to 9ebe6c34); implementation candidate re-frozen 2026-10-01 after touch-up T1 (gaps G1–G5 closed); next gate: Codex IMPLEMENTATION_VERIFIED and a fresh-context Claude review on the same exact SHA**
+Status: **APPROVED 2026-09-07 (Owner; bound to 9ebe6c34); implementation candidate re-frozen 2026-10-01 after touch-up T2 (review synthesis of `a32800b6`: T2-1, T2-2, T2-4…T2-14 closed; T2-3 pending Owner decision); next gate: the targeted re-review of the T2 diff (`a32800b6..` the T2 candidate)**
 
 This file holds the implementation candidate evidence (next section), the scenario
 register with red and green evidence, and the historical draft-review receipts.
@@ -16,6 +16,106 @@ Implementer: Claude Opus 5.5 (Phases I–III, test-first). Coordinator rulings: 
 Fable (`84643c99`, `c9bc12a8`). This section records the frozen implementation
 candidate. It is implementer evidence only: it is not Codex IMPLEMENTATION_VERIFIED,
 not a fresh-context REVIEW_APPROVED and not Owner ACCEPTED.
+
+### Touch-up T2 (review synthesis of `a32800b6`), 2026-10-01
+
+Implementer: Claude Opus 5.5, coordinator dispatch `impl-phase3-touchup2`, scope =
+synthesis §4 (`phase3-review-synthesis-a32800b6.md`). The four-review verdict on
+`a32800b6` was CHANGES_REQUESTED (3 P1, 9 P2). T2 changes product source, so `a32800b6`
+is superseded; the T2 candidate is the commit that adds this section. It is implementer
+evidence only (not a re-review verdict, not Owner ACCEPTED).
+
+| SHA | Subject | Closes |
+| --- | --- | --- |
+| `581cd8e8` | fix(redaction): restore the job store's generic secret arm and key rule for durable records | T2-1 / S-05 (P1) |
+| `6c89cfe2` | fix(ledger): settle transport exits with the host terminal projection | T2-2 / S-01 (P1) |
+| — | (T2-3 / S-06, `completed.payload` members) | **pending Owner decision** (not done in T2) |
+| `f2fa5f1d` | fix(local-job-api): keep registered artifact refs out of the public result | T2-4 / S-10 |
+| `1a575a62` | fix(codex): persist Codex assistant metadata from committed usage and native context | T2-5 / S-11 |
+| `684d434c` | fix(outcome): count completed-only assistant items as output evidence | T2-6 / S-13 |
+| `10a4f821` | fix(outcome): settle native Runs from the committed live native terminal | T2-7 / S-02, S-14 |
+| `3fefd163` | fix(codex): record every client response under its JSON-RPC wire id | T2-8 / S-03 |
+| `27d14a58` | fix(artifacts): admit native candidates through the run directory handle | T2-11 / S-08, S-09 |
+| `09054cd0` | fix(redaction): omit post-seal continuations of withheld stream channels | T2-10 / S-07 |
+| `90ca783e` | fix(artifacts): publish terminal run-dir files only after the terminal commit | T2-9 / S-04 |
+| `60a723fa` | fix(jobs): never leave or run a queued job without its job_created fact | T2-12 / S-12 |
+| `3f215da1` | test: restore exact public payloads and strengthen the ledger writer tests | T2-13 / S-21…S-24 |
+| (this commit) | docs(openspec): record touch-up T2 | T2-14 / S-27 |
+
+Consumer-visible effects of T2 relative to `a32800b6` (all restore the base behavior or
+the approved design; none extends the signed scope):
+
+- **T2-1:** durable records and the terminal job-row fields again scrub the job store's
+  generic `access_token|…|api_key|secret|password` values (any separator, any length)
+  and `*token*`/`authorization`/`api_key`/`secret`/`password` keys (numeric `*Tokens`
+  counts and nulls kept). Runtime/renderer redaction is unchanged.
+- **T2-2:** a transport-exit settlement writes the host's job-row projection (`errorCode`
+  `transport_exit`, message, `result_json`) and the final run-dir files; a Locus-initiated
+  `transport.close()` after the adapter's own result is never a transport-exit candidate,
+  so pre-terminal app-server failures settle `failed` (`codex_app_server_failed`) and an
+  API cancel settles `canceled`/exit 5, as at base.
+- **T2-4:** the public inner `result` (`runs create/retry/result`) and `job.result` no
+  longer carry the store-merged `artifactRefs`; a result that held only refs is `null`.
+- **T2-7:** a Codex app-server Run settles `native_terminal` from the committed
+  `turn/completed` (`reasons` `native_failed`, `completed.payload.code` = the native
+  code, `completed` fact key `settle:<turn/completed observation key>`); the desktop
+  finalizer uses the committed native terminal (Codex `turn/completed`, Claude SDK
+  `result`) and otherwise `host_result`.
+- **T2-8:** `protocol_response`/`native_resume_*` `jsonRpcId` is the JSON-RPC wire id
+  (a number from the stdio transport), and `initialize`, `mcpServerStatus/list` and
+  `turn/interrupt` responses add `protocol_response` status records.
+- **T2-10:** a `late_event` whose stream channel held a withheld potential-secret prefix
+  at the seal carries `observation.contentOmitted: true` and `contentLength` instead of
+  text; the live renderer drops such a buffered post-terminal stream fragment.
+- **T2-11:** native candidates are admitted only as single-link regular files read
+  through the run directory handle; `result.json`/`artifacts.json` list each native path
+  once with its last admitted digest and omit entries whose file no longer matches.
+- **T2-9:** terminal `events.jsonl`/`result.json`/`artifacts.json` appear under their
+  final names only after the terminal commit.
+- **T2-12:** a create/retry whose `job_created` cannot be recorded leaves no queued row.
+
+Decisions and disclosures recorded by T2:
+
+- **S-12 two-commit creation (disclosed structure, mitigated).** The job row insert and
+  `job_created` stay two commits: the ledger ports are asynchronous promises on the Run's
+  serial chain while better-sqlite3 transactions are synchronous, so one transaction
+  would need a synchronous ledger creation path (a structural change outside a
+  touch-up). Mitigation: `createAgentJob`/`retryAgentJob` delete the just-inserted row
+  when the fact cannot be recorded (only while queued with no committed record);
+  `startAgentJob` refuses a v1 job with no committed `lifecycle:job-created` fact
+  (`MISSING_JOB_CREATED`) and the queue listing skips such rows. Residual: a crash
+  between the two commits, or a failed fact after a schedule's own transaction, leaves a
+  queued orphan that is never executed; it stays queued and cancellable (recovery acts
+  on running rows only).
+- **T2-9 residual (disclosed).** A crash between the terminal SQL commit and `publish()`
+  leaves the committed ledger as the truth with the final files missing (the initial
+  `events.jsonl`/`artifacts.json` and unreferenced `.<name>.locus-staged` files remain);
+  files are never contradictory. Nothing cleans staged files after such a crash.
+- **T2-8.** A transport that exposes no wire id (only test fakes) yields an
+  uncorrelated `protocol_response`; no id is invented. The adapter still does not wait
+  for the `turn/interrupt` response before closing; it is recorded when it arrives.
+- **T2-10.** The post-seal omission is memory-only (like the exact hints): a ledger
+  recomposed in another process after the seal starts with fresh stream state.
+- **T2-11.** A bare-pathname admission context (tests) is anchored for that one
+  admission; the host always passes the run directory handle.
+- **T2-2 desktop.** The desktop job host also registers a job-row projection, so a
+  desktop Codex transport exit records an error code and message.
+
+Follow-up register (recorded, not fixed in T2; synthesis §6): S-15 usage-decrease guard
+compares to the baseline, not the last total; S-16 `flushLate` makes one raw append per
+buffered late entry; S-17 ID-less coarse usage dedupe hashes the payload and desktop
+Claude `messageMetadata` vectors are not extracted; S-18 store backstops for post-seal
+`jobMutation`/`artifactRefs`/`terminalSequence` and provenance immutability, stale
+cached provenance; S-19 `never_claimed` ignores execution evidence and same-PID reuse;
+S-20 completion seals `locusBuild:"unknown"`; S-25 `runs result` takes path/type/size
+from the workspace-writable manifest keyed on role+digest (pre-existing); S-26 Codex/exec
+spawn the unresolved path after the realpath check; S-28 Owner product note: after
+`NATIVE_RESUME_REJECTED` a Claude sub-chat keeps retrying the missing session until
+Phase 5 binding repair; S-29 release runbook: stop old daemons before upgrading (v1
+default with an old writer attached) and surface stuck v0 queued/running rows. Lens B
+notes: the legacy-symbol scan walks `src/` only; `--run-event-ledger-fixtures=` also
+replaces the repository pins (CI never passes it); the `job-store.ts` ↔
+`run-event-ledger-host.ts` import cycle is intended.
 
 ### Touch-up T1 (gaps G1–G5), 2026-10-01
 
@@ -269,6 +369,9 @@ end of Phase II:
    JSON-RPC id internally and returns only the result
    (`src/main/lib/codex/app-server-transport.ts:69-72, 487-499`); JSON-RPC error codes are
    kept. If the review judges either a deviation, it becomes a remediation slice.
+   **Ruled non-conformant by the review synthesis of `a32800b6` (§3.1) and resolved in
+   touch-up T2:** T2-7 (native terminal evidence) and T2-8 (wire-id correlation for
+   every client response).
 4. **Schema identity over compiled-in schema documents — accepted with disclosure.**
    `ExecutionProvenance.schemaFiles` fingerprints the schema documents compiled into the
    adapter, not files read at run time: `codex-app-server/v2/dispositions.json` (the pinned
@@ -302,13 +405,13 @@ Signed scope: Owner answers 2026-09-07 (R1 = DIRECT_NEW_STANDARD for C7 rows 4/5
 | 3 | `canonical-run-ledger` feature, closed enum extension, optional experimental `payload.extensions["runtime.codex.v1"]`, preserved string `payload.runtime` | C7 rows 2/10, local-job-api delta | In scope |
 | 4 | Bare payloads; the desktop wrapper disappears | C7 row 1 (internal wrapper) | In scope; no change for API jobs |
 | 5 | Additive `error.classification`, usage snapshot members, `late_event`, `subtype: "system_lifecycle"` on host status | C7 row 10, local-job-api delta | In scope |
-| 6 | `completed.payload` becomes the ledger outcome; `exitCode`, `errorCode`, `errorMessage`, `result` are no longer event payload members (they stay on the job row and the result envelope) | The events row says "Additive except R1 terminal payload" and the design defines `completed.payload`; C7 row 1 says no field is deleted and the member removal is not enumerated. The guide already listed event payload details beyond the envelope as not stable | **Beyond explicit wording — for review** |
+| 6 | `completed.payload` becomes the ledger outcome; `exitCode`, `errorCode`, `errorMessage`, `result` are no longer event payload members (they stay on the job row and the result envelope) | The events row says "Additive except R1 terminal payload" and the design defines `completed.payload`; C7 row 1 says no field is deleted and the member removal is not enumerated. The guide already listed event payload details beyond the envelope as not stable | **pending Owner decision (T2-3)** — review synthesis S-06 (P1 governance): Owner acknowledgment in Consumer Impact rows 1/5 + §10, or additive restore |
 | 7 | Persisted redaction marker becomes `<redacted>` (the store previously also wrote `[redacted]`, `[redacted-jwt]`, `[redacted-pem]`) | C7 row 7 keeps redaction inside the promised boundary; the marker text was never documented | **Beyond explicit wording — for review** |
-| 8 | Stale workers that are alive, EPERM, unknown or claimed without a PID stay `running` with a host `heartbeat_only` diagnostic instead of being interrupted | Design/task 4.3 (Owner-approved design); not in the Consumer Impact table | **Beyond explicit Consumer Impact wording — for review** |
+| 8 | Stale workers that are alive, EPERM, unknown or claimed without a PID stay `running` with a host `heartbeat_only` diagnostic instead of being interrupted | Design/task 4.3; the Owner-approved core recovery scenario (`specs/agent-runtime-core/spec.md`) | In scope via the approved spec (synthesis §3.2); now listed in proposal Consumer Impact row 4 (T2-14, S-27) |
 | 9 | Workbench no longer renders Codex "file-change" rows (`patchUpdated` → `tool_delta` with `changeCount`, `turn/diff/updated` → `status/diff_observation`) | Parity delta disposition table; Workbench rendering is outside C7 §9.1 | Conforms to the table; UX change not enumerated — for review and Owner product acceptance |
 | 10 | Codex app-server API runs submit native candidates; admitted entries use the proposal's roles `native-file`/`native-image`/`native-diff` and follow the Locus run-dir files in `result.json`/`artifacts.json`; rejections carry `role` | Proposal artifact row and C7 row 8 ("Newly admitted native artifacts add entries") | In scope after T1 (was a deviation, gap G2) |
-| 12 | `runs result` lists only manifest entries the run's ledger registered; identical for committed runs, hides prospective refs while a terminal commit is pending or failed | Design "Artifacts and Terminal Commit Order" | Conforms to the design; listed for review (T1 finding 1) |
-| 11 | Failed headless app-server runs report `host_failed` without a native `code` | — | Referred with decision 3 |
+| 12 | `runs result` lists only manifest entries the run's ledger registered; identical for committed runs, hides prospective refs while a terminal commit is pending or failed | Design "Artifacts and Terminal Commit Order" | Conforms to the design (T1 finding 1; synthesis §3.2). T2-4: the registered refs stay a reader detail; the public inner `result`/`job.result` no longer carry `artifactRefs` |
+| 11 | Failed headless app-server runs report `host_failed` without a native `code` | — | Resolved by T2-7: app-server Runs settle `native_terminal` from the committed `turn/completed` (`native_failed`, native `code`); exec/completion Runs and pre-terminal adapter failures keep `host_result` (`host_failed`) |
 
 ### Gaps observed during Phase III (closed by touch-up T1)
 

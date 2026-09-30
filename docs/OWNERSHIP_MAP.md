@@ -374,6 +374,9 @@ or UI helper.
   `classifyCodexThreadSnapshot` resume-snapshot classification),
   `src/main/lib/agent-runtime/stream-event-mapper.ts` (pure
   `projectRunEventToRendererChunks` over committed records),
+  `src/main/lib/codex/app-server-transport.ts` (JSON-RPC wire ids; its
+  per-request `onSent` hook hands the wire id to the adapter so every client
+  response reaches the ledger with its original request correlation),
   `src/main/lib/headless/job-recovery.ts` (stale-worker recovery: 120 s
   heartbeat predicate plus same-host liveness probe or supervisor-observed
   exit; only confirmed-stopped workers settle, others are a host
@@ -381,7 +384,9 @@ or UI helper.
   neutral native diagnostics in `src/main/lib/claude/agent-sdk-errors.ts`
   (`NATIVE_RESUME_REJECTED`, no expiry inference or session-binding change)
 - Artifact ownership split: `run-artifacts.ts` validates, prepares and writes
-  run-dir files and alone admits native candidates; adapters only hand
+  run-dir files (terminal files are staged, then published after the terminal
+  commit or discarded) and alone admits native candidates, reading them
+  through the run directory handle; adapters only hand
   candidate evidence to the host sink and never mint `artifact_created`. The
   local-job-api capability and `src/main/lib/headless/local-job-api.ts`
   serializers own the v1 file paths, roles, schema and consumer contract
