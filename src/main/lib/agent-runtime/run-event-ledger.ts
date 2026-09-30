@@ -193,6 +193,19 @@ export type CreateCanonicalRunEventLedgerOptions = {
   durableStore: DurableStorePort
   projections?: readonly LedgerProjection[]
   artifactOwner?: unknown
+  /**
+   * Terminal run-dir preparation, supplied by the host only when the Run has
+   * an admitted run directory (it composes run-artifacts.ts with the v1
+   * serializers). It receives the frozen public prefix including the
+   * candidate completed and returns the refs registered with that completed
+   * in the same durable commit; a throw settles failed at the same slot.
+   */
+  terminalArtifacts?: {
+    prepare(input: {
+      records: LedgerRecord[]
+      completed: LedgerRecord
+    }): JsonValue[] | Promise<JsonValue[]>
+  }
   /** Sanitized host infrastructure diagnostics (never persisted). */
   onHostDiagnostic?: (diagnostic: { code: string; message: string }) => void
 }
@@ -591,6 +604,7 @@ class RunEventLedgerImpl {
   private readonly store: DurableStorePort
   private readonly projections: readonly LedgerProjection[]
   private readonly onHostDiagnostic: CreateCanonicalRunEventLedgerOptions["onHostDiagnostic"]
+  private readonly terminalArtifacts: CreateCanonicalRunEventLedgerOptions["terminalArtifacts"]
   private readonly redactor = createExactSecretStreamChannelRedactor<string>()
   private readonly pendingStreamKeys = new Map<string, string[]>()
   private readonly delivered = new Map<string, number>()
@@ -620,6 +634,7 @@ class RunEventLedgerImpl {
     this.store = options.durableStore
     this.projections = options.projections ?? []
     this.onHostDiagnostic = options.onHostDiagnostic
+    this.terminalArtifacts = options.terminalArtifacts
     this.state = this.initialState(provenance)
   }
 
@@ -1236,6 +1251,7 @@ class RunEventLedgerImpl {
         plan.drafts,
         expectedHighWater + 1,
       )
+      const artifactRefs = await this.prepareTerminalArtifacts(records, plan)
       try {
         const result = await awaitable(
           this.store.appendExact({
@@ -1244,8 +1260,8 @@ class RunEventLedgerImpl {
             ...(plan.jobMutation
               ? { jobMutation: clone(plan.jobMutation) }
               : {}),
-            ...(plan.artifactRefs && plan.artifactRefs.length > 0
-              ? { artifactRefs: clone(plan.artifactRefs) }
+            ...(artifactRefs.length > 0
+              ? { artifactRefs: clone(artifactRefs) }
               : {}),
           }),
         )
@@ -1300,6 +1316,54 @@ class RunEventLedgerImpl {
         "durable append failed; ingestion is halted until the observation is resubmitted",
       ),
     )
+  }
+
+  /**
+   * Design "Artifacts and Terminal Commit Order": terminal files are prepared
+   * from the frozen prefix plus the candidate completed (regenerated on every
+   * rebased attempt) and their refs join the same commit. A preparation
+   * failure keeps the terminal slot but settles failed (canceled/interrupted
+   * keep their precedence) with the diagnostic in the completed reasons.
+   */
+  private async prepareTerminalArtifacts(
+    records: LedgerRecord[],
+    plan: Extract<PlanResult, { kind: "commit" }>,
+  ): Promise<JsonValue[]> {
+    const refs = [...(plan.artifactRefs ?? [])]
+    const completed = records.find((record) => record.type === "completed")
+    if (!completed || !this.terminalArtifacts) return refs
+    try {
+      const prepared = await awaitable(
+        this.terminalArtifacts.prepare({
+          records: clone([
+            ...this.state.records,
+            ...records.filter(
+              (record) => Number(record.sequence) <= Number(completed.sequence),
+            ),
+          ]),
+          completed: clone(completed),
+        }),
+      )
+      return [...refs, ...(Array.isArray(prepared) ? prepared : [])]
+    } catch {
+      const payload = isObject(completed.payload)
+        ? (completed.payload as JsonObject)
+        : {}
+      const precedence =
+        payload.status === "canceled" || payload.status === "interrupted"
+      const reasons = Array.isArray(payload.reasons) ? payload.reasons : []
+      completed.payload = {
+        ...payload,
+        status: precedence ? payload.status : "failed",
+        reasons: [...reasons, "terminal_artifact_preparation_failed"],
+      }
+      if (plan.jobMutation && !precedence) plan.jobMutation.status = "failed"
+      this.hostDiagnostic(
+        "LEDGER_TERMINAL_ARTIFACTS_FAILED",
+        "terminal run-dir preparation failed; the Run settles without unverified refs",
+      )
+      return refs
+    }
   }
 
   /**
@@ -2160,7 +2224,12 @@ class RunEventLedgerImpl {
             delta,
             dedupeKey,
             asOfSequence: context.nextSequence,
-            ...(discontinuity ? { discontinuity: true } : {}),
+            ...(discontinuity
+              ? {
+                  discontinuity: true,
+                  discontinuityBasis: "counter_decrease_inference",
+                }
+              : {}),
             ...(isObject(decoded.fields) ? toJsonObject(decoded.fields) : {}),
           }),
         },
@@ -2990,6 +3059,11 @@ class RunEventLedgerImpl {
       source: "snapshot",
       result: recognized ? "reconciled" : "mismatch",
       schemaDisposition: recognized ? "recognized" : "incompatible",
+      // Policy/inference labels: a snapshot is not lossless event replay and
+      // an incompatible schema is a defensive policy, not a measured failure.
+      evidenceLimits: recognized
+        ? ["snapshot_not_event_replay"]
+        : ["snapshot_not_event_replay", "incompatible_schema_policy"],
       ...(nonEmptyString(thread.cliVersion)
         ? { creatorVersion: thread.cliVersion }
         : {}),
