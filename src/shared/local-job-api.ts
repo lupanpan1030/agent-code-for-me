@@ -19,7 +19,33 @@ export const LOCAL_JOB_API_DISCOVERY_FEATURES = [
   "runtime-readiness",
   "provider-binding",
   "completion",
+  "canonical-run-ledger",
 ] as const
+
+/** Namespace of the optional experimental Codex native metadata extension. */
+export const LOCAL_JOB_API_CODEX_RUNTIME_EXTENSION = "runtime.codex.v1" as const
+
+/**
+ * Optional `payload.extensions["runtime.codex.v1"]` of runtime-backed Codex
+ * event payloads (feature `canonical-run-ledger`): redacted native identities
+ * present in that boundary only; absent before execution binding.
+ */
+export type LocalJobApiCodexRuntimeExtension = {
+  schemaVersion: 1
+  maturity: "experimental"
+  threadId?: string
+  turnId?: string
+  itemId?: string
+  sessionId?: string
+  requestId?: string | number
+  callId?: string
+  [key: string]: unknown
+}
+
+export type LocalJobApiEventPayloadExtensions = {
+  [LOCAL_JOB_API_CODEX_RUNTIME_EXTENSION]?: LocalJobApiCodexRuntimeExtension
+  [namespace: string]: unknown
+}
 
 export type LocalJobApiDiscoveryFeature =
   (typeof LOCAL_JOB_API_DISCOVERY_FEATURES)[number]

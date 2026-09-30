@@ -104,7 +104,12 @@
       "enum": ["ready", "needs-auth", "unavailable", "unknown"]
     },
     "discoveryFeature": {
-      "enum": ["runtime-readiness", "provider-binding", "completion"]
+      "enum": [
+        "runtime-readiness",
+        "provider-binding",
+        "completion",
+        "canonical-run-ledger"
+      ]
     },
     "jobKind": {
       "enum": ["agent", "completion"]
@@ -1339,8 +1344,66 @@
         "createdAt": {
           "$ref": "#/$defs/dateTimeOrNull"
         },
-        "payload": true
+        "payload": {
+          "if": {
+            "type": "object"
+          },
+          "then": {
+            "type": "object",
+            "properties": {
+              "extensions": {
+                "$ref": "#/$defs/eventPayloadExtensions"
+              }
+            }
+          }
+        }
       }
+    },
+    "eventPayloadExtensions": {
+      "type": "object",
+      "description": "Optional namespaced native metadata on object event payloads (feature canonical-run-ledger). Consumers ignore namespaces they do not know.",
+      "properties": {
+        "runtime.codex.v1": {
+          "type": "object",
+          "description": "Experimental redacted Codex native identities of a runtime-backed record; absent before execution binding and never added retroactively.",
+          "required": ["schemaVersion", "maturity"],
+          "properties": {
+            "schemaVersion": {
+              "const": 1
+            },
+            "maturity": {
+              "const": "experimental"
+            },
+            "threadId": {
+              "type": "string"
+            },
+            "turnId": {
+              "type": "string"
+            },
+            "itemId": {
+              "type": "string"
+            },
+            "sessionId": {
+              "type": "string"
+            },
+            "requestId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                }
+              ]
+            },
+            "callId": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
     },
     "resultEnvelope": {
       "type": "object",
