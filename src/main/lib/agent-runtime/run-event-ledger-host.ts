@@ -279,7 +279,10 @@ export function createDesktopRendererChannel(input: {
       // The renderer sink owns its own inactive state.
     }
   }
-  const emitCommitted = async (committed: Promise<unknown>) => {
+  const emitCommitted = async (
+    committed: Promise<unknown>,
+    bufferedChunk?: Record<string, unknown>,
+  ) => {
     let records: unknown
     try {
       records = await committed
@@ -292,15 +295,22 @@ export function createDesktopRendererChannel(input: {
       return
     }
     if (!Array.isArray(records)) return
+    if (records.length === 0 && bufferedChunk) {
+      // After the native terminal candidate the ledger buffers the fact as a
+      // post-terminal late diagnostic; the live renderer still receives the
+      // redacted chunk at its place in the stream.
+      emitSafely(redactRendererOnly(bufferedChunk))
+      return
+    }
     for (const record of records) {
       for (const chunk of projectRunEventToRendererChunks(record)) {
         if (!NON_CHAT_PROJECTION_CHUNKS.has(chunk.type)) emitSafely(chunk)
       }
     }
   }
-  const redactRendererOnly = (
+  function redactRendererOnly(
     chunk: Record<string, unknown>,
-  ): Record<string, unknown> => {
+  ): Record<string, unknown> {
     const redacted = redactRuntimePayload(
       JSON.parse(JSON.stringify(chunk)) as JsonValue,
       {
@@ -327,7 +337,7 @@ export function createDesktopRendererChannel(input: {
           type: decoded.type,
           payload: decoded.payload,
         })
-        track(() => emitCommitted(committed))
+        track(() => emitCommitted(committed, chunk))
         return
       }
       const redacted = redactRendererOnly(chunk)

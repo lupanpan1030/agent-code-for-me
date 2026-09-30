@@ -511,7 +511,13 @@ export function createCodexAppServerAdapter({
       }
 
       assertNoCodexAppServerRendererSecrets(request, "request", {
-        trustedSubtreePaths: ["request.mcpSessionServers"],
+        // The Run ledger and committed-record consumer are main-process host
+        // objects composed by the host, not renderer input.
+        trustedSubtreePaths: [
+          "request.mcpSessionServers",
+          "request.ledger",
+          "request.trace",
+        ],
       })
       const permission = assertCodexAppServerPermissionPolicyReady(request)
 
@@ -890,22 +896,28 @@ export function createCodexAppServerAdapter({
       })
 
       let abortHandled = false
+      // Resolves once the interrupt request was handed to the transport (it
+      // must precede transport.close()).
+      let interruptIssued: Promise<void> = Promise.resolve()
       const abortHandler = () => {
         if (abortHandled) return
         abortHandled = true
-        void (async () => {
+        interruptIssued = (async () => {
           // The interrupt target is the Run's native context owned by the
-          // ledger; without an observed turn there is nothing to interrupt.
-          const target = ledger ? await ledger.readNativeContext() : null
+          // ledger (read after the observations already submitted commit);
+          // without an observed turn there is nothing to interrupt.
+          if (!ledger) return
+          await ledger.whenIdle()
+          const target = await ledger.readNativeContext()
           if (target?.threadId && target.turnId) {
-            await transport
+            void transport
               .request("turn/interrupt", {
                 threadId: target.threadId,
                 turnId: target.turnId,
               })
               .catch(() => {})
           }
-        })()
+        })().catch(() => {})
         settleTerminal({
           status: "canceled",
           sessionId,
@@ -1178,6 +1190,7 @@ export function createCodexAppServerAdapter({
       } finally {
         request.signal.removeEventListener("abort", abortHandler)
         removeServerRequest()
+        await interruptIssued
         try {
           await transport.close()
         } catch (closeError) {
@@ -1223,6 +1236,8 @@ export function createCodexAppServerAdapter({
           }
         }
 
+        // Usage is read after every submitted observation committed.
+        if (ledger) await ledger.whenIdle()
         const usage = ledger ? await ledger.readUsage() : null
         const last = usage?.last ?? null
         const total = usage?.total ?? null
