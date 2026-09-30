@@ -319,7 +319,23 @@ function getMcpStatus(payload: unknown): string | undefined {
 
 function getUsagePayload(payload: unknown): Record<string, unknown> {
   if (!isRecord(payload)) return {}
-  return isRecord(payload.messageMetadata) ? payload.messageMetadata : payload
+  if (isRecord(payload.messageMetadata)) return payload.messageMetadata
+  // A committed ledger usage snapshot (v1) carries the per-turn vector in
+  // `last` and the native runtime identities in a namespaced extension.
+  if (payload.kind === "snapshot" && isRecord(payload.last)) {
+    const extensions = isRecord(payload.extensions) ? payload.extensions : {}
+    const codex = isRecord(extensions["runtime.codex.v1"])
+    return {
+      ...(codex
+        ? { provider: "codex", adapterSource: "codex-app-server" }
+        : {}),
+      ...payload.last,
+      cacheReadInputTokens:
+        payload.last.cacheReadInputTokens ?? payload.last.cachedInputTokens,
+      modelContextWindow: payload.modelContextWindow,
+    }
+  }
+  return payload
 }
 
 function getUsage(payload: unknown): WorkbenchTraceUsage | undefined {
