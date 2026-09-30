@@ -355,29 +355,42 @@ or UI helper.
   native context), `src/main/lib/agent-runtime/run-event-ledger-host.ts`
   (host composition: `getOrCreateRunEventLedger` for existing jobs, the
   SQLite store adapter that is the sole importer of `appendExactRunEventBatch`
-  from `src/main/lib/headless/job-store.ts`, host-only execution binding and
-  the desktop renderer channel), `src/main/lib/agent-runtime/run-provenance.ts`
+  from `src/main/lib/headless/job-store.ts`, host-only execution binding, the
+  per-Run native artifact candidate sink of a Run with an admitted run
+  directory and the desktop renderer channel),
+  `src/main/lib/agent-runtime/run-provenance.ts`
   (`captureRunExecutionProvenance`: installation identity, executable digest
   and reproducible schema fingerprints at executable resolution),
-  `src/main/lib/agent-runtime/run-artifacts.ts` (artifact admission and
-  run-dir file preparation/writing), `src/main/lib/agent-runtime/runtime-events.ts`
+  `src/main/lib/agent-runtime/run-artifacts.ts` (artifact admission with the
+  `native-file` / `native-image` / `native-diff` roles, staging of native
+  content inside the admitted run directory, and run-dir file
+  preparation/writing), `src/main/lib/agent-runtime/runtime-events.ts`
   (`createRunEvent` constructor and record types) and
   `src/main/lib/agent-runtime/redaction.ts` (the single redaction algorithms)
 - Supporting owners: `src/main/lib/agent-runtime/ledger-ingress.ts` (stateless
   coarse and desktop stream decode), `src/main/lib/codex/app-server-stream-events.ts`
-  (stateless `decodeCodexNativeBoundary` and the pinned disposition table),
+  (stateless `decodeCodexNativeBoundary` and the pinned disposition table, plus
+  the stateless `codexNativeArtifactEvidence` candidate evidence and
+  `classifyCodexThreadSnapshot` resume-snapshot classification),
   `src/main/lib/agent-runtime/stream-event-mapper.ts` (pure
   `projectRunEventToRendererChunks` over committed records),
   `src/main/lib/headless/job-recovery.ts` (stale-worker recovery: 120 s
-  heartbeat predicate plus same-host liveness probe; only confirmed-stopped
-  workers settle, others are a host `heartbeat_only` diagnostic) and the Claude
+  heartbeat predicate plus same-host liveness probe or supervisor-observed
+  exit; only confirmed-stopped workers settle, others are a host
+  `heartbeat_only` diagnostic) and the Claude
   neutral native diagnostics in `src/main/lib/claude/agent-sdk-errors.ts`
   (`NATIVE_RESUME_REJECTED`, no expiry inference or session-binding change)
 - Artifact ownership split: `run-artifacts.ts` validates, prepares and writes
-  run-dir files; the local-job-api capability and
-  `src/main/lib/headless/local-job-api.ts` serializers own the v1 file paths,
-  roles, schema and consumer contract, and the writer consumes those
-  definitions without forking them
+  run-dir files and alone admits native candidates; adapters only hand
+  candidate evidence to the host sink and never mint `artifact_created`. The
+  local-job-api capability and `src/main/lib/headless/local-job-api.ts`
+  serializers own the v1 file paths, roles, schema and consumer contract
+  (including listing only ledger-registered refs in results), and the writer
+  consumes those definitions without forking them
+- Historical read metadata: `src/main/lib/headless/job-store.ts`
+  `runEventHistoryQuality` labels `ledger_version=0` jobs `legacy_unverified`
+  for the store header and the Workbench read (tRPC `agentJobs.logs`) only;
+  no public job, result or event envelope carries it
 - Consumers: desktop runtime adapters, headless job runners and lifecycle
   services, CLI/protocol/v1 serializers, Workbench, chat transports, and Local
   Browser guest diagnostics through `redactUntrustedDiagnosticPayload` (the
@@ -414,7 +427,9 @@ or UI helper.
   host; a stateful Codex decoder or an interrupt target kept outside the
   ledger's native context; a second redaction algorithm or store-side event
   redaction; a second provenance capture helper or a runtime delivery
-  registry; raw desktop text-delta joins or route-local history reconstruction
+  registry; native artifact admission, staging or `artifact_created` minting
+  outside `run-artifacts.ts`, or a public `historyQuality` field; raw desktop
+  text-delta joins or route-local history reconstruction
   instead of the committed item projection; the retired
   `src/main/lib/agent-runtime/job-event-bridge.ts` and the eleven retired
   symbols `mapDesktopStreamChunkToRunEvents`, `createDesktopStreamEventMapper`,
@@ -461,9 +476,12 @@ or UI helper.
   desktop chat implementation.
 - Run events: the desktop run state holds the job's Run ledger.
   `src/main/lib/claude/agent-sdk-desktop-job.ts` binds the bundled executable's
-  provenance before the query starts, `src/main/lib/claude/agent-sdk-adapter.ts`
-  forwards the query's correlated `system/init` and `result` messages with the
-  resume intent (`ingestClaudeMessage`), the envelope emits through the host
+  provenance before the query starts and hands the tuple to the desktop
+  request, `src/main/lib/claude/agent-sdk-adapter.ts` re-checks it
+  (`assertClaudeAgentSdkExecutableUnchanged`) immediately before the SDK
+  spawns the executable and forwards the query's correlated `system/init` and
+  `result` messages with the resume intent (`ingestClaudeMessage`), the
+  envelope emits through the host
   renderer channel, and the finalizers submit terminal evidence.
   `src/main/lib/claude/agent-sdk-errors.ts` reports "No conversation found" as
   the neutral `NATIVE_RESUME_REJECTED`; the stream-error finalizer keeps the
@@ -493,7 +511,11 @@ or UI helper.
   notifications, server requests, response sends, resolved notifications and
   transport exits to the Run ledger; it reads the interrupt target from the
   ledger's native context and never fabricates `thread/started` or substitutes
-  a session ID. `desktop-run-persistence.ts` writes history from the committed
+  a session ID. After the ledger validates a `thread/resume` response it
+  submits the response's thread snapshot to `repairFromSnapshot`
+  (`repairFromValidatedResumeSnapshot`), and for a Run with an admitted run
+  directory it forwards native file/image/diff candidate evidence to the host
+  sink. `desktop-run-persistence.ts` writes history from the committed
   item projection, and `desktop-run-finalize.ts` submits terminal evidence
   instead of completing the job itself.
 - Route boundary: `src/main/lib/trpc/routers/codex.ts` owns tRPC input/schema
@@ -529,7 +551,10 @@ or UI helper.
   the host ledger. `src/main/lib/headless/job-recovery.ts` owns stale-worker
   liveness. The Codex app-server headless wrapper
   (`src/main/lib/headless/adapters/codex-app-server.ts`) consumes committed
-  records and never appends them again.
+  records and never appends them again; it hands the job runner's native
+  artifact candidate sink (composed only for API runs with an admitted run
+  directory) to the adapter. The runner facades return the committed outcome
+  (`readOutcome()`: final status and completed sequence).
 
 ## Runtime MCP Configuration
 
