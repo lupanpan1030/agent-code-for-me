@@ -2,6 +2,7 @@ import { createHash } from "node:crypto"
 import {
   AGENT_JOB_EVENT_TYPES,
   type AgentJobEventType,
+  toPublicJobResult,
 } from "../../../shared/agent-jobs"
 import {
   CODEX_THREAD_ITEM_DISPOSITIONS,
@@ -269,6 +270,14 @@ export type CreateCanonicalRunEventLedgerOptions = {
 export type TerminalProjectionRegistration = {
   terminalArtifacts?: CreateCanonicalRunEventLedgerOptions["terminalArtifacts"]
   terminalJobFields?: SettleOptions["jobFields"]
+}
+
+/** A settlement's job-row projection, normalized and not yet redacted. */
+type ResolvedTerminalJobFields = {
+  exitCode: number | null
+  errorCode: string | null
+  errorMessage: string | null
+  result: JsonValue | undefined
 }
 
 type TerminalArtifactPreparer = NonNullable<
@@ -1521,16 +1530,45 @@ class RunEventLedgerImpl {
         reasons: [...reasons, "terminal_artifact_preparation_failed"],
       }
       if (plan.jobMutation && !precedence) {
+        const jobFields = this.resolveTerminalJobFields(
+          {
+            status: "failed",
+            reasons: (completed.payload as JsonObject).reasons as string[],
+          },
+          plan.settleOptions ?? {},
+        )
         plan.jobMutation = {
           ...plan.jobMutation,
           status: "failed",
-          ...this.terminalJobFields(
-            {
-              status: "failed",
-              reasons: (completed.payload as JsonObject).reasons as string[],
-            },
-            plan.settleOptions ?? {},
-          ),
+          ...this.terminalJobMutation(jobFields),
+        }
+        // The completed members follow the job row they mirror; the built
+        // record is re-sanitized by the same persisted walker.
+        const members = this.sanitize(this.completedJobMembers(jobFields))
+        completed.payload = {
+          ...(completed.payload as JsonObject),
+          ...(isObject(members.value) ? (members.value as JsonObject) : {}),
+        }
+        if (members.rules.length > 0) {
+          const redaction = {
+            status: "redacted" as const,
+            appliedRules: [
+              ...new Set([
+                ...(completed.redaction?.appliedRules ?? []),
+                ...members.rules,
+              ]),
+            ].sort(),
+          }
+          completed.redaction = redaction
+          if (completed.metadata) {
+            completed.metadata = {
+              ...completed.metadata,
+              redaction: {
+                ...(completed.metadata.redaction as JsonObject | undefined),
+                ...redaction,
+              },
+            }
+          }
         }
       }
       this.hostDiagnostic(
@@ -3643,20 +3681,23 @@ class RunEventLedgerImpl {
     }
   }
 
-  private terminalJobFields(
+  /**
+   * The resolved job-row projection of a terminal outcome (the settle call's
+   * own `jobFields`, else the host's registered projection), normalized but
+   * not yet redacted; `null` when the settlement has neither.
+   */
+  private resolveTerminalJobFields(
     outcome: { status: string; reasons: string[] },
     options: SettleOptions,
-  ): JsonObject {
+  ): ResolvedTerminalJobFields | null {
     const jobFields = options.jobFields ?? this.hostJobFields
-    if (typeof jobFields !== "function") return {}
+    if (typeof jobFields !== "function") return null
     const fields = jobFields({
       status: outcome.status,
       reasons: [...outcome.reasons],
     })
     const text = (value: unknown): string | null =>
-      typeof value === "string" && value.length > 0
-        ? this.sanitizeString(value)
-        : null
+      typeof value === "string" && value.length > 0 ? value : null
     return {
       exitCode:
         typeof fields.exitCode === "number" && Number.isFinite(fields.exitCode)
@@ -3664,10 +3705,48 @@ class RunEventLedgerImpl {
           : null,
       errorCode: text(fields.errorCode),
       errorMessage: text(fields.errorMessage),
+      result: fields.result === undefined ? undefined : toJson(fields.result),
+    }
+  }
+
+  /** Sanitized job-row columns of a resolved terminal projection. */
+  private terminalJobMutation(
+    fields: ResolvedTerminalJobFields | null,
+  ): JsonObject {
+    if (!fields) return {}
+    const text = (value: string | null): string | null =>
+      value === null ? null : this.sanitizeString(value)
+    return {
+      exitCode: fields.exitCode,
+      errorCode: text(fields.errorCode),
+      errorMessage: text(fields.errorMessage),
       resultJson:
         fields.result === undefined
           ? null
-          : JSON.stringify(this.sanitize(toJson(fields.result)).value),
+          : JSON.stringify(this.sanitize(fields.result).value),
+    }
+  }
+
+  /**
+   * The base v1 `completed.payload` members `exitCode`, `errorCode`,
+   * `errorMessage` and `result` (S-06 option (a), additive restore): the
+   * same values the settlement writes to the job row, `null` when the
+   * settlement has no such field (never fabricated). `result` is the public
+   * job result (no internal `artifactRefs`). The values are raw here; the
+   * persisted redaction walker sanitizes them with the rest of the record.
+   */
+  private completedJobMembers(
+    fields: ResolvedTerminalJobFields | null,
+  ): JsonObject {
+    const result =
+      fields?.result === undefined
+        ? null
+        : (toJson(toPublicJobResult(fields.result)) as JsonValue)
+    return {
+      exitCode: fields?.exitCode ?? null,
+      errorCode: fields?.errorCode ?? null,
+      errorMessage: fields?.errorMessage ?? null,
+      result,
     }
   }
 
@@ -3785,6 +3864,7 @@ class RunEventLedgerImpl {
     options: SettleOptions = {},
   ): PlanResult {
     this.sealStreams()
+    const jobFields = this.resolveTerminalJobFields(outcome, options)
     const payload: JsonObject = {
       status: outcome.status,
       ...(outcome.reasons.length > 0 ? { reasons: outcome.reasons } : {}),
@@ -3794,6 +3874,7 @@ class RunEventLedgerImpl {
       ...(outcome.code !== undefined ? { code: outcome.code } : {}),
       ...(outcome.message ? { message: outcome.message } : {}),
       ...(this.withheldDropped > 0 ? { lossPossible: true } : {}),
+      ...this.completedJobMembers(jobFields),
     }
     const refs = context.state.artifactRefs.map((ref) => ref as JsonValue)
     return {
@@ -3815,7 +3896,7 @@ class RunEventLedgerImpl {
         status: outcome.status,
         finishedAt: context.nowIso,
         heartbeatAt: context.nowIso,
-        ...this.terminalJobFields(outcome, options),
+        ...this.terminalJobMutation(jobFields),
       },
       ...(refs.length > 0 ? { artifactRefs: refs } : {}),
     }

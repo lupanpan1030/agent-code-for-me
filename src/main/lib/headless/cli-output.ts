@@ -1,3 +1,4 @@
+import { toPublicJobResult } from "../../../shared/agent-jobs"
 import type { AgentJob, AgentJobEvent, AgentSchedule } from "../db/schema"
 
 export type SerializedAgentJob = {
@@ -83,30 +84,14 @@ function parseJson(value: string | null | undefined): unknown {
 }
 
 /**
- * The public job result: the stored `result_json` without the ledger's
- * internal `artifactRefs` member, which the terminal commit merges into the
- * job-row result as registered-artifact metadata (job-store
- * `mergeArtifactRefsIntoResult`). Public result serializers (Local Job API
- * envelopes, `job.result`) stay byte-compatible with the runner's result;
- * a result that carried nothing but the refs is `null`, as before the merge.
+ * The public job result: the stored `result_json` through the shared public
+ * result rule ({@link toPublicJobResult}), so Local Job API envelopes and
+ * `job.result` stay byte-compatible with the runner's result.
  */
 export function parsePublicJobResult(
   resultJson: string | null | undefined,
 ): unknown {
-  const parsed = parseJson(resultJson)
-  if (
-    !parsed ||
-    typeof parsed !== "object" ||
-    Array.isArray(parsed) ||
-    !Object.hasOwn(parsed, "artifactRefs")
-  ) {
-    return parsed
-  }
-  const { artifactRefs: _internalRefs, ...rest } = parsed as Record<
-    string,
-    unknown
-  >
-  return Object.keys(rest).length > 0 ? rest : null
+  return toPublicJobResult(parseJson(resultJson))
 }
 
 export function serializeAgentJob(job: AgentJob): SerializedAgentJob {
