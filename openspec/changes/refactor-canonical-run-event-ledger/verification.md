@@ -1,6 +1,6 @@
 # Verification
 
-Status: **APPROVED 2026-09-07 (Owner; bound to 9ebe6c34); implementation candidate re-frozen 2026-10-01 after touch-up T2 (review synthesis of `a32800b6`: T2-1, T2-2, T2-4…T2-14 closed; T2-3 pending Owner decision); next gate: the targeted re-review of the T2 diff (`a32800b6..` the T2 candidate)**
+Status: **APPROVED 2026-09-07 (Owner; bound to 9ebe6c34); implementation candidate re-frozen 2026-10-01 after touch-up T2 (review synthesis of `a32800b6`: T2-1, T2-2, T2-4…T2-14 closed; T2-3 pending Owner decision) and the docs-only T3 (targeted re-review of `0e6d1273`: Lens A and Lens C REVIEW_APPROVED, Lens B CHANGES_REQUESTED on the register only, closed by T3); next gate: diff-only re-check of T3 and the Owner decision on T2-3**
 
 This file holds the implementation candidate evidence (next section), the scenario
 register with red and green evidence, and the historical draft-review receipts.
@@ -22,7 +22,9 @@ not a fresh-context REVIEW_APPROVED and not Owner ACCEPTED.
 Implementer: Claude Opus 5.5, coordinator dispatch `impl-phase3-touchup2`, scope =
 synthesis §4 (`phase3-review-synthesis-a32800b6.md`). The four-review verdict on
 `a32800b6` was CHANGES_REQUESTED (3 P1, 9 P2). T2 changes product source, so `a32800b6`
-is superseded; the T2 candidate is the commit that adds this section. It is implementer
+is superseded; the T2 source candidate is `0e6d1273`. The docs-only T3 (the commit that
+adds the T2 tests and gates tables, the re-review disclosures and TICKET-127) changes no
+`src/` or `tests/` file and is the current candidate. This section is implementer
 evidence only (not a re-review verdict, not Owner ACCEPTED).
 
 | SHA | Subject | Closes |
@@ -40,7 +42,63 @@ evidence only (not a re-review verdict, not Owner ACCEPTED).
 | `90ca783e` | fix(artifacts): publish terminal run-dir files only after the terminal commit | T2-9 / S-04 |
 | `60a723fa` | fix(jobs): never leave or run a queued job without its job_created fact | T2-12 / S-12 |
 | `3f215da1` | test: restore exact public payloads and strengthen the ledger writer tests | T2-13 / S-21…S-24 |
-| (this commit) | docs(openspec): record touch-up T2 | T2-14 / S-27 |
+| `0e6d1273` | docs(openspec): record touch-up T2 of the canonical run event ledger | T2-14 / S-27 (T2 candidate reviewed by the targeted re-review) |
+| the commit that adds the T2 tests/gates tables (T3) | docs(openspec): register T2 evidence, re-review disclosures and TICKET-127 | re-review Lens B P2-1/P3-3, Lens A/B/C P3 disclosures, TICKET-127 (docs only) |
+
+T2 tests (every new or strengthened test block, by file and title; counts are the
+file's `bun test --isolate` totals at `0e6d1273`). "Fix-sensitive" means the test fails
+with the item's `src/` change reverted (implementer stash check, reproduced for all 11
+code items by re-review Lens B); "control" means it passes on both sides by design and
+guards against an over-broad fix (re-review Lens B P3-1 completed this list).
+
+| Item | File (total) | Test title | Role |
+| --- | --- | --- | --- |
+| T2-1 | `tests/agent-job-store.test.ts` (11) | "redacts common non-sk secret formats from job storage" (extended with every synthesis input) | fix-sensitive |
+| T2-1 | `tests/runtime-redaction.test.ts` (11) | "keeps the runtime path unchanged for the persisted-only store rules (renderer parity)" (`:153`) | control |
+| T2-2 | `tests/local-job-api-app-server-profile.test.ts` (7) | describe "Local Job API app-server terminal projection (T2-2 / S-01)": "a transport that dies before turn/completed settles interrupted with the host projection and final files"; "an initialize error with the child alive settles failed, not a transport-exit interrupt" | fix-sensitive |
+| T2-2 | `tests/local-job-api-app-server-profile.test.ts` | same describe: "an API cancel during the turn settles canceled with exit 5" (`:448`) | control |
+| T2-2 | `tests/desktop-agent-jobs.test.ts` (12) | "a Codex initialize error with the child alive finalizes failed, not a transport-exit interrupt (T2-2 / S-01)" | fix-sensitive |
+| T2-2 | `tests/run-event-ledger-host.test.ts` (4) | "a transport exit settles with the registered terminal projection; a differing re-registration is rejected (T2-2 / S-01)" | fix-sensitive |
+| T2-4 | `tests/headless-cli-dispatcher.test.ts` (46) | "keeps the ledger's registered artifact refs out of the public result (T2-4 / S-10)" | fix-sensitive |
+| T2-5 | `tests/codex-desktop-run-persistence.test.ts` (9) | "builds assistant JSON with the established metadata precedence" (restored multi-source assertion over ledger-committed records); "persists committed usage, native context and session metadata for reload (T2-5 / S-11)" | fix-sensitive |
+| T2-6 | `tests/headless-job-runner-contract.test.ts` (6) | "counts a completed-only assistant item as output evidence (T2-6 / S-13)" | fix-sensitive |
+| T2-6 | `tests/headless-job-runner-contract.test.ts` | "still fails a success without any output evidence as output_empty (T2-6 / S-13)" (`:164`) | control |
+| T2-6 | `tests/desktop-agent-jobs.test.ts` | "counts a completed-only assistant item as desktop output evidence (T2-6 / S-13)" (`:593`) | fix-sensitive |
+| T2-7 | `tests/local-job-api-app-server-profile.test.ts` | describe "Local Job API app-server native terminal evidence (T2-7 / S-02)": "a failed turn settles from the live native terminal with its code"; "a completed turn settles succeeded from the live native terminal" | fix-sensitive |
+| T2-7 | `tests/local-job-api-app-server-profile.test.ts` | same describe: "an adapter failure before any native terminal stays host evidence" (`:571`) | control |
+| T2-7 | `tests/desktop-agent-jobs.test.ts` | "settles desktop runs from the committed live native terminal (T2-7 / S-14)"; the T2-2 desktop test also asserts `host_failed` | fix-sensitive |
+| T2-7 | `tests/headless-job-runner-contract.test.ts` | "settles process runs and uncommitted native claims from the host result (T2-7 / S-02)" (`:177`) | control |
+| T2-8 | `tests/codex-app-server-ingress-order.test.ts` (1) | "each boundary reaches its ledger port once, in arrival order, with an observation key and request context" (S41, extended: every client response once, in order, under its wire id) | fix-sensitive |
+| T2-8 | `tests/codex-app-server-resume-snapshot.test.ts` (10) | describe "Codex client response correlation (T2-8 / S-03)": "every client response is recorded once under the transport's wire id; resume validation is unchanged"; "a turn/interrupt response is recorded as a protocol_response under its wire id" | fix-sensitive |
+| T2-8 | `tests/codex-app-server-transport.test.ts` (15) | "hands each request's JSON-RPC wire id to onSent before writing it (T2-8 / S-03)" | fix-sensitive |
+| T2-11 | `tests/run-event-ledger-native-artifacts.test.ts` (11) | describe "native admission through the run directory handle (T2-11 / S-08, S-09)": "a hard link inside the run dir to an outside file is rejected out_of_scope"; "a run dir swapped for a symlink to an outside directory admits nothing and publishes no outside path"; "terminal preparation lists a file edited twice once with its last digest and drops a file deleted after admission" | fix-sensitive |
+| T2-10 | `tests/run-event-ledger-seal-redaction.test.ts` (4, new file) | describe "stream redaction across the seal (T2-10 / S-07)": "a coarse delta continuing a withheld hint prefix after the seal publishes no part of the hint"; "a native Codex delta continuing a withheld hint prefix after the seal publishes no part of the hint"; "the live renderer never receives a buffered post-terminal stream fragment continuing a withheld prefix" | fix-sensitive |
+| T2-10 | `tests/run-event-ledger-seal-redaction.test.ts` | "a channel with nothing withheld at the seal keeps its redacted late text" (`:164`) | control |
+| T2-9 | `tests/run-event-ledger-terminal-commit-faults.test.ts` (7) | describe "terminal files are staged, published after the commit and discarded on a definite failure (T2-9 / S-04)": "a refused commit shows no final terminal file; staged files are discarded and the retry publishes once"; "exhausted commits leave only the initial files: no result.json, unchanged events/manifest, nothing staged"; "a preparation fault leaves no partial terminal events.jsonl under the final name" | fix-sensitive |
+| T2-12 | `tests/agent-job-store.test.ts` | "a failed job_created append leaves no queued row; a retried create succeeds (T2-12 / S-12)"; "a failed job_created append on retry leaves no retry row (T2-12 / S-12)"; "a v1 queued row without a committed job_created is never listed or started (T2-12 / S-12)" | fix-sensitive |
+| T2-13 | `tests/headless-runtime-event-bridge.test.ts` (2) | "persists headless job events through redacted RunEvent payloads without exposing RunEvent internals"; "keeps Local Job API v1 events readable after bridge redaction" (exact public assistant payloads, S-21) | strengthened |
+| T2-13 | `tests/local-job-api-app-server-profile.test.ts` | "runs only when policy-grant profile is explicit and persists replay artifacts" (exact public assistant payload, S-21) | strengthened |
+| T2-13 | `tests/headless-codex-app-server-adapter.test.ts` (6) | "bridges a policy-grant headless request into the desktop app-server adapter" (writes through `request.ledger`; identity with `observer.runLedger`; no observer appends; S-22) | strengthened |
+| T2-13 | `tests/ledger-v1-fact-key-invariant.test.ts` (1) | "every lifecycle writer leaves only fact-keyed, metadata-bearing rows on ledger_version=1 jobs" (header corrected, retry exit asserted, API completion, jobs-stdio run and session cancel, exact counts 12/11; S-23) | strengthened |
+| T2-13 | `tests/run-event-ledger-units.test.ts` (10) | "the run-dir writer refuses a path that escapes the admitted run directory (T2-13 / S-24)" | new (S-24) |
+
+Shared test helper: `tests/helpers/codex-app-server-scripted-transport.ts` gained
+`initializeError`, `exitOnClose` (close fires attached exit handlers, like the stdio
+transport) and per-request wire ids through `onSent`.
+
+T2 gates at `0e6d1273` (the T2 code tree is `3f215da1`; `0e6d1273` and T3 change only
+documentation on top of it):
+
+| Gate | Result |
+| --- | --- |
+| Nine red files, `bun test --isolate` | 141 pass / 0 fail, 1265 `expect()` |
+| `bun run test` | 2736 pass / 0 fail, 13805 `expect()`, 345 files |
+| `bun run check:full` | exit 0: lint:changed, `architecture:check` (guard self-test 17/17), retired-runtime residue, `tsc --noEmit`, tests, `openspec validate --all --strict` 54/54, build, patch whitespace. Implementer log `phase3-checkfull-0e6d1273.log`; coordinator reproduction `phase3-checkfull-0e6d1273-coordinator.log` (2736/0, EXIT=0) |
+| PR-base lint `BIOME_CHANGED_SINCE=25c075af node scripts/run-biome-changed.mjs` | exit 0 ("diagnostics only outside changed lines"); coordinator log `phase3-lint-prbase-0e6d1273.log` (`LINT_EXIT=0`) |
+| `openspec validate --all --strict` | 54 passed, 0 failed |
+| `git diff --check a32800b6 0e6d1273` | clean |
+| Immutable set (`git diff --stat e99b9892 0e6d1273 --` nine red files, four kits/harness, `tests/fixtures/run-event-ledger/`, `red-receipt.md`, `red-slice-receipt.md`) | empty |
+| Ratchets | `lint-baseline.json` unchanged vs `a32800b6` (no additions; only removals/decreases vs `e1370a78`); `scripts/architecture-baselines.json` unchanged (`reachThroughWrappers` 7 entries, route surface `codex.ts` 941 = `wc -l`) |
 
 Consumer-visible effects of T2 relative to `a32800b6` (all restore the base behavior or
 the approved design; none extends the signed scope):
@@ -60,7 +118,8 @@ the approved design; none extends the signed scope):
   `turn/completed` (`reasons` `native_failed`, `completed.payload.code` = the native
   code, `completed` fact key `settle:<turn/completed observation key>`); the desktop
   finalizer uses the committed native terminal (Codex `turn/completed`, Claude SDK
-  `result`) and otherwise `host_result`.
+  `result`) and otherwise `host_result`. A desktop native failure carries no native
+  `code` (see the follow-up register, re-review Lens A P3-2).
 - **T2-8:** `protocol_response`/`native_resume_*` `jsonRpcId` is the JSON-RPC wire id
   (a number from the stdio transport), and `initialize`, `mcpServerStatus/list` and
   `turn/interrupt` responses add `protocol_response` status records.
@@ -87,10 +146,19 @@ Decisions and disclosures recorded by T2:
   between the two commits, or a failed fact after a schedule's own transaction, leaves a
   queued orphan that is never executed; it stays queued and cancellable (recovery acts
   on running rows only).
-- **T2-9 residual (disclosed).** A crash between the terminal SQL commit and `publish()`
-  leaves the committed ledger as the truth with the final files missing (the initial
-  `events.jsonl`/`artifacts.json` and unreferenced `.<name>.locus-staged` files remain);
-  files are never contradictory. Nothing cleans staged files after such a crash.
+- **T2-9 residual (disclosed; wording corrected by re-review Lens A P3-3).** The
+  committed ledger is the truth and the run-dir readers use registered refs. After the
+  terminal SQL commit the final files may be missing or only partially published:
+  `publish()` renames the staged files one at a time
+  (`src/main/lib/headless/local-job-api.ts:1089-1106`), so a publish fault or a crash
+  mid-publish can leave the terminal `events.jsonl` beside the initial `artifacts.json`,
+  whose `events` digest no longer matches that file (and no `result.json`); a failed
+  publish emits the host diagnostic `LEDGER_TERMINAL_ARTIFACTS_PUBLISH_FAILED`. The code
+  comments at `src/main/lib/agent-runtime/run-event-ledger.ts:241-245` and `:1549-1553`
+  ("never contradictory") overstate this and are corrected with the follow-up fix.
+  Cleanup of unreferenced `.<name>.locus-staged` files after a crash (before or after
+  the commit; design step 5 "retry validates or cleans") is not implemented. Base wrote
+  the files sequentially after its commit, so this is not a regression.
 - **T2-8.** A transport that exposes no wire id (only test fakes) yields an
   uncorrelated `protocol_response`; no id is invented. The adapter still does not wait
   for the `turn/interrupt` response before closing; it is recorded when it arrives.
@@ -100,6 +168,62 @@ Decisions and disclosures recorded by T2:
   admission; the host always passes the run directory handle.
 - **T2-2 desktop.** The desktop job host also registers a job-row projection, so a
   desktop Codex transport exit records an error code and message.
+
+Re-review disclosures for `0e6d1273` (record-and-disclose, no code change in T3;
+`phase3-rereview-{a,b,c}-0e6d1273.md`):
+
+- **Lens A P3-1 — host success without a committed native terminal.** An uncommitted or
+  mismatched `nativeTerminal` falls back to `host_result` with the runner's status,
+  including `succeeded` (`src/main/lib/headless/job-runner.ts:419-431, 470-500`), and a
+  desktop finalizer `succeeded` with no committed native terminal becomes `host_result:
+  succeeded` (`src/main/lib/desktop-agent-jobs.ts:391-396, 416-427`); the design limits
+  `host_result` to process batch/completion (`design.md:124, 381-383`). Unreachable in
+  production today: the adapter's `succeeded` comes only from a submitted and awaited
+  `turn/completed`, and the Claude SDK ends every successful query with `result`. The
+  two T2-6 tests (`tests/headless-job-runner-contract.test.ts:141`,
+  `tests/desktop-agent-jobs.test.ts:593`) exercise completed-only output through that
+  host success. Follow-up: settle `success_evidence_missing` for a native Run with no
+  committed native terminal and add `turn/completed` to those two tests.
+- **Lens A P3-2 — desktop native failures carry no native `code`.**
+  `committedDesktopNativeTerminal` (`src/main/lib/desktop-agent-jobs.ts:339-375`) derives
+  only `{observationKey, status}`: the committed `turn_lifecycle` does not keep
+  `turn.error.code` and the desktop finalizer does not use the adapter's
+  `nativeTerminal.code`. The design's `code` is optional. Follow-up: keep
+  `turn.error.code` on the committed terminal candidate.
+- **Lens A P3-3 — T2-9 partial publish and staged residue.** Recorded in the corrected
+  T2-9 residual above.
+- **Lens A P3-4 — T2-12 predicates differ.** The queue listing checks for any
+  `job_created` event type (`src/main/lib/headless/job-store.ts:444`); `startAgentJob`
+  requires the fact key `lifecycle:job-created:<id>` (`:352-356, 474`). No effect with
+  the current writers; with a legacy key-less `job_created` (S-29 scenario: an old daemon
+  on the migrated DB) a row could be listed and then refused, keeping `daemon --once`
+  looping. A canceled queued orphan commits `completed` at sequence 1 with no
+  `job_created`. Follow-up: align both checks on the fact key.
+- **Lens C P3-1 — unbounded native candidate read.** `readRunArtifactFile`
+  (`src/main/lib/agent-runtime/run-artifacts.ts:625-631`, reached from `:253`) reads to
+  EOF in 64 KiB chunks; a single-link file that keeps growing during the read is
+  rejected by the receipt check only after its bytes are buffered (theoretical memory
+  DoS on the Run's own host). Follow-up: stop at `before.size + 1`.
+- **Lens C P3-2 — FIFO race.** The pre-open `lstat` rejects a FIFO, but
+  `openSync(operationPath, O_RDONLY | O_NOFOLLOW)`
+  (`src/main/lib/agent-runtime/run-artifacts.ts:601-612`) lacks `O_NONBLOCK`, so a rename
+  between the `lstat` and the open can still park the thread on a FIFO.
+  `readStableDirectoryFile` already adds `O_NONBLOCK`. Follow-up: add it here.
+- **Lens B P3-1 — controls.** Four more new tests pass with their item's `src/` reverted
+  and are recorded as controls in the T2 tests table (`tests/runtime-redaction.test.ts:153`,
+  `tests/headless-job-runner-contract.test.ts:164, :177`,
+  `tests/local-job-api-app-server-profile.test.ts:571`), besides the cancel guard
+  (`:448`) and the clean-channel control (`tests/run-event-ledger-seal-redaction.test.ts:164`).
+- **Lens B P3-2 — the invariant does not drive the app-server wrapper.**
+  `tests/ledger-v1-fact-key-invariant.test.ts:13-17` names the Codex app-server headless
+  wrapper, the renderer channel and the adapter-started fact as not driven;
+  `tests/local-job-api-app-server-profile.test.ts:545, 565, 582` pin the wrapper path's
+  `completed` fact keys, not a whole-row `fact_key`/`record_metadata_json` scan.
+  Follow-up: drive one scripted-transport app-server API run inside the invariant DB.
+- **Lens C out-of-diff — Windows run-dir artifacts.** `src/main/lib/filesystem/stable-directory.ts:41-66`
+  anchors directories only on linux, darwin and freebsd and throws on win32, unchanged
+  since `e1370a78`: run-dir artifacts fail closed on Windows before and after this
+  change. Registered as `docs/tickets/TICKET-127-run-dir-artifacts-windows-stable-directory.md`.
 
 Follow-up register (recorded, not fixed in T2; synthesis §6): S-15 usage-decrease guard
 compares to the baseline, not the last total; S-16 `flushLate` makes one raw append per
@@ -115,7 +239,9 @@ Phase 5 binding repair; S-29 release runbook: stop old daemons before upgrading 
 default with an old writer attached) and surface stuck v0 queued/running rows. Lens B
 notes: the legacy-symbol scan walks `src/` only; `--run-event-ledger-fixtures=` also
 replaces the repository pins (CI never passes it); the `job-store.ts` ↔
-`run-event-ledger-host.ts` import cycle is intended.
+`run-event-ledger-host.ts` import cycle is intended. Re-review of `0e6d1273`: the
+disclosures above (Lens A P3-1…P3-4, Lens C P3-1/P3-2, Lens B P3-1/P3-2) and TICKET-127
+(Windows run-dir artifacts, `docs/tickets/TICKET-127-run-dir-artifacts-windows-stable-directory.md`).
 
 ### Touch-up T1 (gaps G1–G5), 2026-10-01
 
@@ -406,9 +532,9 @@ Signed scope: Owner answers 2026-09-07 (R1 = DIRECT_NEW_STANDARD for C7 rows 4/5
 | 4 | Bare payloads; the desktop wrapper disappears | C7 row 1 (internal wrapper) | In scope; no change for API jobs |
 | 5 | Additive `error.classification`, usage snapshot members, `late_event`, `subtype: "system_lifecycle"` on host status | C7 row 10, local-job-api delta | In scope |
 | 6 | `completed.payload` becomes the ledger outcome; `exitCode`, `errorCode`, `errorMessage`, `result` are no longer event payload members (they stay on the job row and the result envelope) | The events row says "Additive except R1 terminal payload" and the design defines `completed.payload`; C7 row 1 says no field is deleted and the member removal is not enumerated. The guide already listed event payload details beyond the envelope as not stable | **pending Owner decision (T2-3)** — review synthesis S-06 (P1 governance): Owner acknowledgment in Consumer Impact rows 1/5 + §10, or additive restore |
-| 7 | Persisted redaction marker becomes `<redacted>` (the store previously also wrote `[redacted]`, `[redacted-jwt]`, `[redacted-pem]`) | C7 row 7 keeps redaction inside the promised boundary; the marker text was never documented | **Beyond explicit wording — for review** |
+| 7 | Persisted redaction marker becomes `<redacted>` (the store previously also wrote `[redacted]`, `[redacted-jwt]`, `[redacted-pem]`) | C7 row 7 keeps redaction inside the promised boundary; the marker text was never documented | In scope (review synthesis of `a32800b6` §3.2); documented in both consumer guides |
 | 8 | Stale workers that are alive, EPERM, unknown or claimed without a PID stay `running` with a host `heartbeat_only` diagnostic instead of being interrupted | Design/task 4.3; the Owner-approved core recovery scenario (`specs/agent-runtime-core/spec.md`) | In scope via the approved spec (synthesis §3.2); now listed in proposal Consumer Impact row 4 (T2-14, S-27) |
-| 9 | Workbench no longer renders Codex "file-change" rows (`patchUpdated` → `tool_delta` with `changeCount`, `turn/diff/updated` → `status/diff_observation`) | Parity delta disposition table; Workbench rendering is outside C7 §9.1 | Conforms to the table; UX change not enumerated — for review and Owner product acceptance |
+| 9 | Workbench no longer renders Codex "file-change" rows (`patchUpdated` → `tool_delta` with `changeCount`, `turn/diff/updated` → `status/diff_observation`) | Parity delta disposition table; Workbench rendering is outside C7 §9.1 | Conforms to the table; not a contract item (review synthesis of `a32800b6` §3.2) — an Owner product acceptance note |
 | 10 | Codex app-server API runs submit native candidates; admitted entries use the proposal's roles `native-file`/`native-image`/`native-diff` and follow the Locus run-dir files in `result.json`/`artifacts.json`; rejections carry `role` | Proposal artifact row and C7 row 8 ("Newly admitted native artifacts add entries") | In scope after T1 (was a deviation, gap G2) |
 | 12 | `runs result` lists only manifest entries the run's ledger registered; identical for committed runs, hides prospective refs while a terminal commit is pending or failed | Design "Artifacts and Terminal Commit Order" | Conforms to the design (T1 finding 1; synthesis §3.2). T2-4: the registered refs stay a reader detail; the public inner `result`/`job.result` no longer carry `artifactRefs` |
 | 11 | Failed headless app-server runs report `host_failed` without a native `code` | — | Resolved by T2-7: app-server Runs settle `native_terminal` from the committed `turn/completed` (`native_failed`, native `code`); exec/completion Runs and pre-terminal adapter failures keep `host_result` (`host_failed`) |
@@ -673,7 +799,11 @@ Red evidence recorded 2026-10-01 at `b8830be5` (red suite `339c4e6e` + follow-up
 
 Green evidence 2026-10-01 (Phase III): `bun test --isolate` over the nine files at `9dc1cbc5`
 (product source identical to `e7198bc7`) = 141 pass / 0 fail. Touch-up T1 rerun at
-`b0f3e60d`: 141 pass / 0 fail, 1265 `expect()` calls; JUnit 141 test cases, 0 failures, 0 skipped; T1 implementer rows cite their new test files. Each green
+`b0f3e60d`: 141 pass / 0 fail, 1265 `expect()` calls; JUnit 141 test cases, 0 failures, 0 skipped; T1 implementer rows cite their new test files. Touch-up T2 rerun at the
+T2 candidate `0e6d1273` (T2 code tree `3f215da1`; T3 is documentation only): 141 pass /
+0 fail, 1265 `expect()` calls (reproduced by re-review Lens A and Lens B); rows touched by
+T2 cite its tests and the implementer-unit totals below are the file totals at `0e6d1273`
+(the full list is the T2 tests table above). Each green
 cell gives `file passed/total` for that scenario's tests. Implementer-unit rows name the
 implementer test that covers the seam, or state what is not asserted (gap G5).
 
@@ -693,33 +823,33 @@ implementer test that covers the seam, or state what is not asserted (gap G5).
 | S12 | agent-runtime-core / Canonical Run Event Ledger Ownership / Process crashes after commit and before projection | `run-event-ledger-store-faults.test.ts` S12 Process crashes after commit and before projection — RED at b8830be5<br>`run-event-ledger-store-faults.test.ts` S12 Process crashes after commit and before projection — RED at b8830be5 / green at candidate: store-faults 2/2 |
 | S13 | agent-runtime-core / Canonical Run Event Ledger Ownership / Historical rows remain explicitly unverified | `run-event-ledger-guards.test.ts` S13 Historical rows remain explicitly unverified — RED at b8830be5<br>`run-event-ledger-guards.test.ts` S13 Historical rows remain explicitly unverified — RED at b8830be5<br>`run-event-ledger-guards.test.ts` S13 Historical rows remain explicitly unverified — GREEN by design at b8830be5 / green at candidate: guards 3/3; `run-event-ledger-host.test.ts` "pre-ledger (ledger_version=0) history is never extended"; internal reader (G1, `77003130`): `run-event-ledger-history-quality.test.ts` 4/4 |
 | S14 | agent-runtime-core / Native Identity And Runtime Provenance / Distinct native identities are preserved | `run-event-ledger-core.test.ts` S14 Distinct native identities are preserved — RED at b8830be5<br>`run-event-ledger-core.test.ts` S14 Distinct native identities are preserved — RED at b8830be5 / green at candidate: core 2/2 |
-| S15 | agent-runtime-core / Native Identity And Runtime Provenance / Exact runtime provenance follows every event | `run-event-ledger-provenance-resume.test.ts` S15 Exact runtime provenance follows every event — RED at b8830be5<br>`run-event-ledger-provenance-resume.test.ts` S15 Exact runtime provenance follows every event — RED at b8830be5<br>`run-event-ledger-provenance-resume.test.ts` S15 Exact runtime provenance follows every event — RED at b8830be5<br>`run-event-ledger-provenance-resume.test.ts` S15 Exact runtime provenance follows every event — RED at b8830be5<br>`run-event-ledger-provenance-resume.test.ts` S15 Exact runtime provenance follows every event — RED at b8830be5<br>`run-event-ledger-provenance-resume.test.ts` S15 Exact runtime provenance follows every event — RED at b8830be5<br>`run-event-ledger-guards.test.ts` S15 Exact runtime provenance follows every event — RED at b8830be5<br>`run-event-ledger-guards.test.ts` S15 Exact runtime provenance follows every event — RED at b8830be5<br>`run-event-ledger-guards.test.ts` S15 Exact runtime provenance follows every event — RED at b8830be5 / green at candidate: provenance-resume 6/6, guards 3/3; Claude pre-spawn re-check (G4, `771d3f63`): `claude-agent-sdk-executable-check.test.ts` 5/5 |
+| S15 | agent-runtime-core / Native Identity And Runtime Provenance / Exact runtime provenance follows every event | `run-event-ledger-provenance-resume.test.ts` S15 Exact runtime provenance follows every event — RED at b8830be5<br>`run-event-ledger-provenance-resume.test.ts` S15 Exact runtime provenance follows every event — RED at b8830be5<br>`run-event-ledger-provenance-resume.test.ts` S15 Exact runtime provenance follows every event — RED at b8830be5<br>`run-event-ledger-provenance-resume.test.ts` S15 Exact runtime provenance follows every event — RED at b8830be5<br>`run-event-ledger-provenance-resume.test.ts` S15 Exact runtime provenance follows every event — RED at b8830be5<br>`run-event-ledger-provenance-resume.test.ts` S15 Exact runtime provenance follows every event — RED at b8830be5<br>`run-event-ledger-guards.test.ts` S15 Exact runtime provenance follows every event — RED at b8830be5<br>`run-event-ledger-guards.test.ts` S15 Exact runtime provenance follows every event — RED at b8830be5<br>`run-event-ledger-guards.test.ts` S15 Exact runtime provenance follows every event — RED at b8830be5 / green at candidate: provenance-resume 6/6, guards 3/3; Claude pre-spawn re-check (G4, `771d3f63`): `claude-agent-sdk-executable-check.test.ts` 5/5; `job_created` recorded or the row removed, and no start without it (T2-12): `agent-job-store.test.ts` (3 tests, 11/11 file) |
 | S16 | agent-runtime-core / Native Identity And Runtime Provenance / Interrupt target comes from native Run state | `run-event-ledger-boundaries.test.ts` S16 Interrupt target comes from native Run state — RED at b8830be5<br>`run-event-ledger-boundaries.test.ts` S16 Interrupt target comes from native Run state — RED at b8830be5<br>`run-event-ledger-boundaries.test.ts` S16 Interrupt target comes from native Run state — RED at b8830be5<br>`run-event-ledger-boundaries.test.ts` S16 Interrupt target comes from native Run state — RED at b8830be5 / green at candidate: boundaries 4/4 |
-| S17 | agent-runtime-core / Stateful Ledger Redaction / Runtime splits an exact secret across adjacent events | `run-event-ledger-boundaries.test.ts` S17 Runtime splits an exact secret across adjacent events — RED at b8830be5<br>`run-event-ledger-boundaries.test.ts` S17 Runtime splits an exact secret across adjacent events — RED at b8830be5<br>`run-event-ledger-boundaries.test.ts` S17 Runtime splits an exact secret across adjacent events — RED at b8830be5<br>`run-event-ledger-boundaries.test.ts` S17 Runtime splits an exact secret across adjacent events — RED at b8830be5<br>`run-event-ledger-boundaries.test.ts` S17 Runtime splits an exact secret across adjacent events — RED at b8830be5 / green at candidate: boundaries 5/5 |
+| S17 | agent-runtime-core / Stateful Ledger Redaction / Runtime splits an exact secret across adjacent events | `run-event-ledger-boundaries.test.ts` S17 Runtime splits an exact secret across adjacent events — RED at b8830be5<br>`run-event-ledger-boundaries.test.ts` S17 Runtime splits an exact secret across adjacent events — RED at b8830be5<br>`run-event-ledger-boundaries.test.ts` S17 Runtime splits an exact secret across adjacent events — RED at b8830be5<br>`run-event-ledger-boundaries.test.ts` S17 Runtime splits an exact secret across adjacent events — RED at b8830be5<br>`run-event-ledger-boundaries.test.ts` S17 Runtime splits an exact secret across adjacent events — RED at b8830be5 / green at candidate: boundaries 5/5; split across the seal (T2-10): `run-event-ledger-seal-redaction.test.ts` 4/4 (coarse, native, renderer buffered window, clean-channel control) |
 | S18 | agent-runtime-core / Item Lifecycle Reconciliation / Assistant deltas reconcile with final snapshot | `run-event-ledger-reconciliation.test.ts` S18 Assistant deltas reconcile with final snapshot — RED at b8830be5<br>`run-event-ledger-reconciliation.test.ts` S18 Assistant deltas reconcile with final snapshot — RED at b8830be5<br>`run-event-ledger-reconciliation.test.ts` S18 Assistant deltas reconcile with final snapshot — RED at b8830be5<br>`run-event-ledger-reconciliation.test.ts` S18 Assistant deltas reconcile with final snapshot — RED at b8830be5<br>`run-event-ledger-reconciliation.test.ts` S18 Assistant deltas reconcile with final snapshot — RED at b8830be5<br>`run-event-ledger-reconciliation.test.ts` S18 Assistant deltas reconcile with final snapshot — RED at b8830be5<br>`run-event-ledger-reconciliation.test.ts` S18 Assistant deltas reconcile with final snapshot — RED at b8830be5<br>`run-event-ledger-reconciliation.test.ts` S18 Assistant deltas reconcile with final snapshot — RED at b8830be5 / green at candidate: reconciliation 8/8 |
 | S19 | agent-runtime-core / Item Lifecycle Reconciliation / Reasoning channels and parts reconcile separately | `run-event-ledger-reconciliation.test.ts` S19 Reasoning channels and parts reconcile separately — RED at b8830be5<br>`run-event-ledger-reconciliation.test.ts` S19 Reasoning channels and parts reconcile separately — RED at b8830be5<br>`run-event-ledger-reconciliation.test.ts` S19 Reasoning channels and parts reconcile separately — RED at b8830be5<br>`run-event-ledger-reconciliation.test.ts` S19 Reasoning channels and parts reconcile separately — RED at b8830be5<br>`run-event-ledger-reconciliation.test.ts` S19 Reasoning channels and parts reconcile separately — RED at b8830be5<br>`run-event-ledger-reconciliation.test.ts` S19 Reasoning channels and parts reconcile separately — RED at b8830be5 / green at candidate: reconciliation 6/6; native-index variant waits on task 1.4 |
 | S20 | agent-runtime-core / Item Lifecycle Reconciliation / Tool item lifecycle is incomplete or repeated | `run-event-ledger-reconciliation.test.ts` S20 Tool item lifecycle is incomplete or repeated — RED at b8830be5<br>`run-event-ledger-reconciliation.test.ts` S20 Tool item lifecycle is incomplete or repeated — RED at b8830be5<br>`run-event-ledger-reconciliation.test.ts` S20 Tool item lifecycle is incomplete or repeated — RED at b8830be5 / green at candidate: reconciliation 3/3 |
 | S21 | agent-runtime-core / Diagnostic Error And Terminal Invariants / Retry error is followed by success | `run-event-ledger-terminal.test.ts` S21 Retry error is followed by success — RED at b8830be5 / green at candidate: terminal 1/1 |
-| S22 | agent-runtime-core / Diagnostic Error And Terminal Invariants / Denial rejection and empty output have deterministic outcomes | `run-event-ledger-terminal.test.ts` S22 Denial rejection and empty output have deterministic outcomes — RED at b8830be5 / green at candidate: terminal 1/1 |
-| S23 | agent-runtime-core / Diagnostic Error And Terminal Invariants / Transport exit synthesizes one terminal | `run-event-ledger-terminal.test.ts` S23 Transport exit synthesizes one terminal — RED at b8830be5<br>`run-event-ledger-terminal.test.ts` S23 Transport exit synthesizes one terminal — RED at b8830be5 / green at candidate: terminal 2/2 |
+| S22 | agent-runtime-core / Diagnostic Error And Terminal Invariants / Denial rejection and empty output have deterministic outcomes | `run-event-ledger-terminal.test.ts` S22 Denial rejection and empty output have deterministic outcomes — RED at b8830be5 / green at candidate: terminal 1/1; completed-only assistant output counts and no output stays `output_empty` (T2-6): `headless-job-runner-contract.test.ts`, `desktop-agent-jobs.test.ts` |
+| S23 | agent-runtime-core / Diagnostic Error And Terminal Invariants / Transport exit synthesizes one terminal | `run-event-ledger-terminal.test.ts` S23 Transport exit synthesizes one terminal — RED at b8830be5<br>`run-event-ledger-terminal.test.ts` S23 Transport exit synthesizes one terminal — RED at b8830be5 / green at candidate: terminal 2/2; production path with the host terminal projection and no exit candidate from a Locus-initiated close (T2-2): `local-job-api-app-server-profile.test.ts` (terminal projection describe, 3 tests), `desktop-agent-jobs.test.ts`, `run-event-ledger-host.test.ts` |
 | S24 | agent-runtime-core / Diagnostic Error And Terminal Invariants / Pre-start cancel and dead-worker recovery settle through ledger | `run-event-ledger-terminal.test.ts` S24 Pre-start cancel and dead-worker recovery settle through ledger — RED at b8830be5<br>`run-event-ledger-terminal.test.ts` S24 Pre-start cancel and dead-worker recovery settle through ledger — RED at b8830be5<br>`run-event-ledger-terminal.test.ts` S24 Pre-start cancel and dead-worker recovery settle through ledger — RED at b8830be5<br>`run-event-ledger-terminal.test.ts` S24 Pre-start cancel and dead-worker recovery settle through ledger — RED at b8830be5<br>`run-event-ledger-terminal.test.ts` S24 Pre-start cancel and dead-worker recovery settle through ledger — RED at b8830be5<br>`run-event-ledger-terminal.test.ts` S24 Pre-start cancel and dead-worker recovery settle through ledger — GREEN by design at b8830be5<br>`run-event-ledger-terminal.test.ts` S24 Pre-start cancel and dead-worker recovery settle through ledger — RED at b8830be5 / green at candidate: terminal 7/7; variants (`00b33a13`): `run-event-ledger-recovery-variants.test.ts` 3/3 (supervisor-observed exit, unknown host, heartbeat or claim changed at commit) |
 | S25 | agent-runtime-core / Diagnostic Error And Terminal Invariants / Usage after completed is diagnostic only | `run-event-ledger-reconciliation.test.ts` S25 Usage after completed is diagnostic only — RED at b8830be5<br>`run-event-ledger-reconciliation.test.ts` S25 Usage after completed is diagnostic only — RED at b8830be5<br>`run-event-ledger-terminal.test.ts` S25 Usage after completed is diagnostic only — RED at b8830be5 / green at candidate: reconciliation 2/2, terminal 1/1 |
 | S26 | agent-runtime-core / Usage Snapshot Accounting / Usage snapshots are accumulated once | `run-event-ledger-reconciliation.test.ts` S26 Usage snapshots are accumulated once — RED at b8830be5<br>`run-event-ledger-reconciliation.test.ts` S26 Usage snapshots are accumulated once — RED at b8830be5 / green at candidate: reconciliation 2/2 |
 | S27 | agent-runtime-core / Usage Snapshot Accounting / Resume establishes a usage baseline | `run-event-ledger-reconciliation.test.ts` S27 Resume establishes a usage baseline — RED at b8830be5 / green at candidate: reconciliation 1/1 |
-| S28 | agent-runtime-core / Canonical Artifact Admission / Valid artifact candidate is admitted | `run-event-ledger-terminal.test.ts` S28 Valid artifact candidate is admitted — RED at b8830be5 / green at candidate: terminal 1/1; native roles and the production path (G2, `5b1ffd3e`): `run-event-ledger-native-artifacts.test.ts` 8/8 |
+| S28 | agent-runtime-core / Canonical Artifact Admission / Valid artifact candidate is admitted | `run-event-ledger-terminal.test.ts` S28 Valid artifact candidate is admitted — RED at b8830be5 / green at candidate: terminal 1/1; native roles and the production path (G2, `5b1ffd3e`) and handle-based admission with terminal re-verification (T2-11): `run-event-ledger-native-artifacts.test.ts` 11/11 |
 | S29 | agent-runtime-core / Canonical Artifact Admission / Invalid artifact candidate is rejected | `run-event-ledger-terminal.test.ts` S29 Invalid artifact candidate is rejected — RED at b8830be5 / green at candidate: terminal 1/1; role-carrying rejections and out_of_scope production candidates: `run-event-ledger-native-artifacts.test.ts` |
-| S30 | agent-runtime-core / Canonical Artifact Admission / Terminal files and completed become visible together | partial — artifact admission covered by S25 tests (`run-event-ledger-terminal.test.ts`); prepare-fail hooks implementer-unit (red-receipt §6) / green at candidate: projection S52 1/1, the three units preparation tests, and `run-event-ledger-terminal-commit-faults.test.ts` 4/4 at T1 (`316859e3`) over `tests/fixtures/run-event-ledger-units/terminal-artifacts.json`: clean, file-preparation fault, refused SQL commit (readers snapshotted at the refusal) and projection fault after commit (redelivered once on reopen) |
+| S30 | agent-runtime-core / Canonical Artifact Admission / Terminal files and completed become visible together | partial — artifact admission covered by S25 tests (`run-event-ledger-terminal.test.ts`); prepare-fail hooks implementer-unit (red-receipt §6) / green at candidate: projection S52 1/1, the three units preparation tests, and `run-event-ledger-terminal-commit-faults.test.ts` 4/4 at T1 (`316859e3`) over `tests/fixtures/run-event-ledger-units/terminal-artifacts.json`: clean, file-preparation fault, refused SQL commit (readers snapshotted at the refusal) and projection fault after commit (redelivered once on reopen); now 7/7 at `0e6d1273` with the three T2-9 staged-publish tests (refused commit shows no final file and the retry publishes once; exhausted commits leave only the initial files; a preparation fault leaves no partial final `events.jsonl`) |
 | S31 | agent-runtime-core / Observable Native Methods And Boundary Facts / Unknown native method is observed | `run-event-ledger-core.test.ts` S31 Unknown native method is observed — RED at b8830be5<br>`run-event-ledger-core.test.ts` S31 Unknown native method is observed — RED at b8830be5 / green at candidate: core 2/2 |
 | S32 | agent-runtime-core / Observable Native Methods And Boundary Facts / Interaction boundary is recorded without a second state machine | `run-event-ledger-boundaries.test.ts` S32 Interaction boundary is recorded without a second state machine — RED at b8830be5<br>`run-event-ledger-boundaries.test.ts` S32 Interaction boundary is recorded without a second state machine — RED at b8830be5<br>`run-event-ledger-boundaries.test.ts` S32 Interaction boundary is recorded without a second state machine — RED at b8830be5 / green at candidate: boundaries 3/3 |
 | S33 | agent-runtime-core / Native Resume Validation Facts / Codex response validates the requested native thread | `run-event-ledger-provenance-resume.test.ts` S33 Codex response validates the requested native thread — RED at b8830be5<br>`run-event-ledger-provenance-resume.test.ts` S33 Codex response validates the requested native thread — RED at b8830be5<br>`run-event-ledger-provenance-resume.test.ts` S33 Codex response validates the requested native thread — RED at b8830be5<br>`run-event-ledger-provenance-resume.test.ts` S33 Codex response validates the requested native thread — RED at b8830be5 / green at candidate: provenance-resume 4/4 |
 | S34 | agent-runtime-core / Native Resume Validation Facts / Claude correlated init validates resume independently of turn success | `run-event-ledger-provenance-resume.test.ts` S34 Claude correlated init validates resume independently of turn success — RED at b8830be5<br>`run-event-ledger-provenance-resume.test.ts` S34 Claude correlated init validates resume independently of turn success — RED at b8830be5<br>`run-event-ledger-provenance-resume.test.ts` S34 Claude correlated init validates resume independently of turn success — RED at b8830be5<br>`run-event-ledger-provenance-resume.test.ts` S34 Claude correlated init validates resume independently of turn success — RED at b8830be5<br>`run-event-ledger-provenance-resume.test.ts` S34 Claude correlated init validates resume independently of turn success — RED at b8830be5 / green at candidate: provenance-resume 5/5 |
-| S35 | agent-runtime-core / Resume Snapshot Repair / Resume snapshot repairs an incomplete item | `run-event-ledger-provenance-resume.test.ts` S35 Resume snapshot repairs an incomplete item — RED at b8830be5<br>`run-event-ledger-provenance-resume.test.ts` S35 Resume snapshot repairs an incomplete item — RED at b8830be5 / green at candidate: provenance-resume 2/2; production caller (G3, `be098376`): `codex-app-server-resume-snapshot.test.ts` 8/8 |
+| S35 | agent-runtime-core / Resume Snapshot Repair / Resume snapshot repairs an incomplete item | `run-event-ledger-provenance-resume.test.ts` S35 Resume snapshot repairs an incomplete item — RED at b8830be5<br>`run-event-ledger-provenance-resume.test.ts` S35 Resume snapshot repairs an incomplete item — RED at b8830be5 / green at candidate: provenance-resume 2/2; production caller (G3, `be098376`) and wire-id response correlation (T2-8): `codex-app-server-resume-snapshot.test.ts` 10/10 |
 | S36 | agent-runtime-core / Resume Snapshot Repair / Durable failure survives degraded native snapshot | `run-event-ledger-provenance-resume.test.ts` S36 Durable failure survives degraded native snapshot — RED at b8830be5<br>`run-event-ledger-provenance-resume.test.ts` S36 Durable failure survives degraded native snapshot — RED at b8830be5 / green at candidate: provenance-resume 2/2; post-seal caller path: `codex-app-server-resume-snapshot.test.ts` |
 | S37 | agent-runtime-core / Resume Snapshot Repair / Cross-version snapshot reconciliation declares its evidence limits | `run-event-ledger-provenance-resume.test.ts` S37 Cross-version snapshot reconciliation declares its evidence limits — RED at b8830be5<br>`run-event-ledger-provenance-resume.test.ts` S37 Cross-version snapshot reconciliation declares its evidence limits — RED at b8830be5<br>`run-event-ledger-provenance-resume.test.ts` S37 Cross-version snapshot reconciliation declares its evidence limits — RED at b8830be5 / green at candidate: provenance-resume 3/3; recognized/incompatible classification on the resume path: `codex-app-server-resume-snapshot.test.ts` |
 | S38 | architecture-ownership / Canonical Runtime Event Mapping Single Path / Second event mapping definition appears | `run-event-ledger-guards.test.ts` S38 Second event mapping definition appears — RED at b8830be5<br>`run-event-ledger-guards.test.ts` S38 Second event mapping definition appears — RED at b8830be5 / green at candidate: guards 2/2; negative self-test: `run-event-ledger-guard-self-test.test.ts` 1/1 at T1 (`10fd4482`) |
 | S39 | architecture-ownership / Canonical Runtime Event Mapping Single Path / Route or runtime adapter writes job events directly | `run-event-ledger-guards.test.ts` S39 Route or runtime adapter writes job events directly — RED at b8830be5<br>`run-event-ledger-guards.test.ts` S39 Route or runtime adapter writes job events directly — RED at b8830be5<br>`run-event-ledger-guards.test.ts` S39 Route or runtime adapter writes job events directly — RED at b8830be5<br>`run-event-ledger-guards.test.ts` S39 Route or runtime adapter writes job events directly — RED at b8830be5<br>`run-event-ledger-guards.test.ts` S39 Route or runtime adapter writes job events directly — RED at b8830be5<br>`run-event-ledger-guards.test.ts` S39 Route or runtime adapter writes job events directly — GREEN by design at b8830be5 / green at candidate: guards 6/6 |
 | S40 | architecture-ownership / Canonical Runtime Event Mapping Single Path / Guard proves its own detection | `run-event-ledger-guards.test.ts` S40 Guard proves its own detection — RED at b8830be5 / green at candidate: guards 1/1; negative self-test: `run-event-ledger-guard-self-test.test.ts` 1/1 at T1 (a mutated fixture through `--run-event-ledger-fixtures` fails the guard by case id for a missing and an unexpected finding; `scripts/check-architecture-guards.mjs:4491-4510`) |
-| S41 | codex-runtime-parity / Codex Native Boundary Forwarding And Disposition / Transport forwards protocol boundary shapes | implementer-unit (spy-ledger injection on the Codex transport; red-receipt §6) / green at candidate: implementer-unit: `codex-app-server-ingress-order.test.ts` 1/1 at T1 (spy ledger over `ingress-boundaries.jsonl`: one call per boundary in arrival order with request context, resolved not duplicated, no invented `thread/started`), plus the adapter resume test and the ledger-backed stream-events tests |
+| S41 | codex-runtime-parity / Codex Native Boundary Forwarding And Disposition / Transport forwards protocol boundary shapes | implementer-unit (spy-ledger injection on the Codex transport; red-receipt §6) / green at candidate: implementer-unit: `codex-app-server-ingress-order.test.ts` 1/1 at T1 (spy ledger over `ingress-boundaries.jsonl`: one call per boundary in arrival order with request context, resolved not duplicated, no invented `thread/started`), extended in T2-8 (every client response once, in request order, under its JSON-RPC wire id), plus the adapter resume test, the wire-id tests in `codex-app-server-resume-snapshot.test.ts` and `codex-app-server-transport.test.ts`, and the ledger-backed stream-events tests |
 | S42 | codex-runtime-parity / Codex Native Boundary Forwarding And Disposition / Pinned native surface has complete disposition | `run-event-ledger-core.test.ts` S42 Pinned native surface has complete disposition — GREEN by design at b8830be5<br>`run-event-ledger-core.test.ts` S42 Pinned native surface has complete disposition — RED at b8830be5<br>`run-event-ledger-core.test.ts` S42 Pinned native surface has complete disposition — RED at b8830be5<br>`run-event-ledger-core.test.ts` S42 Pinned native surface has complete disposition — RED at b8830be5<br>`run-event-ledger-core.test.ts` S42 Pinned native surface has complete disposition — RED at b8830be5<br>`run-event-ledger-core.test.ts` S42 Pinned native surface has complete disposition — RED at b8830be5 / green at candidate: core 6/6 |
 | S43 | codex-runtime-parity / Codex Native Boundary Forwarding And Disposition / Decoder retains channel and native error fields | `run-event-ledger-vocabulary.test.ts` S43 Decoder retains channel and native error fields — RED at b8830be5<br>`run-event-ledger-vocabulary.test.ts` S43 Decoder retains channel and native error fields — RED at b8830be5 / green at candidate: vocabulary 2/2 |
 | S44 | desktop-agent-jobs / Desktop Jobs Persist Semantic Runtime Events / Desktop stream emits semantic events | `run-event-ledger-projection.test.ts` S44 Desktop stream emits semantic events — RED at b8830be5<br>`run-event-ledger-projection.test.ts` S44 Desktop stream emits semantic events — GREEN by design at b8830be5 / green at candidate: projection 2/2 |
@@ -743,14 +873,14 @@ implementer test that covers the seam, or state what is not asserted (gap G5).
 | --- | --- |
 | Owner APPROVED | Recorded 2026-09-07 (receipt below): R1 disposition, four answers, scope bound to `9ebe6c34` |
 | Code/store | Implemented at the candidate: one exact-sequence append path (`appendExactRunEventBatch`, private insert `job-store.ts:930`), definite rollback (S11), reopen/ack cursors (S12, host test), legacy marking and v0 append rejection (S13, host test), internal `historyQuality` read metadata (G1 closed in T1), post-terminal late-only (S25) |
-| Terminal/artifact | Implemented: every inventory terminal caller settles through the ledger (8.4 evidence), candidate files and same-commit refs (S52, implementer tests), failed preparation keeps the slot, recovery (S24, T1 variants), S30 commit-fault injection and registered-refs result reader (T1). Referred: headless app-server `host_result` (decision 3) |
+| Terminal/artifact | Implemented: every inventory terminal caller settles through the ledger (8.4 evidence), candidate files and same-commit refs (S52, implementer tests), failed preparation keeps the slot, recovery (S24, T1 variants), S30 commit-fault injection and registered-refs result reader (T1); transport-exit host projection (T2-2), native terminal evidence (T2-7, resolving decision 3), staged publish after commit (T2-9) |
 | Native/repair | Implemented: correlated resume (S33/S34), 66/10/16 static coverage (S42), two reasoning channels (S19), snapshot-only no-success (S36), native artifact candidates through the host (G2) and the resume snapshot-repair caller (G3), both closed in T1 |
 | Static architecture | Implemented: owner pins, retired symbols absent, the host is the only raw store importer, gate and transition mode deleted; guard self-test 17/17 |
-| Security | Implemented: stateful split-secret flush (S17), withheld prefix dropped at flush (`84541e00`), raw native content omitted, admission scope/digest/ownership checks (S28/S29), store credential patterns kept on durable records (`60bf8e02`), no new grants; Claude capture-to-launch re-check (G4 closed in T1); native staging only inside the admitted run dir |
-| check:full / strict / diff | Exit 0 at `b0f3e60d` (T1 gates); rerun at the candidate in the handoff |
+| Security | Implemented: stateful split-secret flush (S17), withheld prefix dropped at flush (`84541e00`), raw native content omitted, admission scope/digest/ownership checks (S28/S29), store credential patterns kept on durable records (`60bf8e02`), no new grants; Claude capture-to-launch re-check (G4 closed in T1); native staging only inside the admitted run dir; T2: store key rule and generic arm restored on durable records (T2-1), post-seal withheld channels omitted (T2-10), native admission through the run-dir handle with terminal re-verification (T2-11) |
+| check:full / strict / diff | Exit 0 at `b0f3e60d` (T1 gates) and at `0e6d1273` (T2 gates table; coordinator reproduction 2736/0); T3 changes documentation only |
 | Manual/packaged | Host-blocked or not claimed; see the 8.5 smoke matrix and rerun commands |
 | Codex IMPLEMENTATION_VERIFIED | Not issued; due on the candidate SHA |
-| Claude fresh REVIEW_APPROVED | Not issued; due on the candidate SHA |
+| Claude fresh REVIEW_APPROVED | Four-lens review of `a32800b6`: CHANGES_REQUESTED (closed by T2). Targeted re-review of `0e6d1273`: Lens A and Lens C REVIEW_APPROVED; Lens B CHANGES_REQUESTED on the register only (closed by the docs-only T3); a diff-only re-check of T3 is due |
 | Owner ACCEPTED | Not issued; explicit acceptance required after same-SHA technical evidence |
 | Merge/push/remote PR/release | Not authorized / not performed |
 

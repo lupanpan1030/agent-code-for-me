@@ -140,3 +140,13 @@ Owner 对 `add-renderer-untrusted-content-hardening` 选择先合入、开票补
 | 工单 | 标题 | 级别 | 状态 |
 |------|------|------|------|
 | [TICKET-126](TICKET-126-renderer-hardening-gui-tracks.md) | Renderer hardening 开发态/打包态 GUI 双轨与 CSP 补跑 | 🟡 验证跟进 | 待 GUI 补跑 |
+
+## 第十批 — Windows run-dir 制品（2026-10-01）
+
+来源：`refactor-canonical-run-event-ledger` 对 `0e6d1273` 的定向复审（Lens C 范围外观察）。
+`stable-directory.ts` 没有 win32 后端，run-dir 制品在 Windows 上 fail closed。此问题自
+`e1370a78` 起即存在，并非本变更引入；需单独的平台 OpenSpec。
+
+| 工单 | 标题 | 级别 | 状态 |
+|------|------|------|------|
+| [TICKET-127](TICKET-127-run-dir-artifacts-windows-stable-directory.md) | Windows 上 run-dir 制品 fail closed（stable-directory 无 win32 后端） | 🟡 平台缺口（目标平台） | 待平台 OpenSpec / 未授权实施 |
