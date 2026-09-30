@@ -151,6 +151,23 @@ function mermaidResidue(containers: HTMLElement[]): string[] {
 }
 
 async function renderMermaidBlock(code: string): Promise<MermaidRender> {
+  // A previous render in the same test may have left its fullscreen viewer
+  // (a Radix dialog portal under document.body) open; close it so it is not
+  // reported as transient residue of this render. (Coordinator adjudication
+  // 2026-09-30, see red-receipt.md.)
+  if (doc.querySelector('[role="dialog"][data-state="open"]')) {
+    await act(async () => {
+      doc.dispatchEvent(
+        new testWindow.KeyboardEvent("keydown", {
+          key: "Escape",
+          bubbles: true,
+        }) as unknown as Event,
+      )
+    })
+    await act(async () => {
+      await sleep(20)
+    })
+  }
   const headBefore = Array.from(doc.head.childNodes)
   const callsBefore = mermaidRenderCalls
   const container = doc.createElement("div")
