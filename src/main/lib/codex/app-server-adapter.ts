@@ -69,6 +69,9 @@ import {
   codexNativeArtifactEvidence,
 } from "./app-server-stream-events"
 import {
+  type CodexAppServerClientRequestMethod,
+  type CodexAppServerMessageId,
+  type CodexAppServerRequestOptions,
   type CodexAppServerTransport,
   type CodexAppServerTransportServerRequest,
   type CodexAppServerTransportServerRequestResponse,
@@ -994,12 +997,15 @@ export function createCodexAppServerAdapter({
           await ledger.whenIdle()
           const target = await ledger.readNativeContext()
           if (target?.threadId && target.turnId) {
-            void transport
-              .request("turn/interrupt", {
-                threadId: target.threadId,
-                turnId: target.turnId,
-              })
-              .catch(() => {})
+            // The interrupt's response (success or coded error) is recorded
+            // under its wire id whenever it arrives; the adapter does not
+            // wait for it before closing the transport.
+            void requestWithResponseBoundary(
+              "turn/interrupt",
+              { threadId: target.threadId, turnId: target.turnId },
+              {},
+              { cancellable: false },
+            ).catch(() => {})
           }
         })().catch(() => {})
         settleTerminal({
@@ -1015,6 +1021,7 @@ export function createCodexAppServerAdapter({
       const requestWithCancellation = (
         method: Parameters<CodexAppServerTransport["request"]>[0],
         params: unknown,
+        options?: CodexAppServerRequestOptions,
       ): Promise<unknown> => {
         if (!runOwnerIsCurrent()) {
           return Promise.reject(new Error("Codex app-server run canceled."))
@@ -1039,7 +1046,7 @@ export function createCodexAppServerAdapter({
           pendingTransportExitRejectors.add(onTransportExit)
           let pendingRequest: Promise<unknown>
           try {
-            pendingRequest = transport.request(method, params)
+            pendingRequest = transport.request(method, params, options)
           } catch (error) {
             settle(() => reject(error))
             return
@@ -1053,64 +1060,91 @@ export function createCodexAppServerAdapter({
         })
       }
 
-      // Records the correlated response boundary of one client request so
-      // the ledger owns resume validation and the native context.
-      let responseCounter = 0
+      // Records the response boundary of every client request (success or
+      // coded error) under the JSON-RPC id the transport sent it with, so
+      // the ledger owns resume validation, the native context and the
+      // response facts with the original request correlation. A transport
+      // that exposes no wire id yields an uncorrelated response fact; no id
+      // is ever invented.
       let resumeResponseCommitted: Promise<unknown> | null = null
+      const recordResponse = (input: {
+        method: CodexAppServerClientRequestMethod
+        params: unknown
+        context: { intent?: "start" | "resume"; expectedSessionId?: string }
+        wireId: CodexAppServerMessageId | null
+        outcome:
+          | { result: unknown }
+          | { error: { code: string | number; message: string } }
+      }): Promise<unknown> | null => {
+        if (!ledger) return null
+        const committed = ledger.ingestResponse({
+          observationKey: observationKey("response"),
+          transportId,
+          receivedAt: receivedAt(),
+          ...(input.wireId !== null
+            ? {
+                request: {
+                  id: input.wireId,
+                  method: input.method,
+                  params: input.params,
+                  ...(input.context.intent
+                    ? { intent: input.context.intent }
+                    : {}),
+                  ...(input.context.expectedSessionId
+                    ? { expectedSessionId: input.context.expectedSessionId }
+                    : {}),
+                },
+              }
+            : {}),
+          message: {
+            ...(input.wireId !== null ? { id: input.wireId } : {}),
+            ...input.outcome,
+          },
+        })
+        recordCommitted(committed)
+        return committed
+      }
       const requestWithResponseBoundary = async (
-        method: "thread/start" | "thread/resume" | "turn/start",
+        method: CodexAppServerClientRequestMethod,
         params: unknown,
         context: { intent?: "start" | "resume"; expectedSessionId?: string },
+        options: { cancellable: boolean } = { cancellable: true },
       ): Promise<unknown> => {
-        responseCounter += 1
-        const correlationId = `locus-${responseCounter}`
-        const boundaryRequest = {
-          id: correlationId,
-          method,
-          params,
-          ...(context.intent ? { intent: context.intent } : {}),
-          ...(context.expectedSessionId
-            ? { expectedSessionId: context.expectedSessionId }
-            : {}),
+        const sent: { id: CodexAppServerMessageId | null } = { id: null }
+        const onSent = (id: CodexAppServerMessageId) => {
+          sent.id = id
         }
         try {
-          const result = await requestWithCancellation(method, params)
-          if (ledger) {
-            const committed = ledger.ingestResponse({
-              observationKey: observationKey("response"),
-              transportId,
-              receivedAt: receivedAt(),
-              request: boundaryRequest,
-              message: { id: correlationId, result },
-            })
-            recordCommitted(committed)
-            if (method === "thread/resume") resumeResponseCommitted = committed
-          }
+          const result = options.cancellable
+            ? await requestWithCancellation(method, params, { onSent })
+            : await transport.request(method, params, { onSent })
+          const committed = recordResponse({
+            method,
+            params,
+            context,
+            wireId: sent.id,
+            outcome: { result },
+          })
+          if (method === "thread/resume") resumeResponseCommitted = committed
           return result
         } catch (error) {
           const code =
             error && typeof error === "object" && "code" in error
               ? (error as { code?: unknown }).code
               : undefined
-          if (
-            ledger &&
-            (typeof code === "number" || typeof code === "string")
-          ) {
-            recordCommitted(
-              ledger.ingestResponse({
-                observationKey: observationKey("response"),
-                transportId,
-                receivedAt: receivedAt(),
-                request: boundaryRequest,
-                message: {
-                  id: correlationId,
-                  error: {
-                    code,
-                    message: error instanceof Error ? error.message : "",
-                  },
+          if (typeof code === "number" || typeof code === "string") {
+            recordResponse({
+              method,
+              params,
+              context,
+              wireId: sent.id,
+              outcome: {
+                error: {
+                  code,
+                  message: error instanceof Error ? error.message : "",
                 },
-              }),
-            )
+              },
+            })
           }
           throw error
         }
@@ -1144,17 +1178,21 @@ export function createCodexAppServerAdapter({
           allowPreparedLongTextRefs: true,
         })
 
-        await requestWithCancellation("initialize", {
-          clientInfo: {
-            name: "locus",
-            title: "Locus",
-            version: "0.0.0",
+        await requestWithResponseBoundary(
+          "initialize",
+          {
+            clientInfo: {
+              name: "locus",
+              title: "Locus",
+              version: "0.0.0",
+            },
+            capabilities: {
+              experimentalApi,
+              requestAttestation: false,
+            },
           },
-          capabilities: {
-            experimentalApi,
-            requestAttestation: false,
-          },
-        })
+          {},
+        )
         transport.notify("initialized")
         const appServerConfig = {
           ...(providerBinding.client.config ?? {}),
@@ -1214,11 +1252,12 @@ export function createCodexAppServerAdapter({
         }
 
         try {
-          const mcpStatus = await requestWithCancellation(
+          const mcpStatus = await requestWithResponseBoundary(
             "mcpServerStatus/list",
             {
               detail: "toolsAndAuthOnly",
             },
+            {},
           )
           emitRuntimeChunk({
             type: "runtime-status",

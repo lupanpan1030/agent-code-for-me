@@ -65,10 +65,21 @@ export type CodexAppServerTransportExit = {
   error: Error
 }
 
+/** Per-request transport options. */
+export type CodexAppServerRequestOptions = {
+  /**
+   * Receives the JSON-RPC id the request is sent under on the wire, before
+   * it is written, so the caller can correlate the response boundary it
+   * records with the original request.
+   */
+  onSent?: (id: CodexAppServerMessageId) => void
+}
+
 export type CodexAppServerTransport = {
   request(
     method: CodexAppServerClientRequestMethod,
     params: unknown,
+    options?: CodexAppServerRequestOptions,
   ): Promise<unknown>
   notify(method: CodexAppServerClientNotificationMethod, params?: unknown): void
   onNotification(
@@ -484,9 +495,14 @@ export function createCodexAppServerStdioTransport({
   }
 
   return {
-    request(method, params) {
+    request(method, params, options) {
       if (lifecycleExit) return Promise.reject(lifecycleExit.error)
       const id = nextId++
+      try {
+        options?.onSent?.(id)
+      } catch {
+        // The correlation observer never blocks the protocol request.
+      }
       return new Promise((resolve, reject) => {
         pending.set(id, { resolve, reject })
         writeJsonLine(

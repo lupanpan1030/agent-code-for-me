@@ -141,13 +141,18 @@ describe("S41 Codex transport forwards protocol boundary shapes (ingress-boundar
     const boundaryCalls = calls.filter((call) => BOUNDARY_PORTS.has(call.port))
     const fixturePorts = BOUNDARIES.map((entry) => entry.port)
     // The fixture's five boundaries, in arrival order, each exactly once;
-    // the adapter's own turn/start response and terminal notification follow
-    // their arrival too.
+    // the adapter's own initialize, mcpServerStatus/list and turn/start
+    // responses and its terminal notification follow their arrival too.
+    const ownResponses = new Set([
+      "initialize",
+      "mcpServerStatus/list",
+      "turn/start",
+    ])
     const ordered = boundaryCalls.filter(
       (call) =>
         !(
           call.port === "ingestResponse" &&
-          (call.input.request as Json)?.method === "turn/start"
+          ownResponses.has(String((call.input.request as Json)?.method))
         ) &&
         !(
           call.port === "ingestNotification" &&
@@ -155,6 +160,27 @@ describe("S41 Codex transport forwards protocol boundary shapes (ingress-boundar
         ),
     )
     expect(ordered.map((call) => call.port)).toEqual(fixturePorts)
+    // T2-8 / S-03: every client response is forwarded once, in request
+    // order, correlated by the JSON-RPC id the transport sent it under.
+    const responses = boundaryCalls.filter(
+      (call) => call.port === "ingestResponse",
+    )
+    expect(
+      responses.map((call) => (call.input.request as Json).method),
+    ).toEqual([
+      "initialize",
+      "thread/resume",
+      "mcpServerStatus/list",
+      "turn/start",
+    ])
+    for (const call of responses) {
+      const request = call.input.request as Json
+      const sent = transport.requests.find(
+        (entry) => entry.method === request.method,
+      )
+      expect(request.id).toBe(sent?.id)
+      expect((call.input.message as Json).id).toBe(sent?.id)
+    }
 
     const keys = boundaryCalls.map((call) => call.input.observationKey)
     expect(new Set(keys).size).toBe(keys.length)

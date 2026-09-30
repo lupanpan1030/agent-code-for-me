@@ -372,3 +372,88 @@ describe("repairFromValidatedResumeSnapshot", () => {
     expect(rows).toEqual([])
   })
 })
+
+describe("Codex client response correlation (T2-8 / S-03)", () => {
+  test("every client response is recorded once under the transport's wire id; resume validation is unchanged", async () => {
+    const { ledger, rows } = memoryLedger("run-wire-ids")
+    const transport = new ScriptedCodexAppServerTransport({
+      threadResume: (params) => ({
+        thread: {
+          ...recognizedThread(),
+          id: String(params.threadId),
+          sessionId: String(params.threadId),
+        },
+      }),
+    })
+    const result = await createCodexAppServerAdapter({
+      enabled: true,
+      createTransport: () => transport,
+      captureExecutionProvenance: async () => RUNTIME_TUPLE,
+    }).run(resumeRequest(ledger, "th"))
+    await ledger.whenIdle()
+    expect(result).toMatchObject({ status: "succeeded", sessionId: "th" })
+
+    const wireId = (method: string) =>
+      transport.requests.find((entry) => entry.method === method)?.id
+    // (The scripted turn/start response arrives after its turn/completed
+    // terminal candidate, so it is a buffered late observation here.)
+    const responses = statusRows(rows, "protocol_response")
+    expect(
+      responses.map((row) => [row.payload?.method, row.payload?.jsonRpcId]),
+    ).toEqual([
+      ["initialize", wireId("initialize")],
+      ["mcpServerStatus/list", wireId("mcpServerStatus/list")],
+    ])
+    for (const row of responses) {
+      expect(row.payload?.correlated).toBe(true)
+      expect(String(row.payload?.jsonRpcId)).not.toMatch(/^locus-/)
+    }
+    const validated = statusRows(rows, "native_resume_validated")
+    expect(validated).toHaveLength(1)
+    expect(validated[0].payload?.jsonRpcId).toBe(wireId("thread/resume"))
+    // No thread/started is fabricated for the resumed thread.
+    expect(JSON.stringify(rows)).not.toContain('"thread/started"')
+  })
+
+  test("a turn/interrupt response is recorded as a protocol_response under its wire id", async () => {
+    const { ledger, rows } = memoryLedger("run-interrupt-id")
+    const abortController = new AbortController()
+    const transport = new ScriptedCodexAppServerTransport({
+      turn: async (scripted, threadId) => {
+        scripted.emit({
+          method: "turn/started",
+          params: {
+            threadId,
+            turn: { id: "turn-1", status: "inProgress", error: null },
+          },
+        })
+        abortController.abort()
+        await ledger.whenIdle()
+      },
+    })
+    const request = resumeRequest(ledger, "th")
+    const result = await createCodexAppServerAdapter({
+      enabled: true,
+      createTransport: () => transport,
+      captureExecutionProvenance: async () => RUNTIME_TUPLE,
+    }).run({ ...request, session: {}, signal: abortController.signal })
+    expect(result.status).toBe("canceled")
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await ledger.whenIdle()
+
+    const interrupt = transport.requests.find(
+      (entry) => entry.method === "turn/interrupt",
+    )
+    expect(interrupt?.params).toEqual({
+      threadId: "thread-1",
+      turnId: "turn-1",
+    })
+    const interruptResponse = statusRows(rows, "protocol_response").find(
+      (row) => row.payload?.method === "turn/interrupt",
+    )
+    expect(interruptResponse?.payload).toMatchObject({
+      correlated: true,
+      jsonRpcId: interrupt?.id,
+    })
+  })
+})

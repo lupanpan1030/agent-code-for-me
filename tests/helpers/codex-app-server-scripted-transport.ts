@@ -1,6 +1,8 @@
 import type {
   CodexAppServerClientNotificationMethod,
   CodexAppServerClientRequestMethod,
+  CodexAppServerMessageId,
+  CodexAppServerRequestOptions,
   CodexAppServerTransport,
   CodexAppServerTransportExit,
   CodexAppServerTransportNotification,
@@ -66,7 +68,13 @@ export function defaultCodexTurnNotifications(
 export class ScriptedCodexAppServerTransport
   implements CodexAppServerTransport
 {
-  readonly requests: Array<{ method: string; params: unknown }> = []
+  /** Every request with the JSON-RPC id it was sent under on the wire. */
+  readonly requests: Array<{
+    method: string
+    params: unknown
+    id: CodexAppServerMessageId
+  }> = []
+  private nextId = 1
   readonly notified: string[] = []
   closed = false
   private notificationHandler:
@@ -88,8 +96,13 @@ export class ScriptedCodexAppServerTransport
   async request(
     method: CodexAppServerClientRequestMethod,
     params: unknown,
+    options?: CodexAppServerRequestOptions,
   ): Promise<unknown> {
-    this.requests.push({ method, params })
+    // Like the stdio transport, the wire id is allocated per request and
+    // handed to the caller before the request is written.
+    const id = this.nextId++
+    options?.onSent?.(id)
+    this.requests.push({ method, params, id })
     const record = (params ?? {}) as Record<string, unknown>
     switch (method) {
       case "initialize":
