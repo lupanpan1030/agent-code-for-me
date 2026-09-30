@@ -390,6 +390,19 @@ S42 66/10/16 exact).
    are `settle:<trigger.observationKey>`; `createCanonicalRunEventLedger` returns synchronously
    (projection S45 calls ports without await). `check:full` cannot exit 0 while declared red
    tests remain; the Phase I gate is every other stage green, and Phase II must reach exit 0.
+   Added 2026-10-01 (Phase II rulings, coordinator, candidate e7198bc7 — nine red files 141/141,
+   full suite 2665/0, `bun run check:full` exit 0 reproduced independently): of the seven
+   decisions the implementer took inside the design's latitude, (2) v0 rows drain with the old
+   build, (5) desktop completion waits for the renderer channel to drain and flush drops withheld
+   prefixes, and (6) artifact refs merge into `result_json` are accepted as design-conformant;
+   (1) coarse non-usage observations admitted before provenance binding and (4) schema identity
+   over compiled-in schema documents are accepted with disclosure (Phase III records every real
+   coarse runner's binding point and defines `schemaFiles` as the adapter's compiled-in documents);
+   (3) headless app-server runs settling with `host_result` instead of `native_terminal` is
+   referred to the fresh review (design limits `host_result` to process batch/completion);
+   (7) the consumer-visible changes go into both consumer guides with a C7 check against the
+   signed DIRECT_NEW_STANDARD scope. The final Phase II commit rewrote 32 baseline test files;
+   the review must confirm no assertion was weakened.
 5. The green-by-design set (§4) is part of the acceptance gate: S39's gate-absence test will go
    red while `canonicalRunEventLedgerV1` exists and must be green again before acceptance.
 6. Fixture caveat carried from the authors: param shapes are schema-derived synthetic values
