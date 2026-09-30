@@ -4240,6 +4240,411 @@ function assertCanonicalVocabularyI18n() {
   assertDictionaryValuesExclude(dictionaryEntries, retiredAgentTerms, "Agent")
 }
 
+// ---------------------------------------------------------------------------
+// Canonical run event ledger (refactor-canonical-run-event-ledger)
+//
+// The fixture-driven rules pin the ledger owners of
+// docs/OWNERSHIP_MAP.md "Runtime Events, Trace, And Redaction". Their
+// self-test consumes RUN_EVENT_LEDGER_ARCHITECTURE_FIXTURE_PATH in every
+// mode. Repository enforcement runs with --run-event-ledger-phase=transition
+// (declared temporary gate + frozen legacy residue only) or =canonical (no
+// residue); the transition mode, its allowlist and the gate are deleted by
+// the Phase II cutover before acceptance.
+// ---------------------------------------------------------------------------
+
+const RUN_EVENT_LEDGER_ARCHITECTURE_FIXTURE_PATH =
+  "tests/fixtures/run-event-ledger/architecture-fixtures.json"
+const RUN_EVENT_LEDGER_PHASE_FLAG = "--run-event-ledger-phase="
+const RUN_EVENT_LEDGER_FIXTURE_FLAG = "--run-event-ledger-fixtures="
+const RUN_EVENT_LEDGER_GATE = "canonicalRunEventLedgerV1"
+const RUN_EVENT_LEDGER_HOST =
+  "src/main/lib/agent-runtime/run-event-ledger-host.ts"
+const RUN_EVENT_LEDGER_BIND_METHOD = "bindExecutionProvenance"
+const RUN_EVENT_LEDGER_STORE_APPEND = "appendExactRunEventBatch"
+/** Frozen legacy residue the transition phase may still carry (only shrinks). */
+const RUN_EVENT_LEDGER_TRANSITION_LEGACY_RESIDUE = new Set([
+  "src/main/lib/agent-runtime/job-event-bridge.ts:createAgentJobRunEvent",
+  "src/main/lib/agent-runtime/stream-event-mapper.ts:appendAgentJobEvent",
+  "src/main/lib/agent-runtime/stream-event-mapper.ts:appendRunEventsToAgentJob",
+  "src/main/lib/agent-runtime/stream-event-mapper.ts:createDesktopStreamEventMapper",
+  "src/main/lib/agent-runtime/stream-event-mapper.ts:createRuntimeRendererChunkEmitter",
+  "src/main/lib/agent-runtime/stream-event-mapper.ts:createRuntimeStreamChunkSecretRedactor",
+  "src/main/lib/agent-runtime/stream-event-mapper.ts:isDesktopRuntimeFailureChunk",
+  "src/main/lib/agent-runtime/stream-event-mapper.ts:mapDesktopStreamChunkToRunEvents",
+  "src/main/lib/agent-runtime/stream-event-mapper.ts:persistedPayloadForRunEvent",
+  "src/main/lib/agent-runtime/stream-event-mapper.ts:redactRendererDiagnosticChunk",
+  "src/main/lib/agent-runtime/stream-event-mapper.ts:redactRendererRuntimeChunk",
+  "src/main/lib/claude/agent-sdk-desktop-job.ts:appendRunEventsToAgentJob",
+  "src/main/lib/claude/agent-sdk-desktop-job.ts:createDesktopStreamEventMapper",
+  "src/main/lib/claude/agent-sdk-desktop-run-envelope.ts:createRuntimeRendererChunkEmitter",
+  "src/main/lib/codex/app-server-adapter.ts:createRuntimeStreamChunkSecretRedactor",
+  "src/main/lib/codex/app-server-adapter.ts:mapDesktopStreamChunkToRunEvents",
+  "src/main/lib/codex/app-server-adapter.ts:redactRendererRuntimeChunk",
+  "src/main/lib/desktop-agent-jobs.ts:appendAgentJobEvent",
+  "src/main/lib/headless/cli-dispatcher.ts:appendAgentJobEvent",
+  "src/main/lib/headless/completion-runner.ts:appendAgentJobEvent",
+  "src/main/lib/headless/job-runner.ts:appendAgentJobEvent",
+  "src/main/lib/headless/job-store.ts:appendAgentJobEvent",
+  "src/main/lib/headless/job-store.ts:createAgentJobRunEvent",
+  "src/main/lib/trpc/routers/codex.ts:appendRunEventsToAgentJob",
+  "src/main/lib/trpc/routers/codex.ts:redactRendererRuntimeChunk",
+])
+const RUN_EVENT_LEDGER_TRANSITION_DIRECT_EVENT_INSERTS = new Set([
+  "src/main/lib/headless/schedules.ts",
+])
+
+function runEventLedgerOption(flag) {
+  const argument = process.argv.find((entry) => entry.startsWith(flag))
+  return argument ? argument.slice(flag.length) : null
+}
+
+function runEventLedgerPhase() {
+  const phase = runEventLedgerOption(RUN_EVENT_LEDGER_PHASE_FLAG)
+  if (phase === null) return "legacy"
+  if (phase !== "transition" && phase !== "canonical") {
+    fail(
+      `${RUN_EVENT_LEDGER_PHASE_FLAG} must be transition or canonical; got ${phase}.`,
+    )
+    return "legacy"
+  }
+  return phase
+}
+
+function loadRunEventLedgerArchitectureFixture() {
+  const fixturePath =
+    runEventLedgerOption(RUN_EVENT_LEDGER_FIXTURE_FLAG) ??
+    RUN_EVENT_LEDGER_ARCHITECTURE_FIXTURE_PATH
+  const absolutePath = path.isAbsolute(fixturePath)
+    ? fixturePath
+    : path.join(repoRoot, fixturePath)
+  if (!existsSync(absolutePath)) {
+    fail(`${fixturePath} is missing.`)
+    return null
+  }
+  try {
+    return JSON.parse(readFileSync(absolutePath, "utf8"))
+  } catch (error) {
+    fail(`${fixturePath} is not valid JSON: ${String(error)}`)
+    return null
+  }
+}
+
+function collectRunEventLedgerSourceFacts(filePath, content) {
+  const sourceFile = ts.createSourceFile(
+    filePath,
+    content,
+    ts.ScriptTarget.Latest,
+    true,
+  )
+  const facts = {
+    definitions: new Set(),
+    reexports: new Set(),
+    identifiers: new Set(),
+    exportedNames: new Set(),
+    eventInsertFunctions: new Set(),
+    eventInsertCount: 0,
+    bindCalls: 0,
+  }
+  const eventTableAliases = new Set(["agentJobEvents"])
+  for (const statement of sourceFile.statements) {
+    if (
+      ts.isImportDeclaration(statement) &&
+      statement.importClause?.namedBindings &&
+      ts.isNamedImports(statement.importClause.namedBindings)
+    ) {
+      for (const element of statement.importClause.namedBindings.elements) {
+        if ((element.propertyName ?? element.name).text === "agentJobEvents") {
+          eventTableAliases.add(element.name.text)
+        }
+      }
+    }
+  }
+  function enclosingFunctionName(node) {
+    let current = node.parent
+    while (current) {
+      if (ts.isFunctionDeclaration(current) && current.name) {
+        return current.name.text
+      }
+      if (
+        (ts.isFunctionExpression(current) || ts.isArrowFunction(current)) &&
+        current.parent &&
+        ts.isVariableDeclaration(current.parent) &&
+        ts.isIdentifier(current.parent.name)
+      ) {
+        return current.parent.name.text
+      }
+      current = current.parent
+    }
+    return null
+  }
+  function visit(node) {
+    if (
+      (ts.isFunctionDeclaration(node) || ts.isClassDeclaration(node)) &&
+      node.name
+    ) {
+      facts.definitions.add(node.name.text)
+      if (hasModifier(node, ts.SyntaxKind.ExportKeyword)) {
+        facts.exportedNames.add(node.name.text)
+      }
+    }
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
+      facts.definitions.add(node.name.text)
+      const statement = node.parent?.parent
+      if (
+        statement &&
+        ts.isVariableStatement(statement) &&
+        hasModifier(statement, ts.SyntaxKind.ExportKeyword)
+      ) {
+        facts.exportedNames.add(node.name.text)
+      }
+    }
+    if (
+      ts.isExportDeclaration(node) &&
+      node.exportClause &&
+      ts.isNamedExports(node.exportClause)
+    ) {
+      for (const element of node.exportClause.elements) {
+        const local = (element.propertyName ?? element.name).text
+        if (node.moduleSpecifier) {
+          facts.reexports.add(local)
+        } else {
+          facts.exportedNames.add(local)
+        }
+      }
+    }
+    if (ts.isIdentifier(node)) facts.identifiers.add(node.text)
+    if (
+      ts.isElementAccessExpression(node) &&
+      stringLiteralValue(node.argumentExpression)
+    ) {
+      facts.identifiers.add(stringLiteralValue(node.argumentExpression))
+    }
+    if (ts.isCallExpression(node)) {
+      const callee = node.expression
+      const calleeName = ts.isPropertyAccessExpression(callee)
+        ? callee.name.text
+        : ts.isElementAccessExpression(callee)
+          ? stringLiteralValue(callee.argumentExpression)
+          : null
+      if (calleeName === RUN_EVENT_LEDGER_BIND_METHOD) facts.bindCalls += 1
+      if (calleeName === "insert" && node.arguments.length > 0) {
+        const target = node.arguments[0]
+        const targetName = ts.isIdentifier(target)
+          ? target.text
+          : ts.isPropertyAccessExpression(target)
+            ? target.name.text
+            : null
+        if (targetName && eventTableAliases.has(targetName)) {
+          facts.eventInsertCount += 1
+          const owner = enclosingFunctionName(node)
+          if (owner) facts.eventInsertFunctions.add(owner)
+        }
+      }
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(sourceFile)
+  return facts
+}
+
+function collectRunEventLedgerFindings(files, fixture) {
+  const ownerSection = fixture.ownerSection
+  const pins = fixture.pinnedOwners ?? {}
+  const legacySymbols = fixture.legacySymbols ?? []
+  const storeOwner = pins[RUN_EVENT_LEDGER_STORE_APPEND]
+  const storeImporter = fixture.storeAppendImporter
+  const findings = []
+  for (const { filePath, content } of files) {
+    const facts = collectRunEventLedgerSourceFacts(filePath, content)
+    for (const [symbol, owner] of Object.entries(pins)) {
+      if (filePath === owner) continue
+      if (facts.definitions.has(symbol)) {
+        findings.push({
+          rule: "duplicate-definition",
+          file: filePath,
+          symbol,
+          owner,
+          ownerSection,
+        })
+      }
+      if (facts.reexports.has(symbol)) {
+        findings.push({
+          rule: "duplicate-reexport",
+          file: filePath,
+          symbol,
+          owner,
+          ownerSection,
+        })
+      }
+    }
+    if (
+      filePath !== storeOwner &&
+      filePath !== storeImporter &&
+      importsNamedSymbolFrom(
+        filePath,
+        content,
+        storeOwner,
+        RUN_EVENT_LEDGER_STORE_APPEND,
+      )
+    ) {
+      findings.push({
+        rule: "forbidden-store-import",
+        file: filePath,
+        symbol: RUN_EVENT_LEDGER_STORE_APPEND,
+        owner: storeImporter,
+        ownerSection,
+      })
+    }
+    if (filePath === storeOwner) {
+      for (const name of facts.eventInsertFunctions) {
+        if (
+          name !== RUN_EVENT_LEDGER_STORE_APPEND &&
+          facts.exportedNames.has(name)
+        ) {
+          findings.push({
+            rule: "exported-record-insert",
+            file: filePath,
+            symbol: name,
+            owner: storeOwner,
+            ownerSection,
+          })
+        }
+      }
+    } else if (facts.eventInsertCount > 0) {
+      findings.push({
+        rule: "direct-event-insert",
+        file: filePath,
+        symbol: "agentJobEvents",
+        owner: storeOwner,
+        ownerSection,
+      })
+    }
+    for (const symbol of legacySymbols) {
+      if (
+        facts.definitions.has(symbol) ||
+        facts.reexports.has(symbol) ||
+        facts.identifiers.has(symbol)
+      ) {
+        findings.push({
+          rule: "legacy-symbol",
+          file: filePath,
+          symbol,
+          ownerSection,
+        })
+      }
+    }
+    if (filePath !== storeImporter && facts.bindCalls > 0) {
+      findings.push({
+        rule: "provenance-binding-outside-host",
+        file: filePath,
+        symbol: RUN_EVENT_LEDGER_BIND_METHOD,
+        owner: storeImporter,
+        ownerSection,
+      })
+    }
+  }
+  return findings
+}
+
+function runEventLedgerFindingKey(finding) {
+  return JSON.stringify(
+    Object.keys(finding)
+      .sort(compareCodePoints)
+      .map((key) => [key, finding[key]]),
+  )
+}
+
+/**
+ * Fixture-driven self-test: every case's files are scanned as if they were
+ * the repository files at their paths; the produced finding set must equal
+ * expectedFindings exactly, so a missing or an unexpected finding fails.
+ * Returns an inspectable summary.
+ */
+function assertRunEventLedgerGuardSelfTest(fixture) {
+  const summary = { cases: 0, matched: 0, mismatches: [] }
+  for (const entry of fixture?.cases ?? []) {
+    summary.cases += 1
+    const produced = collectRunEventLedgerFindings(entry.files ?? [], fixture)
+      .map(runEventLedgerFindingKey)
+      .sort(compareCodePoints)
+    const expected = (entry.expectedFindings ?? [])
+      .map(runEventLedgerFindingKey)
+      .sort(compareCodePoints)
+    const missing = expected.filter((key) => !produced.includes(key))
+    const unexpected = produced.filter((key) => !expected.includes(key))
+    if (missing.length === 0 && unexpected.length === 0) {
+      summary.matched += 1
+      continue
+    }
+    summary.mismatches.push({ caseId: entry.caseId, missing, unexpected })
+    fail(
+      `Run event ledger guard self-test case ${entry.caseId} (${entry.category}) missed ${missing.join(", ") || "nothing"} and produced unexpected ${unexpected.join(", ") || "nothing"}. See ${RUNTIME_EVENT_OWNERSHIP_SECTION}.`,
+    )
+  }
+  if (summary.cases === 0) {
+    fail(
+      `${RUN_EVENT_LEDGER_ARCHITECTURE_FIXTURE_PATH} must provide run event ledger guard self-test cases.`,
+    )
+  }
+  return summary
+}
+
+function assertRunEventLedgerOwnership(phase, fixture) {
+  const files = walkFiles("src", RUNTIME_CORE_SOURCE_EXTENSIONS).map(
+    (absolutePath) => ({
+      filePath: relative(absolutePath),
+      content: readFileSync(absolutePath, "utf8"),
+    }),
+  )
+  for (const [symbol, owner] of Object.entries(fixture.pinnedOwners ?? {})) {
+    const ownerFile = files.find((file) => file.filePath === owner)
+    const facts = ownerFile
+      ? collectRunEventLedgerSourceFacts(owner, ownerFile.content)
+      : null
+    if (!facts?.definitions.has(symbol) || !facts.exportedNames.has(symbol)) {
+      fail(
+        `${symbol} must be defined and exported by ${owner}. See ${RUNTIME_EVENT_OWNERSHIP_SECTION}.`,
+      )
+    }
+  }
+  for (const finding of collectRunEventLedgerFindings(files, fixture)) {
+    const allowed =
+      phase === "transition" &&
+      ((finding.rule === "legacy-symbol" &&
+        RUN_EVENT_LEDGER_TRANSITION_LEGACY_RESIDUE.has(
+          `${finding.file}:${finding.symbol}`,
+        )) ||
+        (finding.rule === "direct-event-insert" &&
+          RUN_EVENT_LEDGER_TRANSITION_DIRECT_EVENT_INSERTS.has(finding.file)))
+    if (!allowed) {
+      fail(
+        `Run event ledger ${finding.rule}: ${finding.file} ${finding.symbol}${finding.owner ? ` (owner ${finding.owner})` : ""}. See ${RUNTIME_EVENT_OWNERSHIP_SECTION}.`,
+      )
+    }
+  }
+  const gateFiles = files
+    .filter((file) => file.content.includes(RUN_EVENT_LEDGER_GATE))
+    .map((file) => file.filePath)
+  const expectedGateFiles =
+    phase === "transition" ? [RUN_EVENT_LEDGER_HOST] : []
+  if (JSON.stringify(gateFiles) !== JSON.stringify(expectedGateFiles)) {
+    fail(
+      `${RUN_EVENT_LEDGER_GATE} must appear only in ${expectedGateFiles.join(", ") || "no file"} in ${phase} mode; found ${gateFiles.join(", ") || "none"}.`,
+    )
+  }
+}
+
+function assertRunEventLedgerGuards() {
+  const phase = runEventLedgerPhase()
+  const fixture = loadRunEventLedgerArchitectureFixture()
+  if (!fixture) return
+  const summary = assertRunEventLedgerGuardSelfTest(fixture)
+  if (phase !== "legacy") assertRunEventLedgerOwnership(phase, fixture)
+  console.log(
+    `Run event ledger guard self-test: ${summary.matched}/${summary.cases} fixture cases matched (${phase} mode).`,
+  )
+}
+
 if (updateArchitectureBaselines) {
   updateArchitectureBaselineRegistry()
 } else {
@@ -4271,6 +4676,7 @@ if (updateArchitectureBaselines) {
   assertEngineIdSingleOwner()
   assertGuardDecisionSingleOwner()
   assertRuntimeEventSinglePath()
+  assertRunEventLedgerGuards()
   assertRuntimeEventStateOwner()
   assertChatMessageModelOwner()
   assertChatSessionBindingSingleOwner()
