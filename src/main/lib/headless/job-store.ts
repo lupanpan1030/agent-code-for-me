@@ -31,7 +31,10 @@ import {
 } from "../../../shared/agent-runtime-capabilities"
 import { redactExactSecretHints } from "../agent-runtime/redaction"
 import type { TerminalJobFields } from "../agent-runtime/run-event-ledger"
-import { getOrCreateRunEventLedger } from "../agent-runtime/run-event-ledger-host"
+import {
+  getOrCreateRunEventLedger,
+  releaseRunEventLedger,
+} from "../agent-runtime/run-event-ledger-host"
 import type {
   CommittedRunEvent,
   JsonValue,
@@ -79,7 +82,6 @@ export type StartAgentJobInput = {
 
 export type CancelAgentJobInput = {
   requestedBy: string
-  now?: Date
   /**
    * Job-row result fields for a queued job the ledger settles canceled before
    * it started (the caller's existing exit metadata).
@@ -321,12 +323,18 @@ export async function recordAgentJobCreated(
   payload: Record<string, unknown>,
 ): Promise<void> {
   const ledger = await getOrCreateRunEventLedger(db, job)
-  await ledger.appendSystemEvent({
-    observationKey: `lifecycle:job-created:${job.id}`,
-    type: "job_created",
-    payload,
-    occurredAt: job.createdAt ?? undefined,
-  })
+  try {
+    await ledger.appendSystemEvent({
+      observationKey: `lifecycle:job-created:${job.id}`,
+      type: "job_created",
+      payload,
+      occurredAt: job.createdAt ?? undefined,
+    })
+  } finally {
+    // A queued job is not hosted here until a worker claims it; the host
+    // recomposes its ledger from committed records when it does.
+    releaseRunEventLedger(db, job.id)
+  }
 }
 
 export function getAgentJob(
@@ -520,7 +528,11 @@ export async function cancelAgentJob(
       jobFields: () => input.queuedCancelFields ?? {},
     },
   )
-  return getAgentJob(db, jobId) ?? job
+  const updated = getAgentJob(db, jobId) ?? job
+  if (isTerminalAgentJobStatus(updated.status as AgentJobStatus)) {
+    releaseRunEventLedger(db, jobId)
+  }
+  return updated
 }
 
 export async function retryAgentJob(
