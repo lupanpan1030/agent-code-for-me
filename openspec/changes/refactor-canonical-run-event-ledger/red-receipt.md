@@ -379,6 +379,17 @@ S42 66/10/16 exact).
    Added 2026-10-01 (follow-up slice adjudication 6): `tests/runtime-redaction.test.ts`
    `expect(normalOutput).toBe("kept upstream")` — terminal flush must not release a withheld
    potential-hint prefix (design, no length threshold); S17 pins the new behavior.
+   Added 2026-10-01 (Phase I rulings, coordinator): the same flush rule obsoletes the withheld-
+   prefix-release assertions in `tests/runtime-stream-event-mapper.test.ts` and
+   `tests/headless-provider-binding.test.ts` (updated with before/after evidence in 1af858f7), and
+   `tests/headless-runtime-event-bridge.test.ts` now expects the coerced `payload.subtype` that
+   S50 requires (46293fec). Phase I transition state accepted: new jobs default to
+   `ledger_version=1` while the unconverted legacy writers still run (needed by S11-SQLite);
+   Phase II converts every writer so that, at acceptance, no v1 job carries a fact-key-less
+   record. Frozen in Phase I where the design is silent (consistent with §8): terminal fact keys
+   are `settle:<trigger.observationKey>`; `createCanonicalRunEventLedger` returns synchronously
+   (projection S45 calls ports without await). `check:full` cannot exit 0 while declared red
+   tests remain; the Phase I gate is every other stage green, and Phase II must reach exit 0.
 5. The green-by-design set (§4) is part of the acceptance gate: S39's gate-absence test will go
    red while `canonicalRunEventLedgerV1` exists and must be green again before acceptance.
 6. Fixture caveat carried from the authors: param shapes are schema-derived synthetic values
