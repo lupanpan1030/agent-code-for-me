@@ -948,6 +948,94 @@ describe("guest WebContents handlers (GP-04/GP-06)", () => {
   })
 })
 
+describe("D7 request-gate error page (committed-URL postcondition)", () => {
+  test("a main-frame gate cancellation tears the guest down from main; subframe and ordinary failures are only projected", async () => {
+    const harness = createHarness()
+    const embedder = harness.createAppWindow(75)
+    const admission = await admitHttp(harness, embedder)
+    const guest = attachGuest(harness, embedder, admission)
+
+    guest.emit(
+      "did-fail-provisional-load",
+      {},
+      -20,
+      "ERR_BLOCKED_BY_CLIENT",
+      "https://example.com/phish?token=querytok-Z3k8Pw1Rt6Yh",
+      false,
+    )
+    guest.emit(
+      "did-fail-provisional-load",
+      {},
+      -105,
+      "ERR_NAME_NOT_RESOLVED",
+      "http://localhost:3000/missing",
+      true,
+    )
+    expect(guest.closeCalls).toEqual([])
+    expect(embedder.events("load-failure")).toHaveLength(1)
+
+    // Real sequence after a gate cancel (Electron DidFinishNavigation):
+    // did-fail-provisional-load, then did-fail-load; no did-navigate.
+    for (const event of ["did-fail-provisional-load", "did-fail-load"]) {
+      guest.emit(
+        event,
+        {},
+        -20,
+        "ERR_BLOCKED_BY_CLIENT",
+        "https://example.com/phish?token=querytok-Z3k8Pw1Rt6Yh",
+        true,
+      )
+    }
+    expect(guest.closeCalls).toEqual([[]])
+    expect(
+      harness.policy.registry.findByGeneration(admission.generation)?.state,
+    ).toBe("destroyed")
+    expect(embedder.events("closed")).toEqual([
+      {
+        kind: "closed",
+        reason: "committed-url-rejected",
+        confirmed: true,
+        generation: admission.generation,
+      },
+    ])
+    expect(embedder.events("load-failure")).toHaveLength(1)
+    const session = harness.sessions.get(admission.partition) as FakeSession
+    expect(session.request(admission.src, "mainFrame")).toBe(true)
+    expect(harness.logs.join("\n")).toContain("request-gate-error-page")
+    expect(harness.logs.join("\n")).not.toContain("querytok")
+    expect(harness.logs.join("\n")).not.toContain("/phish")
+  })
+
+  test("did-fail-load alone never tears down, and a revoked guest's gate cancellation is not re-handled", async () => {
+    const harness = createHarness()
+    const embedder = harness.createAppWindow(76)
+    const admission = await admitHttp(harness, embedder)
+    const guest = attachGuest(harness, embedder, admission)
+    guest.emit(
+      "did-fail-load",
+      {},
+      -20,
+      "ERR_BLOCKED_BY_CLIENT",
+      "https://example.com/",
+      true,
+    )
+    expect(guest.closeCalls).toEqual([])
+
+    guest.destroyOnClose = false
+    guest.emit("did-navigate", {}, "https://example.com/")
+    expect(guest.closeCalls).toEqual([[]])
+    guest.emit(
+      "did-fail-provisional-load",
+      {},
+      -20,
+      "ERR_BLOCKED_BY_CLIENT",
+      "https://example.com/",
+      true,
+    )
+    expect(guest.closeCalls).toEqual([[]])
+  })
+})
+
 describe("D5/D6 main-alone teardown (GP-08)", () => {
   test("a new generation for the same chat closes the old guest from main with close() (no waitForBeforeUnload) and revokes it immediately", async () => {
     const harness = createHarness()

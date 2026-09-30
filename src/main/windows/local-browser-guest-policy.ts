@@ -474,6 +474,31 @@ export function decideCommittedGuestUrl(
   return { allow: false, reason: "non-admitted-commit" }
 }
 
+/**
+ * Chromium's net error for a request cancelled by the Session
+ * `webRequest.onBeforeRequest` gate (`net::ERR_BLOCKED_BY_CLIENT`).
+ */
+export const GUEST_REQUEST_GATE_CANCEL_ERROR_CODE = -20
+
+/**
+ * Main-frame provisional load failure verdict (design D7 committed-URL
+ * postcondition). When the request gate cancels a top-level request that the
+ * navigation handlers did not prevent, Chromium commits an error page and
+ * reports `did-fail-provisional-load`/`did-fail-load`, never `did-navigate`,
+ * so the committed-URL rule cannot observe it there. A live guest in that
+ * state is torn down; every other failure is only projected as a diagnostic.
+ */
+export function decideGuestProvisionalLoadFailure(
+  live: boolean,
+  failure: { errorCode: number; isMainFrame: boolean },
+): "teardown" | "project" {
+  return live &&
+    failure.isMainFrame &&
+    failure.errorCode === GUEST_REQUEST_GATE_CANCEL_ERROR_CODE
+    ? "teardown"
+    : "project"
+}
+
 /** Every guest permission check or request is denied (design D8). */
 export function decideGuestPermission(_permission: string): false {
   return false
@@ -1512,8 +1537,25 @@ export function createLocalBrowserGuestPolicy(
     )
     guest.on(
       "did-fail-provisional-load",
-      (_event, errorCode, errorDescription, validatedURL, isMainFrame) =>
-        onLoadFailure(errorCode, errorDescription, validatedURL, isMainFrame),
+      (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+        const admission = admissionForGuest(guest)
+        if (
+          admission &&
+          decideGuestProvisionalLoadFailure(
+            guestLifecycleHasAuthority(admission.state),
+            { errorCode, isMainFrame },
+          ) === "teardown"
+        ) {
+          securityLog(
+            "committed url rejected",
+            "request-gate-error-page",
+            validatedURL,
+          )
+          teardownGuest(guest, admission, "committed-url-rejected")
+          return
+        }
+        onLoadFailure(errorCode, errorDescription, validatedURL, isMainFrame)
+      },
     )
     guest.on("page-title-updated", (_event, title) => {
       const record = liveRecord(guest)

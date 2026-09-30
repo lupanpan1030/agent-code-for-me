@@ -13,10 +13,12 @@ import {
   decideCommittedGuestUrl,
   decideGuestNavigation,
   decideGuestPermission,
+  decideGuestProvisionalLoadFailure,
   decideGuestRequest,
   decideGuestWindowOpen,
   decodePreviewPathSegments,
   enforceGuestWebPreferences,
+  GUEST_REQUEST_GATE_CANCEL_ERROR_CODE,
   type GuestLifecycleEvent,
   type GuestLifecycleState,
   type GuestOriginPolicy,
@@ -802,6 +804,35 @@ describe("D7 committed-URL postcondition owner (non-network schemes)", () => {
         isSameDocument: false,
       }),
     ).toEqual({ allow: false, reason: "document-mismatch" })
+  })
+})
+
+describe("D7 committed-URL postcondition for request-gate error pages", () => {
+  test("a live main-frame request-gate cancellation tears down; everything else is projected", () => {
+    expect(GUEST_REQUEST_GATE_CANCEL_ERROR_CODE).toBe(-20)
+    expect(
+      decideGuestProvisionalLoadFailure(true, {
+        errorCode: GUEST_REQUEST_GATE_CANCEL_ERROR_CODE,
+        isMainFrame: true,
+      }),
+    ).toBe("teardown")
+    for (const [live, errorCode, isMainFrame] of [
+      [false, GUEST_REQUEST_GATE_CANCEL_ERROR_CODE, true],
+      [true, GUEST_REQUEST_GATE_CANCEL_ERROR_CODE, false],
+      [true, -3, true],
+      [true, -105, true],
+      [true, -27, true],
+    ] as const) {
+      expect({
+        live,
+        errorCode,
+        isMainFrame,
+        verdict: decideGuestProvisionalLoadFailure(live, {
+          errorCode,
+          isMainFrame,
+        }),
+      }).toEqual({ live, errorCode, isMainFrame, verdict: "project" })
+    }
   })
 })
 
