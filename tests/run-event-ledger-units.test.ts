@@ -19,13 +19,13 @@ import {
 } from "../src/main/lib/agent-runtime/run-artifacts"
 import { createCanonicalRunEventLedger } from "../src/main/lib/agent-runtime/run-event-ledger"
 import {
-  closeStableDirectory,
-  openStableDirectory,
-} from "../src/main/lib/filesystem/stable-directory"
-import {
   captureLocusCompletionProvenance,
   encodeRunSchemaManifest,
 } from "../src/main/lib/agent-runtime/run-provenance"
+import {
+  closeStableDirectory,
+  openStableDirectory,
+} from "../src/main/lib/filesystem/stable-directory"
 
 const RUNTIME = {
   kind: "runtime",
