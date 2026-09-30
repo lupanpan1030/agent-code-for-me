@@ -1,0 +1,276 @@
+{
+  "fixtureVersion": 1,
+  "evidenceClass": "trace-excerpt",
+  "sourceRefs": [
+    "[CODEX-08] live failed turn/completed with 401 and degraded completed/error-null rehydration",
+    "trace \u00a73.1 failed thread disk rebuild row",
+    "design \u00a7Resume Validation and Snapshot Repair",
+    "tasks 7.12"
+  ],
+  "provenance": {
+    "runtimeId": "codex",
+    "version": "0.139.0",
+    "ledgerProvenance": {
+      "kind": "runtime",
+      "installationId": "inst-codex-0.139.0-linux-x64-0729aedf",
+      "runtimeId": "codex",
+      "adapterSource": "codex-app-server",
+      "version": "0.139.0",
+      "executableRef": "exe-ref-codex-01390",
+      "binarySha256": "0729aedf4fe72971d81ef6803c817b850d711254d3c82ecc756a52f3b533c9f8",
+      "protocolName": "codex-app-server-jsonrpc",
+      "protocolVersion": "v2",
+      "schemaFiles": [
+        {
+          "path": "v2/ThreadResumeResponse.json",
+          "sha256": "9454a8c554557f825f60adc725558b04df928b872bdb5091a37de5e2bf4b47e9"
+        },
+        {
+          "path": "v2/ThreadItem.ts",
+          "sha256": "1aef9163c636246a0d1baec611da798a3e77790b7b8819480162b6e734324038"
+        }
+      ]
+    },
+    "idsMeasured": false,
+    "author": "independent test author (Domain B), 2026-09-30",
+    "note": "The live failure and the degraded {id:tu,status:completed,error:null,durationMs:18439} turn are CODEX-08 excerpts; thread wrapper fields are synthetic. There is no Locus rollout writer: the upstream rollout-write loss is a runtime limitation, asserted only as Locus durable-record precedence."
+  },
+  "cases": [
+    {
+      "caseId": "durable-failed-then-degraded-snapshot",
+      "liveSteps": [
+        {
+          "port": "ingestNotification",
+          "observationKey": "sf-ts",
+          "transportId": "t1",
+          "input": {
+            "message": {
+              "method": "turn/started",
+              "params": {
+                "threadId": "th",
+                "turn": {
+                  "id": "tu",
+                  "items": [],
+                  "status": "inProgress",
+                  "error": null
+                }
+              }
+            }
+          }
+        },
+        {
+          "port": "ingestNotification",
+          "observationKey": "sf-err",
+          "transportId": "t1",
+          "input": {
+            "message": {
+              "method": "error",
+              "params": {
+                "threadId": "th",
+                "turnId": "tu",
+                "error": {
+                  "message": "unexpected status 401 Unauthorized",
+                  "code": "401"
+                },
+                "willRetry": false
+              }
+            }
+          }
+        },
+        {
+          "port": "ingestNotification",
+          "observationKey": "sf-sys",
+          "transportId": "t1",
+          "input": {
+            "message": {
+              "method": "thread/status/changed",
+              "params": {
+                "threadId": "th",
+                "status": {
+                  "type": "systemError"
+                }
+              }
+            }
+          }
+        },
+        {
+          "port": "ingestNotification",
+          "observationKey": "sf-term",
+          "transportId": "t1",
+          "input": {
+            "message": {
+              "method": "turn/completed",
+              "params": {
+                "threadId": "th",
+                "turn": {
+                  "id": "tu",
+                  "items": [],
+                  "status": "failed",
+                  "error": {
+                    "message": "unexpected status 401 Unauthorized"
+                  },
+                  "durationMs": 18439
+                }
+              }
+            }
+          }
+        }
+      ],
+      "settle": {
+        "trigger": {
+          "kind": "native_terminal",
+          "status": "failed",
+          "observationKey": "sf-term",
+          "origin": "live",
+          "code": "401"
+        },
+        "policy": {
+          "denied": false,
+          "evidenceKeys": ["policy:allow"]
+        },
+        "output": {
+          "valid": false,
+          "empty": true,
+          "allowEmpty": false,
+          "evidenceKeys": []
+        },
+        "postRun": {
+          "credentialsSafe": true,
+          "evidenceKeys": ["postrun:credentials-ok"]
+        }
+      },
+      "repair": {
+        "observationKey": "sf-repair",
+        "snapshot": {
+          "id": "th",
+          "sessionId": "session",
+          "status": {
+            "type": "idle"
+          },
+          "ephemeral": false,
+          "path": "/fixture/codex-home/sessions/rollout-th.jsonl",
+          "cliVersion": "0.139.0",
+          "turns": [
+            {
+              "id": "tu",
+              "status": "completed",
+              "error": null,
+              "durationMs": 18439,
+              "items": []
+            }
+          ]
+        },
+        "sourceProvenance": {
+          "kind": "runtime",
+          "installationId": "inst-codex-0.139.0-linux-x64-0729aedf",
+          "runtimeId": "codex",
+          "adapterSource": "codex-app-server",
+          "version": "0.139.0",
+          "executableRef": "exe-ref-codex-01390",
+          "binarySha256": "0729aedf4fe72971d81ef6803c817b850d711254d3c82ecc756a52f3b533c9f8",
+          "protocolName": "codex-app-server-jsonrpc",
+          "protocolVersion": "v2",
+          "schemaFiles": [
+            {
+              "path": "v2/ThreadResumeResponse.json",
+              "sha256": "9454a8c554557f825f60adc725558b04df928b872bdb5091a37de5e2bf4b47e9"
+            },
+            {
+              "path": "v2/ThreadItem.ts",
+              "sha256": "1aef9163c636246a0d1baec611da798a3e77790b7b8819480162b6e734324038"
+            }
+          ]
+        },
+        "schemaDisposition": "recognized",
+        "targetTurnId": "tu"
+      },
+      "expected": {
+        "completedStatus": "failed",
+        "lateSubtype": "late_event",
+        "repairSource": "snapshot",
+        "diagnosticOnly": true,
+        "lossPossible": true,
+        "errorText": "401"
+      }
+    },
+    {
+      "caseId": "no-durable-terminal",
+      "liveSteps": [
+        {
+          "port": "ingestNotification",
+          "observationKey": "sf-ts",
+          "transportId": "t1",
+          "input": {
+            "message": {
+              "method": "turn/started",
+              "params": {
+                "threadId": "th",
+                "turn": {
+                  "id": "tu",
+                  "items": [],
+                  "status": "inProgress",
+                  "error": null
+                }
+              }
+            }
+          }
+        }
+      ],
+      "repair": {
+        "observationKey": "sf-nd-repair",
+        "snapshot": {
+          "id": "th",
+          "sessionId": "session",
+          "status": {
+            "type": "idle"
+          },
+          "ephemeral": false,
+          "path": "/fixture/codex-home/sessions/rollout-th.jsonl",
+          "cliVersion": "0.139.0",
+          "turns": [
+            {
+              "id": "tu",
+              "status": "completed",
+              "error": null,
+              "durationMs": 18439,
+              "items": []
+            }
+          ]
+        },
+        "sourceProvenance": {
+          "kind": "runtime",
+          "installationId": "inst-codex-0.139.0-linux-x64-0729aedf",
+          "runtimeId": "codex",
+          "adapterSource": "codex-app-server",
+          "version": "0.139.0",
+          "executableRef": "exe-ref-codex-01390",
+          "binarySha256": "0729aedf4fe72971d81ef6803c817b850d711254d3c82ecc756a52f3b533c9f8",
+          "protocolName": "codex-app-server-jsonrpc",
+          "protocolVersion": "v2",
+          "schemaFiles": [
+            {
+              "path": "v2/ThreadResumeResponse.json",
+              "sha256": "9454a8c554557f825f60adc725558b04df928b872bdb5091a37de5e2bf4b47e9"
+            },
+            {
+              "path": "v2/ThreadItem.ts",
+              "sha256": "1aef9163c636246a0d1baec611da798a3e77790b7b8819480162b6e734324038"
+            }
+          ]
+        },
+        "schemaDisposition": "recognized",
+        "targetTurnId": "tu"
+      },
+      "exit": {
+        "observationKey": "sf-nd-exit",
+        "transportId": "t1",
+        "exitCode": 1,
+        "signal": "SIGINT"
+      },
+      "expected": {
+        "outcomeAfterRepair": null,
+        "completedStatusAfterExit": "interrupted"
+      }
+    }
+  ]
+}

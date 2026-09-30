@@ -1,0 +1,281 @@
+{
+  "fixtureVersion": 1,
+  "evidenceClass": "synthetic",
+  "sourceRefs": [
+    "openspec/changes/refactor-canonical-run-event-ledger/specs/local-job-api/spec.md#Run Result and Artifact Manifest",
+    "openspec/changes/refactor-canonical-run-event-ledger/proposal.md Consumer Impact \u00a74 (R1 examples) and \u00a710 (Owner R1 = DIRECT_NEW_STANDARD)",
+    "openspec/changes/refactor-canonical-run-event-ledger/design.md D7 outcome mapping; Error, Completion and Late-Event Policy",
+    "src/main/lib/headless/job-runner.ts HEADLESS_EXIT_CODES / normalizeHeadlessExitCode"
+  ],
+  "provenance": {
+    "author": "independent red-suite author (domain C)",
+    "measured": false,
+    "note": "Job rows are synthetic committed outcomes; runner cases drive the existing injected AgentTaskRunner seam. The denial case uses the existing internal permission_requested vocabulary with decision=deny as the recorded denied request (proposal \u00a74: 'a native completed/default-success result with a recorded denied request becomes failed/exit 1')."
+  },
+  "cases": [
+    {
+      "caseId": "public-results",
+      "committedJobs": [
+        {
+          "caseId": "committed-succeeded",
+          "job": {
+            "id": "job-result-succeeded",
+            "status": "succeeded",
+            "runtime": "codex",
+            "mode": "agent",
+            "apiConsumerId": "results-consumer",
+            "apiConsumerRunId": "run-ok",
+            "errorCode": null,
+            "errorMessage": null,
+            "resultJson": "{\"finalMessage\":\"done\",\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}}"
+          },
+          "artifacts": [
+            {
+              "role": "request",
+              "path": "/fixture/runs/job-result-succeeded/request.json",
+              "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+              "contentType": "application/json",
+              "sizeBytes": 10
+            },
+            {
+              "role": "events",
+              "path": "/fixture/runs/job-result-succeeded/events.jsonl",
+              "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+              "contentType": "application/x-ndjson",
+              "sizeBytes": 20
+            },
+            {
+              "role": "result",
+              "path": "/fixture/runs/job-result-succeeded/result.json",
+              "sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+              "contentType": "application/json",
+              "sizeBytes": 30
+            },
+            {
+              "role": "native-file",
+              "path": "/fixture/runs/job-result-succeeded/native/report.md",
+              "sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+              "contentType": "text/markdown",
+              "sizeBytes": 40
+            }
+          ],
+          "expected": {
+            "status": "succeeded",
+            "exitCode": 0,
+            "diagnostics": []
+          }
+        },
+        {
+          "caseId": "committed-failed-denial",
+          "job": {
+            "id": "job-result-failed",
+            "status": "failed",
+            "runtime": "codex",
+            "mode": "agent",
+            "apiConsumerId": "results-consumer",
+            "apiConsumerRunId": "run-denied",
+            "errorCode": "policy_denied",
+            "errorMessage": "A requested action was denied by policy.",
+            "resultJson": "{\"value\":null,\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}}"
+          },
+          "artifacts": [],
+          "expected": {
+            "status": "failed",
+            "exitCode": 1,
+            "diagnostics": [
+              {
+                "code": "policy_denied",
+                "message": "A requested action was denied by policy."
+              }
+            ]
+          }
+        },
+        {
+          "caseId": "committed-canceled",
+          "job": {
+            "id": "job-result-canceled",
+            "status": "canceled",
+            "runtime": "claude-code",
+            "mode": "plan",
+            "apiConsumerId": "results-consumer",
+            "apiConsumerRunId": null,
+            "errorCode": "job_canceled",
+            "errorMessage": "Job was canceled before it started.",
+            "resultJson": null
+          },
+          "artifacts": [],
+          "expected": {
+            "status": "canceled",
+            "exitCode": 5,
+            "diagnostics": [
+              {
+                "code": "job_canceled",
+                "message": "Job was canceled before it started."
+              }
+            ]
+          }
+        },
+        {
+          "caseId": "committed-interrupted",
+          "job": {
+            "id": "job-result-interrupted",
+            "status": "interrupted",
+            "runtime": "codex",
+            "mode": "agent",
+            "apiConsumerId": "results-consumer",
+            "apiConsumerRunId": "run-lost",
+            "errorCode": "worker_interrupted",
+            "errorMessage": "Worker exited before completion.",
+            "resultJson": null
+          },
+          "artifacts": [],
+          "expected": {
+            "status": "interrupted",
+            "exitCode": 1,
+            "diagnostics": [
+              {
+                "code": "worker_interrupted",
+                "message": "Worker exited before completion."
+              }
+            ]
+          }
+        }
+      ],
+      "forbiddenSecrets": [
+        "provider-secret-123",
+        "gateway-secret-456",
+        "Bearer ",
+        "Authorization"
+      ],
+      "runnerCases": [
+        {
+          "caseId": "r1-zero-output-default-success",
+          "description": "Runtime reports succeeded but produced no output and the request does not allow empty output: R1 DIRECT_NEW_STANDARD requires failed with a reason and the failure exit code.",
+          "runnerEvents": [],
+          "runnerResult": {
+            "status": "succeeded",
+            "exitCode": 0
+          },
+          "expected": {
+            "jobStatus": "failed",
+            "exitCode": 1
+          }
+        },
+        {
+          "caseId": "r1-recorded-denial-default-success",
+          "description": "Runtime records a denied permission request, then reports default success with some text: R1 requires failed/exit 1 with a reason.",
+          "runnerEvents": [
+            {
+              "type": "permission_requested",
+              "payload": {
+                "controlLevel": "enforce",
+                "decision": "deny",
+                "message": "Write outside the approved scope was denied."
+              }
+            },
+            {
+              "type": "assistant_delta",
+              "payload": {
+                "text": "I could not write the file."
+              }
+            }
+          ],
+          "runnerResult": {
+            "status": "succeeded",
+            "exitCode": 0,
+            "result": {
+              "finalMessage": "I could not write the file."
+            }
+          },
+          "expected": {
+            "jobStatus": "failed",
+            "exitCode": 1
+          }
+        },
+        {
+          "caseId": "r1-retry-diagnostic-then-success",
+          "description": "A retryable diagnostic error followed by live success and valid nonempty output stays succeeded/exit 0; the error remains evidence only. The runner registers an exact provider secret hint that must never be serialized.",
+          "secretHints": ["provider-secret-123"],
+          "runnerEvents": [
+            {
+              "type": "error",
+              "payload": {
+                "classification": "retryable",
+                "code": "retryable",
+                "willRetry": true,
+                "message": "temporary upstream failure"
+              }
+            },
+            {
+              "type": "assistant_delta",
+              "payload": {
+                "text": "hello"
+              }
+            }
+          ],
+          "runnerResult": {
+            "status": "succeeded",
+            "exitCode": 0,
+            "result": {
+              "finalMessage": "hello",
+              "note": "used provider-secret-123"
+            }
+          },
+          "expected": {
+            "jobStatus": "succeeded",
+            "exitCode": 0
+          }
+        }
+      ],
+      "retryCase": {
+        "caseId": "retry-after-failure",
+        "description": "A failed source API job is retried through runs retry; the new job's status envelope links to the source (job.retryOfJobId / job.attempt) and a valid retry run succeeds. Assertions target the job envelope, not an event envelope.",
+        "sourceRunnerEvents": [],
+        "sourceRunnerResult": {
+          "status": "failed",
+          "exitCode": 1,
+          "errorCode": "test_failure",
+          "errorMessage": "source run failed"
+        },
+        "retryRunnerEvents": [
+          {
+            "type": "assistant_delta",
+            "payload": {
+              "text": "hello again"
+            }
+          }
+        ],
+        "retryRunnerResult": {
+          "status": "succeeded",
+          "exitCode": 0,
+          "result": {
+            "finalMessage": "hello again"
+          }
+        },
+        "expected": {
+          "sourceExitCode": 1,
+          "attempt": 2,
+          "retryExitCode": 0,
+          "retryStatus": "succeeded"
+        }
+      },
+      "requestTemplate": {
+        "apiVersion": "locus.local-job.v1",
+        "consumer": {
+          "id": "results-consumer",
+          "runExternalId": "<RUN_EXTERNAL_ID>"
+        },
+        "project": {
+          "cwd": "<PROJECT_CWD>"
+        },
+        "runtime": {
+          "id": "codex"
+        },
+        "mode": "agent",
+        "prompt": {
+          "text": "Produce a short answer."
+        }
+      }
+    }
+  ]
+}

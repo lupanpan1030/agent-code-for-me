@@ -1,0 +1,426 @@
+{
+  "fixtureVersion": 1,
+  "evidenceClass": "synthetic",
+  "sourceRefs": [
+    "openspec/changes/refactor-canonical-run-event-ledger/specs/local-job-api/spec.md#Stable API Event Stream",
+    "openspec/changes/refactor-canonical-run-event-ledger/proposal.md Consumer Impact \u00a72/\u00a74",
+    "openspec/changes/refactor-canonical-run-event-ledger/design.md Test-facing Contract / two-stage provenance",
+    "docs/native-resume-event-gap-trace-2026-09-04.zh-CN.md \u00a71 [ENV-02] pinned installation digest; \u00a79 [EVENT-03] item/agentMessage/delta input"
+  ],
+  "provenance": {
+    "author": "independent red-suite author (domain C)",
+    "measured": false,
+    "note": "All IDs (th/tu/msg/session, job and consumer IDs) are invented synthetic values; they are not claimed to be measured. The native notification shape reuses the [EVENT-03] probe input for item/agentMessage/delta."
+  },
+  "cases": [
+    {
+      "caseId": "api-assistant-hello",
+      "description": "source=api agent run through the existing injected AgentTaskRunner seam; the runner produces one assistant observation with text hello and a valid host result.",
+      "request": {
+        "apiVersion": "locus.local-job.v1",
+        "consumer": {
+          "id": "public-v1-consumer",
+          "runExternalId": "public-v1-001"
+        },
+        "project": {
+          "cwd": "<PROJECT_CWD>"
+        },
+        "runtime": {
+          "id": "codex"
+        },
+        "mode": "agent",
+        "prompt": {
+          "text": "Say hello."
+        }
+      },
+      "runnerEvents": [
+        {
+          "type": "assistant_delta",
+          "payload": {
+            "text": "hello"
+          }
+        }
+      ],
+      "runnerResult": {
+        "status": "succeeded",
+        "exitCode": 0,
+        "result": {
+          "finalMessage": "hello"
+        }
+      },
+      "afterSequence": 2,
+      "expected": {
+        "apiVersion": "locus.local-job.v1",
+        "envelopeKeys": [
+          "apiVersion",
+          "createdAt",
+          "jobId",
+          "payload",
+          "sequence",
+          "type"
+        ],
+        "assistantText": "hello",
+        "forbiddenPayloadKeys": [
+          "runId",
+          "runEventSequence",
+          "redaction",
+          "payload",
+          "recordMetadata",
+          "factKey"
+        ]
+      }
+    },
+    {
+      "caseId": "api-runtime-selection-refused-pre-binding",
+      "description": "Real headless runtime selection refuses Claude Code batch under policy-grant before any executable resolution; the committed host status is a pending (pre-binding) record.",
+      "request": {
+        "apiVersion": "locus.local-job.v1",
+        "consumer": {
+          "id": "public-v1-consumer",
+          "runExternalId": "public-v1-refused"
+        },
+        "project": {
+          "cwd": "<PROJECT_CWD>"
+        },
+        "runtime": {
+          "id": "claude",
+          "executionProfile": "policy-grant",
+          "policyGrant": {
+            "scopes": ["repo.read"]
+          }
+        },
+        "mode": "agent",
+        "prompt": {
+          "text": "Inspect the repository."
+        }
+      },
+      "expected": {
+        "exitCode": 1,
+        "jobStatus": "failed",
+        "statusSubject": "runtime_selection_refused",
+        "payloadRuntime": "claude-code",
+        "extensionNamespace": "runtime.codex.v1"
+      }
+    },
+    {
+      "caseId": "desktop-source-rejected",
+      "description": "A source=desktop job is never served by the Local Job API event reader.",
+      "job": {
+        "source": "desktop",
+        "runtime": "claude-code",
+        "mode": "agent",
+        "prompt": "Desktop chat turn"
+      },
+      "expected": {
+        "errorMessageIncludes": "is not an API job"
+      }
+    },
+    {
+      "caseId": "runtime-backed-extension",
+      "description": "Ledger-level: pending runtime_selected status, then execution binding, then a runtime-backed native assistant delta. Only the runtime-backed record carries payload.extensions[\"runtime.codex.v1\"]; the earlier pending record keeps its string payload.runtime and is not retroactively extended.",
+      "runId": "job-public-v1-native",
+      "runtimeId": "codex",
+      "source": "api",
+      "pendingProvenance": {
+        "kind": "pending",
+        "runtimeId": "codex"
+      },
+      "runtimeProvenance": {
+        "kind": "runtime",
+        "installationId": "codex-0.139.0-linux-x64-0729aedf",
+        "runtimeId": "codex",
+        "adapterSource": "codex-app-server",
+        "version": "0.139.0",
+        "executableRef": "executable-ref-fixture-1",
+        "binarySha256": "0729aedf4fe72971d81ef6803c817b850d711254d3c82ecc756a52f3b533c9f8",
+        "protocolName": "codex-app-server-v2",
+        "protocolVersion": "0.139.0",
+        "schemaFiles": [
+          {
+            "path": "ServerNotification.ts",
+            "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+          }
+        ]
+      },
+      "systemEvent": {
+        "observationKey": "obs-runtime-selected",
+        "type": "status",
+        "payload": {
+          "status": "runtime_selected",
+          "runtime": "codex",
+          "adapterSource": "codex-app-server"
+        }
+      },
+      "notification": {
+        "observationKey": "obs-agent-delta",
+        "transportId": "t1",
+        "receivedAt": "2026-09-04T00:00:00.001Z",
+        "message": {
+          "method": "item/agentMessage/delta",
+          "params": {
+            "threadId": "th",
+            "turnId": "tu",
+            "itemId": "msg",
+            "delta": "hello"
+          }
+        }
+      },
+      "expected": {
+        "extension": {
+          "schemaVersion": 1,
+          "maturity": "experimental",
+          "threadId": "th",
+          "turnId": "tu",
+          "itemId": "msg"
+        }
+      }
+    },
+    {
+      "caseId": "follow-late-diagnostics",
+      "description": "Committed late diagnostics after the sealed completed. The follow reader exits at the terminal; an explicit read returns these observations without another completed.",
+      "lateRecords": [
+        {
+          "type": "status",
+          "payload": {
+            "subtype": "late_event",
+            "originalType": "usage_update",
+            "nativeMethod": "thread/tokenUsage/updated",
+            "diagnosticOnly": true,
+            "observation": {
+              "total": {
+                "totalTokens": 25
+              },
+              "last": {
+                "totalTokens": 5
+              }
+            }
+          }
+        },
+        {
+          "type": "status",
+          "payload": {
+            "subtype": "late_event",
+            "originalType": "status",
+            "nativeMethod": "warning",
+            "diagnosticOnly": true,
+            "observation": {
+              "message": "late warning"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "caseId": "dense-vocabulary",
+      "description": "All 21 internal event types plus one committed redacted-only safe status stub, at contiguous sequences 1..22, as committed agent_job_events rows (bare payload_json). Input for the v1 serializer dense-projection scenario. public-vocabulary.json was authored concurrently by another domain author; this domain keeps its own input here so the two files stay disjoint.",
+      "jobId": "job-dense-vocabulary",
+      "records": [
+        {
+          "id": "evt-dense-1",
+          "jobId": "job-dense-vocabulary",
+          "sequence": 1,
+          "type": "job_created",
+          "payloadJson": "{\"kind\":\"agent\",\"source\":\"api\",\"runtime\":\"codex\"}",
+          "createdAt": "2026-09-04T00:00:00.001Z"
+        },
+        {
+          "id": "evt-dense-2",
+          "jobId": "job-dense-vocabulary",
+          "sequence": 2,
+          "type": "job_started",
+          "payloadJson": "{\"workerId\":\"worker-vocab\",\"workerPid\":null}",
+          "createdAt": "2026-09-04T00:00:00.002Z"
+        },
+        {
+          "id": "evt-dense-3",
+          "jobId": "job-dense-vocabulary",
+          "sequence": 3,
+          "type": "assistant_delta",
+          "payloadJson": "{\"text\":\"hello\"}",
+          "createdAt": "2026-09-04T00:00:00.003Z"
+        },
+        {
+          "id": "evt-dense-4",
+          "jobId": "job-dense-vocabulary",
+          "sequence": 4,
+          "type": "reasoning_delta",
+          "payloadJson": "{\"text\":\"thinking\"}",
+          "createdAt": "2026-09-04T00:00:00.004Z"
+        },
+        {
+          "id": "evt-dense-5",
+          "jobId": "job-dense-vocabulary",
+          "sequence": 5,
+          "type": "tool_started",
+          "payloadJson": "{\"toolCallId\":\"call-1\",\"toolName\":\"Bash\"}",
+          "createdAt": "2026-09-04T00:00:00.005Z"
+        },
+        {
+          "id": "evt-dense-6",
+          "jobId": "job-dense-vocabulary",
+          "sequence": 6,
+          "type": "tool_delta",
+          "payloadJson": "{\"toolCallId\":\"call-1\",\"delta\":\"a\"}",
+          "createdAt": "2026-09-04T00:00:00.006Z"
+        },
+        {
+          "id": "evt-dense-7",
+          "jobId": "job-dense-vocabulary",
+          "sequence": 7,
+          "type": "tool_finished",
+          "payloadJson": "{\"toolCallId\":\"call-1\",\"output\":\"a.txt\"}",
+          "createdAt": "2026-09-04T00:00:00.007Z"
+        },
+        {
+          "id": "evt-dense-8",
+          "jobId": "job-dense-vocabulary",
+          "sequence": 8,
+          "type": "guard_decision",
+          "payloadJson": "{\"decision\":\"deny\",\"reason\":\"outside approved scope\"}",
+          "createdAt": "2026-09-04T00:00:00.008Z"
+        },
+        {
+          "id": "evt-dense-9",
+          "jobId": "job-dense-vocabulary",
+          "sequence": 9,
+          "type": "permission_requested",
+          "payloadJson": "{\"controlLevel\":\"observe\",\"decision\":\"deny\",\"message\":\"write outside scope\"}",
+          "createdAt": "2026-09-04T00:00:00.009Z"
+        },
+        {
+          "id": "evt-dense-10",
+          "jobId": "job-dense-vocabulary",
+          "sequence": 10,
+          "type": "scope_expansion_requested",
+          "payloadJson": "{\"requestedRoot\":\"/fixture/other\",\"reason\":\"needs sibling package\"}",
+          "createdAt": "2026-09-04T00:00:00.010Z"
+        },
+        {
+          "id": "evt-dense-11",
+          "jobId": "job-dense-vocabulary",
+          "sequence": 11,
+          "type": "question_pending",
+          "payloadJson": "{\"approvalId\":\"q1\",\"questions\":[{\"question\":\"Proceed?\"}]}",
+          "createdAt": "2026-09-04T00:00:00.011Z"
+        },
+        {
+          "id": "evt-dense-12",
+          "jobId": "job-dense-vocabulary",
+          "sequence": 12,
+          "type": "question_result",
+          "payloadJson": "{\"approvalId\":\"q1\",\"result\":{\"answer\":\"yes\"}}",
+          "createdAt": "2026-09-04T00:00:00.012Z"
+        },
+        {
+          "id": "evt-dense-13",
+          "jobId": "job-dense-vocabulary",
+          "sequence": 13,
+          "type": "mcp_needs_auth",
+          "payloadJson": "{\"server\":\"docs\",\"status\":\"needs-auth\"}",
+          "createdAt": "2026-09-04T00:00:00.013Z"
+        },
+        {
+          "id": "evt-dense-14",
+          "jobId": "job-dense-vocabulary",
+          "sequence": 14,
+          "type": "usage_update",
+          "payloadJson": "{\"usage\":{\"inputTokens\":3,\"outputTokens\":2}}",
+          "createdAt": "2026-09-04T00:00:00.014Z"
+        },
+        {
+          "id": "evt-dense-15",
+          "jobId": "job-dense-vocabulary",
+          "sequence": 15,
+          "type": "command_started",
+          "payloadJson": "{\"command\":\"ls\",\"cwd\":\"/fixture/workspace\"}",
+          "createdAt": "2026-09-04T00:00:00.015Z"
+        },
+        {
+          "id": "evt-dense-16",
+          "jobId": "job-dense-vocabulary",
+          "sequence": 16,
+          "type": "command_output",
+          "payloadJson": "{\"stream\":\"stdout\",\"text\":\"a.txt\\n\"}",
+          "createdAt": "2026-09-04T00:00:00.016Z"
+        },
+        {
+          "id": "evt-dense-17",
+          "jobId": "job-dense-vocabulary",
+          "sequence": 17,
+          "type": "command_finished",
+          "payloadJson": "{\"exitCode\":0}",
+          "createdAt": "2026-09-04T00:00:00.017Z"
+        },
+        {
+          "id": "evt-dense-18",
+          "jobId": "job-dense-vocabulary",
+          "sequence": 18,
+          "type": "artifact_created",
+          "payloadJson": "{\"artifacts\":[{\"role\":\"request\",\"path\":\"/fixture/run/request.json\",\"sha256\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"contentType\":\"application/json\",\"sizeBytes\":2}]}",
+          "createdAt": "2026-09-04T00:00:00.018Z"
+        },
+        {
+          "id": "evt-dense-19",
+          "jobId": "job-dense-vocabulary",
+          "sequence": 19,
+          "type": "status",
+          "payloadJson": "{\"status\":\"runtime_selected\",\"runtime\":\"codex\"}",
+          "createdAt": "2026-09-04T00:00:00.019Z"
+        },
+        {
+          "id": "evt-dense-20",
+          "jobId": "job-dense-vocabulary",
+          "sequence": 20,
+          "type": "error",
+          "payloadJson": "{\"classification\":\"retryable\",\"code\":\"retryable\",\"willRetry\":true,\"message\":\"temporary\"}",
+          "createdAt": "2026-09-04T00:00:00.020Z"
+        },
+        {
+          "id": "evt-dense-21",
+          "jobId": "job-dense-vocabulary",
+          "sequence": 21,
+          "type": "completed",
+          "payloadJson": "{\"status\":\"succeeded\",\"reasons\":[]}",
+          "createdAt": "2026-09-04T00:00:00.021Z"
+        },
+        {
+          "id": "evt-dense-22",
+          "jobId": "job-dense-vocabulary",
+          "sequence": 22,
+          "type": "status",
+          "payloadJson": "{\"subtype\":\"redacted_observation\",\"contentOmitted\":true,\"lossPossible\":true,\"futureOptionalField\":\"ignorable\"}",
+          "createdAt": "2026-09-04T00:00:00.022Z"
+        }
+      ],
+      "expected": {
+        "publicTypes": [
+          "job_created",
+          "job_started",
+          "assistant_delta",
+          "reasoning_delta",
+          "tool_started",
+          "tool_delta",
+          "tool_finished",
+          "usage_update",
+          "artifact_created",
+          "status",
+          "error",
+          "completed"
+        ],
+        "coercedToStatus": [
+          "guard_decision",
+          "permission_requested",
+          "scope_expansion_requested",
+          "question_pending",
+          "question_result",
+          "mcp_needs_auth",
+          "command_started",
+          "command_output",
+          "command_finished"
+        ],
+        "redactedStubSequence": 22,
+        "redactedStubSubtype": "redacted_observation"
+      }
+    }
+  ]
+}

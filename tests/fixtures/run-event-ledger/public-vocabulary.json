@@ -1,0 +1,232 @@
+{
+  "fixtureVersion": 1,
+  "evidenceClass": "synthetic",
+  "sourceRefs": [
+    "local-job-api delta Stable API Event Stream",
+    "design Native Method and Item Disposition (nine internal types)",
+    "src/shared/agent-jobs.ts AGENT_JOB_EVENT_TYPES"
+  ],
+  "provenance": {
+    "runtimeId": "codex",
+    "version": "0.139.0",
+    "binarySha256": "0729aedf4fe72971d81ef6803c817b850d711254d3c82ecc756a52f3b533c9f8",
+    "binarySha256Source": "trace §1 table / [ENV-02]",
+    "schemaFiles": [
+      {
+        "path": "ServerNotification.ts",
+        "sha256": "bcc5cd580b83e15225dd138c768fafb0cae7d2ab26474a49a8569657f0b944a8"
+      },
+      {
+        "path": "ServerRequest.ts",
+        "sha256": "6274decabc5c0e9b09f144efb1795ca8fc1fe52d8afa42ee5988de2d890f935e"
+      },
+      {
+        "path": "v2/ThreadItem.ts",
+        "sha256": "1aef9163c636246a0d1baec611da798a3e77790b7b8819480162b6e734324038"
+      }
+    ],
+    "schemaFilesSource": "trace §5.1 (reproducible per-file SHA-256)",
+    "shapeReference": "Param shapes are schema-derived synthetic values cross-checked against a local `codex app-server generate-ts` output of codex-cli 0.159.2 as a stand-in; the pinned 0.139.0 TypeScript closure is NOT vendored here (tasks 1.4 remains open).",
+    "idsMeasured": false,
+    "author": "independent test author, 2026-09-30 (test-first red suite)"
+  },
+  "jobId": "job-vocab",
+  "records": [
+    {
+      "id": "evt-vocab-1",
+      "jobId": "job-vocab",
+      "sequence": 1,
+      "type": "job_created",
+      "payloadJson": "{\"runtime\":\"codex\"}",
+      "createdAt": "2026-09-04T00:00:00.000Z"
+    },
+    {
+      "id": "evt-vocab-2",
+      "jobId": "job-vocab",
+      "sequence": 2,
+      "type": "job_started",
+      "payloadJson": "{\"workerId\":\"w1\"}",
+      "createdAt": "2026-09-04T00:00:00.001Z"
+    },
+    {
+      "id": "evt-vocab-3",
+      "jobId": "job-vocab",
+      "sequence": 3,
+      "type": "assistant_delta",
+      "payloadJson": "{\"text\":\"hello\"}",
+      "createdAt": "2026-09-04T00:00:00.002Z"
+    },
+    {
+      "id": "evt-vocab-4",
+      "jobId": "job-vocab",
+      "sequence": 4,
+      "type": "reasoning_delta",
+      "payloadJson": "{\"text\":\"thinking\"}",
+      "createdAt": "2026-09-04T00:00:00.003Z"
+    },
+    {
+      "id": "evt-vocab-5",
+      "jobId": "job-vocab",
+      "sequence": 5,
+      "type": "tool_started",
+      "payloadJson": "{\"toolName\":\"Bash\"}",
+      "createdAt": "2026-09-04T00:00:00.004Z"
+    },
+    {
+      "id": "evt-vocab-6",
+      "jobId": "job-vocab",
+      "sequence": 6,
+      "type": "tool_delta",
+      "payloadJson": "{\"toolName\":\"Bash\",\"output\":\"a\"}",
+      "createdAt": "2026-09-04T00:00:00.005Z"
+    },
+    {
+      "id": "evt-vocab-7",
+      "jobId": "job-vocab",
+      "sequence": 7,
+      "type": "tool_finished",
+      "payloadJson": "{\"toolName\":\"Bash\",\"status\":\"completed\"}",
+      "createdAt": "2026-09-04T00:00:00.006Z"
+    },
+    {
+      "id": "evt-vocab-8",
+      "jobId": "job-vocab",
+      "sequence": 8,
+      "type": "guard_decision",
+      "payloadJson": "{\"decision\":\"deny\",\"ruleId\":\"rule-1\"}",
+      "createdAt": "2026-09-04T00:00:00.007Z"
+    },
+    {
+      "id": "evt-vocab-9",
+      "jobId": "job-vocab",
+      "sequence": 9,
+      "type": "permission_requested",
+      "payloadJson": "{\"permission\":\"write\",\"path\":\"/fixture/workspace\"}",
+      "createdAt": "2026-09-04T00:00:00.008Z"
+    },
+    {
+      "id": "evt-vocab-10",
+      "jobId": "job-vocab",
+      "sequence": 10,
+      "type": "scope_expansion_requested",
+      "payloadJson": "{\"requestedRoot\":\"/fixture/other\"}",
+      "createdAt": "2026-09-04T00:00:00.009Z"
+    },
+    {
+      "id": "evt-vocab-11",
+      "jobId": "job-vocab",
+      "sequence": 11,
+      "type": "question_pending",
+      "payloadJson": "{\"questionId\":\"q1\",\"prompt\":\"Proceed?\"}",
+      "createdAt": "2026-09-04T00:00:00.010Z"
+    },
+    {
+      "id": "evt-vocab-12",
+      "jobId": "job-vocab",
+      "sequence": 12,
+      "type": "question_result",
+      "payloadJson": "{\"questionId\":\"q1\",\"answer\":\"yes\"}",
+      "createdAt": "2026-09-04T00:00:00.011Z"
+    },
+    {
+      "id": "evt-vocab-13",
+      "jobId": "job-vocab",
+      "sequence": 13,
+      "type": "mcp_needs_auth",
+      "payloadJson": "{\"server\":\"docs\"}",
+      "createdAt": "2026-09-04T00:00:00.012Z"
+    },
+    {
+      "id": "evt-vocab-14",
+      "jobId": "job-vocab",
+      "sequence": 14,
+      "type": "usage_update",
+      "payloadJson": "{\"usage\":{\"inputTokens\":1,\"outputTokens\":1}}",
+      "createdAt": "2026-09-04T00:00:00.013Z"
+    },
+    {
+      "id": "evt-vocab-15",
+      "jobId": "job-vocab",
+      "sequence": 15,
+      "type": "command_started",
+      "payloadJson": "{\"command\":\"ls\"}",
+      "createdAt": "2026-09-04T00:00:00.014Z"
+    },
+    {
+      "id": "evt-vocab-16",
+      "jobId": "job-vocab",
+      "sequence": 16,
+      "type": "command_output",
+      "payloadJson": "{\"output\":\"a.txt\"}",
+      "createdAt": "2026-09-04T00:00:00.015Z"
+    },
+    {
+      "id": "evt-vocab-17",
+      "jobId": "job-vocab",
+      "sequence": 17,
+      "type": "command_finished",
+      "payloadJson": "{\"exitCode\":0}",
+      "createdAt": "2026-09-04T00:00:00.016Z"
+    },
+    {
+      "id": "evt-vocab-18",
+      "jobId": "job-vocab",
+      "sequence": 18,
+      "type": "artifact_created",
+      "payloadJson": "{\"role\":\"native-file\",\"sha256\":\"0000000000000000000000000000000000000000000000000000000000000000\"}",
+      "createdAt": "2026-09-04T00:00:00.017Z"
+    },
+    {
+      "id": "evt-vocab-19",
+      "jobId": "job-vocab",
+      "sequence": 19,
+      "type": "status",
+      "payloadJson": "{\"subtype\":\"system_lifecycle\"}",
+      "createdAt": "2026-09-04T00:00:00.018Z"
+    },
+    {
+      "id": "evt-vocab-20",
+      "jobId": "job-vocab",
+      "sequence": 20,
+      "type": "error",
+      "payloadJson": "{\"classification\":\"diagnostic\",\"message\":\"warn\"}",
+      "createdAt": "2026-09-04T00:00:00.019Z"
+    },
+    {
+      "id": "evt-vocab-21",
+      "jobId": "job-vocab",
+      "sequence": 21,
+      "type": "completed",
+      "payloadJson": "{\"status\":\"succeeded\"}",
+      "createdAt": "2026-09-04T00:00:00.020Z"
+    }
+  ],
+  "expected": {
+    "publicTypes": [
+      "job_created",
+      "job_started",
+      "assistant_delta",
+      "reasoning_delta",
+      "tool_started",
+      "tool_delta",
+      "tool_finished",
+      "usage_update",
+      "artifact_created",
+      "status",
+      "error",
+      "completed"
+    ],
+    "coercedToStatus": [
+      "guard_decision",
+      "permission_requested",
+      "scope_expansion_requested",
+      "question_pending",
+      "question_result",
+      "mcp_needs_auth",
+      "command_started",
+      "command_output",
+      "command_finished"
+    ],
+    "redactedOnlyObservation": "not included: the internal representation of a restricted-only record is not named by design/tasks"
+  }
+}

@@ -1,0 +1,216 @@
+{
+  "fixtureVersion": 1,
+  "evidenceClass": "synthetic",
+  "sourceRefs": [
+    "openspec/changes/refactor-canonical-run-event-ledger/specs/headless-agent-jobs/spec.md#Headless Runtime Event Convergence",
+    "openspec/changes/refactor-canonical-run-event-ledger/design.md Current Owner to Target Mapping (headless/adapters/codex-app-server.ts, job-runner.ts observer, agent-runtime.ts)",
+    "src/main/lib/headless/adapters/codex-app-server.ts createCodexAppServerHeadlessTaskRunner (existing createDesktopAdapter seam)"
+  ],
+  "provenance": {
+    "author": "independent red-suite author (domain C)",
+    "measured": false,
+    "note": "Coarse process descriptors drive the existing AgentRuntimeObserver seam; app-server records are synthetic committed RunEvent envelopes as the host ledger would deliver them."
+  },
+  "cases": [
+    {
+      "caseId": "headless-projection",
+      "coarse": {
+        "prompt": "List files.",
+        "runnerEvents": [
+          {
+            "type": "status",
+            "payload": {
+              "status": "working",
+              "source": "codex-batch"
+            }
+          },
+          {
+            "type": "assistant_delta",
+            "payload": {
+              "text": "hello"
+            }
+          },
+          {
+            "type": "command_started",
+            "payload": {
+              "command": "ls",
+              "cwd": "<PROJECT_CWD>"
+            }
+          },
+          {
+            "type": "command_output",
+            "payload": {
+              "stream": "stdout",
+              "text": "a.txt\n"
+            }
+          },
+          {
+            "type": "command_finished",
+            "payload": {
+              "exitCode": 0
+            }
+          },
+          {
+            "type": "error",
+            "payload": {
+              "classification": "retryable",
+              "code": "retryable",
+              "willRetry": true,
+              "message": "temporary"
+            }
+          }
+        ],
+        "runnerResult": {
+          "status": "succeeded",
+          "exitCode": 0,
+          "result": {
+            "finalMessage": "hello"
+          }
+        }
+      },
+      "appServer": {
+        "request": {
+          "jobId": "job-headless-app-server",
+          "runtime": "codex",
+          "cwd": "/fixture/workspace",
+          "mode": "agent",
+          "source": "api",
+          "executionProfile": "policy-grant",
+          "policyGrant": {
+            "scopes": ["workspace:file-write"]
+          },
+          "prompt": "Summarize."
+        },
+        "committedRecords": [
+          {
+            "runId": "job-headless-app-server",
+            "jobId": "job-headless-app-server",
+            "runtimeId": "codex",
+            "sequence": 5,
+            "type": "assistant_delta",
+            "createdAt": "2026-09-04T00:00:00.005Z",
+            "payload": {
+              "id": "msg",
+              "delta": "hello"
+            },
+            "redaction": {
+              "status": "not-required",
+              "appliedRules": []
+            }
+          },
+          {
+            "runId": "job-headless-app-server",
+            "jobId": "job-headless-app-server",
+            "runtimeId": "codex",
+            "sequence": 6,
+            "type": "tool_started",
+            "createdAt": "2026-09-04T00:00:00.006Z",
+            "payload": {
+              "toolCallId": "cmd-1",
+              "toolName": "commandExecution"
+            },
+            "redaction": {
+              "status": "not-required",
+              "appliedRules": []
+            }
+          },
+          {
+            "runId": "job-headless-app-server",
+            "jobId": "job-headless-app-server",
+            "runtimeId": "codex",
+            "sequence": 7,
+            "type": "tool_finished",
+            "createdAt": "2026-09-04T00:00:00.007Z",
+            "payload": {
+              "toolCallId": "cmd-1",
+              "output": "ok"
+            },
+            "redaction": {
+              "status": "not-required",
+              "appliedRules": []
+            }
+          },
+          {
+            "runId": "job-headless-app-server",
+            "jobId": "job-headless-app-server",
+            "runtimeId": "codex",
+            "sequence": 8,
+            "type": "usage_update",
+            "createdAt": "2026-09-04T00:00:00.008Z",
+            "payload": {
+              "kind": "snapshot",
+              "total": {
+                "totalTokens": 12
+              },
+              "last": {
+                "totalTokens": 12
+              }
+            },
+            "redaction": {
+              "status": "not-required",
+              "appliedRules": []
+            }
+          },
+          {
+            "runId": "job-headless-app-server",
+            "jobId": "job-headless-app-server",
+            "runtimeId": "codex",
+            "sequence": 9,
+            "type": "completed",
+            "createdAt": "2026-09-04T00:00:00.009Z",
+            "payload": {
+              "status": "succeeded",
+              "reasons": []
+            },
+            "redaction": {
+              "status": "not-required",
+              "appliedRules": []
+            }
+          }
+        ],
+        "desktopResult": {
+          "status": "succeeded",
+          "sessionId": "session",
+          "usage": null,
+          "error": null
+        }
+      },
+      "apiReaderRequest": {
+        "apiVersion": "locus.local-job.v1",
+        "consumer": {
+          "id": "headless-reader",
+          "runExternalId": "headless-reader-001"
+        },
+        "project": {
+          "cwd": "<PROJECT_CWD>"
+        },
+        "runtime": {
+          "id": "codex"
+        },
+        "mode": "agent",
+        "prompt": {
+          "text": "Say hello."
+        }
+      },
+      "expected": {
+        "internalEnvelopeKeys": [
+          "createdAt",
+          "id",
+          "jobId",
+          "payload",
+          "sequence",
+          "type"
+        ],
+        "v1EnvelopeKeys": [
+          "apiVersion",
+          "createdAt",
+          "jobId",
+          "payload",
+          "sequence",
+          "type"
+        ],
+        "wrapperKeys": ["runId", "runEventSequence", "redaction", "payload"]
+      }
+    }
+  ]
+}

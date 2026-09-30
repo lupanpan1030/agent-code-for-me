@@ -1,0 +1,81 @@
+{
+  "fixtureVersion": 1,
+  "evidenceClass": "synthetic",
+  "sourceRefs": [
+    "trace §6 (55 methods fall to default [])",
+    "trace §7.8",
+    "design Native Method and Item Disposition"
+  ],
+  "provenance": {
+    "runtimeId": "codex",
+    "version": "0.139.0",
+    "binarySha256": "0729aedf4fe72971d81ef6803c817b850d711254d3c82ecc756a52f3b533c9f8",
+    "binarySha256Source": "trace §1 table / [ENV-02]",
+    "schemaFiles": [
+      {
+        "path": "ServerNotification.ts",
+        "sha256": "bcc5cd580b83e15225dd138c768fafb0cae7d2ab26474a49a8569657f0b944a8"
+      },
+      {
+        "path": "ServerRequest.ts",
+        "sha256": "6274decabc5c0e9b09f144efb1795ca8fc1fe52d8afa42ee5988de2d890f935e"
+      },
+      {
+        "path": "v2/ThreadItem.ts",
+        "sha256": "1aef9163c636246a0d1baec611da798a3e77790b7b8819480162b6e734324038"
+      }
+    ],
+    "schemaFilesSource": "trace §5.1 (reproducible per-file SHA-256)",
+    "shapeReference": "Param shapes are schema-derived synthetic values cross-checked against a local `codex app-server generate-ts` output of codex-cli 0.159.2 as a stand-in; the pinned 0.139.0 TypeScript closure is NOT vendored here (tasks 1.4 remains open).",
+    "idsMeasured": false,
+    "author": "independent test author, 2026-09-30 (test-first red suite)"
+  },
+  "secretHints": ["provider-secret-123", "gateway-secret-456"],
+  "cases": [
+    {
+      "caseId": "future-method",
+      "port": "ingestNotification",
+      "observationKey": "unk-future-01",
+      "transportId": "t1",
+      "input": {
+        "message": {
+          "method": "thread/hologram/updated",
+          "params": {
+            "threadId": "th",
+            "token": "provider-secret-123",
+            "nested": {
+              "authorization": "Bearer gateway-secret-456",
+              "note": "future payload"
+            }
+          }
+        }
+      },
+      "expected": {
+        "type": "status",
+        "subtype": "unknown_native_method",
+        "lossPossible": true,
+        "method": "thread/hologram/updated"
+      }
+    },
+    {
+      "caseId": "malformed-known",
+      "port": "ingestNotification",
+      "observationKey": "unk-malformed-01",
+      "transportId": "t1",
+      "input": {
+        "message": {
+          "method": "item/agentMessage/delta",
+          "params": {
+            "threadId": "th"
+          }
+        }
+      },
+      "expected": {
+        "type": "status",
+        "subtype": "warning",
+        "reason": "invalid_native_shape",
+        "lossPossible": true
+      }
+    }
+  ]
+}

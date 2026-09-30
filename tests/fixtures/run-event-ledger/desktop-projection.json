@@ -1,0 +1,355 @@
+{
+  "fixtureVersion": 1,
+  "evidenceClass": "synthetic",
+  "sourceRefs": [
+    "openspec/changes/refactor-canonical-run-event-ledger/specs/desktop-agent-jobs/spec.md#Desktop Jobs Persist Semantic Runtime Events",
+    "openspec/changes/refactor-canonical-run-event-ledger/design.md Item Reconciliation and Redaction; D3 internal alias; Current Owner to Target Mapping (stream-event-mapper.ts, workbench-trace-presenter.ts)",
+    "src/main/lib/agent-runtime/runtime-events.ts RunEvent envelope",
+    "docs/native-resume-event-gap-trace-2026-09-04.zh-CN.md \u00a71 [ENV-02] pinned installation digest"
+  ],
+  "provenance": {
+    "author": "independent red-suite author (domain C)",
+    "measured": false,
+    "note": "Committed records are synthetic RunEvent envelopes as the ledger would deliver them to projections; native IDs th/tu/msg are invented."
+  },
+  "cases": [
+    {
+      "caseId": "desktop-projection",
+      "runId": "job-desktop-projection",
+      "runtimeId": "codex",
+      "committedRecords": [
+        {
+          "runId": "job-desktop-projection",
+          "jobId": "job-desktop-projection",
+          "runtimeId": "codex",
+          "sequence": 1,
+          "type": "job_created",
+          "createdAt": "2026-09-04T00:00:00.001Z",
+          "payload": {
+            "kind": "agent",
+            "source": "desktop",
+            "runtime": "codex"
+          },
+          "redaction": {
+            "status": "not-required",
+            "appliedRules": []
+          }
+        },
+        {
+          "runId": "job-desktop-projection",
+          "jobId": "job-desktop-projection",
+          "runtimeId": "codex",
+          "sequence": 2,
+          "type": "assistant_delta",
+          "createdAt": "2026-09-04T00:00:00.002Z",
+          "payload": {
+            "id": "msg",
+            "delta": "hel",
+            "item": {
+              "threadId": "th",
+              "turnId": "tu",
+              "itemId": "msg",
+              "channel": "assistant",
+              "partIndex": 0
+            }
+          },
+          "redaction": {
+            "status": "not-required",
+            "appliedRules": []
+          }
+        },
+        {
+          "runId": "job-desktop-projection",
+          "jobId": "job-desktop-projection",
+          "runtimeId": "codex",
+          "sequence": 3,
+          "type": "tool_started",
+          "createdAt": "2026-09-04T00:00:00.003Z",
+          "payload": {
+            "toolCallId": "call-1",
+            "toolName": "Bash",
+            "input": {
+              "command": "ls"
+            }
+          },
+          "redaction": {
+            "status": "not-required",
+            "appliedRules": []
+          }
+        },
+        {
+          "runId": "job-desktop-projection",
+          "jobId": "job-desktop-projection",
+          "runtimeId": "codex",
+          "sequence": 4,
+          "type": "tool_finished",
+          "createdAt": "2026-09-04T00:00:00.004Z",
+          "payload": {
+            "toolCallId": "call-1",
+            "output": "a.txt"
+          },
+          "redaction": {
+            "status": "not-required",
+            "appliedRules": []
+          }
+        },
+        {
+          "runId": "job-desktop-projection",
+          "jobId": "job-desktop-projection",
+          "runtimeId": "codex",
+          "sequence": 5,
+          "type": "guard_decision",
+          "createdAt": "2026-09-04T00:00:00.005Z",
+          "payload": {
+            "decision": "deny",
+            "reason": "outside approved scope"
+          },
+          "redaction": {
+            "status": "not-required",
+            "appliedRules": []
+          }
+        },
+        {
+          "runId": "job-desktop-projection",
+          "jobId": "job-desktop-projection",
+          "runtimeId": "codex",
+          "sequence": 6,
+          "type": "question_pending",
+          "createdAt": "2026-09-04T00:00:00.006Z",
+          "payload": {
+            "approvalId": "q1",
+            "toolUseId": "tool-q1",
+            "questions": [
+              {
+                "question": "Proceed?"
+              }
+            ]
+          },
+          "redaction": {
+            "status": "not-required",
+            "appliedRules": []
+          }
+        },
+        {
+          "runId": "job-desktop-projection",
+          "jobId": "job-desktop-projection",
+          "runtimeId": "codex",
+          "sequence": 7,
+          "type": "mcp_needs_auth",
+          "createdAt": "2026-09-04T00:00:00.007Z",
+          "payload": {
+            "status": "runtime-status",
+            "ok": false,
+            "blocker": {
+              "component": "mcp",
+              "server": "docs"
+            },
+            "mcp": {
+              "server": "docs",
+              "authorization": "[redacted]"
+            }
+          },
+          "redaction": {
+            "status": "redacted",
+            "appliedRules": ["sensitive-key"]
+          }
+        },
+        {
+          "runId": "job-desktop-projection",
+          "jobId": "job-desktop-projection",
+          "runtimeId": "codex",
+          "sequence": 8,
+          "type": "usage_update",
+          "createdAt": "2026-09-04T00:00:00.008Z",
+          "payload": {
+            "kind": "snapshot",
+            "total": {
+              "inputTokens": 8,
+              "outputTokens": 2,
+              "totalTokens": 10
+            },
+            "last": {
+              "inputTokens": 8,
+              "outputTokens": 2,
+              "totalTokens": 10
+            }
+          },
+          "redaction": {
+            "status": "not-required",
+            "appliedRules": []
+          }
+        },
+        {
+          "runId": "job-desktop-projection",
+          "jobId": "job-desktop-projection",
+          "runtimeId": "codex",
+          "sequence": 9,
+          "type": "status",
+          "createdAt": "2026-09-04T00:00:00.009Z",
+          "payload": {
+            "subtype": "item_reconciliation",
+            "item": {
+              "threadId": "th",
+              "turnId": "tu",
+              "itemId": "msg",
+              "channel": "assistant",
+              "partIndex": 0,
+              "itemKind": "agentMessage",
+              "text": "hello"
+            },
+            "reconciliation": {
+              "result": "suffix_repaired",
+              "lossPossible": true,
+              "missingStart": false,
+              "suppressedDuplicateCount": 0
+            }
+          },
+          "redaction": {
+            "status": "not-required",
+            "appliedRules": []
+          }
+        },
+        {
+          "runId": "job-desktop-projection",
+          "jobId": "job-desktop-projection",
+          "runtimeId": "codex",
+          "sequence": 10,
+          "type": "error",
+          "createdAt": "2026-09-04T00:00:00.010Z",
+          "payload": {
+            "classification": "retryable",
+            "code": "retryable",
+            "willRetry": true,
+            "message": "provider auth failed for [redacted]"
+          },
+          "redaction": {
+            "status": "redacted",
+            "appliedRules": ["exact-secret-hint"]
+          }
+        },
+        {
+          "runId": "job-desktop-projection",
+          "jobId": "job-desktop-projection",
+          "runtimeId": "codex",
+          "sequence": 11,
+          "type": "completed",
+          "createdAt": "2026-09-04T00:00:00.011Z",
+          "payload": {
+            "status": "succeeded",
+            "reasons": []
+          },
+          "redaction": {
+            "status": "not-required",
+            "appliedRules": []
+          }
+        }
+      ],
+      "reconciliation": {
+        "recordSequence": 9,
+        "itemId": "msg",
+        "priorDeltaText": "hel",
+        "authoritativeText": "hello"
+      },
+      "ingressOnly": {
+        "secretHints": ["provider-secret-123", "gateway-secret-456"],
+        "rawSentinel": "sentinel-raw-input-7f3a",
+        "runtimeProvenance": {
+          "kind": "runtime",
+          "installationId": "codex-0.139.0-linux-x64-0729aedf",
+          "runtimeId": "codex",
+          "adapterSource": "codex-app-server",
+          "version": "0.139.0",
+          "executableRef": "executable-ref-fixture-desktop",
+          "binarySha256": "0729aedf4fe72971d81ef6803c817b850d711254d3c82ecc756a52f3b533c9f8",
+          "protocolName": "codex-app-server-v2",
+          "protocolVersion": "0.139.0",
+          "schemaFiles": [
+            {
+              "path": "ServerNotification.ts",
+              "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+            }
+          ]
+        },
+        "observations": [
+          {
+            "port": "ingestRuntimeObservation",
+            "input": {
+              "observationKey": "obs-desktop-diag",
+              "type": "error",
+              "payload": {
+                "classification": "diagnostic",
+                "message": "provider auth failed for provider-secret-123 via gateway-secret-456"
+              }
+            }
+          },
+          {
+            "port": "ingestRuntimeObservation",
+            "input": {
+              "observationKey": "obs-desktop-mcp",
+              "type": "status",
+              "payload": {
+                "status": "runtime-status",
+                "component": "mcp",
+                "mcp": {
+                  "server": "docs",
+                  "headers": {
+                    "Authorization": "Bearer gateway-secret-456"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "port": "ingestNotification",
+            "input": {
+              "observationKey": "obs-desktop-raw",
+              "transportId": "t-desktop",
+              "receivedAt": "2026-09-04T00:00:01.000Z",
+              "message": {
+                "method": "rawResponseItem/completed",
+                "params": {
+                  "threadId": "th",
+                  "turnId": "tu",
+                  "item": {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [
+                      {
+                        "type": "output_text",
+                        "text": "sentinel-raw-input-7f3a"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "historicalV0Row": {
+        "id": "evt-legacy-desktop-3",
+        "jobId": "job-legacy-desktop",
+        "sequence": 3,
+        "type": "assistant_delta",
+        "payload": {
+          "runId": "desktop-run-legacy",
+          "runtimeId": "claude-code",
+          "runEventSequence": 7,
+          "redaction": {
+            "status": "not-required",
+            "appliedRules": []
+          },
+          "payload": {
+            "id": "text-1",
+            "delta": "legacy hello"
+          }
+        },
+        "createdAt": "2026-08-01T00:00:00.000Z",
+        "expectedSemanticPayload": {
+          "id": "text-1",
+          "delta": "legacy hello"
+        }
+      }
+    }
+  ]
+}

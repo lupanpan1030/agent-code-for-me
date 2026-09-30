@@ -1,0 +1,369 @@
+{
+  "fixtureVersion": 1,
+  "evidenceClass": "synthetic",
+  "sourceRefs": [
+    "openspec/changes/refactor-canonical-run-event-ledger/specs/architecture-ownership/spec.md#Canonical Runtime Event Mapping Single Path",
+    "openspec/changes/refactor-canonical-run-event-ledger/tasks.md 7.17 (architecture-fixtures.json) and 8.3",
+    "scripts/check-architecture-guards.mjs assertRuntimeEventSinglePathSelfTest (existing inline self-test style)"
+  ],
+  "provenance": {
+    "author": "independent red-suite author (domain C)",
+    "measured": false,
+    "note": "Static source strings only. Each case is scanned as if it were the file at filePath; expectedFindings is the exact, complete static finding set (order-insensitive) the guard self-test must produce. A missing or unexpected finding must fail the guard self-test. These cases assert source structure only, never runtime outcomes or secret leakage."
+  },
+  "ownerSection": "Runtime Events, Trace, And Redaction",
+  "pinnedOwners": {
+    "createRunEvent": "src/main/lib/agent-runtime/runtime-events.ts",
+    "createCanonicalRunEventLedger": "src/main/lib/agent-runtime/run-event-ledger.ts",
+    "getOrCreateRunEventLedger": "src/main/lib/agent-runtime/run-event-ledger-host.ts",
+    "projectRunEventToRendererChunks": "src/main/lib/agent-runtime/stream-event-mapper.ts",
+    "admitRunArtifactCandidate": "src/main/lib/agent-runtime/run-artifacts.ts",
+    "redactRuntimePayload": "src/main/lib/agent-runtime/redaction.ts",
+    "redactExactSecretHints": "src/main/lib/agent-runtime/redaction.ts",
+    "appendExactRunEventBatch": "src/main/lib/headless/job-store.ts",
+    "captureRunExecutionProvenance": "src/main/lib/agent-runtime/run-provenance.ts"
+  },
+  "storeAppendImporter": "src/main/lib/agent-runtime/run-event-ledger-host.ts",
+  "legacySymbols": [
+    "mapDesktopStreamChunkToRunEvents",
+    "createDesktopStreamEventMapper",
+    "appendRunEventsToAgentJob",
+    "redactRendererDiagnosticChunk",
+    "redactRendererRuntimeChunk",
+    "createRuntimeRendererChunkEmitter",
+    "createRuntimeStreamChunkSecretRedactor",
+    "isDesktopRuntimeFailureChunk",
+    "persistedPayloadForRunEvent",
+    "createAgentJobRunEvent",
+    "appendAgentJobEvent"
+  ],
+  "cases": [
+    {
+      "caseId": "clean-owners",
+      "category": "clean",
+      "files": [
+        {
+          "filePath": "src/main/lib/agent-runtime/run-event-ledger.ts",
+          "content": "export function createCanonicalRunEventLedger(input: unknown) { return input }"
+        },
+        {
+          "filePath": "src/main/lib/agent-runtime/run-provenance.ts",
+          "content": "export function captureRunExecutionProvenance(input: unknown) { return input }"
+        },
+        {
+          "filePath": "src/main/lib/agent-runtime/run-event-ledger-host.ts",
+          "content": "import { appendExactRunEventBatch } from \"../headless/job-store\"\nimport { createCanonicalRunEventLedger } from \"./run-event-ledger\"\nexport function getOrCreateRunEventLedger(job: { id: string }) { return createCanonicalRunEventLedger({ job, appendExactRunEventBatch }) }\nexport function bindForHost(ledger: { bindExecutionProvenance(p: unknown): void }, p: unknown) { ledger.bindExecutionProvenance(p) }"
+        },
+        {
+          "filePath": "src/main/lib/headless/job-store.ts",
+          "content": "import { agentJobEvents } from \"../db/schema\"\nfunction insertRunEventRecord(executor: any, record: unknown) { executor.insert(agentJobEvents).values(record).run() }\nexport function appendExactRunEventBatch(db: any, records: unknown[]) { for (const record of records) insertRunEventRecord(db, record) }"
+        },
+        {
+          "filePath": "src/main/lib/trpc/routers/agent-jobs.ts",
+          "content": "import { getOrCreateRunEventLedger } from \"../../agent-runtime/run-event-ledger-host\"\nexport function cancelQueued(job: { id: string }) { return getOrCreateRunEventLedger(job) }"
+        }
+      ],
+      "expectedFindings": []
+    },
+    {
+      "caseId": "duplicate-ledger-definition",
+      "category": "duplicate-definition",
+      "files": [
+        {
+          "filePath": "src/main/lib/codex/second-ledger.ts",
+          "content": "export function createCanonicalRunEventLedger() { return null }"
+        }
+      ],
+      "expectedFindings": [
+        {
+          "rule": "duplicate-definition",
+          "file": "src/main/lib/codex/second-ledger.ts",
+          "symbol": "createCanonicalRunEventLedger",
+          "owner": "src/main/lib/agent-runtime/run-event-ledger.ts",
+          "ownerSection": "Runtime Events, Trace, And Redaction"
+        }
+      ]
+    },
+    {
+      "caseId": "duplicate-provenance-definition",
+      "category": "duplicate-definition",
+      "files": [
+        {
+          "filePath": "src/main/lib/codex/cli-path.ts",
+          "content": "export const captureRunExecutionProvenance = () => ({ kind: \"runtime\" })"
+        }
+      ],
+      "expectedFindings": [
+        {
+          "rule": "duplicate-definition",
+          "file": "src/main/lib/codex/cli-path.ts",
+          "symbol": "captureRunExecutionProvenance",
+          "owner": "src/main/lib/agent-runtime/run-provenance.ts",
+          "ownerSection": "Runtime Events, Trace, And Redaction"
+        }
+      ]
+    },
+    {
+      "caseId": "reexport-provenance-owner",
+      "category": "duplicate-definition",
+      "files": [
+        {
+          "filePath": "src/main/lib/claude/env.ts",
+          "content": "export { captureRunExecutionProvenance } from \"../agent-runtime/run-provenance\""
+        }
+      ],
+      "expectedFindings": [
+        {
+          "rule": "duplicate-reexport",
+          "file": "src/main/lib/claude/env.ts",
+          "symbol": "captureRunExecutionProvenance",
+          "owner": "src/main/lib/agent-runtime/run-provenance.ts",
+          "ownerSection": "Runtime Events, Trace, And Redaction"
+        }
+      ]
+    },
+    {
+      "caseId": "reexport-renderer-projection",
+      "category": "duplicate-definition",
+      "files": [
+        {
+          "filePath": "src/main/lib/codex/desktop-run-persistence.ts",
+          "content": "export { projectRunEventToRendererChunks as project } from \"../agent-runtime/stream-event-mapper\""
+        }
+      ],
+      "expectedFindings": [
+        {
+          "rule": "duplicate-reexport",
+          "file": "src/main/lib/codex/desktop-run-persistence.ts",
+          "symbol": "projectRunEventToRendererChunks",
+          "owner": "src/main/lib/agent-runtime/stream-event-mapper.ts",
+          "ownerSection": "Runtime Events, Trace, And Redaction"
+        }
+      ]
+    },
+    {
+      "caseId": "route-imports-store-append",
+      "category": "forbidden-import",
+      "files": [
+        {
+          "filePath": "src/main/lib/trpc/routers/codex.ts",
+          "content": "import { appendExactRunEventBatch } from \"../../headless/job-store\"\nexport const write = appendExactRunEventBatch"
+        }
+      ],
+      "expectedFindings": [
+        {
+          "rule": "forbidden-store-import",
+          "file": "src/main/lib/trpc/routers/codex.ts",
+          "symbol": "appendExactRunEventBatch",
+          "owner": "src/main/lib/agent-runtime/run-event-ledger-host.ts",
+          "ownerSection": "Runtime Events, Trace, And Redaction"
+        }
+      ]
+    },
+    {
+      "caseId": "codex-adapter-namespace-import",
+      "category": "forbidden-import",
+      "files": [
+        {
+          "filePath": "src/main/lib/codex/app-server-adapter.ts",
+          "content": "import * as store from \"../headless/job-store\"\nexport function write(db: any) { return store.appendExactRunEventBatch(db, []) }"
+        }
+      ],
+      "expectedFindings": [
+        {
+          "rule": "forbidden-store-import",
+          "file": "src/main/lib/codex/app-server-adapter.ts",
+          "symbol": "appendExactRunEventBatch",
+          "owner": "src/main/lib/agent-runtime/run-event-ledger-host.ts",
+          "ownerSection": "Runtime Events, Trace, And Redaction"
+        }
+      ]
+    },
+    {
+      "caseId": "claude-adapter-dynamic-import",
+      "category": "forbidden-import",
+      "files": [
+        {
+          "filePath": "src/main/lib/claude/agent-sdk-desktop-job.ts",
+          "content": "export async function write(db: any) { const store = await import(\"../headless/job-store\"); return store.appendExactRunEventBatch(db, []) }"
+        }
+      ],
+      "expectedFindings": [
+        {
+          "rule": "forbidden-store-import",
+          "file": "src/main/lib/claude/agent-sdk-desktop-job.ts",
+          "symbol": "appendExactRunEventBatch",
+          "owner": "src/main/lib/agent-runtime/run-event-ledger-host.ts",
+          "ownerSection": "Runtime Events, Trace, And Redaction"
+        }
+      ]
+    },
+    {
+      "caseId": "ledger-core-imports-store-directly",
+      "category": "forbidden-import",
+      "files": [
+        {
+          "filePath": "src/main/lib/agent-runtime/run-event-ledger.ts",
+          "content": "import { appendExactRunEventBatch } from \"../headless/job-store\"\nexport function createCanonicalRunEventLedger() { return appendExactRunEventBatch }"
+        }
+      ],
+      "expectedFindings": [
+        {
+          "rule": "forbidden-store-import",
+          "file": "src/main/lib/agent-runtime/run-event-ledger.ts",
+          "symbol": "appendExactRunEventBatch",
+          "owner": "src/main/lib/agent-runtime/run-event-ledger-host.ts",
+          "ownerSection": "Runtime Events, Trace, And Redaction"
+        }
+      ]
+    },
+    {
+      "caseId": "job-store-exports-record-insert",
+      "category": "exported-insert",
+      "files": [
+        {
+          "filePath": "src/main/lib/headless/job-store.ts",
+          "content": "import { agentJobEvents } from \"../db/schema\"\nfunction insertRunEventRecord(executor: any, record: unknown) { executor.insert(agentJobEvents).values(record).run() }\nexport function appendExactRunEventBatch(db: any, records: unknown[]) { for (const record of records) insertRunEventRecord(db, record) }\nexport { insertRunEventRecord }"
+        }
+      ],
+      "expectedFindings": [
+        {
+          "rule": "exported-record-insert",
+          "file": "src/main/lib/headless/job-store.ts",
+          "symbol": "insertRunEventRecord",
+          "owner": "src/main/lib/headless/job-store.ts",
+          "ownerSection": "Runtime Events, Trace, And Redaction"
+        }
+      ]
+    },
+    {
+      "caseId": "schedules-direct-event-insert",
+      "category": "direct-event-insert",
+      "files": [
+        {
+          "filePath": "src/main/lib/headless/schedules.ts",
+          "content": "import { agentJobEvents } from \"../db/schema\"\nexport function createScheduledJob(db: any, jobId: string) { db.insert(agentJobEvents).values({ id: \"e1\", jobId, sequence: 1, type: \"job_created\", payloadJson: \"{}\" }).run() }"
+        }
+      ],
+      "expectedFindings": [
+        {
+          "rule": "direct-event-insert",
+          "file": "src/main/lib/headless/schedules.ts",
+          "symbol": "agentJobEvents",
+          "owner": "src/main/lib/headless/job-store.ts",
+          "ownerSection": "Runtime Events, Trace, And Redaction"
+        }
+      ]
+    },
+    {
+      "caseId": "route-direct-event-insert-aliased-table",
+      "category": "direct-event-insert",
+      "files": [
+        {
+          "filePath": "src/main/lib/trpc/routers/agent-jobs.ts",
+          "content": "import { agentJobEvents as events } from \"../../db/schema\"\nexport function mint(tx: any) { tx.insert(events).values({ id: \"e2\", jobId: \"j\", sequence: 9, type: \"completed\", payloadJson: \"{}\" }).run() }"
+        }
+      ],
+      "expectedFindings": [
+        {
+          "rule": "direct-event-insert",
+          "file": "src/main/lib/trpc/routers/agent-jobs.ts",
+          "symbol": "agentJobEvents",
+          "owner": "src/main/lib/headless/job-store.ts",
+          "ownerSection": "Runtime Events, Trace, And Redaction"
+        }
+      ]
+    },
+    {
+      "caseId": "legacy-append-import",
+      "category": "legacy-symbol",
+      "files": [
+        {
+          "filePath": "src/main/lib/headless/completion-runner.ts",
+          "content": "import { appendAgentJobEvent } from \"./job-store\"\nexport const legacy = appendAgentJobEvent"
+        }
+      ],
+      "expectedFindings": [
+        {
+          "rule": "legacy-symbol",
+          "file": "src/main/lib/headless/completion-runner.ts",
+          "symbol": "appendAgentJobEvent",
+          "ownerSection": "Runtime Events, Trace, And Redaction"
+        }
+      ]
+    },
+    {
+      "caseId": "legacy-bridge-definition",
+      "category": "legacy-symbol",
+      "files": [
+        {
+          "filePath": "src/main/lib/agent-runtime/job-event-bridge.ts",
+          "content": "export function createAgentJobRunEvent(input: unknown) { return input }"
+        }
+      ],
+      "expectedFindings": [
+        {
+          "rule": "legacy-symbol",
+          "file": "src/main/lib/agent-runtime/job-event-bridge.ts",
+          "symbol": "createAgentJobRunEvent",
+          "ownerSection": "Runtime Events, Trace, And Redaction"
+        }
+      ]
+    },
+    {
+      "caseId": "legacy-wrapper-writer-private-helper",
+      "category": "legacy-symbol",
+      "files": [
+        {
+          "filePath": "src/main/lib/agent-runtime/stream-event-mapper.ts",
+          "content": "function persistedPayloadForRunEvent(event: { sequence: number; payload: unknown }) { return { runEventSequence: event.sequence, payload: event.payload } }\nexport function projectRunEventToRendererChunks(record: { sequence: number; payload: unknown }) { return [persistedPayloadForRunEvent(record)] }"
+        }
+      ],
+      "expectedFindings": [
+        {
+          "rule": "legacy-symbol",
+          "file": "src/main/lib/agent-runtime/stream-event-mapper.ts",
+          "symbol": "persistedPayloadForRunEvent",
+          "ownerSection": "Runtime Events, Trace, And Redaction"
+        }
+      ]
+    },
+    {
+      "caseId": "legacy-mapper-reexport",
+      "category": "legacy-symbol",
+      "files": [
+        {
+          "filePath": "src/main/lib/codex/desktop-run-finalize.ts",
+          "content": "export { createRuntimeRendererChunkEmitter } from \"../agent-runtime/stream-event-mapper\""
+        }
+      ],
+      "expectedFindings": [
+        {
+          "rule": "legacy-symbol",
+          "file": "src/main/lib/codex/desktop-run-finalize.ts",
+          "symbol": "createRuntimeRendererChunkEmitter",
+          "ownerSection": "Runtime Events, Trace, And Redaction"
+        }
+      ]
+    },
+    {
+      "caseId": "adapter-binds-provenance-outside-host",
+      "category": "host-only-binding",
+      "files": [
+        {
+          "filePath": "src/main/lib/codex/app-server-adapter-runner.ts",
+          "content": "import { captureRunExecutionProvenance } from \"../agent-runtime/run-provenance\"\nexport function start(ledger: { bindExecutionProvenance(p: unknown): void }, path: string) { ledger.bindExecutionProvenance(captureRunExecutionProvenance({ executablePath: path })) }"
+        }
+      ],
+      "expectedFindings": [
+        {
+          "rule": "provenance-binding-outside-host",
+          "file": "src/main/lib/codex/app-server-adapter-runner.ts",
+          "symbol": "bindExecutionProvenance",
+          "owner": "src/main/lib/agent-runtime/run-event-ledger-host.ts",
+          "ownerSection": "Runtime Events, Trace, And Redaction"
+        }
+      ]
+    }
+  ]
+}

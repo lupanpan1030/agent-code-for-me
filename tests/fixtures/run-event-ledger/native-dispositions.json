@@ -1,0 +1,2102 @@
+{
+  "fixtureVersion": 1,
+  "evidenceClass": "synthetic",
+  "sourceRefs": [
+    "trace §5.2 (66 ServerNotification methods)",
+    "trace §5.3 (10 ServerRequest methods)",
+    "trace §5.4 (16 ThreadItem variants)",
+    "codex-runtime-parity delta inline disposition table",
+    "EVENT-01",
+    "EVENT-03"
+  ],
+  "provenance": {
+    "runtimeId": "codex",
+    "version": "0.139.0",
+    "binarySha256": "0729aedf4fe72971d81ef6803c817b850d711254d3c82ecc756a52f3b533c9f8",
+    "binarySha256Source": "trace §1 table / [ENV-02]",
+    "schemaFiles": [
+      {
+        "path": "ServerNotification.ts",
+        "sha256": "bcc5cd580b83e15225dd138c768fafb0cae7d2ab26474a49a8569657f0b944a8"
+      },
+      {
+        "path": "ServerRequest.ts",
+        "sha256": "6274decabc5c0e9b09f144efb1795ca8fc1fe52d8afa42ee5988de2d890f935e"
+      },
+      {
+        "path": "v2/ThreadItem.ts",
+        "sha256": "1aef9163c636246a0d1baec611da798a3e77790b7b8819480162b6e734324038"
+      }
+    ],
+    "schemaFilesSource": "trace §5.1 (reproducible per-file SHA-256)",
+    "shapeReference": "Param shapes are schema-derived synthetic values cross-checked against a local `codex app-server generate-ts` output of codex-cli 0.159.2 as a stand-in; the pinned 0.139.0 TypeScript closure is NOT vendored here (tasks 1.4 remains open).",
+    "idsMeasured": false,
+    "author": "independent test author, 2026-09-30 (test-first red suite)"
+  },
+  "secretHints": ["provider-secret-123", "gateway-secret-456"],
+  "counts": {
+    "notifications": 66,
+    "requests": 10,
+    "items": 16
+  },
+  "notifications": [
+    {
+      "method": "account/login/completed",
+      "input": {
+        "message": {
+          "method": "account/login/completed",
+          "params": {
+            "loginId": "login-1",
+            "success": true,
+            "error": null
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "oauth_lifecycle"
+    },
+    {
+      "method": "mcpServer/oauthLogin/completed",
+      "input": {
+        "message": {
+          "method": "mcpServer/oauthLogin/completed",
+          "params": {
+            "name": "docs",
+            "success": true,
+            "error": null
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "oauth_lifecycle"
+    },
+    {
+      "method": "account/rateLimits/updated",
+      "input": {
+        "message": {
+          "method": "account/rateLimits/updated",
+          "params": {
+            "rateLimits": {
+              "primary": null,
+              "secondary": null
+            }
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "account_lifecycle"
+    },
+    {
+      "method": "account/updated",
+      "input": {
+        "message": {
+          "method": "account/updated",
+          "params": {
+            "authMode": "chatgpt"
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "account_lifecycle"
+    },
+    {
+      "method": "app/list/updated",
+      "input": {
+        "message": {
+          "method": "app/list/updated",
+          "params": {
+            "data": []
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "configuration"
+    },
+    {
+      "method": "externalAgentConfig/import/completed",
+      "input": {
+        "message": {
+          "method": "externalAgentConfig/import/completed",
+          "params": {}
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "configuration"
+    },
+    {
+      "method": "skills/changed",
+      "input": {
+        "message": {
+          "method": "skills/changed",
+          "params": {}
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "configuration"
+    },
+    {
+      "method": "command/exec/outputDelta",
+      "input": {
+        "message": {
+          "method": "command/exec/outputDelta",
+          "params": {
+            "processId": "proc-1",
+            "stream": "stdout",
+            "deltaBase64": "b2s=",
+            "capReached": false
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "runtime_process"
+    },
+    {
+      "method": "process/outputDelta",
+      "input": {
+        "message": {
+          "method": "process/outputDelta",
+          "params": {
+            "processHandle": "proc-1",
+            "stream": "stdout",
+            "deltaBase64": "b2s=",
+            "capReached": false
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "runtime_process"
+    },
+    {
+      "method": "process/exited",
+      "input": {
+        "message": {
+          "method": "process/exited",
+          "params": {
+            "processHandle": "proc-1",
+            "exitCode": 0,
+            "signal": null
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "runtime_process"
+    },
+    {
+      "method": "configWarning",
+      "input": {
+        "message": {
+          "method": "configWarning",
+          "params": {
+            "summary": "config warning",
+            "details": null
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "warning"
+    },
+    {
+      "method": "deprecationNotice",
+      "input": {
+        "message": {
+          "method": "deprecationNotice",
+          "params": {
+            "summary": "deprecated option",
+            "details": null
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "warning"
+    },
+    {
+      "method": "guardianWarning",
+      "input": {
+        "message": {
+          "method": "guardianWarning",
+          "params": {
+            "threadId": "th-disp",
+            "message": "guardian says"
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "warning"
+    },
+    {
+      "method": "warning",
+      "input": {
+        "message": {
+          "method": "warning",
+          "params": {
+            "threadId": "th-disp",
+            "message": "plain warning"
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "warning"
+    },
+    {
+      "method": "error",
+      "input": {
+        "message": {
+          "method": "error",
+          "params": {
+            "error": {
+              "message": "temporary",
+              "code": "retryable",
+              "codexErrorInfo": null,
+              "additionalDetails": null
+            },
+            "willRetry": true,
+            "threadId": "th-disp",
+            "turnId": "tu-disp"
+          }
+        }
+      },
+      "expectedType": "error",
+      "expectedFields": {
+        "willRetry": true
+      }
+    },
+    {
+      "method": "fs/changed",
+      "input": {
+        "message": {
+          "method": "fs/changed",
+          "params": {
+            "watchId": "watch-1",
+            "changedPaths": ["/fixture/workspace/a.txt"]
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "workspace_observation"
+    },
+    {
+      "method": "fuzzyFileSearch/sessionCompleted",
+      "input": {
+        "message": {
+          "method": "fuzzyFileSearch/sessionCompleted",
+          "params": {
+            "sessionId": "fuzzy-1"
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "workspace_observation"
+    },
+    {
+      "method": "fuzzyFileSearch/sessionUpdated",
+      "input": {
+        "message": {
+          "method": "fuzzyFileSearch/sessionUpdated",
+          "params": {
+            "sessionId": "fuzzy-1",
+            "query": "a",
+            "files": []
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "workspace_observation"
+    },
+    {
+      "method": "hook/completed",
+      "input": {
+        "message": {
+          "method": "hook/completed",
+          "params": {
+            "threadId": "th-disp",
+            "turnId": "tu-disp",
+            "run": {
+              "id": "hook-1",
+              "status": "completed"
+            }
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "hook_lifecycle"
+    },
+    {
+      "method": "hook/started",
+      "input": {
+        "message": {
+          "method": "hook/started",
+          "params": {
+            "threadId": "th-disp",
+            "turnId": "tu-disp",
+            "run": {
+              "id": "hook-1",
+              "status": "running"
+            }
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "hook_lifecycle"
+    },
+    {
+      "method": "item/agentMessage/delta",
+      "input": {
+        "message": {
+          "method": "item/agentMessage/delta",
+          "params": {
+            "threadId": "th-disp",
+            "turnId": "tu-disp",
+            "itemId": "item-disp",
+            "delta": "x"
+          }
+        }
+      },
+      "expectedType": "assistant_delta"
+    },
+    {
+      "method": "item/autoApprovalReview/completed",
+      "input": {
+        "message": {
+          "method": "item/autoApprovalReview/completed",
+          "params": {
+            "threadId": "th-disp",
+            "turnId": "tu-disp",
+            "targetItemId": "item-disp",
+            "review": {
+              "status": "approved"
+            }
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "approval_review"
+    },
+    {
+      "method": "item/autoApprovalReview/started",
+      "input": {
+        "message": {
+          "method": "item/autoApprovalReview/started",
+          "params": {
+            "threadId": "th-disp",
+            "turnId": "tu-disp",
+            "targetItemId": "item-disp",
+            "review": {
+              "status": "inProgress"
+            }
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "approval_review"
+    },
+    {
+      "method": "item/commandExecution/outputDelta",
+      "input": {
+        "message": {
+          "method": "item/commandExecution/outputDelta",
+          "params": {
+            "threadId": "th-disp",
+            "turnId": "tu-disp",
+            "itemId": "item-disp",
+            "delta": "out"
+          }
+        }
+      },
+      "expectedType": "tool_delta"
+    },
+    {
+      "method": "item/commandExecution/terminalInteraction",
+      "input": {
+        "message": {
+          "method": "item/commandExecution/terminalInteraction",
+          "params": {
+            "threadId": "th-disp",
+            "turnId": "tu-disp",
+            "itemId": "item-disp",
+            "processId": "proc-1",
+            "stdin": "y\n"
+          }
+        }
+      },
+      "expectedType": "tool_delta"
+    },
+    {
+      "method": "item/completed",
+      "input": {
+        "message": {
+          "method": "item/completed",
+          "params": {
+            "threadId": "th-disp",
+            "turnId": "tu-disp",
+            "item": {
+              "type": "agentMessage",
+              "id": "item-disp",
+              "text": "x"
+            },
+            "completedAtMs": 1
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "item_reconciliation"
+    },
+    {
+      "method": "item/fileChange/outputDelta",
+      "input": {
+        "message": {
+          "method": "item/fileChange/outputDelta",
+          "params": {
+            "threadId": "th-disp",
+            "turnId": "tu-disp",
+            "itemId": "item-disp",
+            "delta": "patched"
+          }
+        }
+      },
+      "expectedType": "tool_delta"
+    },
+    {
+      "method": "item/fileChange/patchUpdated",
+      "input": {
+        "message": {
+          "method": "item/fileChange/patchUpdated",
+          "params": {
+            "threadId": "th-disp",
+            "turnId": "tu-disp",
+            "itemId": "item-disp",
+            "changes": []
+          }
+        }
+      },
+      "expectedType": "tool_delta"
+    },
+    {
+      "method": "item/mcpToolCall/progress",
+      "input": {
+        "message": {
+          "method": "item/mcpToolCall/progress",
+          "params": {
+            "threadId": "th-disp",
+            "turnId": "tu-disp",
+            "itemId": "item-disp",
+            "message": "50%"
+          }
+        }
+      },
+      "expectedType": "tool_delta"
+    },
+    {
+      "method": "item/plan/delta",
+      "input": {
+        "message": {
+          "method": "item/plan/delta",
+          "params": {
+            "threadId": "th-disp",
+            "turnId": "tu-disp",
+            "itemId": "item-disp",
+            "delta": "step one"
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "plan"
+    },
+    {
+      "method": "item/reasoning/summaryPartAdded",
+      "input": {
+        "message": {
+          "method": "item/reasoning/summaryPartAdded",
+          "params": {
+            "threadId": "th-disp",
+            "turnId": "tu-disp",
+            "itemId": "item-disp",
+            "summaryIndex": 0
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "reasoning_part"
+    },
+    {
+      "method": "item/reasoning/summaryTextDelta",
+      "input": {
+        "message": {
+          "method": "item/reasoning/summaryTextDelta",
+          "params": {
+            "threadId": "th-disp",
+            "turnId": "tu-disp",
+            "itemId": "item-disp",
+            "delta": "s"
+          }
+        }
+      },
+      "expectedType": "reasoning_delta"
+    },
+    {
+      "method": "item/reasoning/textDelta",
+      "input": {
+        "message": {
+          "method": "item/reasoning/textDelta",
+          "params": {
+            "threadId": "th-disp",
+            "turnId": "tu-disp",
+            "itemId": "item-disp",
+            "delta": "t"
+          }
+        }
+      },
+      "expectedType": "reasoning_delta"
+    },
+    {
+      "method": "item/started",
+      "input": {
+        "message": {
+          "method": "item/started",
+          "params": {
+            "threadId": "th-disp",
+            "turnId": "tu-disp",
+            "item": {
+              "type": "agentMessage",
+              "id": "item-disp",
+              "text": ""
+            },
+            "startedAtMs": 1
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "item_lifecycle"
+    },
+    {
+      "method": "mcpServer/startupStatus/updated",
+      "input": {
+        "message": {
+          "method": "mcpServer/startupStatus/updated",
+          "params": {
+            "name": "docs",
+            "status": "ready",
+            "error": null
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "mcp_lifecycle"
+    },
+    {
+      "method": "model/rerouted",
+      "input": {
+        "message": {
+          "method": "model/rerouted",
+          "params": {
+            "threadId": "th-disp",
+            "turnId": "tu-disp",
+            "fromModel": "model-a",
+            "toModel": "model-b",
+            "reason": "highRiskCyberActivity"
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "reroute"
+    },
+    {
+      "method": "model/verification",
+      "input": {
+        "message": {
+          "method": "model/verification",
+          "params": {
+            "threadId": "th-disp",
+            "turnId": "tu-disp",
+            "verifications": []
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "model_verification"
+    },
+    {
+      "method": "rawResponseItem/completed",
+      "input": {
+        "message": {
+          "method": "rawResponseItem/completed",
+          "params": {
+            "threadId": "th-disp",
+            "turnId": "tu-disp",
+            "item": {
+              "type": "message",
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "output_text",
+                  "text": "RAW-CONTENT-SENTINEL"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "raw_response_observed",
+      "expectedFields": {
+        "contentOmitted": true
+      },
+      "forbiddenSubstrings": ["RAW-CONTENT-SENTINEL"]
+    },
+    {
+      "method": "remoteControl/status/changed",
+      "input": {
+        "message": {
+          "method": "remoteControl/status/changed",
+          "params": {
+            "status": "connected"
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "unsupported_native_surface",
+      "expectedSurface": "remote_control",
+      "expectedFields": {
+        "surface": "remote_control",
+        "disposition": "observed_deferred",
+        "contentOmitted": true
+      },
+      "forbiddenSubstrings": []
+    },
+    {
+      "method": "serverRequest/resolved",
+      "port": "recordServerRequestResolved",
+      "input": {
+        "requestId": 77,
+        "message": {
+          "method": "serverRequest/resolved",
+          "params": {
+            "threadId": "th-disp",
+            "requestId": 77
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "interaction_boundary",
+      "expectedFields": {
+        "boundary": "resolved"
+      }
+    },
+    {
+      "method": "thread/archived",
+      "input": {
+        "message": {
+          "method": "thread/archived",
+          "params": {
+            "threadId": "th-disp"
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "thread_lifecycle"
+    },
+    {
+      "method": "thread/closed",
+      "input": {
+        "message": {
+          "method": "thread/closed",
+          "params": {
+            "threadId": "th-disp"
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "thread_lifecycle"
+    },
+    {
+      "method": "thread/compacted",
+      "input": {
+        "message": {
+          "method": "thread/compacted",
+          "params": {
+            "threadId": "th-disp",
+            "turnId": "tu-disp"
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "compaction"
+    },
+    {
+      "method": "thread/goal/cleared",
+      "input": {
+        "message": {
+          "method": "thread/goal/cleared",
+          "params": {
+            "threadId": "th-disp"
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "thread_lifecycle"
+    },
+    {
+      "method": "thread/goal/updated",
+      "input": {
+        "message": {
+          "method": "thread/goal/updated",
+          "params": {
+            "threadId": "th-disp",
+            "turnId": "tu-disp",
+            "goal": {
+              "objective": "ship"
+            }
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "thread_lifecycle"
+    },
+    {
+      "method": "thread/name/updated",
+      "input": {
+        "message": {
+          "method": "thread/name/updated",
+          "params": {
+            "threadId": "th-disp",
+            "threadName": "renamed"
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "thread_lifecycle"
+    },
+    {
+      "method": "thread/realtime/closed",
+      "input": {
+        "message": {
+          "method": "thread/realtime/closed",
+          "params": {
+            "threadId": "th-disp",
+            "reason": null
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "unsupported_native_surface",
+      "expectedSurface": "realtime",
+      "expectedFields": {
+        "surface": "realtime",
+        "disposition": "observed_deferred",
+        "contentOmitted": true
+      },
+      "forbiddenSubstrings": []
+    },
+    {
+      "method": "thread/realtime/error",
+      "input": {
+        "message": {
+          "method": "thread/realtime/error",
+          "params": {
+            "threadId": "th-disp",
+            "message": "realtime failed"
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "unsupported_native_surface",
+      "expectedSurface": "realtime",
+      "expectedFields": {
+        "surface": "realtime",
+        "disposition": "observed_deferred",
+        "contentOmitted": true
+      },
+      "forbiddenSubstrings": []
+    },
+    {
+      "method": "thread/realtime/itemAdded",
+      "input": {
+        "message": {
+          "method": "thread/realtime/itemAdded",
+          "params": {
+            "threadId": "th-disp",
+            "item": {
+              "type": "message",
+              "text": "TRANSCRIPT-SENTINEL"
+            }
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "unsupported_native_surface",
+      "expectedSurface": "realtime",
+      "expectedFields": {
+        "surface": "realtime",
+        "disposition": "observed_deferred",
+        "contentOmitted": true
+      },
+      "forbiddenSubstrings": ["TRANSCRIPT-SENTINEL"]
+    },
+    {
+      "method": "thread/realtime/outputAudio/delta",
+      "input": {
+        "message": {
+          "method": "thread/realtime/outputAudio/delta",
+          "params": {
+            "threadId": "th-disp",
+            "audio": {
+              "data": "AUDIO-SENTINEL-BASE64",
+              "sampleRate": 24000,
+              "numChannels": 1,
+              "samplesPerChannel": null,
+              "itemId": null
+            }
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "unsupported_native_surface",
+      "expectedSurface": "realtime",
+      "expectedFields": {
+        "surface": "realtime",
+        "disposition": "observed_deferred",
+        "contentOmitted": true
+      },
+      "forbiddenSubstrings": ["AUDIO-SENTINEL-BASE64"]
+    },
+    {
+      "method": "thread/realtime/sdp",
+      "input": {
+        "message": {
+          "method": "thread/realtime/sdp",
+          "params": {
+            "threadId": "th-disp",
+            "sdp": "v=0 SDP-SENTINEL"
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "unsupported_native_surface",
+      "expectedSurface": "realtime",
+      "expectedFields": {
+        "surface": "realtime",
+        "disposition": "observed_deferred",
+        "contentOmitted": true
+      },
+      "forbiddenSubstrings": ["SDP-SENTINEL"]
+    },
+    {
+      "method": "thread/realtime/started",
+      "input": {
+        "message": {
+          "method": "thread/realtime/started",
+          "params": {
+            "threadId": "th-disp",
+            "sessionId": null,
+            "version": "v1"
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "unsupported_native_surface",
+      "expectedSurface": "realtime",
+      "expectedFields": {
+        "surface": "realtime",
+        "disposition": "observed_deferred",
+        "contentOmitted": true
+      },
+      "forbiddenSubstrings": []
+    },
+    {
+      "method": "thread/realtime/transcript/delta",
+      "input": {
+        "message": {
+          "method": "thread/realtime/transcript/delta",
+          "params": {
+            "threadId": "th-disp",
+            "role": "user",
+            "delta": "TRANSCRIPT-SENTINEL"
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "unsupported_native_surface",
+      "expectedSurface": "realtime",
+      "expectedFields": {
+        "surface": "realtime",
+        "disposition": "observed_deferred",
+        "contentOmitted": true
+      },
+      "forbiddenSubstrings": ["TRANSCRIPT-SENTINEL"]
+    },
+    {
+      "method": "thread/realtime/transcript/done",
+      "input": {
+        "message": {
+          "method": "thread/realtime/transcript/done",
+          "params": {
+            "threadId": "th-disp",
+            "role": "user",
+            "text": "TRANSCRIPT-SENTINEL"
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "unsupported_native_surface",
+      "expectedSurface": "realtime",
+      "expectedFields": {
+        "surface": "realtime",
+        "disposition": "observed_deferred",
+        "contentOmitted": true
+      },
+      "forbiddenSubstrings": ["TRANSCRIPT-SENTINEL"]
+    },
+    {
+      "method": "thread/settings/updated",
+      "input": {
+        "message": {
+          "method": "thread/settings/updated",
+          "params": {
+            "threadId": "th-disp",
+            "settings": {}
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "thread_lifecycle"
+    },
+    {
+      "method": "thread/started",
+      "input": {
+        "message": {
+          "method": "thread/started",
+          "params": {
+            "thread": {
+              "id": "th-disp",
+              "sessionId": "session-disp",
+              "ephemeral": false,
+              "cliVersion": "0.139.0",
+              "turns": []
+            }
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "thread_lifecycle"
+    },
+    {
+      "method": "thread/status/changed",
+      "input": {
+        "message": {
+          "method": "thread/status/changed",
+          "params": {
+            "threadId": "th-disp",
+            "status": {
+              "type": "idle"
+            }
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "thread_lifecycle"
+    },
+    {
+      "method": "thread/tokenUsage/updated",
+      "input": {
+        "message": {
+          "method": "thread/tokenUsage/updated",
+          "params": {
+            "threadId": "th-disp",
+            "turnId": "tu-disp",
+            "tokenUsage": {
+              "total": {
+                "totalTokens": 10,
+                "inputTokens": 8,
+                "cachedInputTokens": 0,
+                "outputTokens": 2,
+                "reasoningOutputTokens": 0
+              },
+              "last": {
+                "totalTokens": 10,
+                "inputTokens": 8,
+                "cachedInputTokens": 0,
+                "outputTokens": 2,
+                "reasoningOutputTokens": 0
+              },
+              "modelContextWindow": null
+            }
+          }
+        }
+      },
+      "expectedType": "usage_update"
+    },
+    {
+      "method": "thread/unarchived",
+      "input": {
+        "message": {
+          "method": "thread/unarchived",
+          "params": {
+            "threadId": "th-disp"
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "thread_lifecycle"
+    },
+    {
+      "method": "turn/completed",
+      "input": {
+        "message": {
+          "method": "turn/completed",
+          "params": {
+            "threadId": "th-disp",
+            "turn": {
+              "id": "tu-disp",
+              "items": [],
+              "status": "completed",
+              "error": null,
+              "durationMs": 10
+            }
+          }
+        }
+      },
+      "expectedType": "completed",
+      "terminalCandidate": true
+    },
+    {
+      "method": "turn/diff/updated",
+      "input": {
+        "message": {
+          "method": "turn/diff/updated",
+          "params": {
+            "threadId": "th-disp",
+            "turnId": "tu-disp",
+            "diff": "--- a/x\n+++ b/x\n"
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "diff_observation"
+    },
+    {
+      "method": "turn/moderationMetadata",
+      "input": {
+        "message": {
+          "method": "turn/moderationMetadata",
+          "params": {
+            "threadId": "th-disp",
+            "turnId": "tu-disp",
+            "metadata": {}
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "model_verification"
+    },
+    {
+      "method": "turn/plan/updated",
+      "input": {
+        "message": {
+          "method": "turn/plan/updated",
+          "params": {
+            "threadId": "th-disp",
+            "turnId": "tu-disp",
+            "explanation": null,
+            "plan": [
+              {
+                "step": "a",
+                "status": "pending"
+              }
+            ]
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "plan"
+    },
+    {
+      "method": "turn/started",
+      "input": {
+        "message": {
+          "method": "turn/started",
+          "params": {
+            "threadId": "th-disp",
+            "turn": {
+              "id": "tu-disp",
+              "items": [],
+              "status": "inProgress",
+              "error": null
+            }
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "turn_lifecycle"
+    },
+    {
+      "method": "windows/worldWritableWarning",
+      "input": {
+        "message": {
+          "method": "windows/worldWritableWarning",
+          "params": {
+            "samplePaths": ["C:/fixture"],
+            "extraCount": 0,
+            "failedScan": false
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "unsupported_native_surface",
+      "expectedSurface": "windows",
+      "expectedFields": {
+        "surface": "windows",
+        "disposition": "observed_deferred",
+        "contentOmitted": true
+      },
+      "forbiddenSubstrings": []
+    },
+    {
+      "method": "windowsSandbox/setupCompleted",
+      "input": {
+        "message": {
+          "method": "windowsSandbox/setupCompleted",
+          "params": {
+            "mode": "elevated",
+            "success": true,
+            "error": null
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "unsupported_native_surface",
+      "expectedSurface": "windows",
+      "expectedFields": {
+        "surface": "windows",
+        "disposition": "observed_deferred",
+        "contentOmitted": true
+      },
+      "forbiddenSubstrings": []
+    }
+  ],
+  "requests": [
+    {
+      "method": "account/chatgptAuthTokens/refresh",
+      "input": {
+        "message": {
+          "id": 100,
+          "method": "account/chatgptAuthTokens/refresh",
+          "params": {
+            "reason": "unauthorized",
+            "previousAccountId": "acct-gateway-secret-456"
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "interaction_boundary",
+      "expectedFields": {
+        "boundary": "request"
+      },
+      "requestId": 100
+    },
+    {
+      "method": "applyPatchApproval",
+      "input": {
+        "message": {
+          "id": 101,
+          "method": "applyPatchApproval",
+          "params": {
+            "conversationId": "th-disp",
+            "callId": "call-patch",
+            "fileChanges": {},
+            "reason": null,
+            "grantRoot": null
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "interaction_boundary",
+      "expectedFields": {
+        "boundary": "request"
+      },
+      "requestId": 101
+    },
+    {
+      "method": "attestation/generate",
+      "input": {
+        "message": {
+          "id": 102,
+          "method": "attestation/generate",
+          "params": {
+            "threadId": "th-disp",
+            "nonce": "nonce-provider-secret-123"
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "interaction_boundary",
+      "expectedFields": {
+        "boundary": "request"
+      },
+      "requestId": 102
+    },
+    {
+      "method": "execCommandApproval",
+      "input": {
+        "message": {
+          "id": 103,
+          "method": "execCommandApproval",
+          "params": {
+            "conversationId": "th-disp",
+            "callId": "call-exec",
+            "command": ["ls"],
+            "cwd": "/fixture/workspace",
+            "reason": null,
+            "parsedCmd": []
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "interaction_boundary",
+      "expectedFields": {
+        "boundary": "request"
+      },
+      "requestId": 103
+    },
+    {
+      "method": "item/commandExecution/requestApproval",
+      "input": {
+        "message": {
+          "id": 104,
+          "method": "item/commandExecution/requestApproval",
+          "params": {
+            "threadId": "th-disp",
+            "turnId": "tu-disp",
+            "itemId": "item-disp",
+            "reason": null,
+            "command": "ls"
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "interaction_boundary",
+      "expectedFields": {
+        "boundary": "request"
+      },
+      "requestId": 104
+    },
+    {
+      "method": "item/fileChange/requestApproval",
+      "input": {
+        "message": {
+          "id": 105,
+          "method": "item/fileChange/requestApproval",
+          "params": {
+            "threadId": "th-disp",
+            "turnId": "tu-disp",
+            "itemId": "item-disp",
+            "reason": null,
+            "grantRoot": null
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "interaction_boundary",
+      "expectedFields": {
+        "boundary": "request"
+      },
+      "requestId": 105
+    },
+    {
+      "method": "item/permissions/requestApproval",
+      "input": {
+        "message": {
+          "id": 106,
+          "method": "item/permissions/requestApproval",
+          "params": {
+            "threadId": "th-disp",
+            "turnId": "tu-disp",
+            "itemId": "item-disp",
+            "permissions": {}
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "interaction_boundary",
+      "expectedFields": {
+        "boundary": "request"
+      },
+      "requestId": 106
+    },
+    {
+      "method": "item/tool/call",
+      "input": {
+        "message": {
+          "id": 107,
+          "method": "item/tool/call",
+          "params": {
+            "threadId": "th-disp",
+            "turnId": "tu-disp",
+            "callId": "call-tool",
+            "namespace": null,
+            "tool": "lookup",
+            "arguments": {}
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "interaction_boundary",
+      "expectedFields": {
+        "boundary": "request"
+      },
+      "requestId": 107
+    },
+    {
+      "method": "item/tool/requestUserInput",
+      "input": {
+        "message": {
+          "id": 108,
+          "method": "item/tool/requestUserInput",
+          "params": {
+            "threadId": "th-disp",
+            "turnId": "tu-disp",
+            "itemId": "item-disp",
+            "questions": []
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "interaction_boundary",
+      "expectedFields": {
+        "boundary": "request"
+      },
+      "requestId": 108
+    },
+    {
+      "method": "mcpServer/elicitation/request",
+      "input": {
+        "message": {
+          "id": 109,
+          "method": "mcpServer/elicitation/request",
+          "params": {
+            "threadId": "th-disp",
+            "turnId": "tu-disp",
+            "serverName": "docs",
+            "message": "need input",
+            "requestedSchema": {}
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "interaction_boundary",
+      "expectedFields": {
+        "boundary": "request"
+      },
+      "requestId": 109
+    }
+  ],
+  "items": [
+    {
+      "itemVariant": "agentMessage",
+      "input": {
+        "started": {
+          "message": {
+            "method": "item/started",
+            "params": {
+              "threadId": "th-disp",
+              "turnId": "tu-disp",
+              "item": {
+                "type": "agentMessage",
+                "id": "item-agentMessage",
+                "text": ""
+              },
+              "startedAtMs": 1
+            }
+          }
+        },
+        "completed": {
+          "message": {
+            "method": "item/completed",
+            "params": {
+              "threadId": "th-disp",
+              "turnId": "tu-disp",
+              "item": {
+                "type": "agentMessage",
+                "id": "item-agentMessage",
+                "text": "done"
+              },
+              "completedAtMs": 2
+            }
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "item_lifecycle",
+      "expectedCompletedType": "status",
+      "expectedCompletedSubtype": "item_reconciliation"
+    },
+    {
+      "itemVariant": "reasoning",
+      "input": {
+        "started": {
+          "message": {
+            "method": "item/started",
+            "params": {
+              "threadId": "th-disp",
+              "turnId": "tu-disp",
+              "item": {
+                "type": "reasoning",
+                "id": "item-reasoning",
+                "summary": [],
+                "content": []
+              },
+              "startedAtMs": 1
+            }
+          }
+        },
+        "completed": {
+          "message": {
+            "method": "item/completed",
+            "params": {
+              "threadId": "th-disp",
+              "turnId": "tu-disp",
+              "item": {
+                "type": "reasoning",
+                "id": "item-reasoning",
+                "summary": ["s"],
+                "content": ["c"]
+              },
+              "completedAtMs": 2
+            }
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "item_lifecycle",
+      "expectedCompletedType": "status",
+      "expectedCompletedSubtype": "item_reconciliation"
+    },
+    {
+      "itemVariant": "commandExecution",
+      "input": {
+        "started": {
+          "message": {
+            "method": "item/started",
+            "params": {
+              "threadId": "th-disp",
+              "turnId": "tu-disp",
+              "item": {
+                "type": "commandExecution",
+                "id": "item-commandExecution",
+                "command": "ls",
+                "cwd": "/fixture/workspace",
+                "processId": null,
+                "source": "agent",
+                "status": "inProgress",
+                "commandActions": [],
+                "aggregatedOutput": null,
+                "exitCode": null,
+                "durationMs": null
+              },
+              "startedAtMs": 1
+            }
+          }
+        },
+        "completed": {
+          "message": {
+            "method": "item/completed",
+            "params": {
+              "threadId": "th-disp",
+              "turnId": "tu-disp",
+              "item": {
+                "type": "commandExecution",
+                "id": "item-commandExecution",
+                "command": "ls",
+                "cwd": "/fixture/workspace",
+                "processId": null,
+                "source": "agent",
+                "status": "completed",
+                "commandActions": [],
+                "aggregatedOutput": "a.txt\n",
+                "exitCode": 0,
+                "durationMs": 5
+              },
+              "completedAtMs": 2
+            }
+          }
+        }
+      },
+      "expectedType": "tool_started",
+      "expectedCompletedType": "tool_finished",
+      "forbiddenTypes": ["artifact_created"]
+    },
+    {
+      "itemVariant": "mcpToolCall",
+      "input": {
+        "started": {
+          "message": {
+            "method": "item/started",
+            "params": {
+              "threadId": "th-disp",
+              "turnId": "tu-disp",
+              "item": {
+                "type": "mcpToolCall",
+                "id": "item-mcpToolCall",
+                "server": "docs",
+                "tool": "search",
+                "status": "inProgress",
+                "arguments": {
+                  "q": "x"
+                },
+                "result": null,
+                "error": null,
+                "durationMs": null
+              },
+              "startedAtMs": 1
+            }
+          }
+        },
+        "completed": {
+          "message": {
+            "method": "item/completed",
+            "params": {
+              "threadId": "th-disp",
+              "turnId": "tu-disp",
+              "item": {
+                "type": "mcpToolCall",
+                "id": "item-mcpToolCall",
+                "server": "docs",
+                "tool": "search",
+                "status": "completed",
+                "arguments": {
+                  "q": "x"
+                },
+                "result": {
+                  "content": [],
+                  "structuredContent": null
+                },
+                "error": null,
+                "durationMs": 7
+              },
+              "completedAtMs": 2
+            }
+          }
+        }
+      },
+      "expectedType": "tool_started",
+      "expectedCompletedType": "tool_finished",
+      "forbiddenTypes": ["artifact_created"]
+    },
+    {
+      "itemVariant": "dynamicToolCall",
+      "input": {
+        "started": {
+          "message": {
+            "method": "item/started",
+            "params": {
+              "threadId": "th-disp",
+              "turnId": "tu-disp",
+              "item": {
+                "type": "dynamicToolCall",
+                "id": "item-dynamicToolCall",
+                "namespace": null,
+                "tool": "lookup",
+                "arguments": {},
+                "status": "inProgress",
+                "contentItems": null,
+                "success": null,
+                "durationMs": null
+              },
+              "startedAtMs": 1
+            }
+          }
+        },
+        "completed": {
+          "message": {
+            "method": "item/completed",
+            "params": {
+              "threadId": "th-disp",
+              "turnId": "tu-disp",
+              "item": {
+                "type": "dynamicToolCall",
+                "id": "item-dynamicToolCall",
+                "namespace": null,
+                "tool": "lookup",
+                "arguments": {},
+                "status": "completed",
+                "contentItems": [],
+                "success": true,
+                "durationMs": 3
+              },
+              "completedAtMs": 2
+            }
+          }
+        }
+      },
+      "expectedType": "tool_started",
+      "expectedCompletedType": "tool_finished",
+      "forbiddenTypes": ["artifact_created"]
+    },
+    {
+      "itemVariant": "collabAgentToolCall",
+      "input": {
+        "started": {
+          "message": {
+            "method": "item/started",
+            "params": {
+              "threadId": "th-disp",
+              "turnId": "tu-disp",
+              "item": {
+                "type": "collabAgentToolCall",
+                "id": "item-collabAgentToolCall",
+                "tool": "spawnAgent",
+                "status": "inProgress",
+                "senderThreadId": "th-disp",
+                "receiverThreadIds": [],
+                "prompt": "help"
+              },
+              "startedAtMs": 1
+            }
+          }
+        },
+        "completed": {
+          "message": {
+            "method": "item/completed",
+            "params": {
+              "threadId": "th-disp",
+              "turnId": "tu-disp",
+              "item": {
+                "type": "collabAgentToolCall",
+                "id": "item-collabAgentToolCall",
+                "tool": "spawnAgent",
+                "status": "completed",
+                "senderThreadId": "th-disp",
+                "receiverThreadIds": ["th-child"],
+                "prompt": "help"
+              },
+              "completedAtMs": 2
+            }
+          }
+        }
+      },
+      "expectedType": "tool_started",
+      "expectedCompletedType": "tool_finished",
+      "forbiddenTypes": ["artifact_created"]
+    },
+    {
+      "itemVariant": "webSearch",
+      "input": {
+        "started": {
+          "message": {
+            "method": "item/started",
+            "params": {
+              "threadId": "th-disp",
+              "turnId": "tu-disp",
+              "item": {
+                "type": "webSearch",
+                "id": "item-webSearch",
+                "query": "bun sqlite",
+                "action": null
+              },
+              "startedAtMs": 1
+            }
+          }
+        },
+        "completed": {
+          "message": {
+            "method": "item/completed",
+            "params": {
+              "threadId": "th-disp",
+              "turnId": "tu-disp",
+              "item": {
+                "type": "webSearch",
+                "id": "item-webSearch",
+                "query": "bun sqlite",
+                "action": {
+                  "type": "search",
+                  "query": "bun sqlite"
+                }
+              },
+              "completedAtMs": 2
+            }
+          }
+        }
+      },
+      "expectedType": "tool_started",
+      "expectedCompletedType": "tool_finished",
+      "forbiddenTypes": ["artifact_created"]
+    },
+    {
+      "itemVariant": "imageView",
+      "input": {
+        "started": {
+          "message": {
+            "method": "item/started",
+            "params": {
+              "threadId": "th-disp",
+              "turnId": "tu-disp",
+              "item": {
+                "type": "imageView",
+                "id": "item-imageView",
+                "path": "/fixture/workspace/image.png"
+              },
+              "startedAtMs": 1
+            }
+          }
+        },
+        "completed": {
+          "message": {
+            "method": "item/completed",
+            "params": {
+              "threadId": "th-disp",
+              "turnId": "tu-disp",
+              "item": {
+                "type": "imageView",
+                "id": "item-imageView",
+                "path": "/fixture/workspace/image.png"
+              },
+              "completedAtMs": 2
+            }
+          }
+        }
+      },
+      "expectedType": "tool_started",
+      "expectedCompletedType": "tool_finished",
+      "forbiddenTypes": ["artifact_created"]
+    },
+    {
+      "itemVariant": "imageGeneration",
+      "input": {
+        "started": {
+          "message": {
+            "method": "item/started",
+            "params": {
+              "threadId": "th-disp",
+              "turnId": "tu-disp",
+              "item": {
+                "type": "imageGeneration",
+                "id": "item-imageGeneration",
+                "status": "inProgress",
+                "revisedPrompt": null,
+                "result": "",
+                "savedPath": null
+              },
+              "startedAtMs": 1
+            }
+          }
+        },
+        "completed": {
+          "message": {
+            "method": "item/completed",
+            "params": {
+              "threadId": "th-disp",
+              "turnId": "tu-disp",
+              "item": {
+                "type": "imageGeneration",
+                "id": "item-imageGeneration",
+                "status": "completed",
+                "revisedPrompt": "a cat",
+                "result": "",
+                "savedPath": "/fixture/workspace/generated.png"
+              },
+              "completedAtMs": 2
+            }
+          }
+        }
+      },
+      "expectedType": "tool_started",
+      "expectedCompletedType": "tool_finished",
+      "forbiddenTypes": ["artifact_created"]
+    },
+    {
+      "itemVariant": "fileChange",
+      "input": {
+        "started": {
+          "message": {
+            "method": "item/started",
+            "params": {
+              "threadId": "th-disp",
+              "turnId": "tu-disp",
+              "item": {
+                "type": "fileChange",
+                "id": "item-fileChange",
+                "changes": [],
+                "status": "inProgress"
+              },
+              "startedAtMs": 1
+            }
+          }
+        },
+        "completed": {
+          "message": {
+            "method": "item/completed",
+            "params": {
+              "threadId": "th-disp",
+              "turnId": "tu-disp",
+              "item": {
+                "type": "fileChange",
+                "id": "item-fileChange",
+                "changes": [
+                  {
+                    "path": "/fixture/workspace/a.txt",
+                    "kind": {
+                      "type": "update"
+                    },
+                    "diff": "@@ -1 +1 @@"
+                  }
+                ],
+                "status": "completed"
+              },
+              "completedAtMs": 2
+            }
+          }
+        }
+      },
+      "expectedType": "tool_started",
+      "expectedCompletedType": "tool_finished",
+      "forbiddenTypes": ["artifact_created"]
+    },
+    {
+      "itemVariant": "contextCompaction",
+      "input": {
+        "started": {
+          "message": {
+            "method": "item/started",
+            "params": {
+              "threadId": "th-disp",
+              "turnId": "tu-disp",
+              "item": {
+                "type": "contextCompaction",
+                "id": "item-contextCompaction"
+              },
+              "startedAtMs": 1
+            }
+          }
+        },
+        "completed": {
+          "message": {
+            "method": "item/completed",
+            "params": {
+              "threadId": "th-disp",
+              "turnId": "tu-disp",
+              "item": {
+                "type": "contextCompaction",
+                "id": "item-contextCompaction"
+              },
+              "completedAtMs": 2
+            }
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "compaction",
+      "expectedCompletedType": "status",
+      "expectedCompletedSubtype": "compaction"
+    },
+    {
+      "itemVariant": "enteredReviewMode",
+      "input": {
+        "started": {
+          "message": {
+            "method": "item/started",
+            "params": {
+              "threadId": "th-disp",
+              "turnId": "tu-disp",
+              "item": {
+                "type": "enteredReviewMode",
+                "id": "item-enteredReviewMode",
+                "review": "current changes"
+              },
+              "startedAtMs": 1
+            }
+          }
+        },
+        "completed": {
+          "message": {
+            "method": "item/completed",
+            "params": {
+              "threadId": "th-disp",
+              "turnId": "tu-disp",
+              "item": {
+                "type": "enteredReviewMode",
+                "id": "item-enteredReviewMode",
+                "review": "current changes"
+              },
+              "completedAtMs": 2
+            }
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "review_mode",
+      "expectedCompletedType": "status",
+      "expectedCompletedSubtype": "review_mode"
+    },
+    {
+      "itemVariant": "exitedReviewMode",
+      "input": {
+        "started": {
+          "message": {
+            "method": "item/started",
+            "params": {
+              "threadId": "th-disp",
+              "turnId": "tu-disp",
+              "item": {
+                "type": "exitedReviewMode",
+                "id": "item-exitedReviewMode",
+                "review": "done"
+              },
+              "startedAtMs": 1
+            }
+          }
+        },
+        "completed": {
+          "message": {
+            "method": "item/completed",
+            "params": {
+              "threadId": "th-disp",
+              "turnId": "tu-disp",
+              "item": {
+                "type": "exitedReviewMode",
+                "id": "item-exitedReviewMode",
+                "review": "done"
+              },
+              "completedAtMs": 2
+            }
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "review_mode",
+      "expectedCompletedType": "status",
+      "expectedCompletedSubtype": "review_mode"
+    },
+    {
+      "itemVariant": "hookPrompt",
+      "input": {
+        "started": {
+          "message": {
+            "method": "item/started",
+            "params": {
+              "threadId": "th-disp",
+              "turnId": "tu-disp",
+              "item": {
+                "type": "hookPrompt",
+                "id": "item-hookPrompt",
+                "fragments": []
+              },
+              "startedAtMs": 1
+            }
+          }
+        },
+        "completed": {
+          "message": {
+            "method": "item/completed",
+            "params": {
+              "threadId": "th-disp",
+              "turnId": "tu-disp",
+              "item": {
+                "type": "hookPrompt",
+                "id": "item-hookPrompt",
+                "fragments": [
+                  {
+                    "text": "hook text"
+                  }
+                ]
+              },
+              "completedAtMs": 2
+            }
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "hook_lifecycle",
+      "expectedCompletedType": "status",
+      "expectedCompletedSubtype": "hook_lifecycle"
+    },
+    {
+      "itemVariant": "plan",
+      "input": {
+        "started": {
+          "message": {
+            "method": "item/started",
+            "params": {
+              "threadId": "th-disp",
+              "turnId": "tu-disp",
+              "item": {
+                "type": "plan",
+                "id": "item-plan",
+                "text": ""
+              },
+              "startedAtMs": 1
+            }
+          }
+        },
+        "completed": {
+          "message": {
+            "method": "item/completed",
+            "params": {
+              "threadId": "th-disp",
+              "turnId": "tu-disp",
+              "item": {
+                "type": "plan",
+                "id": "item-plan",
+                "text": "1. do it"
+              },
+              "completedAtMs": 2
+            }
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "plan",
+      "expectedCompletedType": "status",
+      "expectedCompletedSubtype": "plan"
+    },
+    {
+      "itemVariant": "userMessage",
+      "input": {
+        "started": {
+          "message": {
+            "method": "item/started",
+            "params": {
+              "threadId": "th-disp",
+              "turnId": "tu-disp",
+              "item": {
+                "type": "userMessage",
+                "id": "item-userMessage",
+                "clientId": null,
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "user said"
+                  }
+                ]
+              },
+              "startedAtMs": 1
+            }
+          }
+        },
+        "completed": {
+          "message": {
+            "method": "item/completed",
+            "params": {
+              "threadId": "th-disp",
+              "turnId": "tu-disp",
+              "item": {
+                "type": "userMessage",
+                "id": "item-userMessage",
+                "clientId": null,
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "user said"
+                  }
+                ]
+              },
+              "completedAtMs": 2
+            }
+          }
+        }
+      },
+      "expectedType": "status",
+      "expectedSubtype": "user_message",
+      "expectedCompletedType": "status",
+      "expectedCompletedSubtype": "user_message",
+      "forbiddenTypes": ["assistant_delta"]
+    }
+  ]
+}

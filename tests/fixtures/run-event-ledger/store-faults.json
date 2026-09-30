@@ -1,0 +1,262 @@
+{
+  "fixtureVersion": 1,
+  "evidenceClass": "synthetic",
+  "sourceRefs": [
+    "design \u00a7Durable Schema and Store Invariants (expectedHighWater/state conflict reconciliation, three attempts, LEDGER_APPEND_CONFLICT)",
+    "design Test-facing Contract (durableStore.appendExact)",
+    "tasks 2.10, 7.8"
+  ],
+  "provenance": {
+    "author": "independent test author (Domain B, S56 race cases), 2026-09-30",
+    "note": "Only the S56 cross-process queued-cancel/start race cases live under raceCases. The S11/S12 append/deliver/ack/crash/reopen operations of tasks 7.8 belong to the ledger-ownership author and may be added under a separate key without changing raceCases. Two host ledgers share one store; 'sqlite' variants use two connections to one temporary migrated SQLite file."
+  },
+  "raceCases": [
+    {
+      "caseId": "cancel-first",
+      "store": "shared-memory",
+      "initialStatus": "queued",
+      "ops": [
+        {
+          "op": "append",
+          "ledger": "A",
+          "port": "appendSystemEvent",
+          "key": "sf-race-created",
+          "input": {
+            "type": "job_created",
+            "payload": {
+              "kind": "agent",
+              "source": "api",
+              "runtime": "codex",
+              "mode": "plan"
+            }
+          }
+        },
+        {
+          "op": "reopen",
+          "ledger": "B"
+        },
+        {
+          "op": "settle",
+          "ledger": "B",
+          "key": "sf-race-cancel",
+          "input": {
+            "trigger": {
+              "kind": "cancel",
+              "observationKey": "sf-race-cancel",
+              "reason": "queued_cancel"
+            },
+            "policy": {
+              "denied": false,
+              "evidenceKeys": []
+            },
+            "output": {
+              "valid": false,
+              "empty": true,
+              "allowEmpty": false,
+              "evidenceKeys": []
+            },
+            "postRun": {
+              "credentialsSafe": true,
+              "evidenceKeys": []
+            }
+          }
+        },
+        {
+          "op": "append",
+          "ledger": "A",
+          "port": "appendSystemEvent",
+          "key": "sf-race-start",
+          "input": {
+            "type": "job_started",
+            "payload": {
+              "workerId": "worker-a",
+              "workerPid": null
+            }
+          },
+          "staleHighWater": 1
+        }
+      ],
+      "expected": {
+        "completedStatus": "canceled",
+        "completedCount": 1,
+        "jobStartedCount": 0,
+        "maxAttemptsPerCall": 3
+      }
+    },
+    {
+      "caseId": "start-first",
+      "store": "shared-memory",
+      "initialStatus": "queued",
+      "ops": [
+        {
+          "op": "append",
+          "ledger": "A",
+          "port": "appendSystemEvent",
+          "key": "sf-race2-created",
+          "input": {
+            "type": "job_created",
+            "payload": {
+              "kind": "agent",
+              "source": "api",
+              "runtime": "codex",
+              "mode": "plan"
+            }
+          }
+        },
+        {
+          "op": "reopen",
+          "ledger": "B"
+        },
+        {
+          "op": "append",
+          "ledger": "A",
+          "port": "appendSystemEvent",
+          "key": "sf-race2-start",
+          "input": {
+            "type": "job_started",
+            "payload": {
+              "workerId": "worker-a",
+              "workerPid": null
+            }
+          }
+        },
+        {
+          "op": "settle",
+          "ledger": "B",
+          "key": "sf-race2-cancel",
+          "input": {
+            "trigger": {
+              "kind": "cancel",
+              "observationKey": "sf-race2-cancel",
+              "reason": "queued_cancel"
+            },
+            "policy": {
+              "denied": false,
+              "evidenceKeys": []
+            },
+            "output": {
+              "valid": false,
+              "empty": true,
+              "allowEmpty": false,
+              "evidenceKeys": []
+            },
+            "postRun": {
+              "credentialsSafe": true,
+              "evidenceKeys": []
+            }
+          },
+          "staleHighWater": 1
+        },
+        {
+          "op": "resubmit",
+          "ledger": "B",
+          "key": "sf-race2-cancel"
+        }
+      ],
+      "expected": {
+        "completedCount": 0,
+        "jobStartedCount": 1,
+        "cancelRequestStatus": "cancel_requested",
+        "resubmitNewRecords": 0
+      }
+    },
+    {
+      "caseId": "retry-exhaustion",
+      "store": "shared-memory",
+      "initialStatus": "running",
+      "ops": [
+        {
+          "op": "append",
+          "ledger": "A",
+          "port": "appendSystemEvent",
+          "key": "sf-exh-status",
+          "input": {
+            "type": "status",
+            "payload": {
+              "status": "worker_heartbeat_note"
+            }
+          },
+          "competingCommitEveryAttempt": true
+        }
+      ],
+      "expected": {
+        "attempts": 3,
+        "error": "LEDGER_APPEND_CONFLICT",
+        "committedFromCall": 0
+      }
+    },
+    {
+      "caseId": "unchanged-sequence-retry",
+      "store": "shared-memory",
+      "initialStatus": "running",
+      "ops": [
+        {
+          "op": "append",
+          "ledger": "A",
+          "port": "appendSystemEvent",
+          "key": "sf-rb-status",
+          "input": {
+            "type": "status",
+            "payload": {
+              "status": "worker_heartbeat_note"
+            }
+          },
+          "rollbackOnceWithoutCompetingCommit": true
+        }
+      ],
+      "expected": {
+        "attempts": 2,
+        "sequence": 1
+      }
+    },
+    {
+      "caseId": "sqlite-cancel-first",
+      "store": "sqlite-two-connections",
+      "ops": [
+        {
+          "op": "create",
+          "connection": 1
+        },
+        {
+          "op": "cli-cancel",
+          "connection": 2
+        },
+        {
+          "op": "start",
+          "connection": 1,
+          "workerId": "worker-a"
+        }
+      ],
+      "expected": {
+        "startRejected": true,
+        "status": "canceled",
+        "completedCount": 1,
+        "syntheticSource": "cancel"
+      }
+    },
+    {
+      "caseId": "sqlite-start-first",
+      "store": "sqlite-two-connections",
+      "ops": [
+        {
+          "op": "create",
+          "connection": 1
+        },
+        {
+          "op": "start",
+          "connection": 1,
+          "workerId": "worker-a"
+        },
+        {
+          "op": "cli-cancel",
+          "connection": 2
+        }
+      ],
+      "expected": {
+        "status": "running",
+        "completedCount": 0,
+        "cancelRequested": true
+      }
+    }
+  ]
+}

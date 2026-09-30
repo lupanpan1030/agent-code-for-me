@@ -1,0 +1,340 @@
+{
+  "fixtureVersion": 1,
+  "evidenceClass": "synthetic",
+  "sourceRefs": [
+    "trace §5.4 (Thread id vs sessionId)",
+    "trace §7.2",
+    "trace §7.8",
+    "design Test-facing Contract"
+  ],
+  "provenance": {
+    "runtimeId": "codex",
+    "version": "0.139.0",
+    "binarySha256": "0729aedf4fe72971d81ef6803c817b850d711254d3c82ecc756a52f3b533c9f8",
+    "binarySha256Source": "trace §1 table / [ENV-02]",
+    "schemaFiles": [
+      {
+        "path": "ServerNotification.ts",
+        "sha256": "bcc5cd580b83e15225dd138c768fafb0cae7d2ab26474a49a8569657f0b944a8"
+      },
+      {
+        "path": "ServerRequest.ts",
+        "sha256": "6274decabc5c0e9b09f144efb1795ca8fc1fe52d8afa42ee5988de2d890f935e"
+      },
+      {
+        "path": "v2/ThreadItem.ts",
+        "sha256": "1aef9163c636246a0d1baec611da798a3e77790b7b8819480162b6e734324038"
+      }
+    ],
+    "schemaFilesSource": "trace §5.1 (reproducible per-file SHA-256)",
+    "shapeReference": "Param shapes are schema-derived synthetic values cross-checked against a local `codex app-server generate-ts` output of codex-cli 0.159.2 as a stand-in; the pinned 0.139.0 TypeScript closure is NOT vendored here (tasks 1.4 remains open).",
+    "idsMeasured": false,
+    "author": "independent test author, 2026-09-30 (test-first red suite)"
+  },
+  "secretHints": ["provider-secret-123", "gateway-secret-456"],
+  "provenanceVariants": {
+    "runtime": {
+      "kind": "runtime",
+      "installationId": "inst-codex-0.139.0-linux-x64-0729aedf",
+      "runtimeId": "codex",
+      "adapterSource": "codex-app-server",
+      "version": "0.139.0",
+      "executableRef": "exe-ref-codex-0139",
+      "binarySha256": "0729aedf4fe72971d81ef6803c817b850d711254d3c82ecc756a52f3b533c9f8",
+      "protocolName": "codex-app-server-jsonrpc",
+      "protocolVersion": "v2",
+      "schemaFiles": [
+        {
+          "path": "ServerNotification.ts",
+          "sha256": "bcc5cd580b83e15225dd138c768fafb0cae7d2ab26474a49a8569657f0b944a8"
+        },
+        {
+          "path": "ServerRequest.ts",
+          "sha256": "6274decabc5c0e9b09f144efb1795ca8fc1fe52d8afa42ee5988de2d890f935e"
+        },
+        {
+          "path": "v2/ThreadItem.ts",
+          "sha256": "1aef9163c636246a0d1baec611da798a3e77790b7b8819480162b6e734324038"
+        }
+      ]
+    },
+    "runtimeMissingBinarySha256": {
+      "kind": "runtime",
+      "installationId": "inst-codex-0.139.0-linux-x64-0729aedf",
+      "runtimeId": "codex",
+      "adapterSource": "codex-app-server",
+      "version": "0.139.0",
+      "executableRef": "exe-ref-codex-0139",
+      "protocolName": "codex-app-server-jsonrpc",
+      "protocolVersion": "v2",
+      "schemaFiles": [
+        {
+          "path": "ServerNotification.ts",
+          "sha256": "bcc5cd580b83e15225dd138c768fafb0cae7d2ab26474a49a8569657f0b944a8"
+        },
+        {
+          "path": "ServerRequest.ts",
+          "sha256": "6274decabc5c0e9b09f144efb1795ca8fc1fe52d8afa42ee5988de2d890f935e"
+        },
+        {
+          "path": "v2/ThreadItem.ts",
+          "sha256": "1aef9163c636246a0d1baec611da798a3e77790b7b8819480162b6e734324038"
+        }
+      ]
+    },
+    "locusCompletion": {
+      "kind": "locus-completion",
+      "runtimeId": "codex",
+      "locusBuild": "locus-test-build-0000000",
+      "adapterSource": "completion",
+      "protocolName": "openai-chat-completions",
+      "schemaSha256": "5d1b0c7e2f4a4b8c9d0e1f2a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e"
+    },
+    "pending": {
+      "kind": "pending",
+      "runtimeId": "codex"
+    }
+  },
+  "cases": [
+    {
+      "caseId": "distinct-native-ids",
+      "description": "Distinct thread/session/turn/item/request/call identities, some containing exact secret hints; thread and session differ.",
+      "steps": [
+        {
+          "port": "ingestResponse",
+          "observationKey": "idp-distinct-01",
+          "transportId": "t1",
+          "input": {
+            "request": {
+              "id": 1,
+              "method": "thread/start",
+              "params": {
+                "cwd": "/fixture/workspace"
+              },
+              "intent": "start"
+            },
+            "message": {
+              "id": 1,
+              "result": {
+                "thread": {
+                  "id": "th-provider-secret-123-a",
+                  "sessionId": "session-gateway-secret-456-b",
+                  "ephemeral": false,
+                  "path": "/fixture/rollout.jsonl",
+                  "cliVersion": "0.139.0",
+                  "turns": []
+                }
+              }
+            }
+          }
+        },
+        {
+          "port": "ingestNotification",
+          "observationKey": "idp-distinct-02",
+          "transportId": "t1",
+          "input": {
+            "message": {
+              "method": "turn/started",
+              "params": {
+                "threadId": "th-provider-secret-123-a",
+                "turn": {
+                  "id": "tu-5e",
+                  "items": [],
+                  "status": "inProgress",
+                  "error": null
+                }
+              }
+            }
+          }
+        },
+        {
+          "port": "ingestNotification",
+          "observationKey": "idp-distinct-03",
+          "transportId": "t1",
+          "input": {
+            "message": {
+              "method": "item/started",
+              "params": {
+                "threadId": "th-provider-secret-123-a",
+                "turnId": "tu-5e",
+                "item": {
+                  "type": "agentMessage",
+                  "id": "item-provider-secret-123-c",
+                  "text": ""
+                }
+              }
+            }
+          }
+        },
+        {
+          "port": "ingestNotification",
+          "observationKey": "idp-distinct-04",
+          "transportId": "t1",
+          "input": {
+            "message": {
+              "method": "item/agentMessage/delta",
+              "params": {
+                "threadId": "th-provider-secret-123-a",
+                "turnId": "tu-5e",
+                "itemId": "item-provider-secret-123-c",
+                "delta": "hi"
+              }
+            }
+          }
+        },
+        {
+          "port": "ingestServerRequest",
+          "observationKey": "idp-distinct-05",
+          "transportId": "t1",
+          "input": {
+            "message": {
+              "id": 41,
+              "method": "item/tool/call",
+              "params": {
+                "threadId": "th-provider-secret-123-a",
+                "turnId": "tu-5e",
+                "callId": "call-gateway-secret-456-d",
+                "namespace": null,
+                "tool": "lookup",
+                "arguments": {}
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "rawIds": {
+          "threadId": "th-provider-secret-123-a",
+          "sessionId": "session-gateway-secret-456-b",
+          "turnId": "tu-5e",
+          "itemId": "item-provider-secret-123-c",
+          "requestId": 41,
+          "callId": "call-gateway-secret-456-d"
+        },
+        "responseObservationKey": "idp-distinct-01",
+        "itemObservationKey": "idp-distinct-04",
+        "requestObservationKey": "idp-distinct-05",
+        "exactTurnId": "tu-5e",
+        "extension": {
+          "schemaVersion": 1,
+          "maturity": "experimental"
+        }
+      }
+    },
+    {
+      "caseId": "no-session-observed",
+      "description": "Only thread/turn/item notifications; no sessionId is ever observed, so no record may carry one (thread id must not fill it).",
+      "steps": [
+        {
+          "port": "ingestNotification",
+          "observationKey": "idp-nosess-01",
+          "transportId": "t1",
+          "input": {
+            "message": {
+              "method": "turn/started",
+              "params": {
+                "threadId": "th-only",
+                "turn": {
+                  "id": "tu-only",
+                  "items": [],
+                  "status": "inProgress",
+                  "error": null
+                }
+              }
+            }
+          }
+        },
+        {
+          "port": "ingestNotification",
+          "observationKey": "idp-nosess-02",
+          "transportId": "t1",
+          "input": {
+            "message": {
+              "method": "item/agentMessage/delta",
+              "params": {
+                "threadId": "th-only",
+                "turnId": "tu-only",
+                "itemId": "item-only",
+                "delta": "x"
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "threadId": "th-only",
+        "sessionIdPresent": false
+      }
+    },
+    {
+      "caseId": "interrupt-target",
+      "description": "(S16 input, other domain) thread/turn observations then readNativeContext.",
+      "steps": [
+        {
+          "port": "ingestNotification",
+          "observationKey": "idp-intr-01",
+          "transportId": "t1",
+          "input": {
+            "message": {
+              "method": "turn/started",
+              "params": {
+                "threadId": "th-intr",
+                "turn": {
+                  "id": "tu-intr",
+                  "items": [],
+                  "status": "inProgress",
+                  "error": null
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "interrupt": {
+          "threadId": "th-intr",
+          "turnId": "tu-intr"
+        }
+      }
+    },
+    {
+      "caseId": "interrupt-target-missing-turn",
+      "description": "(S16 input, other domain) thread observed, no turn id; no target and no sessionId substitution.",
+      "steps": [
+        {
+          "port": "ingestNotification",
+          "observationKey": "idp-intr-miss-01",
+          "transportId": "t1",
+          "input": {
+            "message": {
+              "method": "thread/status/changed",
+              "params": {
+                "threadId": "th-intr",
+                "status": {
+                  "type": "active",
+                  "activeFlags": []
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "interrupt": null
+      }
+    },
+    {
+      "caseId": "never-started-pending",
+      "description": "(S15 input, other domain) pending lifecycle ledger: enqueue, worker claim, queued cancel, never-started recovery; ledger_provenance_json stays null; native input before binding is rejected.",
+      "variants": ["enqueue", "worker-claim", "queued-cancel", "recovery"],
+      "provenance": {
+        "kind": "pending",
+        "runtimeId": "codex"
+      },
+      "expected": {
+        "ledgerProvenanceJson": null,
+        "nativeBeforeBinding": "rejected"
+      }
+    }
+  ]
+}

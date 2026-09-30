@@ -1,0 +1,374 @@
+{
+  "fixtureVersion": 1,
+  "evidenceClass": "synthetic",
+  "sourceRefs": [
+    "trace §6 usage_update row",
+    "trace §7.6",
+    "design Usage Semantics",
+    "CODEX-04 / CODEX-07 (usage restored on resume)"
+  ],
+  "provenance": {
+    "runtimeId": "codex",
+    "version": "0.139.0",
+    "binarySha256": "0729aedf4fe72971d81ef6803c817b850d711254d3c82ecc756a52f3b533c9f8",
+    "binarySha256Source": "trace §1 table / [ENV-02]",
+    "schemaFiles": [
+      {
+        "path": "ServerNotification.ts",
+        "sha256": "bcc5cd580b83e15225dd138c768fafb0cae7d2ab26474a49a8569657f0b944a8"
+      },
+      {
+        "path": "ServerRequest.ts",
+        "sha256": "6274decabc5c0e9b09f144efb1795ca8fc1fe52d8afa42ee5988de2d890f935e"
+      },
+      {
+        "path": "v2/ThreadItem.ts",
+        "sha256": "1aef9163c636246a0d1baec611da798a3e77790b7b8819480162b6e734324038"
+      }
+    ],
+    "schemaFilesSource": "trace §5.1 (reproducible per-file SHA-256)",
+    "shapeReference": "Param shapes are schema-derived synthetic values cross-checked against a local `codex app-server generate-ts` output of codex-cli 0.159.2 as a stand-in; the pinned 0.139.0 TypeScript closure is NOT vendored here (tasks 1.4 remains open).",
+    "idsMeasured": false,
+    "author": "independent test author, 2026-09-30 (test-first red suite)",
+    "inference": "Counter reset/decrease and the numeric baseline are defensive synthetic inference, not measured native behavior (tasks 6.5)."
+  },
+  "cases": [
+    {
+      "caseId": "codex-snapshots",
+      "provenanceVariant": "runtime",
+      "steps": [
+        {
+          "port": "ingestNotification",
+          "observationKey": "use-snap-01",
+          "transportId": "t1",
+          "input": {
+            "message": {
+              "method": "thread/tokenUsage/updated",
+              "params": {
+                "threadId": "th",
+                "turnId": "tu",
+                "tokenUsage": {
+                  "total": {
+                    "totalTokens": 10,
+                    "inputTokens": 9,
+                    "cachedInputTokens": 0,
+                    "outputTokens": 1,
+                    "reasoningOutputTokens": 0
+                  },
+                  "last": {
+                    "totalTokens": 10,
+                    "inputTokens": 9,
+                    "cachedInputTokens": 0,
+                    "outputTokens": 1,
+                    "reasoningOutputTokens": 0
+                  },
+                  "modelContextWindow": null
+                }
+              }
+            }
+          }
+        },
+        {
+          "port": "ingestNotification",
+          "observationKey": "use-snap-02",
+          "transportId": "t1",
+          "input": {
+            "message": {
+              "method": "thread/tokenUsage/updated",
+              "params": {
+                "threadId": "th",
+                "turnId": "tu",
+                "tokenUsage": {
+                  "total": {
+                    "totalTokens": 20,
+                    "inputTokens": 19,
+                    "cachedInputTokens": 0,
+                    "outputTokens": 1,
+                    "reasoningOutputTokens": 0
+                  },
+                  "last": {
+                    "totalTokens": 10,
+                    "inputTokens": 9,
+                    "cachedInputTokens": 0,
+                    "outputTokens": 1,
+                    "reasoningOutputTokens": 0
+                  },
+                  "modelContextWindow": null
+                }
+              }
+            }
+          }
+        },
+        {
+          "port": "ingestNotification",
+          "observationKey": "use-snap-03",
+          "transportId": "t1",
+          "input": {
+            "message": {
+              "method": "thread/tokenUsage/updated",
+              "params": {
+                "threadId": "th",
+                "turnId": "tu",
+                "tokenUsage": {
+                  "total": {
+                    "totalTokens": 20,
+                    "inputTokens": 19,
+                    "cachedInputTokens": 0,
+                    "outputTokens": 1,
+                    "reasoningOutputTokens": 0
+                  },
+                  "last": {
+                    "totalTokens": 10,
+                    "inputTokens": 9,
+                    "cachedInputTokens": 0,
+                    "outputTokens": 1,
+                    "reasoningOutputTokens": 0
+                  },
+                  "modelContextWindow": null
+                }
+              }
+            }
+          },
+          "note": "duplicate native snapshot identity (identical thread/turn/total/last), new handoff key"
+        },
+        {
+          "port": "ingestNotification",
+          "observationKey": "use-snap-04",
+          "transportId": "t1",
+          "input": {
+            "message": {
+              "method": "thread/tokenUsage/updated",
+              "params": {
+                "threadId": "th",
+                "turnId": "tu",
+                "tokenUsage": {
+                  "total": {
+                    "totalTokens": 25,
+                    "inputTokens": 24,
+                    "cachedInputTokens": 0,
+                    "outputTokens": 1,
+                    "reasoningOutputTokens": 0
+                  },
+                  "last": {
+                    "totalTokens": 5,
+                    "inputTokens": 4,
+                    "cachedInputTokens": 0,
+                    "outputTokens": 1,
+                    "reasoningOutputTokens": 0
+                  },
+                  "modelContextWindow": null
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "uniqueTotals": [10, 20, 25],
+        "uniqueLasts": [10, 10, 5],
+        "readUsageTotal": 25,
+        "readUsageLast": 5,
+        "kind": "snapshot"
+      }
+    },
+    {
+      "caseId": "per-call",
+      "provenanceVariant": "locusCompletion",
+      "steps": [
+        {
+          "port": "ingestRuntimeObservation",
+          "observationKey": "use-call-01",
+          "input": {
+            "type": "usage_update",
+            "payload": {
+              "callId": "call-a",
+              "revision": 1,
+              "usage": {
+                "inputTokens": 6,
+                "outputTokens": 4,
+                "totalTokens": 10
+              }
+            }
+          }
+        },
+        {
+          "port": "ingestRuntimeObservation",
+          "observationKey": "use-call-02",
+          "input": {
+            "type": "usage_update",
+            "payload": {
+              "callId": "call-b",
+              "revision": 1,
+              "usage": {
+                "inputTokens": 6,
+                "outputTokens": 4,
+                "totalTokens": 10
+              }
+            }
+          }
+        },
+        {
+          "port": "ingestRuntimeObservation",
+          "observationKey": "use-call-03",
+          "input": {
+            "type": "usage_update",
+            "payload": {
+              "callId": "call-a",
+              "revision": 1,
+              "usage": {
+                "inputTokens": 6,
+                "outputTokens": 4,
+                "totalTokens": 10
+              }
+            }
+          },
+          "note": "retransmission of call-a revision 1 under a new handoff key"
+        }
+      ],
+      "expected": {
+        "readUsageTotal": 20,
+        "readUsageLast": 10,
+        "distinctDedupeKeys": 2
+      }
+    },
+    {
+      "caseId": "resume-baseline",
+      "provenanceVariant": "runtime",
+      "steps": [
+        {
+          "port": "repairFromSnapshot",
+          "observationKey": "use-base-01",
+          "input": {
+            "snapshot": {
+              "thread": {
+                "id": "th",
+                "sessionId": "session",
+                "cliVersion": "0.139.0",
+                "turns": [
+                  {
+                    "id": "tu-0",
+                    "status": "completed",
+                    "error": null,
+                    "items": []
+                  }
+                ]
+              },
+              "tokenUsage": {
+                "total": {
+                  "totalTokens": 100,
+                  "inputTokens": 90,
+                  "cachedInputTokens": 0,
+                  "outputTokens": 10,
+                  "reasoningOutputTokens": 0
+                },
+                "last": {
+                  "totalTokens": 10,
+                  "inputTokens": 9,
+                  "cachedInputTokens": 0,
+                  "outputTokens": 1,
+                  "reasoningOutputTokens": 0
+                },
+                "modelContextWindow": null
+              }
+            },
+            "sourceProvenance": {
+              "kind": "runtime",
+              "installationId": "inst-codex-0.139.0-linux-x64-0729aedf",
+              "runtimeId": "codex",
+              "adapterSource": "codex-app-server",
+              "version": "0.139.0",
+              "executableRef": "exe-ref-codex-0139",
+              "binarySha256": "0729aedf4fe72971d81ef6803c817b850d711254d3c82ecc756a52f3b533c9f8",
+              "protocolName": "codex-app-server-jsonrpc",
+              "protocolVersion": "v2",
+              "schemaFiles": [
+                {
+                  "path": "ServerNotification.ts",
+                  "sha256": "bcc5cd580b83e15225dd138c768fafb0cae7d2ab26474a49a8569657f0b944a8"
+                },
+                {
+                  "path": "ServerRequest.ts",
+                  "sha256": "6274decabc5c0e9b09f144efb1795ca8fc1fe52d8afa42ee5988de2d890f935e"
+                },
+                {
+                  "path": "v2/ThreadItem.ts",
+                  "sha256": "1aef9163c636246a0d1baec611da798a3e77790b7b8819480162b6e734324038"
+                }
+              ]
+            },
+            "schemaDisposition": "recognized",
+            "targetTurnId": "tu"
+          }
+        },
+        {
+          "port": "ingestNotification",
+          "observationKey": "use-base-02",
+          "transportId": "t1",
+          "input": {
+            "message": {
+              "method": "thread/tokenUsage/updated",
+              "params": {
+                "threadId": "th",
+                "turnId": "tu",
+                "tokenUsage": {
+                  "total": {
+                    "totalTokens": 108,
+                    "inputTokens": 107,
+                    "cachedInputTokens": 0,
+                    "outputTokens": 1,
+                    "reasoningOutputTokens": 0
+                  },
+                  "last": {
+                    "totalTokens": 8,
+                    "inputTokens": 7,
+                    "cachedInputTokens": 0,
+                    "outputTokens": 1,
+                    "reasoningOutputTokens": 0
+                  },
+                  "modelContextWindow": null
+                }
+              }
+            }
+          }
+        },
+        {
+          "port": "ingestNotification",
+          "observationKey": "use-base-03",
+          "transportId": "t1",
+          "input": {
+            "message": {
+              "method": "thread/tokenUsage/updated",
+              "params": {
+                "threadId": "th",
+                "turnId": "tu",
+                "tokenUsage": {
+                  "total": {
+                    "totalTokens": 3,
+                    "inputTokens": 2,
+                    "cachedInputTokens": 0,
+                    "outputTokens": 1,
+                    "reasoningOutputTokens": 0
+                  },
+                  "last": {
+                    "totalTokens": 3,
+                    "inputTokens": 2,
+                    "cachedInputTokens": 0,
+                    "outputTokens": 1,
+                    "reasoningOutputTokens": 0
+                  },
+                  "modelContextWindow": null
+                }
+              }
+            }
+          },
+          "note": "hypothetical counter decrease (synthetic, not observed in the trace)"
+        }
+      ],
+      "expected": {
+        "baseline": 100,
+        "deltaAfter108": 8,
+        "discontinuityAt3": true
+      }
+    }
+  ]
+}
