@@ -299,7 +299,7 @@ export async function createAgentJob(
 
   const job = getAgentJob(db, id)
   if (!job) throw new Error(`Failed to create job ${id}`)
-  await recordAgentJobCreated(db, job, {
+  await recordAgentJobCreatedOrDiscard(db, job, {
     kind,
     source: input.source,
     runtime: input.runtime,
@@ -307,6 +307,53 @@ export async function createAgentJob(
     cwd: input.cwd,
   })
   return getAgentJob(db, id) ?? job
+}
+
+function jobCreatedObservationKey(jobId: string): string {
+  return `lifecycle:job-created:${jobId}`
+}
+
+/**
+ * The job row insert and its `job_created` fact are two commits (the ledger
+ * ports are asynchronous over a synchronous SQLite transaction). When the
+ * creation fact cannot be recorded, the just-inserted row is removed again
+ * (only while it is still queued with no committed record), so a failed
+ * create leaves no queued job; fact-key idempotency covers a retried create.
+ */
+async function recordAgentJobCreatedOrDiscard(
+  db: AgentJobDatabase,
+  job: AgentJob,
+  payload: Record<string, unknown>,
+): Promise<void> {
+  try {
+    await recordAgentJobCreated(db, job, payload)
+  } catch (error) {
+    try {
+      db.transaction((tx: AgentJobTransaction) => {
+        const recorded = tx
+          .select({ id: agentJobEvents.id })
+          .from(agentJobEvents)
+          .where(eq(agentJobEvents.jobId, job.id))
+          .limit(1)
+          .all()
+        if (recorded.length > 0) return
+        tx.delete(agentJobs)
+          .where(and(eq(agentJobs.id, job.id), eq(agentJobs.status, "queued")))
+          .run()
+      })
+    } catch {
+      // The row stays an orphan; startAgentJob never runs it.
+    }
+    throw error
+  }
+}
+
+/** True once the job's `job_created` fact is committed. */
+function hasCommittedJobCreated(db: AgentJobDatabase, jobId: string): boolean {
+  return (
+    lookupCommittedRunEventFact(db, jobId, jobCreatedObservationKey(jobId))
+      .length > 0
+  )
 }
 
 /**
@@ -322,7 +369,7 @@ export async function recordAgentJobCreated(
   const ledger = await getOrCreateRunEventLedger(db, job)
   try {
     await ledger.appendSystemEvent({
-      observationKey: `lifecycle:job-created:${job.id}`,
+      observationKey: jobCreatedObservationKey(job.id),
       type: "job_created",
       payload,
       occurredAt: job.createdAt ?? undefined,
@@ -384,7 +431,8 @@ export function listQueuedAgentJobsForSource(
 ): AgentJob[] {
   const boundedLimit = Math.max(1, Math.min(limit, 200))
   // Pre-ledger (ledger_version=0) rows drain with the old build; the ledger
-  // never starts or extends them.
+  // never starts or extends them. A queued row whose job_created fact never
+  // committed is not work either (startAgentJob refuses it).
   return db
     .select()
     .from(agentJobs)
@@ -393,6 +441,7 @@ export function listQueuedAgentJobsForSource(
         eq(agentJobs.source, source),
         eq(agentJobs.status, "queued"),
         eq(agentJobs.ledgerVersion, 1),
+        sql`exists (select 1 from ${agentJobEvents} where ${agentJobEvents.jobId} = ${agentJobs.id} and ${agentJobEvents.type} = 'job_created')`,
       ),
     )
     .orderBy(asc(agentJobs.createdAt))
@@ -421,6 +470,16 @@ export async function startAgentJob(
   assertNonTerminal(job)
   if (job.status !== "queued") {
     throw new Error(`Job ${job.id} cannot start from status ${job.status}`)
+  }
+  if (job.ledgerVersion === 1 && !hasCommittedJobCreated(db, job.id)) {
+    // An orphan row whose creation fact never committed is never executed:
+    // job_started would otherwise open its Run at sequence 1.
+    throw Object.assign(
+      new Error(
+        `MISSING_JOB_CREATED: job ${job.id} has no committed job_created fact and cannot start`,
+      ),
+      { code: "MISSING_JOB_CREATED" },
+    )
   }
   const ledger = await getOrCreateRunEventLedger(db, job)
   try {
@@ -582,7 +641,7 @@ export async function retryAgentJob(
     .run()
   const created = getAgentJob(db, retryId)
   if (!created) throw new Error(`Failed to create retry job ${retryId}`)
-  await recordAgentJobCreated(db, created, {
+  await recordAgentJobCreatedOrDiscard(db, created, {
     kind: job.kind,
     retryOfJobId: job.id,
     attempt: job.attempt + 1,

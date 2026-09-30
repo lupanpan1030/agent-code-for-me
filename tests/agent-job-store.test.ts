@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test"
+import { sql } from "drizzle-orm"
 import type { TerminalJobFields } from "../src/main/lib/agent-runtime/run-event-ledger"
 import { getOrCreateRunEventLedger } from "../src/main/lib/agent-runtime/run-event-ledger-host"
-import type { AgentJob } from "../src/main/lib/db/schema"
+import { type AgentJob, agentJobs } from "../src/main/lib/db/schema"
 import {
   type JobRecoveryDiagnostic,
   recoverStaleAgentJobs,
@@ -13,6 +14,7 @@ import {
   getAgentJobPrompt,
   heartbeatAgentJob,
   listAgentJobEvents,
+  listQueuedAgentJobsForSource,
   retryAgentJob,
   startAgentJob,
 } from "../src/main/lib/headless/job-store"
@@ -520,5 +522,84 @@ describe("agent job store", () => {
       expect(durable).not.toContain(value)
     }
     expect(durable).toContain("<redacted>")
+  })
+
+  test("a failed job_created append leaves no queued row; a retried create succeeds (T2-12 / S-12)", async () => {
+    const db = createAgentJobTestDb()
+    db.run(
+      sql.raw(
+        "CREATE TRIGGER refuse_job_created BEFORE INSERT ON agent_job_events WHEN NEW.type = 'job_created' BEGIN SELECT RAISE(ABORT, 'injected: job_created refused'); END",
+      ),
+    )
+    const input = {
+      id: "job-created-refused",
+      source: "daemon" as const,
+      runtime: "codex" as const,
+      mode: "agent" as const,
+      cwd: "/tmp/project",
+      prompt: "Never half-created",
+    }
+
+    await expect(createAgentJob(db, input)).rejects.toThrow()
+    expect(getAgentJob(db, input.id)).toBeNull()
+    expect(listQueuedAgentJobsForSource(db, "daemon", 10)).toEqual([])
+
+    db.run(sql.raw("DROP TRIGGER refuse_job_created"))
+    const created = await createAgentJob(db, input)
+    expect(
+      listAgentJobEvents(db, created.id).map((event) => event.type),
+    ).toEqual(["job_created"])
+    expect(
+      listQueuedAgentJobsForSource(db, "daemon", 10).map((job) => job.id),
+    ).toEqual([created.id])
+  })
+
+  test("a failed job_created append on retry leaves no retry row (T2-12 / S-12)", async () => {
+    const db = createAgentJobTestDb()
+    const job = await createAgentJob(db, {
+      source: "cli",
+      runtime: "codex",
+      mode: "agent",
+      cwd: "/tmp/project",
+      prompt: "Retry me",
+    })
+    await startAgentJob(db, { jobId: job.id, workerId: "worker-1" })
+    await settleHostResult(db, job, {
+      status: "failed",
+      jobFields: { exitCode: 1, errorCode: "runtime_failed" },
+    })
+    db.run(
+      sql.raw(
+        "CREATE TRIGGER refuse_job_created BEFORE INSERT ON agent_job_events WHEN NEW.type = 'job_created' BEGIN SELECT RAISE(ABORT, 'injected: job_created refused'); END",
+      ),
+    )
+
+    await expect(
+      retryAgentJob(db, job.id, { id: "retry-refused" }),
+    ).rejects.toThrow()
+    expect(getAgentJob(db, "retry-refused")).toBeNull()
+  })
+
+  test("a v1 queued row without a committed job_created is never listed or started (T2-12 / S-12)", async () => {
+    const db = createAgentJobTestDb()
+    db.insert(agentJobs)
+      .values({
+        id: "orphan-job",
+        source: "daemon",
+        runtime: "codex",
+        status: "queued",
+        mode: "agent",
+        cwd: "/tmp/project",
+        ledgerVersion: 1,
+        createdAt: new Date(),
+      })
+      .run()
+
+    expect(listQueuedAgentJobsForSource(db, "daemon", 10)).toEqual([])
+    await expect(
+      startAgentJob(db, { jobId: "orphan-job", workerId: "worker-1" }),
+    ).rejects.toThrow("MISSING_JOB_CREATED")
+    expect(getAgentJob(db, "orphan-job")?.status).toBe("queued")
+    expect(listAgentJobEvents(db, "orphan-job")).toEqual([])
   })
 })
