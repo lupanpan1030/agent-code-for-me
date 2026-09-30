@@ -990,13 +990,14 @@ export const REVIEWED_MARKDOWN_SANITIZE_SCHEMA: SanitizeSchema = deepFreeze(
 )
 
 /**
- * Reviewed `rehype-harden` options. No custom protocol is admitted
- * (`allowedProtocols` is empty instead of Streamdown's `["*"]`) and data
- * images are refused. In rehype-harden 1.1.7 the `"*"` link/image prefix
- * admits only absolute `http:`/`https:` URLs; specific prefixes are
- * origin-bound and would block every chat link. The sanitizer schema above
- * has already removed every other scheme and every relative URL, so harden is
- * defense in depth, not the load-bearing URL policy.
+ * Reviewed `rehype-harden` options: an empty protocol allowlist (instead of
+ * Streamdown's `["*"]`), data images refused, and the `"*"` link/image
+ * prefixes (a specific prefix is origin-bound in rehype-harden 1.1.7 and
+ * would block every chat link). Harden's built-in safe-protocol set and its
+ * relative, fragment and `blob:` handling are not relied on: the reviewed
+ * sanitizer schema above runs first and alone enforces the absolute
+ * `http:`/`https:` policy (plus `mailto:` for links). Harden is defense in
+ * depth, not the load-bearing URL policy.
  */
 export const REVIEWED_MARKDOWN_HARDEN_OPTIONS = deepFreeze({
   allowedProtocols: [] as string[],
