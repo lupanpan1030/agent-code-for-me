@@ -6,6 +6,7 @@ import { verifyDesktopRunPreflight } from "./agent-runtime/preflight"
 import type {
   LedgerRecord,
   OutcomeEvidence,
+  TerminalJobFields,
 } from "./agent-runtime/run-event-ledger"
 import {
   getOrCreateRunEventLedger,
@@ -161,7 +162,12 @@ export async function createAndStartDesktopAgentJob(
     workerId,
     workerPid: process.pid,
   })
-  const ledger = await getOrCreateRunEventLedger(db, running)
+  // The desktop host registers the Run's job-row projection once, so a
+  // settlement minted by another port (a Codex transport exit) still records
+  // an error code and message; the safe finalizer passes its own fields.
+  const ledger = await getOrCreateRunEventLedger(db, running, {
+    terminalJobFields: desktopTerminalJobFields,
+  })
   await ledger.appendSystemEvent({
     observationKey: `desktop:stream-started:${job.id}`,
     type: "status",
@@ -177,6 +183,27 @@ export async function createAndStartDesktopAgentJob(
     job: getAgentJob(db, job.id) ?? running,
     workerId,
     cwd: context.cwd,
+  }
+}
+
+function desktopTerminalJobFields(outcome: {
+  status: string
+  reasons: string[]
+}): TerminalJobFields {
+  if (outcome.status === "succeeded") {
+    return { exitCode: 0, errorCode: null, errorMessage: null }
+  }
+  if (outcome.status === "canceled") {
+    return {
+      exitCode: 5,
+      errorCode: "desktop_chat_canceled",
+      errorMessage: "Desktop chat stream was canceled.",
+    }
+  }
+  return {
+    exitCode: 1,
+    errorCode: outcome.reasons[0] ?? "desktop_chat_failed",
+    errorMessage: `Desktop run outcome ${outcome.status}: ${outcome.reasons.join(", ") || "no success evidence"}.`,
   }
 }
 

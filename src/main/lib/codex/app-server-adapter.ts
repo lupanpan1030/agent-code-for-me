@@ -1270,6 +1270,12 @@ export function createCodexAppServerAdapter({
         request.signal.removeEventListener("abort", abortHandler)
         removeServerRequest()
         await interruptIssued
+        // The adapter already has its own result: the deliberate close below
+        // is a Locus-initiated shutdown, not an unexpected transport exit, so
+        // the exit handler is detached first and the child ending is never
+        // submitted as a transport-exit terminal candidate. An exit observed
+        // while the Run was live has already reached ingestTransportExit.
+        removeTransportExit()
         try {
           await transport.close()
         } catch (closeError) {
@@ -1285,7 +1291,6 @@ export function createCodexAppServerAdapter({
           }
         }
         removeTerminalNotification()
-        removeTransportExit()
         try {
           assertCodexAppServerShellSnapshotsScrubbed(
             scrubCodexAppServerShellSnapshots({

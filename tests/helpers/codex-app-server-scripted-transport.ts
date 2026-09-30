@@ -28,6 +28,13 @@ export type CodexAppServerScript = {
     transport: ScriptedCodexAppServerTransport,
     threadId: string,
   ) => Promise<void>
+  /** Rejects `initialize` with a coded JSON-RPC error (child stays alive). */
+  initializeError?: { code: number; message: string }
+  /**
+   * Like the stdio transport, `close()` ends the child and invokes every
+   * still-attached exit handler (the deliberate shutdown is observable).
+   */
+  exitOnClose?: boolean
 }
 
 export function defaultCodexTurnNotifications(
@@ -86,6 +93,11 @@ export class ScriptedCodexAppServerTransport
     const record = (params ?? {}) as Record<string, unknown>
     switch (method) {
       case "initialize":
+        if (this.script.initializeError) {
+          throw Object.assign(new Error(this.script.initializeError.message), {
+            code: this.script.initializeError.code,
+          })
+        }
         return { userAgent: "codex-scripted" }
       case "thread/start":
         this.threadId = "thread-1"
@@ -172,6 +184,13 @@ export class ScriptedCodexAppServerTransport
 
   close(): Promise<void> {
     this.closed = true
+    if (this.script.exitOnClose) {
+      this.exitHandler?.({
+        code: null,
+        signal: "SIGTERM",
+        error: new Error("Codex app-server exited after close"),
+      })
+    }
     return Promise.resolve()
   }
 }

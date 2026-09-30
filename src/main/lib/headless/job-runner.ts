@@ -518,7 +518,31 @@ export async function runPersistedAgentJob(
     workerId,
     workerPid,
   })
-  const ledger = await getOrCreateRunEventLedger(options.db, job)
+  let providerResolution: HeadlessProviderBindingResolution | null = null
+  // The executing host registers the Run's terminal projection once, so a
+  // settlement minted by another port (a transport exit ingested by the
+  // adapter) still writes the job-row diagnostics, result and final run-dir
+  // files. The runner's own settle keeps passing its own evidence.
+  const ledger = await getOrCreateRunEventLedger(options.db, job, {
+    ...(options.terminalArtifacts
+      ? { terminalArtifacts: options.terminalArtifacts }
+      : {}),
+    terminalJobFields: (outcome) => {
+      const errorCode = outcomeErrorCode(outcome, null)
+      return {
+        exitCode: normalizeHeadlessExitCode({
+          status: outcome.status as AgentJobStatus,
+          errorCode,
+        }),
+        errorCode,
+        errorMessage: outcomeErrorMessage(outcome, null),
+        result: resultWithResolvedProvider(
+          {},
+          resolvedProviderForError(null, job, providerResolution),
+        ),
+      }
+    },
+  })
   const prompt = getAgentJobPrompt(options.db, job.id)
   const runner = await resolveRunner(options.runner, options.env)
   const abortController = new AbortController()
@@ -530,7 +554,6 @@ export async function runPersistedAgentJob(
       once: true,
     })
   }
-  let providerResolution: HeadlessProviderBindingResolution | null = null
   const observerController = createObserver({
     db: options.db,
     jobId: job.id,

@@ -29,6 +29,7 @@ import {
   type LedgerClock,
   type LedgerProjection,
   RunEventLedgerError,
+  type TerminalProjectionRegistration,
 } from "./run-event-ledger"
 import type { JsonValue, RunEvent } from "./runtime-events"
 import { projectRunEventToRendererChunks } from "./stream-event-mapper"
@@ -140,7 +141,7 @@ export type GetOrCreateRunEventLedgerOptions = {
   artifactOwner?: unknown
   clock?: LedgerClock
   onHostDiagnostic?: (diagnostic: { code: string; message: string }) => void
-}
+} & TerminalProjectionRegistration
 
 const hostLedgers = new WeakMap<
   AgentJobDatabase,
@@ -178,6 +179,12 @@ export async function getOrCreateRunEventLedger(
   }
   const existing = ledgers.get(existingJob.id)
   if (existing) {
+    // The executing host registers the Run's terminal projection once; a
+    // differing re-registration on the cached ledger is rejected.
+    existing.registerTerminalProjection({
+      terminalArtifacts: options.terminalArtifacts,
+      terminalJobFields: options.terminalJobFields,
+    })
     existing.addSecretHints(options.secretHints ?? [])
     for (const projector of options.projections ?? []) {
       await existing.attachProjection(
@@ -203,6 +210,12 @@ export async function getOrCreateRunEventLedger(
       hostProjection(db, job.id, projector),
     ),
     artifactOwner: options.artifactOwner ?? null,
+    ...(options.terminalArtifacts
+      ? { terminalArtifacts: options.terminalArtifacts }
+      : {}),
+    ...(options.terminalJobFields
+      ? { terminalJobFields: options.terminalJobFields }
+      : {}),
     ...(options.onHostDiagnostic
       ? { onHostDiagnostic: options.onHostDiagnostic }
       : {}),

@@ -10,6 +10,7 @@ import type {
   CreateCanonicalRunEventLedgerOptions,
   LedgerOutcome,
   OutcomeEvidence,
+  TerminalJobFields,
 } from "../agent-runtime/run-event-ledger"
 import {
   bindRunExecutionProvenance,
@@ -500,6 +501,38 @@ function completionOutcomeEvidence(input: {
   }
 }
 
+/** Job-row projection of a completion Run's decided outcome. */
+function completionJobFields(
+  outcome: { status: string; reasons: string[] },
+  input: {
+    errorCode: string | null
+    errorMessage: string | null
+    result: unknown
+  },
+): TerminalJobFields {
+  const errorCode =
+    outcome.status === "succeeded"
+      ? null
+      : outcome.status === "canceled"
+        ? "job_canceled"
+        : (input.errorCode ?? outcome.reasons[0] ?? "runtime_error")
+  return {
+    exitCode: normalizeHeadlessExitCode({
+      status: outcome.status as "succeeded" | "failed" | "canceled",
+      errorCode,
+    }),
+    errorCode,
+    errorMessage:
+      outcome.status === "succeeded"
+        ? null
+        : outcome.status === "canceled"
+          ? "Job was canceled."
+          : (input.errorMessage ??
+            `Run outcome ${outcome.status}: ${outcome.reasons.join(", ")}.`),
+    result: input.result,
+  }
+}
+
 export async function runPersistedCompletionJob(
   options: RunPersistedCompletionJobOptions,
 ): Promise<RunPersistedCompletionJobResult> {
@@ -522,7 +555,19 @@ export async function runPersistedCompletionJob(
     workerId,
     workerPid,
   })
-  const ledger = await getOrCreateRunEventLedger(options.db, job)
+  // The executing host registers the Run's terminal projection once; every
+  // settlement without its own job-row fields uses it.
+  const ledger = await getOrCreateRunEventLedger(options.db, job, {
+    ...(options.terminalArtifacts
+      ? { terminalArtifacts: options.terminalArtifacts }
+      : {}),
+    terminalJobFields: (outcome) =>
+      completionJobFields(outcome, {
+        errorCode: null,
+        errorMessage: null,
+        result: {},
+      }),
+  })
 
   const settleCompletion = async (input: {
     status: "succeeded" | "failed" | "canceled"
@@ -538,29 +583,7 @@ export async function runPersistedCompletionJob(
         content: input.content,
       }),
       {
-        jobFields: (outcome) => {
-          const errorCode =
-            outcome.status === "succeeded"
-              ? null
-              : outcome.status === "canceled"
-                ? "job_canceled"
-                : (input.errorCode ?? outcome.reasons[0] ?? "runtime_error")
-          return {
-            exitCode: normalizeHeadlessExitCode({
-              status: outcome.status as "succeeded" | "failed" | "canceled",
-              errorCode,
-            }),
-            errorCode,
-            errorMessage:
-              outcome.status === "succeeded"
-                ? null
-                : outcome.status === "canceled"
-                  ? "Job was canceled."
-                  : (input.errorMessage ??
-                    `Run outcome ${outcome.status}: ${outcome.reasons.join(", ")}.`),
-            result: input.result,
-          }
-        },
+        jobFields: (outcome) => completionJobFields(outcome, input),
         ...(options.terminalArtifacts
           ? { terminalArtifacts: options.terminalArtifacts }
           : {}),

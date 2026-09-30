@@ -239,8 +239,24 @@ export type CreateCanonicalRunEventLedgerOptions = {
       jobMutation: JsonObject
     }): JsonValue[] | Promise<JsonValue[]>
   }
+  /**
+   * Host job-row projection of the terminal outcome for every settlement
+   * that supplies none of its own (transport exit, a settlement minted by
+   * another port). A settle call's own `jobFields` wins.
+   */
+  terminalJobFields?: SettleOptions["jobFields"]
   /** Sanitized host infrastructure diagnostics (never persisted). */
   onHostDiagnostic?: (diagnostic: { code: string; message: string }) => void
+}
+
+/**
+ * The terminal projection the host that owns a Run registers once: its
+ * run-dir preparer and job-row field projection, applied to every
+ * settlement path (including a transport exit) that brings none of its own.
+ */
+export type TerminalProjectionRegistration = {
+  terminalArtifacts?: CreateCanonicalRunEventLedgerOptions["terminalArtifacts"]
+  terminalJobFields?: SettleOptions["jobFields"]
 }
 
 /** Sanitized ledger failure; carries no payload or secret material. */
@@ -664,7 +680,8 @@ class RunEventLedgerImpl {
   private readonly store: DurableStorePort
   private projections: readonly LedgerProjection[]
   private readonly onHostDiagnostic: CreateCanonicalRunEventLedgerOptions["onHostDiagnostic"]
-  private readonly terminalArtifacts: CreateCanonicalRunEventLedgerOptions["terminalArtifacts"]
+  private terminalArtifacts: CreateCanonicalRunEventLedgerOptions["terminalArtifacts"]
+  private hostJobFields: SettleOptions["jobFields"]
   private readonly redactor = createExactSecretStreamChannelRedactor<string>()
   private readonly pendingStreamKeys = new Map<string, string[]>()
   private readonly delivered = new Map<string, number>()
@@ -695,6 +712,7 @@ class RunEventLedgerImpl {
     this.projections = options.projections ?? []
     this.onHostDiagnostic = options.onHostDiagnostic
     this.terminalArtifacts = options.terminalArtifacts
+    this.hostJobFields = options.terminalJobFields
     this.state = this.initialState(provenance)
   }
 
@@ -1678,6 +1696,35 @@ class RunEventLedgerImpl {
         resolve()
       })
     })
+  }
+
+  /**
+   * Registers the Run's terminal projection on an already composed ledger
+   * (the host that executes the Run knows its run dir and job-row fields).
+   * Registering the same members again is a no-op; a differing
+   * re-registration is rejected so one Run never has two terminal
+   * projections.
+   */
+  registerTerminalProjection(
+    registration: TerminalProjectionRegistration,
+  ): void {
+    const conflicts = (current: unknown, next: unknown): boolean =>
+      next !== undefined && current !== undefined && current !== next
+    if (
+      conflicts(this.terminalArtifacts, registration.terminalArtifacts) ||
+      conflicts(this.hostJobFields, registration.terminalJobFields)
+    ) {
+      throw new RunEventLedgerError(
+        "TERMINAL_PROJECTION_CONFLICT",
+        "the Run already has a different terminal projection",
+      )
+    }
+    if (registration.terminalArtifacts) {
+      this.terminalArtifacts = registration.terminalArtifacts
+    }
+    if (registration.terminalJobFields) {
+      this.hostJobFields = registration.terminalJobFields
+    }
   }
 
   /** Resolves after every observation submitted so far was processed. */
@@ -3495,8 +3542,9 @@ class RunEventLedgerImpl {
     outcome: { status: string; reasons: string[] },
     options: SettleOptions,
   ): JsonObject {
-    if (typeof options.jobFields !== "function") return {}
-    const fields = options.jobFields({
+    const jobFields = options.jobFields ?? this.hostJobFields
+    if (typeof jobFields !== "function") return {}
+    const fields = jobFields({
       status: outcome.status,
       reasons: [...outcome.reasons],
     })

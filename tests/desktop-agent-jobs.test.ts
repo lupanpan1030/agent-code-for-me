@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test"
+import type { DesktopRunRequest } from "../src/main/lib/agent-runtime/desktop-run-request"
 import { resolveDesktopPermissionPolicy } from "../src/main/lib/agent-runtime/permission-policy"
 import { getOrCreateRunEventLedger } from "../src/main/lib/agent-runtime/run-event-ledger-host"
+import { createCodexAppServerAdapter } from "../src/main/lib/codex/app-server-adapter"
 import { chats, projects, subChats } from "../src/main/lib/db/schema"
 import {
   completeDesktopAgentJobSafely,
@@ -18,6 +20,22 @@ import {
   listAgentJobEvents,
 } from "../src/main/lib/headless/job-store"
 import { createAgentJobTestDb } from "./helpers/agent-job-test-db"
+import { ScriptedCodexAppServerTransport } from "./helpers/codex-app-server-scripted-transport"
+
+const DESKTOP_CODEX_PROVENANCE = {
+  kind: "runtime",
+  installationId: "inst-codex-0.139.0-desktop-test",
+  runtimeId: "codex",
+  adapterSource: "codex-app-server",
+  version: "0.139.0",
+  executableRef: "exe-desktop-test",
+  binarySha256: "a".repeat(64),
+  protocolName: "codex-app-server-jsonrpc",
+  protocolVersion: "v2",
+  schemaFiles: [
+    { path: "codex-app-server/v2/dispositions.json", sha256: "b".repeat(64) },
+  ],
+} as const
 
 function seedChat(db: ReturnType<typeof createAgentJobTestDb>) {
   db.insert(projects)
@@ -344,6 +362,81 @@ describe("desktop agent jobs", () => {
       chatId: "chat-1",
       subChatId: "sub-chat-1",
     })
+  })
+
+  test("a Codex initialize error with the child alive finalizes failed, not a transport-exit interrupt (T2-2 / S-01)", async () => {
+    const db = createAgentJobTestDb()
+    seedChat(db)
+    const permissionPolicy = resolveDesktopPermissionPolicy({
+      runtimeId: "codex",
+      mode: "agent",
+    })
+    const { job } = await createAndStartDesktopAgentJob(db, {
+      runtime: "codex",
+      mode: "agent",
+      chatId: "chat-1",
+      subChatId: "sub-chat-1",
+      cwd: "/tmp/project-worktree",
+      prompt: "Implement",
+      runId: "run-init-error",
+      permissionPolicy,
+    })
+    const ledger = await getOrCreateRunEventLedger(db, job)
+    // Like the stdio transport, close() ends the child and fires every
+    // still-attached exit handler.
+    const transport = new ScriptedCodexAppServerTransport({
+      initializeError: { code: -32600, message: "initialize rejected" },
+      exitOnClose: true,
+    })
+    const adapter = createCodexAppServerAdapter({
+      enabled: true,
+      createTransport: () => transport,
+      captureExecutionProvenance: async () => DESKTOP_CODEX_PROVENANCE,
+    })
+    const request: DesktopRunRequest = {
+      identity: { runId: "run-init-error", jobId: job.id },
+      context: {
+        runtimeId: "codex",
+        mode: "agent",
+        projectId: "project-1",
+        chatId: "chat-1",
+        subChatId: "sub-chat-1",
+        cwd: "/tmp/project-worktree",
+      },
+      prompt: "Implement",
+      permissionPolicy,
+      providerBinding: { authMode: "runtime-managed" },
+      mcp: { status: "skipped", serverNames: [], blockers: [] },
+      attachments: [],
+      ledger,
+      signal: new AbortController().signal,
+      session: {},
+    }
+    const adapterResult = await adapter.run(request)
+    expect(adapterResult.status).toBe("failed")
+    expect(transport.closed).toBe(true)
+
+    const completed = await completeDesktopChatAgentJobSafely(db, {
+      jobId: job.id,
+      runtime: "codex",
+      aborted: false,
+      reachedNaturalFinish: true,
+      sawError: true,
+    })
+    expect(completed).toMatchObject({
+      status: "failed",
+      exitCode: 1,
+      errorCode: "desktop_chat_failed",
+    })
+    const events = listAgentJobEvents(db, job.id)
+    const terminal = events.filter((event) => event.type === "completed")
+    expect(terminal).toHaveLength(1)
+    const payload = JSON.parse(terminal[0].payloadJson)
+    expect(payload.status).toBe("failed")
+    expect(payload.synthetic).toBeUndefined()
+    expect(events.map((event) => event.payloadJson).join("\n")).not.toContain(
+      "transport_exit",
+    )
   })
 
   test("safely requests cancel only for unfinished desktop chat jobs", async () => {

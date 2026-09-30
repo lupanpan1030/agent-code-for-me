@@ -205,6 +205,74 @@ describe("run event ledger host", () => {
     ).toEqual({ acknowledged_sequence: rows(sqlite, created.id).length })
   })
 
+  test("a transport exit settles with the registered terminal projection; a differing re-registration is rejected (T2-2 / S-01)", async () => {
+    const { sqlite, db } = migratedDb()
+    const created = await createAgentJob(db as never, {
+      source: "api",
+      runtime: "codex",
+      mode: "plan",
+      cwd: process.cwd(),
+      prompt: "exit",
+    })
+    const prepared: string[] = []
+    const terminalArtifacts = {
+      prepare(input: { completed: { payload: unknown } }) {
+        prepared.push(JSON.stringify(input.completed.payload))
+        return []
+      },
+    }
+    const terminalJobFields = (outcome: {
+      status: string
+      reasons: string[]
+    }) => ({
+      exitCode: 1,
+      errorCode: outcome.reasons[0] ?? "runtime_error",
+      errorMessage: `Run outcome ${outcome.status}`,
+      result: {},
+    })
+    // The ledger is already cached by createAgentJob; the executing host
+    // registers its projection on it once.
+    const ledger = await getOrCreateRunEventLedger(db as never, created, {
+      terminalArtifacts,
+      terminalJobFields,
+    })
+    // Re-registering the same members is a no-op; a different one is refused.
+    await getOrCreateRunEventLedger(db as never, created, {
+      terminalArtifacts,
+      terminalJobFields,
+    })
+    await expect(
+      getOrCreateRunEventLedger(db as never, created, {
+        terminalJobFields: () => ({ exitCode: 2 }),
+      }),
+    ).rejects.toThrow("TERMINAL_PROJECTION_CONFLICT")
+    await bindRunExecutionProvenance(ledger, RUNTIME)
+    await ledger.ingestTransportExit({
+      observationKey: "transport-exit-1",
+      transportId: "t1",
+      exitCode: 1,
+    })
+    expect(prepared).toHaveLength(1)
+    expect(JSON.parse(prepared[0])).toMatchObject({
+      status: "interrupted",
+      synthetic: { source: "transport_exit" },
+    })
+    expect(
+      sqlite
+        .query(
+          "SELECT status, exit_code, error_code, error_message, result_json FROM agent_jobs WHERE id = ?",
+        )
+        .get(created.id),
+    ).toEqual({
+      status: "interrupted",
+      exit_code: 1,
+      error_code: "transport_exit",
+      error_message: "Run outcome interrupted",
+      result_json: "{}",
+    })
+    releaseRunEventLedger(db as never, created.id)
+  })
+
   test("pre-ledger (ledger_version=0) history is never extended", async () => {
     const { sqlite, db } = migratedDb()
     sqlite
