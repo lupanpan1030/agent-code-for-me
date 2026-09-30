@@ -71,6 +71,22 @@ with **2 modified requirements** and
 **1 added / 1 modified requirement**. Post-archive
 `bun x openspec validate --all --strict --no-interactive` passed **53/53**.
 
+### Renderer hardening slice push receipt
+
+Archive commit: `cc05876067a8939babfeab172e43ba183a93f0f8`.
+
+slice: 2026-09-30 direction decisions (dcd5153c) + add-renderer-untrusted-content-hardening (source 5ca5a17a, red suite 08c4f455, docs) pushed 2026-09-30 (coordination-dispatched, Owner ACCEPTED)
+
+This receipt precedes the coordination-authorized single `git push origin main`.
+The handoff records its result, post-push `git ls-remote origin refs/heads/main`
+and latest CI run. Only `origin/main` is authorized as a remote target.
+
+Whole-group rollback: `git revert -m 1 b7b3594d943723dc4a75b65196c30d74a348e94f`
+(includes the `package.json` / `bun.lock` exact Streamdown and rehype pin
+rollback). Never revert an individual commit from the renderer-hardening branch:
+that would separate the product changes from their red suite. The later archive
+and push-receipt documentation must be reconciled if rollback is dispatched.
+
 ## Locally archived 2026-09-07
 
 ### Default branch resolution for local repositories
