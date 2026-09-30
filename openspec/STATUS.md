@@ -8,7 +8,7 @@ Updated: 2026-09-30 (Pacific/Auckland); previous: 2026-09-09 (Pacific/Auckland)
 
 | Change | State | Concrete next gate |
 | --- | --- | --- |
-| `refactor-canonical-run-event-ledger` | APPROVED — queued (after admission + renderer hardening); next gate: red test authoring | Owner 2026-09-07 APPROVED bound to 9ebe6c34; four answers and R1 = DIRECT_NEW_STANDARD recorded. Implementation follows add-linked-worktree-admission and add-renderer-untrusted-content-hardening; independent red acceptance tests required before source edits (pilot policy 2026-09-05). |
+| `refactor-canonical-run-event-ledger` | IMPLEMENTATION CANDIDATE — frozen 2026-10-01 on `codex/refactor-canonical-run-event-ledger-draft` (exact SHA in the handoff); runtime smoke host-blocked | Red suite 141/141 green and `check:full` exit 0 at the candidate; product source unchanged since `e7198bc7`. Next gate: Codex IMPLEMENTATION_VERIFIED and a fresh-context Claude review on the same exact SHA (headless app-server `host_result` settlement and gaps G1–G3 referred to it), then Owner ACCEPTED. No push. |
 
 Parked proposals are indexed in [`deferred/README.md`](deferred/README.md) and
 do not appear in the active list.
