@@ -63,7 +63,10 @@ import {
   assertCodexAppServerShellSnapshotsScrubbed,
   scrubCodexAppServerShellSnapshots,
 } from "./app-server-shell-snapshots"
-import { codexAppServerSchemaDocuments } from "./app-server-stream-events"
+import {
+  classifyCodexThreadSnapshot,
+  codexAppServerSchemaDocuments,
+} from "./app-server-stream-events"
 import {
   type CodexAppServerTransport,
   type CodexAppServerTransportServerRequest,
@@ -224,6 +227,52 @@ function codexTurnErrorMessage(turn: Record<string, unknown>): string | null {
     return `Codex app-server returned unknown terminal status ${String(turn.status)}.`
   }
   return null
+}
+
+function isValidatedResumeRecord(record: unknown): boolean {
+  if (!isRecordValue(record) || record.type !== "status") return false
+  const payload = isRecordValue(record.payload) ? record.payload : {}
+  return payload.subtype === "native_resume_validated"
+}
+
+/**
+ * Snapshot repair caller of the Codex resume path (design "Resume
+ * Validation and Snapshot Repair", tasks 6.4): only after the ledger
+ * committed `native_resume_validated` for the thread/resume response, the
+ * thread snapshot it carried is submitted to `repairFromSnapshot` with its
+ * schema disposition against the pinned item table, the creator version as
+ * source provenance and, when the Run already observed that turn, the target
+ * turn. Pre-seal it repairs item views only; post-seal the ledger records a
+ * late_event. It never creates success, write authority or a replay cursor.
+ */
+export async function repairFromValidatedResumeSnapshot(input: {
+  ledger: CanonicalDesktopRunLedger
+  observationKey: string
+  responseCommitted: Promise<unknown>
+  response: unknown
+}): Promise<unknown> {
+  const committed = await input.responseCommitted
+  if (!Array.isArray(committed) || !committed.some(isValidatedResumeRecord)) {
+    return []
+  }
+  const snapshot = classifyCodexThreadSnapshot(input.response)
+  if (!snapshot) return []
+  const context = await input.ledger.readNativeContext()
+  const targetTurnId =
+    context && snapshot.turnIds.includes(context.turnId)
+      ? context.turnId
+      : undefined
+  return input.ledger.repairFromSnapshot({
+    observationKey: input.observationKey,
+    snapshot: input.response,
+    schemaDisposition: snapshot.schemaDisposition,
+    sourceProvenance: {
+      kind: "runtime",
+      runtimeId: "codex",
+      ...(snapshot.creatorVersion ? { version: snapshot.creatorVersion } : {}),
+    },
+    ...(targetTurnId ? { targetTurnId } : {}),
+  })
 }
 
 /**
@@ -972,6 +1021,7 @@ export function createCodexAppServerAdapter({
       // Records the correlated response boundary of one client request so
       // the ledger owns resume validation and the native context.
       let responseCounter = 0
+      let resumeResponseCommitted: Promise<unknown> | null = null
       const requestWithResponseBoundary = async (
         method: "thread/start" | "thread/resume" | "turn/start",
         params: unknown,
@@ -991,15 +1041,15 @@ export function createCodexAppServerAdapter({
         try {
           const result = await requestWithCancellation(method, params)
           if (ledger) {
-            recordCommitted(
-              ledger.ingestResponse({
-                observationKey: observationKey("response"),
-                transportId,
-                receivedAt: receivedAt(),
-                request: boundaryRequest,
-                message: { id: correlationId, result },
-              }),
-            )
+            const committed = ledger.ingestResponse({
+              observationKey: observationKey("response"),
+              transportId,
+              receivedAt: receivedAt(),
+              request: boundaryRequest,
+              message: { id: correlationId, result },
+            })
+            recordCommitted(committed)
+            if (method === "thread/resume") resumeResponseCommitted = committed
           }
           return result
         } catch (error) {
@@ -1108,6 +1158,18 @@ export function createCodexAppServerAdapter({
               }),
               { intent: "start" },
             )
+        if (ledger && resumeThreadId && resumeResponseCommitted) {
+          // Recorded before the new turn so the repair (and any usage
+          // baseline it carries) precedes this Run's turn records.
+          const repaired = repairFromValidatedResumeSnapshot({
+            ledger,
+            observationKey: observationKey("resume-snapshot"),
+            responseCommitted: resumeResponseCommitted,
+            response: threadStart,
+          })
+          recordCommitted(repaired)
+          await repaired.catch(() => {})
+        }
         // No thread/started is fabricated for a resumed thread: the response
         // is the native fact, and a missing session id stays missing.
         threadId = stringAt(threadStart, ["thread", "id"]) ?? threadId

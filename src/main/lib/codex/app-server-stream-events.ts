@@ -675,6 +675,56 @@ export function decodeCodexNativeBoundary(
 }
 
 /**
+ * Stateless classification of the thread snapshot a `thread/resume` response
+ * carries (design "Resume Validation and Snapshot Repair"): `recognized`
+ * when every turn and item matches the pinned ThreadItem disposition table
+ * this adapter decodes against, `incompatible` otherwise (a defensive schema
+ * policy, not a measured failure). Returns null when the response carries no
+ * thread object or no `turns` member. It reports the snapshot's turn ids and creator version and
+ * never guesses item state.
+ */
+export function classifyCodexThreadSnapshot(response: unknown): {
+  schemaDisposition: "recognized" | "incompatible"
+  turnIds: string[]
+  creatorVersion?: string
+} | null {
+  const thread = asDecoderRecord(asDecoderRecord(response)?.thread)
+  // A response without a turns member carries no history snapshot.
+  if (!thread || !Object.hasOwn(thread, "turns")) return null
+  const creatorVersion = stringField(thread, "cliVersion")
+  const turnIds: string[] = []
+  let recognized = Boolean(stringField(thread, "id"))
+  const turns = thread.turns
+  if (!Array.isArray(turns)) recognized = false
+  for (const entry of Array.isArray(turns) ? turns : []) {
+    const turn = asDecoderRecord(entry)
+    const turnId = stringField(turn, "id")
+    if (!turn || !turnId || !Array.isArray(turn.items)) {
+      recognized = false
+      continue
+    }
+    turnIds.push(turnId)
+    for (const rawItem of turn.items) {
+      const item = asDecoderRecord(rawItem)
+      const itemType = stringField(item, "type")
+      if (
+        !item ||
+        !itemType ||
+        !stringField(item, "id") ||
+        !Object.hasOwn(CODEX_THREAD_ITEM_DISPOSITIONS, itemType)
+      ) {
+        recognized = false
+      }
+    }
+  }
+  return {
+    schemaDisposition: recognized ? "recognized" : "incompatible",
+    turnIds,
+    ...(creatorVersion ? { creatorVersion } : {}),
+  }
+}
+
+/**
  * The Codex app-server protocol schema this adapter decodes against: the
  * pinned notification/request/item disposition tables compiled into Locus
  * (the repository vendors no schema files). run-provenance.ts fingerprints
