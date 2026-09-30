@@ -4,6 +4,10 @@
 import { memo, useState, useEffect, useMemo, useCallback, useRef } from "react"
 import { useAtomValue, useSetAtom } from "jotai"
 import { useCodeTheme } from "../../../lib/hooks/use-code-theme"
+import {
+  type ReviewedRendererHtml,
+  reviewedInnerHtml,
+} from "../../../lib/security/renderer-html-policy"
 import { highlightCode } from "../../../lib/themes/shiki-theme-loader"
 import {
   IconSpinner,
@@ -111,10 +115,10 @@ function useBatchHighlight(
   language: string,
   themeId: string,
   isStreaming: boolean = false,
-): Map<number, string> {
-  const [highlightedMap, setHighlightedMap] = useState<Map<number, string>>(
-    () => new Map(),
-  )
+): Map<number, ReviewedRendererHtml> {
+  const [highlightedMap, setHighlightedMap] = useState<
+    Map<number, ReviewedRendererHtml>
+  >(() => new Map())
 
   // Create stable key from lines content to detect changes
   // Only compute when NOT streaming to avoid expensive join during animation
@@ -138,7 +142,7 @@ function useBatchHighlight(
 
     const highlightAll = async () => {
       try {
-        const results = new Map<number, string>()
+        const results = new Map<number, ReviewedRendererHtml>()
 
         // Highlight all lines in one batch using centralized loader
         for (let i = 0; i < lines.length; i++) {
@@ -180,7 +184,7 @@ const DiffLineRow = memo(
     highlightedHtml,
   }: {
     line: DiffLine
-    highlightedHtml: string | undefined
+    highlightedHtml: ReviewedRendererHtml | undefined
   }) {
     return (
       <div
@@ -196,7 +200,8 @@ const DiffLineRow = memo(
         {highlightedHtml ? (
           <span
             className="whitespace-pre-wrap break-all [&_.shiki]:bg-transparent [&_pre]:bg-transparent [&_code]:bg-transparent"
-            dangerouslySetInnerHTML={{ __html: highlightedHtml }}
+            // biome-ignore lint/security/noDangerouslySetInnerHtml: reviewed sink: value comes only from renderer-html-policy; exact inventory in tests/renderer-html-sinks.test.ts
+            dangerouslySetInnerHTML={reviewedInnerHtml(highlightedHtml)}
           />
         ) : (
           <span
