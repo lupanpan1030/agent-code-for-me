@@ -10,7 +10,7 @@ import {
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type { DesktopRunRequest } from "../src/main/lib/agent-runtime/desktop-run-request"
-import { createRunEvent } from "../src/main/lib/agent-runtime/runtime-events"
+import { bindRunExecutionProvenance } from "../src/main/lib/agent-runtime/run-event-ledger-host"
 import { projects } from "../src/main/lib/db/schema"
 import { createCodexAppServerHeadlessTaskRunner } from "../src/main/lib/headless/adapters/codex-app-server"
 import { LOCAL_JOB_API_VERSION } from "../src/shared/local-job-api"
@@ -18,16 +18,28 @@ import { createAgentJobTestDb } from "./helpers/agent-job-test-db"
 
 const appServerRuns: DesktopRunRequest[] = []
 
+const FAKE_APP_SERVER_PROVENANCE = {
+  kind: "runtime",
+  installationId: "inst-codex-0.139.0-test-app-server",
+  runtimeId: "codex",
+  adapterSource: "codex-app-server",
+  version: "0.139.0",
+  executableRef: "exe-test-app-server",
+  binarySha256: "a".repeat(64),
+  protocolName: "codex-app-server-jsonrpc",
+  protocolVersion: "v2",
+  schemaFiles: [
+    { path: "codex-app-server/v2/dispositions.json", sha256: "b".repeat(64) },
+  ],
+} as const
+
 const {
+  admitLocalJobApiInitialArtifacts,
   createLocalJobApiJob,
+  createLocalJobApiTerminalArtifacts,
   getLocalJobApiEvents,
   toLocalJobApiResultEnvelope,
-  writeLocalJobApiFinalArtifacts,
-  writeLocalJobApiInitialArtifacts,
 } = await import("../src/main/lib/headless/local-job-api")
-const { appendAgentJobEvent, listAgentJobEvents } = await import(
-  "../src/main/lib/headless/job-store"
-)
 const { runPersistedAgentJob } = await import(
   "../src/main/lib/headless/job-runner"
 )
@@ -45,53 +57,33 @@ const fakeAppServerRunner = createCodexAppServerHeadlessTaskRunner({
     },
     async run(request: DesktopRunRequest) {
       appServerRuns.push(request)
-      request.trace.emit(
-        createRunEvent({
-          runId: request.identity.runId,
-          jobId: request.identity.jobId,
-          runtimeId: "codex",
-          sequence: 1,
-          type: "status",
-          payload: {
-            status: "desktop_runtime_adapter_started",
-            adapterSource: "codex-app-server",
-          },
-        }),
-      )
-      request.trace.emit(
-        createRunEvent({
-          runId: request.identity.runId,
-          jobId: request.identity.jobId,
-          runtimeId: "codex",
-          sequence: 2,
-          type: "assistant_delta",
-          payload: { text: "app-server local job response" },
-        }),
-      )
-      request.trace.emit(
-        createRunEvent({
-          runId: request.identity.runId,
-          jobId: request.identity.jobId,
-          runtimeId: "codex",
-          sequence: 3,
-          type: "usage_update",
-          payload: {
-            inputTokens: 5,
-            outputTokens: 7,
-            totalTokens: 12,
-          },
-        }),
-      )
-      request.trace.emit(
-        createRunEvent({
-          runId: request.identity.runId,
-          jobId: request.identity.jobId,
-          runtimeId: "codex",
-          sequence: 4,
-          type: "completed",
-          payload: { status: "succeeded" },
-        }),
-      )
+      // Like the real adapter, ingest into the Run's host ledger (the
+      // headless wrapper hands it over as request.ledger).
+      const ledger = request.ledger
+      if (!ledger) throw new Error("Expected the Run ledger")
+      await ledger.appendSystemEvent({
+        observationKey: "fake-app-server:started",
+        type: "status",
+        payload: {
+          status: "desktop_runtime_adapter_started",
+          adapterSource: "codex-app-server",
+        },
+      })
+      await bindRunExecutionProvenance(ledger, FAKE_APP_SERVER_PROVENANCE)
+      await ledger.ingestRuntimeObservation({
+        observationKey: "fake-app-server:assistant",
+        type: "assistant_delta",
+        payload: { text: "app-server local job response" },
+      })
+      await ledger.ingestRuntimeObservation({
+        observationKey: "fake-app-server:usage",
+        type: "usage_update",
+        payload: {
+          inputTokens: 5,
+          outputTokens: 7,
+          totalTokens: 12,
+        },
+      })
       return {
         status: "succeeded",
         sessionId: "app-server-session-1",
@@ -154,29 +146,23 @@ describe("Local Job API Codex app-server profile", () => {
           writePolicy: "metadata-only",
         },
       })
-      const prepared = createLocalJobApiJob(db, request, "test")
-      const initialArtifacts = writeLocalJobApiInitialArtifacts({
+      const prepared = await createLocalJobApiJob(db, request, "test")
+      // Initial run-dir files are admitted by the run artifact owner; the
+      // terminal files are prepared at the one completed.
+      await admitLocalJobApiInitialArtifacts({ db, prepared })
+      const terminal = createLocalJobApiTerminalArtifacts({
+        db,
         runDir: prepared.runDir,
-        request: prepared.request,
-        job: prepared.job,
-        events: listAgentJobEvents(db, prepared.job.id),
-      })
-      appendAgentJobEvent(db, {
         jobId: prepared.job.id,
-        type: "artifact_created",
-        payload: { artifacts: initialArtifacts },
       })
 
       const result = await runPersistedAgentJob({
         db,
         jobId: prepared.job.id,
         runner: fakeAppServerRunner,
+        terminalArtifacts: terminal.preparer,
       })
-      const finalArtifacts = writeLocalJobApiFinalArtifacts({
-        runDir: prepared.runDir,
-        job: result.job,
-        events: listAgentJobEvents(db, result.job.id),
-      })
+      const finalArtifacts = terminal.artifacts()
       const apiEvents = getLocalJobApiEvents(db, prepared.job.id)
       const resultEnvelope = toLocalJobApiResultEnvelope(
         result.job,
@@ -213,7 +199,7 @@ describe("Local Job API Codex app-server profile", () => {
         status: "desktop_runtime_adapter_started",
         adapterSource: "codex-app-server",
       })
-      expect(apiEvents[4].payload).toEqual({
+      expect(apiEvents[4].payload).toMatchObject({
         text: "app-server local job response",
       })
       expect(apiEvents[5].payload).toMatchObject({

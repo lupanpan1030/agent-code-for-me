@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { randomBytes } from "node:crypto"
 import type { DesktopRunPreflightBlocker } from "../src/main/lib/agent-runtime/preflight"
-import { createDesktopStreamEventMapper } from "../src/main/lib/agent-runtime/stream-event-mapper"
+import { getOrCreateRunEventLedger } from "../src/main/lib/agent-runtime/run-event-ledger-host"
 import {
   clearClaudeActiveSessionsForTest,
   getActiveClaudeSession,
@@ -72,7 +72,7 @@ describe("Claude Agent SDK desktop run envelope", () => {
     expect(completed).toEqual([])
   })
 
-  test("emits preflight blockers through the runtime error handler", () => {
+  test("emits preflight blockers through the runtime error handler", async () => {
     const emitted: UIMessageChunk[] = []
     const completed: string[] = []
     const envelope = createClaudeAgentSdkDesktopRunEnvelope({
@@ -93,6 +93,10 @@ describe("Claude Agent SDK desktop run envelope", () => {
     }
 
     envelope.emitPreflightBlocker(blocker)
+    // Completion follows every chunk already submitted to the renderer
+    // channel (refactor-canonical-run-event-ledger), so it settles after a
+    // microtask turn.
+    await new Promise((resolve) => setTimeout(resolve, 0))
 
     expect(emitted[0]).toMatchObject({
       type: "error",
@@ -132,7 +136,7 @@ describe("Claude Agent SDK desktop run envelope", () => {
     })
   })
 
-  test("redacts upstream and gateway echoes from successful renderer, tool, and persisted RunEvent output", async () => {
+  test("redacts upstream and gateway echoes from successful renderer, tool, and committed ledger output", async () => {
     const upstreamToken = randomBytes(32).toString("hex")
     const gatewayToken = randomBytes(32).toString("hex")
     const providerStartup = await resolveClaudeAgentSdkProviderStartup({
@@ -169,7 +173,7 @@ describe("Claude Agent SDK desktop run envelope", () => {
     if (!providerStartup.ok) throw new Error("expected provider startup")
     const secretHints = providerStartup.startup.secretHints
     const db = createAgentJobTestDb()
-    const job = createAgentJob(db, {
+    const job = await createAgentJob(db, {
       source: "desktop",
       runtime: "claude-code",
       mode: "agent",
@@ -177,6 +181,10 @@ describe("Claude Agent SDK desktop run envelope", () => {
       prompt: "echo canary",
     })
     const emitted: UIMessageChunk[] = []
+    let markCompleted: () => void = () => {}
+    const completed = new Promise<void>((resolve) => {
+      markCompleted = resolve
+    })
     const envelope = createClaudeAgentSdkDesktopRunEnvelope({
       subChatId: "sub-chat-upstream-canary",
       requestedRunId: "run-upstream-canary",
@@ -186,17 +194,14 @@ describe("Claude Agent SDK desktop run envelope", () => {
       log: () => {},
       getSecretHints: () => secretHints,
       emitNext: (chunk) => emitted.push(chunk),
-      emitComplete: () => {},
+      emitComplete: () => markCompleted(),
     })
+    // Durable stream chunks are committed by the desktop job's host ledger
+    // (Run-scoped exact-hint redaction) and projected to the renderer.
     envelope.desktopRunState.setDb(db)
     envelope.desktopRunState.setDesktopJob({
       jobId: job.id,
-      streamEventMapper: createDesktopStreamEventMapper({
-        runtimeId: "claude-code",
-        runId: "run-upstream-canary",
-        jobId: job.id,
-        secretHints,
-      }),
+      ledger: await getOrCreateRunEventLedger(db, job, { secretHints }),
     })
 
     const upstreamSplit = 17
@@ -221,6 +226,8 @@ describe("Claude Agent SDK desktop run envelope", () => {
       toolCallId: "tool-canary",
       output: `tool echoed ${upstreamToken} and ${gatewayToken}`,
     } as UIMessageChunk)
+    envelope.complete()
+    await completed
 
     const rendererAndPersistence = JSON.stringify({
       emitted,
@@ -229,6 +236,16 @@ describe("Claude Agent SDK desktop run envelope", () => {
     expect(rendererAndPersistence).not.toContain(upstreamToken)
     expect(rendererAndPersistence).not.toContain(gatewayToken)
     expect(rendererAndPersistence).toContain(EXACT_SECRET_REDACTION_MARKER)
+    expect(
+      listAgentJobEvents(db, job.id)
+        .map((event) => event.type)
+        .filter((type) => type !== "job_created"),
+    ).toEqual([
+      "assistant_delta",
+      "assistant_delta",
+      "assistant_delta",
+      "tool_finished",
+    ])
     expect(
       emitted
         .filter((chunk) => chunk.type === "text-delta")

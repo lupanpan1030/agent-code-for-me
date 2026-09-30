@@ -7,9 +7,9 @@ import { runPersistedAgentJob } from "../src/main/lib/headless/job-runner"
 import { createAgentJob } from "../src/main/lib/headless/job-store"
 import { createAgentJobTestDb } from "./helpers/agent-job-test-db"
 
-function createTestJob() {
+async function createTestJob() {
   const db = createAgentJobTestDb()
-  const job = createAgentJob(db, {
+  const job = await createAgentJob(db, {
     source: "cli",
     runtime: "codex",
     mode: "agent",
@@ -21,7 +21,7 @@ function createTestJob() {
 
 describe("headless job runner terminal contract", () => {
   test("fails closed when a runtime omits its terminal status", async () => {
-    const { db, job } = createTestJob()
+    const { db, job } = await createTestJob()
 
     const result = await runPersistedAgentJob({
       db,
@@ -40,7 +40,7 @@ describe("headless job runner terminal contract", () => {
   })
 
   test("fails closed when a runtime reports a non-terminal running status", async () => {
-    const { db, job } = createTestJob()
+    const { db, job } = await createTestJob()
 
     const result = await runPersistedAgentJob({
       db,
@@ -62,7 +62,7 @@ describe("headless job runner terminal contract", () => {
   })
 
   test("does not mask a security cleanup failure as cancellation", async () => {
-    const { db, job } = createTestJob()
+    const { db, job } = await createTestJob()
     const controller = new AbortController()
 
     const result = await runPersistedAgentJob({

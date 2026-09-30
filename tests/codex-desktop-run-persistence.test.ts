@@ -49,6 +49,23 @@ function readUpdatedAt(
     ?.updatedAt
 }
 
+function assistantRecord(sequence: number, text: string, itemId = "msg") {
+  return {
+    sequence,
+    type: "assistant_delta",
+    payload: {
+      text,
+      item: {
+        threadId: "th",
+        turnId: "tu",
+        itemId,
+        channel: "assistant",
+        partIndex: 0,
+      },
+    },
+  }
+}
+
 describe("Codex desktop run persistence owner", () => {
   afterEach(() => {
     clearActiveCodexStreamsForTest()
@@ -317,7 +334,7 @@ describe("Codex desktop run persistence owner", () => {
         subChatId: "sub-1",
         activeStreamOwner,
         messagesForStream: [],
-        chunks: [{ type: "text-delta", delta: "must not persist" }],
+        records: [assistantRecord(1, "must not persist")],
         model: "gpt-5.4",
       }),
     ).toBe(false)
@@ -326,20 +343,17 @@ describe("Codex desktop run persistence owner", () => {
   })
 
   test("builds assistant JSON with the established metadata precedence", () => {
+    // History is built from the committed item projection (refactor-
+    // canonical-run-event-ledger): the route supplies the run metadata and
+    // the persisted model/provider still take precedence over it.
     expect(
       buildCodexAppServerAssistantMessage({
-        chunks: [
-          { type: "text-delta", delta: "Hello " },
-          {
-            type: "message-metadata",
-            messageMetadata: { sessionId: "session-1", model: "stale" },
-          },
-          { type: "text-delta", delta: "world" },
-          {
-            type: "finish",
-            messageMetadata: { usage: { inputTokens: 3 }, model: "finish" },
-          },
-        ],
+        records: [assistantRecord(1, "Hello "), assistantRecord(2, "world")],
+        metadata: {
+          sessionId: "session-1",
+          usage: { inputTokens: 3 },
+          model: "stale",
+        },
         model: "gpt-5.4",
         generateMessageId: () => "assistant-1",
         now: () => new Date("2026-08-26T02:03:04.000Z"),
@@ -356,6 +370,35 @@ describe("Codex desktop run persistence owner", () => {
         provider: "codex",
       },
     })
+  })
+
+  test("replaces streamed deltas with the reconciled final item text", () => {
+    expect(
+      buildCodexAppServerAssistantMessage({
+        records: [
+          assistantRecord(1, "hel"),
+          {
+            sequence: 2,
+            type: "status",
+            payload: {
+              subtype: "item_reconciliation",
+              item: {
+                threadId: "th",
+                turnId: "tu",
+                itemId: "msg",
+                channel: "assistant",
+                partIndex: 0,
+                state: "completed",
+                text: "hello",
+              },
+            },
+          },
+        ],
+        model: "gpt-5.4",
+        generateMessageId: () => "assistant-1",
+        now: () => new Date("2026-08-26T02:03:04.000Z"),
+      }),
+    ).toMatchObject({ parts: [{ type: "text", text: "hello" }] })
   })
 
   test("persists an assistant only when the run remains authoritative", () => {
@@ -378,7 +421,7 @@ describe("Codex desktop run persistence owner", () => {
         subChatId: "sub-1",
         activeStreamOwner: staleOwner,
         messagesForStream: [],
-        chunks: [{ type: "text-delta", delta: "stale" }],
+        records: [assistantRecord(1, "stale")],
         model: "gpt-5.4",
       }),
     ).toBe(false)
@@ -390,7 +433,7 @@ describe("Codex desktop run persistence owner", () => {
         subChatId: "sub-1",
         activeStreamOwner: currentOwner,
         messagesForStream: [],
-        chunks: [{ type: "text-delta", delta: "current" }],
+        records: [assistantRecord(1, "current")],
         model: "gpt-5.4",
         createId: () => "assistant-1",
         now: () => new Date("2026-08-26T03:04:05.000Z"),
@@ -413,7 +456,7 @@ describe("Codex desktop run persistence owner", () => {
         subChatId: "sub-1",
         activeStreamOwner: currentOwner,
         messagesForStream: [],
-        chunks: [{ type: "text-delta", delta: "missing owner" }],
+        records: [assistantRecord(1, "missing owner")],
         model: "gpt-5.4",
         createId: () => "assistant-2",
         now: () => new Date("2026-08-26T03:04:06.000Z"),

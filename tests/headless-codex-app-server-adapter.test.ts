@@ -254,16 +254,11 @@ describe("headless Codex app-server adapter", () => {
         adapterSource: "codex-app-server",
       },
     })
-    expect(events).toEqual([
-      {
-        type: "status",
-        payload: { status: "desktop_runtime_adapter_started" },
-      },
-      {
-        type: "assistant_delta",
-        payload: { text: "hello from app-server" },
-      },
-    ])
+    // refactor-canonical-run-event-ledger S46 (APPROVED design): the adapter
+    // commits its records to the Run's own ledger, so the headless wrapper
+    // consumes them without a second observer append or terminal mint.
+    expect(events).toEqual([])
+    expect(desktopRequest?.ledger).toBeNull()
     expect(desktopRequest?.context).toMatchObject({
       runtimeId: "codex",
       source: "desktop",

@@ -27,7 +27,7 @@ import {
 } from "../src/shared/local-job-api"
 import { createAgentJobTestDb } from "./helpers/agent-job-test-db"
 
-function prepareArtifactRun(projectRoot: string) {
+async function prepareArtifactRun(projectRoot: string) {
   const db = createAgentJobTestDb()
   db.insert(projects)
     .values({
@@ -48,7 +48,7 @@ function prepareArtifactRun(projectRoot: string) {
       writePolicy: "metadata-only",
     },
   })
-  const prepared = createLocalJobApiJob(db, request, "test")
+  const prepared = await createLocalJobApiJob(db, request, "test")
   writeLocalJobApiInitialArtifacts({
     runDir: prepared.runDir,
     request,
@@ -61,10 +61,10 @@ function prepareArtifactRun(projectRoot: string) {
 }
 
 describe("Local Job API artifact filesystem security", () => {
-  test("rejects a symlink replacement without overwriting its external target", () => {
+  test("rejects a symlink replacement without overwriting its external target", async () => {
     const projectRoot = mkdtempSync(join(tmpdir(), "locus-artifact-symlink-"))
     try {
-      const prepared = prepareArtifactRun(projectRoot)
+      const prepared = await prepareArtifactRun(projectRoot)
       const eventsPath = join(prepared.runDir.path, "events.jsonl")
       const outsidePath = join(projectRoot, "outside-events.jsonl")
       writeFileSync(outsidePath, "outside-must-stay-unchanged\n")
@@ -86,10 +86,10 @@ describe("Local Job API artifact filesystem security", () => {
     }
   })
 
-  test("rejects a hardlink replacement without overwriting its other link", () => {
+  test("rejects a hardlink replacement without overwriting its other link", async () => {
     const projectRoot = mkdtempSync(join(tmpdir(), "locus-artifact-hardlink-"))
     try {
-      const prepared = prepareArtifactRun(projectRoot)
+      const prepared = await prepareArtifactRun(projectRoot)
       const eventsPath = join(prepared.runDir.path, "events.jsonl")
       const outsidePath = join(projectRoot, "outside-events.jsonl")
       writeFileSync(outsidePath, "outside-must-stay-unchanged\n")
@@ -111,10 +111,10 @@ describe("Local Job API artifact filesystem security", () => {
     }
   })
 
-  test("rejects a swapped run directory without writing into the replacement", () => {
+  test("rejects a swapped run directory without writing into the replacement", async () => {
     const projectRoot = mkdtempSync(join(tmpdir(), "locus-artifact-dir-swap-"))
     try {
-      const prepared = prepareArtifactRun(projectRoot)
+      const prepared = await prepareArtifactRun(projectRoot)
       const runPath = prepared.runDir.path
       const movedRunPath = `${runPath}.moved`
       const outsideDir = join(projectRoot, "outside-dir")
@@ -140,10 +140,10 @@ describe("Local Job API artifact filesystem security", () => {
     }
   })
 
-  test("anchors rename to the open directory and fails closed on a check-to-rename swap", () => {
+  test("anchors rename to the open directory and fails closed on a check-to-rename swap", async () => {
     const projectRoot = mkdtempSync(join(tmpdir(), "locus-artifact-race-swap-"))
     try {
-      const prepared = prepareArtifactRun(projectRoot)
+      const prepared = await prepareArtifactRun(projectRoot)
       const runPath = prepared.runDir.path
       const movedRunPath = `${runPath}.moved`
       const originalEventsIno = lstatSync(join(runPath, "events.jsonl")).ino
@@ -181,10 +181,10 @@ describe("Local Job API artifact filesystem security", () => {
     }
   })
 
-  test("detects a hardlinked atomic result after anchored installation", () => {
+  test("detects a hardlinked atomic result after anchored installation", async () => {
     const projectRoot = mkdtempSync(join(tmpdir(), "locus-artifact-temp-link-"))
     try {
-      const prepared = prepareArtifactRun(projectRoot)
+      const prepared = await prepareArtifactRun(projectRoot)
       const capturedTemp = join(projectRoot, "captured-temp.jsonl")
 
       expect(() =>
@@ -213,10 +213,10 @@ describe("Local Job API artifact filesystem security", () => {
     }
   })
 
-  test("refuses to read an artifact manifest through a replaced directory symlink", () => {
+  test("refuses to read an artifact manifest through a replaced directory symlink", async () => {
     const projectRoot = mkdtempSync(join(tmpdir(), "locus-artifact-read-swap-"))
     try {
-      const prepared = prepareArtifactRun(projectRoot)
+      const prepared = await prepareArtifactRun(projectRoot)
       writeLocalJobApiFinalArtifacts({
         runDir: prepared.runDir,
         job: prepared.job,

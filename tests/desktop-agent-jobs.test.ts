@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { resolveDesktopPermissionPolicy } from "../src/main/lib/agent-runtime/permission-policy"
+import { getOrCreateRunEventLedger } from "../src/main/lib/agent-runtime/run-event-ledger-host"
 import { chats, projects, subChats } from "../src/main/lib/db/schema"
 import {
   completeDesktopAgentJobSafely,
@@ -41,8 +42,24 @@ function seedChat(db: ReturnType<typeof createAgentJobTestDb>) {
     .run()
 }
 
+/**
+ * A succeeded desktop Run needs committed output evidence (R1 DIRECT_NEW_
+ * STANDARD): record one assistant output through the job's host ledger.
+ */
+async function recordDesktopOutput(
+  db: ReturnType<typeof createAgentJobTestDb>,
+  jobId: string,
+) {
+  const ledger = await getOrCreateRunEventLedger(db, { id: jobId })
+  await ledger.ingestRuntimeObservation({
+    observationKey: `desktop-output:${jobId}`,
+    type: "assistant_delta",
+    payload: { text: "done" },
+  })
+}
+
 describe("desktop agent jobs", () => {
-  test("creates a linked running desktop job without duplicating the full prompt", () => {
+  test("creates a linked running desktop job without duplicating the full prompt", async () => {
     const db = createAgentJobTestDb()
     seedChat(db)
 
@@ -51,7 +68,7 @@ describe("desktop agent jobs", () => {
       runtimeId: "codex",
       mode: "plan",
     })
-    const { job, workerId, cwd } = createAndStartDesktopAgentJob(db, {
+    const { job, workerId, cwd } = await createAndStartDesktopAgentJob(db, {
       runtime: "codex",
       mode: "plan",
       chatId: "chat-1",
@@ -115,7 +132,7 @@ describe("desktop agent jobs", () => {
     ])
   })
 
-  test("rejects renderer-supplied cwd and sub-chat mismatches", () => {
+  test("rejects renderer-supplied cwd and sub-chat mismatches", async () => {
     const db = createAgentJobTestDb()
     seedChat(db)
     db.insert(chats)
@@ -126,7 +143,7 @@ describe("desktop agent jobs", () => {
       })
       .run()
 
-    expect(() =>
+    await expect(
       createAndStartDesktopAgentJob(db, {
         runtime: "claude-code",
         mode: "agent",
@@ -135,9 +152,9 @@ describe("desktop agent jobs", () => {
         cwd: "/tmp/other",
         prompt: "Run elsewhere",
       }),
-    ).toThrow("Desktop job cwd mismatch")
+    ).rejects.toThrow("Desktop job cwd mismatch")
 
-    expect(() =>
+    await expect(
       createAndStartDesktopAgentJob(db, {
         runtime: "claude-code",
         mode: "agent",
@@ -146,13 +163,13 @@ describe("desktop agent jobs", () => {
         cwd: "/tmp/project-worktree",
         prompt: "Wrong chat",
       }),
-    ).toThrow("does not belong to chat")
+    ).rejects.toThrow("does not belong to chat")
   })
 
-  test("routes cancellation through the active desktop job registration", () => {
+  test("routes cancellation through the active desktop job registration", async () => {
     const db = createAgentJobTestDb()
     seedChat(db)
-    const { job } = createAndStartDesktopAgentJob(db, {
+    const { job } = await createAndStartDesktopAgentJob(db, {
       runtime: "claude-code",
       mode: "agent",
       chatId: "chat-1",
@@ -174,16 +191,24 @@ describe("desktop agent jobs", () => {
       },
     })
 
-    const result = requestCancelDesktopAgentJob(db, job.id, "desktop")
+    const result = await requestCancelDesktopAgentJob(db, job.id, "desktop")
     expect(result.activeCancelDelivered).toBe(true)
     expect(result.job.cancelRequestedBy).toBe("desktop")
     expect(cancelCount).toBe(1)
+    // Host cancel evidence for a running job is a committed cancel_requested
+    // status (refactor-canonical-run-event-ledger queued_cancel semantics).
     expect(
-      listAgentJobEvents(db, job.id).map((event) => ({
-        type: event.type,
-        payload: JSON.parse(event.payloadJson || "{}"),
-      })),
-    ).toContainEqual({
+      listAgentJobEvents(db, job.id)
+        .map((event) => ({
+          type: event.type,
+          payload: JSON.parse(event.payloadJson || "{}"),
+        }))
+        .find(
+          (event) =>
+            event.type === "status" &&
+            event.payload.status === "cancel_requested",
+        ),
+    ).toMatchObject({
       type: "status",
       payload: { status: "cancel_requested", requestedBy: "desktop" },
     })
@@ -191,12 +216,12 @@ describe("desktop agent jobs", () => {
     unregisterActiveDesktopAgentJob(job.id)
   })
 
-  test("creates and registers a desktop chat job in one owner call", () => {
+  test("creates and registers a desktop chat job in one owner call", async () => {
     const db = createAgentJobTestDb()
     seedChat(db)
     let cancelCount = 0
 
-    const { job, workerId } = createAndRegisterDesktopChatAgentJob(db, {
+    const { job, workerId } = await createAndRegisterDesktopChatAgentJob(db, {
       runtime: "claude-code",
       mode: "agent",
       chatId: "chat-1",
@@ -210,7 +235,7 @@ describe("desktop agent jobs", () => {
     })
 
     expect(workerId).toBe("desktop:claude-code:stream-registered")
-    const canceled = requestCancelDesktopAgentJob(db, job.id, "desktop")
+    const canceled = await requestCancelDesktopAgentJob(db, job.id, "desktop")
     expect(canceled.activeCancelDelivered).toBe(true)
     expect(cancelCount).toBe(1)
     unregisterActiveDesktopAgentJob(job.id)
@@ -219,7 +244,7 @@ describe("desktop agent jobs", () => {
   test("refreshes heartbeat while a desktop job is active", async () => {
     const db = createAgentJobTestDb()
     seedChat(db)
-    const { job, workerId } = createAndStartDesktopAgentJob(db, {
+    const { job, workerId } = await createAndStartDesktopAgentJob(db, {
       runtime: "codex",
       mode: "plan",
       chatId: "chat-1",
@@ -250,10 +275,10 @@ describe("desktop agent jobs", () => {
     expect(refreshedHeartbeat).toBeGreaterThanOrEqual(initialHeartbeat)
   })
 
-  test("completes running desktop jobs safely and ignores terminal jobs", () => {
+  test("completes running desktop jobs safely and ignores terminal jobs", async () => {
     const db = createAgentJobTestDb()
     seedChat(db)
-    const { job } = createAndStartDesktopAgentJob(db, {
+    const { job } = await createAndStartDesktopAgentJob(db, {
       runtime: "codex",
       mode: "plan",
       chatId: "chat-1",
@@ -263,7 +288,8 @@ describe("desktop agent jobs", () => {
       runId: "run-1",
     })
 
-    const completed = completeDesktopAgentJobSafely(db, {
+    await recordDesktopOutput(db, job.id)
+    const completed = await completeDesktopAgentJobSafely(db, {
       jobId: job.id,
       status: "succeeded",
       exitCode: 0,
@@ -273,7 +299,7 @@ describe("desktop agent jobs", () => {
       type: "completed",
     })
 
-    const ignored = completeDesktopAgentJobSafely(db, {
+    const ignored = await completeDesktopAgentJobSafely(db, {
       jobId: job.id,
       status: "failed",
       exitCode: 1,
@@ -281,10 +307,10 @@ describe("desktop agent jobs", () => {
     expect(ignored?.status).toBe("succeeded")
   })
 
-  test("completes desktop chat jobs with shared runtime completion semantics", () => {
+  test("completes desktop chat jobs with shared runtime completion semantics", async () => {
     const db = createAgentJobTestDb()
     seedChat(db)
-    const { job } = createAndStartDesktopAgentJob(db, {
+    const { job } = await createAndStartDesktopAgentJob(db, {
       runtime: "claude-code",
       mode: "agent",
       chatId: "chat-1",
@@ -294,7 +320,8 @@ describe("desktop agent jobs", () => {
       runId: "run-complete",
     })
 
-    const completed = completeDesktopChatAgentJobSafely(db, {
+    await recordDesktopOutput(db, job.id)
+    const completed = await completeDesktopChatAgentJobSafely(db, {
       jobId: job.id,
       runtime: "claude-code",
       aborted: false,
@@ -319,10 +346,10 @@ describe("desktop agent jobs", () => {
     })
   })
 
-  test("safely requests cancel only for unfinished desktop chat jobs", () => {
+  test("safely requests cancel only for unfinished desktop chat jobs", async () => {
     const db = createAgentJobTestDb()
     seedChat(db)
-    const { job } = createAndStartDesktopAgentJob(db, {
+    const { job } = await createAndStartDesktopAgentJob(db, {
       runtime: "codex",
       mode: "plan",
       chatId: "chat-1",
@@ -344,7 +371,7 @@ describe("desktop agent jobs", () => {
       },
     })
 
-    const canceled = requestCancelDesktopChatAgentJobSafely(db, {
+    const canceled = await requestCancelDesktopChatAgentJobSafely(db, {
       jobId: job.id,
       sawError: false,
       reachedNaturalFinish: false,
@@ -354,7 +381,7 @@ describe("desktop agent jobs", () => {
     expect(canceled?.activeCancelDelivered).toBe(true)
     expect(cancelCount).toBe(1)
     expect(
-      requestCancelDesktopChatAgentJobSafely(db, {
+      await requestCancelDesktopChatAgentJobSafely(db, {
         jobId: job.id,
         sawError: true,
         reachedNaturalFinish: false,
@@ -364,7 +391,7 @@ describe("desktop agent jobs", () => {
     unregisterActiveDesktopAgentJob(job.id)
   })
 
-  test("resolves desktop chat completion status consistently across runtimes", () => {
+  test("resolves desktop chat completion status consistently across runtimes", async () => {
     for (const [runtime, label] of [
       ["claude-code", "Claude"],
       ["codex", "Codex"],

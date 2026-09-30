@@ -23,11 +23,12 @@ describe("headless stdio flushing", () => {
       const { HEADLESS_CLI_MARKER } = await import("./src/main/lib/headless/cli-args.ts")
       const { runHeadlessCliCommand } = await import("./src/main/lib/headless/cli-dispatcher.ts")
       const { flushHeadlessStdio } = await import("./src/main/lib/headless/stdio.ts")
-      const { createAgentJob, completeAgentJob } = await import("./src/main/lib/headless/job-store.ts")
+      const { createAgentJob } = await import("./src/main/lib/headless/job-store.ts")
+      const { getOrCreateRunEventLedger } = await import("./src/main/lib/agent-runtime/run-event-ledger-host.ts")
       const { createAgentJobTestDb } = await import("./tests/helpers/agent-job-test-db.ts")
 
       const db = createAgentJobTestDb()
-      const job = createAgentJob(db, {
+      const job = await createAgentJob(db, {
         id: "job_large_pipe_result",
         source: "api",
         runtime: "codex",
@@ -37,14 +38,25 @@ describe("headless stdio flushing", () => {
         apiConsumerId: "pipe-test",
         apiConsumerRunId: "large-json",
       })
-      completeAgentJob(db, {
-        jobId: job.id,
-        status: "succeeded",
-        exitCode: 0,
-        result: {
-          finalMessage: "x".repeat(${ONE_MIB}),
+      const ledger = await getOrCreateRunEventLedger(db, job)
+      await ledger.settle(
+        {
+          trigger: { kind: "host_result", status: "succeeded", observationKey: "large-result" },
+          policy: { denied: false, evidenceKeys: [] },
+          output: { valid: true, empty: false, allowEmpty: false, evidenceKeys: ["runner-result:finalMessage"] },
+          postRun: { credentialsSafe: true, evidenceKeys: [] },
         },
-      })
+        {
+          jobFields: () => ({
+            exitCode: 0,
+            errorCode: null,
+            errorMessage: null,
+            result: {
+              finalMessage: "x".repeat(${ONE_MIB}),
+            },
+          }),
+        },
+      )
 
       const exitCode = await runHeadlessCliCommand({
         db,

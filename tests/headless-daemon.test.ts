@@ -2,21 +2,21 @@ import { describe, expect, test } from "bun:test"
 import { mkdtempSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
-import {
-  createAgentJob,
-  getAgentJob,
-  listAgentJobs,
-  requestCancelAgentJob,
-  startAgentJob,
-} from "../src/main/lib/headless/job-store"
+import { projects } from "../src/main/lib/db/schema"
+import type { AgentTaskRunner } from "../src/main/lib/headless/agent-runtime-contract"
 import {
   acquireDaemonLock,
   runLocalAgentDaemon,
 } from "../src/main/lib/headless/daemon"
+import {
+  cancelAgentJob,
+  createAgentJob,
+  getAgentJob,
+  listAgentJobs,
+  startAgentJob,
+} from "../src/main/lib/headless/job-store"
 import { createAgentSchedule } from "../src/main/lib/headless/schedules"
-import { projects } from "../src/main/lib/db/schema"
 import { createAgentJobTestDb } from "./helpers/agent-job-test-db"
-import type { AgentTaskRunner } from "../src/main/lib/headless/agent-runtime-contract"
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -35,6 +35,12 @@ async function waitUntil(
   throw new Error(message)
 }
 
+// A PID whose process has already exited (the same-host liveness probe
+// reports ESRCH), i.e. a confirmed-stopped worker.
+function exitedWorkerPid(): number {
+  return Bun.spawnSync([process.execPath, "--version"]).pid
+}
+
 function seedCurrentProject(db: ReturnType<typeof createAgentJobTestDb>) {
   db.insert(projects)
     .values({
@@ -48,19 +54,23 @@ function seedCurrentProject(db: ReturnType<typeof createAgentJobTestDb>) {
 describe("local agent daemon", () => {
   test("runs queued daemon jobs and marks stale running jobs interrupted on startup", async () => {
     const db = createAgentJobTestDb()
-    const staleJob = createAgentJob(db, {
+    const staleJob = await createAgentJob(db, {
       source: "daemon",
       runtime: "codex",
       mode: "agent",
       cwd: process.cwd(),
       prompt: "Interrupted work",
     })
-    startAgentJob(db, {
+    // job-recovery.ts settles only a confirmed-stopped stale worker (its
+    // claimed PID is gone); a claimed row without a PID stays running as
+    // heartbeat_only, so the stale worker records the PID it ran under.
+    await startAgentJob(db, {
       jobId: staleJob.id,
       workerId: "daemon:stale",
+      workerPid: exitedWorkerPid(),
       now: new Date("2026-06-03T00:00:00.000Z"),
     })
-    const queuedJob = createAgentJob(db, {
+    const queuedJob = await createAgentJob(db, {
       source: "daemon",
       runtime: "claude-code",
       mode: "plan",
@@ -99,7 +109,7 @@ describe("local agent daemon", () => {
       nextRunAt: new Date("2026-06-03T01:00:00.000Z"),
       now: new Date("2026-06-03T00:00:00.000Z"),
     })
-    const protocolJob = createAgentJob(db, {
+    const protocolJob = await createAgentJob(db, {
       source: "protocol",
       runtime: "codex",
       mode: "agent",
@@ -123,13 +133,15 @@ describe("local agent daemon", () => {
       stoppedBy: "once",
     })
     expect(listAgentJobs(db, { source: "schedule" })).toHaveLength(1)
-    expect(listAgentJobs(db, { source: "schedule" })[0].status).toBe("succeeded")
+    expect(listAgentJobs(db, { source: "schedule" })[0].status).toBe(
+      "succeeded",
+    )
     expect(getAgentJob(db, protocolJob.id)?.status).toBe("queued")
   })
 
   test("daemon worker observes persisted cancel requests", async () => {
     const db = createAgentJobTestDb()
-    const job = createAgentJob(db, {
+    const job = await createAgentJob(db, {
       source: "daemon",
       runtime: "codex",
       mode: "agent",
@@ -158,7 +170,7 @@ describe("local agent daemon", () => {
       runner,
     })
     await waitUntil(() => started, "daemon job did not start")
-    requestCancelAgentJob(db, job.id, "test")
+    await cancelAgentJob(db, job.id, { requestedBy: "test" })
     const result = await daemon
 
     expect(result).toMatchObject({
@@ -174,14 +186,14 @@ describe("local agent daemon", () => {
 
   test("daemon respects the configured concurrency limit", async () => {
     const db = createAgentJobTestDb()
-    const first = createAgentJob(db, {
+    const first = await createAgentJob(db, {
       source: "daemon",
       runtime: "codex",
       mode: "agent",
       cwd: process.cwd(),
       prompt: "First",
     })
-    const second = createAgentJob(db, {
+    const second = await createAgentJob(db, {
       source: "daemon",
       runtime: "codex",
       mode: "agent",
@@ -197,7 +209,13 @@ describe("local agent daemon", () => {
       observer.heartbeat()
       await new Promise<void>((resolve) => releases.push(resolve))
       active -= 1
-      return { status: "succeeded", exitCode: 0, result: { ok: true } }
+      // R1 (approved design): a runner success needs output evidence, so the
+      // fixture result carries a final message.
+      return {
+        status: "succeeded",
+        exitCode: 0,
+        result: { ok: true, finalMessage: "done" },
+      }
     }
 
     const daemon = runLocalAgentDaemon({
@@ -207,13 +225,19 @@ describe("local agent daemon", () => {
       pollIntervalMs: 5,
       runner,
     })
-    await waitUntil(() => releases.length === 1, "first daemon job did not start")
+    await waitUntil(
+      () => releases.length === 1,
+      "first daemon job did not start",
+    )
     expect(maxActive).toBe(1)
     expect(getAgentJob(db, first.id)?.status).toBe("running")
     expect(getAgentJob(db, second.id)?.status).toBe("queued")
 
     releases.shift()?.()
-    await waitUntil(() => releases.length === 1, "second daemon job did not start")
+    await waitUntil(
+      () => releases.length === 1,
+      "second daemon job did not start",
+    )
     expect(maxActive).toBe(1)
     releases.shift()?.()
     const result = await daemon

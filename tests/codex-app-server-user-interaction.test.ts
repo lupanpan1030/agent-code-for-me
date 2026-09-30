@@ -1,18 +1,18 @@
 import { describe, expect, test } from "bun:test"
-import {
-  QUESTIONS_SKIPPED_MESSAGE,
-  type CodexAskUserQuestionPending,
-} from "../src/main/lib/codex/ask-user-question"
-import { mapDesktopStreamChunkToRunEvents } from "../src/main/lib/agent-runtime/stream-event-mapper"
+import { decodeDesktopStreamChunk } from "../src/main/lib/agent-runtime/ledger-ingress"
 import {
   buildCodexAppServerMcpElicitationResponse,
   buildCodexAppServerUserInputResponse,
+  type CodexAppServerMcpElicitationRequestParams,
+  type CodexAppServerToolRequestUserInputParams,
   createCodexAppServerUserInteractionBridge,
   normalizeCodexAppServerMcpElicitationQuestions,
   normalizeCodexAppServerUserInputQuestions,
-  type CodexAppServerMcpElicitationRequestParams,
-  type CodexAppServerToolRequestUserInputParams,
 } from "../src/main/lib/codex/app-server-user-interaction"
+import {
+  type CodexAskUserQuestionPending,
+  QUESTIONS_SKIPPED_MESSAGE,
+} from "../src/main/lib/codex/ask-user-question"
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -123,19 +123,13 @@ describe("Codex app-server user interaction bridge", () => {
       },
     })
 
-    const mappedEvents = chunks.flatMap((chunk, index) =>
-      mapDesktopStreamChunkToRunEvents({
-        runtimeId: "codex",
-        runId: "run-app-server",
-        jobId: "job-app-server",
-        sequence: index + 1,
-        chunk,
-      }),
-    )
-    expect(mappedEvents.map((event) => event.type)).toEqual([
-      "question_pending",
-      "question_result",
-    ])
+    // The desktop stream decode commits the bridge's chunks as question facts.
+    const decodedEvents = chunks.map((chunk) => decodeDesktopStreamChunk(chunk))
+    expect(
+      decodedEvents.map((event) =>
+        event.kind === "observation" ? event.type : event.kind,
+      ),
+    ).toEqual(["question_pending", "question_result"])
   })
 
   test("returns empty requestUserInput answers for skipped and timed-out questions", async () => {

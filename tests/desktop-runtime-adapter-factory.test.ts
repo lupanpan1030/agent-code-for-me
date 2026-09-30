@@ -8,7 +8,7 @@ import {
   type DesktopRuntimeAdapter,
   DesktopRuntimeAdapterFactory,
   type DesktopRuntimeAdapterSource,
-  emitDesktopRuntimeAdapterStarted,
+  recordDesktopRuntimeAdapterStarted,
 } from "../src/main/lib/agent-runtime/desktop-runner"
 
 function fakeAdapter(
@@ -45,9 +45,12 @@ describe("desktop runtime adapter factory", () => {
     })
   })
 
-  test("emits desktop adapter source as a normalized runtime trace event", () => {
-    const emittedEvents: any[] = []
-    emitDesktopRuntimeAdapterStarted(
+  // refactor-canonical-run-event-ledger (APPROVED design, desktop-runner row):
+  // the adapter-started host fact goes through the Run ledger's
+  // appendSystemEvent instead of a direct sequence=0 RunEvent.
+  test("records desktop adapter source as a host fact through the Run ledger", async () => {
+    const recorded: unknown[] = []
+    await recordDesktopRuntimeAdapterStarted(
       {
         identity: { runId: "run-1", jobId: "job-1" },
         context: {
@@ -58,17 +61,19 @@ describe("desktop runtime adapter factory", () => {
           subChatId: "sub-1",
           cwd: "/repo",
         },
-        trace: { emit: (event: any) => emittedEvents.push(event) },
+        ledger: {
+          appendSystemEvent: async (input: unknown) => {
+            recorded.push(input)
+            return []
+          },
+        },
       } as any,
       CODEX_APP_SERVER_DESKTOP_ADAPTER_METADATA,
     )
 
-    expect(emittedEvents).toHaveLength(1)
-    expect(emittedEvents[0]).toMatchObject({
-      runId: "run-1",
-      jobId: "job-1",
-      runtimeId: "codex",
-      sequence: 0,
+    expect(recorded).toHaveLength(1)
+    expect(recorded[0]).toMatchObject({
+      observationKey: "desktop-adapter-started:run-1:codex-app-server",
       type: "status",
       payload: {
         status: "desktop_runtime_adapter_started",
@@ -80,16 +85,12 @@ describe("desktop runtime adapter factory", () => {
         defaultDisableCondition: null,
         removalCondition: null,
       },
-      redaction: {
-        status: "not-required",
-        appliedRules: [],
-      },
     })
   })
 
-  test("rejects adapter source trace when metadata does not match the request runtime", () => {
-    expect(() =>
-      emitDesktopRuntimeAdapterStarted(
+  test("rejects adapter source trace when metadata does not match the request runtime", async () => {
+    await expect(
+      recordDesktopRuntimeAdapterStarted(
         {
           identity: { runId: "run-1", jobId: "job-1" },
           context: {
@@ -100,11 +101,11 @@ describe("desktop runtime adapter factory", () => {
             subChatId: "sub-1",
             cwd: "/repo",
           },
-          trace: { emit: () => {} },
+          ledger: { appendSystemEvent: async () => [] },
         } as any,
         CLAUDE_AGENT_SDK_DESKTOP_ADAPTER_METADATA,
       ),
-    ).toThrow(
+    ).rejects.toThrow(
       "Desktop runtime adapter metadata mismatch: claude-agent-sdk cannot run codex",
     )
   })
@@ -175,9 +176,7 @@ describe("desktop runtime adapter factory", () => {
     const removedSpawnProbe = ["probeCodex", "Spawn"].join("Acp")
 
     expect(codexRouter).toContain("../../codex/app-server-adapter-runner")
-    expect(codexRouter).not.toContain(
-      'from "../../codex/app-server-adapter"',
-    )
+    expect(codexRouter).not.toContain('from "../../codex/app-server-adapter"')
     expect(codexRouter).toContain("../../codex/desktop-run-request")
     expect(codexRouter).toContain("../../codex/chat-history")
     expect(codexRouter).toContain("../../codex/cli-runner")
@@ -185,7 +184,9 @@ describe("desktop runtime adapter factory", () => {
     expect(codexRouter).toContain("runCodexAppServerDesktopAdapter")
     expect(codexRouter).not.toContain("createCodexAppServerAdapter")
     expect(codexRouter).toContain('codexAdapterSource: "codex-app-server"')
-    expect(codexRouter).toContain("createCodexAppServerFinishGate")
+    // The route's finish gate is composed through the committed-projection
+    // renderer sink (refactor-canonical-run-event-ledger).
+    expect(codexRouter).toContain("createCodexDesktopRouteRenderer")
     expect(codexAppServerRunner).toContain("createCodexAppServerAdapter")
     expect(codexAppServerRunner).toContain("DesktopRuntimeAdapterFactory")
     expect(codexAppServerRunner).toContain(

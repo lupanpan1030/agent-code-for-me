@@ -16,15 +16,19 @@ import {
 } from "../src/main/lib/headless/schedules"
 import { createAgentJobTestDb } from "./helpers/agent-job-test-db"
 
-function withTempProject<T>(
-  callback: (paths: { root: string; projectPath: string; cwd: string }) => T,
-): T {
+async function withTempProject<T>(
+  callback: (paths: {
+    root: string
+    projectPath: string
+    cwd: string
+  }) => T | Promise<T>,
+): Promise<T> {
   const root = mkdtempSync(join(tmpdir(), "locus-schedules-"))
   const projectPath = join(root, "project")
   const cwd = join(projectPath, "workspace")
   mkdirSync(cwd, { recursive: true })
   try {
-    return callback({ root, projectPath, cwd })
+    return await callback({ root, projectPath, cwd })
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
@@ -62,8 +66,8 @@ function seedProviderProfile(
 }
 
 describe("headless schedules", () => {
-  test("creates schedules under registered projects and redacts prompt metadata", () => {
-    withTempProject(({ projectPath, cwd }) => {
+  test("creates schedules under registered projects and redacts prompt metadata", async () => {
+    await withTempProject(async ({ projectPath, cwd }) => {
       const db = createAgentJobTestDb()
       seedProject(db, projectPath)
       const now = new Date("2026-06-03T01:00:00.000Z")
@@ -89,8 +93,8 @@ describe("headless schedules", () => {
     })
   })
 
-  test("redacts a prompt secret before the schedule preview boundary", () => {
-    withTempProject(({ projectPath, cwd }) => {
+  test("redacts a prompt secret before the schedule preview boundary", async () => {
+    await withTempProject(async ({ projectPath, cwd }) => {
       const db = createAgentJobTestDb()
       seedProject(db, projectPath)
       const secret = "sk-abcdefghijklmnopqrstuvwxyz123456"
@@ -110,8 +114,8 @@ describe("headless schedules", () => {
     })
   })
 
-  test("rejects unregistered cwd and symlink escapes", () => {
-    withTempProject(({ root, projectPath }) => {
+  test("rejects unregistered cwd and symlink escapes", async () => {
+    await withTempProject(async ({ root, projectPath }) => {
       const db = createAgentJobTestDb()
       seedProject(db, projectPath)
       const outside = join(root, "outside")
@@ -143,8 +147,8 @@ describe("headless schedules", () => {
     })
   })
 
-  test("run now creates a schedule job and audit run without moving next run", () => {
-    withTempProject(({ projectPath, cwd }) => {
+  test("run now creates a schedule job and audit run without moving next run", async () => {
+    await withTempProject(async ({ projectPath, cwd }) => {
       const db = createAgentJobTestDb()
       seedProject(db, projectPath)
       seedProviderProfile(db)
@@ -161,7 +165,7 @@ describe("headless schedules", () => {
         now: new Date("2026-06-03T01:00:00.000Z"),
       })
 
-      const fired = runAgentScheduleNow(
+      const fired = await runAgentScheduleNow(
         db,
         schedule.id,
         new Date("2026-06-03T01:05:00.000Z"),
@@ -184,8 +188,8 @@ describe("headless schedules", () => {
     })
   })
 
-  test("due evaluation fires enabled schedules once and advances next run", () => {
-    withTempProject(({ projectPath, cwd }) => {
+  test("due evaluation fires enabled schedules once and advances next run", async () => {
+    await withTempProject(async ({ projectPath, cwd }) => {
       const db = createAgentJobTestDb()
       seedProject(db, projectPath)
       const schedule = createAgentSchedule(db, {
@@ -199,7 +203,7 @@ describe("headless schedules", () => {
         now: new Date("2026-06-03T00:00:00.000Z"),
       })
 
-      const fired = evaluateDueAgentSchedules(db, {
+      const fired = await evaluateDueAgentSchedules(db, {
         now: new Date("2026-06-03T01:05:00.000Z"),
       })
 
@@ -212,7 +216,7 @@ describe("headless schedules", () => {
         "2026-06-03T01:06:00.000Z",
       )
       expect(
-        evaluateDueAgentSchedules(db, {
+        await evaluateDueAgentSchedules(db, {
           now: new Date("2026-06-03T01:05:00.000Z"),
         }),
       ).toHaveLength(0)
@@ -220,8 +224,8 @@ describe("headless schedules", () => {
     })
   })
 
-  test("pause, resume, and delete control due firing", () => {
-    withTempProject(({ projectPath, cwd }) => {
+  test("pause, resume, and delete control due firing", async () => {
+    await withTempProject(async ({ projectPath, cwd }) => {
       const db = createAgentJobTestDb()
       seedProject(db, projectPath)
       const schedule = createAgentSchedule(db, {
@@ -237,7 +241,7 @@ describe("headless schedules", () => {
 
       expect(pauseAgentSchedule(db, schedule.id).status).toBe("paused")
       expect(
-        evaluateDueAgentSchedules(db, {
+        await evaluateDueAgentSchedules(db, {
           now: new Date("2026-06-03T01:05:00.000Z"),
         }),
       ).toHaveLength(0)
@@ -261,8 +265,8 @@ describe("headless schedules", () => {
     })
   })
 
-  test("due evaluation disables invalid project paths before creating jobs", () => {
-    withTempProject(({ projectPath, cwd }) => {
+  test("due evaluation disables invalid project paths before creating jobs", async () => {
+    await withTempProject(async ({ projectPath, cwd }) => {
       const db = createAgentJobTestDb()
       seedProject(db, projectPath)
       const schedule = createAgentSchedule(db, {
@@ -278,7 +282,7 @@ describe("headless schedules", () => {
       rmSync(projectPath, { recursive: true, force: true })
 
       expect(
-        evaluateDueAgentSchedules(db, {
+        await evaluateDueAgentSchedules(db, {
           now: new Date("2026-06-03T01:05:00.000Z"),
         }),
       ).toHaveLength(0)

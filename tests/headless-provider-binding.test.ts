@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { randomBytes } from "node:crypto"
 import { eq } from "drizzle-orm"
+import { getOrCreateRunEventLedger } from "../src/main/lib/agent-runtime/run-event-ledger-host"
 import {
   agentProviderDefaults,
   agentProviderProfiles,
@@ -8,8 +9,6 @@ import {
 import type { AgentRuntimeRunRequest } from "../src/main/lib/headless/agent-runtime-contract"
 import { runPersistedAgentJob } from "../src/main/lib/headless/job-runner"
 import {
-  appendAgentJobEvent,
-  completeAgentJob,
   createAgentJob,
   getAgentJob,
   listAgentJobEvents,
@@ -111,7 +110,7 @@ describe("headless provider binding", () => {
   test("keeps runtime-registered native credentials redacted through terminal materialization", async () => {
     const db = createAgentJobTestDb()
     const nativeOAuthToken = randomBytes(32).toString("hex")
-    const job = createAgentJob(db, {
+    const job = await createAgentJob(db, {
       source: "api",
       runtime: "claude-code",
       mode: "agent",
@@ -241,7 +240,7 @@ describe("headless provider binding", () => {
 
       let gatewayCreateCount = 0
       let runnerCalled = false
-      const job = createAgentJob(db, {
+      const job = await createAgentJob(db, {
         source: "api",
         runtime: "codex",
         mode: "agent",
@@ -367,7 +366,7 @@ describe("headless provider binding", () => {
       model: "gpt-default",
     })
     seedDefault(db, "codex-default")
-    const job = createAgentJob(db, {
+    const job = await createAgentJob(db, {
       source: "cli",
       runtime: "codex",
       mode: "agent",
@@ -424,7 +423,7 @@ describe("headless provider binding", () => {
       model: "gpt-default",
     })
     seedDefault(db, "codex-default")
-    const job = createAgentJob(db, {
+    const job = await createAgentJob(db, {
       source: "api",
       runtime: "codex",
       mode: "agent",
@@ -512,7 +511,7 @@ describe("headless provider binding", () => {
       targets: ["codex"],
       model: "gpt-canary",
     })
-    const job = createAgentJob(db, {
+    const job = await createAgentJob(db, {
       source: "api",
       runtime: "codex",
       mode: "agent",
@@ -649,7 +648,7 @@ describe("headless provider binding", () => {
       targets: ["codex"],
       model: "gpt-canary",
     })
-    const job = createAgentJob(db, {
+    const job = await createAgentJob(db, {
       source: "api",
       runtime: "codex",
       mode: "agent",
@@ -716,7 +715,7 @@ describe("headless provider binding", () => {
     })
     seedDefault(db, "codex-default")
 
-    const failedJob = createAgentJob(db, {
+    const failedJob = await createAgentJob(db, {
       source: "cli",
       runtime: "codex",
       mode: "agent",
@@ -736,7 +735,7 @@ describe("headless provider binding", () => {
     })
     expect(failed.job.status).toBe("failed")
 
-    const canceledJob = createAgentJob(db, {
+    const canceledJob = await createAgentJob(db, {
       source: "cli",
       runtime: "codex",
       mode: "agent",
@@ -782,7 +781,7 @@ describe("headless provider binding", () => {
       targets: ["codex"],
       model: "gpt-cancel-order",
     })
-    const job = createAgentJob(db, {
+    const job = await createAgentJob(db, {
       source: "cli",
       runtime: "codex",
       mode: "agent",
@@ -867,7 +866,7 @@ describe("headless provider binding", () => {
       targets: ["codex"],
       model: "gpt-tool-streams",
     })
-    const job = createAgentJob(db, {
+    const job = await createAgentJob(db, {
       source: "api",
       runtime: "codex",
       mode: "agent",
@@ -996,7 +995,7 @@ describe("headless provider binding", () => {
       model: "gpt-default",
     })
     seedDefault(db, "codex-default", "gpt-default-override")
-    const job = createAgentJob(db, {
+    const job = await createAgentJob(db, {
       source: "api",
       runtime: "codex",
       mode: "agent",
@@ -1031,17 +1030,20 @@ describe("headless provider binding", () => {
     ])
   })
 
-  test("result envelopes use provider resolution events for in-flight default-profile jobs", () => {
+  test("result envelopes use provider resolution events for in-flight default-profile jobs", async () => {
     const db = createAgentJobTestDb()
-    const job = createAgentJob(db, {
+    const job = await createAgentJob(db, {
       source: "api",
       runtime: "codex",
       mode: "agent",
       cwd: process.cwd(),
       prompt: "Poll while running",
     })
-    appendAgentJobEvent(db, {
-      jobId: job.id,
+    // The provider-resolution status fact is a host fact recorded through
+    // the job's host ledger (the deleted appendAgentJobEvent writer is gone).
+    const ledger = await getOrCreateRunEventLedger(db, job)
+    await ledger.appendSystemEvent({
+      observationKey: `host:provider-binding:${job.id}`,
       type: "status",
       payload: {
         providerBinding: {
@@ -1074,7 +1076,7 @@ describe("headless provider binding", () => {
       targets: ["codex"],
       model: "gpt-default",
     })
-    const original = createAgentJob(db, {
+    const original = await createAgentJob(db, {
       source: "cli",
       runtime: "codex",
       mode: "agent",
@@ -1082,18 +1084,37 @@ describe("headless provider binding", () => {
       prompt: "Run with explicit profile",
       providerProfileId: "codex-main",
     })
-    completeAgentJob(db, {
-      jobId: original.id,
-      status: "failed",
-      exitCode: 1,
-      errorCode: "runtime_failed",
-      errorMessage: "failed before retry",
-    })
+    const originalLedger = await getOrCreateRunEventLedger(db, original)
+    await originalLedger.settle(
+      {
+        trigger: {
+          kind: "host_result",
+          status: "failed",
+          observationKey: `host-result:${original.id}`,
+        },
+        policy: { denied: false, evidenceKeys: [] },
+        output: {
+          valid: true,
+          empty: true,
+          allowEmpty: false,
+          evidenceKeys: [],
+        },
+        postRun: { credentialsSafe: true, evidenceKeys: [] },
+      },
+      {
+        jobFields: () => ({
+          exitCode: 1,
+          errorCode: "runtime_failed",
+          errorMessage: "failed before retry",
+        }),
+      },
+    )
+    expect(getAgentJob(db, original.id)?.status).toBe("failed")
     db.delete(agentProviderProfiles)
       .where(eq(agentProviderProfiles.id, "codex-main"))
       .run()
 
-    const retry = retryAgentJob(db, original.id)
+    const retry = await retryAgentJob(db, original.id)
     const result = await runPersistedAgentJob({
       db,
       jobId: retry.id,
