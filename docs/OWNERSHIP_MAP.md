@@ -340,6 +340,12 @@ or UI helper.
   observer, cancellation signal, and session metadata through the desktop run
   request. Routes remain envelope/input surfaces and must delete or gate
   route-local helpers once equivalent adapter-owned behavior exists.
+- Run events: the request may carry the Run's host-composed ledger (`ledger`).
+  Adapters submit native boundaries and observations through it and project
+  the committed records it returns; `desktop-runner.ts` records the
+  adapter-started fact with `appendSystemEvent`. No adapter allocates sequences,
+  reconstructs a terminal or mints `completed` (see Runtime Events, Trace, And
+  Redaction).
 
 ## Runtime Events, Trace, And Redaction
 
@@ -385,6 +391,38 @@ or UI helper.
   Run-scoped credentials are passed to the redaction owner only as
   main-process-only exact secret hints; hints themselves never enter an event,
   message, result, diagnostic, renderer payload, or durable record.
+- Workbench trace reader:
+  `src/renderer/features/agents/workbench/workbench-trace-presenter.ts` is the
+  single versioned reader of persisted Run events. `getWorkbenchSemanticPayload`
+  unwraps only pre-ledger (`ledger_version=0`) desktop wrapper rows; ledger rows
+  are read as committed bare payloads.
+- Architecture pins: `scripts/check-architecture-guards.mjs` always runs in
+  canonical mode; there is no build-time ledger gate and no transition guard
+  mode. It pins the owners in
+  `tests/fixtures/run-event-ledger/architecture-fixtures.json#pinnedOwners`,
+  allows only `run-event-ledger-host.ts` to import `appendExactRunEventBatch`
+  (`APPEND_EXACT_RUN_EVENT_BATCH_IMPORTERS`), keeps the exact-record insert
+  private to `job-store.ts`, rejects the retired exports and helpers, and binds
+  execution provenance only through the host. Its fixture self-test must match
+  every expected finding exactly. Behavioral pins are the acceptance suite
+  `tests/run-event-ledger-*.test.ts` (S01–S56) and
+  `tests/ledger-v1-fact-key-invariant.test.ts`.
+- Forbidden duplicates: a second event mapper, sequence allocator or
+  `completed` minter outside the ledger; any direct `agent_job_events`
+  insert, update or delete in routes, adapters, schedules, recovery or
+  lifecycle services; any importer of `appendExactRunEventBatch` other than the
+  host; a stateful Codex decoder or an interrupt target kept outside the
+  ledger's native context; a second redaction algorithm or store-side event
+  redaction; a second provenance capture helper or a runtime delivery
+  registry; raw desktop text-delta joins or route-local history reconstruction
+  instead of the committed item projection; the retired
+  `src/main/lib/agent-runtime/job-event-bridge.ts` and the eleven retired
+  symbols `mapDesktopStreamChunkToRunEvents`, `createDesktopStreamEventMapper`,
+  `appendRunEventsToAgentJob`, `redactRendererDiagnosticChunk`,
+  `redactRendererRuntimeChunk`, `createRuntimeRendererChunkEmitter`,
+  `createRuntimeStreamChunkSecretRedactor`, `isDesktopRuntimeFailureChunk`,
+  `persistedPayloadForRunEvent`, `createAgentJobRunEvent` and
+  `appendAgentJobEvent`; and any reintroduced ledger gate or transition mode.
 
 ## Provider Credentials
 
@@ -421,6 +459,17 @@ or UI helper.
   removes this temporary-owner clause.
 - Rule: the bundled Claude Code CLI is an install/runtime asset, not a second
   desktop chat implementation.
+- Run events: the desktop run state holds the job's Run ledger.
+  `src/main/lib/claude/agent-sdk-desktop-job.ts` binds the bundled executable's
+  provenance before the query starts, `src/main/lib/claude/agent-sdk-adapter.ts`
+  forwards the query's correlated `system/init` and `result` messages with the
+  resume intent (`ingestClaudeMessage`), the envelope emits through the host
+  renderer channel, and the finalizers submit terminal evidence.
+  `src/main/lib/claude/agent-sdk-errors.ts` reports "No conversation found" as
+  the neutral `NATIVE_RESUME_REJECTED`; the stream-error finalizer keeps the
+  existing `sessionId`, and the renderer card
+  (`src/renderer/features/agents/lib/ipc-chat-transport.ts`) reads "Session
+  resume rejected" without claiming expiry or starting a fresh session.
 
 ## Codex Desktop Chat Runtime
 
@@ -439,6 +488,14 @@ or UI helper.
 - App-server transport and behavior owners remain under
   `src/main/lib/codex/app-server-*`; adapter selection remains owned by
   `src/main/lib/codex/desktop-adapter-selection.ts`.
+- Run events: `src/main/lib/codex/app-server-adapter.ts` binds the resolved
+  executable's provenance before spawn and submits correlated responses,
+  notifications, server requests, response sends, resolved notifications and
+  transport exits to the Run ledger; it reads the interrupt target from the
+  ledger's native context and never fabricates `thread/started` or substitutes
+  a session ID. `desktop-run-persistence.ts` writes history from the committed
+  item projection, and `desktop-run-finalize.ts` submits terminal evidence
+  instead of completing the job itself.
 - Route boundary: `src/main/lib/trpc/routers/codex.ts` owns tRPC input/schema
   validation, the observable stream envelope, renderer redaction/finish-gate
   wiring, and ordered orchestration of the lib owners. It must not own durable
@@ -460,6 +517,19 @@ or UI helper.
   `src/main/lib/headless/adapters/codex.ts`
 - Rule: headless adapters own batch/job invocation semantics only. They must not
   duplicate desktop chat stream, approval, or UI-state behavior.
+- Run events: `src/main/lib/headless/job-runner.ts` owns the thin coarse
+  observation ingress and the outcome evidence of both terminal branches;
+  `src/main/lib/headless/process-runner.ts#bindProcessRunExecutionProvenance`
+  is the headless exec launch caller of provenance capture;
+  `src/main/lib/headless/completion-runner.ts` binds its `locus-completion`
+  tuple and settles through the ledger. Lifecycle services in
+  `src/main/lib/headless/job-store.ts` (`createAgentJob`, `startAgentJob`,
+  `retryAgentJob`, `cancelAgentJob`), `src/main/lib/headless/schedules.ts`
+  (`recordAgentJobCreated`) and the CLI/API/tRPC cancel paths record through
+  the host ledger. `src/main/lib/headless/job-recovery.ts` owns stale-worker
+  liveness. The Codex app-server headless wrapper
+  (`src/main/lib/headless/adapters/codex-app-server.ts`) consumes committed
+  records and never appends them again.
 
 ## Runtime MCP Configuration
 
