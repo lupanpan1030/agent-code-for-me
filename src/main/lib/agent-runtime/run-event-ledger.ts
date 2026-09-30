@@ -4069,21 +4069,88 @@ class RunEventLedgerImpl {
 export type CanonicalRunEventLedger = RunEventLedgerImpl
 
 /**
- * Output evidence of a completed-only assistant item: a committed
- * `status/item_reconciliation` whose assistant channel carries non-empty
- * final text (design "Final text wins for pre-seal item materialization";
- * reconciliation `missing_local` materializes it without any delta).
+ * Whether a committed record belongs to an assistant item of the Run's item
+ * read model: an `assistant_delta` carrying an item key (native or coarse
+ * correlation) or a `status/item_reconciliation` of the assistant channel.
+ * Such records count as output only through {@link assistantItemOutputRecords};
+ * an item-less coarse `assistant_delta` keeps its host's own rule.
  */
-export function isReconciledAssistantOutput(record: LedgerRecord): boolean {
-  if (record.type !== "status" || !isObject(record.payload)) return false
+export function isAssistantItemRecord(record: LedgerRecord): boolean {
+  if (!isObject(record.payload)) return false
   const payload = record.payload as Record<string, unknown>
-  if (payload.subtype !== "item_reconciliation") return false
-  const item = isObject(payload.item) ? payload.item : null
+  if (!isObject(payload.item)) return false
+  if (record.type === "assistant_delta") return true
   return (
-    item?.channel === "assistant" &&
-    typeof item.text === "string" &&
-    item.text.trim().length > 0
+    record.type === "status" &&
+    payload.subtype === "item_reconciliation" &&
+    (payload.item as Record<string, unknown>).channel === "assistant"
   )
+}
+
+/**
+ * Output evidence of the Run's assistant items from their final item state
+ * (design "Final text wins for pre-seal item materialization"; an invalid
+ * empty output fails): the committed records are folded per item key with
+ * the ledger's own item reduction, so a completed item counts only when its
+ * final text is non-empty (earlier deltas superseded by an empty final text
+ * are not output) and an item still streaming counts by its materialized
+ * text. Returns the records that carry the counted text: the reconciliation
+ * that set a completed item's final text, or the non-empty deltas of a
+ * streaming item. Shared by the headless and desktop hosts.
+ */
+export function assistantItemOutputRecords(
+  records: readonly LedgerRecord[],
+): LedgerRecord[] {
+  type Part = {
+    completed: boolean
+    text: string
+    structured: boolean
+    carriers: LedgerRecord[]
+  }
+  const parts = new Map<string, Part>()
+  for (const record of records) {
+    if (!isAssistantItemRecord(record)) continue
+    const payload = record.payload as Record<string, unknown>
+    const item = payload.item as Record<string, unknown>
+    const key = itemMapKey(item)
+    const part = parts.get(key) ?? {
+      completed: false,
+      text: "",
+      structured: false,
+      carriers: [],
+    }
+    parts.set(key, part)
+    if (record.type === "assistant_delta") {
+      // The ledger ignores a delta for an already completed item.
+      if (part.completed) continue
+      const text =
+        typeof payload.text === "string"
+          ? payload.text
+          : typeof payload.delta === "string"
+            ? payload.delta
+            : ""
+      const structured = payload.structured !== undefined
+      part.text += text
+      part.structured = part.structured || structured
+      if (text.length > 0 || structured) part.carriers.push(record)
+      continue
+    }
+    part.completed = !(item.state === "started" || item.state === "streaming")
+    if (typeof item.text === "string") {
+      // Final text wins: it replaces the materialized text and its carriers.
+      part.text = item.text
+      part.structured = false
+      part.carriers = [record]
+    }
+  }
+  const output: LedgerRecord[] = []
+  for (const part of parts.values()) {
+    const counted = part.completed
+      ? part.text.trim().length > 0
+      : part.text.trim().length > 0 || part.structured
+    if (counted) output.push(...part.carriers)
+  }
+  return output.sort((left, right) => left.sequence - right.sequence)
 }
 
 /**

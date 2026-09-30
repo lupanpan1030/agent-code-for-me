@@ -4,7 +4,8 @@ import type { AgentRuntimeId } from "../../shared/agent-runtime-capabilities"
 import type { DesktopPermissionPolicy } from "./agent-runtime/permission-policy"
 import { verifyDesktopRunPreflight } from "./agent-runtime/preflight"
 import {
-  isReconciledAssistantOutput,
+  assistantItemOutputRecords,
+  isAssistantItemRecord,
   type LedgerRecord,
   type OutcomeEvidence,
   type TerminalJobFields,
@@ -394,13 +395,16 @@ function desktopOutcomeEvidence(input: {
     native && (input.status === "succeeded" || native.status === "failed")
       ? native
       : null
-  const outputKeys = input.records
-    .filter(
+  // Assistant items count by their final item state (final text wins); other
+  // output records, item-less assistant_delta included, count by type.
+  const outputKeys = [
+    ...assistantItemOutputRecords(input.records),
+    ...input.records.filter(
       (record) =>
-        DESKTOP_OUTPUT_TYPES.has(record.type) ||
-        // A completed-only assistant item (no delta) is output too.
-        isReconciledAssistantOutput(record),
-    )
+        DESKTOP_OUTPUT_TYPES.has(record.type) && !isAssistantItemRecord(record),
+    ),
+  ]
+    .sort((left, right) => left.sequence - right.sequence)
     .map((record) => `record:${record.sequence}`)
   const denials = input.records.filter((record) => {
     if (record.type !== "permission_requested") return false

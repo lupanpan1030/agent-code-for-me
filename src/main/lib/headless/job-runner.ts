@@ -9,9 +9,10 @@ import { isTerminalAgentJobStatus } from "../../../shared/agent-jobs"
 import type { LocalJobApiResolvedProvider } from "../../../shared/local-job-api"
 import type { RunArtifactRunDir } from "../agent-runtime/run-artifacts"
 import {
+  assistantItemOutputRecords,
   type CanonicalRunEventLedger,
   type CreateCanonicalRunEventLedgerOptions,
-  isReconciledAssistantOutput,
+  isAssistantItemRecord,
   type LedgerOutcome,
   type LedgerRecord,
   type OutcomeEvidence,
@@ -449,16 +450,20 @@ function headlessOutcomeEvidence(input: {
 }): OutcomeEvidence {
   const observationKey = `runner-result:${input.jobId}`
   const denials = input.records.filter(isRecordedDenial)
-  const outputKeys = input.records
-    .filter(
+  // Assistant items count by their final item state (final text wins); an
+  // item-less coarse assistant_delta counts by its own text.
+  const outputKeys = [
+    ...assistantItemOutputRecords(input.records),
+    ...input.records.filter(
       (record) =>
-        (record.type === "assistant_delta" &&
-          (textOf(record.payload).length > 0 ||
-            (isRecord(record.payload) &&
-              record.payload.structured !== undefined))) ||
-        // A completed-only assistant item (no delta) is output too.
-        isReconciledAssistantOutput(record),
-    )
+        record.type === "assistant_delta" &&
+        !isAssistantItemRecord(record) &&
+        (textOf(record.payload).length > 0 ||
+          (isRecord(record.payload) &&
+            record.payload.structured !== undefined)),
+    ),
+  ]
+    .sort((left, right) => left.sequence - right.sequence)
     .map((record) => `record:${record.sequence}`)
   const finalMessage = isRecord(input.result?.result)
     ? input.result.result.finalMessage
