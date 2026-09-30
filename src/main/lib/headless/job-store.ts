@@ -1,4 +1,15 @@
-import { and, asc, desc, eq, isNotNull, isNull, lt, or, sql } from "drizzle-orm"
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  or,
+  sql,
+} from "drizzle-orm"
 import type { drizzle } from "drizzle-orm/better-sqlite3"
 import {
   AGENT_JOB_EVENT_TYPES,
@@ -20,11 +31,13 @@ import {
 } from "../../../shared/agent-runtime-capabilities"
 import { createAgentJobRunEvent } from "../agent-runtime/job-event-bridge"
 import { redactExactSecretHints } from "../agent-runtime/redaction"
+import type { JsonValue, RunEvent } from "../agent-runtime/runtime-events"
 import type * as schema from "../db/schema"
 import {
   type AgentJob,
   type AgentJobEvent,
   agentJobEvents,
+  agentJobProjectionCursors,
   agentJobs,
 } from "../db/schema"
 import { createId } from "../db/utils"
@@ -765,4 +778,515 @@ export function retryAgentJob(
   const retry = getAgentJob(db, retryId)
   if (!retry) throw new Error(`Failed to create retry job ${retryId}`)
   return retry
+}
+
+// ---------------------------------------------------------------------------
+// Canonical run event ledger store (refactor-canonical-run-event-ledger).
+//
+// The ledger allocates dense sequences and fact keys; this store validates and
+// commits an exact batch atomically, never re-sequences and never redacts or
+// constructs events. Its only importer is agent-runtime/run-event-ledger-host.
+// ---------------------------------------------------------------------------
+
+export type ExactRunEventRecord = RunEvent & {
+  /** `<observationKey>:<ordinal>`; stored verbatim, never hashed. */
+  factKey: string
+  /** Record metadata (redaction, boundary/source, provenance ref). */
+  metadata: { [key: string]: JsonValue }
+}
+
+type ExactRunEventTimestamp = Date | string | number | null
+
+/** Job-row fields a ledger batch may change together with its records. */
+export type ExactRunEventJobMutation = {
+  status?: AgentJobStatus
+  workerId?: string | null
+  workerPid?: number | null
+  workerStartedAt?: ExactRunEventTimestamp
+  startedAt?: ExactRunEventTimestamp
+  finishedAt?: ExactRunEventTimestamp
+  heartbeatAt?: ExactRunEventTimestamp
+  exitCode?: number | null
+  errorCode?: string | null
+  errorMessage?: string | null
+  resultJson?: string | null
+  cancelRequestedAt?: ExactRunEventTimestamp
+  cancelRequestedBy?: string | null
+  ledgerProvenanceJson?: string | null
+}
+
+export type AppendExactRunEventBatchInput = {
+  jobId: string
+  records: readonly ExactRunEventRecord[]
+  expectedHighWater: number
+  jobMutation?: ExactRunEventJobMutation | null
+  /** Final admitted artifact refs registered with the terminal commit. */
+  artifactRefs?: readonly JsonValue[] | null
+}
+
+export type RunEventStoreErrorCode =
+  | "EXPECTED_HIGH_WATER_CONFLICT"
+  | "LEDGER_V0_APPEND_REJECTED"
+  | "PARTIAL_FACT_KEY_OVERLAP"
+  | "NON_DENSE_SEQUENCE"
+  | "SEALED_RUN_APPEND_REJECTED"
+  | "UNKNOWN_JOB"
+  | "INVALID_RECORD"
+
+export class RunEventStoreError extends Error {
+  readonly code: RunEventStoreErrorCode
+
+  constructor(code: RunEventStoreErrorCode, message: string) {
+    super(`${code}: ${message}`)
+    this.name = "RunEventStoreError"
+    this.code = code
+  }
+}
+
+export type RunEventLedgerHeader = {
+  runId: string
+  jobId: string
+  runtimeId: string
+  source: string
+  kind: string
+  status: string
+  ledgerVersion: number
+  ledgerProvenanceJson: string | null
+  ledgerSealedSequence: number | null
+  cancelRequestedAt: string | null
+  workerId: string | null
+  workerPid: number | null
+  workerStartedAt: string | null
+  heartbeatAt: string | null
+  highWater: number
+}
+
+const EXACT_JOB_MUTATION_TIMESTAMP_KEYS = new Set([
+  "workerStartedAt",
+  "startedAt",
+  "finishedAt",
+  "heartbeatAt",
+  "cancelRequestedAt",
+])
+
+const EXACT_JOB_MUTATION_KEYS = new Set([
+  "status",
+  "workerId",
+  "workerPid",
+  "workerStartedAt",
+  "startedAt",
+  "finishedAt",
+  "heartbeatAt",
+  "exitCode",
+  "errorCode",
+  "errorMessage",
+  "resultJson",
+  "cancelRequestedAt",
+  "cancelRequestedBy",
+  "ledgerProvenanceJson",
+])
+
+function toExactTimestamp(value: ExactRunEventTimestamp): Date | null {
+  if (value === null) return null
+  const date = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    throw new RunEventStoreError("INVALID_RECORD", "invalid job timestamp")
+  }
+  return date
+}
+
+function exactJobMutationValues(
+  mutation: ExactRunEventJobMutation | null | undefined,
+): Partial<typeof agentJobs.$inferInsert> {
+  const values: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(mutation ?? {})) {
+    if (value === undefined) continue
+    if (!EXACT_JOB_MUTATION_KEYS.has(key)) {
+      throw new RunEventStoreError(
+        "INVALID_RECORD",
+        `job mutation field ${key} is not ledger-owned`,
+      )
+    }
+    if (key === "status") {
+      assertOneOf(AGENT_JOB_STATUSES, String(value), "job status")
+    }
+    values[key] = EXACT_JOB_MUTATION_TIMESTAMP_KEYS.has(key)
+      ? toExactTimestamp(value as ExactRunEventTimestamp)
+      : value
+  }
+  return values as Partial<typeof agentJobs.$inferInsert>
+}
+
+function isoOrNull(value: Date | null | undefined): string | null {
+  return value ? value.toISOString() : null
+}
+
+function parseStoredJson(value: string | null): JsonValue | undefined {
+  if (value === null) return undefined
+  try {
+    return JSON.parse(value) as JsonValue
+  } catch {
+    return undefined
+  }
+}
+
+function eventRowToRunEvent(
+  row: AgentJobEvent,
+  runtimeId: string,
+): RunEvent & { factKey: string | null; metadata: JsonValue | null } {
+  const metadata = parseStoredJson(row.recordMetadataJson) ?? null
+  const redaction =
+    metadata &&
+    typeof metadata === "object" &&
+    !Array.isArray(metadata) &&
+    metadata.redaction &&
+    typeof metadata.redaction === "object" &&
+    !Array.isArray(metadata.redaction)
+      ? (metadata.redaction as RunEvent["redaction"])
+      : { status: "not-required" as const, appliedRules: [] }
+  const payload = parseStoredJson(row.payloadJson)
+  return {
+    runId: row.jobId,
+    jobId: row.jobId,
+    runtimeId: runtimeId as RunEvent["runtimeId"],
+    sequence: row.sequence,
+    type: row.type as AgentJobEventType,
+    createdAt: isoOrNull(row.createdAt) ?? new Date(0).toISOString(),
+    ...(payload === undefined ? {} : { payload }),
+    redaction: {
+      status: redaction.status,
+      appliedRules: [...(redaction.appliedRules ?? [])],
+    },
+    factKey: row.factKey,
+    metadata,
+  }
+}
+
+function eventHighWater(executor: AgentJobStoreExecutor, jobId: string) {
+  return nextEventSequence(executor, jobId) - 1
+}
+
+function listEventRowsFromExecutor(
+  executor: AgentJobStoreExecutor,
+  jobId: string,
+  afterSequence: number,
+): AgentJobEvent[] {
+  return (executor as AgentJobDatabase)
+    .select()
+    .from(agentJobEvents)
+    .where(
+      and(
+        eq(agentJobEvents.jobId, jobId),
+        gtSequence(agentJobEvents.sequence, afterSequence),
+      ),
+    )
+    .orderBy(agentJobEvents.sequence)
+    .all()
+}
+
+function factKeyRowsFromExecutor(
+  executor: AgentJobStoreExecutor,
+  jobId: string,
+  factKeys: readonly string[],
+): AgentJobEvent[] {
+  if (factKeys.length === 0) return []
+  return (executor as AgentJobDatabase)
+    .select()
+    .from(agentJobEvents)
+    .where(
+      and(
+        eq(agentJobEvents.jobId, jobId),
+        inArray(agentJobEvents.factKey, [...factKeys]),
+      ),
+    )
+    .orderBy(agentJobEvents.sequence)
+    .all()
+}
+
+function assertExactRecord(
+  record: ExactRunEventRecord,
+  jobId: string,
+): asserts record is ExactRunEventRecord {
+  if (typeof record.factKey !== "string" || record.factKey.length === 0) {
+    throw new RunEventStoreError("INVALID_RECORD", "v1 record lacks fact key")
+  }
+  if (!record.metadata || typeof record.metadata !== "object") {
+    throw new RunEventStoreError("INVALID_RECORD", "v1 record lacks metadata")
+  }
+  if ((record.jobId ?? record.runId) !== jobId || record.runId !== jobId) {
+    throw new RunEventStoreError(
+      "INVALID_RECORD",
+      "record belongs to another job",
+    )
+  }
+  assertOneOf(AGENT_JOB_EVENT_TYPES, record.type, "job event type")
+  if (!Number.isInteger(record.sequence) || record.sequence < 1) {
+    throw new RunEventStoreError("INVALID_RECORD", "invalid record sequence")
+  }
+}
+
+function isLateEventRecord(record: ExactRunEventRecord): boolean {
+  const payload = record.payload
+  return (
+    record.type === "status" &&
+    !!payload &&
+    typeof payload === "object" &&
+    !Array.isArray(payload) &&
+    payload.subtype === "late_event"
+  )
+}
+
+/** Private exact insert: the only writer of ledger v1 event rows. */
+function insertExactRunEventRecord(
+  executor: AgentJobStoreExecutor,
+  jobId: string,
+  record: ExactRunEventRecord,
+): void {
+  const createdAt = new Date(record.createdAt)
+  ;(executor as AgentJobDatabase)
+    .insert(agentJobEvents)
+    .values({
+      id: createId(),
+      jobId,
+      sequence: record.sequence,
+      type: record.type,
+      payloadJson: JSON.stringify(record.payload ?? {}),
+      createdAt: Number.isNaN(createdAt.getTime()) ? new Date() : createdAt,
+      factKey: record.factKey,
+      recordMetadataJson: JSON.stringify(record.metadata),
+    })
+    .run()
+}
+
+function mergeArtifactRefsIntoResult(
+  resultJson: string | null,
+  artifactRefs: readonly JsonValue[],
+): string {
+  const parsed = parseStoredJson(resultJson)
+  const base =
+    parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {}
+  return JSON.stringify({ ...base, artifactRefs: [...artifactRefs] })
+}
+
+/**
+ * Commits one exact ledger batch in a single SQLite transaction: v1 marking,
+ * expected high-water, dense supplied sequences, fact-key idempotency, one v1
+ * completed and post-seal late_event-only rules, the optional job mutation and
+ * terminal artifact refs. A complete duplicate fact-key batch returns the
+ * previously committed records; any failure rolls everything back.
+ */
+export function appendExactRunEventBatch(
+  db: AgentJobDatabase,
+  input: AppendExactRunEventBatchInput,
+): Array<ReturnType<typeof eventRowToRunEvent>> {
+  const records = [...input.records]
+  for (const record of records) assertExactRecord(record, input.jobId)
+  return db.transaction((tx: AgentJobTransaction) => {
+    const job = getJobFromExecutor(tx, input.jobId)
+    if (!job) {
+      throw new RunEventStoreError("UNKNOWN_JOB", `unknown job ${input.jobId}`)
+    }
+    if (job.ledgerVersion !== 1) {
+      throw new RunEventStoreError(
+        "LEDGER_V0_APPEND_REJECTED",
+        `job ${job.id} is pre-ledger history`,
+      )
+    }
+    const factKeys = records.map((record) => record.factKey)
+    if (new Set(factKeys).size !== factKeys.length) {
+      throw new RunEventStoreError(
+        "PARTIAL_FACT_KEY_OVERLAP",
+        "batch repeats a fact key",
+      )
+    }
+    const existing = factKeyRowsFromExecutor(tx, job.id, factKeys)
+    if (records.length > 0 && existing.length === records.length) {
+      return existing.map((row) => eventRowToRunEvent(row, job.runtime))
+    }
+    if (existing.length > 0) {
+      throw new RunEventStoreError(
+        "PARTIAL_FACT_KEY_OVERLAP",
+        "batch partially overlaps committed fact keys",
+      )
+    }
+    const highWater = eventHighWater(tx, job.id)
+    if (input.expectedHighWater !== highWater) {
+      throw new RunEventStoreError(
+        "EXPECTED_HIGH_WATER_CONFLICT",
+        `expected ${input.expectedHighWater}, committed ${highWater}`,
+      )
+    }
+    records.forEach((record, index) => {
+      if (record.sequence !== highWater + index + 1) {
+        throw new RunEventStoreError(
+          "NON_DENSE_SEQUENCE",
+          `sequence ${record.sequence} at batch offset ${index}`,
+        )
+      }
+    })
+    const completed = records.filter((record) => record.type === "completed")
+    const sealed = job.ledgerSealedSequence !== null
+    if (completed.length > 1 || (completed.length === 1 && sealed)) {
+      throw new RunEventStoreError(
+        "SEALED_RUN_APPEND_REJECTED",
+        "a v1 job commits exactly one completed",
+      )
+    }
+    if (sealed && records.some((record) => !isLateEventRecord(record))) {
+      throw new RunEventStoreError(
+        "SEALED_RUN_APPEND_REJECTED",
+        "a sealed job accepts late_event diagnostics only",
+      )
+    }
+    const mutation = exactJobMutationValues(input.jobMutation)
+    if (completed.length === 1) {
+      mutation.ledgerSealedSequence = completed[0].sequence
+    }
+    if (input.artifactRefs && input.artifactRefs.length > 0) {
+      mutation.resultJson = mergeArtifactRefsIntoResult(
+        (mutation.resultJson as string | null | undefined) ?? job.resultJson,
+        input.artifactRefs,
+      )
+    }
+    if (Object.keys(mutation).length > 0) {
+      tx.update(agentJobs).set(mutation).where(eq(agentJobs.id, job.id)).run()
+    }
+    for (const record of records) {
+      insertExactRunEventRecord(tx, job.id, record)
+    }
+    return listEventRowsFromExecutor(tx, job.id, highWater).map((row) =>
+      eventRowToRunEvent(row, job.runtime),
+    )
+  })
+}
+
+/** Committed ledger records after `afterSequence`, in sequence order. */
+export function readCommittedRunEvents(
+  db: AgentJobDatabase,
+  jobId: string,
+  afterSequence = 0,
+): Array<ReturnType<typeof eventRowToRunEvent>> {
+  const job = getAgentJob(db, jobId)
+  if (!job) return []
+  return listEventRowsFromExecutor(db, jobId, afterSequence).map((row) =>
+    eventRowToRunEvent(row, job.runtime),
+  )
+}
+
+/** Committed records of one observation (fact keys `<observationKey>:<n>`). */
+export function lookupCommittedRunEventFact(
+  db: AgentJobDatabase,
+  jobId: string,
+  observationKey: string,
+): Array<ReturnType<typeof eventRowToRunEvent>> {
+  const job = getAgentJob(db, jobId)
+  if (!job) return []
+  const prefix = `${observationKey}:`
+  return db
+    .select()
+    .from(agentJobEvents)
+    .where(
+      and(
+        eq(agentJobEvents.jobId, jobId),
+        sql`substr(${agentJobEvents.factKey}, 1, ${prefix.length}) = ${prefix}`,
+      ),
+    )
+    .orderBy(agentJobEvents.sequence)
+    .all()
+    .filter((row) => /^\d+$/.test(String(row.factKey).slice(prefix.length)))
+    .map((row) => eventRowToRunEvent(row, job.runtime))
+}
+
+/** Ledger header: job row facts the ledger rebuilds its state from. */
+export function readRunEventLedgerHeader(
+  db: AgentJobDatabase,
+  jobId: string,
+): RunEventLedgerHeader | null {
+  const job = getAgentJob(db, jobId)
+  if (!job) return null
+  return {
+    runId: job.id,
+    jobId: job.id,
+    runtimeId: job.runtime,
+    source: job.source,
+    kind: job.kind,
+    status: job.status,
+    ledgerVersion: job.ledgerVersion,
+    ledgerProvenanceJson: job.ledgerProvenanceJson,
+    ledgerSealedSequence: job.ledgerSealedSequence,
+    cancelRequestedAt: isoOrNull(job.cancelRequestedAt),
+    workerId: job.workerId,
+    workerPid: job.workerPid,
+    workerStartedAt: isoOrNull(job.workerStartedAt),
+    heartbeatAt: isoOrNull(job.heartbeatAt),
+    highWater: eventHighWater(db, job.id),
+  }
+}
+
+/** Acknowledged contiguous prefix of one projection (0 when none). */
+export function readRunEventProjectionCursor(
+  db: AgentJobDatabase,
+  jobId: string,
+  projectionName: string,
+): number {
+  const row = db
+    .select()
+    .from(agentJobProjectionCursors)
+    .where(
+      and(
+        eq(agentJobProjectionCursors.jobId, jobId),
+        eq(agentJobProjectionCursors.projectionName, projectionName),
+      ),
+    )
+    .get()
+  return row?.acknowledgedSequence ?? 0
+}
+
+/** Monotone acknowledgement bounded by the committed high-water. */
+export function acknowledgeRunEventProjection(
+  db: AgentJobDatabase,
+  jobId: string,
+  projectionName: string,
+  sequence: number,
+): void {
+  db.transaction((tx: AgentJobTransaction) => {
+    if (!Number.isInteger(sequence) || sequence < 0) {
+      throw new RunEventStoreError("INVALID_RECORD", "invalid ack sequence")
+    }
+    const current = tx
+      .select()
+      .from(agentJobProjectionCursors)
+      .where(
+        and(
+          eq(agentJobProjectionCursors.jobId, jobId),
+          eq(agentJobProjectionCursors.projectionName, projectionName),
+        ),
+      )
+      .get()
+    const acknowledged = current?.acknowledgedSequence ?? 0
+    if (sequence < acknowledged) {
+      throw new RunEventStoreError("INVALID_RECORD", "ack must be monotone")
+    }
+    if (sequence > eventHighWater(tx, jobId)) {
+      throw new RunEventStoreError(
+        "INVALID_RECORD",
+        "ack beyond committed high-water",
+      )
+    }
+    if (current) {
+      tx.update(agentJobProjectionCursors)
+        .set({ acknowledgedSequence: sequence })
+        .where(
+          and(
+            eq(agentJobProjectionCursors.jobId, jobId),
+            eq(agentJobProjectionCursors.projectionName, projectionName),
+          ),
+        )
+        .run()
+    } else {
+      tx.insert(agentJobProjectionCursors)
+        .values({ jobId, projectionName, acknowledgedSequence: sequence })
+        .run()
+    }
+  })
 }
