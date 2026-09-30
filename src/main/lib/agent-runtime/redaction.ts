@@ -70,6 +70,12 @@ export type ExactSecretStreamRedactionResult = {
   applied: boolean
   redactionCount: number
   hasPendingSuffix: boolean
+  /**
+   * Length of a withheld potential-secret prefix that the terminal flush
+   * dropped instead of releasing (flush only). Callers report this loss; the
+   * withheld characters themselves are never returned.
+   */
+  droppedPendingLength?: number
 }
 
 export type ExactSecretStreamRedactor = {
@@ -89,6 +95,10 @@ export type ExactSecretStreamFragment<T> = {
 export type ExactSecretStreamChannelRedaction<T> = {
   value: T
   applied: boolean
+  /** True while this channel withholds a potential-secret suffix (push). */
+  pending?: boolean
+  /** Withheld characters dropped at a terminal flush (flush). */
+  droppedPendingLength?: number
 }
 
 export type ExactSecretStreamChannelRedactor<T> = {
@@ -174,15 +184,19 @@ export function createExactSecretStreamRedactor(): ExactSecretStreamRedactor {
       }
     },
     flush(secretHints) {
-      const hints = mergeSecretHints(secretHints)
-      const redacted = redactExactSecretHints(pendingSuffix, hints)
+      mergeSecretHints(secretHints)
+      // The pending suffix is withheld only because it could still become the
+      // prefix of an exact secret; the stream ended before that was ruled out,
+      // so the terminal flush drops it rather than releasing an unsafe prefix.
+      const droppedPendingLength = pendingSuffix.length
       pendingSuffix = ""
       knownSecretHints = []
       return {
-        value: redacted.value,
-        applied: redacted.applied,
-        redactionCount: redacted.redactionCount,
+        value: "",
+        applied: false,
+        redactionCount: 0,
         hasPendingSuffix: false,
+        droppedPendingLength,
       }
     },
   }
@@ -227,6 +241,9 @@ export function createExactSecretStreamChannelRedactor<
       output.push({
         value: state.pendingFragment.withValue(redacted.value),
         applied: redacted.applied,
+        ...(redacted.droppedPendingLength
+          ? { droppedPendingLength: redacted.droppedPendingLength }
+          : {}),
       })
     }
     return output
@@ -250,6 +267,7 @@ export function createExactSecretStreamChannelRedactor<
       return {
         value: fragment.withValue(redacted.value),
         applied: redacted.applied,
+        pending: redacted.hasPendingSuffix,
       }
     },
     flushChannels,

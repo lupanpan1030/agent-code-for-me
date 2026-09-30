@@ -20,12 +20,15 @@ describe("runtime trace redaction", () => {
     expect(output).toBe(`normal ${EXACT_SECRET_REDACTION_MARKER} tail`)
     expect(output).not.toContain(secret)
 
+    // refactor-canonical-run-event-ledger (red-slice adjudication 6, tasks
+    // 1.5): "upstream" is a withheld potential prefix of the secret; the
+    // terminal flush drops it instead of releasing it and reports the loss.
     const normalRedactor = createExactSecretStreamRedactor()
-    const normalOutput = [
-      normalRedactor.push("kept upstream", [secret]).value,
-      normalRedactor.flush([secret]).value,
-    ].join("")
-    expect(normalOutput).toBe("kept upstream")
+    const normalPush = normalRedactor.push("kept upstream", [secret])
+    const normalFlush = normalRedactor.flush([secret])
+    const normalOutput = [normalPush.value, normalFlush.value].join("")
+    expect(normalOutput).toBe("kept ")
+    expect(normalFlush.droppedPendingLength).toBe("upstream".length)
   })
 
   test("uses an exact-secret marker that cannot contain a valid credential", () => {
