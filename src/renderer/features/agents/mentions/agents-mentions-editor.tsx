@@ -16,6 +16,7 @@ import {
   type EditorRun,
   type EditorState,
   editorRunsKey,
+  insertTextIntoState,
   mentionRunFromOption,
   parseSerializedRuns,
   placeCaretAtEnd,
@@ -78,10 +79,38 @@ type AgentsMentionsEditorProps = {
   onSubmit?: () => void
   onForceSubmit?: () => void // Opt+Enter: bypass queue, stop stream and send immediately
   disabled?: boolean
-  onPaste?: (e: React.ClipboardEvent) => void
+  /**
+   * Typed paste delegation (image attachments, large text saved as a file).
+   * The editor has already prevented the browser's paste default and never
+   * hands control back to it: return `consumed` when the delegate handled the
+   * paste, `insertText` for bounded plain text the editor inserts through its
+   * safe builder, or nothing to let the editor insert the clipboard's
+   * explicit `text/plain`. HTML-only clipboard data is never inserted.
+   */
+  onPaste?: (
+    e: React.ClipboardEvent<HTMLDivElement>,
+  ) => MentionsEditorPasteResult | undefined
   onShiftTab?: () => void // callback for Shift+Tab (e.g., mode switching)
   onFocus?: () => void
   onBlur?: () => void
+}
+
+/** Outcome of the typed paste delegate (see `onPaste`). */
+export type MentionsEditorPasteResult =
+  | { kind: "consumed" }
+  | { kind: "insertText"; text: string }
+
+/**
+ * Component-owned `beforeinput` allowlist (design D4). Ordinary text/IME input
+ * and every deletion run natively; line breaks and history are handled
+ * through the canonical state; every other input type is refused.
+ */
+function isNativeEditorInput(inputType: string): boolean {
+  return (
+    inputType === "insertText" ||
+    inputType === "insertCompositionText" ||
+    inputType.startsWith("delete")
+  )
 }
 
 // Combined tree walk result - computes everything in ONE pass instead of 3
@@ -712,6 +741,99 @@ export const AgentsMentionsEditor = memo(
         }
       }, [])
 
+      // Insert plain text at the selection through the canonical state and
+      // the safe builder (paste, drop, line breaks). Never parses markup.
+      const insertPlainText = useCallback(
+        (text: string) => {
+          const editor = editorRef.current
+          if (!editor || text === "") return
+          immediateSaveUndoState()
+          const state = readEditorState(editor, window.getSelection())
+          renderState(insertTextIntoState(state, text))
+          handleInput()
+        },
+        [immediateSaveUndoState, renderState, handleInput],
+      )
+
+      // Component-owned beforeinput allowlist. React's synthetic
+      // onBeforeInput is not driven by native `beforeinput` (and carries no
+      // inputType), so a native listener is attached to the editor element.
+      const handleBeforeInput = useCallback(
+        (event: InputEvent) => {
+          const inputType = event.inputType
+          if (isNativeEditorInput(inputType)) return
+          event.preventDefault()
+          if (inputType === "insertParagraph" || inputType === "insertLineBreak") {
+            insertPlainText("\n")
+          } else if (inputType === "historyUndo") {
+            undo()
+          } else if (inputType === "historyRedo") {
+            redo()
+          }
+          // Every other input type (insertFromPaste, insertFromDrop,
+          // insertLink, insertReplacementText, format*, ...) is refused.
+        },
+        [insertPlainText, undo, redo],
+      )
+      const beforeInputHandlerRef = useRef(handleBeforeInput)
+      beforeInputHandlerRef.current = handleBeforeInput
+      useEffect(() => {
+        const editor = editorRef.current
+        if (!editor) return
+        const listener = (event: Event) => {
+          beforeInputHandlerRef.current(event as InputEvent)
+        }
+        editor.addEventListener("beforeinput", listener)
+        return () => editor.removeEventListener("beforeinput", listener)
+      }, [])
+
+      // Component-owned paste gate: the browser's rich paste never runs,
+      // whatever an optional parent handler does. Only explicit text/plain
+      // is inserted; HTML-only clipboard data is rejected.
+      const handlePaste = useCallback(
+        (e: React.ClipboardEvent<HTMLDivElement>) => {
+          e.preventDefault()
+          const delegated = onPaste?.(e)
+          if (delegated?.kind === "consumed") return
+          insertPlainText(
+            delegated?.kind === "insertText"
+              ? delegated.text
+              : e.clipboardData.getData("text/plain"),
+          )
+        },
+        [onPaste, insertPlainText],
+      )
+
+      // Component-owned drop gate: never the browser's rich drop insertion.
+      // Dropped files stay with the parent's typed attachment handler (the
+      // event still bubbles); dropped text inserts only its text/plain.
+      const handleDrop = useCallback(
+        (e: React.DragEvent<HTMLDivElement>) => {
+          e.preventDefault()
+          const transfer = e.dataTransfer
+          const editor = editorRef.current
+          if (!transfer || !editor || transfer.files.length > 0) return
+          const text = transfer.getData("text/plain")
+          if (!text) return
+          const dropPoint = (
+            editor.ownerDocument as Document & {
+              caretRangeFromPoint?: (x: number, y: number) => Range | null
+            }
+          ).caretRangeFromPoint?.(e.clientX, e.clientY)
+          const selection = window.getSelection()
+          if (dropPoint && selection && editor.contains(dropPoint.startContainer)) {
+            selection.removeAllRanges()
+            selection.addRange(dropPoint)
+          }
+          insertPlainText(text)
+        },
+        [insertPlainText],
+      )
+
+      const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+        e.preventDefault()
+      }, [])
+
       // Handle keydown
       const handleKeyDown = useCallback(
         (e: React.KeyboardEvent) => {
@@ -971,6 +1093,7 @@ export const AgentsMentionsEditor = memo(
               {placeholder}
             </div>
           )}
+          {/* biome-ignore lint/a11y/noStaticElementInteractions: the contentEditable editor owns its paste/drop/beforeinput gates (design D4). */}
           <div
             ref={editorRef}
             contentEditable={!disabled}
@@ -978,11 +1101,9 @@ export const AgentsMentionsEditor = memo(
             spellCheck={false}
             onInput={handleInput}
             onKeyDown={handleKeyDown}
-            onPaste={(e) => {
-              // Save state for undo before paste (immediate, not debounced)
-              immediateSaveUndoState()
-              onPaste?.(e)
-            }}
+            onPaste={handlePaste}
+            onDrop={handleDrop}
+            onDragOver={handleDragOver}
             onFocus={onFocus}
             onBlur={onBlur}
             className={cn(
