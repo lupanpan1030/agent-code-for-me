@@ -718,9 +718,13 @@ event envelope、`jobId` 和 `sequence` 游标都不变。变化的是：哪些 
   `0`。见下文“Outcome 与 exit 示例”。
 - **`completed.payload` 是 ledger outcome。** 每个 run 恰好一个 `completed`。其
   payload 为 `{status, reasons?, evidenceKeys, synthetic?, recovery?, code?,
-  message?, lossPossible?}`，不再携带 `exitCode`、`errorCode`、`errorMessage`
-  或 `result`。这些信息请从 `runs result`（`status`、`diagnostics`、`result`）和
-  create/retry 的 exit code 读取。
+  message?, lossPossible?, exitCode?, errorCode?, errorMessage?, result?}`。
+  ledger outcome 成员在前；`exitCode`、`errorCode`、`errorMessage` 和 `result`
+  含义与此前相同（run 的 exit code、错误码、已脱敏的错误信息和公开 result，与
+  `runs status` / `runs result` 报告的值一致）。它们可为 `null`：没有该值的结算
+  携带 `null`，绝不编造（例如排队中取消的 `result`，或 worker 恢复的 `exitCode`
+  与 `result`）。
+  `result` 不含 Locus 内部成员（例如已登记的 artifact refs）。
 - **`status` 记录变多。** 每条已提交记录都在原始 sequence 上投影一次（见
   [Events](#events)）。请用 `--after` 分页。
 - **脱敏标记。** 持久化记录、events、`events.jsonl`、`result.json` 和 diagnostics
@@ -869,8 +873,9 @@ job。升级前请用旧 build 排空它们：让它们完成、取消它们，�
 1. 依赖修正后的终态真相之前，先检查 `features` 是否含 `canonical-run-ledger`；
    缺少时拒绝或回退。
 2. 刷新本地固定的 `local-job-api-v1.schema.json` 副本。
-3. 从 `runs result` 和 exit code 读取 outcome 细节，不要读 `completed.payload`
-   中已不存在的成员。
+3. 把 `completed.payload.exitCode`、`errorCode`、`errorMessage` 和 `result`
+   视为可选、可为 `null`；`runs result` 和命令 exit code 仍是权威的 outcome 读取
+   方式。
 4. 此前报告成功、但被拒绝、输出无效或输出为空的 run，现在预期为 `failed` 与
    exit `1`。
 5. 用 `--after` 分页读取 events；忽略未知 `status` subtype 和未知 extension 命名空间。
@@ -1021,7 +1026,7 @@ locus api runs create --request "$PACKAGE_DIR/request.json" --json
 | `Unsupported required capability` | capability ID 不存在。 | 先看 `locus api runtimes list --json`。 |
 | exit `4` | runtime credentials 缺失。 | 在 Locus 里配置 runtime，不要通过 request 传 credentials。 |
 | JSON parse 失败 | 命令可能失败并把 diagnostics 写到了 stderr。 | 先检查 exit code 和 stderr，再解析 stdout。 |
-| `completed.payload` 没有 `exitCode` 或 `result` | 在 `canonical-run-ledger` build 上，`completed` 只携带 ledger outcome。 | 读取 `runs result`（`status`、`diagnostics`、`result`）和命令 exit code。 |
+| `completed.payload.exitCode` 或 `result` 为 `null` | 该结算没有此值（例如排队中取消或 worker 恢复）。这些成员可选且可为 `null`。 | 读取 `runs result`（`status`、`diagnostics`、`result`）和命令 exit code。 |
 | runtime 报告成功，但 run 为 `failed`，原因是 `policy_denied`、`output_empty`、`output_invalid` 或 `output_evidence_missing` | 修正后的终态真相：拒绝、无效输出和空输出会使 run 失败。 | 查看 `diagnostics` 以及该 run 的 `status`/`error` events。 |
 | schema 校验拒绝 `features` 中的 `canonical-run-ledger` | 本地固定的旧版 schema 的 `discoveryFeature` enum 是封闭的。 | 刷新 `local-job-api-v1.schema.json` 副本。 |
 

@@ -753,9 +753,15 @@ single `completed` record carries, and how many `status` records a run has.
   [Outcome and exit examples](#outcome-and-exit-examples).
 - **`completed.payload` is the ledger outcome.** Each run has exactly one
   `completed`. Its payload is `{status, reasons?, evidenceKeys, synthetic?,
-  recovery?, code?, message?, lossPossible?}` and no longer carries `exitCode`,
-  `errorCode`, `errorMessage` or `result`. Read those from `runs result`
-  (`status`, `diagnostics`, `result`) and from the create/retry exit code.
+  recovery?, code?, message?, lossPossible?, exitCode?, errorCode?,
+  errorMessage?, result?}`. The ledger outcome members come first; `exitCode`,
+  `errorCode`, `errorMessage` and `result` keep the same meaning as before
+  (the run's exit code, error code, redacted error message and public result,
+  the same values `runs status` / `runs result` report). They are nullable: a
+  settlement that has no such value carries `null`, never an invented value
+  (for example `result` on a queued cancel, or `exitCode` and `result` on a
+  worker recovery). `result` never carries Locus-internal members such as
+  registered artifact refs.
 - **More `status` records.** Every committed record is projected once at its
   original sequence (see [Events](#events)). Page with `--after`.
 - **Redaction marker.** Redacted values in persisted records, events,
@@ -926,8 +932,9 @@ creates a new run on the ledger.
 1. Check `features` for `canonical-run-ledger` before relying on corrected
    terminal truth, and refuse or fall back when it is absent.
 2. Refresh pinned copies of `local-job-api-v1.schema.json`.
-3. Read outcome details from `runs result` and the exit code, not from
-   `completed.payload` members that are no longer there.
+3. Treat `completed.payload.exitCode`, `errorCode`, `errorMessage` and
+   `result` as optional and nullable; `runs result` and the command exit code
+   remain the authoritative outcome readers.
 4. Expect `failed` and exit `1` for denied, invalid or empty-output runs that
    previously reported success.
 5. Page events with `--after`; ignore unknown `status` subtypes and unknown
@@ -1084,7 +1091,7 @@ locus api runs create --request "$PACKAGE_DIR/request.json" --json
 | `Unsupported required capability` | Capability ID is unknown. | Inspect `locus api runtimes list --json`. |
 | Exit `4` | Runtime credentials are missing. | Configure the runtime in Locus. Do not send credentials in the request. |
 | JSON parse fails | The command may have failed and wrote diagnostics to stderr. | Check exit code and stderr before parsing stdout. |
-| `completed.payload` has no `exitCode` or `result` | On `canonical-run-ledger` builds, `completed` carries only the ledger outcome. | Read `runs result` (`status`, `diagnostics`, `result`) and the command exit code. |
+| `completed.payload.exitCode` or `result` is `null` | The settlement had no such value (for example a queued cancel or a worker recovery). The members are optional and nullable. | Read `runs result` (`status`, `diagnostics`, `result`) and the command exit code. |
 | The runtime reported success but the run is `failed` with `policy_denied`, `output_empty`, `output_invalid` or `output_evidence_missing` | Corrected terminal truth: denial, invalid output and empty output fail the run. | Inspect `diagnostics` and the run's `status`/`error` events. |
 | Schema validation rejects `canonical-run-ledger` in `features` | A pinned older copy of the schema has a closed `discoveryFeature` enum. | Refresh your copy of `local-job-api-v1.schema.json`. |
 

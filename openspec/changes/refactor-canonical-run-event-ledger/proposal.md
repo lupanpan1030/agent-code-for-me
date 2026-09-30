@@ -116,11 +116,11 @@ runtime_selection_refused status events; that semantic string is preserved.
 
 | C7 §9.2 row | Classification | Consumer-observable change / evidence |
 | --- | --- | --- |
-| 1 — deletion/rename | Non-breaking | No public command, field, event or error is deleted/renamed; desktop wrapper removal is internal. |
+| 1 — deletion/rename | Non-breaking | No public command, field, event or error is deleted/renamed; desktop wrapper removal is internal. Owner 2026-10-01: S-06 option (a) — completed.payload keeps exitCode/errorCode/errorMessage/result as optional nullable members (additive restore) (`c9fd6b61`), so no `completed.payload` member is deleted. |
 | 2 — type/requiredness/nullable/enum/default/validation | Non-breaking | No public input validation/default, required field, nullable field or status/event enum changes; the additive discovery feature enum extension is accounted for under row 10; output truth is classified once as R1 under 4/5. |
 | 3 — identity | Non-breaking | `jobId` already identifies the API Run; retry already creates a new job with `job.retryOfJobId` and `job.attempt` ([serializer](../../../src/main/lib/headless/cli-output.ts), [schema](../../../docs/local-job-api-v1.schema.json)); these stay unchanged. |
 | 4 — lifecycle | **Red R1: Owner DIRECT_NEW_STANDARD 2026-09-07** | Existing succeeded/failed/canceled/interrupted vocabulary and synchronous create/retry waiting remain; denial, rejection and invalid-empty completion become failed, and retry-only diagnostics no longer force failed. See 5 for the same decision's result/exit effects. Stale-worker recovery follows the Owner-approved core recovery scenario: a stale `running` job becomes `interrupted` only on confirmed-stopped evidence (worker process absent, supervisor-observed exit, never claimed); a worker that is alive, EPERM, unknown or claimed without a PID stays `running` with a host `heartbeat_only` diagnostic. |
-| 5 — ordering/cursor/replay/retry/terminal result | **Red R1 for terminal result only** | Result status and derived create/retry exit codes change for the R1 cases. Additional already-declared event types/optional evidence are additive. Proposed v1 projects EVERY ledger record, including safe status stubs, so sequence remains dense; no sparse-sequence break is taken. |
+| 5 — ordering/cursor/replay/retry/terminal result | **Red R1 for terminal result only** | Result status and derived create/retry exit codes change for the R1 cases. Additional already-declared event types/optional evidence are additive. Proposed v1 projects EVERY ledger record, including safe status stubs, so sequence remains dense; no sparse-sequence break is taken. Owner 2026-10-01: S-06 option (a) — completed.payload keeps exitCode/errorCode/errorMessage/result as optional nullable members (additive restore) (`c9fd6b61`): the ledger outcome members are added next to them; the R1 exception covers terminal truth, not member deletion. |
 | 6 — Runtime/provider/model/policy defaults | Non-breaking | Existing selections, fallback and unsupported/degraded states unchanged. |
 | 7 — trust/access boundary | Non-breaking | Redaction remains inside the existing promised boundary; no new auth, permission, workspace, filesystem or network grant. R1 is not counted again here. |
 | 8 — artifact/ref/digest/retention/access | Non-breaking, additive | Existing run-dir request/events/result/manifest paths, SHA-256 and retention remain; they are already verified today ([fileArtifact](../../../src/main/lib/headless/local-job-api.ts)). Newly admitted native artifacts add entries; no formerly public native candidate is removed. |
@@ -270,6 +270,10 @@ Date: 2026-09-07 (evening decision)
 Approval: APPROVED; implementation queued after add-linked-worktree-admission and
   add-renderer-untrusted-content-hardening; next gate: independent red test authoring
 ```
+
+Owner 2026-10-01: S-06 option (a) — completed.payload keeps exitCode/errorCode/errorMessage/result as optional nullable members (additive restore). Recorded on the implementation candidate as commit `c9fd6b61`
+(`tests/run-event-ledger-completed-members.test.ts`); the members carry the job-row
+values of the settlement, `null` when it has none, and `result` is the public job result.
 
 ## Impact
 

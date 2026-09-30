@@ -1,6 +1,6 @@
 # Verification
 
-Status: **APPROVED 2026-09-07 (Owner; bound to 9ebe6c34); implementation candidate re-frozen 2026-10-01 after touch-up T2 (review synthesis of `a32800b6`: T2-1, T2-2, T2-4…T2-14 closed; T2-3 pending Owner decision) and the docs-only T3 (targeted re-review of `0e6d1273`: Lens A and Lens C REVIEW_APPROVED, Lens B CHANGES_REQUESTED on the register only, closed by T3); next gate: diff-only re-check of T3 and the Owner decision on T2-3**
+Status: **APPROVED 2026-09-07 (Owner; bound to 9ebe6c34); implementation candidate re-frozen 2026-10-01 after touch-up T2 (review synthesis of `a32800b6`: T2-1, T2-2, T2-4…T2-14 closed; T2-3 closed 2026-10-01 by Owner S-06 option (a), `c9fd6b61`) and the docs-only T3 (targeted re-review of `0e6d1273`: Lens A and Lens C REVIEW_APPROVED, Lens B CHANGES_REQUESTED on the register only, closed by T3); next gate: diff-only re-check of T3 and of the S-06 option (a) commits**
 
 This file holds the implementation candidate evidence (next section), the scenario
 register with red and green evidence, and the historical draft-review receipts.
@@ -31,7 +31,7 @@ evidence only (not a re-review verdict, not Owner ACCEPTED).
 | --- | --- | --- |
 | `581cd8e8` | fix(redaction): restore the job store's generic secret arm and key rule for durable records | T2-1 / S-05 (P1) |
 | `6c89cfe2` | fix(ledger): settle transport exits with the host terminal projection | T2-2 / S-01 (P1) |
-| — | (T2-3 / S-06, `completed.payload` members) | **pending Owner decision** (not done in T2) |
+| `c9fd6b61` | feat(ledger): restore optional completed payload members (S-06 option a) | T2-3 / S-06 (P1) — Owner 2026-10-01 option (a), additive restore (after T3) |
 | `f2fa5f1d` | fix(local-job-api): keep registered artifact refs out of the public result | T2-4 / S-10 |
 | `1a575a62` | fix(codex): persist Codex assistant metadata from committed usage and native context | T2-5 / S-11 |
 | `684d434c` | fix(outcome): count completed-only assistant items as output evidence | T2-6 / S-13 |
@@ -81,6 +81,7 @@ guards against an over-broad fix (re-review Lens B P3-1 completed this list).
 | T2-13 | `tests/headless-codex-app-server-adapter.test.ts` (6) | "bridges a policy-grant headless request into the desktop app-server adapter" (writes through `request.ledger`; identity with `observer.runLedger`; no observer appends; S-22) | strengthened |
 | T2-13 | `tests/ledger-v1-fact-key-invariant.test.ts` (1) | "every lifecycle writer leaves only fact-keyed, metadata-bearing rows on ledger_version=1 jobs" (header corrected, retry exit asserted, API completion, jobs-stdio run and session cancel, exact counts 12/11; S-23) | strengthened |
 | T2-13 | `tests/run-event-ledger-units.test.ts` (10) | "the run-dir writer refuses a path that escapes the admitted run directory (T2-13 / S-24)" | new (S-24) |
+| T2-3 | `tests/run-event-ledger-completed-members.test.ts` (7) | describe "S-06 option (a): completed.payload keeps the base job members": API succeeded (exitCode 0, public result without `artifactRefs`, frozen `events.jsonl` equal); headless failed (job-row `exitCode`/`errorCode`/`errorMessage`); transport exit and queued cancel without job-row fields (all four `null`); `artifactRefs` stripped / refs-only result `null`; secret-hint `errorMessage` redacted by the persisted walker (record `redaction.status` `redacted`, equal to the job row); preparation failure re-derives the members | fix-sensitive (all 7 fail with the `src/` change stashed) |
 
 Shared test helper: `tests/helpers/codex-app-server-scripted-transport.ts` gained
 `initializeError`, `exitOnClose` (close fires attached exit handlers, like the stdio
@@ -99,6 +100,18 @@ documentation on top of it):
 | `git diff --check a32800b6 0e6d1273` | clean |
 | Immutable set (`git diff --stat e99b9892 0e6d1273 --` nine red files, four kits/harness, `tests/fixtures/run-event-ledger/`, `red-receipt.md`, `red-slice-receipt.md`) | empty |
 | Ratchets | `lint-baseline.json` unchanged vs `a32800b6` (no additions; only removals/decreases vs `e1370a78`); `scripts/architecture-baselines.json` unchanged (`reachThroughWrappers` 7 entries, route surface `codex.ts` 941 = `wc -l`) |
+
+S-06 option (a) gates (tree = `c9fd6b61` plus the docs commit that records it; the
+docs commit changes no `src/` or `tests/` file):
+
+| Gate | Result |
+| --- | --- |
+| Nine red files, `bun test --isolate` | 141 pass / 0 fail, 1265 `expect()` |
+| `bun run check:full` (includes `bun run test`) | exit 0; tests 2743 pass / 0 fail, 13858 `expect()`, 346 files; `openspec validate --all --strict` 54/54 |
+| PR-base lint `BIOME_CHANGED_SINCE=25c075af node scripts/run-biome-changed.mjs` | exit 0 ("diagnostics only outside changed lines") |
+| `git diff --check` | clean |
+| Immutable set (`git diff --stat e99b9892 HEAD --` nine red files, four kits/harness, `tests/fixtures/run-event-ledger/`, `red-receipt.md`, `red-slice-receipt.md`) | empty |
+| Ratchets | `lint-baseline.json` and `scripts/architecture-baselines.json` unchanged vs `5c9a701e` |
 
 Consumer-visible effects of T2 relative to `a32800b6` (all restore the base behavior or
 the approved design; none extends the signed scope):
@@ -132,6 +145,12 @@ the approved design; none extends the signed scope):
 - **T2-9:** terminal `events.jsonl`/`result.json`/`artifacts.json` appear under their
   final names only after the terminal commit.
 - **T2-12:** a create/retry whose `job_created` cannot be recorded leaves no queued row.
+- **T2-3 (S-06 option (a), `c9fd6b61`):** `completed.payload` again carries `exitCode`,
+  `errorCode`, `errorMessage` and `result` as optional nullable members next to the
+  ledger outcome: the settlement's job-row values (the settle call's `jobFields`, else
+  the host's registered projection), `null` when it has none; `result` is the public job
+  result (shared `toPublicJobResult`, no `artifactRefs`); values are redacted by the
+  persisted walker with the rest of the record.
 
 Decisions and disclosures recorded by T2:
 
@@ -531,7 +550,7 @@ Signed scope: Owner answers 2026-09-07 (R1 = DIRECT_NEW_STANDARD for C7 rows 4/5
 | 3 | `canonical-run-ledger` feature, closed enum extension, optional experimental `payload.extensions["runtime.codex.v1"]`, preserved string `payload.runtime` | C7 rows 2/10, local-job-api delta | In scope |
 | 4 | Bare payloads; the desktop wrapper disappears | C7 row 1 (internal wrapper) | In scope; no change for API jobs |
 | 5 | Additive `error.classification`, usage snapshot members, `late_event`, `subtype: "system_lifecycle"` on host status | C7 row 10, local-job-api delta | In scope |
-| 6 | `completed.payload` becomes the ledger outcome; `exitCode`, `errorCode`, `errorMessage`, `result` are no longer event payload members (they stay on the job row and the result envelope) | The events row says "Additive except R1 terminal payload" and the design defines `completed.payload`; C7 row 1 says no field is deleted and the member removal is not enumerated. The guide already listed event payload details beyond the envelope as not stable | **pending Owner decision (T2-3)** — review synthesis S-06 (P1 governance): Owner acknowledgment in Consumer Impact rows 1/5 + §10, or additive restore |
+| 6 | `completed.payload` becomes the ledger outcome; at `a32800b6` `exitCode`, `errorCode`, `errorMessage`, `result` were no longer event payload members (they stayed on the job row and the result envelope); since `c9fd6b61` they are optional nullable members again | The events row says "Additive except R1 terminal payload" and the design defines `completed.payload`; C7 row 1 says no field is deleted and the member removal is not enumerated. The guide already listed event payload details beyond the envelope as not stable | **Resolved — Owner 2026-10-01, S-06 option (a) (additive restore), `c9fd6b61`:** the four members stay on `completed.payload` as optional nullable members next to the ledger outcome (proposal Consumer Impact rows 1/5 and §10); test `tests/run-event-ledger-completed-members.test.ts` |
 | 7 | Persisted redaction marker becomes `<redacted>` (the store previously also wrote `[redacted]`, `[redacted-jwt]`, `[redacted-pem]`) | C7 row 7 keeps redaction inside the promised boundary; the marker text was never documented | In scope (review synthesis of `a32800b6` §3.2); documented in both consumer guides |
 | 8 | Stale workers that are alive, EPERM, unknown or claimed without a PID stay `running` with a host `heartbeat_only` diagnostic instead of being interrupted | Design/task 4.3; the Owner-approved core recovery scenario (`specs/agent-runtime-core/spec.md`) | In scope via the approved spec (synthesis §3.2); now listed in proposal Consumer Impact row 4 (T2-14, S-27) |
 | 9 | Workbench no longer renders Codex "file-change" rows (`patchUpdated` → `tool_delta` with `changeCount`, `turn/diff/updated` → `status/diff_observation`) | Parity delta disposition table; Workbench rendering is outside C7 §9.1 | Conforms to the table; not a contract item (review synthesis of `a32800b6` §3.2) — an Owner product acceptance note |
