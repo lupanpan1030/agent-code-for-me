@@ -160,7 +160,12 @@ locus api runtimes list --json
 ```json
 {
   "apiVersion": "locus.local-job.v1",
-  "features": ["runtime-readiness", "provider-binding", "completion"],
+  "features": [
+    "runtime-readiness",
+    "provider-binding",
+    "completion",
+    "canonical-run-ledger"
+  ],
   "runtimes": [
     {
       "runtimeId": "codex",
@@ -181,6 +186,22 @@ locus api runtimes list --json
   ]
 }
 ```
+
+Discovery features：
+
+| Feature | 含义 |
+| --- | --- |
+| `runtime-readiness` | 每个 runtime 带下文所述的 advisory `readiness` 对象。 |
+| `provider-binding` | create request 会遵循 `provider` 引用块。 |
+| `completion` | 支持 `kind: "completion"` request。 |
+| `canonical-run-ledger` | events 与 result 来自同一个已提交的 Run ledger：逐记录的稠密 event 投影、修正后的终态真相、可选 native 元数据。见 [Canonical Run Ledger](#canonical-run-ledger)。 |
+
+依赖某个 feature 的 consumer 应在派发前检查 `features`，缺少该标识即视为不支持。
+v1 没有要求 feature 或 extension 的 request 字段，Locus 也不做 extension 协商；
+这项检查是 consumer 自己的 preflight。
+[local-job-api-v1.schema.json](local-job-api-v1.schema.json) 中的
+`discoveryFeature` enum 是封闭的：用旧版 schema 副本校验 discovery 输出的
+consumer 必须刷新该副本，因为“忽略未知字段”不覆盖新的 enum 值。
 
 `readiness.state` 是 advisory，可取 `ready`、`needs-auth`、`unavailable`
 或 `unknown`。readiness probe 失败时 discovery 仍然 exit 0 并返回完整
@@ -442,6 +463,25 @@ example-package/
 
 `final/` 只用于下游应用或用户审核批准后的材料。
 
+manifest 与 result 中每个 `artifacts` 条目都带 `role`。Locus run-dir 文件使用
+`request`、`events`、`result`、`manifest`。API create/retry 时，已准备好的
+run-dir 文件的初始 `artifact_created` 仍然排在 `job_started` 之前。
+
+在带 `canonical-run-ledger` 的 build 上，最终的 `events.jsonl`、`result.json`、
+`artifacts.json` 由该 run 冻结的终态前缀准备，并与该 run 唯一的 `completed`
+在同一次持久提交中登记。它们不会再发出自己的 `artifact_created`。提交后这些文件
+不可变：即使之后到达迟到诊断，登记的 SHA-256 仍与文件字节一致（见
+[Canonical Run Ledger](#canonical-run-ledger) 的迟到观察）。最终文件准备失败时
+run 不能成功：结算为 `failed`（或保留 `canceled`/`interrupted`），
+`completed.payload.reasons` 含 `terminal_artifact_preparation_failed`，且不登记
+未验证条目。
+
+run 的 artifact owner 也可以准入 native artifact 候选，准入后追加 role 为
+`native` 的条目；被拒绝的候选变成 `status` 记录：`subtype: "artifact_admission"`、
+`result: "rejected"`，`reason` 为 `missing`、`out_of_scope`、`ownership_mismatch`、
+`digest_mismatch` 或 `redaction_unsafe`。当前 build 中没有 runtime adapter 提交
+native 候选，所以 result 目前只列出 Locus run-dir role。未知 role 按新增处理。
+
 ## Create Response
 
 `create` 返回一个 v1 envelope，包含 serialized job 和 final result：
@@ -535,6 +575,20 @@ locus api runs events <job-id> --after 0 --jsonl
 - `error`
 - `completed`
 
+Envelope 与 payload 规则：
+
+- `payload` 是该记录裸的、已脱敏的语义 payload。没有包装对象：不会出现
+  `runId`、`runEventSequence`、`redaction` 这些键。
+- 12 个公开类型之外的内部记录类型，会以 `status` 在自己的 sequence 上投递，
+  `payload.subtype` 等于内部类型名（例如 `command_output`、`permission_requested`），
+  并保留其 payload 成员。
+- 在带 `canonical-run-ledger` 的 build 上，每条已提交记录都在原始 `sequence` 上
+  恰好投影一次。sequence 保持稠密、从不重新编号，因此每个 run 的 `status` event
+  数量会增加。请用 `--after` 分页，不要假定单个 run 的 event 数量有上限。只处理
+  既有非 `status` 类型的 consumer 语义不变。
+- 忽略未知 payload 字段、未知 `status` subtype 和未知 `payload.extensions`
+  命名空间。
+
 断点续读逻辑：
 
 ```text
@@ -546,6 +600,8 @@ lastSequence = 0
 ```
 
 如果想让命令等待新 events，使用 `--follow`。job 进入 terminal status 后，follow 命令会退出。
+`--follow` 在终态 `completed` 之后退出，不等待迟到诊断；如需收集，用
+`--after <completed 的 sequence>` 再读一次。
 
 ## Result
 
@@ -627,6 +683,180 @@ Locus 不会静默回落到 runtime native credentials。
 `local_only_guard_blocked` 表示所配置的 profile 指向 local-only 模式禁用的
 Locus 托管服务或远程 sandbox 服务，exit `6`。
 
+## Canonical Run Ledger
+
+在 `features` 中列出 `canonical-run-ledger` 的 build，会通过承载该 run 的进程里的
+同一个已提交 ledger 记录每个 run。命令、request 字段、12 个 event 类型、6 字段
+event envelope、`jobId` 和 `sequence` 游标都不变。变化的是：哪些 run 算成功、
+唯一的 `completed` 记录携带什么、以及一个 run 有多少 `status` 记录。
+
+### 对 consumer 的变化
+
+- **终态真相（breaking）。** run 的状态来自已记录的证据，而不是 runtime 的默认
+  成功。即使 runtime 报告成功，只要记录了拒绝（denial）、输出无效或输出为空，
+  run 就是 `failed`，exit `1`。只有 Locus 自身的内部请求显式允许时，空输出才被
+  接受。可重试的 `error` 之后若有带有效输出的 live 成功，仍为 `succeeded`，exit
+  `0`。见下文“Outcome 与 exit 示例”。
+- **`completed.payload` 是 ledger outcome。** 每个 run 恰好一个 `completed`。其
+  payload 为 `{status, reasons?, evidenceKeys, synthetic?, recovery?, code?,
+  message?, lossPossible?}`，不再携带 `exitCode`、`errorCode`、`errorMessage`
+  或 `result`。这些信息请从 `runs result`（`status`、`diagnostics`、`result`）和
+  create/retry 的 exit code 读取。
+- **`status` 记录变多。** 每条已提交记录都在原始 sequence 上投影一次（见
+  [Events](#events)）。请用 `--after` 分页。
+- **脱敏标记。** 持久化记录、events、`events.jsonl`、`result.json` 和 diagnostics
+  中被脱敏的值统一写作 `<redacted>`。此前 store 对部分模式还会写 `[redacted]`、
+  `[redacted-jwt]` 或 `[redacted-pem]`。请把标记当作不透明文本，不要解析。
+- **裸 payload。** API event payload 仍是裸的语义 payload。仅桌面端使用的
+  `{runId, runtimeId, runEventSequence, redaction, payload}` 包装对新 run 已不存在，
+  也从不经由 `locus api` 出现。
+- **可选 native 元数据。** 由 runtime 执行的 Codex app-server 记录可以附加
+  `payload.extensions["runtime.codex.v1"]`，见下文“Native 元数据”。
+- **Codex 文件变更。** Codex app-server 的文件变更进度以带 `changeCount` 的
+  `tool_delta` 到达，turn 级 diff 是 `subtype: "diff_observation"` 的 `status`
+  记录。桌面 Workbench 不再渲染单独的 Codex “file-change” 行；Workbench 渲染不属于
+  本合同。
+- **过期 worker。** 只有 Locus 在同一主机上确认 worker 进程已不存在、或从未认领该
+  job 时，才会把该 job 以带 `recovery` 证据的 `interrupted` 结算。来自仍存活或状态
+  未知 worker 的过期心跳会让 job 保持 `running`，并在 stderr 或 daemon 日志中输出
+  主机诊断，不产生 event。
+- **历史 run。** 见下文“历史 run”。
+
+### Outcome 与 exit 示例
+
+ledger 依据已记录的证据，对每个 run 只结算一次，顺序如下：
+
+1. 显式 cancel 得到 `canceled`。
+2. interrupt、transport exit 或已确认的 worker 丢失得到 `interrupted`。
+3. 记录的拒绝、无效输出、空输出、运行后凭据检查失败或 live runtime 失败得到
+   `failed`。
+4. 否则，live 成功（或有效的 batch/completion 主机结果）且输出有效，得到
+   `succeeded`。
+
+缺少成功证据即为 `failed`。`error` event 只是证据，自身从不结束 run。
+
+| 已记录的证据 | `completed.payload`（节选） | Result `diagnostics` | create/retry exit |
+| --- | --- | --- | --- |
+| runtime 成功且记录了输出 | `{"status":"succeeded","evidenceKeys":["policy:no-recorded-denial","record:5","postrun:security-cleanup-ok"]}` | `[]` | `0` |
+| 可重试 `error`（`willRetry: true`）之后成功并有输出 | `{"status":"succeeded",...}` | `[]` | `0` |
+| runtime 报告成功，但有权限请求被拒绝 | `{"status":"failed","reasons":["policy_denied"],"evidenceKeys":["record:4",...]}` | `[{"code":"policy_denied","message":"Run outcome failed: policy_denied."}]` | `1` |
+| runtime 报告成功但没有输出 | `{"status":"failed","reasons":["output_empty","output_evidence_missing"],...}` | `[{"code":"output_empty",...}]` | `1` |
+| Codex app-server transport 在终态前退出 | `{"status":"interrupted","reasons":["transport_exit"],"evidenceKeys":[],"synthetic":{"source":"transport_exit","transportId":"t1","exitCode":1,"signal":null}}` | 视 runtime 而定 | `1` |
+| 运行中请求 cancel | `{"status":"canceled","reasons":["cancel_requested"],...,"synthetic":{"source":"cancel"}}` | `[{"code":"job_canceled","message":"Job was canceled."}]` | `5` |
+| 已确认 worker 丢失（之后用 `runs status` / `runs result` 读取） | `{"status":"interrupted","reasons":["worker_stopped"],...,"synthetic":{"source":"recovery"},"recovery":{"confidence":"confirmed","basis":"worker_process_absent","observedAt":"..."}}` | `[{"code":"worker_interrupted",...}]` | 不适用 |
+
+字段说明：
+
+- `reasons` 是说明性字符串，不是封闭 enum。当前取值包括 `policy_denied`、
+  `output_invalid`、`output_empty`、`output_evidence_missing`、
+  `credential_postcheck_failed`、`native_failed`、`host_failed`、
+  `success_evidence_missing`、`terminal_artifact_preparation_failed`、
+  `transport_exit`、`worker_stopped`，以及 `cancel_requested`、`queued_cancel` 等
+  cancel/interrupt 原因。
+- `evidenceKeys` 中形如 `record:<n>` 的条目指向提供该证据的已提交记录的
+  `sequence`；其他键是不透明的。
+- `code` 在观察到 native 终态码时携带它；`message` 是失败 run 最后记录的错误信息。
+- `lossPossible: true` 表示因可能含密钥而被扣留的流文本在终态时无法安全释放，
+  已被丢弃而非发布。
+- [Exit Codes](#exit-codes) 中的 exit code 表不变；修正的只是它所依据的 status。
+
+### Errors
+
+`error` payload 保留既有成员，并新增：
+
+- `classification`：`diagnostic`、`retryable`、`fatal_candidate` 或
+  `policy_denial` 之一。粗粒度 runtime 默认 `diagnostic`，`willRetry` 为 `true`
+  时为 `retryable`。
+- runtime 提供时的 `willRetry`。
+- 存在时的 native 错误码 `code`。
+
+### Usage 快照
+
+`usage_update` payload 保留既有成员，并新增规范化快照：
+
+```json
+{"kind":"snapshot","total":{"inputTokens":90,"outputTokens":18,"totalTokens":108},"last":{"inputTokens":6,"outputTokens":2,"totalTokens":8},"delta":{"inputTokens":90,"outputTokens":18,"totalTokens":108},"dedupeKey":"...","asOfSequence":7}
+```
+
+- `total` 是该 run 的累计向量，`last` 是最近一次调用或 turn 的向量。
+- `delta` 是 `total` 减去 `baseline`。resume 的 run 建立起点时才有 `baseline`。
+- `dedupeKey` 标识一次快照修订；重复的修订不会重复计数，而向量相同的不同调用都会
+  计数。
+- `asOfSequence` 是该快照对应的 sequence。
+- 计数器下降不会产生负 delta；`discontinuity: true` 标记这次重置。
+- 向量只包含 runtime 报告的计数器，缺失的计数器是缺省而不是 0。
+- `completed` 之后到达的 usage 是仅供诊断的迟到记录；result 的 usage 截至封存前缀。
+
+### Status 记录
+
+`status` payload 带 `payload.subtype`。未知 subtype 按可忽略的诊断处理。
+
+| Subtype | 含义 |
+| --- | --- |
+| `system_lifecycle` | 本身没有 subtype 的主机生命周期 status。既有主机 status（如 `runtime_selected` / `runtime_selection_refused`）保留其 `payload.status` 与字符串 `payload.runtime`。 |
+| `guard_decision`、`permission_requested`、`scope_expansion_requested`、`question_pending`、`question_result`、`mcp_needs_auth`、`command_started`、`command_output`、`command_finished` | 12 个公开类型之外的内部记录类型，投影时保留其 payload 成员。 |
+| `late_event` | run 封存后到达、仅供诊断的观察。见下文“迟到观察”。 |
+| `artifact_admission` | 被拒绝的 native artifact 候选。见 [Artifact Contract](#artifact-contract)。 |
+| `interaction_boundary` | native server request、response send（`sent` 或 `failed`）或 resolution。它记录的是观察，不是交互状态或授权。 |
+| `native_resume_validated`、`native_resume_rejected` | 关联的 resume 事实（Codex `thread/resume` 响应、Claude 关联的 `system/init`）。拒绝既不结算 run，也不改变 session 绑定。 |
+| `thread_lifecycle`、`turn_lifecycle`、`item_lifecycle`、`item_reconciliation`、`reasoning_part`、`plan`、`hook_lifecycle`、`compaction`、`review_mode`、`user_message`、`diff_observation`、`runtime_process`、`workspace_observation`、`approval_review`、`model_verification`、`mcp_lifecycle`、`reroute`、`warning`、`protocol_response` 等 | Codex app-server native 边界，遵循 `codex-runtime-parity` capability 中固定的处置表。 |
+| `unknown_native_method`、`unsupported_native_surface`、`raw_response_observed` | 固定表之外的 native 方法、已观察但延后支持的面（realtime、remote control、Windows），或 raw response item。`contentOmitted: true` 表示刻意不存储 native 内容。 |
+
+### 迟到观察
+
+`completed` 之后，runtime 仍可能发出尾随输出、usage 或退出。Locus 将其记录为
+`status`：`subtype: "late_event"`、`diagnosticOnly: true`、`terminalSequence`
+（即 `completed` 的 sequence）、`originalType`、可选的 `nativeMethod`，以及已
+脱敏的 `observation`。迟到的 usage 记录在 `observation` 中保留观察到的
+`total`/`last`。迟到记录从不产生第二个 `completed`，从不改变 result 或其 usage，
+也从不改变已提交的 `events.jsonl`、`result.json` 摘要。`--follow` 停在
+`completed`；显式执行 `runs events <job-id> --after <completed 的 sequence>` 会返回
+迟到记录。
+
+### Native 元数据（`runtime.codex.v1`）
+
+由 runtime 执行的 Codex app-server 记录，其对象 payload 可以带：
+
+```json
+{"text":"hello","extensions":{"runtime.codex.v1":{"schemaVersion":1,"maturity":"experimental","threadId":"th","turnId":"tu","itemId":"msg"}}}
+```
+
+- 该命名空间是可选、实验性的（`schemaVersion: 1`，`maturity: "experimental"`）。
+  其余成员（`threadId`、`turnId`、`itemId`、`sessionId`、`requestId`、`callId`，
+  以及可能更多）是该边界上出现过的、已脱敏的 native 标识。
+- 只有在 run 绑定其 runtime 执行之后才会发出。绑定之前写入的生命周期记录（包括
+  带字符串 `payload.runtime` 的 `runtime_selected`、`runtime_selection_refused`
+  status）从不携带它，之后也不会补加到已有记录上。
+- Codex `exec` run（默认 `batch` profile）产生不含它的粗粒度记录。由 app-server
+  执行的 run 可以携带它；对 API job 而言，就是 `runtime.executionProfile:
+  "policy-grant"` 的 Codex run。Claude run 不使用该命名空间。
+- 它不是 native 协议稳定性承诺，也不授予 live-attach 或控制能力。直接从 runtime
+  消费的 Codex native events 不在本合同范围内。
+
+### 历史 run
+
+`canonical-run-ledger` build 之前记录的 run，其已存储的 events、sequence 和 ID
+逐字节保留。Locus 不会为它们补加 fact key、provenance、reconciliation 记录或缺失
+的 `completed`，也从不向它们追加。这一区分只在内部；公开 job envelope 没有
+`historyQuality` 字段。
+
+`canonical-run-ledger` build 不会启动或恢复旧 build 留下的 `queued` 或 `running`
+job。升级前请用旧 build 排空它们：让它们完成、取消它们，或让旧 build 的 recovery
+结算它们。升级后，对已排空的 `failed`、`canceled` 或 `interrupted` job 执行
+`runs retry`，会在 ledger 上创建新 run。
+
+### 升级检查清单
+
+1. 依赖修正后的终态真相之前，先检查 `features` 是否含 `canonical-run-ledger`；
+   缺少时拒绝或回退。
+2. 刷新本地固定的 `local-job-api-v1.schema.json` 副本。
+3. 从 `runs result` 和 exit code 读取 outcome 细节，不要读 `completed.payload`
+   中已不存在的成员。
+4. 此前报告成功、但被拒绝、输出无效或输出为空的 run，现在预期为 `failed` 与
+   exit `1`。
+5. 用 `--after` 分页读取 events；忽略未知 `status` subtype 和未知 extension 命名空间。
+6. 把 `<redacted>` 当作不透明文本。
+
 ## Cancel
 
 ```bash
@@ -666,6 +896,11 @@ directory，同步执行，并返回和 `create` 相同的 envelope 结构。
 | `6` | local-only guard 阻止执行。 |
 | `7` | `project.cwd` 无效或未注册。 |
 | `8` | 内部错误。 |
+
+在带 `canonical-run-ledger` 的 build 上，create/retry 的 exit code 跟随 ledger
+outcome。runtime 报告成功、但 ledger 结算为 `failed` 的 run（记录的拒绝、无效或空
+输出、缺少输出证据、运行后凭据检查失败）exit `1`。见
+[Canonical Run Ledger](#canonical-run-ledger) 的“Outcome 与 exit 示例”。
 
 consumer 应该先看 exit code 和 stderr，再解析 stdout。Diagnostics 写到 stderr。
 
@@ -767,6 +1002,9 @@ locus api runs create --request "$PACKAGE_DIR/request.json" --json
 | `Unsupported required capability` | capability ID 不存在。 | 先看 `locus api runtimes list --json`。 |
 | exit `4` | runtime credentials 缺失。 | 在 Locus 里配置 runtime，不要通过 request 传 credentials。 |
 | JSON parse 失败 | 命令可能失败并把 diagnostics 写到了 stderr。 | 先检查 exit code 和 stderr，再解析 stdout。 |
+| `completed.payload` 没有 `exitCode` 或 `result` | 在 `canonical-run-ledger` build 上，`completed` 只携带 ledger outcome。 | 读取 `runs result`（`status`、`diagnostics`、`result`）和命令 exit code。 |
+| runtime 报告成功，但 run 为 `failed`，原因是 `policy_denied`、`output_empty`、`output_invalid` 或 `output_evidence_missing` | 修正后的终态真相：拒绝、无效输出和空输出会使 run 失败。 | 查看 `diagnostics` 以及该 run 的 `status`/`error` events。 |
+| schema 校验拒绝 `features` 中的 `canonical-run-ledger` | 本地固定的旧版 schema 的 `discoveryFeature` enum 是封闭的。 | 刷新 `local-job-api-v1.schema.json` 副本。 |
 
 ## 稳定性合同
 
@@ -777,6 +1015,9 @@ v1 稳定：
 - 本手册列出的 request fields
 - 本手册列出的 response envelopes
 - event envelope 字段
+- discovery feature 标识，包括 `canonical-run-ledger`
+- 带 `canonical-run-ledger` 时：每个 run 稠密的 `sequence`、每个 run 恰好一个
+  `completed`，以及 `completed.payload.status`
 - run metadata artifact 文件名
 - secret rejection boundary
 - `projects unregister` 的非破坏性语义
@@ -785,7 +1026,9 @@ v1 不稳定：
 
 - serialized `job` 里的额外字段
 - 内部 SQLite schema
-- v1 envelope 之外的内部 event payload 细节
+- v1 envelope 之外的内部 event payload 细节，包括 `status` subtype 及其成员，
+  以及 `completed.payload.reasons` 与 `evidenceKeys` 的取值
+- `payload.extensions["runtime.codex.v1"]`（`maturity: "experimental"`）
 - Workbench 渲染细节
 - `locus run` 和 `locus jobs` 的人工 CLI 格式
 
