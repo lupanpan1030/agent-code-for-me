@@ -586,6 +586,8 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       insertion rejection and transient Mermaid render behavior; apply the
       shared DOM oracle and record the remote-image beacon residual. Add the
       Question 9 D10 producer rows only as selected by the Owner.
+      Pointer: run the items under verification.md "GUI observations added by this
+      slice" together with this task.
 - [ ] 5.2 Run the local-browser malicious fixture in development Electron:
       bridge/Node probes, exact-origin initial/link/location/`loadURL`/back/
       forward/redirect behavior, brokered-file success or honest platform
@@ -606,6 +608,8 @@ sections 3–4 carry original 2.3 and the removed R6 webview scenario, and secti
       `close()`/`isDestroyed()` teardown without renderer cooperation; attempts
       to revive/reattach need a fresh generation/admission. These runtime
       observations cannot be discharged by 4.8 doubles.
+      Pointer: run the items under verification.md "GUI observations added by this
+      slice" together with this task.
 - [ ] 5.3 Against a packaged build, repeat the full section 5.1 malicious-
       content matrix and section 5.2 guest-security matrix. Record OS,
       Electron/Bun versions, exact frozen source SHA, package/start commands,

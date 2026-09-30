@@ -1792,3 +1792,37 @@ removed pending clauses) keep every WHEN/THEN/AND bullet.
   also requires GUI 5.1–5.3.
 - 6.5 Owner `ACCEPTED` with the acknowledgements listed in task 6.5. No
   push, merge, remote PR, release or rule change is performed or implied.
+
+
+### Targeted re-review of the touch-up slice — source 5ca5a17a
+
+- Reviewer: Claude (fresh context, read-only; no edits, commits or worktrees). Bound to source `5ca5a17aaa7c4ac4cd5d13b41fd528886a1c22ef`, reviewed at evidence head `9ab691020498cc4e579269d72102b4b753032b5a` (docs-only above the source). Slice `55335976..9ab69102`: 9 commits; `55335976..5ca5a17a` 15 files +1,035/−194. No package, lockfile, scripts, preload, tRPC or Local Job change.
+- **Verdict: REVIEW_APPROVED — 0 P0 / 0 P1 / 0 P2 / 3 P3.** Technical verdict for this SHA only; not Owner `ACCEPTED`, no `IMPLEMENTATION_VERIFIED`, no push/merge/release authority. GUI 5.1–5.6, 6.4 and 6.5 stay open.
+- Red suite zero-diff vs `ca4efbe6`: yes. The 66 `08c4f455` paths and `tests/fixtures/renderer-hardening/` are byte-identical at `5ca5a17a` and at `9ab69102`. No test was weakened; no skip, only or todo was added.
+- Re-run on this host:
+  - seven red files: 233 pass / 0 fail / 706 expect();
+  - nine impl files + renderer-html-sinks: 314 pass / 0 fail / 1,505 expect();
+  - `spec:validate` 54/0; `ts:check`, `architecture:check`, `git diff --check` (tree and `08c4f455..HEAD`) and `BIOME_CHANGED_SINCE=8f4181a4` lint: all exit 0;
+  - `check:full` not re-run here.
+- Measured:
+  - `570d6f2d` strip mode is behaviour-identical to the pre-move walk: 26/26 byte-identical adapter outputs, `0377f736` vs HEAD, over real Mermaid renders in both themes, the red SVG fixtures and hostile inputs.
+  - Both Mermaid sinks take the owner-sealed `reviewMermaidSvgOutput` value; the plain string backs only the download.
+  - `redactRuntimePayload` is output-identical to `8f4181a4` (14/14).
+  - The -20 teardown is main-frame, live-only and `did-fail-provisional-load`-only.
+  - The harden wording matches rehype-harden 1.1.7.
+  - The spec deltas keep every WHEN/THEN/AND bullet (11/11/20 and 20/20/66).
+- Prior items: Codex P2, Claude P2 #1–#6, P3 #7/#10/#13/#14/#16 and Y4/Y7/Y16 resolved (Y4 and Y15 remain for the Owner at 6.5).
+- New P3:
+  1. The sink-parse review uses a scripting-disabled full-document parse, while the sink parses a scripting-enabled fragment. A `noscript`-in-`desc` string can pass review and still yield an HTML `img[onerror]` in the sink (measured with parse5; the adapter strips it; not a regression). Fix: flag non-SVG-namespace elements (or forbid `noscript`/`noembed`/`noframes`/`xmp`/`template`) and reword T8.
+  2. The a11y suppression reason cites a toolbar button that has `tabIndex={-1}`.
+  3. Tasks 5.1/5.2 lack a pointer to "GUI observations added by this slice".
+
+### Coordinator closure after the targeted re-review (2026-09-30)
+
+- Verdict chain for source `5ca5a17a`: Claude implementation review (8f4181a4) REVIEW_APPROVED → Codex cross-vendor review (8f4181a4) REVIEW_APPROVED → touch-up slice → targeted re-review (5ca5a17a) REVIEW_APPROVED with 0 P0/P1/P2 and 3 P3. Coordination's independent `bun run check:full` at 5ca5a17a: exit 0, 2507 pass / 0 fail, OpenSpec 54/54 (log: coordination handoff `reviews/followup-a-checkfull-5ca5a17a.log`).
+- Recorded, not fixed on the frozen SHA (Yellow, for the next source slice or GUI track):
+  - **T10 (re-review P3-1):** `reviewMermaidSvgOutput` parses a full document with scripting off while the sink parses an innerHTML fragment with scripting on; a payload such as `<svg><desc><noscript><title></noscript><img src=x onerror=…>` passes the seal check but would become an HTML `img[onerror]` at the sink. Not exploitable today: the load-bearing adapter strips it first (measured output `<svg><desc/></svg>`); not a regression. Follow-up: flag non-SVG-namespace elements in the profile walk or forbid `noscript`/`noembed`/`noframes`/`xmp`/`template`; add the payload to GUI 5.1.
+  - **T11 (re-review P3-2):** the a11y suppression reason at the Mermaid container cites the toolbar fullscreen button, which has `tabIndex={-1}`; reword in the next source touch.
+  - **T12 (re-review P3-3):** tasks 5.1/5.2 now point to "GUI observations added by this slice" (fixed in this docs commit).
+  - **Observation:** any main-frame error −20 while the guest is live tears it down, including non-gate sources (fail-closed; availability only); GUI 5.2 records whether a non-gate −20 appears.
+- Status: **IMPLEMENTATION_CANDIDATE — all fresh reviews approved; GUI tracks 5.1–5.5 pending a GUI host; awaiting Owner ACCEPTED (task 6.5).**

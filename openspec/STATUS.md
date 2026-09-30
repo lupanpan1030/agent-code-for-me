@@ -8,7 +8,7 @@ Updated: 2026-09-30 (Pacific/Auckland); previous: 2026-09-09 (Pacific/Auckland)
 
 | Change | State | Concrete next gate |
 | --- | --- | --- |
-| `add-renderer-untrusted-content-hardening` | IMPLEMENTATION_CANDIDATE — unit half complete; GUI tracks 5.1–5.3 pending a GUI host. Codex and Claude fresh reviews of the first freeze `8f4181a4`: `REVIEW_APPROVED` (0 P0/P1); the post-freeze touch-up applied their P2/P3 dispositions and re-froze. Frozen source `5ca5a17aaa7c4ac4cd5d13b41fd528886a1c22ef`; evidence head = the change's touch-up ledger commit (verification.md "Post-freeze touch-up slice"); `bun run check:full` exit 0 (2,507 pass / 0 fail); red suite 233/233; tasks 38/46 | Targeted re-review of the touch-up at `5ca5a17a`; GUI host: tracks 5.1–5.3 plus TICKET-114 5.4/5.5 on the frozen SHA; 6.4 per the role mapping recorded in the task; then Owner ACCEPTED (6.5) recording four acknowledgements — Q4 named loopback listeners, Q5 win32 file-preview disablement, react-scan loader removal, 2026-09-09 option (a) top-level-link disclosure — plus the corrected harden-options wording (Yellow 4) and escalated Yellow 15. No IMPLEMENTATION_VERIFIED claimed |
+| `add-renderer-untrusted-content-hardening` | IMPLEMENTATION_CANDIDATE at source `5ca5a17a` — Claude review, Codex cross-review and targeted re-review all REVIEW_APPROVED (0 P0/P1) | Owner `ACCEPTED` (task 6.5: four acknowledgements + Y4 wording + Y15 exact-secret hints) with a disposition for GUI tracks 5.1–5.5 (pending a GUI host); then local integration, archive and push |
 
 Parked proposals are indexed in [`deferred/README.md`](deferred/README.md) and
 do not appear in the active list.
