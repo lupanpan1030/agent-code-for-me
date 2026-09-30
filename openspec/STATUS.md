@@ -8,7 +8,6 @@ Updated: 2026-09-30 (Pacific/Auckland); previous: 2026-09-09 (Pacific/Auckland)
 
 | Change | State | Concrete next gate |
 | --- | --- | --- |
-| `add-renderer-untrusted-content-hardening` | Owner ACCEPTED 2026-09-30 at frozen source `5ca5a17a`, evidence head `3de915c0`; three technical reviews REVIEW_APPROVED | Integrate and archive; GUI 5.1–5.5 remain open under TICKET-126 for development and packaged reruns |
 
 Parked proposals are indexed in [`deferred/README.md`](deferred/README.md) and
 do not appear in the active list.
@@ -33,6 +32,44 @@ do not appear in the active list.
 - **Roles.** Coordination/planning: Claude (Fable). Implementation lead: Claude
   Opus 5.5 subagents in the change worktree. Codex (`gpt-6-sol`, high): cross-vendor
   fresh review, local integration/push, Codex-runtime paths.
+
+## Locally archived 2026-09-30
+
+### Renderer untrusted content hardening
+
+Owner **ACCEPTED 2026-09-30** frozen product source
+`5ca5a17aaa7c4ac4cd5d13b41fd528886a1c22ef` and evidence head
+`3de915c00c9c2f6d62569cd1404d3c606af1d5cf`, including Y15/Y4 and the four
+disclosures recorded in the change verification. Acceptance documentation and
+[TICKET-126](../docs/tickets/TICKET-126-renderer-hardening-gui-tracks.md) were
+committed as `0b89ec86dd6644ea53f7568c495395c463bb2939`. The branch was
+merged into local `main` with `--no-ff` as
+`b7b3594d943723dc4a75b65196c30d74a348e94f`. The sole conflict was this
+STATUS file: the main direction-decision section and the branch's ACCEPTED row
+were both retained. No rebase occurred.
+
+At exact merge SHA `b7b3594d`, `bun run check:full` exited **1** at tests:
+**2504 pass / 3 fail / 11694 expectations / 322 files**. All three failures
+are `CodexAppServerShellSnapshotScrubError` from sandbox `EROFS` while scrubbing
+two entries under `/home/chen/.codex/shell_snapshots`; no other test failed.
+The required `bun test --isolate ./tests` fallback also exited **1** with the
+same three EROFS failures and counts. This is an environment exception, **not a
+green full gate**; coordination must independently rerun the gate. Lint,
+architecture guard, retired-runtime residue (**1696 scanned / 10 allowlisted**)
+and TypeScript passed before the test short circuit. Separately,
+`bun run spec:validate` passed **54/54**, production `bun run build` and
+`bun run diff:check` passed, all exit **0**. Logs:
+`/tmp/renderer-hardening-closeout-{checkfull,fallback,spec-pre,build,diff}.log`
+(ephemeral local evidence).
+
+The standard archive accepted 39/46 checked tasks; the seven open items are
+GUI 5.1–5.6 and verification 6.4, which remain tracked by TICKET-126. Archive:
+[`2026-09-30-add-renderer-untrusted-content-hardening`](changes/archive/2026-09-30-add-renderer-untrusted-content-hardening/).
+It updated living [`local-browser-workbench`](specs/local-browser-workbench/spec.md)
+with **2 modified requirements** and
+[`runtime-security-baseline`](specs/runtime-security-baseline/spec.md) with
+**1 added / 1 modified requirement**. Post-archive
+`bun x openspec validate --all --strict --no-interactive` passed **53/53**.
 
 ## Locally archived 2026-09-07
 

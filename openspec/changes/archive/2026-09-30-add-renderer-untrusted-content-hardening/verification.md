@@ -1849,7 +1849,7 @@ in the first release; and a new admission for every preview top-level link,
 including an in-scope file link.
 
 The Owner chose **integrate first, open a ticket for GUI reruns**. Tasks 5.1–5.5
-remain open and unobserved. [TICKET-126](../../../docs/tickets/TICKET-126-renderer-hardening-gui-tracks.md)
+remain open and unobserved. [TICKET-126](../../../../docs/tickets/TICKET-126-renderer-hardening-gui-tracks.md)
 carries development and packaged matrices, the two GUI observation sections above,
 the T10 payload and TICKET-114 CSP linkage. Results must be appended to that
 ticket and this verification record after archive, bound to the actual tested

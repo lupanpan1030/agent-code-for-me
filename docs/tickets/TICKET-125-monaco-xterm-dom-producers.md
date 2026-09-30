@@ -50,7 +50,7 @@ shim/alias 夹具或 D10 行；这些已经由 follow-up A 的 Q9 决定和 task
 
 ## 关联变更 / Related change
 
-- [add-renderer-untrusted-content-hardening proposal](../../openspec/changes/add-renderer-untrusted-content-hardening/proposal.md)
-- [design — Approval Question 9、Threat Model、Non-Goals、D10](../../openspec/changes/add-renderer-untrusted-content-hardening/design.md)
-- [tasks 1.3 / 2.10 / 2.11](../../openspec/changes/add-renderer-untrusted-content-hardening/tasks.md)
-- [Approval Question 9 decision 回执](../../openspec/changes/add-renderer-untrusted-content-hardening/verification.md)
+- [add-renderer-untrusted-content-hardening proposal](../../openspec/changes/archive/2026-09-30-add-renderer-untrusted-content-hardening/proposal.md)
+- [design — Approval Question 9、Threat Model、Non-Goals、D10](../../openspec/changes/archive/2026-09-30-add-renderer-untrusted-content-hardening/design.md)
+- [tasks 1.3 / 2.10 / 2.11](../../openspec/changes/archive/2026-09-30-add-renderer-untrusted-content-hardening/tasks.md)
+- [Approval Question 9 decision 回执](../../openspec/changes/archive/2026-09-30-add-renderer-untrusted-content-hardening/verification.md)
