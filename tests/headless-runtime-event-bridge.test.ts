@@ -159,13 +159,18 @@ describe("headless runtime event bridge", () => {
       "completed",
     ])
     expect(assistant?.payload).toEqual({ text: "hello" })
+    // refactor-canonical-run-event-ledger tasks 5.3 (APPROVED design, Native
+    // Method and Item Disposition): coerced internal types keep their payload
+    // members and carry payload.subtype = the original internal type name.
     expect(commandStarted?.payload).toEqual({
       label: "node",
       args: ["-e", "console.error('warn')"],
+      subtype: "command_started",
     })
     expect(commandOutput?.payload).toEqual({
       stream: "stderr",
       text: "warn",
+      subtype: "command_output",
     })
     expect(error?.payload).toEqual({
       errorCode: "runtime_warning",

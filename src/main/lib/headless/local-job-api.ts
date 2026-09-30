@@ -630,21 +630,33 @@ function parsePayload(event: AgentJobEvent): unknown {
   }
 }
 
+/**
+ * Internal event types outside the 12 public v1 types project to `status` at
+ * the same sequence with `payload.subtype` set to the original internal type
+ * name. Object payload members are preserved (no double wrap); non-object
+ * historical payloads are returned unchanged.
+ */
+function coercedStatusPayload(internalType: string, payload: unknown): unknown {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return payload
+  }
+  return { ...(payload as Record<string, unknown>), subtype: internalType }
+}
+
 export function toLocalJobApiEventEnvelope(
   event: AgentJobEvent,
 ): LocalJobApiEventEnvelope {
-  const type = (LOCAL_JOB_API_EVENT_TYPES as readonly string[]).includes(
-    event.type,
-  )
-    ? (event.type as LocalJobApiEventType)
-    : "status"
+  const isPublicType = (
+    LOCAL_JOB_API_EVENT_TYPES as readonly string[]
+  ).includes(event.type)
+  const payload = parsePayload(event)
   return {
     apiVersion: LOCAL_JOB_API_VERSION,
     jobId: event.jobId,
     sequence: event.sequence,
-    type,
+    type: isPublicType ? (event.type as LocalJobApiEventType) : "status",
     createdAt: eventCreatedAt(event),
-    payload: parsePayload(event),
+    payload: isPublicType ? payload : coercedStatusPayload(event.type, payload),
   }
 }
 
