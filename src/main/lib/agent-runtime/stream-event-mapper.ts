@@ -617,3 +617,88 @@ export function appendRunEventsToAgentJob(
   }
   return appended
 }
+
+// ---------------------------------------------------------------------------
+// Committed-record renderer projection (refactor-canonical-run-event-ledger).
+//
+// projectRunEventToRendererChunks is a pure forward projection of one
+// committed, already redacted ledger record into renderer chunks. It never
+// allocates sequences, never redacts, never reconstructs a terminal and never
+// appends a reconciled item's final text as another delta: an
+// item_reconciliation record replaces the item through a data chunk. The
+// legacy chunk->RunEvent mapper above is removed by the Phase II cutover.
+// ---------------------------------------------------------------------------
+
+export type RendererProjectionChunk = Record<string, unknown> & { type: string }
+
+function projectionRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null
+}
+
+function projectionItemId(
+  record: Record<string, unknown>,
+  payload: Record<string, unknown>,
+): string {
+  const item = projectionRecord(payload.item)
+  for (const candidate of [
+    item?.itemId,
+    item?.correlationKey,
+    payload.id,
+    payload.toolCallId,
+  ]) {
+    if (typeof candidate === "string" && candidate.length > 0) return candidate
+  }
+  return `sequence-${String(record.sequence)}`
+}
+
+export function projectRunEventToRendererChunks(
+  record: unknown,
+): RendererProjectionChunk[] {
+  const committed = projectionRecord(record)
+  if (!committed || typeof committed.type !== "string") return []
+  const payload = projectionRecord(committed.payload) ?? {}
+  const id = projectionItemId(committed, payload)
+  const text =
+    typeof payload.text === "string"
+      ? payload.text
+      : typeof payload.delta === "string"
+        ? payload.delta
+        : null
+  switch (committed.type) {
+    case "assistant_delta":
+      return text ? [{ type: "text-delta", id, delta: text }] : []
+    case "reasoning_delta":
+      return text ? [{ type: "reasoning-delta", id, delta: text }] : []
+    default:
+      break
+  }
+  if (
+    committed.type === "status" &&
+    payload.subtype === "item_reconciliation"
+  ) {
+    return [
+      {
+        type: "data-item-reconciliation",
+        id,
+        data: {
+          sequence: committed.sequence,
+          item: payload.item ?? null,
+          reconciliation: payload.reconciliation ?? null,
+        },
+      },
+    ]
+  }
+  return [
+    {
+      type: "data-run-event",
+      id: `${String(committed.runId ?? committed.jobId ?? "run")}:${String(committed.sequence)}`,
+      data: {
+        sequence: committed.sequence,
+        type: committed.type,
+        payload,
+      },
+    },
+  ]
+}
