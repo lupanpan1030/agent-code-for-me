@@ -258,5 +258,291 @@
         "cancelRequested": true
       }
     }
+  ],
+  "faultOperations": [
+    {
+      "caseId": "append-fails-before-commit",
+      "scenario": "S11",
+      "store": "memory",
+      "projection": "slice-b-history",
+      "description": "appendExact throws before commit for every attempt that carries A while the fault is active; B is submitted from inside A's failing append (queued behind A). The fault is then cleared, A is retried with the same observationKey and both are permitted to commit.",
+      "ops": [
+        {
+          "op": "append",
+          "key": "sf-s11-a",
+          "port": "appendSystemEvent",
+          "input": {
+            "type": "status",
+            "payload": {
+              "status": "worker_heartbeat_note",
+              "note": "s11-a"
+            }
+          },
+          "failAt": "beforeCommit",
+          "failWhile": "faultActive"
+        },
+        {
+          "op": "append",
+          "key": "sf-s11-b",
+          "port": "appendSystemEvent",
+          "input": {
+            "type": "status",
+            "payload": {
+              "status": "worker_heartbeat_note",
+              "note": "s11-b"
+            }
+          },
+          "submittedWhile": "sf-s11-a failing"
+        },
+        {
+          "op": "append",
+          "key": "sf-s11-a",
+          "retry": true
+        },
+        {
+          "op": "append",
+          "key": "sf-s11-b",
+          "retry": true
+        },
+        {
+          "op": "deliver",
+          "key": "sf-s11-a"
+        },
+        {
+          "op": "deliver",
+          "key": "sf-s11-b"
+        },
+        {
+          "op": "ack",
+          "key": "sf-s11-b"
+        }
+      ],
+      "expected": {
+        "duringFailure": {
+          "rows": 0,
+          "highWater": 0,
+          "readKeys": [],
+          "deliveredKeys": [],
+          "acknowledgedKeys": [],
+          "cursor": 0
+        },
+        "afterRecovery": {
+          "order": ["sf-s11-a", "sf-s11-b"],
+          "deliveredKeys": ["sf-s11-a", "sf-s11-b"],
+          "acknowledgedKeys": ["sf-s11-a", "sf-s11-b"],
+          "rowsPerFactKey": 1,
+          "cursorEqualsHighWater": true
+        }
+      }
+    },
+    {
+      "caseId": "sqlite-batch-fault",
+      "scenario": "S11",
+      "store": "sqlite",
+      "description": "Temporary migrated SQLite. A two-record start batch (job_started + status) with a job mutation hits a TEMP trigger that aborts the insert of its second record (faultProbe) before commit. The trigger is dropped, the identical batch is retried, resubmitted once more (duplicate complete fact-key batch) and followed by B.",
+      "ops": [
+        {
+          "op": "append",
+          "key": "sf-sql-a",
+          "failAt": "beforeCommit",
+          "faultProbe": "sf-sql-a-1",
+          "records": [
+            {
+              "type": "job_started",
+              "payload": {
+                "workerId": "worker-sf",
+                "workerPid": null
+              }
+            },
+            {
+              "type": "status",
+              "payload": {
+                "status": "worker_heartbeat_note",
+                "probe": "sf-sql-a-1"
+              }
+            }
+          ],
+          "jobMutation": {
+            "status": "running",
+            "workerId": "worker-sf",
+            "workerPid": null
+          }
+        },
+        {
+          "op": "append",
+          "key": "sf-sql-a",
+          "retry": true
+        },
+        {
+          "op": "append",
+          "key": "sf-sql-a",
+          "retry": true,
+          "duplicate": true
+        },
+        {
+          "op": "append",
+          "key": "sf-sql-b",
+          "records": [
+            {
+              "type": "status",
+              "payload": {
+                "status": "worker_heartbeat_note",
+                "probe": "sf-sql-b-0"
+              }
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "duringFailure": {
+          "newRows": 0,
+          "jobRowUnchanged": true
+        },
+        "afterRecovery": {
+          "factKeys": ["sf-sql-a:0", "sf-sql-a:1", "sf-sql-b:0"],
+          "rowsPerFactKey": 1,
+          "status": "running",
+          "workerId": "worker-sf"
+        }
+      }
+    },
+    {
+      "caseId": "crash-after-commit",
+      "scenario": "S12",
+      "store": "memory",
+      "projection": "slice-b-history",
+      "description": "Process 1 commits and delivers/acks prefix P, then dies right after the store commits A (before any delivery). Process 2 recreates the ledger over the same store and projection cursor, then ingests N.",
+      "ops": [
+        {
+          "op": "append",
+          "key": "sf-c1-p",
+          "port": "appendSystemEvent",
+          "input": {
+            "type": "status",
+            "payload": {
+              "status": "worker_heartbeat_note",
+              "note": "c1-p"
+            }
+          }
+        },
+        {
+          "op": "deliver",
+          "key": "sf-c1-p"
+        },
+        {
+          "op": "ack",
+          "key": "sf-c1-p"
+        },
+        {
+          "op": "append",
+          "key": "sf-c1-a",
+          "port": "appendSystemEvent",
+          "input": {
+            "type": "status",
+            "payload": {
+              "status": "worker_heartbeat_note",
+              "note": "c1-a"
+            }
+          },
+          "failAt": "afterCommit"
+        },
+        {
+          "op": "crash"
+        },
+        {
+          "op": "reopen"
+        },
+        {
+          "op": "append",
+          "key": "sf-c1-n",
+          "port": "appendSystemEvent",
+          "input": {
+            "type": "status",
+            "payload": {
+              "status": "worker_heartbeat_note",
+              "note": "c1-n"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "deliveredBeforeCrash": ["sf-c1-p"],
+        "cursorAtCrashKey": "sf-c1-p",
+        "deliveredAfterReopen": ["sf-c1-a", "sf-c1-n"],
+        "upsertOnce": ["sf-c1-p", "sf-c1-a", "sf-c1-n"],
+        "cursorEqualsHighWater": true
+      }
+    },
+    {
+      "caseId": "crash-after-deliver",
+      "scenario": "S12",
+      "store": "memory",
+      "projection": "slice-b-history",
+      "description": "Process 1 commits and delivers/acks prefix P, commits A and delivers it into the projector's persisted upsert target, then dies before acknowledging A. Process 2 recreates the ledger over the same store and projection cursor, then ingests N.",
+      "ops": [
+        {
+          "op": "append",
+          "key": "sf-c2-p",
+          "port": "appendSystemEvent",
+          "input": {
+            "type": "status",
+            "payload": {
+              "status": "worker_heartbeat_note",
+              "note": "c2-p"
+            }
+          }
+        },
+        {
+          "op": "deliver",
+          "key": "sf-c2-p"
+        },
+        {
+          "op": "ack",
+          "key": "sf-c2-p"
+        },
+        {
+          "op": "append",
+          "key": "sf-c2-a",
+          "port": "appendSystemEvent",
+          "input": {
+            "type": "status",
+            "payload": {
+              "status": "worker_heartbeat_note",
+              "note": "c2-a"
+            }
+          }
+        },
+        {
+          "op": "deliver",
+          "key": "sf-c2-a",
+          "failAt": "afterDeliver"
+        },
+        {
+          "op": "crash"
+        },
+        {
+          "op": "reopen"
+        },
+        {
+          "op": "append",
+          "key": "sf-c2-n",
+          "port": "appendSystemEvent",
+          "input": {
+            "type": "status",
+            "payload": {
+              "status": "worker_heartbeat_note",
+              "note": "c2-n"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "deliveredBeforeCrash": ["sf-c2-p", "sf-c2-a"],
+        "cursorAtCrashKey": "sf-c2-p",
+        "deliveredAfterReopen": ["sf-c2-a", "sf-c2-n"],
+        "upsertOnce": ["sf-c2-p", "sf-c2-a", "sf-c2-n"],
+        "cursorEqualsHighWater": true
+      }
+    }
   ]
 }

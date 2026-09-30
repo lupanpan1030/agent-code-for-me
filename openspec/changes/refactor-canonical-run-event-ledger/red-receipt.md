@@ -376,6 +376,9 @@ S42 66/10/16 exact).
    `tests/claude-agent-sdk-stream-error-finalization.test.ts` ("clears expired session ids"),
    `tests/claude-agent-sdk-errors.test.ts` (SESSION_EXPIRED), `tests/agent-job-store.test.ts`
    (interruptStaleAgentJobs error-only mint), plus the guard's inline self-test strings.
+   Added 2026-10-01 (follow-up slice adjudication 6): `tests/runtime-redaction.test.ts`
+   `expect(normalOutput).toBe("kept upstream")` — terminal flush must not release a withheld
+   potential-hint prefix (design, no length threshold); S17 pins the new behavior.
 5. The green-by-design set (§4) is part of the acceptance gate: S39's gate-absence test will go
    red while `canonicalRunEventLedgerV1` exists and must be green again before acceptance.
 6. Fixture caveat carried from the authors: param shapes are schema-derived synthetic values

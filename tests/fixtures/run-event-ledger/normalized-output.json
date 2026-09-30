@@ -1,0 +1,211 @@
+{
+  "fixtureVersion": 1,
+  "evidenceClass": "synthetic",
+  "sourceRefs": [
+    "specs/agent-runtime-core Normalized Agent Events / Runtime emits assistant output",
+    "specs/agent-runtime-core Normalized Agent Events / Runtime emits tool activity",
+    "tasks 7.17 (normalized-output.json: every existing normalized type)",
+    "src/main/lib/headless/process-runner.ts:251 and job-runner.ts fakeAgentTaskRunner (coarse assistant_delta {text})",
+    "src/main/lib/agent-runtime/stream-event-mapper.ts tool_started/tool_delta/tool_finished payload members (toolCallId, toolName, input, output)",
+    "src/renderer/features/agents/workbench/workbench-trace-presenter.ts getRowParts (desktop display: kind, tool summary, tool status)",
+    "red-receipt §8 (coarse ID-less output via ingestRuntimeObservation({type, payload}))"
+  ],
+  "provenance": {
+    "runtimeId": "codex",
+    "executionProvenanceRef": "identity-provenance.json#provenanceVariants.runtime",
+    "author": "independent test author (follow-up red slice A), 2026-10-01",
+    "note": "Coarse normalized observations (no native IDs) submitted through ingestRuntimeObservation in array order. contentKind/format/messageId/structured are the adapter-supplied content-kind and safe display metadata members this fixture freezes; the ledger must keep them (no double-wrap, no stringification). Secret hint is memory-only. No text field ends with a prefix of the hint, so no suffix is legitimately withheld. terminalStatuses is reserved for the implementer-unit S04 facade test (red-receipt §6) and is not asserted in this slice."
+  },
+  "runId": "run-slice-a-normalized-output",
+  "runtimeId": "codex",
+  "secretHints": ["provider-secret-123"],
+  "output": [
+    {
+      "caseId": "out-assistant-1",
+      "port": "ingestRuntimeObservation",
+      "observationKey": "out-assistant-1",
+      "input": {
+        "type": "assistant_delta",
+        "payload": {
+          "text": "Hello ",
+          "contentKind": "text",
+          "format": "markdown",
+          "messageId": "m-1"
+        }
+      },
+      "expectedType": "assistant_delta",
+      "expectedDesktopKind": "assistant"
+    },
+    {
+      "caseId": "out-reasoning-1",
+      "port": "ingestRuntimeObservation",
+      "observationKey": "out-reasoning-1",
+      "input": {
+        "type": "reasoning_delta",
+        "payload": {
+          "text": "Checking the workspace.",
+          "contentKind": "text",
+          "messageId": "m-1"
+        }
+      },
+      "expectedType": "reasoning_delta",
+      "expectedDesktopKind": "reasoning"
+    },
+    {
+      "caseId": "out-assistant-2",
+      "port": "ingestRuntimeObservation",
+      "observationKey": "out-assistant-2",
+      "input": {
+        "type": "assistant_delta",
+        "payload": {
+          "text": "world.",
+          "contentKind": "text",
+          "format": "markdown",
+          "messageId": "m-1"
+        }
+      },
+      "expectedType": "assistant_delta",
+      "expectedDesktopKind": "assistant"
+    },
+    {
+      "caseId": "out-reasoning-2",
+      "port": "ingestRuntimeObservation",
+      "observationKey": "out-reasoning-2",
+      "input": {
+        "type": "reasoning_delta",
+        "payload": {
+          "text": "Two files match.",
+          "contentKind": "text",
+          "messageId": "m-1"
+        }
+      },
+      "expectedType": "reasoning_delta",
+      "expectedDesktopKind": "reasoning"
+    },
+    {
+      "caseId": "out-structured",
+      "port": "ingestRuntimeObservation",
+      "observationKey": "out-structured",
+      "input": {
+        "type": "assistant_delta",
+        "payload": {
+          "contentKind": "structured",
+          "structured": {
+            "summary": "2 files",
+            "files": ["a.txt", "b.txt"],
+            "count": 2,
+            "complete": true
+          },
+          "messageId": "m-2"
+        }
+      },
+      "expectedType": "assistant_delta",
+      "expectedDesktopKind": "assistant"
+    }
+  ],
+  "tools": [
+    {
+      "caseId": "tool-bash-start",
+      "port": "ingestRuntimeObservation",
+      "observationKey": "tool-bash-start",
+      "input": {
+        "type": "tool_started",
+        "payload": {
+          "toolCallId": "call-1",
+          "toolName": "Bash",
+          "status": "started",
+          "input": {
+            "command": "deploy --key provider-secret-123 --target staging"
+          }
+        }
+      },
+      "expectedType": "tool_started",
+      "expectedName": "Bash",
+      "expectedStatus": "started",
+      "expectedDesktopStatus": "started",
+      "carriesSecret": true,
+      "retainedSafeText": "--target staging"
+    },
+    {
+      "caseId": "tool-bash-progress",
+      "port": "ingestRuntimeObservation",
+      "observationKey": "tool-bash-progress",
+      "input": {
+        "type": "tool_delta",
+        "payload": {
+          "toolCallId": "call-1",
+          "toolName": "Bash",
+          "status": "running",
+          "output": "step 1/2 token=provider-secret-123 ok"
+        }
+      },
+      "expectedType": "tool_delta",
+      "expectedName": "Bash",
+      "expectedStatus": "running",
+      "expectedDesktopStatus": "running",
+      "carriesSecret": true,
+      "retainedSafeText": "step 1/2 token="
+    },
+    {
+      "caseId": "tool-bash-final",
+      "port": "ingestRuntimeObservation",
+      "observationKey": "tool-bash-final",
+      "input": {
+        "type": "tool_finished",
+        "payload": {
+          "toolCallId": "call-1",
+          "toolName": "Bash",
+          "status": "completed",
+          "output": { "exitCode": 0, "stdout": "deployed" }
+        }
+      },
+      "expectedType": "tool_finished",
+      "expectedName": "Bash",
+      "expectedStatus": "completed",
+      "expectedDesktopStatus": "completed",
+      "carriesSecret": false,
+      "retainedSafeText": "deployed"
+    },
+    {
+      "caseId": "tool-read-start",
+      "port": "ingestRuntimeObservation",
+      "observationKey": "tool-read-start",
+      "input": {
+        "type": "tool_started",
+        "payload": {
+          "toolCallId": "call-2",
+          "toolName": "Read",
+          "status": "started",
+          "input": { "path": "/fixture/workspace/missing.txt" }
+        }
+      },
+      "expectedType": "tool_started",
+      "expectedName": "Read",
+      "expectedStatus": "started",
+      "expectedDesktopStatus": "started",
+      "carriesSecret": false,
+      "retainedSafeText": "/fixture/workspace/missing.txt"
+    },
+    {
+      "caseId": "tool-read-final-failed",
+      "port": "ingestRuntimeObservation",
+      "observationKey": "tool-read-final-failed",
+      "input": {
+        "type": "tool_finished",
+        "payload": {
+          "toolCallId": "call-2",
+          "toolName": "Read",
+          "status": "failed",
+          "error": { "message": "ENOENT" }
+        }
+      },
+      "expectedType": "tool_finished",
+      "expectedName": "Read",
+      "expectedStatus": "failed",
+      "expectedDesktopStatus": "failed",
+      "carriesSecret": false,
+      "retainedSafeText": "ENOENT"
+    }
+  ],
+  "terminalStatuses": ["succeeded", "failed", "canceled", "interrupted"]
+}
