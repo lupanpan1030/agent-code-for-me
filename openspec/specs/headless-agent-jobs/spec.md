@@ -205,23 +205,25 @@ The system SHALL support opt-in local schedules that create visible local jobs t
 - **AND** previously created jobs and events remain visible in job history
 
 ### Requirement: Headless Runtime Event Convergence
-Headless local jobs SHALL use the runtime core's canonical event bridge before
-persisting runtime-visible job events.
+Headless jobs SHALL use the ledger in the Run's host process (CLI/daemon or Electron
+host as applicable) through a thin observer ingress adapter. Codex app-server's committed
+records SHALL be consumed directly without suppressing completed or appending a second
+copy; coarse Claude/Codex exec output SHALL enter the same owner as observations.
 
 #### Scenario: Batch process event is persisted
-- **WHEN** a Codex or Claude batch adapter emits assistant output, command
-  lifecycle output, status, error, or completion information
-- **THEN** the headless runner maps the data into sanitized canonical runtime
-  events before appending job events
-- **AND** persisted job events remain ordered and replayable by existing job log
-  and Local Job API readers
+- **WHEN** `headless-projection.json` drives the coarse observer and app-server committed
+  event consumer with recording ledger/store ports
+- **THEN** coarse assistant/command/status/error/result input invokes ledger ingress,
+  while committed app-server records retain their original sequence and completed
+- **AND** the persisted reader contains each committed record once; the headless wrapper
+  performs no raw store append or extra terminal mint
 
 #### Scenario: Existing event readers remain compatible
-- **WHEN** a user runs `locus jobs logs` or a downstream consumer runs
-  `locus api runs events`
-- **THEN** the reader receives documented job event envelopes in sequence
-- **AND** it is not required to understand provider-specific chunks or desktop
-  stream internals
+- **WHEN** jobs logs reads the headless fixture and runs events reads its separate
+  source=api fixture from `headless-projection.json`
+- **THEN** each returns the documented envelope in sequence; v1 has bare semantic payload
+  while the internal reader retains record metadata
+- **AND** neither reader requires provider chunks or desktop wrapper interpretation
 
 ### Requirement: Headless Adapter Selection Boundary
 Headless local jobs SHALL select adapters through the runtime execution selector

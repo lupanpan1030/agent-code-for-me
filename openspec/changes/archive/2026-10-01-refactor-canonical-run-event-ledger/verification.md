@@ -1038,6 +1038,30 @@ records exit 0, 2770 pass / 0 fail, architecture guard pass and strict 54/54.
 Its PR-base changed-file lint also exited 0. These are source-candidate receipts;
 post-merge gates are recorded separately.
 
+### Local merge and post-merge verification
+
+The accepted branch (source `f5704cb6`, acceptance-record commit `a74a2677`)
+merged into `main` at `3d7645c23b29738a441c335b3f104b3477918bd0`
+from base `25c075aff61e19e878915526f2b52365962d98d3` via `--no-ff`.
+There were no merge conflicts. No product source changed after the
+same-source-SHA technical verdicts; this record and the two follow-up tickets
+are documentation only.
+
+| Check at merge SHA | Result |
+| --- | --- |
+| `bun run check:full` | Exit 1 at tests: 2767 pass / 3 fail across 2770 tests; all three `codex-app-server-adapter.test.ts` pre-start shell-snapshot scrub failures report `EROFS` on restricted `/home/chen/.codex/shell_snapshots`. Architecture guard 17/17, retired-runtime check and `tsc --noEmit` passed before the test stage. Aggregate build/spec/diff stages were not reached. |
+| `bun test --isolate ./tests` fallback | Exit 1, same three snapshot-scrub `EROFS` failures, 2767 pass / 3 fail. Diagnostic log: `/tmp/canonical-ledger-post-merge-tests.log` (ephemeral local evidence). No test was counted as passed by waiver. |
+| `bun run architecture:check` | Exit 0; ledger guard self-test 17/17. |
+| `BIOME_CHANGED_SINCE=25c075af node scripts/run-biome-changed.mjs` | Exit 0; diagnostics outside changed lines only. |
+| Pre-archive `openspec validate --all --strict --no-interactive` | Exit 0, 54/54. |
+| Standalone `bun run build` and `bun run diff:check` | Both exit 0, recovering stages that the aggregate did not reach. |
+| Post-archive `openspec validate --all --strict --no-interactive` | Exit 0, 53/53 after the six deltas applied to living specs. |
+
+This host's sandbox restriction is the only observed test failure; the
+coordinator's independent `f5704cb6` source-candidate run passed 2770/0.
+The post-merge aggregate is honestly failed, and no runtime/packaged smoke
+pass is inferred.
+
 ## Future Implementation Receipts
 
 | Evidence | Required receipt / state |
@@ -1048,12 +1072,12 @@ post-merge gates are recorded separately.
 | Native/repair | Implemented: correlated resume (S33/S34), 66/10/16 static coverage (S42), two reasoning channels (S19), snapshot-only no-success (S36), native artifact candidates through the host (G2) and the resume snapshot-repair caller (G3), both closed in T1 |
 | Static architecture | Implemented: owner pins, retired symbols absent, the host is the only raw store importer, gate and transition mode deleted; guard self-test 17/17 |
 | Security | Implemented: stateful split-secret flush (S17), withheld prefix dropped at flush (`84541e00`), raw native content omitted, admission scope/digest/ownership checks (S28/S29), store credential patterns kept on durable records (`60bf8e02`), no new grants; Claude capture-to-launch re-check (G4 closed in T1); native staging only inside the admitted run dir; T2: store key rule and generic arm restored on durable records (T2-1), post-seal withheld channels omitted (T2-10), native admission through the run-dir handle with terminal re-verification (T2-11) |
-| check:full / strict / diff | Exit 0 at `b0f3e60d` (T1), `0e6d1273` (T2, coordinator 2736/0), `790ea4f5` (T4, 2760/0), and independently at final source `f5704cb6` (coordinator `phase3-checkfull-f5704cb6-coordinator.log`: 2770/0, strict 54/54, PR-base lint exit 0); post-merge gate follows |
+| check:full / strict / diff | Exit 0 at `b0f3e60d` (T1), `0e6d1273` (T2, coordinator 2736/0), `790ea4f5` (T4, 2760/0), and independently at final source `f5704cb6` (coordinator `phase3-checkfull-f5704cb6-coordinator.log`: 2770/0, strict 54/54, PR-base lint exit 0). Post-merge `check:full` exit 1 only for three sandbox `EROFS` tests; standalone build/diff and architecture/strict passed, as detailed above. |
 | Manual/packaged | Host-blocked or not claimed; see the 8.5 smoke matrix and rerun commands |
 | Codex IMPLEMENTATION_VERIFIED | Issued in negotiation R2, bound to `f5704cb6` (R1 NOT_VERIFIED at `17e23529` closed by T4); see `phase3-negotiation-r2-codex-f5704cb6.md` |
 | Claude fresh REVIEW_APPROVED | Issued and rebound to `f5704cb6` by `phase3-t4-binding-f5704cb6.md`; prior review history remains above |
 | Owner ACCEPTED | Issued 2026-10-01 at `f5704cb6`, S-06 (a) and limitations above accepted; see `phase3-owner-report-f5704cb6.md` |
-| Merge/push/remote PR/release | Local merge/archive and `main` push are coordination-dispatched under Owner's 2026-09-04 push policy; no tag, release or remote PR mutation |
+| Merge/push/remote PR/release | Local merge `3d7645c2` complete; standard archive applied the six deltas; coordination-dispatched `main` push follows under Owner's 2026-09-04 policy. No tag, release or remote PR mutation. |
 
 ## Consumer Evidence Ownership
 

@@ -6,12 +6,31 @@ ratified strategy and interoperability contract.
 
 Updated: 2026-10-01 (Pacific/Auckland); previous: 2026-09-30 (Pacific/Auckland)
 
-| Change | State | Concrete next gate |
-| --- | --- | --- |
-| `refactor-canonical-run-event-ledger` | ACCEPTED 2026-10-01 @ source `f5704cb6`; local merge in progress; runtime smoke host-blocked and macOS/Windows packaged evidence not claimed | Codex IMPLEMENTATION_VERIFIED and Claude REVIEW_APPROVED bind to `f5704cb6`; Owner accepted the documented limitations. Complete local merge, post-merge gates, archive and coordination-dispatched `main` push. |
+No active changes.
 
 Parked proposals are indexed in [`deferred/README.md`](deferred/README.md) and
 do not appear in the active list.
+
+## Locally archived 2026-10-01
+
+`refactor-canonical-run-event-ledger` was Owner **ACCEPTED** 2026-10-01 at
+source `f5704cb6` (Codex IMPLEMENTATION_VERIFIED and Claude REVIEW_APPROVED
+on that SHA), acceptance record `a74a2677`, and local no-ff merge `3d7645c2`
+from `main` `25c075af`; no merge conflicts. The standard archive is
+[`2026-10-01-refactor-canonical-run-event-ledger`](changes/archive/2026-10-01-refactor-canonical-run-event-ledger/)
+and applied six deltas to living specs. The archiver reported 61/64 checked
+tasks: 1.4's pinned TypeScript union closure remains unvendored, 8.5 remains
+open for host-blocked smoke, and 8.7 awaits the push receipt. macOS/Windows
+packaged evidence is not claimed. Owner accepted the smoke gap.
+
+Post-merge `check:full` exited 1 solely for three shell-snapshot scrub `EROFS`
+tests on restricted `/home/chen/.codex/shell_snapshots` (2767/2770).
+Standalone `bun test --isolate ./tests` reproduced the same three failures;
+architecture guard 17/17, PR-base Biome, production build, diff check, and
+strict validation passed. Post-archive strict validation passed 53/53.
+The [verification receipt](changes/archive/2026-10-01-refactor-canonical-run-event-ledger/verification.md)
+records the exact gate results and accepted cutover prerequisites. The only
+remote target dispatched is `origin/main`; push receipt follows separately.
 
 ## Direction decisions 2026-09-30 (Owner)
 
