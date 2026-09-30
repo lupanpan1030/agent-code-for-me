@@ -629,9 +629,55 @@ function resolvedProviderForJob(
   }
 }
 
+function registeredArtifactKey(entry: unknown): string | null {
+  if (!isRecord(entry)) return null
+  return typeof entry.role === "string" && typeof entry.sha256 === "string"
+    ? `${entry.role}\u0000${entry.sha256}`
+    : null
+}
+
+/**
+ * Manifest entries a result reader may expose (design "Artifacts and
+ * Terminal Commit Order": no prospective terminal or unregistered final ref
+ * is readable before its commit). A ledger job lists only manifest entries
+ * whose role and digest the ledger registered: the refs committed with its
+ * one completed, or the committed `artifact_created` refs before it. A final
+ * manifest prepared for a terminal that has not committed is therefore not
+ * exposed. Pre-ledger (v0) jobs keep reading their historical manifest.
+ */
+function readRegisteredArtifacts(
+  job: AgentJob,
+  events: readonly AgentJobEvent[] | undefined,
+): LocalJobApiArtifact[] {
+  const artifacts = readArtifacts(job.artifactManifestPath)
+  if (job.ledgerVersion === 0) return artifacts
+  const registered = new Set<string>()
+  const register = (list: unknown) => {
+    for (const entry of Array.isArray(list) ? list : []) {
+      const key = registeredArtifactKey(entry)
+      if (key) registered.add(key)
+    }
+  }
+  const result = parseJobResult(job)
+  if (isRecord(result)) register(result.artifactRefs)
+  for (const event of events ?? []) {
+    if (event.type !== "artifact_created") continue
+    try {
+      const payload = JSON.parse(event.payloadJson) as unknown
+      if (isRecord(payload)) register(payload.artifacts)
+    } catch {
+      // A malformed row registers nothing.
+    }
+  }
+  return artifacts.filter((artifact) => {
+    const key = registeredArtifactKey(artifact)
+    return key !== null && registered.has(key)
+  })
+}
+
 export function toLocalJobApiResultEnvelope(
   job: AgentJob,
-  artifacts: LocalJobApiArtifact[] = readArtifacts(job.artifactManifestPath),
+  artifacts?: LocalJobApiArtifact[],
   events?: AgentJobEvent[],
 ): LocalJobApiResultEnvelope {
   return {
@@ -647,7 +693,7 @@ export function toLocalJobApiResultEnvelope(
         }
       : null,
     artifactManifestPath: job.artifactManifestPath,
-    artifacts,
+    artifacts: artifacts ?? readRegisteredArtifacts(job, events),
     diagnostics: job.errorCode
       ? [
           {
