@@ -343,16 +343,45 @@ or UI helper.
 
 ## Runtime Events, Trace, And Redaction
 
-- Canonical owners: `src/main/lib/agent-runtime/runtime-events.ts`,
-  `src/main/lib/agent-runtime/redaction.ts`
-- Consumers: desktop runtime adapters, `src/main/lib/job-store.ts`, Workbench,
-  chat transports, and Local Browser guest diagnostics through
-  `redactUntrustedDiagnosticPayload` (the same matching without a run
-  identity; see Local Browser Guest Boundary)
-- Rule: runtime streams may emit provider-specific chunks, but persisted job
-  events and renderer-visible diagnostics must pass through normalized event
-  mapping and redaction first. Raw provider, gateway, MCP, OAuth, header, and
-  environment secrets must not be persisted or emitted to renderer state.
+- Canonical owners: `src/main/lib/agent-runtime/run-event-ledger.ts` (the
+  per-Run canonical ledger: native/coarse/host ingress, dense sequences and
+  fact keys, item/usage reconciliation, the one `completed` through `settle`,
+  native context), `src/main/lib/agent-runtime/run-event-ledger-host.ts`
+  (host composition: `getOrCreateRunEventLedger` for existing jobs, the
+  SQLite store adapter that is the sole importer of `appendExactRunEventBatch`
+  from `src/main/lib/headless/job-store.ts`, host-only execution binding and
+  the desktop renderer channel), `src/main/lib/agent-runtime/run-provenance.ts`
+  (`captureRunExecutionProvenance`: installation identity, executable digest
+  and reproducible schema fingerprints at executable resolution),
+  `src/main/lib/agent-runtime/run-artifacts.ts` (artifact admission and
+  run-dir file preparation/writing), `src/main/lib/agent-runtime/runtime-events.ts`
+  (`createRunEvent` constructor and record types) and
+  `src/main/lib/agent-runtime/redaction.ts` (the single redaction algorithms)
+- Supporting owners: `src/main/lib/agent-runtime/ledger-ingress.ts` (stateless
+  coarse and desktop stream decode), `src/main/lib/codex/app-server-stream-events.ts`
+  (stateless `decodeCodexNativeBoundary` and the pinned disposition table),
+  `src/main/lib/agent-runtime/stream-event-mapper.ts` (pure
+  `projectRunEventToRendererChunks` over committed records),
+  `src/main/lib/headless/job-recovery.ts` (stale-worker recovery: 120 s
+  heartbeat predicate plus same-host liveness probe; only confirmed-stopped
+  workers settle, others are a host `heartbeat_only` diagnostic) and the Claude
+  neutral native diagnostics in `src/main/lib/claude/agent-sdk-errors.ts`
+  (`NATIVE_RESUME_REJECTED`, no expiry inference or session-binding change)
+- Artifact ownership split: `run-artifacts.ts` validates, prepares and writes
+  run-dir files; the local-job-api capability and
+  `src/main/lib/headless/local-job-api.ts` serializers own the v1 file paths,
+  roles, schema and consumer contract, and the writer consumes those
+  definitions without forking them
+- Consumers: desktop runtime adapters, headless job runners and lifecycle
+  services, CLI/protocol/v1 serializers, Workbench, chat transports, and Local
+  Browser guest diagnostics through `redactUntrustedDiagnosticPayload` (the
+  same matching without a run identity; see Local Browser Guest Boundary)
+- Rule: every persisted job event is committed by the Run's ledger; routes,
+  adapters, lifecycle services and recovery submit observations or evidence
+  through the host and never insert `agent_job_events` rows, allocate
+  sequences or mint `completed`. Renderer-visible Run output is the projection
+  of committed, redacted records. Raw provider, gateway, MCP, OAuth, header,
+  and environment secrets must not be persisted or emitted to renderer state.
   Run-scoped credentials are passed to the redaction owner only as
   main-process-only exact secret hints; hints themselves never enter an event,
   message, result, diagnostic, renderer payload, or durable record.

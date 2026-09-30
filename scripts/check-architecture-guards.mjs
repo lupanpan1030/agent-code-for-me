@@ -3095,40 +3095,26 @@ function assertGuardDecisionSingleOwner() {
 const RUNTIME_EVENT_SYMBOL_OWNERS = new Map([
   ["createRunEvent", "src/main/lib/agent-runtime/runtime-events.ts"],
   [
-    "mapDesktopStreamChunkToRunEvents",
-    "src/main/lib/agent-runtime/stream-event-mapper.ts",
+    "createCanonicalRunEventLedger",
+    "src/main/lib/agent-runtime/run-event-ledger.ts",
   ],
   [
-    "createDesktopStreamEventMapper",
-    "src/main/lib/agent-runtime/stream-event-mapper.ts",
+    "getOrCreateRunEventLedger",
+    "src/main/lib/agent-runtime/run-event-ledger-host.ts",
   ],
   [
-    "appendRunEventsToAgentJob",
+    "projectRunEventToRendererChunks",
     "src/main/lib/agent-runtime/stream-event-mapper.ts",
   ],
-  [
-    "redactRendererDiagnosticChunk",
-    "src/main/lib/agent-runtime/stream-event-mapper.ts",
-  ],
-  [
-    "redactRendererRuntimeChunk",
-    "src/main/lib/agent-runtime/stream-event-mapper.ts",
-  ],
-  [
-    "createRuntimeRendererChunkEmitter",
-    "src/main/lib/agent-runtime/stream-event-mapper.ts",
-  ],
-  ["createAgentJobRunEvent", "src/main/lib/agent-runtime/job-event-bridge.ts"],
   ["redactRuntimePayload", "src/main/lib/agent-runtime/redaction.ts"],
   ["redactExactSecretHints", "src/main/lib/agent-runtime/redaction.ts"],
 ])
 const JOB_EVENT_STORE_OWNER = "src/main/lib/headless/job-store.ts"
-const APPEND_AGENT_JOB_EVENT_IMPORTERS = [
-  "src/main/lib/agent-runtime/stream-event-mapper.ts",
-  "src/main/lib/desktop-agent-jobs.ts",
-  "src/main/lib/headless/cli-dispatcher.ts",
-  "src/main/lib/headless/completion-runner.ts",
-  "src/main/lib/headless/job-runner.ts",
+const JOB_EVENT_STORE_APPEND = "appendExactRunEventBatch"
+const JOB_EVENT_STORE_INSERT = "insertExactRunEventRecord"
+/** The host's exact store adapter is the only raw event writer importer. */
+const APPEND_EXACT_RUN_EVENT_BATCH_IMPORTERS = [
+  "src/main/lib/agent-runtime/run-event-ledger-host.ts",
 ]
 const RUNTIME_EVENT_OWNERSHIP_SECTION =
   'docs/OWNERSHIP_MAP.md "Runtime Events, Trace, And Redaction"'
@@ -3365,13 +3351,13 @@ function assertRuntimeEventSinglePathSelfTest() {
   )
   const rawImport = importsNamedSymbolFrom(
     "src/main/lib/disallowed.ts",
-    'import { appendAgentJobEvent } from "./headless/job-store"',
+    'import { appendExactRunEventBatch } from "./headless/job-store"',
     JOB_EVENT_STORE_OWNER,
-    "appendAgentJobEvent",
+    JOB_EVENT_STORE_APPEND,
   )
   const clean = collectTrackedSymbolFacts(
     "src/main/lib/clean.ts",
-    'import { createAgentJobRunEvent as bridge } from "./agent-runtime/job-event-bridge"; void bridge',
+    'import { getOrCreateRunEventLedger as host } from "./agent-runtime/run-event-ledger-host"; void host',
     new Set(RUNTIME_EVENT_SYMBOL_OWNERS.keys()),
   )
   const privateOwner = collectTrackedSymbolFacts(
@@ -3385,37 +3371,37 @@ function assertRuntimeEventSinglePathSelfTest() {
     new Set(RUNTIME_EVENT_SYMBOL_OWNERS.keys()),
   )
   const rawImportFixtures = [
-    'import { appendAgentJobEvent } from "./headless/job-store"',
-    'import * as store from "./headless/job-store"; store.appendAgentJobEvent',
-    'const store = await import("./headless/job-store"); store.appendAgentJobEvent',
-    'import store = require("./headless/job-store"); store.appendAgentJobEvent',
-    'const { appendAgentJobEvent } = require("./headless/job-store")',
-    'const store = module.require("./headless/job-store"); store["appendAgentJobEvent"]',
-    'import { createRequire } from "node:module"; const load = createRequire(import.meta.url); const store = load("./headless/job-store"); store.appendAgentJobEvent',
+    'import { appendExactRunEventBatch } from "./headless/job-store"',
+    'import * as store from "./headless/job-store"; store.appendExactRunEventBatch',
+    'const store = await import("./headless/job-store"); store.appendExactRunEventBatch',
+    'import store = require("./headless/job-store"); store.appendExactRunEventBatch',
+    'const { appendExactRunEventBatch } = require("./headless/job-store")',
+    'const store = module.require("./headless/job-store"); store["appendExactRunEventBatch"]',
+    'import { createRequire } from "node:module"; const load = createRequire(import.meta.url); const store = load("./headless/job-store"); store.appendExactRunEventBatch',
   ]
   const detectsEveryRawImportSyntax = rawImportFixtures.every((content) =>
     importsNamedSymbolFrom(
       "src/main/lib/disallowed.ts",
       content,
       JOB_EVENT_STORE_OWNER,
-      "appendAgentJobEvent",
+      JOB_EVENT_STORE_APPEND,
     ),
   )
   const ignoresOtherJobStoreImports = !importsNamedSymbolFrom(
     "src/main/lib/clean-job-store-import.ts",
-    'import { getAgentJob } from "./headless/job-store"; const example = "appendAgentJobEvent"; void getAgentJob; void example',
+    'import { getAgentJob } from "./headless/job-store"; const example = "appendExactRunEventBatch"; void getAgentJob; void example',
     JOB_EVENT_STORE_OWNER,
-    "appendAgentJobEvent",
+    JOB_EVENT_STORE_APPEND,
   )
   const aliasedAppendExports = collectActualExportNamesForSymbol(
     JOB_EVENT_STORE_OWNER,
-    "const rawWrite = appendAgentJobEvent; export const rawWriteAgain = rawWrite; export { appendAgentJobEvent, rawWrite }; export default rawWriteAgain",
-    "appendAgentJobEvent",
+    "const rawWrite = appendExactRunEventBatch; export const rawWriteAgain = rawWrite; export { appendExactRunEventBatch, rawWrite }; export default rawWriteAgain",
+    JOB_EVENT_STORE_APPEND,
   )
   const defaultInsertExport = collectActualExportNamesForSymbol(
     JOB_EVENT_STORE_OWNER,
-    "export const rawInsert = insertAgentJobEventRecord; export default rawInsert",
-    "insertAgentJobEventRecord",
+    "export const rawInsert = insertExactRunEventRecord; export default rawInsert",
+    JOB_EVENT_STORE_INSERT,
   )
   if (
     !duplicate.definitions.has("createRunEvent") ||
@@ -3430,7 +3416,7 @@ function assertRuntimeEventSinglePathSelfTest() {
     !ignoresOtherJobStoreImports ||
     JSON.stringify(aliasedAppendExports) !==
       JSON.stringify([
-        "appendAgentJobEvent",
+        "appendExactRunEventBatch",
         "default",
         "rawWrite",
         "rawWriteAgain",
@@ -3439,7 +3425,7 @@ function assertRuntimeEventSinglePathSelfTest() {
       JSON.stringify(["default", "rawInsert"])
   ) {
     fail(
-      "Canonical runtime-event single-path self-test must detect duplicate definitions and raw-write imports while accepting a bridge consumer.",
+      "Canonical runtime-event single-path self-test must detect duplicate definitions and raw-write imports while accepting a host ledger consumer.",
     )
   }
 }
@@ -3448,8 +3434,8 @@ function assertRuntimeEventSinglePath() {
   assertRuntimeEventSinglePathSelfTest()
   const tracked = new Set([
     ...RUNTIME_EVENT_SYMBOL_OWNERS.keys(),
-    "appendAgentJobEvent",
-    "insertAgentJobEventRecord",
+    JOB_EVENT_STORE_APPEND,
+    JOB_EVENT_STORE_INSERT,
   ])
   const definitionSites = new Map(
     [...RUNTIME_EVENT_SYMBOL_OWNERS.keys()].map((symbol) => [symbol, []]),
@@ -3480,7 +3466,7 @@ function assertRuntimeEventSinglePath() {
         exportSites.get(symbol).push(filePath)
     }
     if (
-      facts.exports.has("appendAgentJobEvent") ||
+      facts.exports.has(JOB_EVENT_STORE_APPEND) ||
       reexportsWholeModuleFrom(filePath, content, JOB_EVENT_STORE_OWNER)
     )
       exportedAppendSites.push(filePath)
@@ -3488,15 +3474,15 @@ function assertRuntimeEventSinglePath() {
       canonicalAppendExportNames = collectActualExportNamesForSymbol(
         filePath,
         content,
-        "appendAgentJobEvent",
+        JOB_EVENT_STORE_APPEND,
       )
       canonicalInsertExportNames = collectActualExportNamesForSymbol(
         filePath,
         content,
-        "insertAgentJobEventRecord",
+        JOB_EVENT_STORE_INSERT,
       )
     }
-    if (facts.exports.has("insertAgentJobEventRecord"))
+    if (facts.exports.has(JOB_EVENT_STORE_INSERT))
       exportedInsertSites.push(filePath)
     if (
       filePath !== JOB_EVENT_STORE_OWNER &&
@@ -3504,7 +3490,7 @@ function assertRuntimeEventSinglePath() {
         filePath,
         content,
         JOB_EVENT_STORE_OWNER,
-        "appendAgentJobEvent",
+        JOB_EVENT_STORE_APPEND,
       )
     ) {
       directImporters.push(filePath)
@@ -3530,47 +3516,36 @@ function assertRuntimeEventSinglePath() {
     exportedAppendSites[0] !== JOB_EVENT_STORE_OWNER
   ) {
     fail(
-      `appendAgentJobEvent must be exported only from ${JOB_EVENT_STORE_OWNER}; found ${exportedAppendSites.join(", ") || "none"}.`,
+      `${JOB_EVENT_STORE_APPEND} must be exported only from ${JOB_EVENT_STORE_OWNER}; found ${exportedAppendSites.join(", ") || "none"}.`,
     )
   }
   if (
     JSON.stringify(canonicalAppendExportNames) !==
-    JSON.stringify(["appendAgentJobEvent"])
+    JSON.stringify([JOB_EVENT_STORE_APPEND])
   ) {
     fail(
-      `appendAgentJobEvent must not gain an alias or default export in ${JOB_EVENT_STORE_OWNER}; found export names ${canonicalAppendExportNames.join(", ") || "none"}.`,
+      `${JOB_EVENT_STORE_APPEND} must not gain an alias or default export in ${JOB_EVENT_STORE_OWNER}; found export names ${canonicalAppendExportNames.join(", ") || "none"}.`,
     )
   }
   if (exportedInsertSites.length > 0) {
     fail(
-      `insertAgentJobEventRecord must remain module-private in ${JOB_EVENT_STORE_OWNER}; exported from ${exportedInsertSites.join(", ")}.`,
+      `${JOB_EVENT_STORE_INSERT} must remain module-private in ${JOB_EVENT_STORE_OWNER}; exported from ${exportedInsertSites.join(", ")}.`,
     )
   }
   if (canonicalInsertExportNames.length > 0) {
     fail(
-      `insertAgentJobEventRecord must remain module-private in ${JOB_EVENT_STORE_OWNER}; found export names ${canonicalInsertExportNames.join(", ")}.`,
+      `${JOB_EVENT_STORE_INSERT} must remain module-private in ${JOB_EVENT_STORE_OWNER}; found export names ${canonicalInsertExportNames.join(", ")}.`,
     )
   }
 
   const measuredImporters = sortedUnique(directImporters)
-  const expectedImporters = [...APPEND_AGENT_JOB_EVENT_IMPORTERS].sort(
+  const expectedImporters = [...APPEND_EXACT_RUN_EVENT_BATCH_IMPORTERS].sort(
     compareCodePoints,
   )
   if (JSON.stringify(measuredImporters) !== JSON.stringify(expectedImporters)) {
     fail(
-      `appendAgentJobEvent direct importers must match the frozen only-shrink allowlist. Expected ${expectedImporters.join(", ")}; found ${measuredImporters.join(", ") || "none"}. Routes and runtime adapters must consume appendRunEventsToAgentJob/createAgentJobRunEvent instead.`,
+      `${JOB_EVENT_STORE_APPEND} direct importers must be exactly the host store adapter. Expected ${expectedImporters.join(", ")}; found ${measuredImporters.join(", ") || "none"}. Callers must submit observations and evidence through getOrCreateRunEventLedger.`,
     )
-  }
-  for (const filePath of measuredImporters) {
-    if (
-      filePath.startsWith("src/main/lib/trpc/routers/") ||
-      filePath.startsWith("src/main/lib/codex/") ||
-      filePath.startsWith("src/main/lib/claude/")
-    ) {
-      fail(
-        `${filePath} must not import appendAgentJobEvent directly; consume appendRunEventsToAgentJob/createAgentJobRunEvent instead.`,
-      )
-    }
   }
 }
 
@@ -4245,69 +4220,22 @@ function assertCanonicalVocabularyI18n() {
 //
 // The fixture-driven rules pin the ledger owners of
 // docs/OWNERSHIP_MAP.md "Runtime Events, Trace, And Redaction". Their
-// self-test consumes RUN_EVENT_LEDGER_ARCHITECTURE_FIXTURE_PATH in every
-// mode. Repository enforcement runs with --run-event-ledger-phase=transition
-// (declared temporary gate + frozen legacy residue only) or =canonical (no
-// residue); the transition mode, its allowlist and the gate are deleted by
-// the Phase II cutover before acceptance.
+// self-test consumes RUN_EVENT_LEDGER_ARCHITECTURE_FIXTURE_PATH, and the
+// repository is always enforced in the canonical end state: every pinned
+// owner defines and exports its symbol, no legacy writer/mapper symbol,
+// direct agent_job_events insert, second store importer or provenance binding
+// outside the host remains.
 // ---------------------------------------------------------------------------
 
 const RUN_EVENT_LEDGER_ARCHITECTURE_FIXTURE_PATH =
   "tests/fixtures/run-event-ledger/architecture-fixtures.json"
-const RUN_EVENT_LEDGER_PHASE_FLAG = "--run-event-ledger-phase="
 const RUN_EVENT_LEDGER_FIXTURE_FLAG = "--run-event-ledger-fixtures="
-const RUN_EVENT_LEDGER_GATE = "canonicalRunEventLedgerV1"
-const RUN_EVENT_LEDGER_HOST =
-  "src/main/lib/agent-runtime/run-event-ledger-host.ts"
 const RUN_EVENT_LEDGER_BIND_METHOD = "bindExecutionProvenance"
 const RUN_EVENT_LEDGER_STORE_APPEND = "appendExactRunEventBatch"
-/** Frozen legacy residue the transition phase may still carry (only shrinks). */
-const RUN_EVENT_LEDGER_TRANSITION_LEGACY_RESIDUE = new Set([
-  "src/main/lib/agent-runtime/job-event-bridge.ts:createAgentJobRunEvent",
-  "src/main/lib/agent-runtime/stream-event-mapper.ts:appendAgentJobEvent",
-  "src/main/lib/agent-runtime/stream-event-mapper.ts:appendRunEventsToAgentJob",
-  "src/main/lib/agent-runtime/stream-event-mapper.ts:createDesktopStreamEventMapper",
-  "src/main/lib/agent-runtime/stream-event-mapper.ts:createRuntimeRendererChunkEmitter",
-  "src/main/lib/agent-runtime/stream-event-mapper.ts:createRuntimeStreamChunkSecretRedactor",
-  "src/main/lib/agent-runtime/stream-event-mapper.ts:isDesktopRuntimeFailureChunk",
-  "src/main/lib/agent-runtime/stream-event-mapper.ts:mapDesktopStreamChunkToRunEvents",
-  "src/main/lib/agent-runtime/stream-event-mapper.ts:persistedPayloadForRunEvent",
-  "src/main/lib/agent-runtime/stream-event-mapper.ts:redactRendererDiagnosticChunk",
-  "src/main/lib/agent-runtime/stream-event-mapper.ts:redactRendererRuntimeChunk",
-  "src/main/lib/claude/agent-sdk-desktop-job.ts:appendRunEventsToAgentJob",
-  "src/main/lib/claude/agent-sdk-desktop-job.ts:createDesktopStreamEventMapper",
-  "src/main/lib/claude/agent-sdk-desktop-run-envelope.ts:createRuntimeRendererChunkEmitter",
-  "src/main/lib/codex/app-server-adapter.ts:createRuntimeStreamChunkSecretRedactor",
-  "src/main/lib/codex/app-server-adapter.ts:mapDesktopStreamChunkToRunEvents",
-  "src/main/lib/codex/app-server-adapter.ts:redactRendererRuntimeChunk",
-  "src/main/lib/desktop-agent-jobs.ts:appendAgentJobEvent",
-  "src/main/lib/headless/cli-dispatcher.ts:appendAgentJobEvent",
-  "src/main/lib/headless/completion-runner.ts:appendAgentJobEvent",
-  "src/main/lib/headless/job-runner.ts:appendAgentJobEvent",
-  "src/main/lib/headless/job-store.ts:appendAgentJobEvent",
-  "src/main/lib/headless/job-store.ts:createAgentJobRunEvent",
-  "src/main/lib/trpc/routers/codex.ts:appendRunEventsToAgentJob",
-  "src/main/lib/trpc/routers/codex.ts:redactRendererRuntimeChunk",
-])
-const RUN_EVENT_LEDGER_TRANSITION_DIRECT_EVENT_INSERTS = new Set([
-  "src/main/lib/headless/schedules.ts",
-])
 
 function runEventLedgerOption(flag) {
   const argument = process.argv.find((entry) => entry.startsWith(flag))
   return argument ? argument.slice(flag.length) : null
-}
-
-function runEventLedgerPhase() {
-  const phase = runEventLedgerOption(RUN_EVENT_LEDGER_PHASE_FLAG)
-  if (phase === null) return "legacy"
-  if (phase !== "transition" && phase !== "canonical") {
-    fail(
-      `${RUN_EVENT_LEDGER_PHASE_FLAG} must be transition or canonical; got ${phase}.`,
-    )
-    return "legacy"
-  }
-  return phase
 }
 
 function loadRunEventLedgerArchitectureFixture() {
@@ -4589,7 +4517,7 @@ function assertRunEventLedgerGuardSelfTest(fixture) {
   return summary
 }
 
-function assertRunEventLedgerOwnership(phase, fixture) {
+function assertRunEventLedgerOwnership(fixture) {
   const files = walkFiles("src", RUNTIME_CORE_SOURCE_EXTENSIONS).map(
     (absolutePath) => ({
       filePath: relative(absolutePath),
@@ -4608,40 +4536,19 @@ function assertRunEventLedgerOwnership(phase, fixture) {
     }
   }
   for (const finding of collectRunEventLedgerFindings(files, fixture)) {
-    const allowed =
-      phase === "transition" &&
-      ((finding.rule === "legacy-symbol" &&
-        RUN_EVENT_LEDGER_TRANSITION_LEGACY_RESIDUE.has(
-          `${finding.file}:${finding.symbol}`,
-        )) ||
-        (finding.rule === "direct-event-insert" &&
-          RUN_EVENT_LEDGER_TRANSITION_DIRECT_EVENT_INSERTS.has(finding.file)))
-    if (!allowed) {
-      fail(
-        `Run event ledger ${finding.rule}: ${finding.file} ${finding.symbol}${finding.owner ? ` (owner ${finding.owner})` : ""}. See ${RUNTIME_EVENT_OWNERSHIP_SECTION}.`,
-      )
-    }
-  }
-  const gateFiles = files
-    .filter((file) => file.content.includes(RUN_EVENT_LEDGER_GATE))
-    .map((file) => file.filePath)
-  const expectedGateFiles =
-    phase === "transition" ? [RUN_EVENT_LEDGER_HOST] : []
-  if (JSON.stringify(gateFiles) !== JSON.stringify(expectedGateFiles)) {
     fail(
-      `${RUN_EVENT_LEDGER_GATE} must appear only in ${expectedGateFiles.join(", ") || "no file"} in ${phase} mode; found ${gateFiles.join(", ") || "none"}.`,
+      `Run event ledger ${finding.rule}: ${finding.file} ${finding.symbol}${finding.owner ? ` (owner ${finding.owner})` : ""}. See ${RUNTIME_EVENT_OWNERSHIP_SECTION}.`,
     )
   }
 }
 
 function assertRunEventLedgerGuards() {
-  const phase = runEventLedgerPhase()
   const fixture = loadRunEventLedgerArchitectureFixture()
   if (!fixture) return
   const summary = assertRunEventLedgerGuardSelfTest(fixture)
-  if (phase !== "legacy") assertRunEventLedgerOwnership(phase, fixture)
+  assertRunEventLedgerOwnership(fixture)
   console.log(
-    `Run event ledger guard self-test: ${summary.matched}/${summary.cases} fixture cases matched (${phase} mode).`,
+    `Run event ledger guard self-test: ${summary.matched}/${summary.cases} fixture cases matched; repository ownership enforced.`,
   )
 }
 
