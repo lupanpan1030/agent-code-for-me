@@ -21,6 +21,8 @@ import {
 import { useTheme } from "@/lib/themes/theme-mode-provider"
 import { useI18n } from "../lib/i18n"
 import {
+  assertMermaidDirectiveSuppression,
+  MERMAID_SECURE_CONFIG_KEYS,
   MERMAID_SECURITY_LEVEL,
   sanitizeMermaidSvg,
 } from "../lib/security/mermaid-svg-sanitizer"
@@ -36,25 +38,16 @@ const getMermaid = () => {
   return mermaidPromise
 }
 
-// Clean up mermaid error SVGs that get added to the DOM
-const cleanupMermaidErrors = () => {
-  // Mermaid adds error SVGs with id starting with 'd' or 'mermaid-' to the body
-  const errorSvgs = document.querySelectorAll('svg[id^="mermaid-"]')
-  errorSvgs.forEach((svg) => {
-    // Only remove if it's directly in body (error artifacts)
-    if (svg.parentElement === document.body) {
-      svg.remove()
+// Mermaid transiently mounts `div#d<id>` (holding `svg#<id>`) under
+// document.body to lay the diagram out, and leaves it there when parsing
+// fails. Remove exactly this render's transient elements once it settles.
+const removeMermaidRenderArtifacts = (id: string) => {
+  for (const artifactId of [`d${id}`, `i${id}`, id]) {
+    const element = document.getElementById(artifactId)
+    if (element?.parentElement === document.body) {
+      element.remove()
     }
-  })
-  // Also clean up any container divs mermaid creates
-  const containers = document.querySelectorAll(
-    'div[id^="dmermaid-"], div[id^="d"]',
-  )
-  containers.forEach((div) => {
-    if (div.parentElement === document.body && div.querySelector("svg")) {
-      div.remove()
-    }
-  })
+  }
 }
 
 interface MermaidBlockProps {
@@ -144,6 +137,8 @@ const getMermaidConfig = (isDark: boolean): Record<string, unknown> => ({
         edgeLabelBackground: "#fafafa",
       },
   securityLevel: MERMAID_SECURITY_LEVEL,
+  // Source directives cannot override these keys (design D3).
+  secure: [...MERMAID_SECURE_CONFIG_KEYS],
   fontFamily: "inherit",
 })
 
@@ -191,6 +186,10 @@ const mermaidCache = new Map<string, string>()
 
 // Track which mermaid blocks have finished streaming (by first N chars of code as ID)
 const finishedStreamingBlocks = new Set<string>()
+
+// At most one fullscreen diagram viewer is open: opening one closes any other,
+// so the document never holds more than one fullscreen diagram sink.
+let closeActiveFullscreenViewer: (() => void) | null = null
 
 // Streaming placeholder - simple static text, no spinner
 const StreamingPlaceholder = memo(function StreamingPlaceholder() {
@@ -247,14 +246,21 @@ const MermaidBlockInner = memo(function MermaidBlockInner({
       // Check if this render is still current
       if (currentRenderId !== renderIdRef.current) return
 
-      // Initialize/reinitialize mermaid with current theme
+      // Initialize/reinitialize mermaid with current theme, and fail closed
+      // unless strict mode and the pinned secure list are in force.
       mermaid.initialize(getMermaidConfig(isDark))
+      assertMermaidDirectiveSuppression(mermaid.mermaidAPI.getSiteConfig())
 
       // Generate unique ID for this render
       const id = `mermaid-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
 
-      const { svg } = await mermaid.render(id, code)
+      const { svg } = await mermaid
+        .render(id, code)
+        .finally(() => removeMermaidRenderArtifacts(id))
       const sanitizedSvg = sanitizeMermaidSvg(svg)
+      if (!sanitizedSvg) {
+        throw new Error("Diagram output failed the security profile")
+      }
 
       // Check again if this render is still current
       if (currentRenderId !== renderIdRef.current) return
@@ -266,17 +272,11 @@ const MermaidBlockInner = memo(function MermaidBlockInner({
       setRenderState({ status: "success", svg: sanitizedSvg })
       lastRenderedCodeRef.current = code
       lastRenderedThemeRef.current = isDark
-
-      // Clean up any error artifacts mermaid left in DOM
-      cleanupMermaidErrors()
     } catch (error) {
       if (currentRenderId !== renderIdRef.current) return
 
       const message =
         error instanceof Error ? error.message : "Failed to render diagram"
-
-      // Clean up error SVGs that mermaid adds to DOM
-      cleanupMermaidErrors()
 
       // Check if this is a parse/syntax error (incomplete diagram)
       const isParseError =
@@ -371,13 +371,13 @@ const MermaidBlockInner = memo(function MermaidBlockInner({
     renderDiagram()
   }, [code, isDark, renderDiagram])
 
-  // Cleanup mermaid artifacts and debounce timeout on unmount
+  // Cleanup debounce timeout on unmount (an in-flight render removes its own
+  // transient artifacts when it settles)
   useEffect(() => {
     return () => {
       if (debounceTimeoutRef.current) {
         clearTimeout(debounceTimeoutRef.current)
       }
-      cleanupMermaidErrors()
     }
   }, [])
 
@@ -399,13 +399,32 @@ const MermaidBlockInner = memo(function MermaidBlockInner({
     URL.revokeObjectURL(url)
   }, [renderState])
 
-  const openFullscreen = useCallback(() => {
-    setIsFullscreen(true)
-  }, [])
-
   const closeFullscreen = useCallback(() => {
     setIsFullscreen(false)
   }, [])
+
+  const openFullscreen = useCallback(() => {
+    if (closeActiveFullscreenViewer !== closeFullscreen) {
+      closeActiveFullscreenViewer?.()
+    }
+    closeActiveFullscreenViewer = closeFullscreen
+    setIsFullscreen(true)
+  }, [closeFullscreen])
+
+  useEffect(() => {
+    if (!isFullscreen && closeActiveFullscreenViewer === closeFullscreen) {
+      closeActiveFullscreenViewer = null
+    }
+  }, [isFullscreen, closeFullscreen])
+
+  useEffect(
+    () => () => {
+      if (closeActiveFullscreenViewer === closeFullscreen) {
+        closeActiveFullscreenViewer = null
+      }
+    },
+    [closeFullscreen],
+  )
 
   return (
     <>

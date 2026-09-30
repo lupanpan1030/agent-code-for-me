@@ -23,16 +23,22 @@
  *   Streamdown chain `[rehypeRaw, [rehypeSanitize, schema], [harden, options]]`
  *   (design D2). The schema derives from `rehype-sanitize`'s `defaultSchema`
  *   and is the load-bearing markdown URL/element policy.
- * - `RENDERER_MARKUP_PROFILES` defines the rendered-DOM oracle profiles that
- *   the shared test helper `tests/helpers/renderer-executable-markup-oracle.ts`
- *   implements.
+ * - `reviewMermaidPaintCss()`, `reviewMermaidInlineStyle()` and
+ *   `reviewMermaidAttributeCss()` are the reviewed CSS value profiles the
+ *   Mermaid adapter enforces on returned SVG (design D3): one scoped paint
+ *   `<style>`, reviewed `style` attributes, same-SVG `url(#id)` only.
+ * - `RENDERER_MARKUP_PROFILES` defines the rendered-DOM oracle profiles
+ *   (markdown, highlighted code, diff, Mermaid) that the shared test
+ *   helper `tests/helpers/renderer-executable-markup-oracle.ts` implements.
  *
  * This is deliberately not a generic `sanitize(anything)` helper: a new raw
  * sink needs an explicit inventory entry, a named producer and a behavior
  * gate. A TypeScript brand is not a security boundary on its own; the source
  * guard and the rendered-DOM behavior suites remain the enforcement backstop.
  *
- * Mermaid SVG keeps its specialized adapter in `mermaid-svg-sanitizer.ts`.
+ * Mermaid SVG keeps its specialized adapter in `mermaid-svg-sanitizer.ts`
+ * (DOMPurify load-bearing, DOMParser pass as defense in depth); this module
+ * owns the CSS value profiles that adapter applies.
  */
 import { harden } from "rehype-harden"
 import rehypeRaw from "rehype-raw"
@@ -260,6 +266,343 @@ export function reviewShikiCodeToHtmlOutput(
 }
 
 // ============================================================================
+// Mermaid CSS value profile (design D3)
+// ============================================================================
+
+/**
+ * Diagram ids the Mermaid adapter can scope paint CSS to. Mermaid ids are
+ * app-generated (`mermaid-<time>-<random>`); anything else fails closed.
+ */
+const MERMAID_DIAGRAM_ID = /^[a-z][a-z0-9_-]*$/i
+
+/**
+ * Constructs that make CSS fetch, execute or escape: every URL-bearing
+ * function and `@import` (remote or unvalidated references), legacy script
+ * hooks, and markup delimiters. Matched against lower-cased CSS text.
+ */
+const MERMAID_CSS_FORBIDDEN_PATTERNS: readonly RegExp[] = Object.freeze([
+  /</,
+  /@import/,
+  /expression\s*\(/,
+  /behavior\s*:/,
+  /-moz-binding/,
+  /javascript:/,
+  /vbscript:/,
+  /(?:^|[^a-z0-9_-])(?:url|image|image-set|-webkit-image-set|cross-fade|-webkit-cross-fade|element|-moz-element|src|paint)\s*\(/,
+])
+
+/**
+ * Mermaid-generated CSS (stylis-minified) carries no comments or escapes.
+ * Both are rejected, so the reviewed text is exactly what the browser parses.
+ */
+const MERMAID_CSS_OPAQUE_SYNTAX = /\\|\/\*|\*\//
+
+/** A CSS `url(#fragment)` reference (lower-cased text). */
+const MERMAID_CSS_FRAGMENT_URL = /url\(\s*(["']?)#([a-z0-9_.:-]+)\1\s*\)/g
+
+const MERMAID_KEYFRAMES_PRELUDE =
+  /^@(?:-webkit-)?keyframes\s+[a-z_-][a-z0-9_-]*$/
+const MERMAID_KEYFRAME_SELECTOR = /^(?:from|to|\d+(?:\.\d+)?%)$/
+/** What may follow `#<diagram id>` in a scoped selector (never `~`/`+`). */
+const MERMAID_SCOPE_CONTINUATION = /^(?:$|[ .:[>#])/
+/** Selector remainders treated as targeting the diagram root itself. */
+const MERMAID_ROOT_LEVEL_REMAINDERS: ReadonlySet<string> = new Set([
+  "",
+  " svg",
+  " :root",
+  " *",
+  ">*",
+  " html",
+  " body",
+])
+/** `position` keywords admitted per rule scope; anything else fails. */
+const MERMAID_POSITION_VALUES = Object.freeze({
+  descendant: Object.freeze(["static", "relative", "absolute", "sticky"]),
+  root: Object.freeze(["static", "relative"]),
+  inline: Object.freeze(["static", "relative"]),
+})
+
+type CssBlock = { prelude: string; body: string }
+
+/** Quote/paren-aware split of CSS text at `separator` (top level only). */
+function splitCssTopLevel(text: string, separator: string): string[] {
+  const parts: string[] = []
+  let current = ""
+  let depth = 0
+  let quote: string | null = null
+  for (const character of text) {
+    if (quote) {
+      current += character
+      if (character === quote) quote = null
+      continue
+    }
+    if (character === '"' || character === "'") {
+      quote = character
+    } else if (character === "(" || character === "[") {
+      depth += 1
+    } else if (character === ")" || character === "]") {
+      depth -= 1
+    } else if (character === separator && depth === 0) {
+      parts.push(current)
+      current = ""
+      continue
+    }
+    current += character
+  }
+  parts.push(current)
+  return parts
+}
+
+/**
+ * Splits CSS into top-level `prelude { body }` blocks plus stray statement
+ * text, or returns null when braces or quotes are unbalanced.
+ */
+function splitCssBlocks(
+  css: string,
+): { blocks: CssBlock[]; stray: string } | null {
+  const blocks: CssBlock[] = []
+  let stray = ""
+  let prelude = ""
+  let body = ""
+  let depth = 0
+  let quote: string | null = null
+  for (const character of css) {
+    if (quote) {
+      if (depth === 0) prelude += character
+      else body += character
+      if (character === quote) quote = null
+      continue
+    }
+    if (character === "{") {
+      if (depth > 0) body += character
+      depth += 1
+      continue
+    }
+    if (character === "}") {
+      depth -= 1
+      if (depth < 0) return null
+      if (depth === 0) {
+        blocks.push({ prelude: prelude.trim(), body })
+        prelude = ""
+        body = ""
+      } else {
+        body += character
+      }
+      continue
+    }
+    if (character === '"' || character === "'") quote = character
+    if (depth > 0) {
+      body += character
+    } else if (character === ";") {
+      stray += prelude
+      prelude = ""
+    } else {
+      prelude += character
+    }
+  }
+  if (depth !== 0 || quote) return null
+  return { blocks, stray: `${stray}${prelude}`.trim() }
+}
+
+/** `[property, value]` pairs (value without `!important`), lower-cased input. */
+function cssDeclarations(body: string): Array<[string, string]> {
+  return splitCssTopLevel(body, ";").flatMap(
+    (declaration): Array<[string, string]> => {
+      if (declaration.trim() === "") return []
+      const separator = declaration.indexOf(":")
+      if (separator < 0) return [["", declaration.trim()]]
+      return [
+        [
+          declaration.slice(0, separator).trim(),
+          declaration
+            .slice(separator + 1)
+            .replace(/!\s*important\s*$/, "")
+            .trim(),
+        ],
+      ]
+    },
+  )
+}
+
+/** "root" | "descendant", or the reason the selector is not scoped. */
+function mermaidSelectorScope(selector: string, scope: string): string {
+  if (!selector.startsWith(scope)) return "selector not scoped to the diagram"
+  const remainder = selector.slice(scope.length)
+  if (!MERMAID_SCOPE_CONTINUATION.test(remainder)) {
+    return "selector escapes the diagram id namespace"
+  }
+  let depth = 0
+  let index = 0
+  for (; index < remainder.length; index += 1) {
+    const character = remainder.charAt(index)
+    if (character === "(" || character === "[") depth += 1
+    else if (character === ")" || character === "]") depth -= 1
+    else if (depth === 0 && /[\s>~+]/.test(character)) break
+  }
+  const combinator = remainder.slice(index).trimStart()
+  if (combinator.startsWith("~") || combinator.startsWith("+")) {
+    return "sibling combinator escapes the diagram"
+  }
+  return combinator === "" || MERMAID_ROOT_LEVEL_REMAINDERS.has(remainder)
+    ? "root"
+    : "descendant"
+}
+
+function positionViolations(
+  body: string,
+  admitted: readonly string[],
+  where: string,
+): string[] {
+  return cssDeclarations(body)
+    .filter(
+      ([property, value]) =>
+        property === "position" && !admitted.includes(value),
+    )
+    .map(([, value]) => `position:${value} not admitted (${where})`)
+}
+
+/**
+ * Reviewed CSS value profile for the single retained Mermaid paint `<style>`
+ * (design D3). Returns every violation; an empty list means the text may be
+ * retained. Every selector is scoped to `#<diagramId>` (a descendant or the
+ * root itself, never a sibling); only `@keyframes` at-rules are admitted; no
+ * URL-bearing function, `@import`, `expression(`, `behavior:` or other
+ * external reference; `position:fixed` nowhere and `position:absolute` not at
+ * root level. Attacker `classDef`/`style` diagram statements also reach this
+ * text (the `secure` directive list cannot suppress diagram syntax), so this
+ * profile is their control too.
+ */
+export function reviewMermaidPaintCss(
+  css: string,
+  diagramId: string,
+): string[] {
+  if (!MERMAID_DIAGRAM_ID.test(diagramId)) {
+    return ["diagram id outside the reviewed grammar"]
+  }
+  if (MERMAID_CSS_OPAQUE_SYNTAX.test(css)) {
+    return ["comment or escape in paint CSS"]
+  }
+  const scope = `#${diagramId.toLowerCase()}`
+  // Same-diagram paint references (for example a theme gradient) are the only
+  // admitted `url()`: exactly `url(#<id>)`, `url(#<id>-…)` or `url(#<id>_…)`.
+  const text = css
+    .toLowerCase()
+    .replace(MERMAID_CSS_FRAGMENT_URL, (reference, _quote, fragment: string) =>
+      fragment === scope.slice(1) ||
+      fragment.startsWith(`${scope.slice(1)}-`) ||
+      fragment.startsWith(`${scope.slice(1)}_`)
+        ? "fragment-ref"
+        : reference,
+    )
+  const violations = MERMAID_CSS_FORBIDDEN_PATTERNS.filter((pattern) =>
+    pattern.test(text),
+  ).map((pattern) => `forbidden construct ${pattern.source}`)
+  const parsed = splitCssBlocks(text)
+  if (!parsed) return [...violations, "unbalanced paint CSS"]
+  if (parsed.stray.length > 0) {
+    violations.push("statement outside a scoped rule")
+  }
+  for (const { prelude, body } of parsed.blocks) {
+    const where = prelude.slice(0, 60)
+    if (prelude.startsWith("@")) {
+      const frames = MERMAID_KEYFRAMES_PRELUDE.test(prelude)
+        ? splitCssBlocks(body)
+        : null
+      if (!frames || frames.stray.length > 0) {
+        violations.push(`at-rule not admitted (${where})`)
+        continue
+      }
+      for (const frame of frames.blocks) {
+        const selectors = splitCssTopLevel(frame.prelude, ",")
+        if (
+          frame.body.includes("{") ||
+          !selectors.every((selector) =>
+            MERMAID_KEYFRAME_SELECTOR.test(selector.trim()),
+          )
+        ) {
+          violations.push(`keyframe not admitted (${frame.prelude})`)
+        }
+      }
+      continue
+    }
+    if (body.includes("{")) {
+      violations.push(`nested rule not admitted (${where})`)
+      continue
+    }
+    let rootLevel = false
+    for (const selector of splitCssTopLevel(prelude, ",")) {
+      const verdict = mermaidSelectorScope(selector.trim(), scope)
+      if (verdict === "root") rootLevel = true
+      else if (verdict !== "descendant") {
+        violations.push(`${verdict} (${selector.trim().slice(0, 60)})`)
+      }
+    }
+    violations.push(
+      ...positionViolations(
+        body,
+        rootLevel
+          ? MERMAID_POSITION_VALUES.root
+          : MERMAID_POSITION_VALUES.descendant,
+        where,
+      ),
+    )
+  }
+  return violations
+}
+
+/**
+ * Reviewed value profile for a CSS-bearing `style` attribute in returned
+ * Mermaid SVG. Unreviewed declarations are stripped: any URL-bearing or
+ * scripting construct, comments/escapes, and `position` other than
+ * static/relative. Returns the surviving declarations, or null when the
+ * attribute must be removed.
+ */
+export function reviewMermaidInlineStyle(style: string): string | null {
+  const kept = splitCssTopLevel(style, ";")
+    .map((declaration) => declaration.trim())
+    .filter((declaration) => {
+      if (declaration === "" || MERMAID_CSS_OPAQUE_SYNTAX.test(declaration)) {
+        return false
+      }
+      const text = declaration.toLowerCase()
+      if (
+        MERMAID_CSS_FORBIDDEN_PATTERNS.some((pattern) => pattern.test(text))
+      ) {
+        return false
+      }
+      const [entry] = cssDeclarations(text)
+      if (!entry || entry[0] === "") return false
+      return (
+        entry[0] !== "position" ||
+        MERMAID_POSITION_VALUES.inline.includes(entry[1])
+      )
+    })
+  return kept.length > 0 ? kept.join(";") : null
+}
+
+const MERMAID_FRAGMENT_REFERENCE = /^url\(\s*(["']?)#([a-z0-9_.:-]+)\1\s*\)$/i
+
+/**
+ * Review of any other attribute value in returned Mermaid SVG (`fill`,
+ * `filter`, `marker-end`, ...). `plain`: no CSS function or scripting
+ * construct. `fragment`: exactly one same-document `url(#id)` reference, which
+ * the caller must verify names an element of the same SVG. `unsafe`: strip.
+ */
+export function reviewMermaidAttributeCss(
+  value: string,
+): { kind: "plain" } | { kind: "fragment"; id: string } | { kind: "unsafe" } {
+  const text = value.toLowerCase()
+  if (
+    !MERMAID_CSS_OPAQUE_SYNTAX.test(value) &&
+    !MERMAID_CSS_FORBIDDEN_PATTERNS.some((pattern) => pattern.test(text))
+  ) {
+    return { kind: "plain" }
+  }
+  const fragment = MERMAID_FRAGMENT_REFERENCE.exec(value.trim())
+  return fragment ? { kind: "fragment", id: fragment[2] } : { kind: "unsafe" }
+}
+
+// ============================================================================
 // Rendered-DOM oracle profiles (design D2)
 // ============================================================================
 
@@ -331,6 +674,22 @@ export const RENDERER_MARKUP_PROFILES = Object.freeze({
       "data-separator",
       "data-expand-button",
     ]),
+  }),
+  /**
+   * Returned Mermaid SVG from the specialized adapter
+   * `mermaid-svg-sanitizer.ts#sanitizeMermaidSvg` (design D3), at both the
+   * inline and fullscreen sinks. No navigable URL: URL attributes and CSS
+   * `url()` values are admitted only as fragment references to an element of
+   * the same SVG. At most one `<style>`: the Mermaid-generated paint element,
+   * a direct child of the diagram root, passing `reviewMermaidPaintCss`.
+   * `style` attributes pass `reviewMermaidInlineStyle`.
+   */
+  mermaid: Object.freeze({
+    linkSchemes: Object.freeze([]),
+    mediaSchemes: Object.freeze([]),
+    relativeUrlBase: null,
+    allowFragmentUrls: true,
+    allowedStyleElements: 1,
   }),
 })
 
