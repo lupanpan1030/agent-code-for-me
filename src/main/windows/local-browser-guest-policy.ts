@@ -1600,7 +1600,14 @@ export function createLocalBrowserGuestPolicy(
     if (!verdict.ok) {
       event.preventDefault()
       securityLog("attach denied", verdict.reason)
-      if (verdict.admission && verdict.admission.embedderId === embedder.id) {
+      // A replay targets an admission that is already attaching or attached:
+      // its live guest keeps working, so the denial is logged, not reported
+      // as a close of that generation.
+      if (
+        verdict.reason !== "replayed" &&
+        verdict.admission &&
+        verdict.admission.embedderId === embedder.id
+      ) {
         sendToEmbedder(embedder, verdict.admission.generation, {
           kind: "closed",
           reason: "attach-rejected",

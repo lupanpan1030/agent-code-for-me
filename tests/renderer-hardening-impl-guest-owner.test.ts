@@ -769,6 +769,39 @@ describe("D5 attachment guard (GP-01)", () => {
     expect(harness.logs.join("\n")).not.toContain(admission.partition)
   })
 
+  test("a replayed attach is prevented and logged without closing the live guest of that generation", async () => {
+    const harness = createHarness()
+    const embedder = harness.createAppWindow(64)
+    const admission = await admitHttp(harness, embedder)
+    const guest = attachGuest(harness, embedder, admission)
+    const replay = willAttach(embedder, {
+      src: admission.src,
+      partition: admission.partition,
+    })
+    expect(replay.event.defaultPrevented).toBe(true)
+    expect(harness.logs.join("\n")).toContain("attach denied: replayed")
+    expect(embedder.events("closed")).toEqual([])
+    expect(guest.closeCalls).toEqual([])
+    expect(
+      harness.policy.registry.findByGeneration(admission.generation)?.state,
+    ).toBe("attached")
+
+    // Other denials of an own-embedder admission still report the close.
+    const mismatch = await admitHttp(harness, embedder, "chat-other")
+    willAttach(embedder, {
+      src: "http://localhost:4000/",
+      partition: mismatch.partition,
+    })
+    expect(embedder.events("closed")).toEqual([
+      {
+        kind: "closed",
+        reason: "attach-rejected",
+        confirmed: true,
+        generation: mismatch.generation,
+      },
+    ])
+  })
+
   test("src mismatch, expiry and unsafe element attributes are prevented and revoke the admission", async () => {
     const harness = createHarness()
     const embedder = harness.createAppWindow(63)
