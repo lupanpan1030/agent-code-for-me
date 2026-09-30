@@ -334,7 +334,7 @@
     "src/renderer/features/agents/main/messages-list.tsx": 23,
     "src/renderer/features/agents/main/new-chat-form.tsx": 14,
     "src/renderer/features/agents/mentions/agents-file-mention.tsx": 14,
-    "src/renderer/features/agents/mentions/agents-mentions-editor.tsx": 23,
+    "src/renderer/features/agents/mentions/agents-mentions-editor.tsx": 9,
     "src/renderer/features/agents/mentions/render-file-mentions.tsx": 14,
     "src/renderer/features/agents/search/chat-search-atoms.ts": 1,
     "src/renderer/features/agents/search/chat-search-bar.tsx": 5,
