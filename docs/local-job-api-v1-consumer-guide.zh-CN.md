@@ -719,17 +719,20 @@ event envelope、`jobId` 和 `sequence` 游标都不变。变化的是：哪些 
 - **`completed.payload` 是 ledger outcome。** 每个 run 恰好一个 `completed`。其
   payload 为 `{status, reasons?, evidenceKeys, synthetic?, recovery?, code?,
   message?, lossPossible?, exitCode?, errorCode?, errorMessage?, result?}`。
-  ledger outcome 成员在前；`exitCode`、`errorCode`、`errorMessage` 和 `result`
-  含义与此前相同（run 的 exit code、错误码、已脱敏的错误信息和公开 result，与
-  `runs status` / `runs result` 报告的值一致）。它们可为 `null`：没有该值的结算
-  携带 `null`，绝不编造（例如排队中取消的 `result`，或 worker 恢复的 `exitCode`
-  与 `result`）。
+  `exitCode`、`errorCode`、`errorMessage` 和 `result` 含义与此前相同（run 的
+  exit code、错误码、已脱敏的错误信息和公开 result，与 `runs status` /
+  `runs result` 报告的值一致）。它们可为 `null`：没有该值的结算携带 `null`，
+  绝不编造（例如排队中取消的 `result`，或 worker 恢复的 `exitCode` 与 `result`）。
   `result` 不含 Locus 内部成员（例如已登记的 artifact refs）。
+  这四个成员与基础 job envelope 字段处于同一稳定性层级：可选、可为 `null`、
+  增量添加。不要依赖其中任何一个必然存在，接受 `null`，并忽略不认识的成员。
 - **`status` 记录变多。** 每条已提交记录都在原始 sequence 上投影一次（见
   [Events](#events)）。请用 `--after` 分页。
-- **脱敏标记。** 持久化记录、events、`events.jsonl`、`result.json` 和 diagnostics
-  中被脱敏的值统一写作 `<redacted>`。此前 store 对部分模式还会写 `[redacted]`、
-  `[redacted-jwt]` 或 `[redacted-pem]`。请把标记当作不透明文本，不要解析。
+- **脱敏标记。** 在持久化记录、events、`events.jsonl`、`result.json` 和
+  diagnostics 中，被脱敏规则（敏感键和已知凭据模式）移除的值写作 `<redacted>`，
+  已配置的精确密钥提示（例如为该 run 登记的 provider 凭据）写作 `<mask>`。此前
+  store 对部分模式还会写 `[redacted]`、`[redacted-jwt]` 或 `[redacted-pem]`。请把
+  所有标记都当作不透明文本，不要解析。
 - **裸 payload。** API event payload 仍是裸的语义 payload。仅桌面端使用的
   `{runId, runtimeId, runEventSequence, redaction, payload}` 包装对新 run 已不存在，
   也从不经由 `locus api` 出现。
@@ -760,13 +763,13 @@ ledger 依据已记录的证据，对每个 run 只结算一次，顺序如下�
 
 | 已记录的证据 | `completed.payload`（节选） | Result `diagnostics` | create/retry exit |
 | --- | --- | --- | --- |
-| runtime 成功且记录了输出 | `{"status":"succeeded","evidenceKeys":["policy:no-recorded-denial","record:5","postrun:security-cleanup-ok"]}` | `[]` | `0` |
-| 可重试 `error`（`willRetry: true`）之后成功并有输出 | `{"status":"succeeded",...}` | `[]` | `0` |
-| runtime 报告成功，但有权限请求被拒绝 | `{"status":"failed","reasons":["policy_denied"],"evidenceKeys":["record:4",...]}` | `[{"code":"policy_denied","message":"Run outcome failed: policy_denied."}]` | `1` |
-| runtime 报告成功但没有输出 | `{"status":"failed","reasons":["output_empty","output_evidence_missing"],...}` | `[{"code":"output_empty",...}]` | `1` |
-| Codex app-server transport 在终态前退出 | `{"status":"interrupted","reasons":["transport_exit"],"evidenceKeys":[],"synthetic":{"source":"transport_exit","transportId":"t1","exitCode":1,"signal":null}}` | 视 runtime 而定 | `1` |
-| 运行中请求 cancel | `{"status":"canceled","reasons":["cancel_requested"],...,"synthetic":{"source":"cancel"}}` | `[{"code":"job_canceled","message":"Job was canceled."}]` | `5` |
-| 已确认 worker 丢失（之后用 `runs status` / `runs result` 读取） | `{"status":"interrupted","reasons":["worker_stopped"],...,"synthetic":{"source":"recovery"},"recovery":{"confidence":"confirmed","basis":"worker_process_absent","observedAt":"..."}}` | `[{"code":"worker_interrupted",...}]` | 不适用 |
+| runtime 成功且记录了输出 | `{"status":"succeeded","evidenceKeys":["policy:no-recorded-denial","record:5","postrun:security-cleanup-ok"],"exitCode":0,"errorCode":null,"errorMessage":null,"result":{...}}` | `[]` | `0` |
+| 可重试 `error`（`willRetry: true`）之后成功并有输出 | `{"status":"succeeded",...,"exitCode":0,"errorCode":null,"errorMessage":null,"result":{...}}` | `[]` | `0` |
+| runtime 报告成功，但有权限请求被拒绝 | `{"status":"failed","reasons":["policy_denied"],"evidenceKeys":["record:4",...],"exitCode":1,"errorCode":"policy_denied","errorMessage":"Run outcome failed: policy_denied.","result":{...}}` | `[{"code":"policy_denied","message":"Run outcome failed: policy_denied."}]` | `1` |
+| runtime 报告成功但没有输出 | `{"status":"failed","reasons":["output_empty","output_evidence_missing"],...,"exitCode":1,"errorCode":"output_empty",...}` | `[{"code":"output_empty",...}]` | `1` |
+| Codex app-server transport 在终态前退出 | `{"status":"interrupted","reasons":["transport_exit"],"evidenceKeys":[],"synthetic":{"source":"transport_exit","transportId":"t1","exitCode":2,"signal":null},"exitCode":1,"errorCode":"transport_exit",...}` | 视 runtime 而定 | `1` |
+| 运行中请求 cancel | `{"status":"canceled","reasons":["cancel_requested"],...,"synthetic":{"source":"cancel"},"exitCode":5,"errorCode":"job_canceled","errorMessage":"Job was canceled.",...}` | `[{"code":"job_canceled","message":"Job was canceled."}]` | `5` |
+| 已确认 worker 丢失（之后用 `runs status` / `runs result` 读取） | `{"status":"interrupted","reasons":["worker_stopped"],...,"synthetic":{"source":"recovery"},"recovery":{"confidence":"confirmed","basis":"worker_process_absent","observedAt":"..."},"exitCode":null,"errorCode":"worker_interrupted","errorMessage":"Worker stopped before the job finished.","result":null}` | `[{"code":"worker_interrupted",...}]` | 不适用 |
 
 字段说明：
 
@@ -779,6 +782,9 @@ ledger 依据已记录的证据，对每个 run 只结算一次，顺序如下�
 - `evidenceKeys` 中形如 `record:<n>` 的条目指向提供该证据的已提交记录的
   `sequence`；其他键是不透明的。
 - `code` 在观察到 native 终态码时携带它；`message` 是失败 run 最后记录的错误信息。
+- 顶层 `exitCode` 是 run 的 Locus exit code（即 create/retry exit 列；结算没有该值
+  时为 `null`，例如 worker 恢复）。`synthetic.exitCode` 是已结束的 runtime
+  transport 进程的 exit code；两者可以不同。
 - `lossPossible: true` 表示因可能含密钥而被扣留的流文本在终态时无法安全释放，
   已被丢弃而非发布。
 - [Exit Codes](#exit-codes) 中的 exit code 表不变；修正的只是它所依据的 status。
@@ -879,7 +885,7 @@ job。升级前请用旧 build 排空它们：让它们完成、取消它们，�
 4. 此前报告成功、但被拒绝、输出无效或输出为空的 run，现在预期为 `failed` 与
    exit `1`。
 5. 用 `--after` 分页读取 events；忽略未知 `status` subtype 和未知 extension 命名空间。
-6. 把 `<redacted>` 当作不透明文本。
+6. 把 `<redacted>` 和 `<mask>` 当作不透明文本。
 
 ## Cancel
 

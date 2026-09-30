@@ -362,6 +362,9 @@ Unknown payloads retain only allowlisted diagnostic shape, never arbitrary raw u
 `willRetry` when supplied, native code and sanitized identity. It is never itself a
 RunTerminalEvent. Outcome is a single `completed.payload` with existing `status`,
 `reasons` (optional strings, not a public enum) and redacted evidence references.
+By Owner decision S-06 (a) on 2026-10-01 it also keeps the base members `exitCode`,
+`errorCode`, `errorMessage` and `result` as optional nullable members mirroring the job
+row, where `result` is the public job result (never the internal `artifactRefs`).
 
 The ledger holds live terminal evidence pending existing output validation, credential
 post-check and artifact preparation. Receipt of the first terminal boundary seals the

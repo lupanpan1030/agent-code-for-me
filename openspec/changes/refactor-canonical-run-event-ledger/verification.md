@@ -113,6 +113,20 @@ docs commit changes no `src/` or `tests/` file):
 | Immutable set (`git diff --stat e99b9892 HEAD --` nine red files, four kits/harness, `tests/fixtures/run-event-ledger/`, `red-receipt.md`, `red-slice-receipt.md`) | empty |
 | Ratchets | `lint-baseline.json` and `scripts/architecture-baselines.json` unchanged vs `5c9a701e` |
 
+S-06 review P3 closure (two approvals of `6b5bd62b`, six P3s): `33fb8871` makes the
+preparation-failure case of `tests/run-event-ledger-completed-members.test.ts` register
+a secret hint in the failed projection's `errorMessage` and `result` and assert that the
+stored `payloadJson` lacks it and `metadata.redaction.status` is `redacted` (red, 7 pass /
+1 fail, with the re-derived members' `sanitize` call replaced by the raw members; `src/`
+unchanged), and adds a transport exit under a host-registered projection (now 8 tests).
+The docs commit adds one S-06 (a) sentence to design.md's completion policy; in both
+consumer guides it lists the four members in the abridged outcome table, separates the
+top-level `exitCode` (the run's Locus exit code) from `synthetic.exitCode` (the
+transport's), drops the property-order claim, states the members' tier (optional,
+nullable, additive, as the base job envelope fields) and names both redaction markers
+(`<redacted>` for rules, `<mask>` for configured exact secret hints). Nine red files
+141/141; strict `spec:validate` 54/54; `check:full` exit 0 (2744 pass / 0 fail).
+
 Consumer-visible effects of T2 relative to `a32800b6` (all restore the base behavior or
 the approved design; none extends the signed scope):
 

@@ -754,20 +754,25 @@ single `completed` record carries, and how many `status` records a run has.
 - **`completed.payload` is the ledger outcome.** Each run has exactly one
   `completed`. Its payload is `{status, reasons?, evidenceKeys, synthetic?,
   recovery?, code?, message?, lossPossible?, exitCode?, errorCode?,
-  errorMessage?, result?}`. The ledger outcome members come first; `exitCode`,
-  `errorCode`, `errorMessage` and `result` keep the same meaning as before
-  (the run's exit code, error code, redacted error message and public result,
-  the same values `runs status` / `runs result` report). They are nullable: a
-  settlement that has no such value carries `null`, never an invented value
-  (for example `result` on a queued cancel, or `exitCode` and `result` on a
-  worker recovery). `result` never carries Locus-internal members such as
-  registered artifact refs.
+  errorMessage?, result?}`. `exitCode`, `errorCode`, `errorMessage` and
+  `result` keep the same meaning as before (the run's exit code, error code,
+  redacted error message and public result, the same values `runs status` /
+  `runs result` report). They are nullable: a settlement that has no such
+  value carries `null`, never an invented value (for example `result` on a
+  queued cancel, or `exitCode` and `result` on a worker recovery). `result`
+  never carries Locus-internal members such as registered artifact refs.
+  These four members have the same stability tier as the base job envelope
+  fields: optional, nullable and additive. Require none of them, accept
+  `null`, and ignore members you do not recognize.
 - **More `status` records.** Every committed record is projected once at its
   original sequence (see [Events](#events)). Page with `--after`.
-- **Redaction marker.** Redacted values in persisted records, events,
-  `events.jsonl`, `result.json` and diagnostics read `<redacted>`. The store
-  previously also wrote `[redacted]`, `[redacted-jwt]` or `[redacted-pem]` for
-  some patterns. Treat the marker as opaque text; do not parse it.
+- **Redaction markers.** In persisted records, events, `events.jsonl`,
+  `result.json` and diagnostics, values removed by a redaction rule (sensitive
+  keys and known credential patterns) read `<redacted>`, and configured exact
+  secret hints (such as a provider credential registered for the run) read
+  `<mask>`. The store previously also wrote `[redacted]`, `[redacted-jwt]` or
+  `[redacted-pem]` for some patterns. Treat every marker as opaque text; do not
+  parse it.
 - **Bare payloads.** API event payloads remain the bare semantic payload. The
   desktop-only `{runId, runtimeId, runEventSequence, redaction, payload}`
   wrapper is gone for new runs and never appears through `locus api`.
@@ -803,13 +808,13 @@ never ends a run by itself.
 
 | Recorded evidence | `completed.payload` (abridged) | Result `diagnostics` | create/retry exit |
 | --- | --- | --- | --- |
-| Runtime success with recorded output | `{"status":"succeeded","evidenceKeys":["policy:no-recorded-denial","record:5","postrun:security-cleanup-ok"]}` | `[]` | `0` |
-| Retryable `error` (`willRetry: true`), then success with output | `{"status":"succeeded",...}` | `[]` | `0` |
-| Runtime reported success, but a permission request was denied | `{"status":"failed","reasons":["policy_denied"],"evidenceKeys":["record:4",...]}` | `[{"code":"policy_denied","message":"Run outcome failed: policy_denied."}]` | `1` |
-| Runtime reported success with no output | `{"status":"failed","reasons":["output_empty","output_evidence_missing"],...}` | `[{"code":"output_empty",...}]` | `1` |
-| Codex app-server transport exited before a terminal | `{"status":"interrupted","reasons":["transport_exit"],"evidenceKeys":[],"synthetic":{"source":"transport_exit","transportId":"t1","exitCode":1,"signal":null}}` | runtime-specific | `1` |
-| Cancel requested while running | `{"status":"canceled","reasons":["cancel_requested"],...,"synthetic":{"source":"cancel"}}` | `[{"code":"job_canceled","message":"Job was canceled."}]` | `5` |
-| Worker confirmed gone (read later with `runs status` / `runs result`) | `{"status":"interrupted","reasons":["worker_stopped"],...,"synthetic":{"source":"recovery"},"recovery":{"confidence":"confirmed","basis":"worker_process_absent","observedAt":"..."}}` | `[{"code":"worker_interrupted",...}]` | not applicable |
+| Runtime success with recorded output | `{"status":"succeeded","evidenceKeys":["policy:no-recorded-denial","record:5","postrun:security-cleanup-ok"],"exitCode":0,"errorCode":null,"errorMessage":null,"result":{...}}` | `[]` | `0` |
+| Retryable `error` (`willRetry: true`), then success with output | `{"status":"succeeded",...,"exitCode":0,"errorCode":null,"errorMessage":null,"result":{...}}` | `[]` | `0` |
+| Runtime reported success, but a permission request was denied | `{"status":"failed","reasons":["policy_denied"],"evidenceKeys":["record:4",...],"exitCode":1,"errorCode":"policy_denied","errorMessage":"Run outcome failed: policy_denied.","result":{...}}` | `[{"code":"policy_denied","message":"Run outcome failed: policy_denied."}]` | `1` |
+| Runtime reported success with no output | `{"status":"failed","reasons":["output_empty","output_evidence_missing"],...,"exitCode":1,"errorCode":"output_empty",...}` | `[{"code":"output_empty",...}]` | `1` |
+| Codex app-server transport exited before a terminal | `{"status":"interrupted","reasons":["transport_exit"],"evidenceKeys":[],"synthetic":{"source":"transport_exit","transportId":"t1","exitCode":2,"signal":null},"exitCode":1,"errorCode":"transport_exit",...}` | runtime-specific | `1` |
+| Cancel requested while running | `{"status":"canceled","reasons":["cancel_requested"],...,"synthetic":{"source":"cancel"},"exitCode":5,"errorCode":"job_canceled","errorMessage":"Job was canceled.",...}` | `[{"code":"job_canceled","message":"Job was canceled."}]` | `5` |
+| Worker confirmed gone (read later with `runs status` / `runs result`) | `{"status":"interrupted","reasons":["worker_stopped"],...,"synthetic":{"source":"recovery"},"recovery":{"confidence":"confirmed","basis":"worker_process_absent","observedAt":"..."},"exitCode":null,"errorCode":"worker_interrupted","errorMessage":"Worker stopped before the job finished.","result":null}` | `[{"code":"worker_interrupted",...}]` | not applicable |
 
 Field notes:
 
@@ -823,6 +828,10 @@ Field notes:
   committed record that supplied the evidence; other keys are opaque.
 - `code` carries a native terminal code when one was observed, and `message`
   the last recorded error message of a failed run.
+- The top-level `exitCode` is the run's Locus exit code (the create/retry exit
+  column, or `null` when the settlement has none, as for a worker recovery).
+  `synthetic.exitCode` is the exit code of the runtime transport process that
+  ended; the two can differ.
 - `lossPossible: true` means stream text withheld as a possible secret could not
   be released safely at the terminal and was dropped instead of published.
 - The exit-code table in [Exit Codes](#exit-codes) is unchanged; only the
@@ -939,7 +948,7 @@ creates a new run on the ledger.
    previously reported success.
 5. Page events with `--after`; ignore unknown `status` subtypes and unknown
    extension namespaces.
-6. Treat `<redacted>` as opaque text.
+6. Treat `<redacted>` and `<mask>` as opaque text.
 
 ## Cancel
 
