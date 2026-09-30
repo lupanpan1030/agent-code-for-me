@@ -492,7 +492,7 @@ describe("desktop stream event mapper", () => {
     })
   })
 
-  test("runtime renderer chunk emitter flushes a normal pending suffix before finish", () => {
+  test("runtime renderer chunk emitter drops a withheld hint-prefix suffix at finish instead of releasing it", () => {
     const secretHint = "ordinary-prefix-secret"
     const emitted: Array<Record<string, unknown>> = []
     const safeEmit = createRuntimeRendererChunkEmitter({
@@ -517,17 +517,16 @@ describe("desktop stream event mapper", () => {
     ).toBe(true)
     expect(safeEmit({ type: "finish", status: "succeeded" })).toBe(true)
 
-    expect(emitted.map((chunk) => chunk.type)).toEqual([
-      "text-delta",
-      "text-delta",
-      "finish",
-    ])
+    // refactor-canonical-run-event-ledger (red-slice adjudication 6):
+    // "ordinary" could still become the configured secret's prefix, so the
+    // terminal flush drops it instead of releasing a second text-delta.
+    expect(emitted.map((chunk) => chunk.type)).toEqual(["text-delta", "finish"])
     expect(
       emitted
         .filter((chunk) => chunk.type === "text-delta")
         .map((chunk) => chunk.delta)
         .join(""),
-    ).toBe("keep ordinary")
+    ).toBe("keep ")
   })
 
   test("stream exact redaction preserves interleaved chunk order", () => {
@@ -664,9 +663,10 @@ describe("desktop stream event mapper", () => {
       assistantPersistenceIndex,
       "Codex redacted assistant persistence call",
     ).toBeGreaterThan(persistenceIndex)
-    expect(assistantMessageIndex, "Codex assistant build owner").toBeGreaterThan(
-      0,
-    )
+    expect(
+      assistantMessageIndex,
+      "Codex assistant build owner",
+    ).toBeGreaterThan(0)
     expect(
       messagePersistenceIndex,
       "Codex assistant persistence",
@@ -681,9 +681,9 @@ describe("desktop stream event mapper", () => {
     expect(
       source.match(/revokeProviderBinding: providerBindingStage\.revoke/g),
     ).toHaveLength(2)
-    expect(finalizeSource.match(/input\.revokeProviderBinding\(\)/g)).toHaveLength(
-      2,
-    )
+    expect(
+      finalizeSource.match(/input\.revokeProviderBinding\(\)/g),
+    ).toHaveLength(2)
   })
 
   test("appends mapped run events through the existing job store", () => {

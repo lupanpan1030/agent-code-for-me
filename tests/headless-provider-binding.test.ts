@@ -962,8 +962,13 @@ describe("headless provider binding", () => {
         .map((event) => event.payload.delta ?? "")
         .join("")
 
-    expect(deltasByTool("tool-a")).toBe(
-      `A:${EXACT_SECRET_REDACTION_MARKER}|${unfinishedGatewayPrefix}`,
+    // refactor-canonical-run-event-ledger (red-slice adjudication 6): the
+    // unfinished gateway prefix withheld on tool-a is a potential secret
+    // prefix, so the tool-a channel boundary drops it instead of releasing it
+    // as an extra flushed tool_delta.
+    expect(deltasByTool("tool-a")).toBe(`A:${EXACT_SECRET_REDACTION_MARKER}|`)
+    expect(JSON.stringify(result.events)).not.toContain(
+      `|${unfinishedGatewayPrefix}`,
     )
     expect(deltasByTool("tool-b")).toBe(`B:${EXACT_SECRET_REDACTION_MARKER}`)
     expect(
@@ -973,7 +978,6 @@ describe("headless provider binding", () => {
     ).toEqual([
       "tool_delta:tool-a",
       "tool_delta:tool-b",
-      "tool_delta:tool-a",
       "tool_delta:tool-a",
       "tool_finished:tool-a",
       "tool_delta:tool-b",
