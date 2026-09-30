@@ -331,10 +331,13 @@ describe("S-06 option (a): completed.payload keeps the base job members", () => 
     releaseRunEventLedger(db, job.id)
   })
 
-  test("a terminal run-dir preparation failure re-derives the members from the failed job row", async () => {
+  test("a terminal run-dir preparation failure re-derives the members from the failed job row and redacts them", async () => {
+    const secret = "sk-completed-members-prepare-0123456789abcdef"
     const db = createAgentJobTestDb()
     const job = await startedJob(db, "members preparation failure")
-    const ledger = await getOrCreateRunEventLedger(db, job)
+    const ledger = await getOrCreateRunEventLedger(db, job, {
+      secretHints: [secret],
+    })
     await ledger.settle(
       {
         trigger: {
@@ -358,8 +361,8 @@ describe("S-06 option (a): completed.payload keeps the base job members", () => 
             : {
                 exitCode: 1,
                 errorCode: outcome.reasons.at(-1) ?? "failed",
-                errorMessage: `Run outcome ${outcome.status}`,
-                result: { failed: true },
+                errorMessage: `Run outcome ${outcome.status} with key ${secret}`,
+                result: { failed: true, detail: `echo ${secret}` },
               },
         terminalArtifacts: {
           prepare: () => {
@@ -368,19 +371,59 @@ describe("S-06 option (a): completed.payload keeps the base job members", () => 
         },
       },
     )
-    const { payload } = completedEvent(db, job.id)
+    const { payload, metadata } = completedEvent(db, job.id)
     const row = jobRowMembers(db, job.id)
     expect(payload.status).toBe("failed")
     expect(payload.reasons).toContain("terminal_artifact_preparation_failed")
     expect(payload).toMatchObject({
       exitCode: 1,
       errorCode: "terminal_artifact_preparation_failed",
-      errorMessage: "Run outcome failed",
       result: { failed: true },
     })
+    // The re-derived members go through the persisted walker: the stored
+    // record carries the marker, never the hint, and is marked redacted.
+    const listed = listAgentJobEvents(db, job.id).find(
+      (event) => event.type === "completed",
+    )
+    expect(listed?.payloadJson).not.toContain(secret)
+    expect(payload.errorMessage).toContain(EXACT_SECRET_REDACTION_MARKER)
+    expect(JSON.stringify(payload.result)).toContain(
+      EXACT_SECRET_REDACTION_MARKER,
+    )
+    expect((metadata.redaction as Json | undefined)?.status).toBe("redacted")
     expect(payload.exitCode).toBe(row.exitCode)
     expect(payload.errorCode).toBe(row.errorCode)
     expect(payload.errorMessage).toBe(row.errorMessage)
+    expect(payload.result).toEqual(JSON.parse(row.resultJson ?? "null"))
+    releaseRunEventLedger(db, job.id)
+  })
+
+  test("a transport exit under a host-registered projection carries the job row's members", async () => {
+    const db = createAgentJobTestDb()
+    const job = await startedJob(db, "members host projection exit")
+    const ledger = await getOrCreateRunEventLedger(db, job, {
+      terminalJobFields: (outcome) => ({
+        exitCode: 137,
+        errorCode: `run_${outcome.status}`,
+        errorMessage: `Run ${outcome.status} (${outcome.reasons.join(",")})`,
+        result: { interrupted: true },
+      }),
+    })
+    await bindRunExecutionProvenance(ledger, RUNTIME)
+    await ledger.ingestTransportExit({
+      observationKey: "members-host-projection-exit",
+      transportId: "t1",
+      exitCode: 137,
+      signal: "SIGKILL",
+    })
+    const { payload } = completedEvent(db, job.id)
+    const row = jobRowMembers(db, job.id)
+    expect(payload.status).toBe("interrupted")
+    expect(row.errorCode).toBe("run_interrupted")
+    expect(payload.exitCode).toBe(row.exitCode)
+    expect(payload.errorCode).toBe(row.errorCode)
+    expect(payload.errorMessage).toBe(row.errorMessage)
+    expect(payload.result).toEqual(JSON.parse(row.resultJson ?? "null"))
     releaseRunEventLedger(db, job.id)
   })
 })
