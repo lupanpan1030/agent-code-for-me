@@ -1,6 +1,6 @@
 # Verification
 
-Status: **APPROVED 2026-09-07 (Owner; bound to 9ebe6c34); implementation candidate re-frozen 2026-10-01 after touch-up T2 (review synthesis of `a32800b6`: T2-1, T2-2, T2-4…T2-14 closed; T2-3 closed 2026-10-01 by Owner S-06 option (a), `c9fd6b61`) and the docs-only T3 (targeted re-review of `0e6d1273`: Lens A and Lens C REVIEW_APPROVED, Lens B CHANGES_REQUESTED on the register only, closed by T3); next gate: diff-only re-check of T3 and of the S-06 option (a) commits**
+Status: **APPROVED 2026-09-07 (Owner; bound to 9ebe6c34); implementation candidate re-frozen 2026-10-01 after touch-up T4 (Codex gpt-6-astra negotiation round 1 on `17e23529`: NOT_VERIFIED, one P1 and one P2, both fixed in T4); earlier: touch-up T2 (review synthesis of `a32800b6`), the docs-only T3 and the S-06 option (a) commits; next gate: Codex round 2 and the Claude targeted re-review, both bound to the T4 candidate SHA**
 
 This file holds the implementation candidate evidence (next section), the scenario
 register with red and green evidence, and the historical draft-review receipts.
@@ -16,6 +16,76 @@ Implementer: Claude Opus 5.5 (Phases I–III, test-first). Coordinator rulings: 
 Fable (`84643c99`, `c9bc12a8`). This section records the frozen implementation
 candidate. It is implementer evidence only: it is not Codex IMPLEMENTATION_VERIFIED,
 not a fresh-context REVIEW_APPROVED and not Owner ACCEPTED.
+
+### Negotiation round 1 (Codex gpt-6-astra) and T4, 2026-10-01
+
+Codex gpt-6-astra reviewed `17e23529` (negotiation round 1,
+`phase3-negotiation-r1-codex-17e23529.md`; coordinator response
+`phase3-negotiation-r1-claude-response-17e23529.md`) and returned **NOT_VERIFIED at
+`17e23529`**: of the five earlier findings two were CLOSED and three PARTIAL (P1-2 = C1,
+P1-3 = the P1 below, P2-2 = the P2 below); C1–C8 were agreed with the qualified rulings
+recorded in the coordinator response; the 46 frozen files were byte-identical to
+`e99b9892`. Touch-up T4 (implementer Claude Opus 5.5) fixes both new findings; it is
+implementer evidence only, not a verdict.
+
+- **P1 — an empty authoritative final text still settled succeeded.** For one assistant
+  item, non-empty delta → `item/completed` with `text: ""` → successful `turn/completed`
+  settled `succeeded` with `reasons: []` on the headless and the desktop host, because
+  `headlessOutcomeEvidence` and `desktopOutcomeEvidence` counted historical
+  `assistant_delta` records even though the final text superseded them (design "Final
+  text wins for pre-seal item materialization"; invalid-empty → failed). Fix `06a52bd8`
+  fix(ledger): derive output evidence from final item state (T4-P1): one shared helper
+  beside the ledger, `assistantItemOutputRecords` (with `isAssistantItemRecord`) in
+  `src/main/lib/agent-runtime/run-event-ledger.ts`, folds the committed records per item
+  key with the ledger's item rules and is used by both hosts. A completed item counts only
+  when its final text is non-empty (evidence: the `item_reconciliation` carrying it); an
+  item still streaming counts by its materialized text (evidence: its non-empty deltas);
+  an item-less coarse `assistant_delta` and the runner `finalMessage` keep their host
+  rules. `isReconciledAssistantOutput` is removed (both hosts were its only callers).
+  Consumer-visible effect: such a Run now settles `failed` with `output_empty`; a desktop
+  coarse text delta whose text is empty is no longer output evidence; output evidence keys
+  of a reconciled item cite the reconciliation record instead of its superseded deltas.
+- **P2 — response ingest order and omission.** When one stdio batch carried response →
+  `item/completed` → `turn/completed`, the response fact entered the ledger after the
+  notifications (the adapter recorded it only after the request promise settled; in the
+  pre-fix probe the `turn/start` response was not committed before the terminal
+  candidate), and a `thread/start` response parsed after a cancel but before close was
+  never recorded (the cancellable wait rejected first). Fix `790ea4f5` fix(codex): ingest
+  responses in wire order and after cancel (T4-P2): the stdio transport hands each
+  response to a new per-request `onResponse` observer synchronously at its parse boundary,
+  before the request promise settles; the adapter records the response fact from that
+  observer (so it enters the ledger's serial ingress in wire order, and independently of
+  whether the Run still waits), once per request, with the record-after-settle path kept
+  as the fallback for transports without the observer. The change stays inside the
+  transport and the adapter's response boundary; no ledger or store change.
+
+T4 tests (file totals, `bun test --isolate`; "fix-sensitive" = fails with the item's
+`src/` change stashed, implementer check):
+
+| Item | File (total) | Test title | Role |
+| --- | --- | --- | --- |
+| T4-P1 | `tests/run-event-ledger-final-text-output.test.ts` (13, new file; real ledger over the in-memory SQLite store) | "headless: a non-empty delta superseded by an empty final text fails as output_empty despite a native success" and the same title with "desktop:" | fix-sensitive (both hosts) |
+| T4-P1 | same file | "headless/desktop: a streamed item whose final text replaces the deltas cites the final text carrier"; "headless/desktop: an empty final item beside an independent non-empty item succeeds" | fix-sensitive |
+| T4-P1 | same file | "headless/desktop: a completed-only item with non-empty final text succeeds"; "… an item still streaming at the native terminal counts by its materialized text"; "… coarse assistant output without a native item still counts"; "headless: an item-less structured assistant_delta keeps counting" | control |
+| T4-P2 | `tests/codex-app-server-response-wire-order.test.ts` (3, new file; real stdio transport over a fake child, real adapter and ledger) | "the stdio transport observes a response before the notifications parsed after it"; "one stdout batch response -> item/completed -> turn/completed commits in wire order"; "a thread/start response parsed after cancel but before close is recorded" | fix-sensitive (all 3) |
+
+T4 gates at `790ea4f5` (the docs commit that records T4 changes no `src/` or `tests/`
+file):
+
+| Gate | Result |
+| --- | --- |
+| Nine red files, `bun test --isolate` | 141 pass / 0 fail, 1265 `expect()` |
+| `bun run check:full` (includes `bun run test`) | exit 0; tests 2760 pass / 0 fail, 13934 `expect()`, 348 files; guard self-test 17/17; `openspec validate --all --strict` 54/54 |
+| PR-base lint `BIOME_CHANGED_SINCE=25c075af node scripts/run-biome-changed.mjs` | exit 0 ("diagnostics only outside changed lines") |
+| `git diff --check` | clean |
+| Immutable set (`git diff --stat e99b9892 HEAD --` nine red files, four kits/harness, `tests/fixtures/run-event-ledger/`, `red-receipt.md`, `red-slice-receipt.md`) | empty |
+| Ratchets | `lint-baseline.json` and `scripts/architecture-baselines.json` unchanged vs `17e23529`; `appendExactRunEventBatch` still has one importer (`run-event-ledger-host.ts`) |
+
+Rebinding: T4 changes product source, so `17e23529` is superseded and no verdict on it or
+on `6b5bd62b` (the two S-06 APPROVED receipts) carries over. Task 8.6's Codex
+IMPLEMENTATION_VERIFIED and the fresh-context Claude REVIEW_APPROVED must both be bound to
+the T4 candidate SHA (the docs commit that records T4, on top of `790ea4f5`): Codex round 2
+and a Claude targeted re-review of the T4 diff against `17e23529`.
 
 ### Touch-up T2 (review synthesis of `a32800b6`), 2026-10-01
 
@@ -836,7 +906,8 @@ Green evidence 2026-10-01 (Phase III): `bun test --isolate` over the nine files 
 T2 candidate `0e6d1273` (T2 code tree `3f215da1`; T3 is documentation only): 141 pass /
 0 fail, 1265 `expect()` calls (reproduced by re-review Lens A and Lens B); rows touched by
 T2 cite its tests and the implementer-unit totals below are the file totals at `0e6d1273`
-(the full list is the T2 tests table above). Each green
+(the full list is the T2 tests table above). Touch-up T4 rerun at `790ea4f5`: 141 pass /
+0 fail, 1265 `expect()` calls; T4 adds implementer tests only (T4 tests table above). Each green
 cell gives `file passed/total` for that scenario's tests. Implementer-unit rows name the
 implementer test that covers the seam, or state what is not asserted (gap G5).
 
@@ -910,10 +981,10 @@ implementer test that covers the seam, or state what is not asserted (gap G5).
 | Native/repair | Implemented: correlated resume (S33/S34), 66/10/16 static coverage (S42), two reasoning channels (S19), snapshot-only no-success (S36), native artifact candidates through the host (G2) and the resume snapshot-repair caller (G3), both closed in T1 |
 | Static architecture | Implemented: owner pins, retired symbols absent, the host is the only raw store importer, gate and transition mode deleted; guard self-test 17/17 |
 | Security | Implemented: stateful split-secret flush (S17), withheld prefix dropped at flush (`84541e00`), raw native content omitted, admission scope/digest/ownership checks (S28/S29), store credential patterns kept on durable records (`60bf8e02`), no new grants; Claude capture-to-launch re-check (G4 closed in T1); native staging only inside the admitted run dir; T2: store key rule and generic arm restored on durable records (T2-1), post-seal withheld channels omitted (T2-10), native admission through the run-dir handle with terminal re-verification (T2-11) |
-| check:full / strict / diff | Exit 0 at `b0f3e60d` (T1 gates) and at `0e6d1273` (T2 gates table; coordinator reproduction 2736/0); T3 changes documentation only |
+| check:full / strict / diff | Exit 0 at `b0f3e60d` (T1 gates), at `0e6d1273` (T2 gates table; coordinator reproduction 2736/0) and at `790ea4f5` (T4 gates table, 2760/0); T3 and the T4 docs commit change documentation only |
 | Manual/packaged | Host-blocked or not claimed; see the 8.5 smoke matrix and rerun commands |
-| Codex IMPLEMENTATION_VERIFIED | Not issued; due on the candidate SHA |
-| Claude fresh REVIEW_APPROVED | Four-lens review of `a32800b6`: CHANGES_REQUESTED (closed by T2). Targeted re-review of `0e6d1273`: Lens A and Lens C REVIEW_APPROVED; Lens B CHANGES_REQUESTED on the register only (closed by the docs-only T3); a diff-only re-check of T3 is due |
+| Codex IMPLEMENTATION_VERIFIED | Not issued. Negotiation round 1 at `17e23529`: NOT_VERIFIED (P1 and P2, fixed by T4); round 2 is due on the T4 candidate SHA |
+| Claude fresh REVIEW_APPROVED | Four-lens review of `a32800b6`: CHANGES_REQUESTED (closed by T2). Targeted re-review of `0e6d1273`: Lens A and Lens C REVIEW_APPROVED; Lens B CHANGES_REQUESTED on the register only (closed by the docs-only T3); a diff-only re-check of T3 is due. S-06 approvals bind to `6b5bd62b`; after T4 a Claude targeted re-review is due on the T4 candidate SHA (same SHA as Codex round 2) |
 | Owner ACCEPTED | Not issued; explicit acceptance required after same-SHA technical evidence |
 | Merge/push/remote PR/release | Not authorized / not performed |
 
