@@ -502,12 +502,17 @@ fixtures as synthetic, never attribute the completed body to EVENT-01..03 or COD
   conformance inference or fixture substitutes for actual runtime/packaged receipts.
   Open: `check:full`, strict validation and `git diff --check` pass at the candidate. Every
   runtime smoke is host-blocked on this WSL host (Electron cannot load `libnspr4.so`); the
-  matrix, exact reasons and rerun commands are in verification. Nothing is claimed passed.
-- [ ] 8.6 Bind Codex IMPLEMENTATION_VERIFIED and fresh-context Claude REVIEW_APPROVED to
+  matrix, exact reasons and rerun commands are in verification. Owner explicitly
+  ACCEPTED this smoke gap on 2026-10-01; macOS/Windows packaged evidence is not claimed.
+- [x] 8.6 Bind Codex IMPLEMENTATION_VERIFIED and fresh-context Claude REVIEW_APPROVED to
   the same exact implementing source SHA, record consumer-owned E2E status separately,
   then stop for Owner ACCEPTED; DRAFT verification does not satisfy these product gates.
-- [ ] 8.7 No merge, push, remote PR mutation or release is authorized by this dispatch;
-  future external action requires explicit Owner authorization for its exact scope/SHA.
+  Codex IMPLEMENTATION_VERIFIED and Claude REVIEW_APPROVED both bind to
+  `f5704cb6fc0318c676aed8cbb9f8aa5cde97e266`; Owner ACCEPTED 2026-10-01.
+  Consumer-owned E2E remains separately recorded as unknown in verification.
+- [ ] 8.7 Push is coordination-dispatched under the Owner 2026-09-04 push policy,
+  for `main` only. Record the exact pushed SHA and remote receipt after completion;
+  no tag, release, other branch push or remote PR mutation is in scope.
 
 ## Reproducible draft validation
 

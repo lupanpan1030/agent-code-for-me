@@ -996,6 +996,48 @@ implementer test that covers the seam, or state what is not asserted (gap G5).
 | S56 | agent-runtime-core / Canonical Run Event Ledger Ownership / Cross-process queued cancel races with start | `run-event-ledger-terminal.test.ts` S56 Cross-process queued cancel races with start — RED at b8830be5<br>`run-event-ledger-terminal.test.ts` S56 Cross-process queued cancel races with start — RED at b8830be5<br>`run-event-ledger-terminal.test.ts` S56 Cross-process queued cancel races with start — RED at b8830be5<br>`run-event-ledger-terminal.test.ts` S56 Cross-process queued cancel races with start — RED at b8830be5<br>`run-event-ledger-terminal.test.ts` S56 Cross-process queued cancel races with start — RED at b8830be5<br>`run-event-ledger-terminal.test.ts` S56 Cross-process queued cancel races with start — RED at b8830be5 / green at candidate: terminal 6/6 |
 
 
+## Owner ACCEPTED 2026-10-01
+
+Owner accepted the implementation at source `f5704cb6fc0318c676aed8cbb9f8aa5cde97e266`
+after the Codex gpt-6-astra R2 **IMPLEMENTATION_VERIFIED** and fresh-context Claude
+**REVIEW_APPROVED** bound to that same SHA. S-06 is option (a): the optional nullable
+`completed.payload` members `exitCode`, `errorCode`, `errorMessage` and `result` stay.
+The Owner report and negotiation receipts are in the coordinator handoff at
+`/home/chen/.claude/projects/-home-chen-projects-agent-code-for-me/f1888632-cd03-49a0-a57d-51704695f29d/handoff/reviews/phase3-owner-report-f5704cb6.md`,
+`phase3-negotiation-r2-codex-f5704cb6.md` and `phase3-t4-binding-f5704cb6.md`.
+
+Accepted limitations and disclosures:
+
+- **C7 smoke:** Desktop/Workbench, headless and API runtime smoke is host-blocked on
+  this WSL host; the 8.5 matrix records reasons and rerun commands. macOS/Windows
+  packaged evidence is not claimed, and runtime/packaged usability is not inferred.
+- **C8 cutover hard prerequisites:** stop every old writer, use the old build to
+  drain/cancel/recover queued and running legacy rows, confirm no active v0 rows,
+  then enable the new build. Rollback uses an isolated profile with the old build.
+- **C1/C2:** job-row insert and `job_created` are separate commits, leaving a
+  crash-window queued orphan; terminal files stage, commit, then publish one by one,
+  leaving possible partial files/mixed snapshots and uncleaned staged files after a
+  crash. Follow-up: TICKET-128.
+- **C3/C4:** without a committed native terminal, `host_result` can still settle a
+  native Run as succeeded; desktop native failures omit the native code. Follow-up:
+  TICKET-129.
+- **C5:** a parsed server request can reach the ledger one microtask after a later
+  notification and become `late_event`; desktop persisted history appends some
+  post-final deltas that the ledger item fold ignores. Follow-up: TICKET-129, with
+  one shared item reducer as the intended owner.
+- **C6:** `readRunArtifactFile` reads without an upper bound and opens without
+  `O_NONBLOCK`; TICKET-129 tracks both. TICKET-127 separately tracks Windows run-dir
+  artifact fail-closed behavior.
+- Claude's `No conversation found` repair still retains the session id (Phase 5).
+  Workbench no longer displays Codex file-change rows. Consumer-owned Career Kit and
+  Amadeus E2E remain `unknown` below, not claimed as Locus execution evidence.
+
+The coordinator's independent `check:full` log at
+`/home/chen/.claude/projects/-home-chen-projects-agent-code-for-me/f1888632-cd03-49a0-a57d-51704695f29d/handoff/reviews/phase3-checkfull-f5704cb6-coordinator.log`
+records exit 0, 2770 pass / 0 fail, architecture guard pass and strict 54/54.
+Its PR-base changed-file lint also exited 0. These are source-candidate receipts;
+post-merge gates are recorded separately.
+
 ## Future Implementation Receipts
 
 | Evidence | Required receipt / state |
@@ -1006,12 +1048,12 @@ implementer test that covers the seam, or state what is not asserted (gap G5).
 | Native/repair | Implemented: correlated resume (S33/S34), 66/10/16 static coverage (S42), two reasoning channels (S19), snapshot-only no-success (S36), native artifact candidates through the host (G2) and the resume snapshot-repair caller (G3), both closed in T1 |
 | Static architecture | Implemented: owner pins, retired symbols absent, the host is the only raw store importer, gate and transition mode deleted; guard self-test 17/17 |
 | Security | Implemented: stateful split-secret flush (S17), withheld prefix dropped at flush (`84541e00`), raw native content omitted, admission scope/digest/ownership checks (S28/S29), store credential patterns kept on durable records (`60bf8e02`), no new grants; Claude capture-to-launch re-check (G4 closed in T1); native staging only inside the admitted run dir; T2: store key rule and generic arm restored on durable records (T2-1), post-seal withheld channels omitted (T2-10), native admission through the run-dir handle with terminal re-verification (T2-11) |
-| check:full / strict / diff | Exit 0 at `b0f3e60d` (T1 gates), at `0e6d1273` (T2 gates table; coordinator reproduction 2736/0) and at `790ea4f5` (T4 gates table, 2760/0); T3 and the T4 docs commit change documentation only |
+| check:full / strict / diff | Exit 0 at `b0f3e60d` (T1), `0e6d1273` (T2, coordinator 2736/0), `790ea4f5` (T4, 2760/0), and independently at final source `f5704cb6` (coordinator `phase3-checkfull-f5704cb6-coordinator.log`: 2770/0, strict 54/54, PR-base lint exit 0); post-merge gate follows |
 | Manual/packaged | Host-blocked or not claimed; see the 8.5 smoke matrix and rerun commands |
-| Codex IMPLEMENTATION_VERIFIED | Not issued. Negotiation round 1 at `17e23529`: NOT_VERIFIED (P1 and P2, fixed by T4); round 2 is due on the T4 candidate SHA |
-| Claude fresh REVIEW_APPROVED | Four-lens review of `a32800b6`: CHANGES_REQUESTED (closed by T2). Targeted re-review of `0e6d1273`: Lens A and Lens C REVIEW_APPROVED; Lens B CHANGES_REQUESTED on the register only (closed by the docs-only T3). S-06 approvals bound to `6b5bd62b`. The T4 rebinding (T4 section above) supersedes the T3 diff-only re-check and those approvals: a Claude targeted re-review is due on the T4 candidate SHA (same SHA as Codex round 2) |
-| Owner ACCEPTED | Not issued; explicit acceptance required after same-SHA technical evidence |
-| Merge/push/remote PR/release | Not authorized / not performed |
+| Codex IMPLEMENTATION_VERIFIED | Issued in negotiation R2, bound to `f5704cb6` (R1 NOT_VERIFIED at `17e23529` closed by T4); see `phase3-negotiation-r2-codex-f5704cb6.md` |
+| Claude fresh REVIEW_APPROVED | Issued and rebound to `f5704cb6` by `phase3-t4-binding-f5704cb6.md`; prior review history remains above |
+| Owner ACCEPTED | Issued 2026-10-01 at `f5704cb6`, S-06 (a) and limitations above accepted; see `phase3-owner-report-f5704cb6.md` |
+| Merge/push/remote PR/release | Local merge/archive and `main` push are coordination-dispatched under Owner's 2026-09-04 push policy; no tag, release or remote PR mutation |
 
 ## Consumer Evidence Ownership
 

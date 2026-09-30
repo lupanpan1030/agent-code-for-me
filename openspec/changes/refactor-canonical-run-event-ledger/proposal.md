@@ -275,6 +275,9 @@ Owner 2026-10-01: S-06 option (a) — completed.payload keeps exitCode/errorCode
 (`tests/run-event-ledger-completed-members.test.ts`); the members carry the job-row
 values of the settlement, `null` when it has none, and `result` is the public job result.
 
+Owner **ACCEPTED 2026-10-01 @ `f5704cb6`**, with the smoke gap, cutover prerequisites,
+residuals and product disclosures recorded in `verification.md`.
+
 ## Impact
 
 Six capability deltas are affected: agent-runtime-core, architecture-ownership,

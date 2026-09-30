@@ -150,3 +150,13 @@ Owner 对 `add-renderer-untrusted-content-hardening` 选择先合入、开票补
 | 工单 | 标题 | 级别 | 状态 |
 |------|------|------|------|
 | [TICKET-127](TICKET-127-run-dir-artifacts-windows-stable-directory.md) | Windows 上 run-dir 制品 fail closed（stable-directory 无 win32 后端） | 🟡 平台缺口（目标平台） | 待平台 OpenSpec / 未授权实施 |
+
+## 第十一批 — Canonical Run event ledger 验收后续（2026-10-01）
+
+来源：`refactor-canonical-run-event-ledger` Owner ACCEPTED @ `f5704cb6`；以下是
+被接受的残余，不代表已实施或已通过真实宿主 smoke。
+
+| 工单 | 标题 | 级别 | 状态 |
+|------|------|------|------|
+| [TICKET-128](TICKET-128-run-ledger-creation-atomicity-and-terminal-publish.md) | Run 创建事实原子性与终态制品发布/崩溃恢复 | 🟡 数据一致性 | 待独立 OpenSpec / 未授权实施 |
+| [TICKET-129](TICKET-129-native-run-success-evidence-and-artifact-read-hardening.md) | Native 成功证据、顺序/折叠一致性与制品读取加固 | 🟡 Runtime/安全 | 待独立 OpenSpec / 未授权实施 |
