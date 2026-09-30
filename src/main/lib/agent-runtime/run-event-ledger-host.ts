@@ -13,7 +13,10 @@ import {
   readRunEventLedgerHeader,
   readRunEventProjectionCursor,
 } from "../headless/job-store"
-import { decodeDesktopStreamChunk } from "./ledger-ingress"
+import {
+  decodeCoarseRuntimeObservation,
+  decodeDesktopStreamChunk,
+} from "./ledger-ingress"
 import { redactRuntimePayload } from "./redaction"
 import {
   admitRunArtifactCandidate,
@@ -430,6 +433,7 @@ export function createDesktopRendererChannel(input: {
   const emitCommitted = async (
     committed: Promise<unknown>,
     bufferedChunk?: Record<string, unknown>,
+    bufferedStreamFragment = false,
   ) => {
     let records: unknown
     try {
@@ -445,9 +449,12 @@ export function createDesktopRendererChannel(input: {
     if (!Array.isArray(records)) return
     if (records.length === 0 && bufferedChunk) {
       // After the native terminal candidate the ledger buffers the fact as a
-      // post-terminal late diagnostic; the live renderer still receives the
-      // redacted chunk at its place in the stream.
-      emitSafely(redactRendererOnly(bufferedChunk))
+      // post-terminal late diagnostic. A stream fragment is not released to
+      // the live renderer: it may continue a potential secret whose withheld
+      // prefix the stream redaction holds, and per-chunk exact matching
+      // cannot see the whole hint (like its durable fact, it is diagnostic
+      // only). Other chunks keep their redacted place in the stream.
+      if (!bufferedStreamFragment) emitSafely(redactRendererOnly(bufferedChunk))
       return
     }
     for (const record of records) {
@@ -485,7 +492,12 @@ export function createDesktopRendererChannel(input: {
           type: decoded.type,
           payload: decoded.payload,
         })
-        track(() => emitCommitted(committed, chunk))
+        const coarse = decodeCoarseRuntimeObservation({
+          type: decoded.type,
+          payload: decoded.payload,
+        })
+        const streamFragment = coarse.kind === "event" && !!coarse.stream
+        track(() => emitCommitted(committed, chunk, streamFragment))
         return
       }
       const redacted = redactRendererOnly(chunk)

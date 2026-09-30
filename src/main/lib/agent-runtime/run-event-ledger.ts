@@ -684,6 +684,13 @@ class RunEventLedgerImpl {
   private hostJobFields: SettleOptions["jobFields"]
   private readonly redactor = createExactSecretStreamChannelRedactor<string>()
   private readonly pendingStreamKeys = new Map<string, string[]>()
+  /**
+   * Stream channels whose withheld potential-secret prefix the seal dropped
+   * (memory only, like the exact hints). A post-seal continuation on such a
+   * channel could carry the rest of that secret, so its content is omitted
+   * from the late diagnostic.
+   */
+  private readonly sealedWithheldChannels = new Set<string>()
   private readonly delivered = new Map<string, number>()
   private state: LedgerState
   private chain: Promise<void> = Promise.resolve()
@@ -1110,7 +1117,18 @@ class RunEventLedgerImpl {
     pending: boolean
     applied: boolean
     releasedFrom: string[]
+    /** Set when the content is omitted (post-seal withheld channel). */
+    omittedLength?: number
   } {
+    if (this.sealedWithheldChannels.has(channel)) {
+      return {
+        text: "",
+        pending: false,
+        applied: false,
+        releasedFrom: [],
+        omittedLength: text.length,
+      }
+    }
     const pushed = this.redactor.push(
       { channel, value: text, withValue: (value) => value },
       this.secretHints,
@@ -1135,6 +1153,9 @@ class RunEventLedgerImpl {
     // records already carry redactionPending, and the seal records the loss.
     this.redactor.flush(this.secretHints)
     this.withheldDropped += this.pendingStreamKeys.size
+    for (const channel of this.pendingStreamKeys.keys()) {
+      this.sealedWithheldChannels.add(channel)
+    }
     this.pendingStreamKeys.clear()
   }
 
@@ -1882,7 +1903,15 @@ class RunEventLedgerImpl {
           raw,
           observationKey,
         )
-        payload[decoded.stream.field] = streamed.text
+        if (streamed.omittedLength !== undefined) {
+          // Post-seal continuation of a channel whose withheld prefix was
+          // dropped: no part of it is published (length kept).
+          delete payload[decoded.stream.field]
+          payload.contentOmitted = true
+          payload.contentLength = streamed.omittedLength
+        } else {
+          payload[decoded.stream.field] = streamed.text
+        }
         if (streamed.pending) payload.redactionPending = true
         if (streamed.applied) rules.push("secret-hint")
         if (streamed.releasedFrom.length > 0) {
@@ -2084,6 +2113,7 @@ class RunEventLedgerImpl {
     let pending = false
     let applied = false
     let releasedFrom: string[] = []
+    let omittedLength: number | undefined
     const streamed =
       decoded.kind === "assistant_delta" ||
       decoded.kind === "reasoning_delta" ||
@@ -2092,17 +2122,28 @@ class RunEventLedgerImpl {
       const ids = decoded.native
       const channel = `native:${decoded.kind}:${ids.threadId ?? ""}:${ids.turnId ?? ""}:${ids.itemId ?? ""}:${decoded.channel ?? ""}:${decoded.partIndex ?? ""}`
       const result = this.streamRedact(channel, decoded.text, observationKey)
-      text = result.text
+      omittedLength = result.omittedLength
+      text = omittedLength === undefined ? result.text : undefined
       pending = result.pending
       applied = result.applied
       releasedFrom = result.releasedFrom
+    }
+    const late = this.nativeLateSummary(decoded, text)
+    if (omittedLength !== undefined) {
+      // Post-seal continuation of a channel whose withheld prefix was
+      // dropped: no part of it is published (length kept).
+      late.observation = {
+        ...late.observation,
+        contentOmitted: true,
+        contentLength: omittedLength,
+      }
     }
     return {
       ...(text === undefined ? {} : { text }),
       pending,
       applied,
       releasedFrom,
-      late: this.nativeLateSummary(decoded, text),
+      late,
     }
   }
 
