@@ -1,14 +1,261 @@
 # Verification
 
-Status: **APPROVED 2026-09-07 (Owner; bound to 9ebe6c34); queued; next gate: independent red test authoring**
+Status: **APPROVED 2026-09-07 (Owner; bound to 9ebe6c34); implementation candidate frozen 2026-10-01; next gate: Codex IMPLEMENTATION_VERIFIED and a fresh-context Claude review on the same exact SHA**
 
-This is documentation-revision evidence plus a future implementation evidence register.
-No product code, acceptance test or runtime fixture is implemented by this revision.
-Passing document/unchanged-code checks does not mean IMPLEMENTATION_VERIFIED,
+This file holds the implementation candidate evidence (next section), the scenario
+register with red and green evidence, and the historical draft-review receipts.
+Passing implementer checks does not mean IMPLEMENTATION_VERIFIED,
 REVIEW_APPROVED or Owner ACCEPTED. The third re-check below is REVIEW_APPROVED only
 for source 4b6ca640288555ca1d94c546ca6bf9d13e4b7fba; it is not a fresh review verdict
 on this subsequent documentation touch-up commit. Owner answers/APPROVED are recorded in the receipt below; historical pending statements
 retain their original review-time meaning.
+
+## Implementation Candidate Evidence (Phase III, 2026-10-01)
+
+Implementer: Claude Opus 5.5 (Phases I–III, test-first). Coordinator rulings: Claude
+Fable (`84643c99`, `c9bc12a8`). This section records the frozen implementation
+candidate. It is implementer evidence only: it is not Codex IMPLEMENTATION_VERIFIED,
+not a fresh-context REVIEW_APPROVED and not Owner ACCEPTED.
+
+### Candidate identity
+
+- Worktree `/home/chen/projects/locus-refactor-canonical-run-event-ledger-draft`, branch
+  `codex/refactor-canonical-run-event-ledger-draft`, based on `main` `25c075af`.
+- Red suite: `339c4e6e` (suite), `b8830be5` (follow-up slice), `e63457a5` (register).
+- Phase I: `645d89d3`..`d8779d33`, rulings `84643c99`. Phase II: `12d75c50`..`e7198bc7`,
+  rulings `c9bc12a8`. Phase III (documentation only): `e536febd` (consumer guides),
+  `b0d60796` (OWNERSHIP_MAP), `9dc1cbc5` (tasks and STATUS row), then the commit that adds
+  this section. That last commit is the frozen candidate; a commit cannot name its own
+  SHA, so the handoff names it.
+- Product source freeze: `git diff e7198bc7 <candidate> -- src tests scripts drizzle
+  package.json bun.lock lint-baseline.json` is empty. Phase III changed only `docs/` and
+  `openspec/`. Implementation diff `e63457a5..e7198bc7`: 98 files, +14697/−3905
+  (src/scripts/drizzle 57 files, +11433/−2613; tests 37 files, +3141/−1263).
+- Immutable red set: `git diff e63457a5 <candidate> --` over the nine
+  `tests/run-event-ledger-*.test.ts` files, the four kits/harness files,
+  `tests/fixtures/run-event-ledger/` and `red-slice-receipt.md` is empty. `red-receipt.md`
+  changed only through the appended coordinator rulings in `84643c99` and `c9bc12a8`.
+- Ratchets: `lint-baseline.json` only shrinks from `e63457a5` (+8/−17 lines: entries removed
+  or lowered, none added or raised);
+  `scripts/architecture-baselines.json` changes only `routeSurfaceRatchets` for
+  `src/main/lib/trpc/routers/codex.ts` (957 → 941 lines); `reachThroughWrappers` unchanged.
+
+### Gate commands and output
+
+Measured at `9dc1cbc5` on 2026-10-01 (Bun 1.3.14, Node v24.19.0, Ubuntu 24.04.4 on WSL2
+kernel 6.18.33.2). The candidate differs from `9dc1cbc5` only by edits to this
+`verification.md`; the handoff reports the same commands rerun at the candidate SHA.
+
+| Check | Exact command | Result |
+| --- | --- | --- |
+| Aggregate gate | `bun run check:full` | Exit 0 in 2m18.6s: `lint:changed` pass; `architecture:check` "Run event ledger guard self-test: 17/17 fixture cases matched; repository ownership enforced. Architecture guard passed."; `retired-runtime:check` 1756 files scanned, 10 allowlisted; `tsc --noEmit` clean; `bun test --isolate tests` 2665 pass / 0 fail, 13105 `expect()` calls, 334 files; `openspec validate --all --strict` 54 passed, 0 failed; `electron-vite build` main, preload and renderer built; `check-patch-whitespace` pass |
+| Nine acceptance files | `bun test --isolate --reporter=junit --reporter-outfile=<file> tests/run-event-ledger-{core,reconciliation,terminal,provenance-resume,projection,guards,vocabulary,store-faults,boundaries}.test.ts` | 141 pass / 0 fail, 1265 `expect()` calls; JUnit: 141 test cases, 0 failures, 0 skipped. Per-scenario counts are in the register below |
+| Single strict validation | `openspec validate refactor-canonical-run-event-ledger --strict --no-interactive` | Exit 0: `Change 'refactor-canonical-run-event-ledger' is valid` (OpenSpec 1.10.0 from this worktree's `node_modules`) |
+| All strict validation | `openspec validate --all --strict --no-interactive` | Exit 0: `Totals: 54 passed, 0 failed (54 items)` |
+| Whitespace | `git diff --check e63457a5 HEAD` and `node scripts/check-patch-whitespace.mjs` | Both exit 0 with no output |
+
+Stderr noise in the aggregate log (forced remark/Shiki failures, hydration warnings,
+TerminalRouter scope errors, a mocked migration failure, symlink-escape reads) comes from
+deliberately negative tests that pass; none is a failure.
+
+### 8.4 deletion and single-writer evidence
+
+Run at the candidate source (`src/` identical to `e7198bc7`):
+
+| Claim | Command | Result |
+| --- | --- | --- |
+| Gate constant and transition mode gone | `grep -rnE 'canonicalRunEventLedgerV1\|run-event-ledger-phase\|RUN_EVENT_LEDGER_PHASE_FLAG\|TRANSITION_LEGACY_RESIDUE\|TRANSITION_DIRECT_EVENT_INSERTS' src scripts package.json`; `grep -n '"transition"' scripts/check-architecture-guards.mjs` | 0 and 0 matches; the guard always runs canonical mode |
+| job-event-bridge deleted | `ls src/main/lib/agent-runtime/job-event-bridge.ts`; `git log --diff-filter=D -- <that path>` | No such file; deleted in `12d75c50` |
+| Eleven retired symbols | `grep -rlw <symbol> src` and `grep -rlw <symbol> scripts` for `mapDesktopStreamChunkToRunEvents`, `createDesktopStreamEventMapper`, `appendRunEventsToAgentJob`, `redactRendererDiagnosticChunk`, `redactRendererRuntimeChunk`, `createRuntimeRendererChunkEmitter`, `createRuntimeStreamChunkSecretRedactor`, `isDesktopRuntimeFailureChunk`, `persistedPayloadForRunEvent`, `createAgentJobRunEvent`, `appendAgentJobEvent` | 0 files each in `src` and `scripts` (three comment-only mentions remain in baseline tests) |
+| Legacy store writers | `grep -rnwE 'interruptStaleAgentJobs\|completeAgentJob\|requestCancelAgentJob\|insertAgentJobEventRecord\|withEventSequenceRetry\|nextEventSequence' src` | 0 matches |
+| One physical event writer | `grep -rnE 'agent_job_events\|agentJobEvents\)' src \| grep -iE 'insert\|update\|into\|delete'` | only `src/main/lib/headless/job-store.ts:914 .insert(agentJobEvents)` inside the private `insertExactRunEventRecord` |
+| One importer of the exact batch | `grep -rlw appendExactRunEventBatch src` | `job-store.ts` (definition) and `run-event-ledger-host.ts` (sole importer); guard `APPEND_EXACT_RUN_EVENT_BATCH_IMPORTERS` (`scripts/check-architecture-guards.mjs:3116`) |
+| SESSION_EXPIRED path removed | `grep -rn 'SESSION_EXPIRED\|Session expired' src` | 0 matches; the card reads "Session resume rejected" (`src/renderer/features/agents/lib/ipc-chat-transport.ts:158`) |
+| v1 fact-key invariant | `bun test --isolate tests/ledger-v1-fact-key-invariant.test.ts` | green in the aggregate run: every lifecycle writer leaves only fact-keyed, metadata-bearing rows on `ledger_version=1` jobs |
+
+### Implementation decisions (within the design's latitude)
+
+Coordinator rulings of 2026-10-01 (`c9bc12a8`) on the seven decisions reported at the
+end of Phase II:
+
+1. **Coarse non-usage observations of an unbound runner are admitted with pending
+   provenance — accepted with disclosure.** `ingestRuntimeObservation` requires binding
+   only for `usage_update` (`src/main/lib/agent-runtime/run-event-ledger.ts:1803-1808`).
+   Every real runner binds before it spawns or sends its first runtime record:
+
+   | Runner | Binding point |
+   | --- | --- |
+   | Codex headless `exec` (batch) | `src/main/lib/headless/adapters/codex.ts:118-125` resolves `resolveBundledCodexCliPath` and binds before `runProcess` (:126) |
+   | Claude headless `-p` (batch) | `src/main/lib/headless/adapters/claude-code.ts:184-191` resolves `getBundledClaudeBinaryPath` and binds before `runProcessAgentTask` (:192) |
+   | Shared headless hand-off | `src/main/lib/headless/process-runner.ts:485-504` captures, hands the tuple to `observer.recordExecutionProvenance` (`src/main/lib/headless/job-runner.ts:234-236` → `bindRunExecutionProvenance`, `src/main/lib/agent-runtime/run-event-ledger-host.ts:219-224`), then re-checks the executable bytes (:503) |
+   | Codex app-server, desktop and headless `policy-grant` | `src/main/lib/codex/app-server-adapter.ts:257-269` captures, binds and re-checks before `createCodexAppServerStdioTransport` (:271); an injected transport binds at :245-250 |
+   | Claude desktop (Agent SDK) | `src/main/lib/claude/agent-sdk-desktop-job.ts:167-170` binds `captureClaudeAgentSdkExecutionProvenance` (:48-60) during job setup, before the query; no pre-spawn byte re-check (gap G4) |
+   | Completion (provider only) | `src/main/lib/headless/completion-runner.ts:588-598` binds the `locus-completion` tuple before the model request and usage |
+   | Fixture and fake runners | `LOCUS_HEADLESS_FAKE_RUNNER=1` (`src/main/lib/headless/job-runner.ts:85-88, 287`) and injected test runners never bind; their coarse records stay pending, which is a test shape, and their usage is rejected |
+
+2. **Old active `ledger_version=0` rows drain with the old build — accepted** (design
+   Migration Plan, task 2.9). The queue listing (`src/main/lib/headless/job-store.ts:398`)
+   and recovery (`src/main/lib/headless/job-recovery.ts:114`) act only on v1 rows, and an
+   append to a v0 job fails with `LEDGER_V0_APPEND_REJECTED` (`job-store.ts:956-958`).
+   Draining a real profile before upgrade is an Owner release step; the consumer guides
+   state it.
+3. **Headless app-server runs settle with `host_result` — referred to the fresh review; not
+   changed in source.** Current state: `headlessOutcomeEvidence`
+   (`src/main/lib/headless/job-runner.ts:398-464`) builds the trigger for every headless
+   adapter from the runner's `AgentRuntimeRunResult`: `cancel`/`interrupt`, otherwise
+   `host_result` with the runner status (:430-440, observation key
+   `runner-result:<jobId>`). For the Codex app-server profile the native `turn/completed`
+   is still committed as a record, and the adapter's result status is derived from it
+   (`src/main/lib/codex/app-server-adapter.ts:722-735`); desktop Codex settles
+   `native_terminal` (`src/main/lib/desktop-agent-jobs.ts:311-355`, trigger at :332). The design limits
+   `host_result` to "process batch/completion only" (design Test-facing Contract,
+   `OutcomeEvidence`). Observable difference: status precedence is identical, but a
+   failed headless app-server run reports `host_failed` rather than `native_failed` and
+   carries no native terminal `code`. Implementer rationale: the job runner is the one
+   settlement point for all headless adapters and owns the outcome evidence of both
+   terminal branches without distinguishing adapter kinds. Related: Codex response
+   correlation records use local ids `locus-<n>` as the request id
+   (`app-server-adapter.ts:975-1032`), because the transport assigns and pairs the wire
+   JSON-RPC id internally and returns only the result
+   (`src/main/lib/codex/app-server-transport.ts:69-72, 487-499`); JSON-RPC error codes are
+   kept. If the review judges either a deviation, it becomes a remediation slice.
+4. **Schema identity over compiled-in schema documents — accepted with disclosure.**
+   `ExecutionProvenance.schemaFiles` fingerprints the schema documents compiled into the
+   adapter, not files read at run time: `codex-app-server/v2/dispositions.json` (the pinned
+   disposition tables, `src/main/lib/codex/app-server-stream-events.ts:683-706`),
+   `claude-agent-sdk/stream-json-messages.json`
+   (`src/main/lib/claude/agent-sdk-desktop-job.ts:32-41`),
+   `locus-process-runner/stdio-observations.json`
+   (`src/main/lib/headless/process-runner.ts:464-477`), and for completion a
+   `schemaSha256` over the provider protocol and response format. The manifest is sorted
+   by relative path, has a per-file SHA-256 and the versioned encoding
+   `locus.run-schema-manifest.v1` (`src/main/lib/agent-runtime/run-provenance.ts:22,
+   104-131`). These documents describe Locus's decode surface; they are not the upstream
+   0.139 protocol schema bytes, which the repository does not vendor (task 1.4 open).
+5. **Claude desktop completion waits for the renderer channel to drain, and the flush drops
+   withheld prefixes — accepted** (red-slice adjudication 6; `84541e00`).
+6. **Artifact refs are merged into `result_json` by the store in the terminal commit —
+   accepted** (design: same commit, no second truth table;
+   `src/main/lib/headless/job-store.ts:928-935, 1013-1016`).
+7. **Consumer-visible changes — documented in both consumer guides** (`e536febd`), with
+   the C7 check below.
+
+### Consumer-visible changes against the signed scope
+
+Signed scope: Owner answers 2026-09-07 (R1 = DIRECT_NEW_STANDARD for C7 rows 4/5; answers
+2–4) and the proposal's Consumer Impact at `9ebe6c34`.
+
+| # | Change | Signed basis | Classification |
+| --- | --- | --- | --- |
+| 1 | Denied, invalid-output and empty-output runs become `failed`/exit 1; retry diagnostics followed by success stay `succeeded` | R1, C7 rows 4/5 | In scope |
+| 2 | Dense per-record projection, more `status` records, `--after` paging, no bounded count | Owner answer 4, C7 row 5 | In scope |
+| 3 | `canonical-run-ledger` feature, closed enum extension, optional experimental `payload.extensions["runtime.codex.v1"]`, preserved string `payload.runtime` | C7 rows 2/10, local-job-api delta | In scope |
+| 4 | Bare payloads; the desktop wrapper disappears | C7 row 1 (internal wrapper) | In scope; no change for API jobs |
+| 5 | Additive `error.classification`, usage snapshot members, `late_event`, `subtype: "system_lifecycle"` on host status | C7 row 10, local-job-api delta | In scope |
+| 6 | `completed.payload` becomes the ledger outcome; `exitCode`, `errorCode`, `errorMessage`, `result` are no longer event payload members (they stay on the job row and the result envelope) | The events row says "Additive except R1 terminal payload" and the design defines `completed.payload`; C7 row 1 says no field is deleted and the member removal is not enumerated. The guide already listed event payload details beyond the envelope as not stable | **Beyond explicit wording — for review** |
+| 7 | Persisted redaction marker becomes `<redacted>` (the store previously also wrote `[redacted]`, `[redacted-jwt]`, `[redacted-pem]`) | C7 row 7 keeps redaction inside the promised boundary; the marker text was never documented | **Beyond explicit wording — for review** |
+| 8 | Stale workers that are alive, EPERM, unknown or claimed without a PID stay `running` with a host `heartbeat_only` diagnostic instead of being interrupted | Design/task 4.3 (Owner-approved design); not in the Consumer Impact table | **Beyond explicit Consumer Impact wording — for review** |
+| 9 | Workbench no longer renders Codex "file-change" rows (`patchUpdated` → `tool_delta` with `changeCount`, `turn/diff/updated` → `status/diff_observation`) | Parity delta disposition table; Workbench rendering is outside C7 §9.1 | Conforms to the table; UX change not enumerated — for review and Owner product acceptance |
+| 10 | Admitted native artifact role literal is `native`, not the proposal's `native-file`/`native-image`/`native-diff`; no production path submits native candidates | Proposal artifact row | **Deviation from proposal wording — for review (gap G2)** |
+| 11 | Failed headless app-server runs report `host_failed` without a native `code` | — | Referred with decision 3 |
+
+### Gaps observed during Phase III (no source change made)
+
+These were found while documenting; Phase III made no source change and records them
+for the review and a coordinator ruling.
+
+- **G1 — `historyQuality` reader.** The core delta's historical scenario says the internal
+  store/Workbench read projection exposes `historyQuality=legacy_unverified`. No reader
+  exposes it: the store header exposes `ledgerVersion` (`job-store.ts:1082`) and the
+  Workbench unwrap is shape-based (`workbench-trace-presenter.ts:202-209`). The red S13
+  tests assert the v0 bytes, labeling and constraints but not this field.
+- **G2 — native artifact candidates.** `admitRunArtifactCandidate`
+  (`src/main/lib/agent-runtime/run-artifacts.ts:212-243`) has no production caller;
+  Codex `turn/diff/updated`, `imageGeneration.savedPath` and `fileChange` do not feed
+  candidates to the artifact owner as the parity table says. The admitted role literal is
+  `native` (:231).
+- **G3 — snapshot repair caller.** `repairFromSnapshot` is implemented and green (S35–S37)
+  but has no production caller; a Codex `thread/resume` response is recorded only as
+  `native_resume_validated`/`native_resume_rejected`.
+- **G4 — Claude capture-to-launch check.** The Claude Agent SDK path binds provenance at
+  job setup but does not re-check the executable bytes before the SDK spawns it; the
+  process runner and the app-server adapter call `assertRunExecutableUnchanged`.
+- **G5 — implementer-unit coverage.** Partially asserted: S04 (the runner facade does not
+  return the completed sequence), S06/S08/S09 (`coarse-process.json` and
+  `desktop-request.json` not materialized; no fake desktop adapter through injected
+  ports), S30 (no before-SQL-commit or after-commit-before-projection fault injection;
+  `terminal-artifacts.json` not materialized), S41 (no spy-ledger port-order test over
+  `ingress-boundaries.jsonl`), S24 (supervisor-observed-exit basis and changed claim or
+  heartbeat at commit not asserted), S38/S40 (the guard fails on missing or unexpected
+  findings, `scripts/check-architecture-guards.mjs:4491-4510`, but no test injects a
+  mismatch) and S19 (native-index variant waits on task 1.4).
+- **Baseline rewrites.** `e7198bc7` rewrote 32 baseline test files and `75628977` updated
+  the §8.4 baselines with before/after evidence; the coordinator asked the review to
+  confirm no assertion was weakened (`c9bc12a8`).
+
+### 8.5 smoke matrix
+
+Probe (2026-10-01, this host): `node_modules/electron/dist/electron` (Electron 39.4.0)
+cannot start: `error while loading shared libraries: libnspr4.so`; `ldd` also reports
+`libnss3.so`, `libnssutil3.so`, `libsmime3.so` and `libasound.so.2` missing. Attempted in a
+disposable profile: `LOCUS_USER_DATA_DIR=$(mktemp -d) LOCUS_HEADLESS_FAKE_RUNNER=1
+node_modules/electron/dist/electron out/main/index.js --locus-headless-cli api runtimes
+list --json --no-probe` and `... api projects register --cwd <tmp> --json` both exit 127
+with that error, and so does `resources/cli/locus api runtimes list --json --no-probe`
+through a temporary `LOCUS_HEADLESS_EXECUTABLE` wrapper. The bundled runtimes are not
+present in this worktree (`resources/bin/` absent), `DISPLAY` is unset (WSLg is present at
+`/mnt/wslg`), and no macOS or Windows host is available.
+
+| Smoke item | Result | Reason |
+| --- | --- | --- |
+| API create/status/events/`--follow`/result and run-dir artifacts, disposable profile, fake runner | host-blocked | Electron shared libraries missing (exit 127 above) |
+| API cancel and retry | host-blocked | Electron; needs a running real-runtime job to cancel |
+| Headless exec: Codex `exec` and Claude `-p` | host-blocked | Electron; bundled runtimes not downloaded; runtime credentials |
+| Headless Codex app-server (`executionProfile: "policy-grant"`) | host-blocked | Electron; bundled Codex; credentials |
+| Completion (`kind: "completion"`) | host-blocked | Electron; needs a stored provider profile with credentials |
+| Desktop/Workbench Claude and Codex (development build) | host-blocked | Electron shared libraries (same as TICKET-126); `DISPLAY` unset; credentials |
+| macOS packaged | not claimed | no macOS host |
+| Windows packaged | not claimed | no Windows host |
+
+Rerun on the Owner host (after `sudo apt-get install -y libnspr4 libnss3 libasound2t64
+libxss1`, at the exact candidate SHA):
+
+```bash
+bun run build
+export LOCUS_USER_DATA_DIR="$(mktemp -d)"
+L="node_modules/electron/dist/electron out/main/index.js --locus-headless-cli"
+PROJ="$(mktemp -d)" && git -C "$PROJ" init -q
+# A. API lifecycle without credentials (fake runner; it never binds provenance)
+LOCUS_HEADLESS_FAKE_RUNNER=1 $L api runtimes list --json --no-probe   # features has canonical-run-ledger
+LOCUS_HEADLESS_FAKE_RUNNER=1 $L api projects register --cwd "$PROJ" --json
+printf '%s\n' "{\"apiVersion\":\"locus.local-job.v1\",\"consumer\":{\"id\":\"smoke\"},\"project\":{\"cwd\":\"$PROJ\"},\"runtime\":{\"id\":\"codex\"},\"mode\":\"plan\",\"prompt\":{\"text\":\"smoke\"},\"artifacts\":{\"baseDir\":\"$PROJ/.locus/runs\"}}" > "$PROJ/request.json"
+LOCUS_HEADLESS_FAKE_RUNNER=1 $L api runs create --request "$PROJ/request.json" --json > "$PROJ/create.json"; echo "exit=$?"
+JOB="$(node -e 'console.log(require(process.argv[1]).job.id)' "$PROJ/create.json")"
+$L api runs status "$JOB" --json
+$L api runs events "$JOB" --after 0 --jsonl            # dense sequences, one completed, bare payloads
+$L api runs events "$JOB" --after 0 --follow --jsonl   # exits at completed
+$L api runs result "$JOB" --json                       # compare artifact sha256 with the files
+(cd "$PROJ/.locus/runs/$JOB" && sha256sum request.json events.jsonl result.json artifacts.json)
+# B. Real runtimes (after bun run codex:download && bun run claude:download and runtime login
+#    or a provider profile): repeat create with runtime.id codex and claude-code; a Codex
+#    request with "executionProfile":"policy-grant" and policyGrant scopes; a
+#    kind:"completion" request with provider.profileId; cancel one running create from a
+#    second shell with `$L api runs cancel <job-id> --json` (the canceled create exits 5),
+#    then `$L api runs retry <job-id> --json` (new job with retryOfJobId).
+# C. Desktop: DISPLAY=:0 bun run dev; run Claude and Codex chats, interrupt a Codex run,
+#    check Workbench usage rows and the Codex tool_delta/diff_observation rows, and a Claude
+#    resume rejection showing "Session resume rejected" with the session unchanged.
+```
+
+### Harness-conformance follow-up register (task 7.18)
+
+Registered as harness-conformance follow-up, outside this change and not implemented:
+actual dynamics of the 66 pinned notification methods (frequency and total order);
+trailing usage and warnings after `turn/completed`; realtime, remote-control, process and
+Windows surfaces (observed-deferred here); lost retransmission; in-flight process death
+and the snapshot it leaves; Codex rollout failure persistence. CODEX-08's observed
+negative result stands: Locus does not require Codex to write a failed or error rollout
+record. The 0.139 closure vendoring (task 1.4) is its prerequisite for index-level checks.
 
 ## Sources
 
@@ -159,90 +406,95 @@ createRunEvent/sequence=0; these are now explicit deletion/rewiring points and t
 INSERT is statically guarded. Actual migration paths
 and retry job typing above take precedence over contradictory raw reviewer claims.
 
-## Scenario Register — Future Independent Red/Green Evidence
+## Scenario Register — Red/Green Evidence
 
 Each row below identifies one exact capability/Requirement/Scenario. Independent author
 adds one test file/ID and red command/output, then a green command/output at the frozen
-implementing SHA. Fixtures are defined in tasks §7; no row is already a passing test.
+implementing SHA. Fixtures are defined in tasks §7.
 Third revision: 56 unique scenarios = 38 core + 3 architecture + 3 Codex + 2 desktop +
 2 headless + 8 Local Job API. S01–S55 retain their IDs; S56 adds conflict reconciliation.
 
 Red evidence recorded 2026-10-01 at `b8830be5` (red suite `339c4e6e` + follow-up slice): `bun test --isolate` over the nine `tests/run-event-ledger-*.test.ts` files = 141 tests, 122 RED / 19 green-by-design characterizations; per-test red reasons, frozen shapes and coordinator adjudications are in `red-receipt.md` and `red-slice-receipt.md`. Green output is recorded at the frozen implementing SHA.
 
+Green evidence 2026-10-01 (Phase III): `bun test --isolate` over the nine files at `9dc1cbc5`
+(product source identical to `e7198bc7` and to the candidate) = 141 pass / 0 fail. Each green
+cell gives `file passed/total` for that scenario's tests. Implementer-unit rows name the
+implementer test that covers the seam, or state what is not asserted (gap G5).
+
 | ID | Capability / Requirement / Scenario | Test ID / red / green |
 | --- | --- | --- |
-| S01 | agent-runtime-core / Normalized Agent Events / Event type is emitted | `run-event-ledger-vocabulary.test.ts` S01 Event type is emitted — RED at b8830be5<br>`run-event-ledger-vocabulary.test.ts` S01 Event type is emitted — RED at b8830be5 / green: pending |
-| S02 | agent-runtime-core / Normalized Agent Events / Runtime emits assistant output | `run-event-ledger-vocabulary.test.ts` S02 Runtime emits assistant output — RED at b8830be5 / green: pending |
-| S03 | agent-runtime-core / Normalized Agent Events / Runtime emits tool activity | `run-event-ledger-vocabulary.test.ts` S03 Runtime emits tool activity — RED at b8830be5 / green: pending |
-| S04 | agent-runtime-core / Normalized Agent Events / Runtime reports completion | implementer-unit (red-receipt §6: facade result ↔ completedSequence; seam not public) / green: pending |
-| S05 | agent-runtime-core / Normalized Agent Events / Event is serialized for CLI | `run-event-ledger-vocabulary.test.ts` S05 Event is serialized for CLI — GREEN by design at b8830be5<br>`run-event-ledger-vocabulary.test.ts` S05 Event is serialized for CLI — RED at b8830be5 / green: pending |
-| S06 | agent-runtime-core / Normalized Agent Events / Headless process emits coarse output | partial — coarse rows persisted via ledger store port covered by S46 (`run-event-ledger-projection.test.ts`); returned-record half implementer-unit (`ledger-ingress.ts` seam) / green: pending |
-| S07 | agent-runtime-core / Normalized Agent Events / Event compatibility is required | `run-event-ledger-vocabulary.test.ts` S07 Event compatibility is required — RED at b8830be5<br>`run-event-ledger-vocabulary.test.ts` S07 Event compatibility is required — GREEN by design at b8830be5 / green: pending |
-| S08 | agent-runtime-core / Desktop Run Request Contract / Adapter receives desktop request | implementer-unit (desktop request ledger ports; red-receipt §6) / green: pending |
-| S09 | agent-runtime-core / Desktop Run Request Contract / Adapter emits normalized events | implementer-unit (desktop-runner ledger injection; red-receipt §6) / green: pending |
-| S10 | agent-runtime-core / Canonical Run Event Ledger Ownership / All protocol boundaries enter one ledger | `run-event-ledger-core.test.ts` S10 All protocol boundaries enter one ledger — RED at b8830be5<br>`run-event-ledger-core.test.ts` S10 All protocol boundaries enter one ledger — RED at b8830be5 / green: pending |
-| S11 | agent-runtime-core / Canonical Run Event Ledger Ownership / Durable append fails before acknowledgement | `run-event-ledger-store-faults.test.ts` S11 Durable append fails before acknowledgement — RED at b8830be5<br>`run-event-ledger-store-faults.test.ts` S11 Durable append fails before acknowledgement — RED at b8830be5 / green: pending |
-| S12 | agent-runtime-core / Canonical Run Event Ledger Ownership / Process crashes after commit and before projection | `run-event-ledger-store-faults.test.ts` S12 Process crashes after commit and before projection — RED at b8830be5<br>`run-event-ledger-store-faults.test.ts` S12 Process crashes after commit and before projection — RED at b8830be5 / green: pending |
-| S13 | agent-runtime-core / Canonical Run Event Ledger Ownership / Historical rows remain explicitly unverified | `run-event-ledger-guards.test.ts` S13 Historical rows remain explicitly unverified — RED at b8830be5<br>`run-event-ledger-guards.test.ts` S13 Historical rows remain explicitly unverified — RED at b8830be5<br>`run-event-ledger-guards.test.ts` S13 Historical rows remain explicitly unverified — GREEN by design at b8830be5 / green: pending |
-| S14 | agent-runtime-core / Native Identity And Runtime Provenance / Distinct native identities are preserved | `run-event-ledger-core.test.ts` S14 Distinct native identities are preserved — RED at b8830be5<br>`run-event-ledger-core.test.ts` S14 Distinct native identities are preserved — RED at b8830be5 / green: pending |
-| S15 | agent-runtime-core / Native Identity And Runtime Provenance / Exact runtime provenance follows every event | `run-event-ledger-provenance-resume.test.ts` S15 Exact runtime provenance follows every event — RED at b8830be5<br>`run-event-ledger-provenance-resume.test.ts` S15 Exact runtime provenance follows every event — RED at b8830be5<br>`run-event-ledger-provenance-resume.test.ts` S15 Exact runtime provenance follows every event — RED at b8830be5<br>`run-event-ledger-provenance-resume.test.ts` S15 Exact runtime provenance follows every event — RED at b8830be5<br>`run-event-ledger-provenance-resume.test.ts` S15 Exact runtime provenance follows every event — RED at b8830be5<br>`run-event-ledger-provenance-resume.test.ts` S15 Exact runtime provenance follows every event — RED at b8830be5<br>`run-event-ledger-guards.test.ts` S15 Exact runtime provenance follows every event — RED at b8830be5<br>`run-event-ledger-guards.test.ts` S15 Exact runtime provenance follows every event — RED at b8830be5<br>`run-event-ledger-guards.test.ts` S15 Exact runtime provenance follows every event — RED at b8830be5 / green: pending |
-| S16 | agent-runtime-core / Native Identity And Runtime Provenance / Interrupt target comes from native Run state | `run-event-ledger-boundaries.test.ts` S16 Interrupt target comes from native Run state — RED at b8830be5<br>`run-event-ledger-boundaries.test.ts` S16 Interrupt target comes from native Run state — RED at b8830be5<br>`run-event-ledger-boundaries.test.ts` S16 Interrupt target comes from native Run state — RED at b8830be5<br>`run-event-ledger-boundaries.test.ts` S16 Interrupt target comes from native Run state — RED at b8830be5 / green: pending |
-| S17 | agent-runtime-core / Stateful Ledger Redaction / Runtime splits an exact secret across adjacent events | `run-event-ledger-boundaries.test.ts` S17 Runtime splits an exact secret across adjacent events — RED at b8830be5<br>`run-event-ledger-boundaries.test.ts` S17 Runtime splits an exact secret across adjacent events — RED at b8830be5<br>`run-event-ledger-boundaries.test.ts` S17 Runtime splits an exact secret across adjacent events — RED at b8830be5<br>`run-event-ledger-boundaries.test.ts` S17 Runtime splits an exact secret across adjacent events — RED at b8830be5<br>`run-event-ledger-boundaries.test.ts` S17 Runtime splits an exact secret across adjacent events — RED at b8830be5 / green: pending |
-| S18 | agent-runtime-core / Item Lifecycle Reconciliation / Assistant deltas reconcile with final snapshot | `run-event-ledger-reconciliation.test.ts` S18 Assistant deltas reconcile with final snapshot — RED at b8830be5<br>`run-event-ledger-reconciliation.test.ts` S18 Assistant deltas reconcile with final snapshot — RED at b8830be5<br>`run-event-ledger-reconciliation.test.ts` S18 Assistant deltas reconcile with final snapshot — RED at b8830be5<br>`run-event-ledger-reconciliation.test.ts` S18 Assistant deltas reconcile with final snapshot — RED at b8830be5<br>`run-event-ledger-reconciliation.test.ts` S18 Assistant deltas reconcile with final snapshot — RED at b8830be5<br>`run-event-ledger-reconciliation.test.ts` S18 Assistant deltas reconcile with final snapshot — RED at b8830be5<br>`run-event-ledger-reconciliation.test.ts` S18 Assistant deltas reconcile with final snapshot — RED at b8830be5<br>`run-event-ledger-reconciliation.test.ts` S18 Assistant deltas reconcile with final snapshot — RED at b8830be5 / green: pending |
-| S19 | agent-runtime-core / Item Lifecycle Reconciliation / Reasoning channels and parts reconcile separately | `run-event-ledger-reconciliation.test.ts` S19 Reasoning channels and parts reconcile separately — RED at b8830be5<br>`run-event-ledger-reconciliation.test.ts` S19 Reasoning channels and parts reconcile separately — RED at b8830be5<br>`run-event-ledger-reconciliation.test.ts` S19 Reasoning channels and parts reconcile separately — RED at b8830be5<br>`run-event-ledger-reconciliation.test.ts` S19 Reasoning channels and parts reconcile separately — RED at b8830be5<br>`run-event-ledger-reconciliation.test.ts` S19 Reasoning channels and parts reconcile separately — RED at b8830be5<br>`run-event-ledger-reconciliation.test.ts` S19 Reasoning channels and parts reconcile separately — RED at b8830be5 / green: pending |
-| S20 | agent-runtime-core / Item Lifecycle Reconciliation / Tool item lifecycle is incomplete or repeated | `run-event-ledger-reconciliation.test.ts` S20 Tool item lifecycle is incomplete or repeated — RED at b8830be5<br>`run-event-ledger-reconciliation.test.ts` S20 Tool item lifecycle is incomplete or repeated — RED at b8830be5<br>`run-event-ledger-reconciliation.test.ts` S20 Tool item lifecycle is incomplete or repeated — RED at b8830be5 / green: pending |
-| S21 | agent-runtime-core / Diagnostic Error And Terminal Invariants / Retry error is followed by success | `run-event-ledger-terminal.test.ts` S21 Retry error is followed by success — RED at b8830be5 / green: pending |
-| S22 | agent-runtime-core / Diagnostic Error And Terminal Invariants / Denial rejection and empty output have deterministic outcomes | `run-event-ledger-terminal.test.ts` S22 Denial rejection and empty output have deterministic outcomes — RED at b8830be5 / green: pending |
-| S23 | agent-runtime-core / Diagnostic Error And Terminal Invariants / Transport exit synthesizes one terminal | `run-event-ledger-terminal.test.ts` S23 Transport exit synthesizes one terminal — RED at b8830be5<br>`run-event-ledger-terminal.test.ts` S23 Transport exit synthesizes one terminal — RED at b8830be5 / green: pending |
-| S24 | agent-runtime-core / Diagnostic Error And Terminal Invariants / Pre-start cancel and dead-worker recovery settle through ledger | `run-event-ledger-terminal.test.ts` S24 Pre-start cancel and dead-worker recovery settle through ledger — RED at b8830be5<br>`run-event-ledger-terminal.test.ts` S24 Pre-start cancel and dead-worker recovery settle through ledger — RED at b8830be5<br>`run-event-ledger-terminal.test.ts` S24 Pre-start cancel and dead-worker recovery settle through ledger — RED at b8830be5<br>`run-event-ledger-terminal.test.ts` S24 Pre-start cancel and dead-worker recovery settle through ledger — RED at b8830be5<br>`run-event-ledger-terminal.test.ts` S24 Pre-start cancel and dead-worker recovery settle through ledger — RED at b8830be5<br>`run-event-ledger-terminal.test.ts` S24 Pre-start cancel and dead-worker recovery settle through ledger — GREEN by design at b8830be5<br>`run-event-ledger-terminal.test.ts` S24 Pre-start cancel and dead-worker recovery settle through ledger — RED at b8830be5 / green: pending |
-| S25 | agent-runtime-core / Diagnostic Error And Terminal Invariants / Usage after completed is diagnostic only | `run-event-ledger-reconciliation.test.ts` S25 Usage after completed is diagnostic only — RED at b8830be5<br>`run-event-ledger-reconciliation.test.ts` S25 Usage after completed is diagnostic only — RED at b8830be5<br>`run-event-ledger-terminal.test.ts` S25 Usage after completed is diagnostic only — RED at b8830be5 / green: pending |
-| S26 | agent-runtime-core / Usage Snapshot Accounting / Usage snapshots are accumulated once | `run-event-ledger-reconciliation.test.ts` S26 Usage snapshots are accumulated once — RED at b8830be5<br>`run-event-ledger-reconciliation.test.ts` S26 Usage snapshots are accumulated once — RED at b8830be5 / green: pending |
-| S27 | agent-runtime-core / Usage Snapshot Accounting / Resume establishes a usage baseline | `run-event-ledger-reconciliation.test.ts` S27 Resume establishes a usage baseline — RED at b8830be5 / green: pending |
-| S28 | agent-runtime-core / Canonical Artifact Admission / Valid artifact candidate is admitted | `run-event-ledger-terminal.test.ts` S28 Valid artifact candidate is admitted — RED at b8830be5 / green: pending |
-| S29 | agent-runtime-core / Canonical Artifact Admission / Invalid artifact candidate is rejected | `run-event-ledger-terminal.test.ts` S29 Invalid artifact candidate is rejected — RED at b8830be5 / green: pending |
-| S30 | agent-runtime-core / Canonical Artifact Admission / Terminal files and completed become visible together | partial — artifact admission covered by S25 tests (`run-event-ledger-terminal.test.ts`); prepare-fail hooks implementer-unit (red-receipt §6) / green: pending |
-| S31 | agent-runtime-core / Observable Native Methods And Boundary Facts / Unknown native method is observed | `run-event-ledger-core.test.ts` S31 Unknown native method is observed — RED at b8830be5<br>`run-event-ledger-core.test.ts` S31 Unknown native method is observed — RED at b8830be5 / green: pending |
-| S32 | agent-runtime-core / Observable Native Methods And Boundary Facts / Interaction boundary is recorded without a second state machine | `run-event-ledger-boundaries.test.ts` S32 Interaction boundary is recorded without a second state machine — RED at b8830be5<br>`run-event-ledger-boundaries.test.ts` S32 Interaction boundary is recorded without a second state machine — RED at b8830be5<br>`run-event-ledger-boundaries.test.ts` S32 Interaction boundary is recorded without a second state machine — RED at b8830be5 / green: pending |
-| S33 | agent-runtime-core / Native Resume Validation Facts / Codex response validates the requested native thread | `run-event-ledger-provenance-resume.test.ts` S33 Codex response validates the requested native thread — RED at b8830be5<br>`run-event-ledger-provenance-resume.test.ts` S33 Codex response validates the requested native thread — RED at b8830be5<br>`run-event-ledger-provenance-resume.test.ts` S33 Codex response validates the requested native thread — RED at b8830be5<br>`run-event-ledger-provenance-resume.test.ts` S33 Codex response validates the requested native thread — RED at b8830be5 / green: pending |
-| S34 | agent-runtime-core / Native Resume Validation Facts / Claude correlated init validates resume independently of turn success | `run-event-ledger-provenance-resume.test.ts` S34 Claude correlated init validates resume independently of turn success — RED at b8830be5<br>`run-event-ledger-provenance-resume.test.ts` S34 Claude correlated init validates resume independently of turn success — RED at b8830be5<br>`run-event-ledger-provenance-resume.test.ts` S34 Claude correlated init validates resume independently of turn success — RED at b8830be5<br>`run-event-ledger-provenance-resume.test.ts` S34 Claude correlated init validates resume independently of turn success — RED at b8830be5<br>`run-event-ledger-provenance-resume.test.ts` S34 Claude correlated init validates resume independently of turn success — RED at b8830be5 / green: pending |
-| S35 | agent-runtime-core / Resume Snapshot Repair / Resume snapshot repairs an incomplete item | `run-event-ledger-provenance-resume.test.ts` S35 Resume snapshot repairs an incomplete item — RED at b8830be5<br>`run-event-ledger-provenance-resume.test.ts` S35 Resume snapshot repairs an incomplete item — RED at b8830be5 / green: pending |
-| S36 | agent-runtime-core / Resume Snapshot Repair / Durable failure survives degraded native snapshot | `run-event-ledger-provenance-resume.test.ts` S36 Durable failure survives degraded native snapshot — RED at b8830be5<br>`run-event-ledger-provenance-resume.test.ts` S36 Durable failure survives degraded native snapshot — RED at b8830be5 / green: pending |
-| S37 | agent-runtime-core / Resume Snapshot Repair / Cross-version snapshot reconciliation declares its evidence limits | `run-event-ledger-provenance-resume.test.ts` S37 Cross-version snapshot reconciliation declares its evidence limits — RED at b8830be5<br>`run-event-ledger-provenance-resume.test.ts` S37 Cross-version snapshot reconciliation declares its evidence limits — RED at b8830be5<br>`run-event-ledger-provenance-resume.test.ts` S37 Cross-version snapshot reconciliation declares its evidence limits — RED at b8830be5 / green: pending |
-| S38 | architecture-ownership / Canonical Runtime Event Mapping Single Path / Second event mapping definition appears | `run-event-ledger-guards.test.ts` S38 Second event mapping definition appears — RED at b8830be5<br>`run-event-ledger-guards.test.ts` S38 Second event mapping definition appears — RED at b8830be5 / green: pending |
-| S39 | architecture-ownership / Canonical Runtime Event Mapping Single Path / Route or runtime adapter writes job events directly | `run-event-ledger-guards.test.ts` S39 Route or runtime adapter writes job events directly — RED at b8830be5<br>`run-event-ledger-guards.test.ts` S39 Route or runtime adapter writes job events directly — RED at b8830be5<br>`run-event-ledger-guards.test.ts` S39 Route or runtime adapter writes job events directly — RED at b8830be5<br>`run-event-ledger-guards.test.ts` S39 Route or runtime adapter writes job events directly — RED at b8830be5<br>`run-event-ledger-guards.test.ts` S39 Route or runtime adapter writes job events directly — RED at b8830be5<br>`run-event-ledger-guards.test.ts` S39 Route or runtime adapter writes job events directly — GREEN by design at b8830be5 / green: pending |
-| S40 | architecture-ownership / Canonical Runtime Event Mapping Single Path / Guard proves its own detection | `run-event-ledger-guards.test.ts` S40 Guard proves its own detection — RED at b8830be5 / green: pending |
-| S41 | codex-runtime-parity / Codex Native Boundary Forwarding And Disposition / Transport forwards protocol boundary shapes | implementer-unit (spy-ledger injection on the Codex transport; red-receipt §6) / green: pending |
-| S42 | codex-runtime-parity / Codex Native Boundary Forwarding And Disposition / Pinned native surface has complete disposition | `run-event-ledger-core.test.ts` S42 Pinned native surface has complete disposition — GREEN by design at b8830be5<br>`run-event-ledger-core.test.ts` S42 Pinned native surface has complete disposition — RED at b8830be5<br>`run-event-ledger-core.test.ts` S42 Pinned native surface has complete disposition — RED at b8830be5<br>`run-event-ledger-core.test.ts` S42 Pinned native surface has complete disposition — RED at b8830be5<br>`run-event-ledger-core.test.ts` S42 Pinned native surface has complete disposition — RED at b8830be5<br>`run-event-ledger-core.test.ts` S42 Pinned native surface has complete disposition — RED at b8830be5 / green: pending |
-| S43 | codex-runtime-parity / Codex Native Boundary Forwarding And Disposition / Decoder retains channel and native error fields | `run-event-ledger-vocabulary.test.ts` S43 Decoder retains channel and native error fields — RED at b8830be5<br>`run-event-ledger-vocabulary.test.ts` S43 Decoder retains channel and native error fields — RED at b8830be5 / green: pending |
-| S44 | desktop-agent-jobs / Desktop Jobs Persist Semantic Runtime Events / Desktop stream emits semantic events | `run-event-ledger-projection.test.ts` S44 Desktop stream emits semantic events — RED at b8830be5<br>`run-event-ledger-projection.test.ts` S44 Desktop stream emits semantic events — GREEN by design at b8830be5 / green: pending |
-| S45 | desktop-agent-jobs / Desktop Jobs Persist Semantic Runtime Events / Secret-like payload is observed | `run-event-ledger-projection.test.ts` S45 Secret-like payload is observed — RED at b8830be5<br>`run-event-ledger-projection.test.ts` S45 Secret-like payload is observed — GREEN by design at b8830be5 / green: pending |
-| S46 | headless-agent-jobs / Headless Runtime Event Convergence / Batch process event is persisted | `run-event-ledger-projection.test.ts` S46 Batch process event is persisted — RED at b8830be5<br>`run-event-ledger-projection.test.ts` S46 Batch process event is persisted — RED at b8830be5 / green: pending |
-| S47 | headless-agent-jobs / Headless Runtime Event Convergence / Existing event readers remain compatible | `run-event-ledger-projection.test.ts` S47 Existing event readers remain compatible — RED at b8830be5 / green: pending |
-| S48 | local-job-api / Stable API Event Stream / Consumer reads events | `run-event-ledger-projection.test.ts` S48 Consumer reads events — GREEN by design at b8830be5<br>`run-event-ledger-projection.test.ts` S48 Consumer reads events — GREEN by design at b8830be5<br>`run-event-ledger-projection.test.ts` S48 Consumer reads events — GREEN by design at b8830be5<br>`run-event-ledger-projection.test.ts` S48 Consumer reads events — RED at b8830be5<br>`run-event-ledger-projection.test.ts` S48 Consumer reads events — GREEN by design at b8830be5 / green: pending |
-| S49 | local-job-api / Stable API Event Stream / Consumer follows events | `run-event-ledger-projection.test.ts` S49 Consumer follows events — GREEN by design at b8830be5 / green: pending |
-| S50 | local-job-api / Stable API Event Stream / All internal event types preserve dense v1 projection | `run-event-ledger-projection.test.ts` S50 All internal event types preserve dense v1 projection — RED at b8830be5<br>`run-event-ledger-core.test.ts` S50 All internal event types preserve dense v1 projection — RED at b8830be5 / green: pending |
-| S51 | local-job-api / Run Result and Artifact Manifest / API job completes | `run-event-ledger-projection.test.ts` S51 API job completes — GREEN by design at b8830be5<br>`run-event-ledger-projection.test.ts` S51 API job completes — RED at b8830be5<br>`run-event-ledger-projection.test.ts` S51 API job completes — RED at b8830be5<br>`run-event-ledger-projection.test.ts` S51 API job completes — GREEN by design at b8830be5<br>`run-event-ledger-projection.test.ts` S51 API job completes — GREEN by design at b8830be5 / green: pending |
-| S52 | local-job-api / Run Result and Artifact Manifest / Run artifact directory is configured | `run-event-ledger-projection.test.ts` S52 Run artifact directory is configured — GREEN by design at b8830be5 / green: pending |
-| S53 | local-job-api / Discovery Feature Advertisement / Consumer detects readiness support | `run-event-ledger-projection.test.ts` S53 Consumer detects readiness support — GREEN by design at b8830be5 / green: pending |
-| S54 | local-job-api / Discovery Feature Advertisement / Older build lacks the feature | `run-event-ledger-projection.test.ts` S54 Older build lacks the feature — GREEN by design at b8830be5 / green: pending |
-| S55 | local-job-api / Discovery Feature Advertisement / Consumer detects canonical ledger support | `run-event-ledger-projection.test.ts` S55 Consumer detects canonical ledger support — RED at b8830be5 / green: pending |
-| S56 | agent-runtime-core / Canonical Run Event Ledger Ownership / Cross-process queued cancel races with start | `run-event-ledger-terminal.test.ts` S56 Cross-process queued cancel races with start — RED at b8830be5<br>`run-event-ledger-terminal.test.ts` S56 Cross-process queued cancel races with start — RED at b8830be5<br>`run-event-ledger-terminal.test.ts` S56 Cross-process queued cancel races with start — RED at b8830be5<br>`run-event-ledger-terminal.test.ts` S56 Cross-process queued cancel races with start — RED at b8830be5<br>`run-event-ledger-terminal.test.ts` S56 Cross-process queued cancel races with start — RED at b8830be5<br>`run-event-ledger-terminal.test.ts` S56 Cross-process queued cancel races with start — RED at b8830be5 / green: pending |
+| S01 | agent-runtime-core / Normalized Agent Events / Event type is emitted | `run-event-ledger-vocabulary.test.ts` S01 Event type is emitted — RED at b8830be5<br>`run-event-ledger-vocabulary.test.ts` S01 Event type is emitted — RED at b8830be5 / green at candidate: vocabulary 2/2 |
+| S02 | agent-runtime-core / Normalized Agent Events / Runtime emits assistant output | `run-event-ledger-vocabulary.test.ts` S02 Runtime emits assistant output — RED at b8830be5 / green at candidate: vocabulary 1/1 |
+| S03 | agent-runtime-core / Normalized Agent Events / Runtime emits tool activity | `run-event-ledger-vocabulary.test.ts` S03 Runtime emits tool activity — RED at b8830be5 / green at candidate: vocabulary 1/1 |
+| S04 | agent-runtime-core / Normalized Agent Events / Runtime reports completion | implementer-unit (red-receipt §6: facade result ↔ completedSequence; seam not public) / green at candidate: implementer-unit, partial: `run-event-ledger-host.test.ts` "the SQLite adapter commits exact batches…" asserts `readOutcome().completedSequence` after reopen and `run-event-ledger-units.test.ts` "refs prepared from the frozen prefix…" the completed sequence of the commit; the runner facade does not return the completed sequence, so that clause is not asserted |
+| S05 | agent-runtime-core / Normalized Agent Events / Event is serialized for CLI | `run-event-ledger-vocabulary.test.ts` S05 Event is serialized for CLI — GREEN by design at b8830be5<br>`run-event-ledger-vocabulary.test.ts` S05 Event is serialized for CLI — RED at b8830be5 / green at candidate: vocabulary 2/2 |
+| S06 | agent-runtime-core / Normalized Agent Events / Headless process emits coarse output | partial — coarse rows persisted via ledger store port covered by S46 (`run-event-ledger-projection.test.ts`); returned-record half implementer-unit (`ledger-ingress.ts` seam) / green at candidate: implementer-unit: `run-event-ledger-units.test.ts` "coarse output keeps its source payload, describes the stream field and invents no native identity" plus projection S46 2/2 (persistence half); `coarse-process.json` not materialized |
+| S07 | agent-runtime-core / Normalized Agent Events / Event compatibility is required | `run-event-ledger-vocabulary.test.ts` S07 Event compatibility is required — RED at b8830be5<br>`run-event-ledger-vocabulary.test.ts` S07 Event compatibility is required — GREEN by design at b8830be5 / green at candidate: vocabulary 2/2 |
+| S08 | agent-runtime-core / Desktop Run Request Contract / Adapter receives desktop request | implementer-unit (desktop request ledger ports; red-receipt §6) / green at candidate: partial: request contract tests (`codex-desktop-run-request.test.ts`, `claude-desktop-run-request.test.ts`) pass, but no test drives `desktop-request.json` (not materialized) or asserts the request's optional `ledger` port |
+| S09 | agent-runtime-core / Desktop Run Request Contract / Adapter emits normalized events | implementer-unit (desktop-runner ledger injection; red-receipt §6) / green at candidate: partial: `desktop-runtime-adapter-factory.test.ts` "records desktop adapter source as a host fact through the Run ledger"; no fake desktop adapter through injected ports |
+| S10 | agent-runtime-core / Canonical Run Event Ledger Ownership / All protocol boundaries enter one ledger | `run-event-ledger-core.test.ts` S10 All protocol boundaries enter one ledger — RED at b8830be5<br>`run-event-ledger-core.test.ts` S10 All protocol boundaries enter one ledger — RED at b8830be5 / green at candidate: core 2/2 |
+| S11 | agent-runtime-core / Canonical Run Event Ledger Ownership / Durable append fails before acknowledgement | `run-event-ledger-store-faults.test.ts` S11 Durable append fails before acknowledgement — RED at b8830be5<br>`run-event-ledger-store-faults.test.ts` S11 Durable append fails before acknowledgement — RED at b8830be5 / green at candidate: store-faults 2/2 |
+| S12 | agent-runtime-core / Canonical Run Event Ledger Ownership / Process crashes after commit and before projection | `run-event-ledger-store-faults.test.ts` S12 Process crashes after commit and before projection — RED at b8830be5<br>`run-event-ledger-store-faults.test.ts` S12 Process crashes after commit and before projection — RED at b8830be5 / green at candidate: store-faults 2/2 |
+| S13 | agent-runtime-core / Canonical Run Event Ledger Ownership / Historical rows remain explicitly unverified | `run-event-ledger-guards.test.ts` S13 Historical rows remain explicitly unverified — RED at b8830be5<br>`run-event-ledger-guards.test.ts` S13 Historical rows remain explicitly unverified — RED at b8830be5<br>`run-event-ledger-guards.test.ts` S13 Historical rows remain explicitly unverified — GREEN by design at b8830be5 / green at candidate: guards 3/3; `run-event-ledger-host.test.ts` "pre-ledger (ledger_version=0) history is never extended"; the internal `historyQuality=legacy_unverified` reader is not implemented (gap G1) |
+| S14 | agent-runtime-core / Native Identity And Runtime Provenance / Distinct native identities are preserved | `run-event-ledger-core.test.ts` S14 Distinct native identities are preserved — RED at b8830be5<br>`run-event-ledger-core.test.ts` S14 Distinct native identities are preserved — RED at b8830be5 / green at candidate: core 2/2 |
+| S15 | agent-runtime-core / Native Identity And Runtime Provenance / Exact runtime provenance follows every event | `run-event-ledger-provenance-resume.test.ts` S15 Exact runtime provenance follows every event — RED at b8830be5<br>`run-event-ledger-provenance-resume.test.ts` S15 Exact runtime provenance follows every event — RED at b8830be5<br>`run-event-ledger-provenance-resume.test.ts` S15 Exact runtime provenance follows every event — RED at b8830be5<br>`run-event-ledger-provenance-resume.test.ts` S15 Exact runtime provenance follows every event — RED at b8830be5<br>`run-event-ledger-provenance-resume.test.ts` S15 Exact runtime provenance follows every event — RED at b8830be5<br>`run-event-ledger-provenance-resume.test.ts` S15 Exact runtime provenance follows every event — RED at b8830be5<br>`run-event-ledger-guards.test.ts` S15 Exact runtime provenance follows every event — RED at b8830be5<br>`run-event-ledger-guards.test.ts` S15 Exact runtime provenance follows every event — RED at b8830be5<br>`run-event-ledger-guards.test.ts` S15 Exact runtime provenance follows every event — RED at b8830be5 / green at candidate: provenance-resume 6/6, guards 3/3 |
+| S16 | agent-runtime-core / Native Identity And Runtime Provenance / Interrupt target comes from native Run state | `run-event-ledger-boundaries.test.ts` S16 Interrupt target comes from native Run state — RED at b8830be5<br>`run-event-ledger-boundaries.test.ts` S16 Interrupt target comes from native Run state — RED at b8830be5<br>`run-event-ledger-boundaries.test.ts` S16 Interrupt target comes from native Run state — RED at b8830be5<br>`run-event-ledger-boundaries.test.ts` S16 Interrupt target comes from native Run state — RED at b8830be5 / green at candidate: boundaries 4/4 |
+| S17 | agent-runtime-core / Stateful Ledger Redaction / Runtime splits an exact secret across adjacent events | `run-event-ledger-boundaries.test.ts` S17 Runtime splits an exact secret across adjacent events — RED at b8830be5<br>`run-event-ledger-boundaries.test.ts` S17 Runtime splits an exact secret across adjacent events — RED at b8830be5<br>`run-event-ledger-boundaries.test.ts` S17 Runtime splits an exact secret across adjacent events — RED at b8830be5<br>`run-event-ledger-boundaries.test.ts` S17 Runtime splits an exact secret across adjacent events — RED at b8830be5<br>`run-event-ledger-boundaries.test.ts` S17 Runtime splits an exact secret across adjacent events — RED at b8830be5 / green at candidate: boundaries 5/5 |
+| S18 | agent-runtime-core / Item Lifecycle Reconciliation / Assistant deltas reconcile with final snapshot | `run-event-ledger-reconciliation.test.ts` S18 Assistant deltas reconcile with final snapshot — RED at b8830be5<br>`run-event-ledger-reconciliation.test.ts` S18 Assistant deltas reconcile with final snapshot — RED at b8830be5<br>`run-event-ledger-reconciliation.test.ts` S18 Assistant deltas reconcile with final snapshot — RED at b8830be5<br>`run-event-ledger-reconciliation.test.ts` S18 Assistant deltas reconcile with final snapshot — RED at b8830be5<br>`run-event-ledger-reconciliation.test.ts` S18 Assistant deltas reconcile with final snapshot — RED at b8830be5<br>`run-event-ledger-reconciliation.test.ts` S18 Assistant deltas reconcile with final snapshot — RED at b8830be5<br>`run-event-ledger-reconciliation.test.ts` S18 Assistant deltas reconcile with final snapshot — RED at b8830be5<br>`run-event-ledger-reconciliation.test.ts` S18 Assistant deltas reconcile with final snapshot — RED at b8830be5 / green at candidate: reconciliation 8/8 |
+| S19 | agent-runtime-core / Item Lifecycle Reconciliation / Reasoning channels and parts reconcile separately | `run-event-ledger-reconciliation.test.ts` S19 Reasoning channels and parts reconcile separately — RED at b8830be5<br>`run-event-ledger-reconciliation.test.ts` S19 Reasoning channels and parts reconcile separately — RED at b8830be5<br>`run-event-ledger-reconciliation.test.ts` S19 Reasoning channels and parts reconcile separately — RED at b8830be5<br>`run-event-ledger-reconciliation.test.ts` S19 Reasoning channels and parts reconcile separately — RED at b8830be5<br>`run-event-ledger-reconciliation.test.ts` S19 Reasoning channels and parts reconcile separately — RED at b8830be5<br>`run-event-ledger-reconciliation.test.ts` S19 Reasoning channels and parts reconcile separately — RED at b8830be5 / green at candidate: reconciliation 6/6; native-index variant waits on task 1.4 |
+| S20 | agent-runtime-core / Item Lifecycle Reconciliation / Tool item lifecycle is incomplete or repeated | `run-event-ledger-reconciliation.test.ts` S20 Tool item lifecycle is incomplete or repeated — RED at b8830be5<br>`run-event-ledger-reconciliation.test.ts` S20 Tool item lifecycle is incomplete or repeated — RED at b8830be5<br>`run-event-ledger-reconciliation.test.ts` S20 Tool item lifecycle is incomplete or repeated — RED at b8830be5 / green at candidate: reconciliation 3/3 |
+| S21 | agent-runtime-core / Diagnostic Error And Terminal Invariants / Retry error is followed by success | `run-event-ledger-terminal.test.ts` S21 Retry error is followed by success — RED at b8830be5 / green at candidate: terminal 1/1 |
+| S22 | agent-runtime-core / Diagnostic Error And Terminal Invariants / Denial rejection and empty output have deterministic outcomes | `run-event-ledger-terminal.test.ts` S22 Denial rejection and empty output have deterministic outcomes — RED at b8830be5 / green at candidate: terminal 1/1 |
+| S23 | agent-runtime-core / Diagnostic Error And Terminal Invariants / Transport exit synthesizes one terminal | `run-event-ledger-terminal.test.ts` S23 Transport exit synthesizes one terminal — RED at b8830be5<br>`run-event-ledger-terminal.test.ts` S23 Transport exit synthesizes one terminal — RED at b8830be5 / green at candidate: terminal 2/2 |
+| S24 | agent-runtime-core / Diagnostic Error And Terminal Invariants / Pre-start cancel and dead-worker recovery settle through ledger | `run-event-ledger-terminal.test.ts` S24 Pre-start cancel and dead-worker recovery settle through ledger — RED at b8830be5<br>`run-event-ledger-terminal.test.ts` S24 Pre-start cancel and dead-worker recovery settle through ledger — RED at b8830be5<br>`run-event-ledger-terminal.test.ts` S24 Pre-start cancel and dead-worker recovery settle through ledger — RED at b8830be5<br>`run-event-ledger-terminal.test.ts` S24 Pre-start cancel and dead-worker recovery settle through ledger — RED at b8830be5<br>`run-event-ledger-terminal.test.ts` S24 Pre-start cancel and dead-worker recovery settle through ledger — RED at b8830be5<br>`run-event-ledger-terminal.test.ts` S24 Pre-start cancel and dead-worker recovery settle through ledger — GREEN by design at b8830be5<br>`run-event-ledger-terminal.test.ts` S24 Pre-start cancel and dead-worker recovery settle through ledger — RED at b8830be5 / green at candidate: terminal 7/7; supervisor-observed-exit and changed-claim-at-commit variants not asserted (gap G5) |
+| S25 | agent-runtime-core / Diagnostic Error And Terminal Invariants / Usage after completed is diagnostic only | `run-event-ledger-reconciliation.test.ts` S25 Usage after completed is diagnostic only — RED at b8830be5<br>`run-event-ledger-reconciliation.test.ts` S25 Usage after completed is diagnostic only — RED at b8830be5<br>`run-event-ledger-terminal.test.ts` S25 Usage after completed is diagnostic only — RED at b8830be5 / green at candidate: reconciliation 2/2, terminal 1/1 |
+| S26 | agent-runtime-core / Usage Snapshot Accounting / Usage snapshots are accumulated once | `run-event-ledger-reconciliation.test.ts` S26 Usage snapshots are accumulated once — RED at b8830be5<br>`run-event-ledger-reconciliation.test.ts` S26 Usage snapshots are accumulated once — RED at b8830be5 / green at candidate: reconciliation 2/2 |
+| S27 | agent-runtime-core / Usage Snapshot Accounting / Resume establishes a usage baseline | `run-event-ledger-reconciliation.test.ts` S27 Resume establishes a usage baseline — RED at b8830be5 / green at candidate: reconciliation 1/1 |
+| S28 | agent-runtime-core / Canonical Artifact Admission / Valid artifact candidate is admitted | `run-event-ledger-terminal.test.ts` S28 Valid artifact candidate is admitted — RED at b8830be5 / green at candidate: terminal 1/1 |
+| S29 | agent-runtime-core / Canonical Artifact Admission / Invalid artifact candidate is rejected | `run-event-ledger-terminal.test.ts` S29 Invalid artifact candidate is rejected — RED at b8830be5 / green at candidate: terminal 1/1 |
+| S30 | agent-runtime-core / Canonical Artifact Admission / Terminal files and completed become visible together | partial — artifact admission covered by S25 tests (`run-event-ledger-terminal.test.ts`); prepare-fail hooks implementer-unit (red-receipt §6) / green at candidate: partial: projection S52 1/1 plus `run-event-ledger-units.test.ts` "refs prepared from the frozen prefix plus the candidate completed join the completed commit", "a preparation failure keeps the terminal slot…" and "canceled keeps its precedence…"; no before-SQL-commit or after-commit-before-projection injection, `terminal-artifacts.json` not materialized |
+| S31 | agent-runtime-core / Observable Native Methods And Boundary Facts / Unknown native method is observed | `run-event-ledger-core.test.ts` S31 Unknown native method is observed — RED at b8830be5<br>`run-event-ledger-core.test.ts` S31 Unknown native method is observed — RED at b8830be5 / green at candidate: core 2/2 |
+| S32 | agent-runtime-core / Observable Native Methods And Boundary Facts / Interaction boundary is recorded without a second state machine | `run-event-ledger-boundaries.test.ts` S32 Interaction boundary is recorded without a second state machine — RED at b8830be5<br>`run-event-ledger-boundaries.test.ts` S32 Interaction boundary is recorded without a second state machine — RED at b8830be5<br>`run-event-ledger-boundaries.test.ts` S32 Interaction boundary is recorded without a second state machine — RED at b8830be5 / green at candidate: boundaries 3/3 |
+| S33 | agent-runtime-core / Native Resume Validation Facts / Codex response validates the requested native thread | `run-event-ledger-provenance-resume.test.ts` S33 Codex response validates the requested native thread — RED at b8830be5<br>`run-event-ledger-provenance-resume.test.ts` S33 Codex response validates the requested native thread — RED at b8830be5<br>`run-event-ledger-provenance-resume.test.ts` S33 Codex response validates the requested native thread — RED at b8830be5<br>`run-event-ledger-provenance-resume.test.ts` S33 Codex response validates the requested native thread — RED at b8830be5 / green at candidate: provenance-resume 4/4 |
+| S34 | agent-runtime-core / Native Resume Validation Facts / Claude correlated init validates resume independently of turn success | `run-event-ledger-provenance-resume.test.ts` S34 Claude correlated init validates resume independently of turn success — RED at b8830be5<br>`run-event-ledger-provenance-resume.test.ts` S34 Claude correlated init validates resume independently of turn success — RED at b8830be5<br>`run-event-ledger-provenance-resume.test.ts` S34 Claude correlated init validates resume independently of turn success — RED at b8830be5<br>`run-event-ledger-provenance-resume.test.ts` S34 Claude correlated init validates resume independently of turn success — RED at b8830be5<br>`run-event-ledger-provenance-resume.test.ts` S34 Claude correlated init validates resume independently of turn success — RED at b8830be5 / green at candidate: provenance-resume 5/5 |
+| S35 | agent-runtime-core / Resume Snapshot Repair / Resume snapshot repairs an incomplete item | `run-event-ledger-provenance-resume.test.ts` S35 Resume snapshot repairs an incomplete item — RED at b8830be5<br>`run-event-ledger-provenance-resume.test.ts` S35 Resume snapshot repairs an incomplete item — RED at b8830be5 / green at candidate: provenance-resume 2/2 |
+| S36 | agent-runtime-core / Resume Snapshot Repair / Durable failure survives degraded native snapshot | `run-event-ledger-provenance-resume.test.ts` S36 Durable failure survives degraded native snapshot — RED at b8830be5<br>`run-event-ledger-provenance-resume.test.ts` S36 Durable failure survives degraded native snapshot — RED at b8830be5 / green at candidate: provenance-resume 2/2 |
+| S37 | agent-runtime-core / Resume Snapshot Repair / Cross-version snapshot reconciliation declares its evidence limits | `run-event-ledger-provenance-resume.test.ts` S37 Cross-version snapshot reconciliation declares its evidence limits — RED at b8830be5<br>`run-event-ledger-provenance-resume.test.ts` S37 Cross-version snapshot reconciliation declares its evidence limits — RED at b8830be5<br>`run-event-ledger-provenance-resume.test.ts` S37 Cross-version snapshot reconciliation declares its evidence limits — RED at b8830be5 / green at candidate: provenance-resume 3/3 |
+| S38 | architecture-ownership / Canonical Runtime Event Mapping Single Path / Second event mapping definition appears | `run-event-ledger-guards.test.ts` S38 Second event mapping definition appears — RED at b8830be5<br>`run-event-ledger-guards.test.ts` S38 Second event mapping definition appears — RED at b8830be5 / green at candidate: guards 2/2; negative self-test not injected by a test (gap G5) |
+| S39 | architecture-ownership / Canonical Runtime Event Mapping Single Path / Route or runtime adapter writes job events directly | `run-event-ledger-guards.test.ts` S39 Route or runtime adapter writes job events directly — RED at b8830be5<br>`run-event-ledger-guards.test.ts` S39 Route or runtime adapter writes job events directly — RED at b8830be5<br>`run-event-ledger-guards.test.ts` S39 Route or runtime adapter writes job events directly — RED at b8830be5<br>`run-event-ledger-guards.test.ts` S39 Route or runtime adapter writes job events directly — RED at b8830be5<br>`run-event-ledger-guards.test.ts` S39 Route or runtime adapter writes job events directly — RED at b8830be5<br>`run-event-ledger-guards.test.ts` S39 Route or runtime adapter writes job events directly — GREEN by design at b8830be5 / green at candidate: guards 6/6 |
+| S40 | architecture-ownership / Canonical Runtime Event Mapping Single Path / Guard proves its own detection | `run-event-ledger-guards.test.ts` S40 Guard proves its own detection — RED at b8830be5 / green at candidate: guards 1/1; the guard fails on missing or unexpected findings (`scripts/check-architecture-guards.mjs:4491-4510`), not injected by a test |
+| S41 | codex-runtime-parity / Codex Native Boundary Forwarding And Disposition / Transport forwards protocol boundary shapes | implementer-unit (spy-ledger injection on the Codex transport; red-receipt §6) / green at candidate: partial: `codex-app-server-adapter.test.ts` "resumes an existing app-server thread through thread/resume" (no fabricated `thread/started`, session from the response) and the ledger-backed `codex-app-server-stream-events.test.ts` tests; no spy-ledger port-order test over `ingress-boundaries.jsonl` |
+| S42 | codex-runtime-parity / Codex Native Boundary Forwarding And Disposition / Pinned native surface has complete disposition | `run-event-ledger-core.test.ts` S42 Pinned native surface has complete disposition — GREEN by design at b8830be5<br>`run-event-ledger-core.test.ts` S42 Pinned native surface has complete disposition — RED at b8830be5<br>`run-event-ledger-core.test.ts` S42 Pinned native surface has complete disposition — RED at b8830be5<br>`run-event-ledger-core.test.ts` S42 Pinned native surface has complete disposition — RED at b8830be5<br>`run-event-ledger-core.test.ts` S42 Pinned native surface has complete disposition — RED at b8830be5<br>`run-event-ledger-core.test.ts` S42 Pinned native surface has complete disposition — RED at b8830be5 / green at candidate: core 6/6 |
+| S43 | codex-runtime-parity / Codex Native Boundary Forwarding And Disposition / Decoder retains channel and native error fields | `run-event-ledger-vocabulary.test.ts` S43 Decoder retains channel and native error fields — RED at b8830be5<br>`run-event-ledger-vocabulary.test.ts` S43 Decoder retains channel and native error fields — RED at b8830be5 / green at candidate: vocabulary 2/2 |
+| S44 | desktop-agent-jobs / Desktop Jobs Persist Semantic Runtime Events / Desktop stream emits semantic events | `run-event-ledger-projection.test.ts` S44 Desktop stream emits semantic events — RED at b8830be5<br>`run-event-ledger-projection.test.ts` S44 Desktop stream emits semantic events — GREEN by design at b8830be5 / green at candidate: projection 2/2 |
+| S45 | desktop-agent-jobs / Desktop Jobs Persist Semantic Runtime Events / Secret-like payload is observed | `run-event-ledger-projection.test.ts` S45 Secret-like payload is observed — RED at b8830be5<br>`run-event-ledger-projection.test.ts` S45 Secret-like payload is observed — GREEN by design at b8830be5 / green at candidate: projection 2/2 |
+| S46 | headless-agent-jobs / Headless Runtime Event Convergence / Batch process event is persisted | `run-event-ledger-projection.test.ts` S46 Batch process event is persisted — RED at b8830be5<br>`run-event-ledger-projection.test.ts` S46 Batch process event is persisted — RED at b8830be5 / green at candidate: projection 2/2 |
+| S47 | headless-agent-jobs / Headless Runtime Event Convergence / Existing event readers remain compatible | `run-event-ledger-projection.test.ts` S47 Existing event readers remain compatible — RED at b8830be5 / green at candidate: projection 1/1 |
+| S48 | local-job-api / Stable API Event Stream / Consumer reads events | `run-event-ledger-projection.test.ts` S48 Consumer reads events — GREEN by design at b8830be5<br>`run-event-ledger-projection.test.ts` S48 Consumer reads events — GREEN by design at b8830be5<br>`run-event-ledger-projection.test.ts` S48 Consumer reads events — GREEN by design at b8830be5<br>`run-event-ledger-projection.test.ts` S48 Consumer reads events — RED at b8830be5<br>`run-event-ledger-projection.test.ts` S48 Consumer reads events — GREEN by design at b8830be5 / green at candidate: projection 5/5 |
+| S49 | local-job-api / Stable API Event Stream / Consumer follows events | `run-event-ledger-projection.test.ts` S49 Consumer follows events — GREEN by design at b8830be5 / green at candidate: projection 1/1 |
+| S50 | local-job-api / Stable API Event Stream / All internal event types preserve dense v1 projection | `run-event-ledger-projection.test.ts` S50 All internal event types preserve dense v1 projection — RED at b8830be5<br>`run-event-ledger-core.test.ts` S50 All internal event types preserve dense v1 projection — RED at b8830be5 / green at candidate: projection 1/1, core 1/1 |
+| S51 | local-job-api / Run Result and Artifact Manifest / API job completes | `run-event-ledger-projection.test.ts` S51 API job completes — GREEN by design at b8830be5<br>`run-event-ledger-projection.test.ts` S51 API job completes — RED at b8830be5<br>`run-event-ledger-projection.test.ts` S51 API job completes — RED at b8830be5<br>`run-event-ledger-projection.test.ts` S51 API job completes — GREEN by design at b8830be5<br>`run-event-ledger-projection.test.ts` S51 API job completes — GREEN by design at b8830be5 / green at candidate: projection 5/5 |
+| S52 | local-job-api / Run Result and Artifact Manifest / Run artifact directory is configured | `run-event-ledger-projection.test.ts` S52 Run artifact directory is configured — GREEN by design at b8830be5 / green at candidate: projection 1/1 |
+| S53 | local-job-api / Discovery Feature Advertisement / Consumer detects readiness support | `run-event-ledger-projection.test.ts` S53 Consumer detects readiness support — GREEN by design at b8830be5 / green at candidate: projection 1/1 |
+| S54 | local-job-api / Discovery Feature Advertisement / Older build lacks the feature | `run-event-ledger-projection.test.ts` S54 Older build lacks the feature — GREEN by design at b8830be5 / green at candidate: projection 1/1 |
+| S55 | local-job-api / Discovery Feature Advertisement / Consumer detects canonical ledger support | `run-event-ledger-projection.test.ts` S55 Consumer detects canonical ledger support — RED at b8830be5 / green at candidate: projection 1/1 |
+| S56 | agent-runtime-core / Canonical Run Event Ledger Ownership / Cross-process queued cancel races with start | `run-event-ledger-terminal.test.ts` S56 Cross-process queued cancel races with start — RED at b8830be5<br>`run-event-ledger-terminal.test.ts` S56 Cross-process queued cancel races with start — RED at b8830be5<br>`run-event-ledger-terminal.test.ts` S56 Cross-process queued cancel races with start — RED at b8830be5<br>`run-event-ledger-terminal.test.ts` S56 Cross-process queued cancel races with start — RED at b8830be5<br>`run-event-ledger-terminal.test.ts` S56 Cross-process queued cancel races with start — RED at b8830be5<br>`run-event-ledger-terminal.test.ts` S56 Cross-process queued cancel races with start — RED at b8830be5 / green at candidate: terminal 6/6 |
 
 
 ## Future Implementation Receipts
 
 | Evidence | Required receipt / state |
 | --- | --- |
-| Owner APPROVED | Proposal section 10 R1 disposition, four Open Questions, exact scope; Pending |
-| Code/store | One exact-sequence append path, definite rollback, reopen/ack, legacy marking and post-terminal late-only constraint; Pending |
-| Terminal/artifact | All inventory terminal callers, candidate files + same-commit refs, digest graph/failed preparation/recovery; Pending |
-| Native/repair | Correlated resume, 66/10/16 static coverage, two reasoning channels, snapshot-only no-success; Pending |
-| Static architecture | Owner pins, legacy symbols absent, raw store importer only host; gate/transition branch deleted; Pending |
-| Security | Stateful split-secret flush, raw native omitted, scope/digest/ownership admission and no new grants; Pending |
-| check:full / strict / diff | Commands rerun on frozen implementing SHA; Pending |
-| Manual/packaged | Claude/Codex Desktop/Workbench, headless/completion/CLI and public API smoke; applicable macOS/Windows receipts or explicit limitations; Pending |
-| Codex IMPLEMENTATION_VERIFIED | Not issued — no implementing source in this DRAFT |
-| Claude fresh REVIEW_APPROVED | Not issued — revised draft review and later implementing review pending |
+| Owner APPROVED | Recorded 2026-09-07 (receipt below): R1 disposition, four answers, scope bound to `9ebe6c34` |
+| Code/store | Implemented at the candidate: one exact-sequence append path (`appendExactRunEventBatch`, private insert `job-store.ts:914`), definite rollback (S11), reopen/ack cursors (S12, host test), legacy marking and v0 append rejection (S13, host test; gap G1), post-terminal late-only (S25) |
+| Terminal/artifact | Implemented: every inventory terminal caller settles through the ledger (8.4 evidence), candidate files and same-commit refs (S52, implementer tests), failed preparation keeps the slot, recovery (S24). Partial: S30 commit-fault injection (gap G5); headless app-server `host_result` referred (decision 3) |
+| Native/repair | Implemented: correlated resume (S33/S34), 66/10/16 static coverage (S42), two reasoning channels (S19), snapshot-only no-success (S36). Open for review: gaps G2 and G3 |
+| Static architecture | Implemented: owner pins, retired symbols absent, the host is the only raw store importer, gate and transition mode deleted; guard self-test 17/17 |
+| Security | Implemented: stateful split-secret flush (S17), withheld prefix dropped at flush (`84541e00`), raw native content omitted, admission scope/digest/ownership checks (S28/S29), store credential patterns kept on durable records (`60bf8e02`), no new grants. Gap G4 (Claude capture-to-launch check) |
+| check:full / strict / diff | Exit 0 at `9dc1cbc5` (see Gate commands); rerun at the candidate in the handoff |
+| Manual/packaged | Host-blocked or not claimed; see the 8.5 smoke matrix and rerun commands |
+| Codex IMPLEMENTATION_VERIFIED | Not issued; due on the candidate SHA |
+| Claude fresh REVIEW_APPROVED | Not issued; due on the candidate SHA |
 | Owner ACCEPTED | Not issued; explicit acceptance required after same-SHA technical evidence |
 | Merge/push/remote PR/release | Not authorized / not performed |
 
@@ -250,10 +502,10 @@ Red evidence recorded 2026-10-01 at `b8830be5` (red suite `339c4e6e` + follow-up
 
 | Owner | Evidence scope | Current revision result |
 | --- | --- | --- |
-| Locus | Neutral batch/structured-output, interactive events/cursor, dense 12-type v1, feature/maturity, terminal and artifact fixtures | Pending implementation |
-| Locus | Desktop/Workbench and headless/CLI projections | Pending implementation |
+| Locus | Neutral batch/structured-output, interactive events/cursor, dense 12-type v1, feature/maturity, terminal and artifact fixtures | Implemented; conformance tests green at the candidate (S21/S22, S48–S55); API runtime smoke host-blocked |
+| Locus | Desktop/Workbench and headless/CLI projections | Implemented; tests green (S44–S47, S05/S07); desktop and CLI smoke host-blocked |
 | Career Kit | Its adapter/version and business E2E (historical links in proposal are background only) | unknown |
-| Amadeus | Its adapter/version and E2E, actual Locus v1 dependencies | unknown |
+| Amadeus | Its adapter/version and E2E, actual Locus v1 dependencies | unknown (consumer facts relayed by the Owner; no Locus-side inventory, task 1.3) |
 | Other consumer | Inventory and its own receipts | unknown |
 
 ## Remaining Red and Deferred Inputs
