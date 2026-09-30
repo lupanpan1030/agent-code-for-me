@@ -149,19 +149,23 @@ const INVENTORY: InventoryEntry[] = [
     behaviorTests: SHIKI_BEHAVIOR,
   },
   {
-    // Inline and fullscreen sinks share the one sanitized string.
+    // Inline and fullscreen sinks share the one sealed diagram value.
     construct: "react-dangerouslySetInnerHTML",
     file: "src/renderer/components/mermaid-block.tsx",
     symbol: "MermaidBlockInner",
     count: 2,
     status: "reviewed",
     producer:
-      "mermaid-svg-sanitizer#sanitizeMermaidSvg (specialized SVG adapter)",
-    producerImports: ["lib/security/mermaid-svg-sanitizer"],
-    value: /^\{\{ __html: renderState\.svg \}\}$/,
+      "renderer-html-policy#reviewedInnerHtml over reviewMermaidSvgOutput(mermaid-svg-sanitizer#sanitizeMermaidSvg) (specialized SVG adapter, owner-sealed)",
+    producerImports: [
+      "lib/security/mermaid-svg-sanitizer",
+      "lib/security/renderer-html-policy",
+    ],
+    value: /^\{reviewedInnerHtml\(\s*renderState\.diagram\.markup,?\s*\)\}$/,
     behaviorTests: [
       "tests/renderer-mermaid-xss.test.ts",
       "tests/renderer-hardening-mermaid-editor.test.ts",
+      "tests/renderer-hardening-impl-mermaid.test.ts",
     ],
   },
   {
@@ -483,15 +487,26 @@ describe("renderer sink scanner self-test", () => {
 // ---------------------------------------------------------------------------
 
 describe("renderer HTML policy named rules", () => {
-  test("requires Mermaid SVG sanitization before insertion", () => {
+  test("requires Mermaid SVG sanitization and the owner's sealed review before insertion", () => {
     const source = read("src/renderer/components/mermaid-block.tsx")
 
     expect(source).toContain("securityLevel: MERMAID_SECURITY_LEVEL")
     expect(source).toContain("const sanitizedSvg = sanitizeMermaidSvg(svg)")
-    expect(source).toContain("mermaidCache.set(cacheKey, sanitizedSvg)")
     expect(source).toContain(
-      'setRenderState({ status: "success", svg: sanitizedSvg })',
+      "const reviewedSvg = reviewMermaidSvgOutput(sanitizedSvg)",
     )
+    expect(source).toContain("markup: reviewedSvg,")
+    // The cache and the success state hold only the sealed diagram value.
+    expect(source).toContain(
+      "const mermaidCache = new Map<string, RenderedDiagram>()",
+    )
+    expect(source).toContain("mermaidCache.set(cacheKey, diagram)")
+    expect(source).toContain('setRenderState({ status: "success", diagram })')
+    expect(source).toMatch(/markup: ReviewedRendererHtml\b/)
+    // The plain adapter string never reaches a raw sink: only the download.
+    expect(source.match(/\.svgFile\b/g)).toHaveLength(1)
+    expect(source).toContain("new Blob([renderState.diagram.svgFile]")
+    expect(source).not.toContain("__html:")
   })
 
   test("documents remaining Shiki-backed HTML sinks: highlightCode is their sole producer and returns reviewed output", () => {

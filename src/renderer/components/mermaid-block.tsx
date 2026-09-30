@@ -26,6 +26,11 @@ import {
   MERMAID_SECURITY_LEVEL,
   sanitizeMermaidSvg,
 } from "../lib/security/mermaid-svg-sanitizer"
+import {
+  type ReviewedRendererHtml,
+  reviewedInnerHtml,
+  reviewMermaidSvgOutput,
+} from "../lib/security/renderer-html-policy"
 import { cn } from "../lib/utils"
 import { Dialog, DialogContent, DialogPortal, DialogTitle } from "./ui/dialog"
 
@@ -56,10 +61,20 @@ interface MermaidBlockProps {
   isStreaming?: boolean
 }
 
+/**
+ * One rendered diagram: the owner-sealed markup is the only value the inline
+ * and fullscreen sinks accept; the same adapter output as a plain string
+ * backs only the explicit SVG download.
+ */
+type RenderedDiagram = {
+  markup: ReviewedRendererHtml
+  svgFile: string
+}
+
 type RenderState =
   | { status: "idle" }
   | { status: "loading" }
-  | { status: "success"; svg: string }
+  | { status: "success"; diagram: RenderedDiagram }
   | { status: "error"; message: string }
   | { status: "parsing" } // Syntax not yet valid - show "Creating diagram..."
 
@@ -182,7 +197,7 @@ function ZoomControls() {
 const RENDER_DEBOUNCE_MS = 600
 
 // Global cache for rendered mermaid diagrams to persist across remounts
-const mermaidCache = new Map<string, string>()
+const mermaidCache = new Map<string, RenderedDiagram>()
 
 // Track which mermaid blocks have finished streaming (by first N chars of code as ID)
 const finishedStreamingBlocks = new Set<string>()
@@ -220,7 +235,7 @@ const MermaidBlockInner = memo(function MermaidBlockInner({
     const cacheKey = `${code}-${isDark ? "dark" : "light"}`
     const cached = mermaidCache.get(cacheKey)
     if (cached) {
-      return { status: "success", svg: cached }
+      return { status: "success", diagram: cached }
     }
     return { status: "idle" }
   })
@@ -258,8 +273,14 @@ const MermaidBlockInner = memo(function MermaidBlockInner({
         .render(id, code)
         .finally(() => removeMermaidRenderArtifacts(id))
       const sanitizedSvg = sanitizeMermaidSvg(svg)
-      if (!sanitizedSvg) {
+      // The sinks accept only the owner's sealed review of the adapter output.
+      const reviewedSvg = reviewMermaidSvgOutput(sanitizedSvg)
+      if (!reviewedSvg) {
         throw new Error("Diagram output failed the security profile")
+      }
+      const diagram: RenderedDiagram = {
+        markup: reviewedSvg,
+        svgFile: sanitizedSvg,
       }
 
       // Check again if this render is still current
@@ -267,9 +288,9 @@ const MermaidBlockInner = memo(function MermaidBlockInner({
 
       // Cache the result for future remounts
       const cacheKey = `${code}-${isDark ? "dark" : "light"}`
-      mermaidCache.set(cacheKey, sanitizedSvg)
+      mermaidCache.set(cacheKey, diagram)
 
-      setRenderState({ status: "success", svg: sanitizedSvg })
+      setRenderState({ status: "success", diagram })
       lastRenderedCodeRef.current = code
       lastRenderedThemeRef.current = isDark
     } catch (error) {
@@ -355,7 +376,7 @@ const MermaidBlockInner = memo(function MermaidBlockInner({
     const cacheKey = `${code}-${isDark ? "dark" : "light"}`
     const cached = mermaidCache.get(cacheKey)
     if (cached) {
-      setRenderState({ status: "success", svg: cached })
+      setRenderState({ status: "success", diagram: cached })
       lastRenderedCodeRef.current = code
       lastRenderedThemeRef.current = isDark
       return
@@ -390,7 +411,9 @@ const MermaidBlockInner = memo(function MermaidBlockInner({
   const handleDownload = useCallback(async () => {
     if (renderState.status !== "success") return
 
-    const blob = new Blob([renderState.svg], { type: "image/svg+xml" })
+    const blob = new Blob([renderState.diagram.svgFile], {
+      type: "image/svg+xml",
+    })
     const url = URL.createObjectURL(blob)
     const a = document.createElement("a")
     a.href = url
@@ -491,13 +514,18 @@ const MermaidBlockInner = memo(function MermaidBlockInner({
           )}
 
           {renderState.status === "success" && (
+            // biome-ignore lint/a11y/noStaticElementInteractions: pre-existing click-to-expand shortcut; the toolbar fullscreen button is the control.
+            // biome-ignore lint/a11y/useKeyWithClickEvents: pre-existing click-to-expand shortcut; the toolbar fullscreen button is the control.
             <div
               className={cn(
                 "mermaid-diagram w-full overflow-x-auto cursor-pointer",
                 "[&_svg]:max-w-full [&_svg]:h-auto [&_svg]:mx-auto",
               )}
               onClick={openFullscreen}
-              dangerouslySetInnerHTML={{ __html: renderState.svg }}
+              // biome-ignore lint/security/noDangerouslySetInnerHtml: reviewed sink: value comes only from renderer-html-policy; exact inventory in tests/renderer-html-sinks.test.ts
+              dangerouslySetInnerHTML={reviewedInnerHtml(
+                renderState.diagram.markup,
+              )}
             />
           )}
 
@@ -574,7 +602,10 @@ const MermaidBlockInner = memo(function MermaidBlockInner({
                         "[&_svg]:max-w-none [&_svg]:h-auto",
                         isDark ? "" : "[&_svg]:filter [&_svg]:drop-shadow-lg",
                       )}
-                      dangerouslySetInnerHTML={{ __html: renderState.svg }}
+                      // biome-ignore lint/security/noDangerouslySetInnerHtml: reviewed sink: value comes only from renderer-html-policy; exact inventory in tests/renderer-html-sinks.test.ts
+                      dangerouslySetInnerHTML={reviewedInnerHtml(
+                        renderState.diagram.markup,
+                      )}
                     />
                   </TransformComponent>
                 </TransformWrapper>

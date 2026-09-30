@@ -19,14 +19,16 @@
  *    an independent XML parse. On a parser error it returns the already
  *    purified and profiled markup, never the raw SVG.
  *
- * The CSS value profiles are owned by `renderer-html-policy.ts`.
+ * The CSS value profiles and the Mermaid SVG profile walk
+ * (`applyMermaidSvgProfile`, applied here in `strip` mode) are owned by
+ * `renderer-html-policy.ts`. This adapter returns a string; the Mermaid raw
+ * sinks accept only the owner's sealed `reviewMermaidSvgOutput()` result,
+ * which re-checks that string in the sink's own HTML parse.
  */
 import createDOMPurify, { type Config } from "dompurify"
 import {
-  RENDERER_MARKUP_PROFILES,
-  reviewMermaidAttributeCss,
-  reviewMermaidInlineStyle,
-  reviewMermaidPaintCss,
+  applyMermaidSvgProfile,
+  isUnsafeMermaidSvgAttribute,
 } from "./renderer-html-policy"
 
 export const MERMAID_SECURITY_LEVEL = "strict" as const
@@ -116,26 +118,6 @@ let browserPurifier: DomPurifyInstance | null = null
 const ELEMENT_NODE = 1
 const TEXT_NODE = 3
 
-function isAttributeSpacingOrControlCharacter(char: string) {
-  const code = char.charCodeAt(0)
-  return code <= 0x1f || code === 0x7f || /\s/.test(char)
-}
-
-function isUnsafeMermaidSvgAttribute(attrName: string, attrValue: string) {
-  const name = attrName.toLowerCase()
-  const normalizedValue = Array.from(attrValue)
-    .filter((char) => !isAttributeSpacingOrControlCharacter(char))
-    .join("")
-    .toLowerCase()
-
-  return (
-    name.startsWith("on") ||
-    name === "href" ||
-    name === "xlink:href" ||
-    normalizedValue.startsWith("javascript:")
-  )
-}
-
 function hardenMermaidSvgAttributes(purifier: DomPurifyInstance) {
   purifier.addHook("uponSanitizeAttribute", (_node, data) => {
     if (isUnsafeMermaidSvgAttribute(data.attrName, data.attrValue)) {
@@ -148,86 +130,10 @@ function localNameOf(element: Element): string {
   return (element.localName || "").toLowerCase()
 }
 
-function subtreeElements(root: Element): Element[] {
-  return [root, ...Array.from(root.getElementsByTagName("*"))]
-}
-
-function isForbiddenMermaidElement(element: Element): boolean {
-  const name = localNameOf(element)
-  const forbidden: readonly string[] =
-    RENDERER_MARKUP_PROFILES.forbiddenElements
-  return (
-    forbidden.includes(name) ||
-    RENDERER_MARKUP_PROFILES.forbiddenElementPrefixes.some((prefix) =>
-      name.startsWith(prefix),
-    )
-  )
-}
-
-/**
- * The Mermaid paint profile over one diagram root. Keeps at most the single
- * Mermaid-generated `<style>` (the root's first `<style>` child), and only when
- * its text passes `reviewMermaidPaintCss`; reduces `style` attributes to
- * their reviewed declarations; keeps other CSS-bearing values only as
- * `url(#id)` references to an element of this SVG; strips unsafe attributes
- * and forbidden elements. It only removes, never adds, markup.
- */
-function applyMermaidPaintProfile(root: Element): void {
-  for (const element of subtreeElements(root)) {
-    if (element !== root && isForbiddenMermaidElement(element)) {
-      element.remove()
-    }
-  }
-
-  const paint =
-    Array.from(root.children).find((child) => localNameOf(child) === "style") ??
-    null
-  for (const style of Array.from(root.getElementsByTagName("style"))) {
-    if (style !== paint) style.remove()
-  }
-  if (
-    paint &&
-    (Array.from(paint.childNodes).some((node) => node.nodeType !== TEXT_NODE) ||
-      reviewMermaidPaintCss(
-        paint.textContent ?? "",
-        root.getAttribute("id") ?? "",
-      ).length > 0)
-  ) {
-    paint.remove()
-  }
-
-  const ids = new Set(
-    subtreeElements(root)
-      .map((element) => element.getAttribute("id"))
-      .filter((id): id is string => Boolean(id)),
-  )
-  for (const element of subtreeElements(root)) {
-    for (const { name, value } of Array.from(element.attributes)) {
-      if (isUnsafeMermaidSvgAttribute(name, value)) {
-        element.removeAttribute(name)
-        continue
-      }
-      if (name.toLowerCase() === "style") {
-        const reviewed = reviewMermaidInlineStyle(value)
-        if (reviewed === null) element.removeAttribute(name)
-        else if (reviewed !== value) element.setAttribute(name, reviewed)
-        continue
-      }
-      const verdict = reviewMermaidAttributeCss(value)
-      if (
-        verdict.kind === "unsafe" ||
-        (verdict.kind === "fragment" && !ids.has(verdict.id))
-      ) {
-        element.removeAttribute(name)
-      }
-    }
-  }
-}
-
 /**
  * Keeps only the first top-level `<svg>` of DOMPurify's output tree (plus
- * whitespace) and applies the paint profile to it. Returns false when there
- * is no diagram root.
+ * whitespace) and applies the Mermaid SVG profile to it. Returns false when
+ * there is no diagram root.
  */
 function profilePurifiedTree(container: Node): boolean {
   let root: Element | null = null
@@ -246,7 +152,7 @@ function profilePurifiedTree(container: Node): boolean {
     }
   }
   if (!root) return false
-  applyMermaidPaintProfile(root)
+  applyMermaidSvgProfile(root, "strip")
   return true
 }
 
@@ -264,7 +170,7 @@ function removeUnsafeMermaidSvgAttributes(svg: string): string {
     return svg
   }
 
-  applyMermaidPaintProfile(root)
+  applyMermaidSvgProfile(root, "strip")
 
   return new window.XMLSerializer().serializeToString(root)
 }

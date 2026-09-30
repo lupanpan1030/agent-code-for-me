@@ -529,7 +529,10 @@ or UI helper.
   consumed top-level `<pre><code>` wrapper, fail closed to escaped text);
   `reviewedPlainCodeToHtml` backs the diff shim's `codeToHtml` export. The
   owner also holds the Mermaid CSS value profiles (`reviewMermaidPaintCss`,
-  `reviewMermaidInlineStyle`, `reviewMermaidAttributeCss`), the explicit
+  `reviewMermaidInlineStyle`, `reviewMermaidAttributeCss`), the one Mermaid
+  SVG profile walk (`applyMermaidSvgProfile`, `strip` in the adapter,
+  `verify` at the sink), the Mermaid sink adapter `reviewMermaidSvgOutput`
+  (re-checks the adapter's string in the sink's HTML parse and seals it), the explicit
   replace-not-merge markdown chain `REVIEWED_MARKDOWN_REHYPE_PLUGINS` with
   `REVIEWED_MARKDOWN_SANITIZE_SCHEMA` (derived from `rehype-sanitize`
   `defaultSchema`) and `REVIEWED_MARKDOWN_HARDEN_OPTIONS`, and the
@@ -551,8 +554,11 @@ or UI helper.
 - Mermaid SVG adapter: `src/renderer/lib/security/mermaid-svg-sanitizer.ts`
   (`MERMAID_SECURE_CONFIG_KEYS`, `assertMermaidDirectiveSuppression`,
   `sanitizeMermaidSvg`; DOMPurify is load-bearing, the DOMParser pass is
-  defense in depth). `src/renderer/components/mermaid-block.tsx` hands the
-  same sanitized string to its inline sink and its single fullscreen viewer.
+  defense in depth; it returns a string). `src/renderer/components/mermaid-block.tsx`
+  passes that string through `reviewMermaidSvgOutput` and hands the one
+  sealed `ReviewedRendererHtml` to its inline sink and its single fullscreen
+  viewer through `reviewedInnerHtml`; the plain string backs only the SVG
+  download.
 - Dependency diff producer (Approval Question 9): the Vite-aliased
   `src/renderer/lib/vendor/pierre-diffs-shiki-shim.ts` (live `createPlainHast`
   text-node HAST serialized by un-aliased `hast-util-to-html@9.0.5`; its

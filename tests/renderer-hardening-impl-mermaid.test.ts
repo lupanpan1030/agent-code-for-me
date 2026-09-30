@@ -21,9 +21,12 @@ import {
   sanitizeMermaidSvg,
 } from "../src/renderer/lib/security/mermaid-svg-sanitizer"
 import {
+  applyMermaidSvgProfile,
+  reviewedInnerHtml,
   reviewMermaidAttributeCss,
   reviewMermaidInlineStyle,
   reviewMermaidPaintCss,
+  reviewMermaidSvgOutput,
 } from "../src/renderer/lib/security/renderer-html-policy"
 import { testWindow } from "./fixtures/renderer-hardening/mermaid-editor/happy-dom-env"
 import { findRendererMarkupViolations } from "./helpers/renderer-executable-markup-oracle"
@@ -349,6 +352,87 @@ describe("D3: adapter paint/attribute profile around DOMPurify and the DOMParser
     expect(out).not.toMatch(/position:\s*(?:fixed|absolute)/)
     expect(out).toContain("fill:#f9f")
     expect(mermaidViolations(out)).toEqual([])
+    expect(sealedMarkup(out)).toBe(out)
+  })
+})
+
+/** The owner-sealed sink value for adapter output, as the sinks read it. */
+function sealedMarkup(svg: string): string | null {
+  const sealed = reviewMermaidSvgOutput(svg)
+  return sealed ? reviewedInnerHtml(sealed).__html : null
+}
+
+describe("D1 Invariant 1: the Mermaid sinks accept only the owner-sealed review of the adapter output", () => {
+  test("adapter output passes the sink-parse review unchanged and is sealed verbatim", () => {
+    const out = sanitizeMermaidSvg(
+      '<svg id="mermaid-s" xmlns="http://www.w3.org/2000/svg"><style>#mermaid-s .ok>*{fill:#e0f2fe!important;}</style><defs><marker id="mermaid-s_end"></marker></defs><g class="ok" style="fill:#fff"><path marker-end="url(#mermaid-s_end)"></path><text>a&nbsp;b &amp; c</text></g></svg>',
+    )
+    expect(out).not.toBe("")
+    expect(sealedMarkup(out)).toBe(out)
+  })
+
+  test.each([
+    ["empty adapter output", ""],
+    [
+      "an event handler",
+      '<svg id="mermaid-r" xmlns="http://www.w3.org/2000/svg"><g onclick="x()"></g></svg>',
+    ],
+    [
+      "a script element",
+      '<svg id="mermaid-r" xmlns="http://www.w3.org/2000/svg"><script>x()</script></svg>',
+    ],
+    [
+      "a foreignObject",
+      '<svg id="mermaid-r" xmlns="http://www.w3.org/2000/svg"><foreignObject><div>x</div></foreignObject></svg>',
+    ],
+    [
+      "a navigable href",
+      '<svg id="mermaid-r" xmlns="http://www.w3.org/2000/svg"><a href="https://evil.example/"><text>x</text></a></svg>',
+    ],
+    [
+      "a paint style failing the CSS profile",
+      '<svg id="mermaid-r" xmlns="http://www.w3.org/2000/svg"><style>#mermaid-r{position:fixed}</style></svg>',
+    ],
+    [
+      "a second style element",
+      '<svg id="mermaid-r" xmlns="http://www.w3.org/2000/svg"><style>#mermaid-r .a{fill:red}</style><g><style>#mermaid-r .b{fill:red}</style></g></svg>',
+    ],
+    [
+      "an unreviewed style attribute",
+      '<svg id="mermaid-r" xmlns="http://www.w3.org/2000/svg"><g style="position:fixed;fill:red"></g></svg>',
+    ],
+    [
+      "a dangling fragment reference",
+      '<svg id="mermaid-r" xmlns="http://www.w3.org/2000/svg"><path fill="url(#missing)"></path></svg>',
+    ],
+    [
+      "two top-level diagrams",
+      '<svg id="mermaid-r" xmlns="http://www.w3.org/2000/svg"></svg><svg id="mermaid-q" xmlns="http://www.w3.org/2000/svg"></svg>',
+    ],
+    [
+      "markup outside the diagram",
+      '<img src="https://evil.example/beacon.png"><svg id="mermaid-r" xmlns="http://www.w3.org/2000/svg"></svg>',
+    ],
+    [
+      "text outside the diagram",
+      '<svg id="mermaid-r" xmlns="http://www.w3.org/2000/svg"></svg>trailing text',
+    ],
+  ])("rejects %s (fail closed, nothing sealed)", (_label, svg) => {
+    expect(reviewMermaidSvgOutput(svg)).toBeNull()
+  })
+
+  test("verify mode reports violations without changing the tree; strip mode removes them", () => {
+    const markup =
+      '<svg id="mermaid-v" xmlns="http://www.w3.org/2000/svg"><style>#mermaid-v{position:fixed}</style><g onclick="x()" style="position:fixed;fill:red"><script>x()</script></g></svg>'
+    const verifyRoot = hold(markup).querySelector("svg") as unknown as Element
+    const before = verifyRoot.outerHTML
+    expect(applyMermaidSvgProfile(verifyRoot, "verify").length).toBeGreaterThan(
+      0,
+    )
+    expect(verifyRoot.outerHTML).toBe(before)
+    const stripRoot = hold(markup).querySelector("svg") as unknown as Element
+    applyMermaidSvgProfile(stripRoot, "strip")
+    expect(applyMermaidSvgProfile(stripRoot, "verify")).toEqual([])
   })
 })
 
@@ -393,6 +477,7 @@ describe("D3 positive control: safe diagram styling survives across diagram type
       expect(reviewMermaidPaintCss(paint ?? "", id)).toEqual([])
       expect(paint).toContain(`#${id}`)
       expect(mermaidViolations(out)).toEqual([])
+      expect(sealedMarkup(out)).toBe(out)
     }, 20_000)
   }
 })

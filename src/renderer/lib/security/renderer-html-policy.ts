@@ -27,6 +27,9 @@
  *   `reviewMermaidAttributeCss()` are the reviewed CSS value profiles the
  *   Mermaid adapter enforces on returned SVG (design D3): one scoped paint
  *   `<style>`, reviewed `style` attributes, same-SVG `url(#id)` only.
+ *   `applyMermaidSvgProfile()` is the one profile walk (the adapter strips
+ *   with it) and `reviewMermaidSvgOutput()` is the Mermaid sink adapter: it
+ *   re-checks the adapter's string in the sink's HTML parse and seals it.
  * - `RENDERER_MARKUP_PROFILES` defines the rendered-DOM oracle profiles
  *   (markdown, highlighted code, diff, Mermaid, editor) that the shared test
  *   helper `tests/helpers/renderer-executable-markup-oracle.ts` implements.
@@ -38,7 +41,8 @@
  *
  * Mermaid SVG keeps its specialized adapter in `mermaid-svg-sanitizer.ts`
  * (DOMPurify load-bearing, DOMParser pass as defense in depth); this module
- * owns the CSS value profiles that adapter applies.
+ * owns the CSS value profiles and the profile walk that adapter applies, and
+ * seals its output for the two Mermaid sinks.
  */
 import { harden } from "rehype-harden"
 import rehypeRaw from "rehype-raw"
@@ -723,6 +727,181 @@ export const RENDERER_MARKUP_PROFILES = Object.freeze({
     }),
   }),
 })
+
+// ============================================================================
+// Mermaid SVG profile walk and sink adapter (design D1/D3)
+// ============================================================================
+
+const DOM_ELEMENT_NODE = 1
+const DOM_TEXT_NODE = 3
+
+function mermaidLocalName(element: Element): string {
+  return (element.localName || "").toLowerCase()
+}
+
+function mermaidSubtree(root: Element): Element[] {
+  return [root, ...Array.from(root.getElementsByTagName("*"))]
+}
+
+function isForbiddenMermaidElement(element: Element): boolean {
+  const name = mermaidLocalName(element)
+  const forbidden: readonly string[] =
+    RENDERER_MARKUP_PROFILES.forbiddenElements
+  return (
+    forbidden.includes(name) ||
+    RENDERER_MARKUP_PROFILES.forbiddenElementPrefixes.some((prefix) =>
+      name.startsWith(prefix),
+    )
+  )
+}
+
+function isAttributeSpacingOrControlCharacter(char: string): boolean {
+  const code = char.charCodeAt(0)
+  return code <= 0x1f || code === 0x7f || /\s/.test(char)
+}
+
+/**
+ * Event handlers, navigable references and `javascript:` values in Mermaid
+ * SVG. Used by the adapter's DOMPurify hook and by the profile walk.
+ */
+export function isUnsafeMermaidSvgAttribute(
+  attrName: string,
+  attrValue: string,
+): boolean {
+  const name = attrName.toLowerCase()
+  const normalizedValue = Array.from(attrValue)
+    .filter((char) => !isAttributeSpacingOrControlCharacter(char))
+    .join("")
+    .toLowerCase()
+  return (
+    name.startsWith("on") ||
+    name === "href" ||
+    name === "xlink:href" ||
+    normalizedValue.startsWith("javascript:")
+  )
+}
+
+export type MermaidSvgProfileMode = "strip" | "verify"
+
+/**
+ * The Mermaid SVG profile over one diagram root: no forbidden element; at
+ * most the single Mermaid-generated paint `<style>` (the root's first
+ * `<style>` child), text only and passing `reviewMermaidPaintCss`; `style`
+ * attributes exactly their `reviewMermaidInlineStyle` value; other
+ * CSS-bearing values only as `url(#id)` references to an element of this
+ * SVG; no unsafe attribute. In `strip` mode (the specialized adapter
+ * `mermaid-svg-sanitizer.ts`) every violation is removed or reduced, never
+ * adding markup; in `verify` mode (the sink adapter below) nothing changes.
+ * Both modes return every violation found.
+ */
+export function applyMermaidSvgProfile(
+  root: Element,
+  mode: MermaidSvgProfileMode,
+): string[] {
+  const strip = mode === "strip"
+  const violations: string[] = []
+  for (const element of mermaidSubtree(root)) {
+    if (element !== root && isForbiddenMermaidElement(element)) {
+      violations.push(`forbidden element <${mermaidLocalName(element)}>`)
+      if (strip) element.remove()
+    }
+  }
+
+  const paint =
+    Array.from(root.children).find(
+      (child) => mermaidLocalName(child) === "style",
+    ) ?? null
+  for (const style of Array.from(root.getElementsByTagName("style"))) {
+    if (style !== paint) {
+      violations.push("<style> outside the paint slot")
+      if (strip) style.remove()
+    }
+  }
+  if (paint) {
+    const reasons = Array.from(paint.childNodes).some(
+      (node) => node.nodeType !== DOM_TEXT_NODE,
+    )
+      ? ["paint <style> with non-text children"]
+      : reviewMermaidPaintCss(
+          paint.textContent ?? "",
+          root.getAttribute("id") ?? "",
+        )
+    if (reasons.length > 0) {
+      violations.push(...reasons)
+      if (strip) paint.remove()
+    }
+  }
+
+  const ids = new Set(
+    mermaidSubtree(root)
+      .map((element) => element.getAttribute("id"))
+      .filter((id): id is string => Boolean(id)),
+  )
+  for (const element of mermaidSubtree(root)) {
+    for (const { name, value } of Array.from(element.attributes)) {
+      if (isUnsafeMermaidSvgAttribute(name, value)) {
+        violations.push(`unsafe attribute ${name}`)
+        if (strip) element.removeAttribute(name)
+        continue
+      }
+      if (name.toLowerCase() === "style") {
+        const reviewed = reviewMermaidInlineStyle(value)
+        if (reviewed === value) continue
+        violations.push("unreviewed style declarations")
+        if (!strip) continue
+        if (reviewed === null) element.removeAttribute(name)
+        else element.setAttribute(name, reviewed)
+        continue
+      }
+      const verdict = reviewMermaidAttributeCss(value)
+      if (
+        verdict.kind === "unsafe" ||
+        (verdict.kind === "fragment" && !ids.has(verdict.id))
+      ) {
+        violations.push(`unreviewed CSS value in ${name}`)
+        if (strip) element.removeAttribute(name)
+      }
+    }
+  }
+  return violations
+}
+
+/**
+ * Sink adapter for the specialized Mermaid adapter's output (design D1,
+ * Invariant 1): `sanitizeMermaidSvg()` keeps returning a string, and both
+ * Mermaid raw sinks accept only the `ReviewedRendererHtml` sealed here. The
+ * string is parsed exactly as the sink will parse it (HTML parser, inert
+ * document), must be one top-level `<svg>` and must pass the Mermaid SVG
+ * profile unchanged (`verify` mode), so a parse that differs from the
+ * adapter's tree also fails closed. Returns null otherwise.
+ */
+export function reviewMermaidSvgOutput(
+  svg: string,
+): ReviewedRendererHtml | null {
+  if (svg.trim() === "" || typeof window === "undefined") return null
+  const parsed = new window.DOMParser().parseFromString(svg, "text/html")
+  if (parsed.head.childNodes.length > 0) return null
+  let root: Element | null = null
+  for (const node of Array.from(parsed.body.childNodes)) {
+    if (
+      root === null &&
+      node.nodeType === DOM_ELEMENT_NODE &&
+      mermaidLocalName(node as Element) === "svg"
+    ) {
+      root = node as Element
+      continue
+    }
+    if (
+      node.nodeType === DOM_TEXT_NODE &&
+      (node.textContent ?? "").trim() === ""
+    ) {
+      continue
+    }
+    return null
+  }
+  if (!root || applyMermaidSvgProfile(root, "verify").length > 0) return null
+  return sealReviewedMarkup(svg)
+}
 
 // ============================================================================
 // Markdown: explicit replace-not-merge Streamdown rehype chain (design D2)

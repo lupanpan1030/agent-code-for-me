@@ -252,7 +252,7 @@
     "src/renderer/components/dialogs/settings-tabs/tool-selector.tsx": 3,
     "src/renderer/components/dialogs/settings-tabs/use-list-keyboard-nav.ts": 2,
     "src/renderer/components/language-switcher.tsx": 3,
-    "src/renderer/components/mermaid-block.tsx": 9,
+    "src/renderer/components/mermaid-block.tsx": 5,
     "src/renderer/components/open-in-button.tsx": 2,
     "src/renderer/components/rename-dialog.tsx": 5,
     "src/renderer/components/ui/alert-dialog.tsx": 2,
