@@ -748,7 +748,7 @@ function assertRuntimeCoreImportBoundarySelfTest() {
   const cleanFindings = collectRuntimeCoreImportBoundaryFindings(
     cleanFixturePath,
     `
-      import "./adapter-selector"
+      import "./runtime-route-catalog"
       const packageName = "electron"
       const example = 'import type { AnyRouter } from "@trpc/server"'
       const anotherExample = "require('trpc-electron')"
