@@ -674,7 +674,8 @@ type RelayedAbort = {
  * The R4 relay of a create/default-retry wrapper. Its listeners are installed
  * once, before admission, and removed only by `dispose()` when the command
  * ends; every later change of disposition is a mode switch, so a signal the
- * runtime already caught is always dispatched to a live handler.
+ * runtime caught before the command reported is dispatched to a live
+ * handler.
  */
 type WrapperAbortRelay = {
   /** Resolves as soon as a relayed catchable signal or armed EOF arrives. */
@@ -736,8 +737,8 @@ export function daemonFirstRelaySignals(
 /**
  * R4 relay of a create/default-retry wrapper, armed before admission and
  * disposed only after a final event-loop turn — so a catchable signal the
- * runtime caught while the command runs is dispatched to a live handler —
- * and moved through these modes:
+ * runtime caught before the command reported is dispatched to a live
+ * handler — and moved through these modes:
  *
  * - pending (arming and admission in progress, no ID yet): a catchable
  *   signal of daemonFirstRelaySignals or an armed stdin EOF is held. An
