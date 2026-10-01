@@ -130,7 +130,7 @@ Proposed：同一输入改调用 submit；可选加 `"idempotencyKey":"req-001"`
 冲突/超时与新增 status 字段（同样省略既有 job 成员）：
 
 ```json
-{"apiVersion":"locus.local-job.v1","error":{"code":"idempotency_conflict","message":"Idempotency key is already bound to a different request."}}
+{"apiVersion":"locus.local-job.v1","error":{"code":"idempotency_conflict","message":"The idempotency key is already bound to a different request."}}
 {"apiVersion":"locus.local-job.v1","job":{"id":"job-A","status":"queued"},"wait":{"state":"timeout","timeoutMs":30000,"reason":"executor_unavailable"}}
 {"apiVersion":"locus.local-job.v1","job":{"id":"job-A","status":"queued"},"execution":{"state":"unavailable","reason":"no_executor","observedAt":"2026-10-01T00:00:00.000Z","hint":"locus daemon run"}}
 ```
@@ -152,7 +152,7 @@ wait ready 和旧请求 create 保留 Current 的**完整**正常终态 envelope
 Q1 验证收紧示例：同一 create body 若带 `"idempotencyKey":"req-001"`，今日忽略该字段并执行；Owner 已确认新版 SHALL 不执行，stdout 一行如下，exit 2。选 stdout 沿既有 create project/provider error envelopes（cli-dispatcher.ts:514-520），不改变其他 generic validation 的 stderr。继续 ignore 是已否决的备选，不实现；旧 build 的 keyed create 仍可能重复执行。
 
 ```json
-{"apiVersion":"locus.local-job.v1","error":{"code":"idempotency_key_not_supported","message":"idempotencyKey is supported only on runs submit and runs retry --request."}}
+{"apiVersion":"locus.local-job.v1","error":{"code":"idempotency_key_not_supported","message":"idempotencyKey is not accepted by runs create; use runs submit."}}
 ```
 
 Claim-time fail-closed 的五种投影均为 `status:"failed"`：`completed.payload.reasons` 分别含 `project_unregistered`、`cwd_identity_changed`、`execution_profile_invalid`、`queued_age_exceeded`、`artifact_admission_mismatch`；`job.errorCode` 同名，惟 profile owner 提供 binding code 时保留该 code。create/default retry/wait outcome exit 分别为 7、7、binding unavailable→4 / invalid-request→2 / local-only→6（无 binding code 时 3）、1、1。另有 gate 意外异常的内部兜底 `claim_gate_failed` / `internal_error` / 8（沿用既有 exit 8，合计六个已记录的 fail-closed 结果；T1 实施时由 design D5 与 headless delta 记录）。示例：项目撤销后的 job.errorCode=project_unregistered、reasons 含同名条目、wait exit 7；reasons 按 guide:1130 仍非 v1-stable，消费者可依赖 errorCode/exit，不需迁移到新的 exit 编号。

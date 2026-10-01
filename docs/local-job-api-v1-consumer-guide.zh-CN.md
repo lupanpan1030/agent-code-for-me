@@ -1229,6 +1229,12 @@ run 没有登记终态文件时（无 artifact 的 run、recovery、admission �
 - 最大排队时长为从 `createdAt` 起 24 h，不可配置。运行中的 daemon 也会在不认领的
   情况下结算已达该时长的 admitted API run，按最旧优先、每次循环数量有上限。没有
   daemon 时，超龄 run 在 executor 尝试认领它时结算。
+- 多项检查同时失败时，报告的 code 取决于由哪一步结算该 run。daemon 的超龄结算
+  只检查时长，而认领时先检查 project、cwd 与 profile，再检查时长。因此项目已撤销
+  登记的超龄 run 由 daemon 的超龄结算处理时为 `queued_age_exceeded` / `1`，由认领
+  先处理时为 `project_unregistered` / `7`。daemon 在每次循环中先执行超龄结算、再认领
+  queued run，所以在一次循环开始时已经超龄的 run 会从该 daemon 得到
+  `queued_age_exceeded`。
 - 这些结算不登记终态文件：`result.artifacts` 为 `[]`，`wait` 立即就绪。
 - 公开承诺是 `job.errorCode` 与 exit code。`completed.payload.reasons` 的取值
   仍是信息性的，与以前相同。没有新增 exit code，`0`–`8` 含义不变。

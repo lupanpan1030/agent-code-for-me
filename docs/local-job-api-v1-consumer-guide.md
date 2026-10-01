@@ -1348,6 +1348,14 @@ failing check settles the run `failed` without running it:
   running daemon also settles admitted API runs that reached that age without
   claiming them, oldest first and a bounded number per loop iteration. Without
   a daemon, an over-age run is settled when an executor tries to claim it.
+- When several checks fail, the reported code depends on which step settles
+  the run. The daemon's over-age settlement checks age only, while a claim
+  checks the project, cwd and profile before the age. An over-age run in an
+  unregistered project therefore settles `queued_age_exceeded` / `1` when the
+  daemon's over-age settlement reaches it, but `project_unregistered` / `7`
+  when a claim reaches it first. A daemon runs its over-age settlement before
+  it claims queued runs in each loop iteration, so a run that was already over
+  age when an iteration started gets `queued_age_exceeded` from that daemon.
 - These settlements register no terminal files: `result.artifacts` is `[]` and
   `wait` is ready at once.
 - The public commitments are `job.errorCode` and the exit code.

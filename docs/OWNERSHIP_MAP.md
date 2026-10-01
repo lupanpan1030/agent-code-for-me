@@ -600,8 +600,10 @@ or UI helper.
     `lifecycle:initial-artifacts:<id>:0`); `startAgentJob` enforces it.
   - Publication readiness and retention:
     `src/main/lib/agent-runtime/run-event-ledger-host.ts#readRunPublicationReadiness`
-    is the only terminal-publication read used by wait and status, and
-    `#recordVerifiedRunRetention` is the lifecycle-host retention start
+    is the only terminal-publication read; its callers are
+    `run-submission.ts#observeRun` (`runs wait` and the create/default-retry
+    wrapper wait) and `#recordVerifiedRunRetention`, which is the
+    lifecycle-host retention start
     (after verified publication, or at settlement for an empty terminal
     set).
   - Claim gate: `src/main/lib/headless/job-runner.ts#RunClaimGate` is the
