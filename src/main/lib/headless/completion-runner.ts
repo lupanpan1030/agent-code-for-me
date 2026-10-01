@@ -584,145 +584,150 @@ export async function runPersistedCompletionJob(
   } catch (error) {
     gate = claimGateFailure(error)
   }
-  const terminalArtifacts =
-    gate.kind === "proceed" ? gate.terminalArtifacts : undefined
-  // The executing host registers the Run's terminal projection once; every
-  // settlement without its own job-row fields uses it.
-  const ledger = await getOrCreateRunEventLedger(options.db, job, {
-    ...(terminalArtifacts ? { terminalArtifacts } : {}),
-    terminalJobFields: (outcome) =>
-      completionJobFields(outcome, {
+  // The gate-opened run-dir handle is closed on every exit from here on,
+  // including a ledger/runner setup failure before the guarded run.
+  try {
+    const terminalArtifacts =
+      gate.kind === "proceed" ? gate.terminalArtifacts : undefined
+    // The executing host registers the Run's terminal projection once; every
+    // settlement without its own job-row fields uses it.
+    const ledger = await getOrCreateRunEventLedger(options.db, job, {
+      ...(terminalArtifacts ? { terminalArtifacts } : {}),
+      terminalJobFields: (outcome) =>
+        completionJobFields(outcome, {
+          errorCode: null,
+          errorMessage: null,
+          result: {},
+        }),
+    })
+
+    const settleCompletion = async (input: {
+      status: "succeeded" | "failed" | "canceled"
+      content: unknown
+      errorCode: string | null
+      errorMessage: string | null
+      result: unknown
+      hostReasons?: string[]
+    }): Promise<RunPersistedCompletionJobResult> => {
+      await ledger.settle(
+        completionOutcomeEvidence({
+          jobId: job.id,
+          status: input.status,
+          content: input.content,
+          ...(input.hostReasons ? { hostReasons: input.hostReasons } : {}),
+        }),
+        {
+          jobFields: (outcome) => completionJobFields(outcome, input),
+          ...(terminalArtifacts ? { terminalArtifacts } : {}),
+        },
+      )
+      const outcome = await ledger.readOutcome()
+      const completed = getAgentJob(options.db, job.id) ?? job
+      return {
+        job: completed,
+        events: listAgentJobEvents(options.db, job.id),
+        exitCode: normalizeHeadlessExitCode({
+          status: completed.status as "succeeded" | "failed" | "canceled",
+          errorCode: completed.errorCode,
+        }),
+        outcome,
+      }
+    }
+
+    try {
+      if (gate.kind === "fail") {
+        return await settleCompletion({
+          status: "failed",
+          content: null,
+          errorCode: gate.errorCode,
+          errorMessage: gate.errorMessage,
+          result: null,
+          hostReasons: [gate.reason],
+        })
+      }
+      const provider = resolveExplicitHeadlessProviderProfile({
+        db: options.db,
+        runtime: request.runtime.id,
+        providerProfileId: request.provider.profileId,
+        modelOverride: request.provider.model,
+        dependencies: options.providerBindingDependencies,
+      })
+      ledger.addSecretHints(
+        provider.profile.token ? [provider.profile.token] : [],
+      )
+      await bindRunExecutionProvenance(
+        ledger,
+        captureLocusCompletionProvenance({
+          runtimeId: job.runtime,
+          locusBuild: options.locusBuild || job.createdByVersion || "unknown",
+          protocolName: `${COMPLETION_PROTOCOL_NAME}:${provider.profile.protocol}`,
+          schemaDocument: JSON.stringify({
+            protocol: provider.profile.protocol,
+            responseFormat: request.responseFormat.type,
+          }),
+        }),
+      )
+      const model =
+        provider.resolvedProvider.model ?? provider.profile.defaultModel
+      // The single upstream call has no runtime observations: the claimant
+      // keeps its worker heartbeat fresh while it waits, so a long call is
+      // never mistaken for a stale worker (closure-check residual (1)).
+      const heartbeat = setInterval(() => {
+        try {
+          heartbeatAgentJob(options.db, job.id, workerId)
+        } catch {
+          // A heartbeat on a no-longer-running job is not an upstream error.
+        }
+      }, COMPLETION_HEARTBEAT_INTERVAL_MS)
+      let result: Awaited<ReturnType<typeof performCompletion>>
+      try {
+        result = await performCompletion({
+          profile: provider.profile,
+          model,
+          messages: request.messages,
+          maxTokens: request.maxTokens,
+          temperature: request.temperature,
+          responseFormat: request.responseFormat,
+          fetchImpl: options.fetchImpl ?? fetch,
+          signal: options.signal,
+        })
+      } finally {
+        clearInterval(heartbeat)
+      }
+      await ledger.ingestRuntimeObservation({
+        observationKey: `completion-usage:${job.id}`,
+        type: "usage_update",
+        payload: {
+          usage: result.usage,
+          resolvedProvider: provider.resolvedProvider,
+        },
+      })
+      return await settleCompletion({
+        status: "succeeded",
+        content: result.content,
         errorCode: null,
         errorMessage: null,
-        result: {},
-      }),
-  })
-
-  const settleCompletion = async (input: {
-    status: "succeeded" | "failed" | "canceled"
-    content: unknown
-    errorCode: string | null
-    errorMessage: string | null
-    result: unknown
-    hostReasons?: string[]
-  }): Promise<RunPersistedCompletionJobResult> => {
-    await ledger.settle(
-      completionOutcomeEvidence({
-        jobId: job.id,
-        status: input.status,
-        content: input.content,
-        ...(input.hostReasons ? { hostReasons: input.hostReasons } : {}),
-      }),
-      {
-        jobFields: (outcome) => completionJobFields(outcome, input),
-        ...(terminalArtifacts ? { terminalArtifacts } : {}),
-      },
-    )
-    const outcome = await ledger.readOutcome()
-    const completed = getAgentJob(options.db, job.id) ?? job
-    return {
-      job: completed,
-      events: listAgentJobEvents(options.db, job.id),
-      exitCode: normalizeHeadlessExitCode({
-        status: completed.status as "succeeded" | "failed" | "canceled",
-        errorCode: completed.errorCode,
-      }),
-      outcome,
-    }
-  }
-
-  try {
-    if (gate.kind === "fail") {
-      return await settleCompletion({
-        status: "failed",
-        content: null,
-        errorCode: gate.errorCode,
-        errorMessage: gate.errorMessage,
-        result: null,
-        hostReasons: [gate.reason],
-      })
-    }
-    const provider = resolveExplicitHeadlessProviderProfile({
-      db: options.db,
-      runtime: request.runtime.id,
-      providerProfileId: request.provider.profileId,
-      modelOverride: request.provider.model,
-      dependencies: options.providerBindingDependencies,
-    })
-    ledger.addSecretHints(
-      provider.profile.token ? [provider.profile.token] : [],
-    )
-    await bindRunExecutionProvenance(
-      ledger,
-      captureLocusCompletionProvenance({
-        runtimeId: job.runtime,
-        locusBuild: options.locusBuild || job.createdByVersion || "unknown",
-        protocolName: `${COMPLETION_PROTOCOL_NAME}:${provider.profile.protocol}`,
-        schemaDocument: JSON.stringify({
-          protocol: provider.profile.protocol,
-          responseFormat: request.responseFormat.type,
+        result: completionResult({
+          content: result.content,
+          usage: result.usage,
+          resolvedProvider: provider.resolvedProvider,
         }),
-      }),
-    )
-    const model =
-      provider.resolvedProvider.model ?? provider.profile.defaultModel
-    // The single upstream call has no runtime observations: the claimant
-    // keeps its worker heartbeat fresh while it waits, so a long call is
-    // never mistaken for a stale worker (closure-check residual (1)).
-    const heartbeat = setInterval(() => {
-      try {
-        heartbeatAgentJob(options.db, job.id, workerId)
-      } catch {
-        // A heartbeat on a no-longer-running job is not an upstream error.
-      }
-    }, COMPLETION_HEARTBEAT_INTERVAL_MS)
-    let result: Awaited<ReturnType<typeof performCompletion>>
-    try {
-      result = await performCompletion({
-        profile: provider.profile,
-        model,
-        messages: request.messages,
-        maxTokens: request.maxTokens,
-        temperature: request.temperature,
-        responseFormat: request.responseFormat,
-        fetchImpl: options.fetchImpl ?? fetch,
-        signal: options.signal,
+      })
+    } catch (error) {
+      const errorCode = errorCodeForCompletion(error)
+      const status = errorCode === "job_canceled" ? "canceled" : "failed"
+      const message = error instanceof Error ? error.message : String(error)
+      return await settleCompletion({
+        status,
+        content: null,
+        errorCode,
+        errorMessage: message,
+        result: null,
       })
     } finally {
-      clearInterval(heartbeat)
+      releaseRunEventLedger(options.db, job.id)
     }
-    await ledger.ingestRuntimeObservation({
-      observationKey: `completion-usage:${job.id}`,
-      type: "usage_update",
-      payload: {
-        usage: result.usage,
-        resolvedProvider: provider.resolvedProvider,
-      },
-    })
-    return await settleCompletion({
-      status: "succeeded",
-      content: result.content,
-      errorCode: null,
-      errorMessage: null,
-      result: completionResult({
-        content: result.content,
-        usage: result.usage,
-        resolvedProvider: provider.resolvedProvider,
-      }),
-    })
-  } catch (error) {
-    const errorCode = errorCodeForCompletion(error)
-    const status = errorCode === "job_canceled" ? "canceled" : "failed"
-    const message = error instanceof Error ? error.message : String(error)
-    return await settleCompletion({
-      status,
-      content: null,
-      errorCode,
-      errorMessage: message,
-      result: null,
-    })
   } finally {
-    releaseRunEventLedger(options.db, job.id)
     if (gate.kind === "proceed") gate.close?.()
   }
 }
