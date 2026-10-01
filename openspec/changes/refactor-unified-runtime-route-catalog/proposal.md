@@ -1,45 +1,47 @@
 # Change: Refactor Unified Runtime Route Catalog
 
-Status: **DRAFT — awaiting Owner APPROVED**
+Status: **DRAFT v2 — awaiting Owner APPROVED**
 
 ## Why
 
 Phase 3 的 ledger 和 async-submit 已归档，但“哪个 Runtime/adapter/transport 处理哪类 Run”
 仍分散在 headless selector、desktop factory、专用 route delegate、readiness 分支和两处
-renderer Engine switch。增加 Runtime 仍需修改多个选择点，discovery 也不能枚举同一份
+renderer transport 构造分支（其他 Engine 分支为具名残余）。增加 Runtime 仍需修改多个选择点，discovery 也不能枚举同一份
 执行路线。本切片以单一声明式路由目录替换这些选择逻辑，保持已交付运行语义。
 
-基线 `6192b13f74603fbcc57c8ba858cb6b0f0d0ac776`，与当前远端 main 一致；已包含
-`add-local-job-api-async-submit` 归档。24 处 file:line、输入、输出、重复/分歧见
+产品基线 `6192b13f74603fbcc57c8ba858cb6b0f0d0ac776`（第一版的远端核对记录）；已包含
+`add-local-job-api-async-submit` 归档。第二版从指定干净 HEAD
+`f7a3f7bd454b95deb7ae6f6596efebe0dd3d9cf3` 改写，依据 fresh synthesis §3 1–14 与本次
+OD-1–OD-5 统筹裁定，保持纯文档 DRAFT。33 处 file:line、输入、输出、重复/分歧见
 [design §2](design.md#2-路由点清单事实底稿)。本任务只有文档，所有产品实现均待 Owner APPROVED。
 
 ## What Changes
 
 - 拟以 `src/main/lib/agent-runtime/runtime-route-catalog.ts` 为 runtime 路由唯一 owner：
   声明条目、校验、确定性查询、factory/transport/capability/readiness 引用和 safe projection。
-- 按 runtime/surface/kind/mode/profile/capabilities 解析；未知、歧义、所需能力/扩展不满足
+- 按 runtime/entry/kind/mode/profile/capabilities（executionSurface 仅输出）解析；未知、歧义、所需能力/扩展不满足
   都 fail closed，错误通过既有 surface envelope，不新增公共 error/exit。
-- 原子替换 12 处选择职责，删除旧 selector/registry/factory/renderer runtime 分支；
+- 原子替换 11 处选择职责，另 6 C / 16 B，删除旧 selector/registry/factory/两处 renderer transport runtime 分支；
   source cancellation、provider policy、native protocol 和 event-type switch 保留其 owner。
-- renderer 只读消费 main 的 transport descriptor；增加 stub Runtime 的测试只需目录条目与
-  adapter 包，不改 renderer dispatcher/core event state machine。
+- renderer 只读消费 main 盖在 binding read model 的 transportId。**OD-1 缩窄 L2**：目录条目
+  + adapter 包 + 自有 main chat router/transport 静态注册，不改 main 中央分派；现有 renderer
+  transport 构造和 event-state 语义不变，不承诺第三 Runtime 对所有 renderer switch 零改动。
 - 引用现有 capability、readiness、projection truth；目录不是安装 registry，也不是队列。
-- 仅允许 discovery 的可选 `runtimes[].routes` 追加；既有 v1/async-submit/jobs-stdio/desktop
+- OD-2 允许受约束 experimental discovery 的可选 `runtimes[].routes` 追加；既有 v1/async-submit/jobs-stdio/desktop
   chat IPC 不变。该可选 public scope 仍待本提案第 10 节批准。
-- 新增单目录架构守卫、独立作者测试先行的 S01–S32 conformance 规格。
+- 新增单目录架构守卫、独立作者测试先行的 S01–S52 conformance 规格。
 
 ## Impact and four delivery anchors
 
 | 必写项 | 决定（拟议，未批准） |
 | --- | --- |
 | Canonical owner | NEW `src/main/lib/agent-runtime/runtime-route-catalog.ts`；只拥有路线声明/查询/投影/工厂选择。 |
-| 旧路径删除点 | design P01/P06–P12/P14/P15/P18/P23：旧 selector、registry facade、desktop factory、runtime-specific selector wrappers、route 固定执行选择、renderer 两处分支、readiness runtime dispatch、pump kind→runner 表达式。 |
+| 旧路径删除点 | design P01/P06–P12/P14/P15/P18：旧 selector、registry facade、desktop factory、runtime-specific selector wrappers、route 固定执行选择、renderer 两处分支、readiness runtime dispatch；P05 assertion 与 P23 pump kind→runner 保留 B，八份耦合 tests/exports/residue allowlist 的原子更新见 D5。 |
 | Migration gate | **无迁移**：无 DB/schema/reset/安装迁移；source 原子切换，旧符号/调用清零，守卫与同 SHA 双技术门禁后接受；无双路 flag。 |
 | 验证消费者 | neutral Local Job v1 agent/completion/async、stdio、CLI/daemon/schedule、Desktop/Workbench、manifest/discovery/readiness readers；真实 consumer E2E unknown。 |
 
-六份 delta：agent-runtime-core、agent-runtime-capabilities、headless-agent-jobs、desktop-agent-jobs、
-local-job-api、architecture-ownership。runtime-capability-projection、provider-runtime-bindings、
-codex-runtime-parity 是已审阅的回归约束，无行为变更，不另造重复 requirement。
+七份 delta：agent-runtime-core、agent-runtime-capabilities、headless-agent-jobs、desktop-agent-jobs、
+local-job-api、architecture-ownership、codex-runtime-parity；含完整 living MODIFIED，删除 registry/selector 旧 owner 术语。runtime-capability-projection、provider-runtime-bindings 为回归约束。
 未来实施文件与 owner 映射见 design D2；OWNERSHIP_MAP 新行/旧 owner 修订只列于 tasks。
 风险：拟议实现 R2 跨层架构；factory/secret 边界须独立安全审查。本次起草 R0，零产品代码。
 
@@ -64,7 +66,7 @@ Status: DRAFT — awaiting Owner APPROVED
 OpenSpec change: refactor-unified-runtime-route-catalog
 Author / date: Codex / 2026-10-02
 Decision owner: Repository Owner
-Implementation blocked until: Owner 对准确 draft SHA APPROVED，填第 10 节并处理 Q1–Q3；独立作者 RED suite 冻结先于产品实现。
+Implementation blocked until: Owner 对准确 draft SHA APPROVED，填第 10 节并确认 Q1–Q5 默认（OD-1–OD-5）；独立作者 RED suite 冻结先于产品实现。
 ```
 
 无 APPROVED、IMPLEMENTATION_VERIFIED、REVIEW_APPROVED 或 ACCEPTED 声明。
@@ -74,7 +76,7 @@ Implementation blocked until: Owner 对准确 draft SHA APPROVED，填第 10 节
 ```text
 Current: 相同 runtime 的执行、metadata 和 renderer transport 由多个选择点分别决定。
 Proposed: 内部查同一目录；旧请求的运行与错误语义保持；discovery 可选显示可用路线摘要。
-Why: 新 Runtime 可通过目录与 adapter 包加入，消费端不用增加 Engine switch 或解读 vendor raw stream。
+Why: main 路由通过目录、adapter 与自有 router/transport 静态注册；renderer 只读投影，完整第三 Runtime/approval 中性化留 Phase 4/conformance。
 ```
 
 ### 3. 受影响公共边界
@@ -82,11 +84,11 @@ Why: 新 Runtime 可通过目录与 adapter 包加入，消费端不用增加 En
 | Contract / version | Surface | 当前 → proposed | Breaking? / 分类 | 证据 |
 | --- | --- | --- | --- | --- |
 | `locus.local-job.v1` | runs create/submit/wait/retry/status/events/result/cancel | 相同请求/字段/命令/等待/幂等语义，内部 adapter 查目录 | 拟不变；需完整 golden，不以 parse 成功作证明 | `src/shared/local-job-api.ts:16`; `openspec/specs/local-job-api/spec.md:528`, `:561` |
-| same | runtimes list --json / --no-probe | manifest/readiness/features 保持；可选追加 runtimes[].routes | optional additive，Q1 待批准；旧 schema 和忽略字段 reader 必须通过 | schema `:1001`, `:1318`; local-job-api.ts `:481` |
+| same | runtimes list --json / --no-probe | manifest/readiness/features 保持；可选追加 runtimes[].routes | C7 #2/#10 additive **Yellow，非 Red**，Q1 受约束默认；旧 schema 和忽略字段 reader 必须通过 | schema `:1001`, `:1318`; local-job-api.ts `:481` |
 | same | error/exit/diagnostic | 保留 parser、provider、selector、claim-time、wait 各自映射 | 不变；目录新内部 reason 不直接外泄成 public code | design D4 源码表 |
 | same | events/native metadata/artifact refs | 12 types、六字段、dense sequence、cursor、runtime.codex.v1、run-dir refs 原样 | 不变；目录不是 event/artifact producer | local-job-api.ts `:455`, `:755`; shared/local-job-api.ts `:26` |
 | `locus-jobs-stdio.v1` | initialize/job.run/job.cancel/shutdown | 原 JSON-RPC 信封和 session-scoped submit/pump，间接查目录 | 不变；不增加 completion/profile 方法能力 | jobs-stdio.ts `:247`, `:268`, `:293`, `:407` |
-| Desktop private IPC（C7 internal，另受 L4） | claude.chat/codex.chat、agentJobs、listManifests | chat wire 和 cancel closure 不变；内部只读 discovery 拟增 listRoutes | 无现有 envelope 改动；Q2 确认 additive discovery 范围 | codex.ts `:779`; claude.ts `:407`; agent-runtime.ts `:5` |
+| Desktop private IPC（C7 internal，另受 L4） | claude.chat/codex.chat、agentJobs、listManifests | chat wire 和 cancel closure 不变；chat/createSubChat 绑定读模型增加 transportId，无 listRoutes | chat request/stream/cancel envelope 无改动，绑定读模型内部追加；Q2 默认 binding read model；chat 请求不接收 descriptor | codex.ts `:779`; claude.ts `:407`; agent-runtime.ts `:5` |
 | independently versioned app↔Runtime | native SDK/app-server/exec | 无新增协议/version/binary/activation | 无变化 | C8 `:1071`, `:1112`, `:1160` |
 
 上表短源码路径由 design 路由点清单给出完整路径。C7 §9.2 的 **十条** 分类如下：
@@ -94,7 +96,7 @@ Why: 新 Runtime 可通过目录与 adapter 包加入，消费端不用增加 En
 | # | C7 类别 | 分类与具体差异 / Red 停止条件 |
 | --- | --- | --- |
 | 1 | 删除/重命名字段、command、event、status、error、capability | **Green — public 无变化**；仅 internal helper/module 原子删除。公开删改即 Red，Owner decision needed。 |
-| 2 | type/requiredness/nullable/enum/default/validation | **Green — optional discovery only**；routes 可缺省，不改既有 enum/validation。新 feature、runtime ID、profile enum、required 字段即 Red。 |
+| 2 | type/requiredness/nullable/enum/default/validation | **Yellow — #2 additive optional discovery**；routes experimental，可缺省；四个新描述串开放，routeId 非稳定非身份，不改既有 enum/default/validation。Owner 确认与 S22 后可关闭 Yellow；新 feature、runtime ID、profile enum、required 字段即 **Red，Owner decision needed**。 |
 | 3 | identity | **Green — 不变**；Run/jobId、retry lineage、native identities、workerId opaque 语义均不变；routeId 是描述性 key，不是 Run/Binding identity。 |
 | 4 | lifecycle | **Green — 不变**；submit ack、create wait、cancel/claim/admission 时点、terminal/replay 保持；目录不写状态。改变 ack/claim 次序即 Red。 |
 | 5 | ordering/cursor/idempotency/retry/terminal | **Green — 不变**；所有操作仍经 ledger/host、submission/pump；不修补 TICKET-128/129 的 terminal/publication 语义。 |
@@ -102,10 +104,10 @@ Why: 新 Runtime 可通过目录与 adapter 包加入，消费端不用增加 En
 | 7 | auth/secret/filesystem/network/workspace/trust | **Green — 不变**；只读 projection 排除 secret/factory/env/path，provider/env、scope/root 校验仍原 owner；descriptor 不授予执行权。新 credential/probe I/O/动态加载即 Red。 |
 | 8 | artifact/ref/path/digest/retention/access | **Green — 不变**；既有 Windows fail-closed、registered refs 和 wait readiness 保留；route 可用不代表 artifact 可用。改变 artifact 后端/访问即 Red。 |
 | 9 | transport/Host/discovery/start/platform | **Green — discovery optional 追加**；transport 字符串仅描述，chat/stdio/CLI 实际传输与 startup 不改，平台承诺不提升。新 Host/transport/后台启动或 UI wire 迁移即 Red。 |
-| 10 | 必须理解的新 event/enum/extension/unknown 处理 | **Green — 无新 mandatory item**；现有 optional runtime.codex.v1 原样；routes 可忽略，无新 feature。添加 closed feature enum/requiredExtensions 请求字段即 **Red，Owner decision needed**，不能沿用姊妹 change 的 direct 授权。 |
+| 10 | 必须理解的新 event/enum/extension/unknown 处理 | **Yellow — #10 additive unknown-field vocabulary**；现有 optional runtime.codex.v1 原样；routes 可忽略、开放值旧 reader 安全，消费者不得按 adapterSource/transport 分支；约束已写入 D3/S22，待批准/验证关闭 Yellow，非 Red。添加 closed feature enum/requiredExtensions 请求字段即 **Red，Owner decision needed**，不能沿用姊妹 change 的 direct 授权。 |
 
-本稿未提议 public breaking；Q1 的 optional 追加需要本次明确批准，Q2 涉及内部 discovery
-范围确认。实现若发现已有调用的 error/exit/default 不能保持，则登记 **Red** 后返回 Owner，
+本稿未提议 public breaking；Q1 的 optional 追加需要本次明确批准，Q2 默认内部绑定读模型
+字段，不新增 procedure。实现若发现已有调用的 error/exit/default 不能保持，则登记 **Red** 后返回 Owner，
 不能把上述 Green 分类当作结果已经成立，也不能自动沿用 archived Consumer Impact 决定。
 
 ### 4. Current 与 proposed 示例
@@ -137,9 +139,13 @@ Discovery current（节选）：
 Discovery proposed（节选，保留全部原字段，仅展示一个摘要项）：
 
 ```json
-{"apiVersion":"locus.local-job.v1","features":["runtime-readiness","provider-binding","completion","canonical-run-ledger","async-submit"],"runtimes":[{"runtimeId":"codex","readiness":{"state":"unknown"},"routes":[{"routeId":"codex.api.agent.batch","surface":"api","kind":"agent","executionProfile":"batch","adapterSource":"codex-batch","transport":"process-stdio","extensions":[{"namespace":"runtime.codex.v1","schemaVersion":1,"maturity":"experimental","schemaRef":"#/$defs/eventPayloadExtensions/properties/runtime.codex.v1"}]}]}]}
+{"apiVersion":"locus.local-job.v1","features":["runtime-readiness","provider-binding","completion","canonical-run-ledger","async-submit"],"runtimes":[{"runtimeId":"codex","readiness":{"state":"unknown"},"routes":[{"routeId":"codex.api.agent.batch","surface":"api","kind":"agent","executionProfile":"batch","adapterSource":"codex-batch","transport":"process-stdio","extensions":[]}]}]}
 ```
 
+routes block 为 **experimental**；routeId/surface/adapterSource/transport 是开放描述串，
+routeId 非身份且不保证跨版本稳定。消费者不得按 adapterSource/transport 分支；公开仅
+api summary，省略 protocol。batch/completion extensions=[]，仅真实 app-server producer
+支持的 policy-grant route 声明 runtime.codex.v1，S13/S22 交叉核对。
 没有 public route execution endpoint。`routes` 缺失表示旧构建没有该描述，**不表示现有
 async-submit/completion 等 feature 不支持**；consumer 继续按既有 features/request contract
 调用。扩展声明不保证每个事件携带该扩展；仍依赖既有执行 provenance 与 native IDs。
@@ -153,7 +159,7 @@ S16 的 claim race 和 S20 的 exact-owner cancel 测试约束。
 | --- | --- | --- | --- | --- |
 | Career Kit | `docs/ideas/locus-product-direction-harness-strategy.zh-CN.md:89` 的 pinned adapter/contract/historical smoke references | v1 create/status/result，structured proposal | 按推荐方案无强制修改，optional routes 可忽略；仍由自身 review/apply gate 写业务数据 | 本切片未运行，unknown；不把历史 smoke 当本 SHA receipt |
 | Amadeus | 同文 `:108` 的 Owner 提供事实及 pinned README relationship | 已接 Local Job API，具体部署调用面 unknown | 无强制修改；若选择读取路线摘要由 consumer 自行更新 adapter | unknown；是事实上的 integrating consumer，不据此重排 roadmap |
-| Locus Desktop/Workbench | design P11–P17/P22 | private chat/discovery/cancel/logs | 内部 dispatcher 改为 descriptor 消费；wire 与 UI lifecycle 保持 | Locus-owned S18–S20 |
+| Locus Desktop/Workbench | design P11–P17/P22 | private chat/discovery/cancel/logs | 两个 transport 构造点改为 binding.transportId 消费；wire 与 UI lifecycle 保持 | Locus-owned S18–S20 |
 | 其他 v1 / jobs-stdio client | 已发布 schema/CLI，实际消费者集合 unknown | runtimes list、run/observe/cancel | 忽略可选摘要即可；不解析 adapter-specific raw events | neutral fixtures 为 producer gate，真实 E2E unknown |
 
 不读取外部 consumer 私有库，不建立 consumer-specific core、依赖矩阵或额外批准 veto。
@@ -162,7 +168,8 @@ S16 的 claim race 和 S20 的 exact-owner cancel 测试约束。
 
 | Option | Locus 变化 | Consumer 变化 | 维护成本 / 风险 | 删除条件 |
 | --- | --- | --- | --- | --- |
-| **推荐：既有公共合同不变 + optional discovery** | 内部原子目录迁移，可选摘要/schema/docs | 无强制更新 | 一套 core；需要旧 schema/reader 与完整行为回归 | 旧 internal 选择器同 change 删除；无 facade |
+| **推荐：既有公共合同不变 + optional discovery** | 内部原子目录迁移，可选摘要/schema/docs | 无强制更新，开放描述值可忽略 | 一套 core；需要旧 schema/reader 与完整行为回归 | 旧 internal 选择器同 change 删除；无 facade |
+| Optional summary without adapterSource/transport | 同步缩小 schema/exact keys | 无强制更新 | 暴露更少实现描述，route 可发现性较弱 | Q1 备选，无第二 core |
 | Direct new standard | 若欲改 default/error/feature，需另列准确 public break | 可能同步升级 | 实现简单但违背当前 L4 未授权范围 | 必须重新批准 Consumer Impact；本稿不实施 |
 | New public version | 新 serializer/schema 仍调同一 core | 分期升级 | 本次无收益，增加双版本 conformance | 明确旧版 sunset，另案批准 |
 | Temporary old-contract facade | 只许薄 envelope 翻译 | 暂不改 | 当前没有需翻译的合同；易滞留 | Owner 另定日期/条件，禁止旧 core/worker |
@@ -191,7 +198,7 @@ Required release order: exact draft APPROVED → independent RED tests → imple
 Can old consumer call new Locus? Yes under the proposed unchanged contract; optional routes safely ignored, proven by fixtures before delivery.
 Can new consumer call old Locus? Existing operations yes; absent routes yields no route-summary UI, never silent execution downgrade.
 Unsupported-version error: preserve existing apiVersion validation and stderr/exit 2 (shared/local-job-api.ts parser; async-submit living scenarios).
-Downgrade behavior: no automatic runtime/provider/profile/required-extension fallback; retain only existing explicit preference fallback with its diagnostic.
+Downgrade behavior: no automatic runtime/provider/profile/required-extension fallback; delete the test-only preferredAdapterSource option; public fallbackReason stays null and interactive requests retain refusal.
 Rollback target: complete catalog implementation group to its recorded pre-implementation base, not one retired selector. This draft base is 6192b13f; implementation must record its actual base.
 External data/artifact impact: none; no schema/reset/delete. Stop active execution and restart on complete old build before code rollback.
 Security impact: static factory allowlist and redacted metadata only; same credential/root/policy owners. New trust/I/O boundary would be Red.
@@ -202,7 +209,7 @@ PR mutation 或外部通知。现有 TICKET-127–131 残余不能通过代码�
 
 ### 9. 验证证据
 
-以下为实施验收，全部未执行；[verification](verification.md) 登记 S01–S32，不以起草校验代替：
+以下为实施验收，全部未执行；[verification](verification.md) 登记 S01–S52，不以起草校验代替：
 
 - [ ] Optional discovery machine-readable schema/types、指南与示例同 change 更新；原 schema snapshot 仍接受追加字段。
 - [ ] Common-core、既有请求完整 stdout/stderr/exit、默认 adapter、policy/provider、async lifecycle conformance。
@@ -217,14 +224,14 @@ PR mutation 或外部通知。现有 TICKET-127–131 残余不能通过代码�
 ### 10. Owner 决定
 
 ```text
-Decision: PENDING — recommended unchanged public contracts + optional discovery; no breaking policy chosen.
-Approved exact scope: NONE; Owner must bind APPROVED to the reviewed draft SHA and answer design Q1/Q2.
+Decision: PENDING — 统筹预设（推荐默认，Owner 可改）：unchanged public contracts + constrained experimental optional discovery; C7 #2/#10 additive Yellow, no public Red proposed.
+Approved exact scope: NONE; Owner must bind APPROVED to the reviewed draft SHA and confirm design Q1–Q5 defaults (OD-1–OD-5).
 Compatibility obligation: proposed existing v1/async-submit/stdio/desktop chat semantics; only optional discovery summary.
 Sunset/deletion condition: no public sunset; internal old routing removed in the same implementation change.
 Consumer coordination required: no mandatory consumer upgrade under recommendation; any observed break returns to Owner.
 Owner: Repository Owner (not yet signed).
 Date: not approved.
-Acceptance delegation: design Q3 pending; neither draft assignment nor sibling acceptance authorizes ACCEPTED here.
+Acceptance delegation: OD-5 已授权；Owner 2026-10-02 自我迭代指示覆盖统筹代行，须同 SHA 双技术 verdict、无开放 Red、残余已裁定。此项不代签本提案 APPROVED/ACCEPTED；push 仍由统筹依 2026-09-04 规矩派 Codex，本派单不 push。
 ```
 
 模板的 DIRECT_NEW_STANDARD / NEW_VERSION / TEMPORARY_FACADE / DEFER / REJECT 为可能的

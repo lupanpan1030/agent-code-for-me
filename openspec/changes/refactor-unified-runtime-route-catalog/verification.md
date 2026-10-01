@@ -1,21 +1,22 @@
 # Verification: Unified Runtime Route Catalog
 
-Status: **DRAFT — awaiting Owner APPROVED**
+Status: **DRAFT v2 — awaiting Owner APPROVED**
 
 本文件是实施验证骨架与起草校验回执。没有产品实现、RED suite、技术 verdict 或验收；
-S01–S32 全部 **NOT RUN**。文档可解析不证明目录或 Runtime 行为已实现。
+S01–S52 全部 **NOT RUN**。文档可解析不证明目录或 Runtime 行为已实现。
 
 ## 1. Source 与治理绑定
 
 | 栏位 | 当前值 / 实施时回填 |
 | --- | --- |
 | Draft base | `6192b13f74603fbcc57c8ba858cb6b0f0d0ac776` |
-| Base 核对 | 2026-10-02 主检出 HEAD = origin/main = remote main；含已归档 ledger 与 async-submit |
+| Base 核对 | 第一版核对记录：6192b13f 含已归档 ledger 与 async-submit；第二版未重新联网核对 main |
+| Redraft input HEAD | `f7a3f7bd454b95deb7ae6f6596efebe0dd3d9cf3`，本次开工 branch/HEAD/clean tree 已核对 |
 | Worktree | `/home/chen/projects/locus-refactor-unified-runtime-route-catalog-draft` |
 | Branch | `codex/refactor-unified-runtime-route-catalog-draft` |
 | Draft receipt SHA | 含本回执的单一本地文档提交；由交付报告给出准确 SHA，不自引用提交内容 |
 | Owner APPROVED / Consumer Impact §10 | PENDING；本派单仅授权起草 |
-| Q1 / Q2 / Q3 | PENDING，见 design Open questions |
+| Q1–Q5 / OD-1–OD-5 | 统筹预设（推荐默认，Owner 可改）已登记；无异议。缩窄 L2 / 受约束 optional routes / binding read model / P23→B / 验收代行已授权，见 design Open questions |
 | Approved spec SHA | — |
 | Independent RED author / suite SHA / adjudication SHA | — / — / — |
 | Implementation source SHA / test fixture hashes | — / — |
@@ -33,74 +34,131 @@ S01–S32 全部 **NOT RUN**。文档可解析不证明目录或 Runtime 行为�
 
 工具固定使用主检出的
 `/home/chen/projects/agent-code-for-me/node_modules/.bin/openspec`，cwd 为本 worktree。
-最终提交后需再次核对这些结果，准确提交 SHA 记录在交付报告中。
+最终提交后再次核对这些结果。**Redraft SHA** 为包含本 §2 的唯一改写提交，
+以 `git log -1 --format=%H -- openspec/changes/refactor-unified-runtime-route-catalog/verification.md`
+解析（parent=`f7a3f7bd454b95deb7ae6f6596efebe0dd3d9cf3`，subject=`docs(openspec): rewrite unified runtime route catalog per review synthesis`）；
+准确 40 位 SHA 同时写入最终交付回报。为满足单一提交，不在 commit 内容内伪造其自身 hash
+或追加第二个“回填 SHA”提交。产品 source 仍与 6192b13f 相同，非实施 verdict。
 
 | Command / check | 起草结果 |
 | --- | --- |
 | `openspec validate refactor-unified-runtime-route-catalog --strict --no-interactive` | PASS，exit 0；`Change 'refactor-unified-runtime-route-catalog' is valid` |
 | `openspec validate --all --strict --no-interactive` | PASS，exit 0；`Totals: 54 passed, 0 failed (54 items)` |
 | `git diff --check`（含 `git diff --cached --check` 新文件检查） | PASS，exit 0，无输出；提交后再检查准确提交差异 |
-| 文档一致性 | PASS；P01–P24 = 12 R + 6 C + 6 B，L1–L10、Consumer Impact 十节齐全，S01–S32 各登记一次且 GIVEN/registry/tasks §7 的扁平 fixture 路径一致；全路径 file:line 存在且未越界，11 个变更文件均在授权范围 |
-| `bun run check:full` | ATTEMPTED / ENVIRONMENT-BLOCKED，exit 1；新 worktree 无本地 `node_modules/.bin/biome`，lint:changed 即停止，后续 architecture/type/test/build 未执行 |
+| 文档一致性 | P01–P33 = 11 R + 6 C + 16 B；L1–L10、Consumer Impact 十节齐全；52 条 Scenario 各有 flat fixture/GIVEN/入口/断言，注册表和 tasks §7 同步；12 文件均在授权范围 |
+| `bun run check:full` | ATTEMPTED / ENVIRONMENT-BLOCKED，exit 1；lint PASS（无受支持的改动文件），architecture PASS（ledger/async 各17/17）；retired-runtime guard 在 spawnSync /bin/sh EPERM 停止，后续 type/tests/spec/build 未执行 |
 
-`check:full` 的实际输出关键行：
+第二版 check:full 实际关键输出：
 
 ```text
-Biome executable not found at /home/chen/projects/locus-refactor-unified-runtime-route-catalog-draft/node_modules/.bin/biome. Run `bun install` before linting.
-error: script "lint:changed" exited with code 1
+No changed files supported by Biome.
+Run event ledger guard self-test: 17/17 fixture cases matched; repository ownership enforced.
+Local job API async submission guard self-test: 17/17 fixture cases matched; repository ownership enforced.
+Architecture guard passed.
+Error: spawnSync /bin/sh EPERM
+  at scripts/check-retired-runtime-residue.mjs:182:17
+error: script "retired-runtime:check" exited with code 1
+error: script "check" exited with code 1
 error: script "check:full" exited with code 1
 ```
 
-本次没有为绕过该限制安装依赖或创建 worktree 外的依赖链接，也没有产品文件变化。
-此记录不是 `check:full` PASS、不是复用 main/姊妹 change 的技术 verdict，实施时须在依赖齐备
-环境完成全门禁。源代码、GUI、真实 Runtime、packaged 与 consumer E2E 均未在起草阶段验证。
+第一版的 Biome 缺失记录是历史结果，不能当第二版失败原因；本次未安装/链接依赖，未改
+src/tests/docs 或 guard。strict/diff 独立运行，不把 check:full 的环境失败改报为 PASS。
+源代码、GUI、真实 Runtime、packaged 与 consumer E2E 未在起草阶段验证；产品阶段仍需全门禁。
+
+### Fresh synthesis §3 闭环登记（文档改写，不是实现完成）
+
+| 项 | 状态 | 落点 / 闭环证据 |
+| --- | --- | --- |
+| 1 | CLOSED | design L2/D3/D6/Q4；desktop SHALL NOT 与 S19 缩窄，移除虚构 common transport，hash 后置。 |
+| 2 | CLOSED | design P25–P33 补八处与两个 runner seam，P05/P23→B，33=11R/6C/16B，S29 新正例。 |
+| 3 | CLOSED | P23/D2/tasks3.7/headless delta 保留 kind→runner；S27 排除 rewires，S03/S11/S16/S17 spies。 |
+| 4 | CLOSED | D1 诊断候选/拒绝优先级；D4 分 surface/内部 reason mapping/真实代码出处；S05/S21/S24 payload exact keys。 |
+| 5 | CLOSED | entry/leaf 分离、typed union/non-null policy、validated catalog、overlap=catalog_invalid、leaf enforcement 常量；S01/S06/S08。 |
+| 6 | CLOSED | singleton/test-only constructor+host runtimeRouteCatalog seam，S01 生产 reference CI，S14/S21/S24 禁 fake runner，S30 env/fs/config guard。 |
+| 7 | CLOSED | OD-3 binding read model，S18 helper+guard 及 unavailable/error variants；Q2 拒绝分支同步审批门。 |
+| 8 | CLOSED | P11/P12/P27 typed fixed-runtime admission/secret 顺序；S07 wrong claude.chat/Codex binding，descriptor 不跨 IPC。 |
+| 9 | CLOSED | D5/tasks4.1/4.2/S26 冻结 flag/fixture/finding/rules/summary；fixed-runtime leaf import negative。 |
+| 10 | CLOSED | D5/tests 八文件逐项处置、re-export、residue allowlist、clean fixture、OWNERSHIP_MAP 原子更新；tasks4.6。 |
+| 11 | CLOSED | D3/proposal/S22 experimental/open/non-stable vocabulary、禁止 consumer branching、producer reality、api-only/exact keys；C7 #2/#10 additive Yellow 非 Red。 |
+| 12 | CLOSED | core 的 Agent Runtime Contract、Capability Honesty（合成别称 Runtime Capability Truth 的真实 owner）、Runtime-Neutral Agent Runner；architecture Runtime Execution Boundary Ownership 与 parity Dependency 均 whole-copy MODIFIED；core :433 保留理由已登记。 |
+| 13 | CLOSED | S01/S04/S10/S12/S13 具名函数/字段；D5 adapterSource replay IDs 冻结；D3/S11 missing route/probe→unknown。 |
+| 14 | CLOSED | 本 §2 strict 两项/diff 校验；唯一 docs(openspec) 改写提交，SHA 解析绑定与交付报告；不 push。 |
+
 
 ## 3. Scenario 登记表
+
+场景变更：原 32 条中改写 25 条（S01、S03–S16、S18–S19、S21–S22、S24、
+S26–S27、S29–S31），保持 7 条（S02/S17/S20/S23/S25/S28/S32）；新增 S33–S52
+共 20 条以完整承接 MODIFIED living requirements，合计 52。
 
 fixture 根固定为 `tests/fixtures/runtime-route-catalog/`，**扁平布局**；`#Sxx` 表示 JSON
 顶层键，和 spec GIVEN、tasks §7 一致。下列 fixture/test 路径均为待实施声明，当前未创建。
 测试入口前缀为 `tests/runtime-route-catalog-`，表内 `query.test.ts` 等表示该前缀下的拟文件名；
 独立作者实施时填写准确 test name、RED/GREEN SHA、命令、完整子断言与 receipt，不只填总数。
-S14/S15 保留 living scenario 原标题，通过 delta 注释登记 ID。
+S14/S15 与 S33–S52 保留 living scenario 原标题，通过 delta 注释登记 ID；共 52 条
+（32 原登记 + 20 whole-copy MODIFIED 场景），未把 preserved living 场景漏出测试登记。
 
 | ID | Spec delta | Fixture / key | 拟 bun test 入口 | Observable oracle / 当前结果 |
 | --- | --- | --- | --- | --- |
-| S01 | agent-runtime-core | catalog.json#S01 | query.test.ts | 重复/相交/缺引用/非法 namespace 表不能执行，零副作用；NOT RUN |
+| S01 | agent-runtime-core | catalog.json#S01 | query.test.ts | 生产表/真实 refs、重复/相交/缺引用/非法 namespace/enforcement/probe validation，初始化故障 host 映射；NOT RUN |
 | S02 | agent-runtime-core | catalog.json#S02 | query.test.ts | 查询/枚举排列不变、readonly、不调用 factory/probe/DB；NOT RUN |
 | S03 | agent-runtime-core | routes.json#S03 | routes.test.ts | desktop 两原生 factory 及 preflight 拒绝顺序；NOT RUN |
-| S04 | agent-runtime-core | routes.json#S04 | routes.test.ts | 各入口同 batch leaf、原 source/provenance；NOT RUN |
+| S04 | agent-runtime-core | routes.json#S04 | routes.test.ts | entry input / executionSurface output，各入口同 batch leaf、原 source/provenance；NOT RUN |
 | S05 | agent-runtime-core | policy.json#S05 | routes.test.ts | Codex grant 原 enforcement、Claude/invalid/hard guard 拒绝；NOT RUN |
-| S06 | agent-runtime-core | refusals.json#S06 | query.test.ts | missing/ambiguous/非法组合结构化 fail closed，零执行；NOT RUN |
-| S07 | agent-runtime-core | renderer.json#S07 | renderer.test.ts | 篡改 descriptor 不覆盖 DB binding/verified context；NOT RUN |
-| S08 | agent-runtime-core | policy.json#S08 | routes.test.ts | 原 preference fallback diagnostic 与 explicit interactive 拒绝；NOT RUN |
+| S06 | agent-runtime-core | refusals.json#S06 | query.test.ts | unknown/retired/missing/非法组合 route_not_found；overlap 仅 validation catalog_invalid；NOT RUN |
+| S07 | agent-runtime-core | renderer.json#S07 | renderer.test.ts | 真实 claude.chat 对 Codex binding，rejectStaleRunPayload 原 message/hint、零 secret/factory；NOT RUN |
+| S08 | agent-runtime-core | policy.json#S08 | routes.test.ts | 删除 preferredAdapterSource；fallbackReason:null 与 internal interactive 原拒绝；NOT RUN |
 | S09 | agent-runtime-core | completion.json#S09 | completion.test.ts | 显式 profile、一次 upstream、零 agent child；NOT RUN |
 | S10 | agent-runtime-capabilities | capabilities.json#S10 | capabilities.test.ts | 引用 canonical manifest，adapter evidence 不虚报；NOT RUN |
-| S11 | agent-runtime-capabilities | readiness.json#S11 | capabilities.test.ts | default/native/cache/no-probe 原行为，advisory 不阻断合法 admission；NOT RUN |
+| S11 | agent-runtime-capabilities | readiness.json#S11 | capabilities.test.ts | default/native/cache/no-probe/missing route-probe→unknown 原行为，advisory 不阻断合法 admission；NOT RUN |
 | S12 | agent-runtime-capabilities | capabilities.json#S12 | capabilities.test.ts | projection owner 决定可用性，无 adapter kind 不造 stub；NOT RUN |
 | S13 | agent-runtime-capabilities | extensions.json#S13 | capabilities.test.ts | 既有 schema、unknown optional 忽略、internal required 拒绝；NOT RUN |
 | S14 | headless-agent-jobs | headless.json#S14 | headless.test.ts | CLI/daemon/schedule/protocol/API batch 原 argv/stdin/cancel；NOT RUN |
 | S15 | headless-agent-jobs | headless.json#S15 | headless.test.ts | rich factory 可用也不暗选、unsupported 零 provider work；NOT RUN |
-| S16 | headless-agent-jobs | executor.json#S16 | executor.test.ts | 两连接 pump 竞争一次执行，原 source slots/exclusions/claim；NOT RUN |
+| S16 | headless-agent-jobs | executor.json#S16 | executor.test.ts | 两连接 kind dispatch 保留，test catalog 只转发/claim 后查，原 slots/exclusions；NOT RUN |
 | S17 | headless-agent-jobs | executor.json#S17 | executor.test.ts | replay/scoped wrapper/stdio 仍使用原 submission/pump；NOT RUN |
-| S18 | desktop-agent-jobs | renderer.json#S18 | renderer.test.ts | 两入口同 descriptor helper，未知 transport 不默认 Claude；NOT RUN |
-| S19 | desktop-agent-jobs | renderer.json#S19 | renderer.test.ts | fixture-only 第三 Runtime；dispatcher/event-state hash 与状态断言；NOT RUN |
+| S18 | desktop-agent-jobs | renderer.json#S18 | renderer.test.ts | binding read model/helper 单测+两站点 guard；unknown/unavailable/error 零订阅；NOT RUN |
+| S19 | desktop-agent-jobs | renderer.json#S19 | renderer.test.ts | existing-wire fixture；具名 helper/event-state guards、question/guard/finish atom transitions；NOT RUN |
 | S20 | desktop-agent-jobs | desktop-actions.json#S20 | renderer.test.ts | exact-owner cancel、source retry 拒绝不变；NOT RUN |
 | S21 | local-job-api | public-contract.json#S21 | public-contract.test.ts | create/submit/wait/retry/status/events/result/cancel 全 bytes/channels/exits；NOT RUN |
-| S22 | local-job-api | discovery.json#S22 | discovery.test.ts | 旧/新 schema 与 reader 双向读取、原 features、schemaRef 可解析；NOT RUN |
+| S22 | local-job-api | discovery.json#S22 | discovery.test.ts | 旧/新 schema/reader、unknown open values、exact keys、防 leaks、producer extensions；NOT RUN |
 | S23 | local-job-api | readiness.json#S23 | discovery.test.ts | submitter 与 daemon env 如实分离，no-probe 无 native work；NOT RUN |
 | S24 | local-job-api | errors.json#S24 | public-contract.test.ts | 原 surface error/exit/JSON-RPC/IPC，无新 public code；NOT RUN |
 | S25 | local-job-api | artifacts.json#S25 | public-contract.test.ts | Windows admission 与 incomplete publish 不被 route availability 绕过；NOT RUN |
 | S26 | architecture-ownership | architecture-fixtures.json#S26 | guards.test.ts | runtime 分支/map/alias/namespace/wrapper exact findings；NOT RUN |
-| S27 | architecture-ownership | architecture-fixtures.json#S27 | guards.test.ts | 旧文件/符号/caller 删除；逐项恢复 mutation 被检出；NOT RUN |
+| S27 | architecture-ownership | architecture-fixtures.json#S27 | guards.test.ts | retired modules/exports/两分支 exact mutation；合法 rewires 由 S03/S11/S16 spies；NOT RUN |
 | S28 | architecture-ownership | architecture-fixtures.json#S28 | guards.test.ts | import direction、readiness cycle 拒绝；旧 ratchet 不放宽；NOT RUN |
 | S29 | architecture-ownership | architecture-fixtures.json#S29 | guards.test.ts | 合法相邻 owner 正例通过，配对重复选择 mutation 失败；NOT RUN |
-| S30 | architecture-ownership | architecture-fixtures.json#S30 | guards.test.ts | catalog 不新增 queue/ledger/artifact/credential 状态 owner；NOT RUN |
+| S30 | architecture-ownership | architecture-fixtures.json#S30 | guards.test.ts | catalog 不新增状态 owner、无 env/fs/config，production test-port override 被拒绝；NOT RUN |
 | S31 | agent-runtime-core | routes.json#S31 | routes.test.ts | Codex desktop 失败不 exec fallback/重复 terminal；NOT RUN |
 | S32 | agent-runtime-core | provider.json#S32 | provider.test.ts | explicit/model/default/native precedence、cleanup、secret-safe projection；NOT RUN |
+| S33 | agent-runtime-core | catalog.json#S33 | query.test.ts | 真实声明初始化、唯一 runtime、重复拒绝；NOT RUN |
+| S34 | agent-runtime-core | capabilities.json#S34 | capabilities.test.ts | 基本 route 不要求可选 unsupported native 能力；NOT RUN |
+| S35 | agent-runtime-core | capabilities.json#S35 | capabilities.test.ts | 只读 metadata/manifest 明确能力状态与理由；NOT RUN |
+| S36 | agent-runtime-core | capabilities.json#S36 | capabilities.test.ts | 声明 supported 的实际 adapter capability port 执行；NOT RUN |
+| S37 | agent-runtime-core | capabilities.json#S37 | capabilities.test.ts | pre-execution 工具 allow/deny/rewrite 与诊断；NOT RUN |
+| S38 | agent-runtime-core | capabilities.json#S38 | capabilities.test.ts | 缺 pre-hook 不宣称 hard enforcement；NOT RUN |
+| S39 | agent-runtime-core | capabilities.json#S39 | capabilities.test.ts | Codex missing capability 从目录可测；NOT RUN |
+| S40 | agent-runtime-core | policy.json#S40 | routes.test.ts | grant enforcement evidence/原 scope-binding 或 refusal；NOT RUN |
+| S41 | agent-runtime-core | routes.json#S41 | routes.test.ts | Claude alias normalization/shared runner 原 events/result；NOT RUN |
+| S42 | agent-runtime-core | routes.json#S42 | routes.test.ts | Codex shared runner 原 events/result；NOT RUN |
+| S43 | agent-runtime-core | routes.json#S43 | routes.test.ts | headless/API default batch 与 source diagnostic；NOT RUN |
+| S44 | agent-runtime-core | policy.json#S44 | routes.test.ts | 无交互通道的 internal query 原拒绝；NOT RUN |
+| S45 | agent-runtime-core | policy.json#S45 | routes.test.ts | 保留 living fallback 标题；无隐式 downgrade，fallbackReason:null；NOT RUN |
+| S46 | agent-runtime-core | refusals.json#S46 | query.test.ts | public parser 原 unsupported runtime；internal route_not_found；NOT RUN |
+| S47 | agent-runtime-core | capabilities.json#S47 | capabilities.test.ts | required capability union gate/原诊断；NOT RUN |
+| S48 | architecture-ownership | architecture-fixtures.json#S48 | guards.test.ts | 目录唯一 owner、route-local dispatch exact finding；NOT RUN |
+| S49 | architecture-ownership | routes.json#S49 | routes.test.ts | 真实 ledger/redaction 经 host 投影，不造第二 event owner；NOT RUN |
+| S50 | architecture-ownership | architecture-fixtures.json#S50 | guards.test.ts | 无 selector dual path/production test flag；NOT RUN |
+| S51 | codex-runtime-parity | capabilities.json#S51 | capabilities.test.ts | Codex manifest shared truth 从目录到 caller gate；NOT RUN |
+| S52 | codex-runtime-parity | capabilities.json#S52 | capabilities.test.ts | supported claim 必须真实 enforcing port 测试；NOT RUN |
 
 S22 的支持文件为同根 `discovery-schema-before.json`（冻结基线真实 schema 与 hash）及
 `discovery-reader-before.ts`（注明规则来源的 neutral old reader）。它不是真实 consumer E2E。
 Q1 若改为 internal-only，批准前同步删除 public delta/S22 及关联任务；不能留下“可不测”的场景。
+Q2 若拒绝 binding read model 且没有可行替代，则 S18/S19 与 desktop delta 必须先重写、重校验
+和重新审批；不得用 renderer lookup/async lifecycle 隐式扩大边界。
 
 ## 4. 实施与手工 smoke 回执骨架
 
@@ -109,7 +167,7 @@ Q1 若改为 internal-only，批准前同步删除 public delta/S22 及关联任
 | 验证层 | 当前状态 | 待回填证据 |
 | --- | --- | --- |
 | 独立 RED baseline / frozen oracles | NOT RUN | 作者、批准 spec SHA、suite SHA、每场景 failure-before 或保真 baseline PASS |
-| S01–S32 targeted bun tests | NOT RUN | 所有子断言及 suite adjudications，不能以 omnibus PASS 代替 |
+| S01–S52 targeted bun tests | NOT RUN | 所有子断言及 suite adjudications，不能以 omnibus PASS 代替 |
 | 原 headless/desktop/provider/async/ledger 回归 | NOT RUN | 命令与精确 source SHA；原 claim/publication/fallback 语义 |
 | Architecture / retired-runtime guards | NOT RUN | 新守卫正反例 exact findings 与旧 ratchet 无放宽 |
 | `bun run check:full` implementation | NOT RUN | 依赖齐备后的准确 SHA、全部 stages、pass/skip/fail |
@@ -128,6 +186,6 @@ Q1 若改为 internal-only，批准前同步删除 public delta/S22 及关联任
 
 - 无 Owner APPROVED、独立 RED 或公共决策不完整，产品实施不开始；新增必要 Red 回 Owner。
 - IMPLEMENTATION_VERIFIED 与 fresh Claude REVIEW_APPROVED 同 SHA 且所需验证完整后，方可交 Owner 验收。
-- 统筹只有在 Owner 明确 mandate 覆盖本切片（Q3）、同 SHA 双 verdict、无开放 Red、全部残余逐项裁定时可代行 ACCEPTED；填写授权出处/统筹/日期/SHA，否则等待 Owner。
-- 本稿未授权 merge/archive/push；以后如有本地 merge 派单，merge SHA 再验证。远程 push/PR mutation/merge/release 必须另有准确 SHA 与 target 的明确 Owner 授权。
-- 不把起草校验、姊妹切片验收、历史 push policy 或某个平台的通过，充当本切片实施/平台/外部动作授权。
+- OD-5 已确认 Owner 2026-10-02 自我迭代指示覆盖本切片；统筹仅在同 SHA Codex IMPLEMENTATION_VERIFIED + Claude REVIEW_APPROVED、无开放 Red、全部残余逐项裁定后代行 ACCEPTED，填写授权出处/身份/日期/SHA；当前没有实施/验收 verdict。
+- 本次派单不 merge/archive/push；以后 merge 派单需在 merge SHA 再验证。push 依 Owner 2026-09-04 规矩由统筹派 Codex，固定准确 SHA/target/门禁，不扩展到其他远程动作。
+- 不把起草校验、姊妹切片验收或某个平台的通过，充当本切片实施/平台/外部动作授权。
