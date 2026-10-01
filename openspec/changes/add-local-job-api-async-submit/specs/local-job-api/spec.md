@@ -14,7 +14,7 @@ admission boundaries SHALL remain in their canonical owners. A claim following a
 through status, independently of the already emitted queued snapshot.
 
 #### Scenario: S01 Submit returns before execution is released
-- **GIVEN** `tests/fixtures/local-job-api-async/public-submission.json#S01`, with an artifact-free codex/plan request, registered temporary project/profile,
+- **GIVEN** `tests/fixtures/local-job-api-async/submit-wait/public-submission.json#S01`, with an artifact-free codex/plan request, registered temporary project/profile,
   fixed IDs/clock and a pump paused at claim with its runtime blocked on a second latch
 - **WHEN** `locus api runs submit --request - --json` receives the request
 - **THEN** it exits 0 with exactly one queued job envelope, no result, before runtime release
@@ -24,7 +24,7 @@ through status, independently of the already emitted queued snapshot.
   submit stdout still contains queued and the DB still has exactly one job
 
 #### Scenario: S02 Existing admission gates run before provider work
-- **GIVEN** `tests/fixtures/local-job-api-async/public-submission.json#S02`, with separate temporary-profile fixtures for unregistered cwd, an unsupported
+- **GIVEN** `tests/fixtures/local-job-api-async/submit-wait/public-submission.json#S02`, with separate temporary-profile fixtures for unregistered cwd, an unsupported
   required capability, an invalid execution profile/grant, an unusable explicit
   provider profile, a secret-bearing input and a completion containing agent-only fields
 - **WHEN** each is submitted through `runs submit --request - --json`
@@ -94,7 +94,7 @@ can truncate the 5 s acknowledgement wait; in the normal catchable relay case th
 request is persisted before the later kill, but hard-kill delivery is not guaranteed.
 
 #### Scenario: S03 Old create matches submit plus wait byte for byte
-- **GIVEN** `tests/fixtures/local-job-api-async/terminal-bytes.json#S03`, with independent profiles with injected job ID, createdAt/startedAt/completedAt,
+- **GIVEN** `tests/fixtures/local-job-api-async/submit-wait/terminal-bytes.json#S03`, with independent profiles with injected job ID, createdAt/startedAt/completedAt,
   workerId, workerPid, appVersion, cwd/artifact paths and sanitized deterministic runtime
   results for succeeded/failed/canceled/interrupted and specialized baseline 0–8 exits
 - **WHEN** old-shaped create with the own-Run scoped pump and submit+wait through the same canonical pump
@@ -108,7 +108,7 @@ request is persisted before the later kill, but hard-kill delivery is not guaran
   workerId/workerPid identify the actual wrapper or daemon that won claim, not injected values
 
 #### Scenario: S04 Default retry retains synchronous response and lineage
-- **GIVEN** `tests/fixtures/local-job-api-async/terminal-bytes.json#S04`, with identical retained failed API source jobs in equivalent fixed-clock profiles
+- **GIVEN** `tests/fixtures/local-job-api-async/submit-wait/terminal-bytes.json#S04`, with identical retained failed API source jobs in equivalent fixed-clock profiles
 - **WHEN** one calls `runs retry <source-id> --json` with no new flags and the other
   calls `runs retry <source-id> --async --json` followed by wait through an available executor
 - **THEN** the first response is emitted only after terminal publication and its full
@@ -117,7 +117,7 @@ request is persisted before the later kill, but hard-kill delivery is not guaran
   attempt=source.attempt+1, without changing the source job/events/artifact bytes
 
 #### Scenario: S25 Internal wait timeout does not become a create result
-- **GIVEN** `tests/fixtures/local-job-api-async/terminal-bytes.json#S25`, with a valid create request executed by the wrapper's own in-process pump, whose runtime
+- **GIVEN** `tests/fixtures/local-job-api-async/submit-wait/terminal-bytes.json#S25`, with a valid create request executed by the wrapper's own in-process pump, whose runtime
   latch remains held for the first 30000 ms, and a fake monotonic clock
 - **WHEN** the internal wait deadline expires and then the executor is released to
   commit and publish a successful terminal in the next bounded observation interval
@@ -128,7 +128,7 @@ request is persisted before the later kill, but hard-kill delivery is not guaran
   heartbeat/high-water change returns baseline stdout/exit under the own-pump exemption
 
 #### Scenario: S34 Create and retry run without an external executor
-- **GIVEN** `tests/fixtures/local-job-api-async/terminal-bytes.json#S34`, with isolated profiles with no daemon lock, valid agent/completion create requests,
+- **GIVEN** `tests/fixtures/local-job-api-async/submit-wait/terminal-bytes.json#S34`, with isolated profiles with no daemon lock, valid agent/completion create requests,
   terminal retry sources and controlled canonical pump ports
 - **WHEN** create/default retry runs and the deterministic worker is released
 - **THEN** exactly the own admitted ID is claimed by pumpQueuedRuns,
@@ -140,7 +140,7 @@ request is persisted before the later kill, but hard-kill delivery is not guaran
   at 30000 ms and returns that claimant's terminal envelope/outcome once completed
 
 #### Scenario: S35 Aborting a wrapper applies the chosen cancel policy
-- **GIVEN** `tests/fixtures/local-job-api-async/controls.json#S35`, with a running wrapper-owned child, a daemon-first Run, two unrelated Runs and
+- **GIVEN** `tests/fixtures/local-job-api-async/submit-wait/controls.json#S35`, with a running wrapper-owned child, a daemon-first Run, two unrelated Runs and
   file-based requests with an open
   stdin pipe at admission, with separate ignored/already-closed stdin variants and a
   relay-ack latch held beyond 500 ms for the forced-kill timing case
@@ -219,7 +219,7 @@ These are non-outcome errors, not Run statuses. Existing command errors not list
 here SHALL retain their baseline shapes/streams/exits.
 
 #### Scenario: S05 Wait observes both commit and publication
-- **GIVEN** `tests/fixtures/local-job-api-async/publication.json#S05`, with artifact-bearing job fixtures with terminal commit and last-rename latches,
+- **GIVEN** `tests/fixtures/local-job-api-async/submit-wait/publication.json#S05`, with artifact-bearing job fixtures with terminal commit and last-rename latches,
   prepared-tail golden refs and a variant whose publisher throws on the final rename
 - **WHEN** `runs wait <id> --timeout 1000 --json` observes each stage
 - **THEN** staging before commit and completed before full publication are non-ready;
@@ -231,7 +231,7 @@ here SHALL retain their baseline shapes/streams/exits.
   whereas a daemon-first wrapper returns identified error/8 after 30000 ms
 
 #### Scenario: S06 Wait has explicit bounded timeout semantics
-- **GIVEN** `tests/fixtures/local-job-api-async/wait-observation.json#S06`, with fake-clock cases queued+available, queued+no-lock, queued+legacy-lock,
+- **GIVEN** `tests/fixtures/local-job-api-async/submit-wait/wait-observation.json#S06`, with fake-clock cases queued+available, queued+no-lock, queued+legacy-lock,
   queued+missing-admission, running+dead-lock without recovery eligibility, and
   terminal+missing-file; expected reasons respectively run_pending, executor_unavailable,
   executor_unknown, admission_incomplete, run_pending and terminal_artifacts_pending
@@ -248,7 +248,7 @@ here SHALL retain their baseline shapes/streams/exits.
   plus newline on stderr, empty stdout and exit 8, without a JSON error envelope
 
 #### Scenario: S07 Multiple waiters and late facts cannot change the result
-- **GIVEN** `tests/fixtures/local-job-api-async/publication.json#S07`, with two wait processes on one API job, with commit occurring between their
+- **GIVEN** `tests/fixtures/local-job-api-async/submit-wait/publication.json#S07`, with two wait processes on one API job, with commit occurring between their
   initial read and wakeup registration, then published files and a late diagnostic
 - **WHEN** both waiters re-read committed facts and a third waiter opens after completion
 - **THEN** all return the same terminal envelope/outcome without missing the commit,
@@ -301,7 +301,7 @@ cleanup path. Raw key SHALL never be stored/emitted in requests/artifacts/events
 logs; hashes SHALL not be represented as encryption or consumer authentication.
 
 #### Scenario: S08 Normalized replay stays on supported key surfaces
-- **GIVEN** `tests/fixtures/local-job-api-async/idempotency.json#S08`, with a published keyed submit with consumer fixture-a, runtime claude alias and
+- **GIVEN** `tests/fixtures/local-job-api-async/idempotency/idempotency.json#S08`, with a published keyed submit with consumer fixture-a, runtime claude alias and
   omitted defaults, and matching terminal retry-source/child fixtures
 - **WHEN** submit repeats using claude-code, equivalent explicit defaults and reordered
   keys; retry repeats the same --request once asynchronously and once synchronously
@@ -312,7 +312,7 @@ logs; hashes SHALL not be represented as encryption or consumer authentication.
   remains a fresh submit intent and produces the baseline bytes
 
 #### Scenario: S09 Changed request conflicts without exposing the key
-- **GIVEN** `tests/fixtures/local-job-api-async/idempotency.json#S09`, with a committed key binding for a request and variants changing prompt, mode,
+- **GIVEN** `tests/fixtures/local-job-api-async/idempotency/idempotency.json#S09`, with a committed key binding for a request and variants changing prompt, mode,
   provider intent, artifact base, completion messages/schema or consumer external ID
 - **WHEN** each variant is submitted under the same consumer/key
 - **THEN** it exits 2 with error.code=idempotency_conflict in a v1 error envelope,
@@ -320,7 +320,7 @@ logs; hashes SHALL not be represented as encryption or consumer authentication.
 - **AND** neither stdout nor stderr contains the key or stored request content
 
 #### Scenario: S10 Same key cannot replay across consumers
-- **GIVEN** `tests/fixtures/local-job-api-async/idempotency.json#S10`, with two valid requests identical except consumer.id=fixture-a and fixture-b,
+- **GIVEN** `tests/fixtures/local-job-api-async/idempotency/idempotency.json#S10`, with two valid requests identical except consumer.id=fixture-a and fixture-b,
   both with key req-1, and an executor paused before claim
 - **WHEN** both invoke submit
 - **THEN** distinct job IDs and reservations exist, neither response is a replay and
@@ -328,7 +328,7 @@ logs; hashes SHALL not be represented as encryption or consumer authentication.
 - **AND** repeating fixture-b returns only fixture-b's ID, never fixture-a's
 
 #### Scenario: S11 Concurrent requests reserve one attempt
-- **GIVEN** `tests/fixtures/local-job-api-async/idempotency.json#S11`, with two SQLite connections/processes with the same consumer/key/artifact request
+- **GIVEN** `tests/fixtures/local-job-api-async/idempotency/idempotency.json#S11`, with two SQLite connections/processes with the same consumer/key/artifact request
   and a third different-input contender, with transaction and admission latches
 - **WHEN** submit interleaves before insert, after reservation, after creation commit
   and after initial admission, then the single eligible executor is released
@@ -339,7 +339,7 @@ logs; hashes SHALL not be represented as encryption or consumer authentication.
   exactly one after executor release
 
 #### Scenario: S12 Rollback and creation compensation release the key
-- **GIVEN** `tests/fixtures/local-job-api-async/idempotency.json#S12`, with faults before job/reservation SQL commit and on creation append after their
+- **GIVEN** `tests/fixtures/local-job-api-async/idempotency/idempotency.json#S12`, with faults before job/reservation SQL commit and on creation append after their
   commit, with queued/no-facts compensation permitted and artifact paths enabled
 - **WHEN** submit fails and an independent connection plus directory listing inspect state
 - **THEN** jobs/reservations/events contain zero failed-submission rows, no ack was
@@ -348,7 +348,7 @@ logs; hashes SHALL not be represented as encryption or consumer authentication.
   creation fact and one admitted directory, without idempotentReplay
 
 #### Scenario: S13 Crashed creation never becomes a successful replay
-- **GIVEN** `tests/fixtures/local-job-api-async/idempotency.json#S13`, with a killed creator after job/reservation commit before creation, a failed
+- **GIVEN** `tests/fixtures/local-job-api-async/idempotency/idempotency.json#S13`, with a killed creator after job/reservation commit before creation, a failed
   compensation case and a still-live creator paused at that same boundary
 - **WHEN** submit repeats each key, daemon list/start runs and cleanup advances past 30 days
 - **THEN** each returns stdout error.code=submission_pending,error.retryable=true/exit 8,
@@ -358,7 +358,7 @@ logs; hashes SHALL not be represented as encryption or consumer authentication.
   its original orphan remains, demonstrating the documented remedy without TTL repair
 
 #### Scenario: S14 Retention has a declared endpoint
-- **GIVEN** `tests/fixtures/local-job-api-async/idempotency.json#S14`, with a fake clock and worker-published, artifact-free, recovery, admitted-cancel,
+- **GIVEN** `tests/fixtures/local-job-api-async/idempotency/idempotency.json#S14`, with a fake clock and worker-published, artifact-free, recovery, admitted-cancel,
   missing-admission-cancel terminals, plus running/unpublished/orphan reservations;
   successful cases have expiresAt=verified-publish-or-empty-settle-time+2592000000
 - **WHEN** same-key replay reads just before expiry, same-consumer submit triggers cleanup
@@ -369,7 +369,7 @@ logs; hashes SHALL not be represented as encryption or consumer authentication.
   wait/status reads never repair TTL; no nonexistent job-deletion command is assumed
 
 #### Scenario: S15 Idempotency key stays out of durable and diagnostic output
-- **GIVEN** `tests/fixtures/local-job-api-async/idempotency.json#S15`, with a unique non-secret key, admitted artifact request and key variants empty,
+- **GIVEN** `tests/fixtures/local-job-api-async/idempotency/idempotency.json#S15`, with a unique non-secret key, admitted artifact request and key variants empty,
   whitespace, 161 characters, sk- followed by 24 ASCII letters, and Bearer abcdef
   (the last is both secret-like and charset-invalid)
 - **WHEN** submit/replay/conflict run and DB, request.json/events.jsonl/result.json,
@@ -404,7 +404,7 @@ PID, nonce, hostname, lock paths and secrets. Observation itself SHALL not launc
 daemon, acquire its lock or change status; the existing recovery prologue is unchanged.
 
 #### Scenario: S16 Submission without an executor is observable
-- **GIVEN** `tests/fixtures/local-job-api-async/wait-observation.json#S16`, with a valid artifact-free request and an isolated profile with no executor lock
+- **GIVEN** `tests/fixtures/local-job-api-async/submit-wait/wait-observation.json#S16`, with a valid artifact-free request and an isolated profile with no executor lock
 - **WHEN** submit succeeds, status reads its ID and wait reaches its deadline
 - **THEN** creation is committed, status reports execution.state=unavailable,
   reason=no_executor and hint="locus daemon run", and wait reports executor_unavailable/exit 9
@@ -412,7 +412,7 @@ daemon, acquire its lock or change status; the existing recovery prologue is unc
   the existing desktop/store overview reads that same queued API job and consumer
 
 #### Scenario: S17 Lock observations do not invent liveness
-- **GIVEN** `tests/fixtures/local-job-api-async/wait-observation.json#S17`, with same-profile fixtures for alive v2/apiCapable/fresh lock, absent lock, ESRCH,
+- **GIVEN** `tests/fixtures/local-job-api-async/submit-wait/wait-observation.json#S17`, with same-profile fixtures for alive v2/apiCapable/fresh lock, absent lock, ESRCH,
   alive stale, legacy, EPERM, missing lockPath, future heartbeat and nonce A→B between reads
 - **WHEN** runs status reads a queued admitted job through filesystem/liveness/clock seams
 - **THEN** states are available, unavailable, unavailable, unknown, unknown, unknown,
@@ -432,7 +432,7 @@ New retry request consumer.id SHALL match the stored source consumer; no new req
 body SHALL be required for existing retry/cancel calls.
 
 #### Scenario: S18 Queued cancel wins claim without a second terminal
-- **GIVEN** `tests/fixtures/local-job-api-async/controls.json#S18`, with artifact/no-artifact admitted jobs with paused claim, two cancel processes,
+- **GIVEN** `tests/fixtures/local-job-api-async/submit-wait/controls.json#S18`, with artifact/no-artifact admitted jobs with paused claim, two cancel processes,
   and a slow-cancel preparation racing a claimed runner that fails immediately
 - **WHEN** runs cancel races claim in both orders, cancel races cancel, and slow cancel
   resumes after the failing claimant commits; capture each preparation attempt's files
@@ -444,7 +444,7 @@ body SHALL be required for existing retry/cancel calls.
 - **AND** repeated cancel/Workbench reads create no extra completed or provider call
 
 #### Scenario: S19 Retry key replays the child and preserves the parent
-- **GIVEN** `tests/fixtures/local-job-api-async/controls.json#S19`, with a terminal failed API job with consumer fixture-a and a retry request
+- **GIVEN** `tests/fixtures/local-job-api-async/idempotency/controls.json#S19`, with a terminal failed API job with consumer fixture-a and a retry request
   `{apiVersion:"locus.local-job.v1",consumer:{id:"fixture-a"},idempotencyKey:"retry-1"}`
 - **WHEN** two `runs retry <id> --request - --async --json` calls and one synchronous
   retry with that request execute concurrently through an available executor
@@ -455,7 +455,7 @@ body SHALL be required for existing retry/cancel calls.
   same-key different source emits stdout idempotency_conflict/2; parent events/results/artifacts stay byte-identical
 
 #### Scenario: S20 API reads and control stay source-scoped
-- **GIVEN** `tests/fixtures/local-job-api-async/controls.json#S20`, with desktop/cli/protocol/missing IDs plus succeeded/queued API jobs and frozen
+- **GIVEN** `tests/fixtures/local-job-api-async/submit-wait/controls.json#S20`, with desktop/cli/protocol/missing IDs plus succeeded/queued API jobs and frozen
   baseline cancel/events/retry error stream/exit fixtures
 - **WHEN** wait/retry and existing cancel/events operations receive those IDs
 - **THEN** wait for missing or non-API IDs emits exactly `Unknown job: <id>` plus newline
@@ -473,7 +473,7 @@ share submission, claim and terminal ownership. Discovery is modified below unde
 its existing Requirement, not defined by a competing ADDED requirement.
 
 #### Scenario: S21 V1 event and artifact regression is unchanged
-- **GIVEN** `tests/fixtures/local-job-api-async/public-v1.json#S21`, with baseline public-v1/public-results fixtures containing all 12 event types,
+- **GIVEN** `tests/fixtures/local-job-api-async/submit-wait/public-v1.json#S21`, with baseline public-v1/public-results fixtures containing all 12 event types,
   committed initial artifact refs before job_started, a completed and late diagnostics
 - **WHEN** runs events with --after 2, --follow --jsonl, runs result and a terminal wait
   consume the fixtures produced by the queued executor
@@ -485,7 +485,7 @@ its existing Requirement, not defined by a competing ADDED requirement.
   fixtures, with no native raw event union, new event enum or vendor-specific consumer branch
 
 #### Scenario: S24 Completion uses the same queued admission
-- **GIVEN** `tests/fixtures/local-job-api-async/public-submission.json#S24`, with a reference-only usable completion provider, opaque json_schema response
+- **GIVEN** `tests/fixtures/local-job-api-async/submit-wait/public-submission.json#S24`, with a reference-only usable completion provider, opaque json_schema response
   format, deterministic upstream fetch fixture and no agent-only fields
 - **WHEN** submit acknowledges the completion, an existing daemon executes it and wait returns
 - **THEN** exactly one upstream call occurs after claim, its structured output and
@@ -509,7 +509,7 @@ Pinned-old-schema failure evidence SHALL be retained for the direct enum extensi
 
 #### Scenario: Consumer detects readiness support
 <!-- Scenario register: S52 (retained living scenario; title unchanged for MODIFIED archive) -->
-- **GIVEN** `tests/fixtures/local-job-api-async/discovery.json#S52`, with current discovery JSON with runtime-readiness and explicit ready/needs-auth runtime entries
+- **GIVEN** `tests/fixtures/local-job-api-async/idempotency/discovery.json#S52`, with current discovery JSON with runtime-readiness and explicit ready/needs-auth runtime entries
 - **WHEN** the discovery reader is exercised with `discovery.json` containing current
   readiness-enabled runtime fixtures
 - **THEN** features contains runtime-readiness and the per-runtime readiness objects
@@ -517,7 +517,7 @@ Pinned-old-schema failure evidence SHALL be retained for the direct enum extensi
 
 #### Scenario: Older build lacks the feature
 <!-- Scenario register: S53 (retained living scenario; title unchanged for MODIFIED archive) -->
-- **GIVEN** `tests/fixtures/local-job-api-async/discovery.json#S53`, with the executable neutral preflight helper, no-feature discovery JSON and a recording dispatch port
+- **GIVEN** `tests/fixtures/local-job-api-async/idempotency/discovery.json#S53`, with the executable neutral preflight helper, no-feature discovery JSON and a recording dispatch port
 - **WHEN** a consumer reads the discovery envelope from a build without a given feature identifier
 - **THEN** the consumer treats the corresponding contract addition as unsupported instead of assuming silently-dropped request fields were honored
 - **AND** as a documentation example, the preflight helper returns unsupported and its
@@ -525,7 +525,7 @@ Pinned-old-schema failure evidence SHALL be retained for the direct enum extensi
 
 #### Scenario: Consumer detects canonical ledger support
 <!-- Scenario register: S54 (retained living scenario; title unchanged for MODIFIED archive) -->
-- **GIVEN** `tests/fixtures/local-job-api-async/discovery.json#S54`, with canonical-run-ledger discovery JSON and runtime.codex.v1 extension metadata fixture
+- **GIVEN** `tests/fixtures/local-job-api-async/idempotency/discovery.json#S54`, with canonical-run-ledger discovery JSON and runtime.codex.v1 extension metadata fixture
 - **WHEN** the implemented discovery reader is exercised with the ledger-enabled
   discovery.json fixture
 - **THEN** features contains canonical-run-ledger alongside existing features, and the
@@ -533,7 +533,7 @@ Pinned-old-schema failure evidence SHALL be retained for the direct enum extensi
   experimental maturity matching its emitted metadata
 
 #### Scenario: S22 Discovery advertises the extension with explicit schema evolution
-- **GIVEN** `tests/fixtures/local-job-api-async/discovery.json#S22`, with a new executable with migrated isolated profile and async activation enabled,
+- **GIVEN** `tests/fixtures/local-job-api-async/submit-wait/discovery.json#S22`, with a new executable with migrated isolated profile and async activation enabled,
   pinned schema from product source 2c59664f, updated schema, and a separately pinned old discovery output
 - **WHEN** runtimes list --json is validated with each schema and baseline output is read
 - **THEN** new output retains v1/existing features, adds async-submit, passes new schema
@@ -547,7 +547,7 @@ Pinned-old-schema failure evidence SHALL be retained for the direct enum extensi
   policy rather than falsely certified as a technical old-build fence
 
 #### Scenario: S23 Unsupported version and absent feature fail closed
-- **GIVEN** `tests/fixtures/local-job-api-async/discovery.json#S23`, with the executable neutral consumer-preflight fixture with a dispatch spy,
+- **GIVEN** `tests/fixtures/local-job-api-async/submit-wait/discovery.json#S23`, with the executable neutral consumer-preflight fixture with a dispatch spy,
   no-feature discovery JSON and requests using locus.local-job.v1.1 or unknown version;
   the baseline 2c59664f CLI parser is vendored as cli-args-before.ts using
   `git show 2c59664f:src/main/lib/headless/cli-args.ts` and directly invoked by the test

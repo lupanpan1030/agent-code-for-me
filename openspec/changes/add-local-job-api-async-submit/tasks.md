@@ -13,7 +13,7 @@ Owner APPROVED 2026-10-02 @ 0f998436，R1–R4 / Q1–Q6 全部推荐默认已�
 - [ ] 1.3 按 Owner 已选 Q4 仅补 ack/claim/publication-read 安全并披露 TICKET-128 残余；禁止未评审地把全量创建/发布状态机塞入本 change。
 - [ ] 1.4 基线采集旧 v1 create/retry 的完整 stdout/exit golden（agent、completion、所有终态与 0–8 特殊错误），固定 ID/时钟/worker identity/路径；记录 stderr-only 错误与现有结构错误的真实区别；增加本地 non-outcome failure goldens：create 的 localJobApiCreateErrorCode 默认 2、message 匹配 /unsupported/i 时 3，retry 3，保留原 stderr text、stop execution tree、不伪造 terminal、admitted-not-started queued-cancel cleanup。另采集 POSIX SIGINT/SIGTERM/SIGKILL、Windows console Ctrl/parent child.kill()/TerminateProcess、open-pipe EOF/ignored stdin 的 abort receipts（child alive/dead、row status、recovery outcome），包含 Career Kit 500 ms kill grace 截短 ack wait。
 - [ ] 1.5 为独立测试作者提供下列纯合同 seams：submitRun、waitForRun、readRunPublicationReadiness、clock/ID/真实 worker identity、reopenAdmittedRunDir/receipt verification、cleanupExpiredAgentJobIdempotency、claim latch、SQL commit/compensation fault、creation→initial-admission crash、read/wakeup-registration latch（S07）、artifact write/rename fault、executor liveness/lock v2 ports、multi-process spawn/kill ports；仅接口和 fixtures，不先写生产实现。
-
+  统筹裁定（2026-10-02，红套件审计 F3）：红套件冻结两处测试接缝名，实施必须采用——`RunHeadlessCliCommandOptions.monotonicClock`（注入的单调时钟，wait 超时与 30 s 停滞窗口只读它）与 `beforeOwnPumpClaim`（wrapper 自身 pump 认领前的测试闩，用于 daemon-first / paused 变体）；夹具目录按域分子目录 `tests/fixtures/local-job-api-async/{submit-wait,idempotency,executor,guards-protocol}/`。
 - [ ] 1.6 Owner 决定 R1–R4、Q1–Q6 后，将 deltas 改为仅保留选定分支的无条件 SHALL；备选仅保留在 design.md Owner decisions（history，已否决，不实现）。删除 specs 内全部“统筹预设/pending/conditional”决策措辞（尤其 headless 的 R3、local-job-api 的 Q2/R4/Discovery R2），S34/S35 裁剪到选定分支；即使全部接受默认也必须执行。重跑 strict validate，取得一次简短 closure re-check，记录选定分支裁剪与 closure re-check 后的 resulting SHA，并保留 Owner 原批准绑定 0f998436；不得将待决或互斥分支带入 red tests、实施或 living archive。本次已完成文字 prune；独立 closure re-check/精确 SHA receipt 尚待完成，故本项保持未勾。
 
 ## 2. Submit 核心与 wrapper
@@ -46,7 +46,7 @@ Owner APPROVED 2026-10-02 @ 0f998436，R1–R4 / Q1–Q6 全部推荐默认已�
 - [ ] 4.6 run-artifacts admission observation key 改为 lifecycle:initial-artifacts:<id>；artifactManifestPath 非 NULL 时 required；只有 reservation winner 且 creation committed 后才 mkdir，loser/rollback 无空目录；初始 artifact admission 尚未完成时不重放 success；失败已有 creation fact 时保留 attempt/key，经 ledger 失败结算，不删除已有事实。
 - [ ] 4.7 host 经 job-store 一次设 expiresAt：worker/有文件 cancel 在 publish+verification 成功后；artifact-free/recovery/无 initial admission cancel/无 terminal refs 失败在 settle 时；均 +30 天。job-store.cleanupExpiredAgentJobIdempotency 由 submit 同 consumer lookup 前及 daemon tick 全域触发；只删到期 reservation。NULL expiry 保守保留，不虚构 job-delete 路径；compensation FK cascade 保留。
 - [ ] 4.8 key 原文从 inputJson/request.json/events/result/diagnostics/log 排除，只存 hash；使用现有 redaction/security owner，secret check 先于 charset/length、Bearer abcdef 同时失败时 secret_in_request 优先，新增错误沿现有 apiVersion+error 形状且不回显敏感输入。
-- [ ] 4.9 迁移/回滚 fixture（tests/fixtures/local-job-api-async/discovery.json#S22）：旧记录不回填 key，停旧 writer 后启用新 feature；SYN-26：停旧 daemon/CLI，以独立 userData path 激活新 schema，旧 binary 固定旧 profile；负例证明旧 build 不理解新 marker，不能声称其自动 fence；正例验证路径/进程隔离。rollback 停写/drain 用隔离 profile，不混写/清空 consumer 数据；共享路径强制 fence 需单独证明并经 Owner 决策。
+- [ ] 4.9 迁移/回滚 fixture（tests/fixtures/local-job-api-async/submit-wait/discovery.json#S22）：旧记录不回填 key，停旧 writer 后启用新 feature；SYN-26：停旧 daemon/CLI，以独立 userData path 激活新 schema，旧 binary 固定旧 profile；负例证明旧 build 不理解新 marker，不能声称其自动 fence；正例验证路径/进程隔离。rollback 停写/drain 用隔离 profile，不混写/清空 consumer 数据；共享路径强制 fence 需单独证明并经 Owner 决策。
 
 ## 5. 执行者可观测
 

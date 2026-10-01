@@ -65,7 +65,7 @@ CLI runtimes list SHALL continue probing the CLI environment and SHALL not claim
 
 #### Scenario: Daemon starts without a renderer window
 <!-- Scenario register: S41 (retained living scenario; title unchanged for MODIFIED archive) -->
-- **GIVEN** `tests/fixtures/local-job-api-async/queue.json#S41`, with an isolated daemon profile and recording packaged-bootstrap ports for renderer/menu/updater/auth/MCP startup
+- **GIVEN** `tests/fixtures/local-job-api-async/executor/queue.json#S41`, with an isolated daemon profile and recording packaged-bootstrap ports for renderer/menu/updater/auth/MCP startup
 - **WHEN** the user runs `locus daemon run`
 - **THEN** the packaged CLI launches the Locus Electron main process in daemon mode
 - **AND** the daemon starts before GUI single-instance handling, menu construction, BrowserWindow creation, updater startup, auth callback server startup, and GUI-only MCP warmup
@@ -73,7 +73,7 @@ CLI runtimes list SHALL continue probing the CLI environment and SHALL not claim
 
 #### Scenario: Daemon claims queued daemon jobs
 <!-- Scenario register: S42 (retained living scenario; title unchanged for MODIFIED archive) -->
-- **GIVEN** `tests/fixtures/local-job-api-async/queue.json#S42`, with queued daemon/schedule/API rows, excluded desktop/CLI/protocol rows, a concurrency-1 daemon and controlled runtime
+- **GIVEN** `tests/fixtures/local-job-api-async/executor/queue.json#S42`, with queued daemon/schedule/API rows, excluded desktop/CLI/protocol rows, a concurrency-1 daemon and controlled runtime
 - **WHEN** the daemon is running
 - **AND** queued `source=daemon` jobs exist
 - **THEN** the daemon starts those jobs through the shared runtime core according to configured local concurrency limits
@@ -84,7 +84,7 @@ CLI runtimes list SHALL continue probing the CLI environment and SHALL not claim
 
 #### Scenario: Daemon follows cancellation requests
 <!-- Scenario register: S43 (retained living scenario; title unchanged for MODIFIED archive) -->
-- **GIVEN** `tests/fixtures/local-job-api-async/queue.json#S43`, with a running daemon job with a blocked worker and observable cancel request/confirmation latches
+- **GIVEN** `tests/fixtures/local-job-api-async/executor/queue.json#S43`, with a running daemon job with a blocked worker and observable cancel request/confirmation latches
 - **WHEN** `locus jobs cancel <job-id>` is used for a running daemon job
 - **THEN** the system records a persisted cancel request
 - **AND** the daemon worker observes the request through the job observer
@@ -92,21 +92,21 @@ CLI runtimes list SHALL continue probing the CLI environment and SHALL not claim
 
 #### Scenario: User follows daemon logs
 <!-- Scenario register: S44 (retained living scenario; title unchanged for MODIFIED archive) -->
-- **GIVEN** `tests/fixtures/local-job-api-async/queue.json#S44`, with a daemon job with sequence-ordered events, a pending terminal latch and stdout/stderr capture
+- **GIVEN** `tests/fixtures/local-job-api-async/executor/queue.json#S44`, with a daemon job with sequence-ordered events, a pending terminal latch and stdout/stderr capture
 - **WHEN** a user follows a daemon job with `locus run --daemon --follow` or `locus jobs logs <job-id> --follow`
 - **THEN** the CLI streams persisted events in sequence
 - **AND** exits after the daemon job reaches a terminal status
 
 #### Scenario: Daemon restarts after crash
 <!-- Scenario register: S45 (retained living scenario; title unchanged for MODIFIED archive) -->
-- **GIVEN** `tests/fixtures/local-job-api-async/queue.json#S45`, with stale running rows with confirmed-stopped workers and a stopped-vs-live liveness fixture
+- **GIVEN** `tests/fixtures/local-job-api-async/executor/queue.json#S45`, with stale running rows with confirmed-stopped workers and a stopped-vs-live liveness fixture
 - **WHEN** the daemon starts and finds jobs marked running without an active worker
 - **THEN** it marks those jobs as interrupted
 - **AND** exposes retry or resume only when the runtime adapter supports it
 
 #### Scenario: Daemon coordination stays local
 <!-- Scenario register: S46 (retained living scenario; title unchanged for MODIFIED archive) -->
-- **GIVEN** `tests/fixtures/local-job-api-async/queue.json#S46`, with an isolated daemon profile, network-listen spy and requests carrying forbidden token/API-key/env fields
+- **GIVEN** `tests/fixtures/local-job-api-async/executor/queue.json#S46`, with an isolated daemon profile, network-listen spy and requests carrying forbidden token/API-key/env fields
 - **WHEN** the local daemon is running
 - **THEN** it uses only local per-user coordination primitives and the app SQLite database for queue state
 - **AND** does not expose an unauthenticated TCP HTTP or WebSocket control surface by default
@@ -115,7 +115,7 @@ CLI runtimes list SHALL continue probing the CLI environment and SHALL not claim
   network-listen spy stays zero, while only the configured local profile is changed
 
 #### Scenario: S28 Daemon executes API work once and preserves source exclusions
-- **GIVEN** `tests/fixtures/local-job-api-async/queue.json#S28`, with admitted daemon/schedule/API-agent/API-completion/desktop/CLI/protocol rows,
+- **GIVEN** `tests/fixtures/local-job-api-async/executor/queue.json#S28`, with admitted daemon/schedule/API-agent/API-completion/desktop/CLI/protocol rows,
   two direct pump instances on independent connections (each concurrency 1), and runner latches
 - **WHEN** those pump instances race claim; separately two daemon instances attempt
   real lock acquisition for the same profile
@@ -127,7 +127,7 @@ CLI runtimes list SHALL continue probing the CLI environment and SHALL not claim
   unlink its successor (pump concurrency tests do not bypass the daemon lock assertion)
 
 #### Scenario: S37 Submit in one process and publish in another
-- **GIVEN** `tests/fixtures/local-job-api-async/publication.json#S37`, with a registered project with artifact base, process A using an isolated DB and
+- **GIVEN** `tests/fixtures/local-job-api-async/executor/publication.json#S37`, with a registered project with artifact base, process A using an isolated DB and
   process B with no shared memory/receipts, plus digest/symlink/hardlink mismatch variants
   and equivalent create/default retry variants paused after their own admission for B to claim
 - **WHEN** A submits and exits, B's daemon claims/reopens/executes/publishes, then process C
@@ -142,7 +142,7 @@ CLI runtimes list SHALL continue probing the CLI environment and SHALL not claim
 - **AND** processes share only persistent DB/files; stdout contains no dev/ino/raw env
 
 #### Scenario: S39 Claim revalidates project identity profile and age
-- **GIVEN** `tests/fixtures/local-job-api-async/admission.json#S39`, with admitted queued API fixtures, mutated after ack by unregistering the project,
+- **GIVEN** `tests/fixtures/local-job-api-async/executor/admission.json#S39`, with admitted queued API fixtures, mutated after ack by unregistering the project,
   replacing cwd directory identity, invalidating the execution profile/grant, or advancing
   the fake clock to exactly createdAt+86400000; include an unchanged younger control
   and profile-owner errors with unavailable/invalid-request/local-only binding codes
@@ -160,7 +160,7 @@ CLI runtimes list SHALL continue probing the CLI environment and SHALL not claim
   moves only the age threshold, never bypasses the identity/profile gates
 
 #### Scenario: S40 Runtime environment belongs to the actual claimant
-- **GIVEN** `tests/fixtures/local-job-api-async/environment.json#S40`, with per-platform adapter-allowlisted native-home/PATH sentinels A and B for submitter
+- **GIVEN** `tests/fixtures/local-job-api-async/executor/environment.json#S40`, with per-platform adapter-allowlisted native-home/PATH sentinels A and B for submitter
   and daemon, proxy sentinels only for adapters that forward them, injected
   runtime child env capture, fake native credential readiness and secret env sentinels
 - **WHEN** A submits and B claims, then a separate no-daemon Q2(a) create runs locally;

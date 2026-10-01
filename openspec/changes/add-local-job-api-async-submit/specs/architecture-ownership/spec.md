@@ -17,7 +17,7 @@ remain unchanged. The guard SHALL validate structure; runtime semantics SHALL be
 verified by behavior fixtures rather than inferred from symbol counts.
 
 #### Scenario: S32 Guard rejects an inline API execution fallback
-- **GIVEN** `tests/fixtures/local-job-api-async/architecture-fixtures.json#S32`, with clean source fixtures and variants restoring runPreparedLocalJobApiJob,
+- **GIVEN** `tests/fixtures/local-job-api-async/guards-protocol/architecture-fixtures.json#S32`, with clean source fixtures and variants restoring runPreparedLocalJobApiJob,
   inserting runPersistedAgentJob or runPersistedCompletionJob into API create/retry,
   or adding an independently dispatching jobs-stdio loop; the clean fixture includes
   API wrapper and stdio calls to the same pumpQueuedRuns with own-ID scope
@@ -27,7 +27,7 @@ verified by behavior fixtures rather than inferred from symbol counts.
 - **AND** the guard self-test fails if a required finding is missing or unexpected
 
 #### Scenario: S33 Guard rejects duplicate creation and ledger writers
-- **GIVEN** `tests/fixtures/local-job-api-async/architecture-fixtures.json#S33`, with fixtures duplicating submitRun/waitForRun outside their owner, inserting
+- **GIVEN** `tests/fixtures/local-job-api-async/guards-protocol/architecture-fixtures.json#S33`, with fixtures duplicating submitRun/waitForRun outside their owner, inserting
   agent_jobs directly in an API/stdio/schedule adapter, and importing
   appendExactRunEventBatch outside run-event-ledger-host.ts
 - **WHEN** the architecture guard and its negative-fixture suite run
@@ -44,7 +44,7 @@ transaction, then record creation through the ledger host. This SHALL be an atom
 internal refactor, not a second scheduling or API idempotency path.
 
 #### Scenario: S31 Schedule creation retains one fire without bypassing creation facts
-- **GIVEN** `tests/fixtures/local-job-api-async/schedule.json#S31`, with a due schedule, two SQLite connections racing the same scheduledFor time,
+- **GIVEN** `tests/fixtures/local-job-api-async/guards-protocol/schedule.json#S31`, with a due schedule, two SQLite connections racing the same scheduledFor time,
   and a variant failing the post-transaction creation append
 - **WHEN** evaluateDueAgentSchedules fires and listQueuedAgentJobsForSource reads schedule work
 - **THEN** the successful fixture has one job/audit fire and advances nextRunAt once,

@@ -51,7 +51,7 @@ changes SHALL invalidate it. Consumer deletion after publish SHALL be disclosed 
 indistinguishable from never published; a durable publish marker is TICKET-128 scope.
 
 #### Scenario: S26 Queue listing and claim require the same committed facts
-- **GIVEN** `tests/fixtures/local-job-api-async/admission.json#S26`, with temporary SQLite rows for a valid creation fact, a job_created with a wrong
+- **GIVEN** `tests/fixtures/local-job-api-async/executor/admission.json#S26`, with temporary SQLite rows for a valid creation fact, a job_created with a wrong
   fact key, an orphan with no events, a legacy v0 job, and an API run-dir job lacking
   initial artifact admission, plus an artifact_created with a wrong admission key
 - **WHEN** listQueuedAgentJobsForSource and startAgentJob run against every row
@@ -61,7 +61,7 @@ indistinguishable from never published; a durable publish marker is TICKET-128 s
   and first factKey suffix :0 through the host permits that API fixture, while listing/claim never allocate a replacement creation fact or sequence
 
 #### Scenario: S27 Publication faults cannot be mistaken for completion
-- **GIVEN** `tests/fixtures/local-job-api-async/publication.json#S27`, with frozen terminal artifact fixtures, fault injection after every staged
+- **GIVEN** `tests/fixtures/local-job-api-async/executor/publication.json#S27`, with frozen terminal artifact fixtures, fault injection after every staged
   write, SQL commit and final rename, and a process restarted with only committed DB
   state and the resulting run directory, with the pre-commit worker still confirmed alive
   and heartbeating to exclude the independent recovery trigger
@@ -75,7 +75,7 @@ indistinguishable from never published; a durable publish marker is TICKET-128 s
   overwrites outcome; no process-local publish flag is required
 
 #### Scenario: S36 Daemon death recovers to a readable interrupted result
-- **GIVEN** `tests/fixtures/local-job-api-async/publication.json#S36`, with a keyed daemon-claimed artifact API Run and its retained reservation, committed
+- **GIVEN** `tests/fixtures/local-job-api-async/executor/publication.json#S36`, with a keyed daemon-claimed artifact API Run and its retained reservation, committed
   initial refs, running status, a blocked runtime, no terminal commit and heartbeat
   advanced beyond the existing 120 s
   stale threshold; the real daemon/worker is killed and the liveness port confirms stopped
@@ -88,7 +88,7 @@ indistinguishable from never published; a durable publish marker is TICKET-128 s
   adds no terminal, and a stale-but-EPERM/live variant remains running with no false recovery
 
 #### Scenario: S38 Crash at creation to initial admission boundary
-- **GIVEN** `tests/fixtures/local-job-api-async/idempotency.json#S38`, with a keyed artifact submission killed exactly after committed job_created and
+- **GIVEN** `tests/fixtures/local-job-api-async/executor/idempotency.json#S38`, with a keyed artifact submission killed exactly after committed job_created and
   before lifecycle:initial-artifacts:<id>:0, with its admitted-intent job ID read via store
 - **WHEN** fresh list/start, same-key submit, runs status and wait --timeout 0 inspect it
 - **THEN** list/start admit zero, provider calls zero, submit returns submission_pending/8
