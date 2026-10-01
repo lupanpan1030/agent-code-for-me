@@ -533,6 +533,9 @@ export function jobVars(
   const row = jobRowById(profile, jobId)
   return {
     ROOT: profile.root,
+    // Coordinator adjudication 2026-10-02: the job cwd is the checkout root,
+    // which differs per worktree/CI runner; goldens use {{REPO_ROOT}}.
+    REPO_ROOT,
     JOB_ID: jobId,
     WORKER_ID: row?.worker_id ?? "<unclaimed>",
     WORKER_PID: row?.worker_pid ?? null,
