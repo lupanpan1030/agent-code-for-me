@@ -530,6 +530,9 @@ export async function runLocalAgentDaemon(
   // Runs this daemon could not dispatch (non-outcome failure) are not
   // retried by the same daemon pass.
   const failedIds = new Set<string>()
+  // Over-age Runs this daemon could not settle (non-race error) are not
+  // retried by later ticks, so they cannot starve younger over-age Runs.
+  const overAgeFailedIds = new Set<string>()
   const result: RunLocalAgentDaemonResult = {
     scheduledJobs: 0,
     startedJobs: 0,
@@ -566,6 +569,14 @@ export async function runLocalAgentDaemon(
       await settleOverAgeQueuedLocalJobApiRuns(options.db, {
         now: options.now,
         maxQueuedApiAgeMs: options.maxQueuedApiAgeMs ?? MAX_QUEUED_API_AGE_MS,
+        excludeIds: overAgeFailedIds,
+        onSettlementError: (jobId, code) => {
+          overAgeFailedIds.add(jobId)
+          writeLine(
+            options.stderr,
+            `[Daemon] Over-age job ${jobId} was not settled (${code}); not retried by this daemon.`,
+          )
+        },
       })
       const available = concurrency - active.size
       if (available > 0) {

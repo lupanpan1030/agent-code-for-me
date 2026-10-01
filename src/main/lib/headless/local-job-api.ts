@@ -1879,18 +1879,34 @@ export const OVER_AGE_QUEUED_API_SETTLEMENT_LIMIT = 16
  * no terminal refs, and retention starting at the settlement. At most
  * OVER_AGE_QUEUED_API_SETTLEMENT_LIMIT Runs per tick (oldest first); a Run
  * a concurrent executor claims first is left to that executor's claim gate.
+ *
+ * Only a lost race is silent (the commit precondition failed, or a re-read
+ * shows the Run claimed or terminal). Any other settlement error is passed
+ * to `onSettlementError` with a sanitized code, and the caller excludes
+ * that Run from later ticks (`excludeIds`) so it cannot starve younger
+ * over-age Runs of the per-tick bound.
  */
 export async function settleOverAgeQueuedLocalJobApiRuns(
   db: AgentJobDatabase,
-  options: { now?: Date; maxQueuedApiAgeMs: number; limit?: number },
+  options: {
+    now?: Date
+    maxQueuedApiAgeMs: number
+    limit?: number
+    excludeIds?: ReadonlySet<string>
+    onSettlementError?: (jobId: string, code: string) => void
+  },
 ): Promise<AgentJob[]> {
   const nowMs = (options.now ?? new Date()).getTime()
+  const limit = options.limit ?? OVER_AGE_QUEUED_API_SETTLEMENT_LIMIT
+  const excluded = options.excludeIds
   const candidates = listQueuedAgentJobsCreatedAtOrBefore(
     db,
     "api",
     new Date(nowMs - options.maxQueuedApiAgeMs),
-    options.limit ?? OVER_AGE_QUEUED_API_SETTLEMENT_LIMIT,
+    limit + (excluded?.size ?? 0),
   )
+    .filter((job) => !excluded?.has(job.id))
+    .slice(0, limit)
   const settled: AgentJob[] = []
   for (const job of candidates) {
     try {
@@ -1903,11 +1919,48 @@ export async function settleOverAgeQueuedLocalJobApiRuns(
         requireUnclaimed: true,
       })
       if (updated.status === "failed") settled.push(updated)
-    } catch {
-      // A concurrent claim or settlement won; nothing was written.
+    } catch (error) {
+      if (overAgeSettlementRaceLost(db, job.id, error)) continue
+      options.onSettlementError?.(job.id, sanitizedErrorCode(error))
     }
   }
   return settled
+}
+
+/** A concurrent claim or settlement won; nothing was written. */
+function overAgeSettlementRaceLost(
+  db: AgentJobDatabase,
+  jobId: string,
+  error: unknown,
+): boolean {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    (error as { code?: unknown }).code === "JOB_PRECONDITION_FAILED"
+  ) {
+    return true
+  }
+  try {
+    const current = getAgentJob(db, jobId)
+    return (
+      current !== null &&
+      current !== undefined &&
+      (current.status !== "queued" || current.workerId !== null)
+    )
+  } catch {
+    return false
+  }
+}
+
+/** An error code safe for a diagnostic line (never free error text). */
+function sanitizedErrorCode(error: unknown): string {
+  const code =
+    typeof error === "object" && error !== null
+      ? (error as { code?: unknown }).code
+      : undefined
+  return typeof code === "string" && /^[A-Z][A-Z0-9_]{0,63}$/.test(code)
+    ? code
+    : "UNKNOWN"
 }
 
 /** Committed events up to a terminal's seal (the frozen terminal prefix). */
