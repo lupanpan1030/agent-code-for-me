@@ -155,7 +155,7 @@ Q1 验证收紧示例：同一 create body 若带 `"idempotencyKey":"req-001"`�
 {"apiVersion":"locus.local-job.v1","error":{"code":"idempotency_key_not_supported","message":"idempotencyKey is supported only on runs submit and runs retry --request."}}
 ```
 
-Claim-time fail-closed 的五种投影均为 `status:"failed"`：`completed.payload.reasons` 分别含 `project_unregistered`、`cwd_identity_changed`、`execution_profile_invalid`、`queued_age_exceeded`、`artifact_admission_mismatch`；`job.errorCode` 同名，惟 profile owner 提供 binding code 时保留该 code。create/default retry/wait outcome exit 分别为 7、7、binding unavailable→4 / invalid-request→2 / local-only→6（无 binding code 时 3）、1、1。示例：项目撤销后的 job.errorCode=project_unregistered、reasons 含同名条目、wait exit 7；reasons 按 guide:1130 仍非 v1-stable，消费者可依赖 errorCode/exit，不需迁移到新的 exit 编号。
+Claim-time fail-closed 的五种投影均为 `status:"failed"`：`completed.payload.reasons` 分别含 `project_unregistered`、`cwd_identity_changed`、`execution_profile_invalid`、`queued_age_exceeded`、`artifact_admission_mismatch`；`job.errorCode` 同名，惟 profile owner 提供 binding code 时保留该 code。create/default retry/wait outcome exit 分别为 7、7、binding unavailable→4 / invalid-request→2 / local-only→6（无 binding code 时 3）、1、1。另有 gate 意外异常的内部兜底 `claim_gate_failed` / `internal_error` / 8（沿用既有 exit 8，合计六个已记录的 fail-closed 结果；T1 实施时由 design D5 与 headless delta 记录）。示例：项目撤销后的 job.errorCode=project_unregistered、reasons 含同名条目、wait exit 7；reasons 按 guide:1130 仍非 v1-stable，消费者可依赖 errorCode/exit，不需迁移到新的 exit 编号。
 
 submission_pending 可能是仍在提交也可能是永久 orphan；重试同 key 不生成第二 attempt。未解决时可改新 key，但活跃原 creator 仍可能完成，必须明确承担重复风险；orphan 不自动过期，修复归 TICKET-128。
 
