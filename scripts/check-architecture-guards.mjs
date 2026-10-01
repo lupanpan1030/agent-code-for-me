@@ -4566,10 +4566,20 @@ function assertRunEventLedgerGuards() {
 // through a migration toggle. Its self-test consumes
 // LOCAL_JOB_API_ASYNC_ARCHITECTURE_FIXTURE_PATH and the repository is always
 // enforced in that end state.
-// Detection limits (disclosed): runner/claim calls are matched by callee name
-// (direct, named-import alias, namespace or element access); a reference
-// re-bound by assignment (`const r = runner; r()`), an indirect
-// `.call`/`.apply`, and raw SQL `INSERT INTO agent_jobs` text are not caught.
+// Runner/claim calls are matched by callee name: direct, named-import alias,
+// namespace or element access, and a local re-binding by a variable
+// declaration (`const r = runner`, `const { startAgentJob: claim } = store`).
+// Every src/main/lib/headless file except the execution owners
+// (LOCAL_JOB_API_ASYNC_EXECUTION_OWNERS) is scanned besides the fixture's
+// nonExecutingFiles, and a permitted caller counts only as the outermost
+// top-level function of its file (a nested helper or a class method of the
+// same name is not permitted). Job-row inserts match `insert(agentJobs)`
+// through an import alias, a namespace member or an element access
+// (`schema["agentJobs"]`).
+// Detection limits (disclosed): re-binding by later assignment
+// (`let r; r = runner`), indirect `.call`/`.apply`/`Reflect.apply`, a
+// computed element key that is not a string literal, a re-binding through
+// another module, and raw SQL `INSERT INTO agent_jobs` text are not caught.
 // ---------------------------------------------------------------------------
 
 const LOCAL_JOB_API_ASYNC_ARCHITECTURE_FIXTURE_PATH =
@@ -4579,6 +4589,14 @@ const LOCAL_JOB_API_ASYNC_GUARD_LABEL =
   "Local job API async submission guard self-test"
 const HEADLESS_AGENT_RUNTIME_OWNERSHIP_SECTION =
   'docs/OWNERSHIP_MAP.md "Headless Agent Runtime"'
+/** Headless files that own execution: they define or call runner/claim. */
+const LOCAL_JOB_API_ASYNC_EXECUTION_OWNERS = new Set([
+  "src/main/lib/headless/daemon.ts",
+  "src/main/lib/headless/job-runner.ts",
+  "src/main/lib/headless/completion-runner.ts",
+  "src/main/lib/headless/job-store.ts",
+])
+const LOCAL_JOB_API_ASYNC_SCANNED_PREFIX = "src/main/lib/headless/"
 const LOCAL_JOB_API_ASYNC_OWNERSHIP_PINS = [
   "`src/main/lib/headless/run-submission.ts#submitRun`",
   "`src/main/lib/headless/run-submission.ts#waitForRun`",
@@ -4606,28 +4624,50 @@ function loadLocalJobApiAsyncArchitectureFixture() {
   }
 }
 
-/** Names of every function-like ancestor of a node (outermost last). */
-function enclosingFunctionNames(node) {
-  const names = []
+/**
+ * Name of the outermost function-like ancestor of a node when it is a
+ * top-level function of its file (a function declaration, or a function
+ * expression / arrow bound by a top-level variable declaration); null for
+ * a call outside any function, inside a class method, or inside a function
+ * nested in another construct.
+ */
+function topLevelEnclosingFunctionName(node) {
+  let outermost = null
   let current = node.parent
   while (current) {
-    if (
-      (ts.isFunctionDeclaration(current) || ts.isMethodDeclaration(current)) &&
-      current.name &&
-      ts.isIdentifier(current.name)
-    ) {
-      names.push(current.name.text)
-    } else if (
-      (ts.isFunctionExpression(current) || ts.isArrowFunction(current)) &&
-      current.parent &&
-      ts.isVariableDeclaration(current.parent) &&
-      ts.isIdentifier(current.parent.name)
-    ) {
-      names.push(current.parent.name.text)
-    }
+    if (ts.isFunctionLike(current)) outermost = current
     current = current.parent
   }
-  return names
+  if (!outermost) return null
+  if (
+    ts.isFunctionDeclaration(outermost) &&
+    outermost.name &&
+    ts.isSourceFile(outermost.parent)
+  ) {
+    return outermost.name.text
+  }
+  if (
+    (ts.isFunctionExpression(outermost) || ts.isArrowFunction(outermost)) &&
+    outermost.parent &&
+    ts.isVariableDeclaration(outermost.parent) &&
+    ts.isIdentifier(outermost.parent.name) &&
+    ts.isVariableDeclarationList(outermost.parent.parent) &&
+    ts.isVariableStatement(outermost.parent.parent.parent) &&
+    ts.isSourceFile(outermost.parent.parent.parent.parent)
+  ) {
+    return outermost.parent.name.text
+  }
+  return null
+}
+
+/** Name of a referenced member: identifier, property or literal element. */
+function referencedMemberName(node) {
+  if (ts.isIdentifier(node)) return node.text
+  if (ts.isPropertyAccessExpression(node)) return node.name.text
+  if (ts.isElementAccessExpression(node)) {
+    return stringLiteralValue(node.argumentExpression)
+  }
+  return null
 }
 
 function collectLocalJobApiAsyncSourceFacts(filePath, content, fixture) {
@@ -4660,31 +4700,51 @@ function collectLocalJobApiAsyncSourceFacts(filePath, content, fixture) {
   for (const symbol of tracked) {
     if (!callAliases.has(symbol)) callAliases.set(symbol, symbol)
   }
+  // Local re-bindings by declaration: `const r = runner`,
+  // `const r = store.startAgentJob` and destructuring
+  // `const { startAgentJob: claim } = store`.
+  function collectRebindings(node) {
+    if (ts.isVariableDeclaration(node) && node.initializer) {
+      if (ts.isIdentifier(node.name)) {
+        const source = referencedMemberName(node.initializer)
+        if (source && callAliases.has(source)) {
+          callAliases.set(node.name.text, callAliases.get(source))
+        }
+        if (source && jobTableAliases.has(source)) {
+          jobTableAliases.add(node.name.text)
+        }
+      } else if (ts.isObjectBindingPattern(node.name)) {
+        for (const element of node.name.elements) {
+          if (!ts.isIdentifier(element.name)) continue
+          const property = element.propertyName
+            ? ts.isIdentifier(element.propertyName) ||
+              ts.isStringLiteral(element.propertyName)
+              ? element.propertyName.text
+              : null
+            : element.name.text
+          if (property && tracked.has(property)) {
+            callAliases.set(element.name.text, property)
+          }
+          if (property === "agentJobs") jobTableAliases.add(element.name.text)
+        }
+      }
+    }
+    ts.forEachChild(node, collectRebindings)
+  }
+  collectRebindings(sourceFile)
   const calls = []
   let jobInsertCount = 0
   function visit(node) {
     if (ts.isCallExpression(node)) {
-      const callee = node.expression
-      const calleeName = ts.isIdentifier(callee)
-        ? callee.text
-        : ts.isPropertyAccessExpression(callee)
-          ? callee.name.text
-          : ts.isElementAccessExpression(callee)
-            ? stringLiteralValue(callee.argumentExpression)
-            : null
+      const calleeName = referencedMemberName(node.expression)
       if (calleeName && callAliases.has(calleeName)) {
         calls.push({
           symbol: callAliases.get(calleeName),
-          functions: enclosingFunctionNames(node),
+          topLevelFunction: topLevelEnclosingFunctionName(node),
         })
       }
       if (calleeName === "insert" && node.arguments.length > 0) {
-        const target = node.arguments[0]
-        const targetName = ts.isIdentifier(target)
-          ? target.text
-          : ts.isPropertyAccessExpression(target)
-            ? target.name.text
-            : null
+        const targetName = referencedMemberName(node.arguments[0])
         if (targetName && jobTableAliases.has(targetName)) jobInsertCount += 1
       }
     }
@@ -4745,12 +4805,16 @@ function collectLocalJobApiAsyncFindings(files, fixture) {
         })
       }
     }
-    if (nonExecuting.has(filePath)) {
+    if (
+      nonExecuting.has(filePath) ||
+      (filePath.startsWith(LOCAL_JOB_API_ASYNC_SCANNED_PREFIX) &&
+        !LOCAL_JOB_API_ASYNC_EXECUTION_OWNERS.has(filePath))
+    ) {
       const reported = new Set()
       for (const call of facts.calls) {
         const allowed = permitted.some(
           (entry) =>
-            entry.file === filePath && call.functions.includes(entry.function),
+            entry.file === filePath && call.topLevelFunction === entry.function,
         )
         if (allowed) continue
         const rule = runnerSymbols.has(call.symbol)
@@ -4871,6 +4935,18 @@ function assertLocalJobApiAsyncOwnership(fixture) {
     if (!section.includes(pin)) {
       fail(
         `${HEADLESS_AGENT_RUNTIME_OWNERSHIP_SECTION} must pin ${pin} as the async submission owner.`,
+      )
+    }
+    // Every pin names a symbol its file defines and exports, so a rename or
+    // a move cannot leave the ownership map stale.
+    const [owner, symbol] = pin.replaceAll("`", "").split("#")
+    const ownerFile = files.find((file) => file.filePath === owner)
+    const facts = ownerFile
+      ? collectRunEventLedgerSourceFacts(owner, ownerFile.content)
+      : null
+    if (!facts?.definitions.has(symbol) || !facts.exportedNames.has(symbol)) {
+      fail(
+        `${symbol} must be defined and exported by ${owner} (pinned in ${HEADLESS_AGENT_RUNTIME_OWNERSHIP_SECTION}).`,
       )
     }
   }
