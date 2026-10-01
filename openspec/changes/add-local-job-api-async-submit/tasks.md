@@ -1,6 +1,6 @@
 # Implementation tasks
 
-Status: **IMPLEMENTATION CANDIDATE — frozen 2026-10-02 (Phase III); awaiting same-SHA Codex IMPLEMENTATION_VERIFIED + Claude REVIEW_APPROVED**
+Status: **IMPLEMENTATION CANDIDATE — re-frozen 2026-10-02 (T2); awaiting same-SHA Codex IMPLEMENTATION_VERIFIED + Claude REVIEW_APPROVED**
 
 执行顺序为 1 → 7 的独立 red fixtures（`20e7bfcf`，seam 批准 `8974c9ed`）→ 2–6（Phase I `89b68393`..`0ae41f47`，红套件裁定 `d59b1142`/`770c78ad`，Phase II `2385df4e`..`84c622ce`，T1 `74e30df9`..`e0a9a967`）→ 7 green（四个红文件 79/79）→ 8。
 Phase III（文档、登记、smoke、冻结候选）只改 docs/openspec，无 src/tests 变更；T2（Phase III 检查 `887df155` 的修复）再改 src/tests/docs，产生新的冻结候选。每项勾选后附提交证据；未勾选项写明缺什么，不以环境失败或部分覆盖冒充完成。证据中仍有开放子项的条目不勾选，标 PARTIAL 并列出开放子项（8.1 以这些子项为准）。
@@ -162,7 +162,7 @@ Phase III（文档、登记、smoke、冻结候选）只改 docs/openspec，无 
 - [ ] 8.1 所有 S01–S54 登记、red→green evidence 齐全；targeted bun、architecture guard、migration/rollback、secret/fault suites 实际执行。
   未完成：S01–S54 登记与 red→green 证据已齐（verification），但 4.9 迁移/回滚夹具与 red-receipt §6 未覆盖子项仍开放。
 - [x] 8.2 在冻结的精确 source SHA 跑 `bun run check:full`、本 change 与全量 strict OpenSpec、`git diff --check`；记录命令/exit/count/log，不能把环境失败算 pass。
-  证据：`bun run check:full` 在候选父提交 `bbcc0995` 的树上 exit 0（2864/2864、strict 54/54、build、diff:check）；候选提交上复跑 strict 54/54、`git diff --check`、PR-base lint 与四个红文件 79/79（verification「Gates」，handoff 报告记录候选 SHA）。
+  证据（T2 候选）：`bun run check:full` 在候选父提交 `b63f9965` 与 T2 冻结提交上均 exit 0（2882 pass / 2 skip（win32 门控）/ 0 fail、strict 54/54、build、diff:check）；四个红文件 79/79、PR-base lint、`git diff --check` 亦在两处复跑（verification「Gates」，handoff 报告 `impl-async-submit-t2.report.md` 记录候选 SHA）。
 - [ ] 8.3 disposable-profile 手工及 packaged smoke：submit 后 submitter 退出仍可被 daemon 执行；agent/completion wait/result；queued cancel/cancel；retry key；daemon death→recovery→wait；真实 cross-process publish；env sentinel；stdio session shutdown；Workbench 可见。macOS/Windows 分别记录，WSL 不代替 packaged 证据。
   未完成：本 WSL 主机 Electron 缺共享库（exit 127）、无 bundled runtimes/凭据、无 macOS/Windows 主机；见 verification smoke 矩阵与重跑命令。
 - [ ] 8.4 Windows 有/无 artifacts 分开验收；TICKET-127 未修复时 artifact fixture 预期 fail closed，不宣称已交付 Windows artifact refs。TICKET-128 部分发布预期 non-ready，不算恢复成功。

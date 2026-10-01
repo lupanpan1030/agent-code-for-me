@@ -8,7 +8,7 @@ Updated: 2026-10-02 (Pacific/Auckland); previous: 2026-10-01 (Pacific/Auckland)
 
 | Active change | Status | Scope / next gate |
 | --- | --- | --- |
-| [add-local-job-api-async-submit](changes/add-local-job-api-async-submit/proposal.md) | IMPLEMENTATION CANDIDATE — frozen 2026-10-02 (SHA in handoff) — next gate: same-SHA Codex IMPLEMENTATION_VERIFIED + Claude REVIEW_APPROVED | Owner APPROVED @ 0f998436; red suite 79/79 green, `check:full` exit 0, strict 54/54; product code final at `e0a9a967`, Phase III docs-only; runtime/packaged smoke host-blocked (macOS/Windows not claimed); open: tasks 1.4, 1.6, 3.3, 4.9, 8.1, 8.3–8.8 (see verification.md); ACCEPTED delegated to coordination on same-SHA dual verdicts and no open Red; push not authorized |
+| [add-local-job-api-async-submit](changes/add-local-job-api-async-submit/proposal.md) | IMPLEMENTATION CANDIDATE — re-frozen 2026-10-02 after T2 (SHA in handoff `impl-async-submit-t2.report.md`) — next gate: same-SHA Codex IMPLEMENTATION_VERIFIED + Claude REVIEW_APPROVED | Owner APPROVED @ 0f998436; red suite 79/79 green, `check:full` exit 0 (2882 pass / 2 win32-gated skips), strict 54/54; T2 closed the Phase III check P2 (R4 relay now SIGHUP + win32 SIGBREAK) and its P3s; runtime/packaged smoke host-blocked (macOS/Windows not claimed); open: tasks 1.4, 1.6, 3.3, 4.9, PARTIAL 7.2/7.3/7.4/7.6/7.7/7.9/7.10, 8.1, 8.3–8.8 (see verification.md); ACCEPTED delegated to coordination on same-SHA dual verdicts and no open Red; push not authorized |
 
 Parked proposals are indexed in [`deferred/README.md`](deferred/README.md) and
 do not appear in the active list.

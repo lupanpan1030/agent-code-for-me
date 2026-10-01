@@ -1,6 +1,6 @@
 # Change: Add Local Job API Async Submit
 
-Status: **APPROVED 2026-10-02 (Owner, bound to 0f998436) — IMPLEMENTATION CANDIDATE frozen 2026-10-02 (see verification.md)**
+Status: **APPROVED 2026-10-02 (Owner, bound to 0f998436) — IMPLEMENTATION CANDIDATE re-frozen 2026-10-02 after T2 (see verification.md)**
 
 ## Why
 
