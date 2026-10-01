@@ -1,6 +1,6 @@
 # Change: Add Local Job API Async Submit
 
-Status: **APPROVED 2026-10-02 (Owner, bound to 0f998436) — IMPLEMENTATION CANDIDATE re-frozen 2026-10-02 after T2 (see verification.md)**
+Status: **APPROVED 2026-10-02 (Owner, bound to 0f998436) — FINAL FROZEN CANDIDATE 2026-10-02 after T2 documentation closure (see verification.md)**
 
 ## Why
 
@@ -49,12 +49,12 @@ tests/architecture guards；**本次起草只写本 change 文档与 STATUS 一�
 ### 1. Gate 状态
 
 ```text
-Status: APPROVED 2026-10-02 (Owner, bound to 0f998436) / IMPLEMENTATION CANDIDATE (T2 re-freeze; awaiting same-SHA dual verdicts, see verification.md)
+Status: APPROVED 2026-10-02 (Owner, bound to 0f998436) / FINAL FROZEN CANDIDATE (post-T2 documentation closure; awaiting same-SHA dual verdicts, see verification.md)
 OpenSpec change: add-local-job-api-async-submit
 Author / date: Codex / 2026-10-01
 Decision owner: Repository Owner
 Owner approval: 2026-10-02 @ 0f998436；第 10 节六项决定全部按推荐默认
-Implementation blocked until: 1.6 prune closure re-check + 独立作者 red suite（先于实现）——历史门槛：独立 red suite `20e7bfcf` 已先于实现；1.6 receipt 仍开放，由统筹记录或豁免（tasks 1.6）
+Implementation blocked until: 1.6 prune closure re-check + 独立作者 red suite（先于实现）——历史门槛：独立 red suite `20e7bfcf` 已先于实现；统筹受理 1.6：prune 后复查由 `887df155` docs/C7 闭合检查与 `b7b408d1` T2 评审覆盖（均在 `0447d02d` prune 之后），视为满足（tasks 1.6）
 ```
 
 ### 2. 一句话变化

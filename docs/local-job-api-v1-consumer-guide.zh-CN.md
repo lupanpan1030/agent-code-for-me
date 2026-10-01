@@ -1106,6 +1106,8 @@ daemon 认领了 run 时，等待中的命令退出后 daemon 仍会继续执行
 | POSIX | `SIGINT`、`SIGTERM`、`SIGHUP`、已 armed 的 stdin EOF | `SIGKILL` |
 | Windows | Ctrl+C（`SIGINT`）、Ctrl+Break（`SIGBREAK`）、console 窗口关闭（`SIGHUP`）、已 armed 的 stdin EOF | 父进程 `child.kill()` / `TerminateProcess`；logoff 与 shutdown console 事件 |
 
+- 在命令观察到另一执行者认领 run 之前到达的信号不会被转发，而是按 OS 默认处置。
+  请用 `runs cancel <job-id>` 可靠取消该 run。
 - 转发中止时，命令先持久化 cancel request，最多等待 5 s 让 run 进入终态，不向
   stdout 写任何内容，然后重新抛出原信号（让 POSIX 父进程看到该信号），stdin EOF
   时则 exit `8`。
@@ -1234,7 +1236,8 @@ run 没有登记终态文件时（无 artifact 的 run、recovery、admission �
   登记的超龄 run 由 daemon 的超龄结算处理时为 `queued_age_exceeded` / `1`，由认领
   先处理时为 `project_unregistered` / `7`。daemon 在每次循环中先执行超龄结算、再认领
   queued run，所以在一次循环开始时已经超龄的 run 会从该 daemon 得到
-  `queued_age_exceeded`。
+  `queued_age_exceeded`，除非该 run 超出本轮 16 条结算上限，或 daemon 已报告无法
+  结算并排除之。
 - 这些结算不登记终态文件：`result.artifacts` 为 `[]`，`wait` 立即就绪。
 - 公开承诺是 `job.errorCode` 与 exit code。`completed.payload.reasons` 的取值
   仍是信息性的，与以前相同。没有新增 exit code，`0`–`8` 含义不变。
@@ -1285,7 +1288,9 @@ esac
    之前，先检查 `features` 是否含 `async-submit`。旧 build 会以 exit `2` 拒绝新
    命令形状，但会忽略发给 `create` 的 key。
 2. 刷新本地固定的 `local-job-api-v1.schema.json` 副本：`discoveryFeature` 现在包含
-   `async-submit`。
+   `async-submit`。使用 JSON Schema 2020-12 校验器；completion 请求成员现位于
+   `completionRequestMembers`，`completionCreateRequest` / `completionSubmitRequest`
+   经 `allOf` + `unevaluatedProperties: false` 从该定义派生。
 3. 不要把 `idempotencyKey` 发给 `runs create`。
 4. 把 `runs wait` 的 exit `9` 当作“尚未就绪”，而不是 run 失败。
 5. 处理 `submission_pending`（exit `8`，`"retryable":true`）：用同一 key 重试，或

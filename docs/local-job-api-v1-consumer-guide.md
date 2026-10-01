@@ -1200,6 +1200,9 @@ only its own run, on a catchable abort:
 | POSIX | `SIGINT`, `SIGTERM`, `SIGHUP`, armed stdin EOF | `SIGKILL` |
 | Windows | Ctrl+C (`SIGINT`), Ctrl+Break (`SIGBREAK`), console window closed (`SIGHUP`), armed stdin EOF | parent `child.kill()` / `TerminateProcess`; logoff and shutdown console events |
 
+- A signal that arrives before the command has observed another executor
+  claiming the run is not relayed; the OS default disposition applies. Use
+  `runs cancel <job-id>` to cancel the run reliably.
 - On a relayed abort the command persists the cancel request, waits at most
   5 s for the run to reach a terminal status, writes nothing to stdout, and
   then re-raises the original signal so a POSIX parent sees that signal, or
@@ -1355,7 +1358,9 @@ failing check settles the run `failed` without running it:
   daemon's over-age settlement reaches it, but `project_unregistered` / `7`
   when a claim reaches it first. A daemon runs its over-age settlement before
   it claims queued runs in each loop iteration, so a run that was already over
-  age when an iteration started gets `queued_age_exceeded` from that daemon.
+  age when an iteration started gets `queued_age_exceeded` from that daemon,
+  unless the run is beyond that iteration's 16-run settlement limit, or the
+  daemon has reported that it could not settle the run and excluded it.
 - These settlements register no terminal files: `result.artifacts` is `[]` and
   `wait` is ready at once.
 - The public commitments are `job.errorCode` and the exit code.
@@ -1414,7 +1419,10 @@ esac
    `retry --async`, `retry --request` or `idempotencyKey`. Older builds reject
    the new command shapes with exit `2`, but ignore a key sent to `create`.
 2. Refresh pinned copies of `local-job-api-v1.schema.json`: `discoveryFeature`
-   now includes `async-submit`.
+   now includes `async-submit`. Use a JSON Schema 2020-12 validator; completion
+   request members now live in `completionRequestMembers`, from which
+   `completionCreateRequest` and `completionSubmitRequest` derive via `allOf`
+   with `unevaluatedProperties: false`.
 3. Do not send `idempotencyKey` to `runs create`.
 4. Treat exit `9` from `runs wait` as "not ready yet", not as a run failure.
 5. Handle `submission_pending` (exit `8`, `"retryable":true`): retry the same

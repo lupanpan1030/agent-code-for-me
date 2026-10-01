@@ -1,15 +1,20 @@
 # Verification
 
-Status: **IMPLEMENTATION CANDIDATE — re-frozen 2026-10-02 (T2, after the Phase III check of `887df155`); awaiting same-SHA Codex IMPLEMENTATION_VERIFIED + Claude REVIEW_APPROVED**
+Status: **FINAL FROZEN CANDIDATE — 2026-10-02 (post-T2 documentation closure); awaiting same-SHA Codex IMPLEMENTATION_VERIFIED + Claude REVIEW_APPROVED**
 
 ## Candidate
 
 - Change: `add-local-job-api-async-submit` (Phase 3, second proposal).
-- Candidate source SHA: the last T2 commit, which is the last commit that
-  touches this file. A commit cannot name its own SHA; the exact value is
-  recorded in the T2 handoff report (`impl-async-submit-t2.report.md`) and
+- Candidate source SHA: this single documentation-closure commit,
+  `docs(openspec): final documentation closure for local job api async submit`,
+  is the **final frozen candidate**, superseding the T2 tip
+  `b7b408d15d14fccd3a6f561405f6ae2c82c37e40`. A commit cannot contain its own
+  SHA; the exact value is recorded in this dispatch's final handoff and
   resolves with
   `git log -1 --format=%H -- openspec/changes/add-local-job-api-async-submit/verification.md`.
+  On the frozen branch this must equal `git rev-parse HEAD`, and its subject
+  must match the documentation-closure subject above. The T2 report and T2
+  `REVIEW_APPROVED` remain evidence for `b7b408d1`, not verdicts for this SHA.
   The Phase III candidate `887df155` is superseded: T2 changed product code,
   so no verdict bound to `887df155` or `e0a9a967` carries over.
 - Worktree / branch: `/home/chen/projects/locus-add-local-job-api-async-submit-draft`,
@@ -26,6 +31,9 @@ Status: **IMPLEMENTATION CANDIDATE — re-frozen 2026-10-02 (T2, after the Phase
   assertion (`tests/local-job-api-schema.test.ts`, the completion member set
   now read from `completionRequestMembers`) and added four implementer-unit
   test files. Phase III commits were documentation only.
+- This final closure changes only the two consumer guides and this change's
+  documentation. Product code, tests, the published schema structure and the
+  immutable red set remain unchanged from `b7b408d1`.
 - Immutable red set (4 red tests, 4 kits, `tests/fixtures/local-job-api-async`,
   `red-receipt.md`): zero diff against the re-pinned baseline `770c78ad`.
 - Data lifecycle stage: PRE-PRODUCTION / DISPOSABLE TEST DATA
@@ -43,7 +51,8 @@ Status: **IMPLEMENTATION CANDIDATE — re-frozen 2026-10-02 (T2, after the Phase
 | Phase II | `2385df4e`, `765b8ea6`, `ad16cb0c`, `a44e87fd`, `ac1e2f74`, `84c622ce` | `async-submit-phase2-review-*-84c622ce.md`: design CHANGES_REQUESTED (1 P2, 3 P3); tests/security CHANGES_REQUESTED (1 P2 lint on immutable files, 4 P3) |
 | T1 touch-up | `74e30df9`, `27cbcdad`, `5615e1f2`, `dcad0c0e`, `ad6225cb`, `22d4336b`, `0537da25`, `2dc0b5e6`, `e0a9a967` | `async-submit-t1-review-e0a9a967….md`: REVIEW_APPROVED (0 P0/P1/P2, 3 P3) |
 | Phase III | `d37fa4e5` (guides), `d813b060` (schema), `4748aa73` (owner rows), `53bbc270` (proposal P3-1), `bbcc0995` (tasks), `887df155` (freeze) | `async-submit-phase3-check-887df155….md`: CHANGES_REQUESTED (1 P2 Windows relay overclaim, 6 P3) |
-| T2 | `0e70e7d7` (relay SIGHUP/SIGBREAK), `39e3446d` (R4 docs), `674ab421` (own-pump read failure), `0d6b03da` (over-age tick diagnostics), `9f73d96e` (schema test, derived completion submit), `43354f87` (precedence, owner map, proposal text), `b63f9965` (tasks), `cfe73cf5` (re-freeze record, STATUS), `abb96416` (S35 timing disclosure), candidate-pointer commit (this line) | pending: same-SHA dual verdicts |
+| T2 | `0e70e7d7` (relay SIGHUP/SIGBREAK), `39e3446d` (R4 docs), `674ab421` (own-pump read failure), `0d6b03da` (over-age tick diagnostics), `9f73d96e` (schema test, derived completion submit), `43354f87` (precedence, owner map, proposal text), `b63f9965` (tasks), `cfe73cf5` (re-freeze record, STATUS), `abb96416` (S35 timing disclosure), `b7b408d1` (T2 candidate pointer) | `async-submit-t2-review-b7b408d15d14fccd3a6f561405f6ae2c82c37e40.md`: READY_FOR_FINAL_REVIEW / REVIEW_APPROVED for T2 closure scope; 4 nonblocking P3 documentation/residual items |
+| Final documentation closure | This commit (SHA resolves under Candidate) | Dispositions of the four T2 P3s and the implementer report's coordinator items; final same-SHA dual verdicts pending |
 
 Every P2 above is closed at `e0a9a967`: Phase I design P2-1 (retry error
 baseline, `ac1e2f74`) and P2-2 (R4 relay race, `84c622ce`); Phase I security
@@ -55,10 +64,11 @@ and the T1 review's P3-2/P3-3 are dispositioned under Disclosures.
 
 ## Gates
 
-Run on the T2 candidate tree. Every gate below ran on `b63f9965` (the last
+Historical implementation gates on the T2 tree, ending at
+`b7b408d15d14fccd3a6f561405f6ae2c82c37e40`. Every gate below ran on `b63f9965` (the last
 code/test commit; later commits change only this record, `STATUS.md`,
-`tasks.md` and `proposal.md` status lines) and was re-run on the candidate
-itself; the counts are identical (T2 handoff report). One intermediate
+`tasks.md` and `proposal.md` status lines) and was re-run on the T2 tip
+`b7b408d1`; the counts are identical (T2 handoff report). One intermediate
 `check:full` run on `cfe73cf5` failed one red-file test under full-suite load
 and passed on rerun; see the S35 timing disclosure below.
 
@@ -76,6 +86,20 @@ and passed on rerun; see the S35 timing disclosure below.
 | Immutable set | `git diff --stat 770c78ad <candidate> -- <4 red tests, 4 kits, tests/fixtures/local-job-api-async, red-receipt.md>` | empty |
 | T2 product scope | `git diff --stat e0a9a967 <candidate> -- src tests scripts drizzle` | `cli-dispatcher.ts`, `run-submission.ts`, `local-job-api.ts`, `daemon.ts`, `tests/local-job-api-schema.test.ts` and the four new implementer-unit files only; no `scripts`/`drizzle` change |
 | Schema conformance | `bun test --isolate tests/local-job-api-async-schema-envelopes.test.ts` (committed in T2; replaces the Phase III throwaway probe) | Ajv 2020 against the published schema: emitted fresh/keyed-replay submit (agent and completion), status with `execution`, wait timeout, wait `observation_failed`, wait-ready and create (`createResponseEnvelope`), keyed `retry --async` and its replay, and the stdout errors `idempotency_key_not_supported`, `invalid_idempotency_key`, `idempotency_conflict`, `consumer_mismatch` all valid; keyed agent/completion bodies valid for `submitRequest` and rejected by `createRequest`; unknown members rejected by `completionSubmitRequest`/`completionCreateRequest`/`retryRequest`. `submission_pending` and `secret_in_request` are not emitted by this file; their behavior is asserted by the idempotency red file, but their envelopes are not schema-validated by a committed test. `completionSubmitRequest` now derives from `completionRequestMembers` (`allOf` + `unevaluatedProperties: false`), shared with `completionCreateRequest`, so the two member sets cannot drift; validation of `completionCreateRequest` is unchanged. |
+
+### Final documentation closure checks
+
+Run on the documentation-closure worktree before the single freeze commit;
+these checks are distinct from the historical T2 implementation gates above.
+Exact-SHA post-commit gate results are recorded in this dispatch's final
+handoff, without a second documentation commit.
+
+| Check | Command | Result / local log |
+| --- | --- | --- |
+| Strict OpenSpec | `/home/chen/projects/agent-code-for-me/node_modules/.bin/openspec validate --all --strict --no-interactive` | exit 0; `Totals: 54 passed, 0 failed (54 items)`; `/tmp/async-submit-doc-closure-validate.log` |
+| Whitespace | `git diff --check` | exit 0, empty output; `/tmp/async-submit-doc-closure-diff-check.log` |
+| PR-base lint | `BIOME_CHANGED_SINCE=2c59664f node scripts/run-biome-changed.mjs` | exit 0; `Biome reported diagnostics only outside changed lines; ignoring legacy file diagnostics.`; `/tmp/async-submit-doc-closure-lint.log` |
+| T2 P3-4 format probe | `node_modules/.bin/biome check --stdin-file-path=tests/local-job-api-schema.test.ts` with the old wrap on stdin; `biome format` with the same path | old-wrap check exit 1; formatter restores the retained `baseRequest` wrap. Test unchanged; `/tmp/async-submit-schema-format-probe.log` |
 
 ## Scenario register (S01–S54)
 
@@ -165,7 +189,12 @@ predicate (Phase I, `0bbaa549`); no `expect` changed (Phase I security P3-1).
 assertion block of `tests/local-job-api-schema.test.ts`: the completion
 `required`/`properties` checks read `completionRequestMembers`, and
 `additionalProperties: false` became `allOf` + `unevaluatedProperties: false`
-(same accepted set). No other existing test changed.
+(same accepted set). T2 also retained the formatter-only wrap at lines
+229–232: a post-T2 probe of the old `expect(validate(baseRequest), ...)` wrap
+with the repository's Biome configuration returns exit 1, and `biome format`
+restores exactly the retained wrap. The final documentation closure therefore
+keeps it; the test file has no diff against `b7b408d1`. No other existing test
+changed in T2.
 
 ### Sub-clauses not covered by an automated test
 
@@ -230,22 +259,29 @@ is either documented for consumers or recorded here for a follow-up.
 | Phase II security P3-2 | Async guard misses assignment aliases, `.call`/`.apply` and raw `INSERT INTO agent_jobs` | Disclosed in the guard comment (`2dc0b5e6`); the S32/S33 fixture does not require them. |
 | Phase II security P3-4 | Unscoped direct `pumpQueuedRuns` defaults to API-capable | Record only; the only production caller passes `apiCapable: lock !== null`. |
 | T1 P3-2 | The over-age tick swallowed every settlement error silently; 16 or more persistently failing over-age runs would block younger ones in that bound | Closed in T2: only `JOB_PRECONDITION_FAILED` or a re-read showing the run claimed/terminal is silent; any other error writes `[Daemon] Over-age job <id> was not settled (<CODE>); not retried by this daemon.` (sanitized code, no error text) and the daemon excludes that id on later ticks (`tests/local-job-api-over-age-tick-diagnostics.test.ts`). |
-| T1 P3-3 / Phase III check P3-2 | Tick vs claim precedence: an over-age and unregistered run settles `queued_age_exceeded` / 1 on a daemon tick but `project_unregistered` / 7 if a claim reaches it first (the claim gate checks project → cwd → profile → age) | Disclosed in both guides (Claim-time checks, T2): the tick settles age only and runs before the pump in each daemon iteration, so a daemon reports `queued_age_exceeded` for a run already over age when the iteration started; a run crossing the bound between tick and claim, or claimed by another executor, gets the claim gate's order. Not a contract violation ("claim/tick SHALL fail closed"). |
+| T1 P3-3 / Phase III check P3-2 / T2 P3-2 | Tick vs claim precedence: an over-age and unregistered run settles `queued_age_exceeded` / 1 on a daemon tick but `project_unregistered` / 7 if a claim reaches it first (the claim gate checks project → cwd → profile → age) | Disclosed in both guides (Claim-time checks): the tick settles age only and runs before the pump in each daemon iteration, so a daemon reports `queued_age_exceeded` for a run already over age when the iteration started, unless it is beyond that iteration's 16-run settlement limit, or the daemon has reported that it could not settle the run and excluded it; a run crossing the age bound between tick and claim, or claimed by another executor, gets the claim gate's order. Not a contract violation ("claim/tick SHALL fail closed"). |
 | Daemon tick cadence | The over-age settlement runs every loop iteration, also in a lock-less daemon (settling is not claiming), at most 16 per iteration | Implementation judgement (T1); documented to consumers as "a bounded number per loop iteration". |
 | projectIdentity fail-closed | API agent rows admitted by unreleased builds between `d59b1142` and `765b8ea6` lack the stored identity and now fail closed with `cwd_identity_changed` / 7 | Intended (Phase II security P3-1); no released build wrote such rows. |
 | R1 (accepted) | Daemon-first `wait.state:"error"` / 8 branches and the local publish-failure `artifacts:[]` baseline | Documented in both guides. |
 | R3 (accepted) | Daemon-claimed runs use the daemon's environment and native credential homes | Documented in both guides. |
 | R4 (accepted) | `SIGKILL`, Windows `TerminateProcess` / `child.kill()` and the logoff/shutdown console events (libuv does not deliver them) cannot relay; 500 ms kill grace and the Windows console-close grace truncate the 5 s ack; Windows exits after a relayed signal (Ctrl+C → 1, Ctrl+Break / console close → 8) not verified on Windows (closure residual 3) | Documented in both guides; Windows host-blocked. The win32 `SIGBREAK`/`SIGHUP` tests in `tests/local-job-api-wrapper-relay-signals.test.ts` are platform-gated and skipped on this Linux host. |
-| S35 timing (T2 observation) | Once in four full-suite runs, the immutable "Career Kit SIGTERM then SIGKILL" S35 test saw the wrapper die by `SIGTERM` with no relayed cancel. The harness sends `SIGTERM` as soon as the child prints `CLAIMED` from inside the `beforeOwnPumpClaim` seam, while the wrapper arms its relay only after the seam returns and it reads the Run as claimed by another executor. Under load the signal can land in that window, where the default disposition still applies. 6/6 isolated reruns and the other full runs passed; the same window exists at `887df155` (T2 did not change that path). For a consumer, a catchable signal that arrives between admission and the daemon-first decision ends the wrapper without relaying; the Run stays queryable and cancelable by ID. | Disclosed residual; not fixed in T2 (closing it needs a handler armed from admission that also preserves the own-pump default-disposition receipts). |
+| Windows relay host evidence | Windows SIGBREAK/SIGHUP behavior and exit codes have not been verified on a Windows host | host-blocked; Windows SIGBREAK/SIGHUP 行为与退出码未在 Windows 宿主验证。Platform-gated skips and POSIX receipts are not Windows host evidence. |
+| S35 timing (T2 observation / T2 P3-1) | Once in four full-suite runs, the immutable "Career Kit SIGTERM then SIGKILL" S35 test saw the wrapper die by `SIGTERM` with no relayed cancel. The harness sends `SIGTERM` as soon as the child prints `CLAIMED` from inside the `beforeOwnPumpClaim` seam, while the wrapper arms its relay only after the seam returns and it reads the Run as claimed by another executor. Under load the signal can land in that window, where the default disposition still applies. 6/6 isolated reruns and the other full runs passed; the same window exists at `887df155` (T2 did not change that path). For a consumer, a catchable signal that arrives between admission and the daemon-first decision ends the wrapper without relaying; the Run stays queryable and cancelable by ID. | Coordinator disposition (2026-10-02): residual disclosure + follow-up ticket. Both guides now disclose the OS default disposition before the command observes another executor's claim and direct consumers to `runs cancel <job-id>`. The window is not fixed in this closure; proposed ticket scope is registered under Follow-up register. |
 | Phase III check P3-1 | A wrapper store-read failure returned `observation_failed`/8 even while its own pump ran the Run | Closed in T2 (`674ab421`): with a pending or completed own dispatch the wrapper aborts its own pump (the runner's abort signal stops the runtime tree), closes a never-started Run by queued cancel and keeps the baseline stderr/exit (create 2, retry 3); the stopped Run settles `canceled` when the store allows it, otherwise it stays for recovery. Only a remote claimant gets `observation_failed`/8. Both guides state the split. |
 | Phase III check P3-3 | Tasks 7.2, 7.3, 7.4, 7.6, 7.7, 7.9, 7.10 were ticked with open sub-clauses | T2 (`b63f9965`): unticked and marked PARTIAL with the open sub-clauses listed; tasks.md states the rule. |
-| Phase III check P3-4 | Task 1.6 receipt (post-prune closure re-check) missing | Open for the coordinator: the `25575cc3`/`abec16a5` closure checks predate the `0447d02d` prune and cannot stand in; the Phase III check's delta grep at `887df155` found no leftover conditional wording. The proposal §1 gate block now records the candidate state. |
-| Phase III check P3-5 | Schema additions had no committed test; `completionSubmitRequest` copied the completion members | Closed in T2 (`9f73d96e`). The restructure of `completionCreateRequest` (`allOf` over `completionRequestMembers` + `unevaluatedProperties: false`) accepts exactly the same documents; a consumer that inspects the schema's structure rather than validating with it sees the members under the new def. |
+| Phase III check P3-4 | Task 1.6 receipt (post-prune closure re-check) missing | Coordinator accepted (2026-10-02): the post-prune re-check is covered by the `887df155` docs/C7 closure check and the `b7b408d1` T2 review, both after the `0447d02d` prune; deemed satisfied and task 1.6 checked. `25575cc3`/`abec16a5` predate prune and remain historical evidence only. Owner approval stays bound to `0f998436`. |
+| Phase III check P3-5 / T2 P3-3 | Schema additions had no committed test; `completionSubmitRequest` copied the completion members | Closed in T2 (`9f73d96e`). The restructure of `completionCreateRequest` (`allOf` over `completionRequestMembers` + `unevaluatedProperties: false`) accepts exactly the same documents with a JSON Schema 2020-12 validator; a consumer that inspects the schema's structure sees the members under the new def. Both guides' async-submit schema-refresh instructions now require a 2020-12 validator and name the shared members def and the create/submit derivation. |
 | Phase III check P3-6 | Proposal example messages and the OWNERSHIP_MAP readiness callers drifted from the code | Closed in T2 (`43354f87`); the Gates record now names one candidate tree. |
 | Phase III check P2-1 | The relay armed only `SIGINT`/`SIGTERM` while the docs promised Windows console Ctrl events | Closed in T2: `SIGHUP` (POSIX, win32 console close) and `SIGBREAK` (win32 Ctrl+Break) armed; spec delta, design R4, proposal and both guides name the exact set. The immutable fixture `controls.json#S35.windowsMatrix` still says "console Ctrl events"; it is unexecuted documentation of the win32 harness and is superseded by the spec table. |
 | Starvation | daemon → schedule → api slot order can delay API runs | Documented. |
 | TICKET-128 | Orphan creation keeps a key pending; partial publish and publish→expiry crash gap; a consumer deleting published files makes `wait` pending again | Documented in both guides; not repaired in this slice. |
 | Mixed builds | An older build on the same profile is unsupported and not technically fenced (D7, SYN-26) | Documented in both guides; the 4.9 fixture is open. |
+
+## Follow-up register
+
+| Item | Coordinator disposition / proposed ticket scope | Evidence and acceptance boundary |
+| --- | --- | --- |
+| S35 relay-arming window | Residual disclosure + follow-up ticket suggestion (2026-10-02): 在 admission 时即 arm handler，同时保留 own-pump 默认处置回执。The canonical wrapper owner is `headless/cli-dispatcher.ts`; implementation requires a separately scoped follow-up, not this documentation closure. | Cover a signal before the wrapper observes another executor's claim, retain own-pump process-tree/default-disposition receipts, and exercise the S35 Career Kit 500 ms sequence and the T2 real-process SIGHUP test under load. Both tests share the arming race. The current window remains disclosed; no product fix or Windows host pass is claimed. |
 
 ## C7 scope check
 
@@ -363,8 +399,9 @@ $L api runs retry "$Q" --request "$PROJ/retry.json" --async --json
 
 - Tasks 8.5: Codex `IMPLEMENTATION_VERIFIED` and a fresh-context Claude
   `REVIEW_APPROVED` must both bind this candidate SHA. Both are pending. The
-  T1 `REVIEW_APPROVED` binds `e0a9a967` and the Phase III check binds
-  `887df155`; T2 changed product code after both, so neither is a substitute.
+  T1 `REVIEW_APPROVED` binds `e0a9a967`, the Phase III check binds
+  `887df155`, and the T2 closure review binds `b7b408d1`; none is a substitute
+  for final verdicts on this documentation-closure SHA.
 - Tasks 8.7: once both verdicts bind the same SHA and no Red item is open, the
   coordinator records ACCEPTED under the Owner's 2026-10-02 self-iteration
   mandate. Red items return to the Owner. Not recorded yet.
@@ -372,7 +409,7 @@ $L api runs retry "$Q" --request "$PROJ/retry.json" --async --json
   merge, release or repository-rules changes; none was performed. A local
   merge needs its own authorization and post-merge gates.
 - Open before acceptance can be argued complete: tasks 1.4 (Windows
-  receipts), 1.6 (closure re-check receipt), 3.3 (SYN-25 cache), 4.9
+  receipts), 3.3 (SYN-25 cache), 4.9
   (migration/rollback fixture), the PARTIAL rows 7.2, 7.3, 7.4, 7.6, 7.7, 7.9
   and 7.10, 8.1, 8.3, 8.4, and the sub-clauses listed above. The coordinator
   decides which of these are acceptance blockers.
