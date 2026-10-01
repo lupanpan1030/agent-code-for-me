@@ -1,22 +1,22 @@
 # Verification
 
-Status: **FINAL FROZEN CANDIDATE — 2026-10-02 (post-T2 documentation closure); awaiting same-SHA Codex IMPLEMENTATION_VERIFIED + Claude REVIEW_APPROVED**
+Status: **FINAL FROZEN CANDIDATE — 2026-10-02 (T3: Codex R1 P1s and final-review findings closed); awaiting same-SHA Codex IMPLEMENTATION_VERIFIED + Claude REVIEW_APPROVED**
 
 ## Candidate
 
 - Change: `add-local-job-api-async-submit` (Phase 3, second proposal).
-- Candidate source SHA: this single documentation-closure commit,
-  `docs(openspec): final documentation closure for local job api async submit`,
-  is the **final frozen candidate**, superseding the T2 tip
-  `b7b408d15d14fccd3a6f561405f6ae2c82c37e40`. A commit cannot contain its own
-  SHA; the exact value is recorded in this dispatch's final handoff and
-  resolves with
+- Candidate source SHA: the T3 record commit
+  `docs(openspec): freeze the async submit T3 candidate` is the **final
+  frozen candidate**, superseding the documentation-closure candidate
+  `37de7fce8fe0b67c81e90e1be886c6b85efb02dc`. A commit cannot contain its own
+  SHA; the exact value is recorded in the T3 handoff
+  (`impl-async-submit-t3.report.md`) and resolves with
   `git log -1 --format=%H -- openspec/changes/add-local-job-api-async-submit/verification.md`.
   On the frozen branch this must equal `git rev-parse HEAD`, and its subject
-  must match the documentation-closure subject above. The T2 report and T2
-  `REVIEW_APPROVED` remain evidence for `b7b408d1`, not verdicts for this SHA.
-  The Phase III candidate `887df155` is superseded: T2 changed product code,
-  so no verdict bound to `887df155` or `e0a9a967` carries over.
+  must match the subject above. T3 changed product code, so no verdict bound
+  to `37de7fce`, `b7b408d1`, `887df155` or `e0a9a967` carries over; the
+  `37de7fce` reviews (Codex R1 NOT_VERIFIED; Claude design/security
+  CHANGES_REQUESTED, tests/static REVIEW_APPROVED) are the inputs T3 closes.
 - Worktree / branch: `/home/chen/projects/locus-add-local-job-api-async-submit-draft`,
   `codex/add-local-job-api-async-submit-draft`. Remote push, PR, merge, release
   and rules changes: not authorized, not performed.
@@ -24,16 +24,18 @@ Status: **FINAL FROZEN CANDIDATE — 2026-10-02 (post-T2 documentation closure);
   canonical run event ledger archive `87eb6b01`). Owner APPROVED decisions
   bound to `0f998436`, recorded at `0447d02d`. Independent red suite
   `20e7bfcf` with ratified seams `8974c9ed`.
-- Product code changed after `e0a9a967` only in T2: `src/main/lib/headless/cli-dispatcher.ts`
-  (`0e70e7d7`, `674ab421`), `run-submission.ts` (`674ab421`), `local-job-api.ts` and
-  `daemon.ts` (`0d6b03da`); T2 also changed the published schema
-  (`docs/local-job-api-v1.schema.json`, `9f73d96e`), one living schema test
-  assertion (`tests/local-job-api-schema.test.ts`, the completion member set
-  now read from `completionRequestMembers`) and added four implementer-unit
-  test files. Phase III commits were documentation only.
-- This final closure changes only the two consumer guides and this change's
-  documentation. Product code, tests, the published schema structure and the
-  immutable red set remain unchanged from `b7b408d1`.
+- Product code changed after `e0a9a967` in T2 (`cli-dispatcher.ts`,
+  `run-submission.ts`, `local-job-api.ts`, `daemon.ts`, the published schema
+  structure, one living schema test assertion and four implementer-unit test
+  files) and in T3 (after `37de7fce`):
+  `src/main/lib/headless/job-store.ts` (`5fa48189`, `29edbf39`),
+  `local-job-api.ts` (`5fa48189`, `a90361ee`), `run-submission.ts`
+  (`5fa48189`), `cli-dispatcher.ts` (`29edbf39`, `36dc9c12`, `a90361ee`),
+  `daemon.ts` (`29edbf39`, `96dbc22d`, `36dc9c12`) and
+  `scripts/check-architecture-guards.mjs` (`528f05d9`). T3 added five
+  implementer-unit test files and one test-owned child fixture
+  (`tests/fixtures/local-job-api-relay-arming/child.ts`) and retitled one T2
+  test (`9f0fde7f`); no published-schema, migration or `drizzle` change.
 - Immutable red set (4 red tests, 4 kits, `tests/fixtures/local-job-api-async`,
   `red-receipt.md`): zero diff against the re-pinned baseline `770c78ad`.
 - Data lifecycle stage: PRE-PRODUCTION / DISPOSABLE TEST DATA
@@ -52,7 +54,8 @@ Status: **FINAL FROZEN CANDIDATE — 2026-10-02 (post-T2 documentation closure);
 | T1 touch-up | `74e30df9`, `27cbcdad`, `5615e1f2`, `dcad0c0e`, `ad6225cb`, `22d4336b`, `0537da25`, `2dc0b5e6`, `e0a9a967` | `async-submit-t1-review-e0a9a967….md`: REVIEW_APPROVED (0 P0/P1/P2, 3 P3) |
 | Phase III | `d37fa4e5` (guides), `d813b060` (schema), `4748aa73` (owner rows), `53bbc270` (proposal P3-1), `bbcc0995` (tasks), `887df155` (freeze) | `async-submit-phase3-check-887df155….md`: CHANGES_REQUESTED (1 P2 Windows relay overclaim, 6 P3) |
 | T2 | `0e70e7d7` (relay SIGHUP/SIGBREAK), `39e3446d` (R4 docs), `674ab421` (own-pump read failure), `0d6b03da` (over-age tick diagnostics), `9f73d96e` (schema test, derived completion submit), `43354f87` (precedence, owner map, proposal text), `b63f9965` (tasks), `cfe73cf5` (re-freeze record, STATUS), `abb96416` (S35 timing disclosure), `b7b408d1` (T2 candidate pointer) | `async-submit-t2-review-b7b408d15d14fccd3a6f561405f6ae2c82c37e40.md`: READY_FOR_FINAL_REVIEW / REVIEW_APPROVED for T2 closure scope; 4 nonblocking P3 documentation/residual items |
-| Final documentation closure | This commit (SHA resolves under Candidate) | Dispositions of the four T2 P3s and the implementer report's coordinator items; final same-SHA dual verdicts pending |
+| Final documentation closure | `37de7fce` | Codex R1 `async-submit-negotiation-r1-codex-37de7fce.md`: NOT_VERIFIED (P1-1 fresh ack re-read, P1-2 relay armed too late; A2/A8 PARTIAL); Claude `async-submit-final-review-design-correctness-37de7fce.md` CHANGES_REQUESTED (F1 P2, F2/F3 P3), `…-security-c7-37de7fce.md` CHANGES_REQUESTED (P1-1 disclosure, P3-1/P3-2), `…-tests-arch-37de7fce.md` REVIEW_APPROVED (4 P3) |
+| T3 | `5fa48189` (fresh ack snapshot), `29edbf39` (halted ledger release, bounded own cancel and over-age tick), `96dbc22d` (dispatch backoff), `36dc9c12` (relay armed at admission), `a90361ee` (generic malformed-JSON diagnostic), `528f05d9` (guard detection), `9f0fde7f` (test title), `a30cdd6d` (guides), `e6842e5d` (proposal rows, design F3), T3 record commit (SHA resolves under Candidate) | Closes every 37de7fce finding (see Disclosures); final same-SHA dual verdicts pending |
 
 Every P2 above is closed at `e0a9a967`: Phase I design P2-1 (retry error
 baseline, `ac1e2f74`) and P2-2 (R4 relay race, `84c622ce`); Phase I security
@@ -63,6 +66,22 @@ immutable files, `770c78ad`). The T1 review verified these closures with probes.
 and the T1 review's P3-2/P3-3 are dispositioned under Disclosures.
 
 ## Gates
+
+### T3 candidate gates
+
+Run on `e6842e5d` (the last T3 commit before this record; this record commit
+changes only `verification.md`, `tasks.md` and `STATUS.md`) and re-run at the
+T3 record commit; the exact-SHA results are in the T3 handoff.
+
+| Gate | Command | Result |
+| --- | --- | --- |
+| Four red files | `bun test --isolate` over the four red files | 79 pass / 0 fail, 360 `expect()` calls |
+| Aggregate | `bun run check:full` | exit 0 (4 min 28 s): no changed files for lint:changed; both guard self-tests 17/17 and `Architecture guard passed.`; retired-runtime check passed; `tsc --noEmit` clean; 2894 pass / 2 skip / 0 fail, 14527 `expect()` calls, 2896 tests in 366 files (the 2 skips are the win32-gated relay tests); strict 54/54; build succeeded; diff:check clean |
+| PR-base lint | `BIOME_CHANGED_SINCE=2c59664f node scripts/run-biome-changed.mjs` | exit 0 |
+| Lint ratchet | `git diff 2c59664f <candidate> -- lint-baseline.json` | only deletions, unchanged by T3: `daemon.ts: 2`, `job-store.ts: 1`, `trpc/routers/agent-jobs.ts: 1` |
+| Architecture baselines | `scripts/architecture-baselines.json` | 0-line diff vs `2c59664f`; `reachThroughWrappers` unchanged |
+| Immutable set | `git diff --stat 770c78ad <candidate> -- <4 red tests, 4 kits, tests/fixtures/local-job-api-async, red-receipt.md>` | empty |
+| Whitespace | `git diff --check` | exit 0 |
 
 Historical implementation gates on the T2 tree, ending at
 `b7b408d15d14fccd3a6f561405f6ae2c82c37e40`. Every gate below ran on `b63f9965` (the last
@@ -87,7 +106,7 @@ and passed on rerun; see the S35 timing disclosure below.
 | T2 product scope | `git diff --stat e0a9a967 <candidate> -- src tests scripts drizzle` | `cli-dispatcher.ts`, `run-submission.ts`, `local-job-api.ts`, `daemon.ts`, `tests/local-job-api-schema.test.ts` and the four new implementer-unit files only; no `scripts`/`drizzle` change |
 | Schema conformance | `bun test --isolate tests/local-job-api-async-schema-envelopes.test.ts` (committed in T2; replaces the Phase III throwaway probe) | Ajv 2020 against the published schema: emitted fresh/keyed-replay submit (agent and completion), status with `execution`, wait timeout, wait `observation_failed`, wait-ready and create (`createResponseEnvelope`), keyed `retry --async` and its replay, and the stdout errors `idempotency_key_not_supported`, `invalid_idempotency_key`, `idempotency_conflict`, `consumer_mismatch` all valid; keyed agent/completion bodies valid for `submitRequest` and rejected by `createRequest`; unknown members rejected by `completionSubmitRequest`/`completionCreateRequest`/`retryRequest`. `submission_pending` and `secret_in_request` are not emitted by this file; their behavior is asserted by the idempotency red file, but their envelopes are not schema-validated by a committed test. `completionSubmitRequest` now derives from `completionRequestMembers` (`allOf` + `unevaluatedProperties: false`), shared with `completionCreateRequest`, so the two member sets cannot drift; validation of `completionCreateRequest` is unchanged. |
 
-### Final documentation closure checks
+### Final documentation closure checks (`37de7fce`)
 
 Run on the documentation-closure worktree before the single freeze commit;
 these checks are distinct from the historical T2 implementation gates above.
@@ -114,7 +133,7 @@ documentation-example clause, as before.
 
 | ID | Delta | Scenario | Tests at the candidate (file — title after the Sxx name) | Result |
 | --- | --- | --- | --- | --- |
-| S01 | [local-job-api](specs/local-job-api/spec.md) | Submit returns before execution is released | `submit-wait` — submit acks one queued admission with a committed job_created before any dispatch, and a later claim is visible only through status (pass) | pass |
+| S01 | [local-job-api](specs/local-job-api/spec.md) | Submit returns before execution is released | `submit-wait` — submit acks one queued admission with a committed job_created before any dispatch, and a later claim is visible only through status (pass)<br>`local-job-api-submit-ack-snapshot.test.ts` — a claim between admission and the fresh submit ack still prints the queued admission snapshot (run-dir admission / no run dir) (implementer-unit, T3, pass) | pass |
 | S02 | [local-job-api](specs/local-job-api/spec.md) | Existing admission gates run before provider work | `submit-wait` — every create-time rejection is reproduced by submit with zero provider calls and no queued ack; a no-profile request keeps the batch selector path (pass) | pass |
 | S03 | [local-job-api](specs/local-job-api/spec.md) | Old create matches submit plus wait byte for byte | `submit-wait` — old-shaped create and submit + executor + wait both reproduce the 2c59664f golden stdout/exit for every outcome and kind (pass)<br>`submit-wait` — real processes: workerId/workerPid identify the wrapper or daemon process that actually won the claim (pass) | pass |
 | S04 | [local-job-api](specs/local-job-api/spec.md) | Default retry retains synchronous response and lineage | `submit-wait` — sync retry and retry --async + executor + wait both equal the 2c59664f retry golden, each with one new child attempt and an untouched source (pass) | pass |
@@ -148,7 +167,7 @@ documentation-example clause, as before.
 | S32 | [architecture-ownership](specs/architecture-ownership/spec.md) | Guard rejects an inline API execution fallback | `guards-protocol` — the guard self-test matches every S32 case exactly: the clean wrapper/stdio pump fixture (human locus run permitted) passes and each inline-runner, restored runPreparedLocalJobApiJob and independent stdio dispatch variant reports its file, symbol and daemon/run-submission owner (pass)<br>`guards-protocol` — the guard self-test fails by case id when a required inline-runner finding is missing from a variant or an unexpected one is demanded of the clean fixture (pass)<br>`guards-protocol` — the default architecture check self-tests the canonical async fixture and enforces the repository end state (run-submission.ts owns submitRun/waitForRun, daemon.ts owns pumpQueuedRuns, runPreparedLocalJobApiJob and adapter runner calls are gone) (pass) | pass |
 | S33 | [architecture-ownership](specs/architecture-ownership/spec.md) | Guard rejects duplicate creation and ledger writers | `guards-protocol` — the guard self-test matches every S33 case exactly: duplicated submitRun/waitForRun/pumpQueuedRuns, direct agent_jobs inserts in API/stdio/schedule adapters and an appendExactRunEventBatch import outside the host are rejected with their owner, the schedule shared-insertion fixture passes, and no migration toggle can revive the old core or the retired ledger gate (pass) | pass |
 | S34 | [local-job-api](specs/local-job-api/spec.md) | Create and retry run without an external executor | `submit-wait` — with no daemon lock, create (agent, completion) and default retry claim only their own admitted Run through the canonical pump, leave unrelated queued work untouched and match baseline bytes (pass)<br>`submit-wait` — daemon-first: when a daemon wins the claim the wrapper only waits, never double-dispatches, and returns the claimant's terminal envelope (pass)<br>`submit-wait` — daemon-first stalled worker with unknown liveness and no progress yields the identified executor_unknown error/8 at the 30000 ms window (pass)<br>`submit-wait` — daemon-first kind:completion with a 45000 ms upstream call and a confirmed-alive claimant emits no error/8 at 30000 ms and returns the claimant's terminal envelope (pass) | pass |
-| S35 | [local-job-api](specs/local-job-api/spec.md) | Aborting a wrapper applies the chosen cancel policy | `submit-wait` — own-pump wrapper keeps the 2c59664f process-tree receipts for SIGINT/SIGTERM/SIGKILL and stdin EOF (pass)<br>`submit-wait` — daemon-first SIGINT relays one cancel for the admitted ID only, waits at most 5000 ms for the ack and re-raises SIGINT (pass)<br>`submit-wait` — daemon-first SIGTERM relays one cancel for the admitted ID only, waits at most 5000 ms for the ack and re-raises SIGTERM (pass)<br>`submit-wait` — SIGKILL of a daemon-backed waiter relays nothing and leaves the Run running and queryable (pass)<br>`submit-wait` — closing a stdin pipe that was open at admission relays the own cancel and exits 8 without a terminal envelope (pass)<br>`submit-wait` — ignored stdin and a --request - body EOF consumed before admission arm no EOF cancel and the Run continues (pass)<br>`submit-wait` — Career Kit SIGTERM then SIGKILL after 500 ms truncates the ack wait without undoing the persisted cancel request (pass) | pass |
+| S35 | [local-job-api](specs/local-job-api/spec.md) | Aborting a wrapper applies the chosen cancel policy | `submit-wait` — own-pump wrapper keeps the 2c59664f process-tree receipts for SIGINT/SIGTERM/SIGKILL and stdin EOF (pass)<br>`submit-wait` — daemon-first SIGINT relays one cancel for the admitted ID only, waits at most 5000 ms for the ack and re-raises SIGINT (pass)<br>`submit-wait` — daemon-first SIGTERM relays one cancel for the admitted ID only, waits at most 5000 ms for the ack and re-raises SIGTERM (pass)<br>`submit-wait` — SIGKILL of a daemon-backed waiter relays nothing and leaves the Run running and queryable (pass)<br>`submit-wait` — closing a stdin pipe that was open at admission relays the own cancel and exits 8 without a terminal envelope (pass)<br>`submit-wait` — ignored stdin and a --request - body EOF consumed before admission arm no EOF cancel and the Run continues (pass)<br>`submit-wait` — Career Kit SIGTERM then SIGKILL after 500 ms truncates the ack wait without undoing the persisted cancel request (pass)<br>`local-job-api-wrapper-relay-arming.test.ts` — daemon-first SIGTERM before the own claim attempt and SIGTERM before any claim (implementer-unit, T3, pass) | pass |
 | S36 | [agent-runtime-core](specs/agent-runtime-core/spec.md) | Daemon death recovers to a readable interrupted result | `executor` — a killed daemon worker settles once as interrupted/worker_stopped and wait returns exit 1 with result.artifacts [] and retention from settlement (pass)<br>`executor` — a stale heartbeat whose worker is alive or EPERM stays running with no false recovery and wait reports run_pending (pass) | pass |
 | S37 | [headless-agent-jobs](specs/headless-agent-jobs/spec.md) | Submit in one process and publish in another | `executor` — process A submits and exits, process B reopens/executes/publishes and process C waits ready with the golden prepared tail and no dev/ino/env leakage (pass)<br>`executor` — an initial-file digest, symlink or hardlink mismatch found by the claiming process settles failed/artifact_admission_mismatch once, calls no provider and wait returns exit 1 (pass) | pass |
 | S38 | [agent-runtime-core](specs/agent-runtime-core/spec.md) | Crash at creation to initial admission boundary | `executor` — the half-admitted Run is never listed or claimed, same-key submit is submission_pending/8 and status/wait report admission_incomplete (pass)<br>`executor` — runs cancel settles one canceled terminal without terminal refs and only the named cleanup at settlement+30 days releases the reservation (pass) | pass |
@@ -181,6 +200,11 @@ Implementer-unit tests added during implementation (all pass at the candidate):
 | `tests/local-job-api-wrapper-observation-fault.test.ts` (T2) | 3 | Phase III check P3-1: own-pump create/retry store-read failure stops the own tree, stderr `database is locked`, exit 2/3, no stdout, Run settles `canceled`; daemon-first control keeps `observation_failed`/8 |
 | `tests/local-job-api-over-age-tick-diagnostics.test.ts` (T2) | 3 | T1 P3-2: non-race settlement error reported with a sanitized code and excluded; claim race silent; daemon writes one `[Daemon]` diagnostic and still settles younger over-age runs |
 | `tests/local-job-api-async-schema-envelopes.test.ts` (T2) | 8 | Phase III check P3-5: Ajv 2020 conformance of emitted envelopes and request bodies; derived completion submit member set |
+| `tests/local-job-api-submit-ack-snapshot.test.ts` (T3) | 2 | Codex R1 P1-1: a real claim on a second connection between the completed admission and the ack (with and without a run dir) still prints the queued snapshot (no worker fields, exit 0) while the store holds `job_started` |
+| `tests/local-job-api-claim-append-failure.test.ts` (T3) | 4 | Design F1/F2: an always-failing `job_started` append makes own-pump create/retry report one stderr line with exit 2/3, no stdout, Run `canceled`, bounded; a daemon still settles that Run `queued_age_exceeded` when it ages out and stops on abort; a Run whose claim append failed three times is retried with backoff and succeeds once |
+| `tests/local-job-api-wrapper-relay-arming.test.ts` (T3, POSIX) | 2 | Codex R1 P1-2: real processes held in the former unarmed window by the `beforeOwnPumpClaim` seam; SIGTERM after a daemon claim relays one cancel (Run `canceled` by the claimant) and re-raises SIGTERM within the ack bound; SIGTERM before any claim cancels the own queued Run (never started) and re-raises SIGTERM |
+| `tests/local-job-api-malformed-request-diagnostic.test.ts` (T3) | 3 | Security P3-1: malformed `runs submit` / `runs retry --request` bodies print `Invalid JSON request`, exit 2, no request text; `runs create` keeps the parser-message diagnostic |
+| `tests/local-job-api-async-guard-detection.test.ts` (T3) | 1 | Tests/static P3-1: the frozen 17 cases plus seven test-owned cases (nested or method `runCommand`, top-level permitted caller, destructured and declared re-binding, element-access insert, new headless module) match exactly |
 
 Existing-test churn: `tests/run-event-ledger-terminal-commit-faults.test.ts`
 moved `artifactManifestPath` to after the claim because of the D3 admission
@@ -208,8 +232,8 @@ From red-receipt §6, with their state at the candidate:
 | S18 | slow-cancel preparation racing a claimant that fails immediately | partly: process+attempt staging names (`765b8ea6`) and cancel/cancel race (`local-job-api-queued-cancel-terminal.test.ts`) covered; slow-cancel vs failing claimant open |
 | S22 | failed migration exits before activation; isolated profile activation/rollback; old binary at a new marker | open (tasks 4.9); the guides state that same-profile mixed builds are unsupported |
 | S27 | fault after each staged write, not only the last | open |
-| S35 | Windows matrix; POSIX process-group kill with real grandchildren | host-blocked (no Windows host); POSIX single-process receipts covered, POSIX `SIGHUP` relay covered in T2; the win32 `SIGBREAK`/`SIGHUP` relay tests exist but skip on this Linux host |
-| S37 / S39 | create/default-retry wrapper paused after admission (`beforeOwnPumpClaim`) | open as tests; the Phase II design review probed the wrapper-paused unregister case (exit 7) on the same gate |
+| S35 | Windows matrix; POSIX process-group kill with real grandchildren | host-blocked (no Windows host); POSIX single-process receipts covered, POSIX `SIGHUP` relay covered in T2, signals before the own claim covered in T3; the win32 `SIGBREAK`/`SIGHUP` relay tests exist but skip on this Linux host |
+| S37 / S39 | create/default-retry wrapper paused after admission (`beforeOwnPumpClaim`) | open as tests for S37/S39 themselves; the Phase II design review probed the wrapper-paused unregister case (exit 7) on the same gate, and T3's relay-arming tests pause the wrapper there for S35 |
 | S40 | CLI readiness with probing enabled across processes; win32 allowlist | open / host-blocked |
 | S41 / S47 | packaged bootstrap ordering and packaged `locus jobs-stdio` capture | host-blocked (tasks 8.3) |
 | S21 | retention equality with baseline | open (names, roles, digests and result fields are asserted) |
@@ -225,20 +249,22 @@ against the code at `e0a9a967`.
 | Hashes | Key hash = SHA-256 of `locus.local-job.idempotency-key.v1\0` + length-prefixed consumer + length-prefixed key. Request hash = SHA-256 of a domain plus canonical JSON `{normalizationVersion:1, fingerprint}`; the submit fingerprint uses realpath-canonical cwd and artifact base (no registry read, so a replay never reruns admission gates); the retry fingerprint is `{intent:"retry", sourceJobId, sourceInput}`. |
 | Error envelopes | stdout `{apiVersion, error:{code, message[, retryable]}}`; `submission_pending` → exit 8 with `retryable:true`; every other async code → exit 2. A keyed submit/retry whose `consumer.id` the store would redact → `secret_in_request` (unkeyed requests keep baseline storage). Messages: `idempotencyKey is not accepted by runs create; use runs submit.`, `The idempotency key is already bound to a different request.`, `consumer.id does not match the source job consumer.`, `Submission is not yet admitted; retry the same key.` |
 | Replay envelope | `{apiVersion, idempotentReplay:true, job}` for keyed submit and keyed `retry --async`; a synchronous keyed retry replay prints the child's plain terminal envelope. |
-| Retry body | Only `apiVersion`, `consumer.id`, `idempotencyKey`; other members and malformed JSON → plain-text stderr, exit 2; `consumer_mismatch` before key lookup. |
+| Retry body | Only `apiVersion`, `consumer.id`, `idempotencyKey`; other members → plain-text stderr, exit 2; malformed JSON → stderr `Invalid JSON request`, exit 2 (T3; `runs submit` likewise; `runs create` keeps the parser-message diagnostic); `consumer_mismatch` before key lookup. |
+| Fresh ack snapshot | `insertQueuedAgentJobRow` returns the row read inside its insertion transaction; `createAgentJob`, `retryAgentJob`, the API admission adapters and `submitRun` return that row without re-reading it. `job_created` and the initial run-dir `artifact_created` commit events only and mutate no job column, so it is exactly the queued row of the completed admission (T3, Codex R1 P1-1). Replays (`resolveReservation`) read the current state. |
 | Retention | One `UPDATE agent_job_idempotency SET expires_at` through `recordVerifiedRunRetention` after verified publication (pump, queued cancel) or at settlement for an empty terminal set (recovery, admission failure, claim-gate and over-age settlements). Cleanup is a `DELETE`, run by `submitRun` for the consumer before every submit, create and retry (keyed or not) and by every daemon loop iteration, including `--once`. |
 | Admission keys | Initial admission observation key `lifecycle:initial-artifacts:<id>` (fact `:0`); claim errors `MISSING_JOB_CREATED`, `MISSING_INITIAL_ADMISSION`, `CLAIM_LOST`. A run-dir or admission failure after the creation commit settles `failed` / `artifact_admission_failed` through the host and keeps the attempt and key. |
 | Worker identity | Unique per claim: `<kind>:<pid>:<ms>:<createId>:<jobId>`, where `kind` is `daemon` for daemon claims and the runner's own prefix otherwise (`headless`, `completion`; protocol sessions keep `protocol:`). Two pumps in one process otherwise produced identical `job_started` fact keys (found by S28). Opaque; the guides disclose the format change. |
 | Pump | `pumpQueuedRuns` is a one-line export over the internal `runPumpPass`, which the daemon loop also calls, so external scoped callers stay observable. Slots daemon → schedule → api; `api` only when the daemon holds a lock (`apiCapable: lock !== null`); a direct unscoped `pumpQueuedRuns` call defaults to API-capable (executor tests). |
 | Lock v2 | Refreshed every 500 ms and on each loop iteration by temp file + rename; the writer stops on a foreign nonce. Freshness 0–5000 ms; running-worker evidence uses the existing 120 s recovery window. |
 | Wrapper wait | 100 ms polls on `monotonicClock`; own-pump runs exempt from the no-progress window while the dispatch promise is pending; daemon-first no-progress window 30 s with reason `executor_unavailable` when the observation is unavailable, otherwise `executor_unknown` (including a queued run with an available daemon that never claims it); publication bound 30 s after `completed`. |
-| R4 relay | Armed signals = `daemonFirstRelaySignals(process.platform)`: `SIGINT`, `SIGTERM`, `SIGHUP` on POSIX, plus `SIGBREAK` on win32 (T2 P2-1). Cancel is persisted, then up to 5000 ms of polling for a terminal; then the signal is re-raised (1 s fallback if a foreign handler keeps the process alive; exit 8 when the runtime cannot raise it, i.e. Windows `SIGBREAK`/`SIGHUP`) or exit 8 on EOF, with no stdout. EOF is armed only when `stdin` is `process.stdin`, fd 0 is a FIFO or socket and the request was not read from stdin. |
+| R4 relay | Armed signals = `daemonFirstRelaySignals(process.platform)`: `SIGINT`, `SIGTERM`, `SIGHUP` on POSIX, plus `SIGBREAK` on win32 (T2 P2-1). T3 (Codex R1 P1-2): armed at admission, before `beforeOwnPumpClaim` and the own pump's claim attempt. Before the own claim (queued, or claimed by another executor) an abort stops the own pump attempt (abort signal) and wait, persists one cancel of the own ID through `cancelAgentJob` (a queued Run settles canceled; a claimed Run gets its cancel request), polls up to 5000 ms in total for a terminal, waits for the stopped own pump within the same bound, then re-raises the signal (1 s fallback if a foreign handler keeps the process alive; exit 8 when the runtime cannot raise it, i.e. Windows `SIGBREAK`/`SIGHUP`) or exits 8 on EOF, with no stdout. The canonical pump's `claimObserver` reports the own worker identity before the claim and disarms the relay right after a successful own claim, so local execution keeps the default signal disposition and ignores EOF; a signal caught between that claim commit and the disarm (row `workerId` equals the own worker) is re-raised at once with the default disposition. EOF is armed only when `stdin` is `process.stdin`, fd 0 is a FIFO or socket and the request was not read from stdin. |
 | Completion heartbeat | Every 15 s during the single upstream call (closure residual 1). |
 | Claim gate | `RunClaimGate` after the conditional claim, before provider resolution: project → cwd identity → stored profile/capability/grant → explicit provider profile → queued age → run-dir reopen; completion runs skip project, cwd and reopen. Failures settle `host_result` failed with optional `reasons` prepended to the ledger failures; an unexpected gate exception → `claim_gate_failed` / `internal_error` / 8. Missing or malformed stored identity → `cwd_identity_changed` (`74e30df9`). The gate handle closes in an outer `finally` (`27cbcdad`). |
 | Stored identity | `inputJson.submissionContext.projectIdentity = {canonicalPath, dev, ino}` with decimal-string dev/ino from a bigint stat; retry re-captures it; never serialized or written to `request.json`. |
 | Staging | `.<final>.locus-staged-<pid>-<uuid per prepare()>`, exclusive create; discard removes only the preparer's own receipts. |
 | Queued cancel | `openQueuedCancelLocalJobApiTerminal` returns a preparer only for a queued, admitted `source=api` agent run whose project, cwd identity and planned run dir still revalidate; it shares the private reopen helper with the claim gate and is passed to `cancelAgentJob` as `queuedTerminalProjection` by every API cancel host (CLI `runs cancel`, `jobs cancel`, the R4 relay, own-dispatch cleanup, tRPC `agentJobs.cancel`). jobs-stdio cancel is unchanged (protocol runs only). |
-| Over-age tick | `settleOverAgeQueuedLocalJobApiRuns` every daemon loop iteration (with or without a lock), after idempotency cleanup and before schedules and pump; oldest first, at most 16 per iteration, admitted runs with `createdAt <= now - maxQueuedApiAgeMs`, through `settleQueuedAgentJobFailed(..., {requireUnclaimed})` so a concurrent claimant wins. A non-race settlement error yields one sanitized `[Daemon]` diagnostic and excludes the id for the rest of that daemon's life (T2). |
+| Over-age tick | `settleOverAgeQueuedLocalJobApiRuns` every daemon loop iteration (with or without a lock), after idempotency cleanup and before schedules and pump; oldest first, at most 16 per iteration, admitted runs with `createdAt <= now - maxQueuedApiAgeMs`, through `settleQueuedAgentJobFailed(..., {requireUnclaimed})` so a concurrent claimant wins. A non-race settlement error yields one sanitized `[Daemon]` diagnostic and excludes the id for the rest of that daemon's life (T2). T3: the tick waits for the pass at most `OVER_AGE_TICK_WAIT_MS` (5000 ms) and starts no second pass while one is pending; a failed pass writes one `[Daemon]` line and is retried on a later tick. |
+| Failed dispatch (T3) | `startAgentJob` releases the cached ledger when the `job_started` append fails without a competing claim (the ledger is halted on that observation), so later cancels and settlements on the same handle recompose a ledger (design F1). The daemon retries a Run whose dispatch failed with a non-outcome error while it stays queued, after `DAEMON_DISPATCH_RETRY_BASE_MS` (1 s) doubling per failure up to `DAEMON_DISPATCH_RETRY_MAX_MS` (60 s); a `--once` pass still stops when only failed Runs remain (design F2). The wrapper's own queued cancel after `own_dispatch_failed` / `own_observation_failed` waits at most 5000 ms. |
 | Retry errors | `apiRetryError` keeps the `2c59664f` retry catch (provider-binding → stdout envelope, everything else → stderr exit 3) plus the new request errors; `apiCreateError` keeps the create catch. The retry status check stays inside `retryAgentJob`, after the gates. |
 | Protocol | `SubmitRunIntent` gains `{kind:"protocol-run"}` (no key, no artifacts); protocol claims keep the `protocol:` worker prefix. |
 
@@ -249,14 +275,14 @@ is either documented for consumers or recorded here for a follow-up.
 
 | Source | Item | Disposition |
 | --- | --- | --- |
-| Phase I design P3-2 | D3 moves mkdir after the creation commit; a run-dir or admission failure leaves a `failed` / `artifact_admission_failed` job (every artifact-bearing attempt on Windows until TICKET-127) | Documented in both guides (Claim-time checks, Known limits). TICKET-127/128 text not updated in this slice. |
+| Phase I design P3-2 / 37de7fce security P1-1 | D3 moves mkdir after the creation commit; a run-dir or admission failure leaves a durable `failed` / `artifact_admission_failed` job, also for old-request `runs create` and default `runs retry` (stderr/exit unchanged), binds a submit key to that attempt, checks the retry source status before mkdir, and hits every artifact-bearing attempt on Windows until TICKET-127 | T3: proposal §3 row "admission failure after creation commit" (C7 #4/#5/#10; not a new Red: the behavior is the approved D3 order, Owner 2026-10-02 bound to `0f998436`); the "六个" sentence and C7 #4/#5/#10 name it; both guides gain "Admission failure after creation" besides Claim-time checks and Known limits. TICKET-127/128 text not updated in this slice. |
 | Phase I design P3-3 | `readRunPublicationReadiness` re-hashes every terminal ref on each 100 ms poll; no SYN-25 stat/identity cache | Open (tasks 3.3). Cost only; correctness unaffected. |
 | Phase I design P3-4 | Lock heartbeat nonce check and `renameSync` are not atomic together | Open; reachable only when a successor took over a lock whose writer looked dead. |
-| Phase I design P3-5 | `job.workerId` format gained a `createId` segment | Documented in both guides (opaque, format changed). |
+| Phase I design P3-5 / 37de7fce security P3-2 | `job.workerId` value format gained a per-claim unique segment (`<kind>:<pid>:<ms>:<unique>:<jobId>`) | Kept: the segment keeps the `job_started` fact keys of two pumps in one process distinct (S28 double-claim fix), so the baseline format is not restored. T3: proposal §3 workerId row now states the value-format change (opaque string, #3/#10 disclosure, not Red); both guides show both formats and say not to parse it. |
 | Phase I security P3-1 | `run-event-ledger-terminal-commit-faults` fixture churn | Recorded above; no assertion changed. |
-| Phase I security P3-2 | Malformed JSON bodies on `submit` / `retry --request` can echo parser text (and so a fragment of the input) on stderr | Open; same as existing create behavior; keys are not secrets by contract. |
+| Phase I security P3-2 / 37de7fce security P3-1 | Malformed JSON bodies on `submit` / `retry --request` echoed parser text (and so a fragment of the input) on stderr | Closed in T3 (`a90361ee`): those commands print `Invalid JSON request`; `runs create` keeps its 2c59664f diagnostic (baseline bytes; create rejects keys after parsing, so a malformed create body can still echo its own text, as before). Both guides document it. |
 | Phase I security P3-3 | Lock heartbeat temp file written non-exclusively | Open; same-user actor only. |
-| Phase II security P3-2 | Async guard misses assignment aliases, `.call`/`.apply` and raw `INSERT INTO agent_jobs` | Disclosed in the guard comment (`2dc0b5e6`); the S32/S33 fixture does not require them. |
+| Phase II security P3-2 / 37de7fce tests-static P3-1/P3-2 | Async guard detection gaps: assignment aliases, `.call`/`.apply`, raw SQL; also ancestor-name permitted-caller match, `schema["agentJobs"]`, the closed `nonExecutingFiles` list, destructured re-binding, and two doc-only OWNERSHIP pins | T3 (`528f05d9`): permitted caller only as the outermost top-level function; declared and destructured re-bindings followed; element-access insert targets matched; every `src/main/lib/headless` file except the execution owners (`daemon.ts`, `job-runner.ts`, `completion-runner.ts`, `job-store.ts`) scanned; every OWNERSHIP pin must name a defined export. Remaining limits disclosed in the guard comment: later assignment re-binding, `.call`/`.apply`/`Reflect.apply`, non-literal computed keys, cross-module re-binding, raw SQL. Pinned by `tests/local-job-api-async-guard-detection.test.ts`; the frozen fixture is unchanged. |
 | Phase II security P3-4 | Unscoped direct `pumpQueuedRuns` defaults to API-capable | Record only; the only production caller passes `apiCapable: lock !== null`. |
 | T1 P3-2 | The over-age tick swallowed every settlement error silently; 16 or more persistently failing over-age runs would block younger ones in that bound | Closed in T2: only `JOB_PRECONDITION_FAILED` or a re-read showing the run claimed/terminal is silent; any other error writes `[Daemon] Over-age job <id> was not settled (<CODE>); not retried by this daemon.` (sanitized code, no error text) and the daemon excludes that id on later ticks (`tests/local-job-api-over-age-tick-diagnostics.test.ts`). |
 | T1 P3-3 / Phase III check P3-2 / T2 P3-2 | Tick vs claim precedence: an over-age and unregistered run settles `queued_age_exceeded` / 1 on a daemon tick but `project_unregistered` / 7 if a claim reaches it first (the claim gate checks project → cwd → profile → age) | Disclosed in both guides (Claim-time checks): the tick settles age only and runs before the pump in each daemon iteration, so a daemon reports `queued_age_exceeded` for a run already over age when the iteration started, unless it is beyond that iteration's 16-run settlement limit, or the daemon has reported that it could not settle the run and excluded it; a run crossing the age bound between tick and claim, or claimed by another executor, gets the claim gate's order. Not a contract violation ("claim/tick SHALL fail closed"). |
@@ -266,13 +292,19 @@ is either documented for consumers or recorded here for a follow-up.
 | R3 (accepted) | Daemon-claimed runs use the daemon's environment and native credential homes | Documented in both guides. |
 | R4 (accepted) | `SIGKILL`, Windows `TerminateProcess` / `child.kill()` and the logoff/shutdown console events (libuv does not deliver them) cannot relay; 500 ms kill grace and the Windows console-close grace truncate the 5 s ack; Windows exits after a relayed signal (Ctrl+C → 1, Ctrl+Break / console close → 8) not verified on Windows (closure residual 3) | Documented in both guides; Windows host-blocked. The win32 `SIGBREAK`/`SIGHUP` tests in `tests/local-job-api-wrapper-relay-signals.test.ts` are platform-gated and skipped on this Linux host. |
 | Windows relay host evidence | Windows SIGBREAK/SIGHUP behavior and exit codes have not been verified on a Windows host | host-blocked; Windows SIGBREAK/SIGHUP 行为与退出码未在 Windows 宿主验证。Platform-gated skips and POSIX receipts are not Windows host evidence. |
-| S35 timing (T2 observation / T2 P3-1) | Once in four full-suite runs, the immutable "Career Kit SIGTERM then SIGKILL" S35 test saw the wrapper die by `SIGTERM` with no relayed cancel. The harness sends `SIGTERM` as soon as the child prints `CLAIMED` from inside the `beforeOwnPumpClaim` seam, while the wrapper arms its relay only after the seam returns and it reads the Run as claimed by another executor. Under load the signal can land in that window, where the default disposition still applies. 6/6 isolated reruns and the other full runs passed; the same window exists at `887df155` (T2 did not change that path). For a consumer, a catchable signal that arrives between admission and the daemon-first decision ends the wrapper without relaying; the Run stays queryable and cancelable by ID. | Coordinator disposition (2026-10-02): residual disclosure + follow-up ticket. Both guides now disclose the OS default disposition before the command observes another executor's claim and direct consumers to `runs cancel <job-id>`. The window is not fixed in this closure; proposed ticket scope is registered under Follow-up register. |
+| S35 timing (T2 observation / T2 P3-1 / 37de7fce tests-static P3-3) | Observed rate: one failure of the immutable "Career Kit SIGTERM then SIGKILL" S35 test in four T2 full-suite runs, and the first exact-SHA `check:full` at `37de7fce` (documentation-closure dispatch) was red once with the same test (2881 pass / 1 fail) while the coordinator's rerun at that SHA passed (2882 / 0): at least 2 failures across about 6 full runs. Cause: the harness sends `SIGTERM` as soon as the child prints `CLAIMED` from inside the `beforeOwnPumpClaim` seam, while the wrapper armed its relay only after the seam returned and it read the Run as claimed by another executor (the same window as Codex R1 P1-2). Task 8.2's earlier tick rested on T2-candidate evidence. | Closed in T3 (`36dc9c12`): the relay is armed at admission, before the seam, so a catchable signal in that window is relayed; `tests/local-job-api-wrapper-relay-arming.test.ts` holds the wrapper in the window deterministically. Residual: only uncatchable terminations (`SIGKILL`, Windows `TerminateProcess` / `child.kill()`, logoff/shutdown console events) and the 500 ms kill grace truncating the 5 s ack wait. Both guides drop the former unrelayed-window caveat and keep cancel-by-ID advice. The T3 `check:full` runs are recorded under Gates and in the T3 handoff. |
 | Phase III check P3-1 | A wrapper store-read failure returned `observation_failed`/8 even while its own pump ran the Run | Closed in T2 (`674ab421`): with a pending or completed own dispatch the wrapper aborts its own pump (the runner's abort signal stops the runtime tree), closes a never-started Run by queued cancel and keeps the baseline stderr/exit (create 2, retry 3); the stopped Run settles `canceled` when the store allows it, otherwise it stays for recovery. Only a remote claimant gets `observation_failed`/8. Both guides state the split. |
 | Phase III check P3-3 | Tasks 7.2, 7.3, 7.4, 7.6, 7.7, 7.9, 7.10 were ticked with open sub-clauses | T2 (`b63f9965`): unticked and marked PARTIAL with the open sub-clauses listed; tasks.md states the rule. |
 | Phase III check P3-4 | Task 1.6 receipt (post-prune closure re-check) missing | Coordinator accepted (2026-10-02): the post-prune re-check is covered by the `887df155` docs/C7 closure check and the `b7b408d1` T2 review, both after the `0447d02d` prune; deemed satisfied and task 1.6 checked. `25575cc3`/`abec16a5` predate prune and remain historical evidence only. Owner approval stays bound to `0f998436`. |
 | Phase III check P3-5 / T2 P3-3 | Schema additions had no committed test; `completionSubmitRequest` copied the completion members | Closed in T2 (`9f73d96e`). The restructure of `completionCreateRequest` (`allOf` over `completionRequestMembers` + `unevaluatedProperties: false`) accepts exactly the same documents with a JSON Schema 2020-12 validator; a consumer that inspects the schema's structure sees the members under the new def. Both guides' async-submit schema-refresh instructions now require a 2020-12 validator and name the shared members def and the create/submit derivation. |
 | Phase III check P3-6 | Proposal example messages and the OWNERSHIP_MAP readiness callers drifted from the code | Closed in T2 (`43354f87`); the Gates record now names one candidate tree. |
 | Phase III check P2-1 | The relay armed only `SIGINT`/`SIGTERM` while the docs promised Windows console Ctrl events | Closed in T2: `SIGHUP` (POSIX, win32 console close) and `SIGBREAK` (win32 Ctrl+Break) armed; spec delta, design R4, proposal and both guides name the exact set. The immutable fixture `controls.json#S35.windowsMatrix` still says "console Ctrl events"; it is unexecuted documentation of the win32 harness and is superseded by the spec table. |
+| Codex R1 P1-1 (37de7fce) | A legitimate claim between admission and the fresh `runs submit` ack printed `running` with a `workerId` (design D2 fixed queued snapshot violated) | Closed in T3 (`5fa48189`); see Implementation decisions "Fresh ack snapshot" and `tests/local-job-api-submit-ack-snapshot.test.ts`. Codex A2 PARTIAL (job-store.ts:433 re-read, :459 compensation, run-submission.ts:289) closes with it: the re-reads are gone and the compensation path is unchanged. |
+| Codex R1 P1-2 (37de7fce) | The R4 relay was armed only after the own pump lost the claim; a catchable signal in between took the default disposition with no relayed cancel | Closed in T3 (`36dc9c12`); see Implementation decisions "R4 relay". Codex A8 PARTIAL closes with it; its R3 part was already AGREE: `adapters/codex.ts:77-91` (`buildCodexEnv`, unchanged since `2c59664f`) builds the child env from the executing process (daemon or wrapper) through the existing allowlist and secret stripping, and nothing persists an env snapshot. |
+| Design F1 (37de7fce, P2) | A failed claim append left the cached ledger halted: the wrapper hung in its own queued cancel, and a daemon wedged at that Run's over-age settlement while advertising `available` | Closed in T3 (`29edbf39`); see Implementation decisions "Failed dispatch" and "Over-age tick"; `tests/local-job-api-claim-append-failure.test.ts`. |
+| Design F2 (37de7fce, P3) | A transient claim failure excluded the Run from the daemon for its lifetime | Closed in T3 (`96dbc22d`): retry with backoff while queued. The over-age tick's own exclusion of Runs it cannot settle (T2) is unchanged and still disclosed. |
+| Design F3 (37de7fce, P3) | design.md said the wrapper calls the recovery owner at the end of its observation window | Closed in T3 (`e6842e5d`): design D5 now says recovery runs from the CLI prologue and daemon start, as implemented. |
+| Tests/static P3-4 (37de7fce) | The simulated re-raise relay test title read like Windows evidence | Closed in T3 (`9f0fde7f`): retitled "simulated on this host …". |
 | Starvation | daemon → schedule → api slot order can delay API runs | Documented. |
 | TICKET-128 | Orphan creation keeps a key pending; partial publish and publish→expiry crash gap; a consumer deleting published files makes `wait` pending again | Documented in both guides; not repaired in this slice. |
 | Mixed builds | An older build on the same profile is unsupported and not technically fenced (D7, SYN-26) | Documented in both guides; the 4.9 fixture is open. |
@@ -281,7 +313,7 @@ is either documented for consumers or recorded here for a follow-up.
 
 | Item | Coordinator disposition / proposed ticket scope | Evidence and acceptance boundary |
 | --- | --- | --- |
-| S35 relay-arming window | Residual disclosure + follow-up ticket suggestion (2026-10-02): 在 admission 时即 arm handler，同时保留 own-pump 默认处置回执。The canonical wrapper owner is `headless/cli-dispatcher.ts`; implementation requires a separately scoped follow-up, not this documentation closure. | Cover a signal before the wrapper observes another executor's claim, retain own-pump process-tree/default-disposition receipts, and exercise the S35 Career Kit 500 ms sequence and the T2 real-process SIGHUP test under load. Both tests share the arming race. The current window remains disclosed; no product fix or Windows host pass is claimed. |
+| S35 relay-arming window | Closed in T3 (`36dc9c12`, Codex R1 P1-2): relay armed at admission; own-pump default disposition retained after the own claim. | `tests/local-job-api-wrapper-relay-arming.test.ts` (daemon-first and still-queued windows), the immutable S35 tests and `tests/local-job-api-wrapper-relay-signals.test.ts` green at the T3 candidate. No Windows host pass is claimed. |
 
 ## C7 scope check
 
@@ -308,12 +340,16 @@ the same section and content):
 | #8 key retention is not file retention | Idempotency → Retention |
 | #9 no HTTP/socket, no detached launcher | Known limits |
 | TICKET-128 / TICKET-127 residuals, admission-failure rows, mixed builds | Known limits; Claim-time checks |
+| admission failure after the creation commit (T3 row; old create/default retry, key binding, retry order, Windows) | Claim-time checks → Admission failure after creation; Known limits |
+| `job.workerId` value format (opaque string) | Executor availability bullet |
+| malformed submit / retry `--request` body diagnostic | Idempotency → after the error table |
 | deleted published files make wait pending again (SYN-18) | Wait |
 
-No consumer-visible change was found outside proposal §3. Two consumer-facing
-details the proposal did not spell out are disclosed in the guides: the
-`workerId` format change (Phase I P3-5) and the failed job left by an
-admission failure after the creation commit (Phase I P3-2).
+No consumer-visible change was found outside proposal §3. The two details
+the proposal formerly left to the guides — the `workerId` value format
+(Phase I P3-5) and the failed job left by an admission failure after the
+creation commit (Phase I P3-2, 37de7fce security P1-1) — now have proposal §3
+rows (T3).
 
 ## Smoke matrix (tasks 8.3 / 8.4)
 
@@ -400,8 +436,9 @@ $L api runs retry "$Q" --request "$PROJ/retry.json" --async --json
 - Tasks 8.5: Codex `IMPLEMENTATION_VERIFIED` and a fresh-context Claude
   `REVIEW_APPROVED` must both bind this candidate SHA. Both are pending. The
   T1 `REVIEW_APPROVED` binds `e0a9a967`, the Phase III check binds
-  `887df155`, and the T2 closure review binds `b7b408d1`; none is a substitute
-  for final verdicts on this documentation-closure SHA.
+  `887df155`, the T2 closure review binds `b7b408d1`, and the `37de7fce`
+  reviews bind that SHA; none is a substitute for final verdicts on the T3
+  candidate.
 - Tasks 8.7: once both verdicts bind the same SHA and no Red item is open, the
   coordinator records ACCEPTED under the Owner's 2026-10-02 self-iteration
   mandate. Red items return to the Owner. Not recorded yet.
