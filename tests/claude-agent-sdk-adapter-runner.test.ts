@@ -13,12 +13,12 @@ import {
   ClaudeAgentSdkQueryStartError,
 } from "../src/main/lib/claude/agent-sdk-adapter"
 import {
-  resolveClaudeAgentSdkDesktopAdapter,
   runClaudeAgentSdkAdapterWithPolicyRetry,
   runClaudeAgentSdkDesktopAdapter,
   runClaudeAgentSdkDesktopAdapterWithPreparedRuntimeQuery,
   runClaudeAgentSdkDesktopAdapterWithRuntimeConsumer,
 } from "../src/main/lib/claude/agent-sdk-adapter-runner"
+import { resolveClaudeAgentSdkDesktopRouteDelegate } from "../src/main/lib/claude/agent-sdk-desktop-route"
 import {
   createClaudeAgentSdkPolicyRetryState,
   recordClaudeAgentSdkPolicyRetry,
@@ -94,23 +94,40 @@ describe("Claude Agent SDK adapter runner", () => {
     clearClaudeActiveSessionsForTest()
   })
 
-  test("resolves the Claude Agent SDK adapter through the desktop factory", () => {
+  // refactor-unified-runtime-route-catalog (design D5): the desktop factory
+  // lookup is retired; the route catalog selects this leaf as the typed
+  // Claude desktop delegate and the leaf only asserts its own route.
+  test("is the catalog's typed Claude desktop delegate and asserts its own route", async () => {
     const request = createRequest()
-    const adapter = createAdapter(async () => ({ status: "succeeded" }))
-
-    expect(resolveClaudeAgentSdkDesktopAdapter({ adapter, request })).toBe(
-      adapter,
+    expect(typeof resolveClaudeAgentSdkDesktopRouteDelegate(request)).toBe(
+      "function",
     )
 
-    expect(() =>
-      resolveClaudeAgentSdkDesktopAdapter({
-        adapter,
+    const queryCalls: unknown[] = []
+    await expect(
+      runClaudeAgentSdkDesktopAdapter({
+        query: ((params: unknown) => {
+          queryCalls.push(params)
+          return createStream()
+        }) as never,
         request: {
           ...request,
           context: { ...request.context, runtimeId: "codex" },
         },
+        queryOptions: { prompt: "hello", options: {} } as never,
+        consumeStream: async () => ({ status: "succeeded" }),
+        policyRetry: createClaudeAgentSdkPolicyRetryState(),
+        beforeAttempt: () => {},
+        getChunkCount: () => 0,
+        subId: "sub-1",
+        emitError: () => {},
+        emit: () => {},
+        complete: () => {},
       }),
-    ).toThrow("Desktop runtime adapter not registered: codex:claude-agent-sdk")
+    ).rejects.toThrow(
+      "Desktop runtime adapter metadata mismatch: claude-agent-sdk cannot run codex",
+    )
+    expect(queryCalls).toEqual([])
   })
 
   test("creates the current Claude Agent SDK adapter before the policy retry loop", async () => {
@@ -121,7 +138,6 @@ describe("Claude Agent SDK adapter runner", () => {
     const consumedMessages: unknown[] = []
     const beforeAttempts: string[] = []
     const consumedRequests: DesktopRunRequest[] = []
-    const resolveAdapter = mock(({ adapter }) => adapter)
 
     await expect(
       runClaudeAgentSdkDesktopAdapter({
@@ -138,7 +154,6 @@ describe("Claude Agent SDK adapter runner", () => {
           }
           return { status: "succeeded" }
         },
-        resolveAdapter,
         policyRetry,
         beforeAttempt: () => beforeAttempts.push("attempt"),
         getChunkCount: () => consumedMessages.length,
@@ -151,17 +166,6 @@ describe("Claude Agent SDK adapter runner", () => {
       }),
     ).resolves.toEqual({ status: "succeeded" })
 
-    expect(resolveAdapter).toHaveBeenCalledTimes(1)
-    expect(resolveAdapter.mock.calls[0][0]).toMatchObject({
-      request,
-      adapter: {
-        metadata: {
-          runtimeId: "claude-code",
-          source: "claude-agent-sdk",
-          temporaryFallback: false,
-        },
-      },
-    })
     expect(queryCalls).toEqual([queryOptions])
     expect(consumedRequests).toHaveLength(1)
     expect(consumedRequests[0]).not.toBe(request)

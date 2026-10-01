@@ -4,29 +4,20 @@ import type {
   DesktopRunRequest,
   DesktopRunResult,
 } from "../agent-runtime/desktop-run-request"
-import {
-  type DesktopRuntimeAdapter,
-  DesktopRuntimeAdapterFactory,
-} from "../agent-runtime/desktop-runner"
+import { assertDesktopRuntimeAdapterMatchesRequest } from "../agent-runtime/desktop-runner"
 import {
   type CreateCodexAppServerAdapterInput,
   createCodexAppServerAdapter,
 } from "./app-server-adapter"
 import { resolveCodexAppServerPluginConfigOverrides } from "./app-server-plugin-allowlist"
-import {
-  type CodexDesktopAdapterSelection,
-  resolveCodexDesktopAdapterSelection,
-} from "./desktop-adapter-selection"
 
 export type CodexAppServerDesktopAdapterRunnerDependencies = {
   createAdapter: typeof createCodexAppServerAdapter
-  resolveAdapterSelection: typeof resolveCodexDesktopAdapterSelection
   resolvePluginConfig: typeof resolveCodexAppServerPluginConfigOverrides
 }
 
 const defaultDependencies: CodexAppServerDesktopAdapterRunnerDependencies = {
   createAdapter: createCodexAppServerAdapter,
-  resolveAdapterSelection: resolveCodexDesktopAdapterSelection,
   resolvePluginConfig: resolveCodexAppServerPluginConfigOverrides,
 }
 
@@ -36,17 +27,6 @@ function withDefaultDependencies(
     | undefined,
 ): CodexAppServerDesktopAdapterRunnerDependencies {
   return { ...defaultDependencies, ...dependencies }
-}
-
-export function resolveCodexAppServerDesktopAdapter(input: {
-  adapter: DesktopRuntimeAdapter
-  request: DesktopRunRequest
-  selection: CodexDesktopAdapterSelection
-}): DesktopRuntimeAdapter {
-  return new DesktopRuntimeAdapterFactory([input.adapter]).get({
-    runtimeId: input.request.context.runtimeId,
-    source: input.selection.source,
-  })
 }
 
 /** Input of the Codex desktop leaf (the catalog's typed delegate input). */
@@ -81,7 +61,6 @@ export async function runCodexAppServerDesktopAdapter(
     }
   }
   const env = input.env ?? process.env
-  const selection = dependencies.resolveAdapterSelection(env)
   const pluginConfig = await dependencies.resolvePluginConfig({
     projectId: input.request.context.projectId,
     chatId: input.request.context.chatId,
@@ -92,7 +71,7 @@ export async function runCodexAppServerDesktopAdapter(
   }
 
   const adapter = dependencies.createAdapter({
-    enabled: selection.useAppServer,
+    enabled: true,
     experimentalApi:
       env.LOCUS_CODEX_APP_SERVER_EXPERIMENTAL_API === "1" ||
       env.LOCUS_CODEX_APP_SERVER_CONTROLLED_EDIT_EXECUTOR === "1",
@@ -126,10 +105,8 @@ export async function runCodexAppServerDesktopAdapter(
     registerPendingQuestion: input.registerPendingQuestion,
     unregisterPendingQuestion: input.unregisterPendingQuestion,
   })
-  const desktopAdapter = resolveCodexAppServerDesktopAdapter({
-    adapter,
-    request: input.request,
-    selection,
-  })
-  return desktopAdapter.run(input.request)
+  // The runtime route catalog selected this leaf; the leaf constructs its
+  // single native adapter and only asserts it received its own route.
+  assertDesktopRuntimeAdapterMatchesRequest(input.request, adapter.metadata)
+  return adapter.run(input.request)
 }

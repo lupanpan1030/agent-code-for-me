@@ -4,8 +4,8 @@ import {
   withDesktopRunAttempt,
 } from "../agent-runtime/desktop-run-request"
 import {
+  assertDesktopRuntimeAdapterMatchesRequest,
   type DesktopRuntimeAdapter,
-  DesktopRuntimeAdapterFactory,
 } from "../agent-runtime/desktop-runner"
 import { redactRuntimePayload } from "../agent-runtime/redaction"
 import type { JsonValue } from "../agent-runtime/runtime-events"
@@ -60,7 +60,6 @@ export type RunClaudeAgentSdkDesktopAdapterInput = Omit<
   loadQuery?: () => Promise<ClaudeAgentSdkQuery>
   queryOptions: ClaudeAgentSdkQueryParams
   consumeStream: ClaudeAgentSdkStreamConsumer
-  resolveAdapter?: typeof resolveClaudeAgentSdkDesktopAdapter
 }
 
 export type RunClaudeAgentSdkDesktopAdapterWithStreamConsumerInput = Omit<
@@ -112,10 +111,11 @@ export async function runClaudeAgentSdkDesktopAdapter({
   loadQuery,
   queryOptions,
   consumeStream,
-  resolveAdapter = resolveClaudeAgentSdkDesktopAdapter,
   isRequestAuthoritative = isAuthoritativeClaudeAgentSdkRequest,
   ...runnerInput
 }: RunClaudeAgentSdkDesktopAdapterInput): Promise<DesktopRunResult> {
+  // The runtime route catalog selected this leaf; the leaf constructs its
+  // single native adapter and only asserts it received its own route.
   const adapter = createClaudeAgentSdkAdapter({
     query,
     loadQuery,
@@ -123,27 +123,14 @@ export async function runClaudeAgentSdkDesktopAdapter({
     consumeStream,
     isRequestAuthoritative,
   })
-  const desktopAdapter = resolveAdapter({
-    adapter,
-    request: runnerInput.request,
-  })
+  assertDesktopRuntimeAdapterMatchesRequest(
+    runnerInput.request,
+    adapter.metadata,
+  )
   return runClaudeAgentSdkAdapterWithPolicyRetry({
-    adapter: desktopAdapter,
+    adapter,
     isRequestAuthoritative,
     ...runnerInput,
-  })
-}
-
-export function resolveClaudeAgentSdkDesktopAdapter({
-  adapter,
-  request,
-}: {
-  adapter: DesktopRuntimeAdapter
-  request: DesktopRunRequest
-}): DesktopRuntimeAdapter {
-  return new DesktopRuntimeAdapterFactory([adapter]).get({
-    runtimeId: request.context.runtimeId,
-    source: "claude-agent-sdk",
   })
 }
 

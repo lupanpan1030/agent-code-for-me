@@ -5,7 +5,8 @@
  * implementer-unit: desktop request ledger ports and desktop-runner ledger
  * injection), driven by tests/fixtures/run-event-ledger-units/
  * desktop-request.json through the Claude runtime-startup request factory, a
- * recording adapter resolved by DesktopRuntimeAdapterFactory and the Run's
+ * recording adapter reached as the runtime route catalog's typed Claude
+ * desktop delegate (refactor-unified-runtime-route-catalog D5) and the Run's
  * host ledger over the SQLite store.
  */
 import { describe, expect, test } from "bun:test"
@@ -14,7 +15,6 @@ import { join } from "node:path"
 import type { DesktopRunRequest } from "../src/main/lib/agent-runtime/desktop-run-request"
 import {
   type DesktopRuntimeAdapter,
-  DesktopRuntimeAdapterFactory,
   recordDesktopRuntimeAdapterStarted,
 } from "../src/main/lib/agent-runtime/desktop-runner"
 import { resolveDesktopPermissionPolicy } from "../src/main/lib/agent-runtime/permission-policy"
@@ -23,6 +23,8 @@ import {
   getOrCreateRunEventLedger,
   releaseRunEventLedger,
 } from "../src/main/lib/agent-runtime/run-event-ledger-host"
+import { validateRuntimeRouteCatalog } from "../src/main/lib/agent-runtime/runtime-route-catalog"
+import { resolveClaudeAgentSdkDesktopRouteDelegate } from "../src/main/lib/claude/agent-sdk-desktop-route"
 import { createClaudeDesktopRunRequestFromRuntimeStartup } from "../src/main/lib/claude/desktop-run-request"
 import {
   createAgentJob,
@@ -132,6 +134,29 @@ function recordingAdapter(
   }
 }
 
+/**
+ * The recording adapter as the catalog's typed Claude desktop delegate: a
+ * validated test catalog over the production table whose Claude desktop
+ * factory reference resolves to the recording leaf.
+ */
+function catalogDesktopDelegate(
+  adapter: DesktopRuntimeAdapter,
+  request: DesktopRunRequest,
+): (request: DesktopRunRequest) => ReturnType<DesktopRuntimeAdapter["run"]> {
+  const validated = validateRuntimeRouteCatalog(undefined, {
+    lookupAgentFactory: (ref: unknown) =>
+      ref === "desktop:claude-agent-sdk"
+        ? (input: { request: DesktopRunRequest }) => adapter.run(input.request)
+        : () => Promise.reject(new Error(`unexpected leaf ${String(ref)}`)),
+  })
+  if (!validated.ok) throw new Error("test catalog is invalid")
+  const delegate = resolveClaudeAgentSdkDesktopRouteDelegate(
+    request,
+    validated.catalog,
+  )
+  return (runRequest) => delegate({ request: runRequest } as never)
+}
+
 /** The request as the adapter sees it, without the host ledger object. */
 function capturedRequestJson(request: DesktopRunRequest): string {
   const { ledger: _ledger, signal: _signal, ...rest } = request
@@ -139,16 +164,17 @@ function capturedRequestJson(request: DesktopRunRequest): string {
 }
 
 describe("S08 adapter receives desktop request (desktop-request.json)", () => {
-  test("the factory hands the recording adapter identity, verified context, provider metadata, policy, MCP readiness, attachments, signal, session and the ledger ports, without raw tokens, headers, renderer env or secret hints", async () => {
+  test("the catalog delegate hands the recording adapter identity, verified context, provider metadata, policy, MCP readiness, attachments, signal, session and the ledger ports, without raw tokens, headers, renderer env or secret hints", async () => {
     const run = await desktopRun()
     let received: DesktopRunRequest | null = null
-    const adapter = new DesktopRuntimeAdapterFactory([
+    const runDelegate = catalogDesktopDelegate(
       recordingAdapter(async (request) => {
         received = request
       }),
-    ]).get({ runtimeId: "claude-code", source: "claude-agent-sdk" })
+      run.request,
+    )
 
-    await adapter.run(run.request)
+    await runDelegate(run.request)
     releaseRunEventLedger(run.db, run.job.id)
 
     const request = received as unknown as DesktopRunRequest
@@ -192,22 +218,21 @@ describe("S09 adapter emits normalized events (desktop-request.json)", () => {
   test("a fake adapter submitting the fixture categories through its injected ports yields committed RunEvent records to the recording trace, redacted by the host, with the original signal retained", async () => {
     const run = await desktopRun()
     let signalSeen: AbortSignal | null = null
-    const adapter = new DesktopRuntimeAdapterFactory([
-      recordingAdapter(async (request) => {
-        signalSeen = request.signal
-        const metadata = adapter.metadata
-        await recordDesktopRuntimeAdapterStarted(request, metadata)
-        for (const [index, event] of FIXTURE.events.entries()) {
-          await request.ledger?.ingestRuntimeObservation({
-            observationKey: `desktop-request:${index}`,
-            type: event.type,
-            payload: event.payload,
-          })
-        }
-      }),
-    ]).get({ runtimeId: "claude-code", source: "claude-agent-sdk" })
+    const adapter = recordingAdapter(async (request) => {
+      signalSeen = request.signal
+      const metadata = adapter.metadata
+      await recordDesktopRuntimeAdapterStarted(request, metadata)
+      for (const [index, event] of FIXTURE.events.entries()) {
+        await request.ledger?.ingestRuntimeObservation({
+          observationKey: `desktop-request:${index}`,
+          type: event.type,
+          payload: event.payload,
+        })
+      }
+    })
+    const runDelegate = catalogDesktopDelegate(adapter, run.request)
 
-    const result = await adapter.run(run.request)
+    const result = await runDelegate(run.request)
     await run.ledger.whenIdle()
     releaseRunEventLedger(run.db, run.job.id)
 

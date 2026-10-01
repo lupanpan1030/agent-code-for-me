@@ -1,3 +1,4 @@
+import { getAgentRuntimeCapabilityManifest } from "../../../shared/agent-runtime-capabilities"
 import {
   buildCodexRuntimeAvailabilityFromComponents,
   type CodexRuntimeComponentStatus,
@@ -6,22 +7,29 @@ import {
 } from "../../../shared/codex-runtime-status"
 import { CODEX_APP_SERVER_DESKTOP_ADAPTER_METADATA } from "../agent-runtime/desktop-adapter-metadata"
 import type { DesktopRuntimeAdapterMetadata } from "../agent-runtime/desktop-runner"
-import { getRegisteredAgentRuntimeManifest } from "../agent-runtime/runtime-registry"
+import { listRuntimeRoutes } from "../agent-runtime/runtime-route-catalog"
 import { type ElectronAppLike, getElectronApp } from "../electron-app"
 import { isLocalOnlyMode } from "../local-only"
 import { getRuntimeExecutableStatus } from "../runtime-executable"
+import type { CodexDesktopAdapterSource } from "./adapter-types"
 import {
   BUNDLED_CODEX_CLI_VERSION,
   getBundledCodexCliMissingHint,
   getBundledCodexCliPath,
 } from "./cli-path"
-import {
-  type CodexDesktopAdapterSelection,
-  resolveCodexDesktopAdapterSelection,
-} from "./desktop-adapter-selection"
 import { extractCodexError } from "./errors"
 import { getCodexIntegrationStatus } from "./integration-status"
 import { redactCodexLoginOutput } from "./login-output"
+
+/** The private codex.getRuntimeStatus projection of the desktop route. */
+export type CodexDesktopAdapterSelection = {
+  source: CodexDesktopAdapterSource
+  useAppServer: true
+  reason: string
+}
+
+const CODEX_DESKTOP_ADAPTER_SELECTION_REASON =
+  "Codex app-server is the only desktop chat adapter."
 
 export type CodexAdapterRuntimeStatusMetadata = {
   bundledCodexVersion: string
@@ -40,14 +48,35 @@ function executableStatus(
   return "failed"
 }
 
+/**
+ * The Codex desktop adapter selection is read-only route metadata from the
+ * runtime route catalog (P30): the catalog's single Codex desktop route
+ * names the adapter source; this status projection keeps its private
+ * `adapters.selection` shape and hint text. No native probe runs here.
+ */
+function codexDesktopAdapterSelection(): CodexDesktopAdapterSelection {
+  const [desktopRoute] = listRuntimeRoutes({
+    runtimeId: "codex",
+    entry: "desktop",
+  })
+  if (desktopRoute?.adapterSource !== "codex-app-server") {
+    throw new Error("Codex desktop route metadata is unavailable.")
+  }
+  return {
+    source: desktopRoute.adapterSource,
+    useAppServer: true,
+    reason: CODEX_DESKTOP_ADAPTER_SELECTION_REASON,
+  }
+}
+
 export function buildCodexAdapterRuntimeStatusMetadata(
-  input: { env?: EnvLike } = {},
+  // The environment never selects the desktop adapter (the catalog does).
+  _input: { env?: EnvLike } = {},
 ): CodexAdapterRuntimeStatusMetadata {
-  const selection = resolveCodexDesktopAdapterSelection(input.env)
   return {
     bundledCodexVersion: BUNDLED_CODEX_CLI_VERSION,
     current: CODEX_APP_SERVER_DESKTOP_ADAPTER_METADATA,
-    selection,
+    selection: codexDesktopAdapterSelection(),
   }
 }
 
@@ -183,6 +212,6 @@ export async function getCodexRuntimeStatus(
     adapters: adapterStatus,
     components: availability.components,
     blockers: availability.blockers,
-    capabilities: getRegisteredAgentRuntimeManifest("codex").capabilities,
+    capabilities: getAgentRuntimeCapabilityManifest("codex").capabilities,
   }
 }

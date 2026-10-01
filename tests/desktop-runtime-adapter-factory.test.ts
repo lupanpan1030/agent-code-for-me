@@ -4,30 +4,38 @@ import {
   CLAUDE_AGENT_SDK_DESKTOP_ADAPTER_METADATA,
   CODEX_APP_SERVER_DESKTOP_ADAPTER_METADATA,
 } from "../src/main/lib/agent-runtime/desktop-adapter-metadata"
+import { createDesktopRuntimeRouteQuery } from "../src/main/lib/agent-runtime/desktop-route-query"
+import * as desktopRunner from "../src/main/lib/agent-runtime/desktop-runner"
+import { recordDesktopRuntimeAdapterStarted } from "../src/main/lib/agent-runtime/desktop-runner"
+import { resolveDesktopPermissionPolicy } from "../src/main/lib/agent-runtime/permission-policy"
 import {
-  type DesktopRuntimeAdapter,
-  DesktopRuntimeAdapterFactory,
-  type DesktopRuntimeAdapterSource,
-  recordDesktopRuntimeAdapterStarted,
-} from "../src/main/lib/agent-runtime/desktop-runner"
+  listRuntimeRoutes,
+  resolveRuntimeRoute,
+} from "../src/main/lib/agent-runtime/runtime-route-catalog"
 
-function fakeAdapter(
+function desktopRequest(
   runtimeId: "claude-code" | "codex",
-  source: DesktopRuntimeAdapterSource,
-): DesktopRuntimeAdapter {
+): Parameters<typeof createDesktopRuntimeRouteQuery>[1] {
   return {
-    metadata: {
+    context: {
       runtimeId,
-      source,
-      label: `${runtimeId} ${source}`,
-      temporaryFallback: false,
+      mode: "agent",
+      projectId: "project-1",
+      chatId: "chat-1",
+      subChatId: "sub-1",
+      cwd: "/repo",
     },
-    async run() {
-      return { status: "succeeded", sessionId: "session-1" }
-    },
+    permissionPolicy: resolveDesktopPermissionPolicy({
+      runtimeId,
+      mode: "agent",
+    }),
+    requestedCapabilities: [],
   }
 }
 
+// refactor-unified-runtime-route-catalog (design D5): the mutable desktop
+// adapter factory is retired; each desktop host resolves its typed delegate
+// through the runtime route catalog (S03).
 describe("desktop runtime adapter factory", () => {
   test("declares current desktop adapter sources honestly", () => {
     expect(CLAUDE_AGENT_SDK_DESKTOP_ADAPTER_METADATA).toMatchObject({
@@ -110,33 +118,60 @@ describe("desktop runtime adapter factory", () => {
     )
   })
 
-  test("registers and resolves adapters by runtime and source", () => {
-    const claude = fakeAdapter("claude-code", "claude-agent-sdk")
-    const codex = fakeAdapter("codex", "codex-app-server")
-    const factory = new DesktopRuntimeAdapterFactory([claude, codex])
+  test("resolves each desktop runtime to its typed catalog delegate", () => {
+    const resolved = (["claude-code", "codex"] as const).map((runtimeId) => {
+      const route = resolveRuntimeRoute(
+        createDesktopRuntimeRouteQuery(runtimeId, desktopRequest(runtimeId)),
+      )
+      return route.ok
+        ? [
+            runtimeId,
+            route.adapterSource,
+            route.executionSurface,
+            route.enforcementEvidence,
+            typeof route.delegate,
+          ]
+        : [runtimeId, route.reason]
+    })
 
-    expect(factory.get({ runtimeId: "claude-code" })).toBe(claude)
-    expect(factory.get({ runtimeId: "codex" })).toBe(codex)
+    expect(resolved).toEqual([
+      [
+        "claude-code",
+        "claude-agent-sdk",
+        "desktop-sdk",
+        "pre-execution",
+        "function",
+      ],
+      [
+        "codex",
+        "codex-app-server",
+        "desktop-app-server",
+        "pre-execution",
+        "function",
+      ],
+    ])
     expect(
-      factory.get({ runtimeId: "codex", source: "codex-app-server" }),
-    ).toBe(codex)
-    expect(factory.listMetadata()).toEqual([claude.metadata, codex.metadata])
+      listRuntimeRoutes({ entry: "desktop" }).map((route) => [
+        route.runtimeId,
+        route.adapterSource,
+      ]),
+    ).toEqual([
+      ["claude-code", "claude-agent-sdk"],
+      ["codex", "codex-app-server"],
+    ])
   })
 
-  test("rejects duplicate and unsupported adapter lookups", () => {
-    const claude = fakeAdapter("claude-code", "claude-agent-sdk")
-
-    expect(() => new DesktopRuntimeAdapterFactory([claude, claude])).toThrow(
-      "Duplicate desktop runtime adapter",
+  test("keeps no mutable desktop adapter registry", () => {
+    expect(Object.keys(desktopRunner).sort()).toEqual([
+      "assertDesktopRuntimeAdapterMatchesRequest",
+      "recordDesktopRuntimeAdapterStarted",
+    ])
+    const desktopRunnerSource = readFileSync(
+      "src/main/lib/agent-runtime/desktop-runner.ts",
+      "utf8",
     )
-
-    const factory = new DesktopRuntimeAdapterFactory([claude])
-    expect(() => factory.get({ runtimeId: "codex" })).toThrow(
-      "Desktop runtime adapter not registered",
-    )
-    expect(() => factory.get({ runtimeId: "unknown" as any })).toThrow(
-      "Desktop runtime adapter not registered: unknown",
-    )
+    expect(desktopRunnerSource).not.toContain("register(")
+    expect(desktopRunnerSource).not.toContain("new Map")
   })
 
   test("keeps Codex desktop chat on the app-server adapter boundary", () => {
@@ -190,11 +225,10 @@ describe("desktop runtime adapter factory", () => {
     // renderer sink (refactor-canonical-run-event-ledger).
     expect(codexRouter).toContain("createCodexDesktopRouteRenderer")
     expect(codexAppServerRunner).toContain("createCodexAppServerAdapter")
-    expect(codexAppServerRunner).toContain("DesktopRuntimeAdapterFactory")
     expect(codexAppServerRunner).toContain(
-      "resolveCodexAppServerDesktopAdapter({",
+      "assertDesktopRuntimeAdapterMatchesRequest(input.request, adapter.metadata)",
     )
-    expect(codexAppServerRunner).toContain("desktopAdapter.run(input.request)")
+    expect(codexAppServerRunner).toContain("adapter.run(input.request)")
     expect(codexRouter).not.toContain(removedTemporaryFactory)
     expect(codexRouter).not.toContain("getOrCreateCodexAcpProvider")
     expect(codexRouter).not.toContain("resolveCodexAcpBinaryPath")
@@ -211,7 +245,8 @@ describe("desktop runtime adapter factory", () => {
       "CodexAppServerPermissionPolicyError",
     )
     expect(codexRuntimeStatus).toContain("buildCodexRuntimeAvailability")
-    expect(codexRuntimeStatus).toContain("getRegisteredAgentRuntimeManifest")
+    expect(codexRuntimeStatus).toContain("getAgentRuntimeCapabilityManifest")
+    expect(codexRuntimeStatus).toContain("listRuntimeRoutes({")
     expect(codexRuntimeStatus).not.toContain(removedTemporaryMetadata)
     expect(codexRuntimeStatus).not.toContain("Default-disable condition:")
     expect(codexRuntimeStatus).not.toContain("Removal condition:")

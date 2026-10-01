@@ -303,11 +303,11 @@ describe("desktop runtime preflight", () => {
       "const adapter = dependencies.createAdapter({",
     )
     const adapterFactoryIndex = codexAdapterRunner.indexOf(
-      "resolveCodexAppServerDesktopAdapter({",
+      "assertDesktopRuntimeAdapterMatchesRequest(input.request, adapter.metadata)",
       adapterConstructionIndex,
     )
     const adapterRunIndex = codexAdapterRunner.indexOf(
-      "desktopAdapter.run(input.request)",
+      "adapter.run(input.request)",
       adapterFactoryIndex,
     )
 

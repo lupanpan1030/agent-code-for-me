@@ -3,10 +3,7 @@ import type { ValidatedAgentScopeContract } from "../src/main/lib/agent-guard"
 import type { DesktopRunRequest } from "../src/main/lib/agent-runtime/desktop-run-request"
 import type { DesktopRuntimeAdapter } from "../src/main/lib/agent-runtime/desktop-runner"
 import type { CreateCodexAppServerAdapterInput } from "../src/main/lib/codex/app-server-adapter"
-import {
-  resolveCodexAppServerDesktopAdapter,
-  runCodexAppServerDesktopAdapter,
-} from "../src/main/lib/codex/app-server-adapter-runner"
+import { runCodexAppServerDesktopAdapter } from "../src/main/lib/codex/app-server-adapter-runner"
 import type { ResolvedChatImageAttachment } from "../src/shared/chat-attachments"
 
 function createRequest(): DesktopRunRequest {
@@ -39,21 +36,49 @@ function createAdapter(
 }
 
 describe("Codex app-server desktop adapter runner", () => {
-  test("resolves Codex construction through DesktopRuntimeAdapterFactory", () => {
+  // refactor-unified-runtime-route-catalog (design D5): the desktop factory
+  // and selection wrappers are retired; the route catalog selects this leaf
+  // as the typed Codex desktop delegate and the leaf asserts its own route.
+  test("constructs one native adapter and asserts it received its own route", async () => {
     const request = createRequest()
-    const adapter = createAdapter(async () => ({ status: "succeeded" }))
-
-    expect(
-      resolveCodexAppServerDesktopAdapter({
-        adapter,
+    const runs: unknown[] = []
+    await expect(
+      runCodexAppServerDesktopAdapter({
         request,
-        selection: {
-          source: "codex-app-server",
-          useAppServer: true,
-          reason: "test",
+        providerGatewayToken: null,
+        appManagedApiKey: null,
+        secretHints: [],
+        resolvedImages: [],
+        guardedContract: null,
+        isCurrentRunOwner: () => true,
+        emit: () => {},
+        registerPendingQuestion: () => {},
+        unregisterPendingQuestion: () => {},
+        dependencies: {
+          resolvePluginConfig: async () => ({
+            configOverrides: {},
+            diagnostics: [],
+            enabledPluginIds: [],
+          }),
+          createAdapter: () =>
+            ({
+              metadata: {
+                runtimeId: "claude-code",
+                source: "claude-agent-sdk",
+                label: "Claude Agent SDK",
+                temporaryFallback: false,
+              },
+              run: async (received: unknown) => {
+                runs.push(received)
+                return { status: "succeeded" }
+              },
+            }) as never,
         },
       }),
-    ).toBe(adapter)
+    ).rejects.toThrow(
+      "Desktop runtime adapter metadata mismatch: claude-agent-sdk cannot run codex",
+    )
+    expect(runs).toEqual([])
   })
 
   test("maps the existing experiment switches and runs the selected adapter", async () => {
@@ -94,14 +119,6 @@ describe("Codex app-server desktop adapter runner", () => {
       unregisterPendingQuestion,
       env,
       dependencies: {
-        resolveAdapterSelection: (receivedEnv) => {
-          expect(receivedEnv).toBe(env)
-          return {
-            source: "codex-app-server",
-            useAppServer: true,
-            reason: "test selection",
-          }
-        },
         resolvePluginConfig: async (input) => {
           expect(input).toEqual({
             projectId: "project-1",
