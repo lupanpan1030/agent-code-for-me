@@ -20,8 +20,10 @@ Tests MAY inject that option; it SHALL NOT be user-settable at runtime and SHALL
 no CLI flag. Any later runtime configuration surface requires C7 #2 classification.
 At or beyond that age the claim/tick SHALL fail closed. Failed checks SHALL
 settle through the host with project_unregistered, cwd_identity_changed,
-execution_profile_invalid or queued_age_exceeded; provider errors retain existing
-codes. Unadmitted jobs SHALL remain unclaimable and use the missing-admission cancel
+execution_profile_invalid or queued_age_exceeded; an unexpected exception of the
+claim-time gate itself SHALL fail closed as the internal fallback claim_gate_failed
+with job.errorCode internal_error and the existing internal-failure exit 8; provider
+errors retain existing codes. Unadmitted jobs SHALL remain unclaimable and use the missing-admission cancel
 remedy, not speculative execution.
 
 Every fail-closed settlement below SHALL be committed through the host with status
@@ -37,6 +39,7 @@ existing exit mapping; without one it SHALL use execution_profile_invalid/3.
 | execution_profile_invalid | owner-supplied provider-binding code, else execution_profile_invalid | failed | binding unavailable→4, invalid request→2, local-only blocked→6; else 3 |
 | queued_age_exceeded | queued_age_exceeded | failed | 1 |
 | artifact_admission_mismatch | artifact_admission_mismatch | failed | 1 |
+| claim_gate_failed (internal fallback: unexpected gate exception) | internal_error | failed | 8 |
 
 The exit and job.errorCode projections SHALL be public commitments. As already stated
 in the v1 guide:1130, completed.payload.reasons values are not v1-stable; the fixed
