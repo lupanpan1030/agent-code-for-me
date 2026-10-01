@@ -513,11 +513,10 @@
         }
       }
     },
-    "completionCreateRequest": {
+    "completionRequestMembers": {
       "type": "object",
-      "description": "Consumer-neutral completion input accepted by `locus api runs create --request <path|-> --json`. `responseFormat.schema` is caller-owned and opaque to Locus except for JSON Schema validation of the returned content.",
+      "description": "Members shared by `completionCreateRequest` and `completionSubmitRequest`. Open on its own; each request closes it with `unevaluatedProperties: false`, so the two member sets cannot drift.",
       "required": ["apiVersion", "kind", "consumer", "provider", "messages"],
-      "additionalProperties": false,
       "properties": {
         "apiVersion": {
           "$ref": "#/$defs/apiVersion"
@@ -593,6 +592,16 @@
           }
         }
       }
+    },
+    "completionCreateRequest": {
+      "type": "object",
+      "description": "Consumer-neutral completion input accepted by `locus api runs create --request <path|-> --json`. `responseFormat.schema` is caller-owned and opaque to Locus except for JSON Schema validation of the returned content.",
+      "allOf": [
+        {
+          "$ref": "#/$defs/completionRequestMembers"
+        }
+      ],
+      "unevaluatedProperties": false
     },
     "createRequest": {
       "description": "Input accepted by `locus api runs create --request <path|-> --json`. Omitted `kind` is treated as `agent` for backward compatibility. On builds with feature async-submit, `idempotencyKey` is rejected with idempotency_key_not_supported (use `#/$defs/submitRequest`).",
@@ -1652,41 +1661,18 @@
     },
     "completionSubmitRequest": {
       "type": "object",
-      "description": "Feature async-submit: completion input of `locus api runs submit --request <path|-> --json`: the completion create request members (same rules) plus the optional idempotencyKey.",
-      "required": ["apiVersion", "kind", "consumer", "provider", "messages"],
-      "additionalProperties": false,
+      "description": "Feature async-submit: completion input of `locus api runs submit --request <path|-> --json`: the completion create request members (`completionRequestMembers`, same rules) plus the optional idempotencyKey.",
+      "allOf": [
+        {
+          "$ref": "#/$defs/completionRequestMembers"
+        }
+      ],
       "properties": {
-        "apiVersion": {
-          "$ref": "#/$defs/completionCreateRequest/properties/apiVersion"
-        },
-        "kind": {
-          "$ref": "#/$defs/completionCreateRequest/properties/kind"
-        },
-        "consumer": {
-          "$ref": "#/$defs/completionCreateRequest/properties/consumer"
-        },
-        "runtime": {
-          "$ref": "#/$defs/completionCreateRequest/properties/runtime"
-        },
-        "provider": {
-          "$ref": "#/$defs/completionCreateRequest/properties/provider"
-        },
-        "messages": {
-          "$ref": "#/$defs/completionCreateRequest/properties/messages"
-        },
-        "maxTokens": {
-          "$ref": "#/$defs/completionCreateRequest/properties/maxTokens"
-        },
-        "temperature": {
-          "$ref": "#/$defs/completionCreateRequest/properties/temperature"
-        },
-        "responseFormat": {
-          "$ref": "#/$defs/completionCreateRequest/properties/responseFormat"
-        },
         "idempotencyKey": {
           "$ref": "#/$defs/idempotencyKey"
         }
-      }
+      },
+      "unevaluatedProperties": false
     },
     "submitRequest": {
       "description": "Feature async-submit: input accepted by `locus api runs submit --request <path|-> --json`. Omitted `kind` is treated as `agent`.",
