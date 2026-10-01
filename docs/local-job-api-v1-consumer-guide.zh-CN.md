@@ -1033,7 +1033,9 @@ stderr 行是纯文本加换行，不是 JSON。`runs status` 对未知 ID 与�
 - 它从不包含 PID、nonce、hostname、lock 路径或 secret。既有的 `job.workerId` 与
   `job.workerPid` 指向实际认领该 run 的进程：daemon 认领时是 daemon，`create` /
   `retry` 命令自己执行时是调用方进程。不要向 `workerPid` 发信号，请用
-  `runs cancel`。`workerId` 是不透明字符串，其格式在本版本中有变化。
+  `runs cancel`。`workerId` 是不透明字符串，其格式在本版本中有变化：现在带有
+  每次认领唯一的一段（`<kind>:<pid>:<ms>:<unique>:<jobId>`，以前是
+  `<kind>:<pid>:<ms>:<jobId>`）。不要解析它。
 - daemon 按 daemon job、schedule job、API run 的顺序填充 slot。持续的 daemon 或
   schedule 工作会推迟 API run；没有优先级调度器。
 
@@ -1096,18 +1098,22 @@ runtime adapter 允许的 native-home 变量（例如 POSIX 上的 `HOME`、`COD
 #### Aborting a waiting command
 
 命令在进程内执行自己的 run 时，中止行为与以前相同：杀掉命令的进程树会停止
-runtime 子进程。
+runtime 子进程，stdin EOF 不会取消它。
 
 daemon 认领了 run 时，等待中的命令退出后 daemon 仍会继续执行。为此，命令会在
-可捕获的中止时转发对自己 run（且仅限自己的 run）的取消：
+可捕获的中止时转发对自己 run（且仅限自己的 run）的取消。转发从 run 被 admitted
+起就已 armed，直到命令自己的 executor 认领该 run：
+
+- 尚无任何 executor 认领时，可捕获的中止会取消这个 queued run（结算为
+  `canceled`，从不启动），命令也不会再执行它。
+- 另一执行者（daemon）先认领时，可捕获的中止会为该 run 持久化 cancel request。
+- 命令自己的 executor 认领后，转发即解除，适用上面的进程内行为。
 
 | 平台 | 转发（可捕获） | 不转发 |
 | --- | --- | --- |
 | POSIX | `SIGINT`、`SIGTERM`、`SIGHUP`、已 armed 的 stdin EOF | `SIGKILL` |
 | Windows | Ctrl+C（`SIGINT`）、Ctrl+Break（`SIGBREAK`）、console 窗口关闭（`SIGHUP`）、已 armed 的 stdin EOF | 父进程 `child.kill()` / `TerminateProcess`；logoff 与 shutdown console 事件 |
 
-- 在命令观察到另一执行者认领 run 之前到达的信号不会被转发，而是按 OS 默认处置。
-  请用 `runs cancel <job-id>` 可靠取消该 run。
 - 转发中止时，命令先持久化 cancel request，最多等待 5 s 让 run 进入终态，不向
   stdout 写任何内容，然后重新抛出原信号（让 POSIX 父进程看到该信号），stdin EOF
   时则 exit `8`。
@@ -1124,7 +1130,9 @@ daemon 认领了 run 时，等待中的命令退出后 daemon 仍会继续执行
 - 信号之后很快跟上的 kill（例如在 `SIGKILL` 前只给 500 ms）会截短 5 s 的确认等待。
   cancel request 通常在此之前已经持久化，但 hard kill 之后不保证送达。
 - `SIGKILL`，以及 Windows 上的 `TerminateProcess`、Node 的 `child.kill()` 和
-  logoff/shutdown console 事件，都无法转发：daemon 中的 run 会继续执行，且仍可查询。
+  logoff/shutdown console 事件，都无法捕获，因此无法转发：daemon 中的 run 会继续
+  执行，且仍可查询；尚无 executor 认领的 run 保持 queued，直到 daemon 认领或按 ID
+  取消。
 
 `runs cancel <job-id>` 是唯一在所有平台都可靠的取消方式。请保存 job ID：需要可靠
 取消时（尤其在 Windows 上），使用 `runs submit`，它会在 run 执行前输出 ID。
@@ -1214,6 +1222,10 @@ run 没有登记终态文件时（无 artifact 的 run、recovery、admission �
 每个错误都是一行 stdout：`{"apiVersion":"locus.local-job.v1","error":{"code":…,"message":…}}`，
 属于 request 错误，不是 run status。其他错误保持原有的结构、输出流与 exit。
 
+`runs submit` 或 `runs retry <job-id> --request` 的正文不是合法 JSON 时，stderr
+输出 `Invalid JSON request` 一行，exit `2`。该行从不引用 request 内容，所以格式错误
+正文里的 key 不会被回显。`runs create` 保持以前的诊断，其中包含 JSON parser 的消息。
+
 ### Claim-time checks
 
 提交后的 run 可能在队列中等待。在任何 provider 调用或子进程启动之前，认领 API run
@@ -1246,6 +1258,21 @@ run 没有登记终态文件时（无 artifact 的 run、recovery、admission �
 - 新 run 的 run directory 或初始 admission 在其 creation 已提交之后失败时，命令仍
   像以前一样报告错误，而该 attempt 会作为 `failed` job 保留，`job.errorCode` 为
   `artifact_admission_failed`。用于它的 key 仍绑定在该 job 上。
+
+#### Admission failure after creation
+
+这同样适用于旧的 request 形态。run directory 现在在 job 的 creation 提交之后创建
+（这样只有已提交的 run 才会得到确认），而不是之前：
+
+- 带 artifacts 的 `runs create` 与 `runs retry <job-id>`：run directory 或初始
+  artifact admission 失败时，stderr 与 exit 与以前相同，但现在会留下一个
+  `job.errorCode` 为 `artifact_admission_failed` 的 `failed` job（经 `runs wait`
+  为 exit `1`）。旧版不留下 job。`runs list`、`runs status` 与 Workbench 都会显示它。
+- 带 key 的 `runs submit`：该 key 在保留期内绑定到这个失败的 attempt；重新提交会以
+  `idempotentReplay: true` 重放该失败 job。新的尝试请用新 key。
+- `runs retry <job-id>` 先检查源 run 的状态，再创建 run directory；旧版先创建目录。
+- 在 Windows 上，run directory 后端落地前（TICKET-127），每个带 `artifacts.baseDir`
+  的 run 都会这样失败，因此每次尝试都会留下这样的 job。
 
 ### Cancel, recovery and terminal files
 

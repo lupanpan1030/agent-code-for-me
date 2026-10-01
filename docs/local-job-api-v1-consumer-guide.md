@@ -1110,7 +1110,10 @@ Terminal jobs and every other envelope omit it.
   `job.workerId` and `job.workerPid` identify the process that actually claimed
   the run: the daemon when the daemon claimed it, the caller's process when a
   `create`/`retry` command ran it. Do not signal `workerPid`; use
-  `runs cancel`. `workerId` is opaque, and its format changed in this release.
+  `runs cancel`. `workerId` is an opaque string, and its format changed in
+  this release: it now carries a unique per-claim segment
+  (`<kind>:<pid>:<ms>:<unique>:<jobId>` instead of `<kind>:<pid>:<ms>:<jobId>`).
+  Do not parse it.
 - A daemon fills its slots with daemon jobs first, then schedule jobs, then
   API runs. Sustained daemon or schedule work can delay API runs; there is no
   priority scheduler.
@@ -1189,20 +1192,27 @@ prove that the daemon is ready.
 #### Aborting a waiting command
 
 When the command runs its own run in-process, aborting it behaves as before:
-killing the command's process tree stops the runtime child.
+killing the command's process tree stops the runtime child, and stdin EOF
+does not cancel it.
 
 When a daemon claimed the run, the daemon keeps running it after the waiting
 command dies. To cover that, the command relays a cancel of its own run, and
-only its own run, on a catchable abort:
+only its own run, on a catchable abort. The relay is armed from the moment
+the run is admitted until the command's own executor claims the run:
+
+- Before any executor claimed the run, a catchable abort cancels the queued
+  run (it settles `canceled` and never starts) and the command does not
+  execute it.
+- When another executor (a daemon) claimed the run first, a catchable abort
+  persists a cancel request for that run.
+- Once the command's own executor claimed the run, the relay is disarmed and
+  the in-process behavior above applies.
 
 | Platform | Relayed (catchable) | Not relayed |
 | --- | --- | --- |
 | POSIX | `SIGINT`, `SIGTERM`, `SIGHUP`, armed stdin EOF | `SIGKILL` |
 | Windows | Ctrl+C (`SIGINT`), Ctrl+Break (`SIGBREAK`), console window closed (`SIGHUP`), armed stdin EOF | parent `child.kill()` / `TerminateProcess`; logoff and shutdown console events |
 
-- A signal that arrives before the command has observed another executor
-  claiming the run is not relayed; the OS default disposition applies. Use
-  `runs cancel <job-id>` to cancel the run reliably.
 - On a relayed abort the command persists the cancel request, waits at most
   5 s for the run to reach a terminal status, writes nothing to stdout, and
   then re-raises the original signal so a POSIX parent sees that signal, or
@@ -1226,8 +1236,10 @@ only its own run, on a catchable abort:
   normally persisted before that, but delivery is not guaranteed after a hard
   kill.
 - `SIGKILL`, and on Windows `TerminateProcess`, Node's `child.kill()` and
-  the logoff/shutdown console events, cannot be relayed: the daemon's run
-  keeps going and stays queryable.
+  the logoff/shutdown console events, cannot be caught and so cannot be
+  relayed: a daemon's run keeps going and stays queryable, and a run no
+  executor claimed yet stays queued until a daemon claims it or it is
+  canceled by ID.
 
 `runs cancel <job-id>` is the only cancellation that works on every platform.
 Keep the job ID: when you need to cancel reliably, especially on Windows, use
@@ -1332,6 +1344,11 @@ Each is one stdout line, `{"apiVersion":"locus.local-job.v1","error":{"code":…
 and is a request error, not a run status. Other errors keep their existing
 shapes, streams and exits.
 
+A body of `runs submit` or `runs retry <job-id> --request` that is not valid
+JSON gets the stderr line `Invalid JSON request` and exit `2`. The line never
+quotes the request, so a key in a malformed body is not echoed. `runs create`
+keeps its previous diagnostic, which includes the JSON parser's message.
+
 ### Claim-time checks
 
 A submitted run can wait in the queue. Before any provider call or child
@@ -1372,6 +1389,25 @@ failing check settles the run `failed` without running it:
   creation was committed, the command reports the error as before, and the
   attempt stays as a `failed` job with `job.errorCode` `artifact_admission_failed`.
   A key used for it stays bound to that job.
+
+#### Admission failure after creation
+
+This also applies to the older request shapes. The run directory is now
+created after the job's creation is committed (so a submission is
+acknowledged only for a committed run), not before:
+
+- `runs create` and `runs retry <job-id>` with artifacts: when the run
+  directory or the initial artifact admission fails, stderr and the exit are
+  as before, but a `failed` job with `job.errorCode`
+  `artifact_admission_failed` (exit `1` through `runs wait`) now remains. Older
+  builds left no job. `runs list`, `runs status` and the Workbench show it.
+- `runs submit` with a key: the key stays bound to that failed attempt for
+  the retention period; resubmitting it replays the failed job with
+  `idempotentReplay: true`. Use a new key for a new attempt.
+- `runs retry <job-id>` checks the source run's status before it creates the
+  run directory; older builds created the directory first.
+- On Windows every run with `artifacts.baseDir` fails this way until the run
+  directory backend lands (TICKET-127), so each attempt leaves such a job.
 
 ### Cancel, recovery and terminal files
 
