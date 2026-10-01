@@ -6,7 +6,7 @@
  * claim owner drops it, so the same process can still cancel or settle the
  * Run. The create/default-retry wrapper then reports the baseline error and
  * its own Run ends canceled; a daemon still settles the Run when it ages
- * out.
+ * out, and retries a Run whose claim failed transiently with backoff.
  */
 import { afterEach, beforeEach, expect, setSystemTime, test } from "bun:test"
 import {
@@ -203,5 +203,47 @@ test("a daemon whose claim append failed still settles that Run when it ages out
     errorCode: "queued_age_exceeded",
     runner: 0,
     stopped: "stopped",
+  })
+}, 30_000)
+
+test("a daemon retries a Run whose claim append failed transiently (with backoff) instead of excluding it for its lifetime", async () => {
+  const p = profile()
+  const submitted = await cli(p, SUBMIT, {
+    stdin: JSON.stringify(agentRequest(p)),
+  })
+  const jobId = jsonLines(submitted.stdout)[0]?.job?.id as string
+  // Three failures exhaust one claim's transaction attempts; the next claim
+  // succeeds.
+  const { db, state } = failingClaimAppends(p, 3)
+  const { runner, calls } = countingRunner()
+  const abort = new AbortController()
+  const daemon = runLocalAgentDaemon({
+    db,
+    env: {},
+    runner: runner as any,
+    lockPath: p.lockPath,
+    pollIntervalMs: 100,
+    signal: abort.signal,
+    stderr: { write: () => true } as any,
+  })
+  const deadline = performance.now() + 10_000
+  while (
+    jobRowById(p, jobId)?.status !== "succeeded" &&
+    performance.now() < deadline
+  ) {
+    await realDelay(50)
+  }
+  abort.abort()
+  await daemon
+  expect({
+    failures: state.failures,
+    status: jobRowById(p, jobId)?.status,
+    runner: calls.entered,
+    started: countType(p, jobId, "job_started"),
+  }).toEqual({
+    failures: 3,
+    status: "succeeded",
+    runner: 1,
+    started: 1,
   })
 }, 30_000)

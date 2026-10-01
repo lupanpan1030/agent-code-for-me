@@ -23,6 +23,7 @@ import { runPersistedAgentJob } from "./job-runner"
 import {
   type AgentJobDatabase,
   cleanupExpiredAgentJobIdempotency,
+  getAgentJob,
   isAgentJobClaimLostError,
   listQueuedAgentJobsForIds,
   listQueuedAgentJobsForSource,
@@ -532,6 +533,56 @@ export function settledWithin(
  */
 export const OVER_AGE_TICK_WAIT_MS = 5_000
 
+/** First retry delay of a Run whose dispatch failed (doubles per failure). */
+export const DAEMON_DISPATCH_RETRY_BASE_MS = 1_000
+/** Upper bound of that retry delay. */
+export const DAEMON_DISPATCH_RETRY_MAX_MS = 60_000
+
+/**
+ * Backoff of Runs whose dispatch failed with a non-outcome error (for
+ * example a claim append the store rejected): a Run that is still queued is
+ * retried after DAEMON_DISPATCH_RETRY_BASE_MS, doubling per failure up to
+ * DAEMON_DISPATCH_RETRY_MAX_MS, instead of being excluded for the daemon's
+ * lifetime while status keeps reporting the executor available.
+ */
+class DispatchBackoff {
+  private readonly entries = new Map<
+    string,
+    { failures: number; retryAt: number }
+  >()
+
+  failed(jobId: string, now: number): void {
+    const failures = (this.entries.get(jobId)?.failures ?? 0) + 1
+    const wait = Math.min(
+      DAEMON_DISPATCH_RETRY_MAX_MS,
+      DAEMON_DISPATCH_RETRY_BASE_MS * 2 ** Math.min(failures - 1, 16),
+    )
+    this.entries.set(jobId, { failures, retryAt: now + wait })
+  }
+
+  settled(jobId: string): void {
+    this.entries.delete(jobId)
+  }
+
+  /** Every Run with a failed dispatch (a `once` pass does not wait for it). */
+  all(): Set<string> {
+    return new Set(this.entries.keys())
+  }
+
+  /**
+   * Runs still waiting out their backoff. Entries whose Run left the queue
+   * (claimed elsewhere, canceled, settled) are dropped once due.
+   */
+  waiting(now: number, isQueued: (jobId: string) => boolean): Set<string> {
+    const waiting = new Set<string>()
+    for (const [jobId, entry] of this.entries) {
+      if (entry.retryAt > now) waiting.add(jobId)
+      else if (!isQueued(jobId)) this.entries.delete(jobId)
+    }
+    return waiting
+  }
+}
+
 function delay(ms: number, signal: AbortSignal | undefined): Promise<void> {
   if (signal?.aborted) return Promise.resolve()
   return new Promise((resolve) => {
@@ -557,9 +608,9 @@ export async function runLocalAgentDaemon(
     ? setInterval(() => lock.heartbeat(), DAEMON_LOCK_HEARTBEAT_INTERVAL_MS)
     : null
   const active = new Set<Promise<unknown>>()
-  // Runs this daemon could not dispatch (non-outcome failure) are not
-  // retried by the same daemon pass.
-  const failedIds = new Set<string>()
+  // Runs this daemon could not dispatch (non-outcome failure) are retried
+  // with backoff while they stay queued.
+  const backoff = new DispatchBackoff()
   // Over-age Runs this daemon could not settle (non-race error) are not
   // retried by later ticks, so they cannot starve younger over-age Runs.
   const overAgeFailedIds = new Set<string>()
@@ -644,7 +695,13 @@ export async function runLocalAgentDaemon(
           providerBindingDependencies: options.providerBindingDependencies,
           appVersion: options.appVersion,
           concurrency: available,
-          excludeIds: failedIds,
+          excludeIds: backoff.waiting(performance.now(), (jobId) => {
+            try {
+              return getAgentJob(options.db, jobId)?.status === "queued"
+            } catch {
+              return true
+            }
+          }),
           workerKind: "daemon",
           apiCapable: lock !== null,
           now: options.now,
@@ -654,7 +711,7 @@ export async function runLocalAgentDaemon(
             const tracked = dispatch
               .then((run) => {
                 if (run.error) {
-                  failedIds.add(job.id)
+                  backoff.failed(job.id, performance.now())
                   result.failedJobs += 1
                   writeLine(
                     options.stderr,
@@ -664,8 +721,9 @@ export async function runLocalAgentDaemon(
                         : String(run.error)
                     }`,
                   )
-                } else if (run.claimed) {
-                  result.completedJobs += 1
+                } else {
+                  backoff.settled(job.id)
+                  if (run.claimed) result.completedJobs += 1
                 }
               })
               .finally(() => {
@@ -680,7 +738,7 @@ export async function runLocalAgentDaemon(
         const queued = listPumpWork({
           db: options.db,
           concurrency: 1,
-          excludeIds: failedIds,
+          excludeIds: backoff.all(),
           apiCapable: lock !== null,
         })
         if (queued.length === 0) break
