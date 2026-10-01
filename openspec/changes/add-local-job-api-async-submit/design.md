@@ -203,7 +203,7 @@ terminal staged 名唯一包含 process PID + 高熵 preparation-attempt token�
 | queued cancel 无 initial admission；artifact-free；preparation/reopen fail closed | 不登记 terminal refs，host settle 对应 outcome/reason | committed completed 即 ready；settle 设 expiry |
 | recovery（Owner 已确认，2026-10-02） | 保留既有 recovery owner/liveness；settle interrupted，**不登记新 terminal refs** | registered terminal set 为空，立即 ready，初始 refs 仍保留在历史；prepared tail/result.artifacts=[]；settle 设 expiry |
 
-wait/status **observation itself** 不 settle/cancel/改 status；CLI 既有 `recoverStaleAgentJobs` prologue 不变，故启动 read 命令可能先触发既有 recovery writer，不能宣称整个命令绝无写入。daemon 恢复和 wrapper 有界观察窗末调用同一 recovery owner，不复制 liveness 或 interrupted FSM。恢复需要既有 stale heartbeat（120 s）+ confirmed stopped，不因 unknown 判死。
+wait/status **observation itself** 不 settle/cancel/改 status；CLI 既有 `recoverStaleAgentJobs` prologue 不变，故启动 read 命令可能先触发既有 recovery writer，不能宣称整个命令绝无写入。同一 recovery owner（`recoverStaleAgentJobs`）只由 CLI 命令 prologue 与 daemon 启动调用；wrapper 有界观察窗末不另行调用（30 s 窗远小于 120 s stale 阈值，该调用必为 no-op；T3 将本句与实现对齐），不复制 liveness 或 interrupted FSM。恢复需要既有 stale heartbeat（120 s）+ confirmed stopped，不因 unknown 判死。
 
 ### Executor signal 与 decision table
 
