@@ -41,7 +41,7 @@ Status: **DRAFT — awaiting Owner APPROVED**
 | 2 / F-B | CLOSED | proposal §3 #2/#10、§4，design D2/Open Q4，local request/error/S08：create 无新字段且显式 reject key；今日 silent acceptance→新 stdout v1 idempotency_key_not_supported/2 属 Q1 tightening；reject/ignore 和旧 build duplicate 风险披露。 |
 | 3 / F-C | CLOSED | local wrapper、design D2、tasks 1.4：baseline stderr text；create 2 或 unsupported message→3、retry 3；stop owned execution tree、queued cleanup、无 false terminal 保留。 |
 | 4 / F-D/F-T | CLOSED | local S53 THEN 逐字恢复 living consumer rule，helper/spy 另列 documentation example；tasks 7.12/fixture contract 和本登记准确披露 S42/S46/S48/S51 modified-inherited 与 S53 example。 |
-| 5 / F-E | CLOSED | headless projection table/S37/S39、design D5、proposal §3 #5/#10 与 §4：五 reason 的 completed.payload.reasons、job.errorCode、failed、exit（7/7/binding 6,2,4 else 3/1/1）；reasons 非 v1-stable，0–8 含义不变。 |
+| 5 / F-E | CLOSED | headless projection table/S37/S39、design D5、proposal §3 #5/#10 与 §4：五 reason 的 completed.payload.reasons、job.errorCode、failed、exit（7/7/binding 4,2,6 else 3/1/1）；reasons 非 v1-stable，0–8 含义不变。 |
 | 6 / F-F | CLOSED | tasks 1.1/新增 1.6/7.2：Owner 决策后、red tests 前强制 prune 为仅选定分支的可归档 SHALL，删除 specs 的 pending/conditional/预设决策措辞，备选归 design history，裁剪 S34/S35，strict validate + 单次 closure re-check + approved exact SHA；默认全选也执行。 |
 | 7 / F-G | CLOSED | local stderr table/S06/S20、design D2：plain text + newline，unknown ID 与 status 同形 Unknown job: <id>/3，invalid-timeout argument diagnostic/2，pre-snapshot observation diagnostic/8；stdout envelopes 保留。 |
 | 8 / F-H/F-O | CLOSED | design R4、local R4/S35、proposal §3/§5、tasks 1.4：POSIX/Windows matrix、cancel-by-id/EOF 边界、Career Kit no win32 detach/500 ms grace、signal re-raise、hard-kill negative assertion、ignored stdin 不 armed。 |

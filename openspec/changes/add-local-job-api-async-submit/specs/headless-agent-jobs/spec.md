@@ -34,7 +34,7 @@ existing exit mapping; without one it SHALL use execution_profile_invalid/3.
 | --- | --- | --- | --- |
 | project_unregistered | project_unregistered | failed | 7 |
 | cwd_identity_changed | cwd_identity_changed | failed | 7 |
-| execution_profile_invalid | owner-supplied provider-binding code, else execution_profile_invalid | failed | binding unavailable→6, invalid request→2, local-only blocked→4; else 3 |
+| execution_profile_invalid | owner-supplied provider-binding code, else execution_profile_invalid | failed | binding unavailable→4, invalid request→2, local-only blocked→6; else 3 |
 | queued_age_exceeded | queued_age_exceeded | failed | 1 |
 | artifact_admission_mismatch | artifact_admission_mismatch | failed | 1 |
 
@@ -156,7 +156,7 @@ This R3 decision remains **统筹预设（推荐，Owner 可改）**, pending Ow
   and no unsafe artifact writes
 - **AND** job.errorCode equals each matching reason except that the profile variants
   preserve their owner-supplied binding code; create/default retry and wait return exits
-  7/7/(6,2,4 for those binding codes or 3 without one)/1 respectively, as the table specifies
+  7/7/(4,2,6 for those binding codes or 3 without one)/1 respectively, as the table specifies
 - **AND** the unchanged fixture executes exactly once; injecting internal maxQueuedApiAgeMs
   moves only the age threshold, never bypasses the identity/profile gates
 

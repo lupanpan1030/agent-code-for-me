@@ -74,7 +74,7 @@ Why: 公共 batch 与异步消费共用可观察、可取消、可去重的同�
 | same | waiter abort | 今日 process-tree kill 终止本地工作；远端 claimant 不会随 waiter 消失 | **Red R4 #4/#9**；(b)/(c) 及 (a) daemon-first 预设 catchable abort/armed EOF cancel own ID；POSIX SIGKILL、Windows child.kill()/TerminateProcess 不可 relay；跨平台可靠取消须按 ID | guide:787,817；design D2 |
 | same | job.workerId / workerPid | 字段不变；daemon-first 值指向 shared executor，不再是 caller | #3 provenance 披露（P3），不要 signal workerPid；调用 runs cancel | schema:1063-1064；cli-output.ts:124-125 |
 | same | idempotency/replay/conflict | 仅 submit/retry body 可选 key，同 consumer/request 重放；conflict exit 2 | submit/retry opt-in additive #5；create 不新增字段且显式拒绝 idempotencyKey，属 #2 tightening / #10 新 code；Q1/Q5 | design D4 |
-| same | fail-closed settlements | 新 project_unregistered、cwd_identity_changed、execution_profile_invalid、queued_age_exceeded、artifact_admission_mismatch | #5/#10：status=failed；job.errorCode 为同名或 profile owner binding code；exit 为 7/7/(binding 6/2/4，否则 3)/1/1；Q6，不新增 exit，不改 0–8 含义 | design D5；headless delta projection table；guide:995,1130 |
+| same | fail-closed settlements | 新 project_unregistered、cwd_identity_changed、execution_profile_invalid、queued_age_exceeded、artifact_admission_mismatch | #5/#10：status=failed；job.errorCode 为同名或 profile owner binding code；exit 为 7/7/(binding 4/2/6，否则 3)/1/1；Q6，不新增 exit，不改 0–8 含义 | design D5；headless delta projection table；guide:995,1130 |
 | same | submission_pending | 原无此 code；live creator / permanent orphan 均 exit 8 + retryable:true | #5 新语义，需 Owner Q4/Q6；retryable 不承诺最终解除 | synthesis SYN-09；design D3 |
 | same | wait/status observation | status queued/running 必有 execution；terminal 省略；wait 根据表给 reason | additive fields，read 本身只观察，既有 recovery prologue 不变 | design D5 |
 | same | discoveryFeature | closed enum 加 async-submit | **Red R2 / Q3** pinned-old-schema 失败；预声明 refresh 规则支持 direct | guide:209-216；living Discovery:476-478 |
@@ -154,7 +154,7 @@ Q1 验证收紧示例：同一 create body 若带 `"idempotencyKey":"req-001"`�
 {"apiVersion":"locus.local-job.v1","error":{"code":"idempotency_key_not_supported","message":"idempotencyKey is supported only on runs submit and runs retry --request."}}
 ```
 
-Claim-time fail-closed 的五种投影均为 `status:"failed"`：`completed.payload.reasons` 分别含 `project_unregistered`、`cwd_identity_changed`、`execution_profile_invalid`、`queued_age_exceeded`、`artifact_admission_mismatch`；`job.errorCode` 同名，惟 profile owner 提供 binding code 时保留该 code。create/default retry/wait outcome exit 分别为 7、7、binding unavailable→6 / invalid-request→2 / local-only→4（无 binding code 时 3）、1、1。示例：项目撤销后的 job.errorCode=project_unregistered、reasons 含同名条目、wait exit 7；reasons 按 guide:1130 仍非 v1-stable，消费者可依赖 errorCode/exit，不需迁移到新的 exit 编号。
+Claim-time fail-closed 的五种投影均为 `status:"failed"`：`completed.payload.reasons` 分别含 `project_unregistered`、`cwd_identity_changed`、`execution_profile_invalid`、`queued_age_exceeded`、`artifact_admission_mismatch`；`job.errorCode` 同名，惟 profile owner 提供 binding code 时保留该 code。create/default retry/wait outcome exit 分别为 7、7、binding unavailable→4 / invalid-request→2 / local-only→6（无 binding code 时 3）、1、1。示例：项目撤销后的 job.errorCode=project_unregistered、reasons 含同名条目、wait exit 7；reasons 按 guide:1130 仍非 v1-stable，消费者可依赖 errorCode/exit，不需迁移到新的 exit 编号。
 
 submission_pending 可能是仍在提交也可能是永久 orphan；重试同 key 不生成第二 attempt。未解决时可改新 key，但活跃原 creator 仍可能完成，必须明确承担重复风险；orphan 不自动过期，修复归 TICKET-128。
 
