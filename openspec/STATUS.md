@@ -4,11 +4,11 @@ This ledger records execution state only. Current product truth remains in
 `openspec/specs/` plus the checked-out code; future direction remains in the
 ratified strategy and interoperability contract.
 
-Updated: 2026-10-01 (Pacific/Auckland); previous: 2026-09-30 (Pacific/Auckland)
+Updated: 2026-10-02 (Pacific/Auckland); previous: 2026-10-01 (Pacific/Auckland)
 
 | Active change | Status | Scope / next gate |
 | --- | --- | --- |
-| [add-local-job-api-async-submit](changes/add-local-job-api-async-submit/proposal.md) | APPROVED 2026-10-02 (Owner, bound to 0f998436) — next gate: red test authoring | Six decision groups accepted as recommended; docs-only decision record and selected-branch prune; independent red suite before implementation; ACCEPTED delegated to coordination on same-SHA Codex IMPLEMENTATION_VERIFIED + Claude REVIEW_APPROVED and no open Red |
+| [add-local-job-api-async-submit](changes/add-local-job-api-async-submit/proposal.md) | IMPLEMENTATION CANDIDATE — frozen 2026-10-02 (SHA in handoff) — next gate: same-SHA Codex IMPLEMENTATION_VERIFIED + Claude REVIEW_APPROVED | Owner APPROVED @ 0f998436; red suite 79/79 green, `check:full` exit 0, strict 54/54; product code final at `e0a9a967`, Phase III docs-only; runtime/packaged smoke host-blocked (macOS/Windows not claimed); open: tasks 1.4, 1.6, 3.3, 4.9, 8.1, 8.3–8.8 (see verification.md); ACCEPTED delegated to coordination on same-SHA dual verdicts and no open Red; push not authorized |
 
 Parked proposals are indexed in [`deferred/README.md`](deferred/README.md) and
 do not appear in the active list.

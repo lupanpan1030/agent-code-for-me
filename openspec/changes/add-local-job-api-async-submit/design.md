@@ -1,6 +1,6 @@
 # Design: Local Job API async submit
 
-Status: **APPROVED 2026-10-02 (Owner, bound to 0f998436) — awaiting red suite (test-first)**
+Status: **APPROVED 2026-10-02 (Owner, bound to 0f998436) — IMPLEMENTATION CANDIDATE frozen 2026-10-02 (see verification.md)**
 
 ## Context and source basis
 
