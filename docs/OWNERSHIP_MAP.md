@@ -560,6 +560,25 @@ or UI helper.
   artifact candidate sink (composed only for API runs with an admitted run
   directory) to the adapter. The runner facades return the committed outcome
   (`readOutcome()`: final status and completed sequence).
+- Async submission and wait (add-local-job-api-async-submit):
+  `src/main/lib/headless/run-submission.ts#submitRun` is the one submission
+  core of API create/submit/retry and jobs-stdio `job.run` (validate,
+  idempotency reservation, committed `job_created`, winner-only initial
+  admission, ack); `src/main/lib/headless/run-submission.ts#waitForRun` is
+  its read-only bounded wait. `src/main/lib/headless/daemon.ts#pumpQueuedRuns`
+  is the only dispatch of queued Runs (daemon slots daemon → schedule → api;
+  the create/retry wrapper and a protocol session pass their own admitted
+  IDs); its runners run the claim-time API gate after the conditional claim.
+  `src/main/lib/headless/job-store.ts#insertQueuedAgentJobRecord` (with the
+  private reservation-aware insert behind `createAgentJob`/`retryAgentJob`)
+  is the only `agent_jobs` row insertion; schedules call it inside their
+  fire/audit transaction. `src/main/lib/agent-runtime/run-artifacts.ts#reopenAdmittedRunDir`
+  owns the claimant's cross-process reopen of an admitted run directory.
+  The CLI and jobs-stdio adapters only parse and translate envelopes; they
+  never call a runner or the claim primitives (the human `locus run` keeps
+  its in-process runner). `scripts/check-architecture-guards.mjs` enforces
+  this end state with the fixture
+  `tests/fixtures/local-job-api-async/guards-protocol/architecture-fixtures.json`.
 
 ## Runtime MCP Configuration
 
