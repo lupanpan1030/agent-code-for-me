@@ -83,6 +83,10 @@ const ALLOWED = new Map([
     "negative assertions proving the router no longer contains the retired symbols",
   ],
   [
+    "tests/fixtures/runtime-route-catalog/refusals.json",
+    "S06/S46 retired-ID refusal fixtures (refactor-unified-runtime-route-catalog RED suite, tasks 6.1 / design D5)",
+  ],
+  [
     "tests/agent-chat-provider-routing.test.ts",
     "regression: a legacy/unknown provider string must fall back inside the union",
   ],

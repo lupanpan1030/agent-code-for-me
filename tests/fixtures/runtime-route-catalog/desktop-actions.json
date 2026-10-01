@@ -1,0 +1,109 @@
+{
+  "fixtureVersion": 1,
+  "evidenceClass": "synthetic",
+  "sourceRefs": [
+    "openspec/changes/refactor-unified-runtime-route-catalog/specs/desktop-agent-jobs/spec.md:37-41",
+    "openspec/changes/refactor-unified-runtime-route-catalog/design.md:88",
+    "openspec/changes/refactor-unified-runtime-route-catalog/tasks.md:63",
+    "src/main/lib/trpc/routers/agent-jobs.ts:83-128",
+    "src/main/lib/desktop-agent-jobs.ts:212-279",
+    "src/main/lib/headless/cli-output.ts"
+  ],
+  "provenance": {
+    "author": "independent red-test author (surfaces domain), no implementation context",
+    "approvedSpecSha": "a9b74594",
+    "productBaseSha": "19986552",
+    "createdAt": "2026-10-02",
+    "notes": "Envelope key sets and refusal messages are the 19986552 agentJobs router baseline (agent-jobs.ts:83-128); rows are created through the desktop-agent-jobs/job-store/submit owners in a temporary migrated DB."
+  },
+  "S20": {
+    "chat": {
+      "chatId": "s20-chat",
+      "subChatId": "s20-sub",
+      "projectId": "s20-project"
+    },
+    "desktopRuntime": "claude-code",
+    "oldStream": {
+      "runId": "s20-stream-old"
+    },
+    "newStream": {
+      "runId": "s20-stream-new"
+    },
+    "apiRequest": {
+      "consumerId": "s20-api",
+      "runtime": "codex",
+      "prompt": "S20 API job"
+    },
+    "headlessJob": {
+      "id": "s20-headless",
+      "source": "cli",
+      "runtime": "codex"
+    },
+    "expected": {
+      "oldCancel": {
+        "oldCancelDeliveries": 1,
+        "newCancelDeliveries": 0,
+        "oldCancelRequestedBy": "desktop",
+        "newStatus": "running",
+        "newCancelRequestedBy": null
+      },
+      "desktopRetryError": "Desktop chat jobs must be retried from their linked chat.",
+      "apiRetryError": "API jobs must be retried through locus api runs retry.",
+      "headlessCancel": {
+        "status": "canceled",
+        "exitCode": 130,
+        "errorCode": "job_canceled",
+        "errorMessage": "Job was canceled before it started.",
+        "cancelRequestedBy": "desktop"
+      },
+      "headlessRetry": {
+        "source": "cli",
+        "attempt": 2,
+        "status": "queued"
+      }
+    },
+    "envelopeKeys": ["job"],
+    "catalogModuleTokens": [
+      "runtime-route-catalog",
+      "resolveRuntimeRoute",
+      "runtimeRouteCatalog"
+    ],
+    "ownerSources": [
+      "src/main/lib/trpc/routers/agent-jobs.ts",
+      "src/main/lib/desktop-agent-jobs.ts"
+    ],
+    "jobEnvelopeKeys": [
+      "id",
+      "retryOfJobId",
+      "attempt",
+      "kind",
+      "source",
+      "runtime",
+      "status",
+      "mode",
+      "cwd",
+      "projectId",
+      "chatId",
+      "subChatId",
+      "promptPreview",
+      "apiConsumerId",
+      "apiConsumerRunId",
+      "artifactBaseDir",
+      "artifactManifestPath",
+      "providerProfileId",
+      "modelOverride",
+      "createdAt",
+      "startedAt",
+      "finishedAt",
+      "exitCode",
+      "errorCode",
+      "errorMessage",
+      "result",
+      "workerId",
+      "workerPid",
+      "heartbeatAt",
+      "cancelRequestedAt",
+      "cancelRequestedBy"
+    ]
+  }
+}

@@ -1,0 +1,512 @@
+{
+  "fixtureVersion": 1,
+  "evidenceClass": "synthetic",
+  "sourceRefs": [
+    "openspec/changes/refactor-unified-runtime-route-catalog/specs/agent-runtime-core/spec.md:20-30",
+    "openspec/changes/refactor-unified-runtime-route-catalog/specs/agent-runtime-core/spec.md:113-119",
+    "openspec/changes/refactor-unified-runtime-route-catalog/design.md:121-230",
+    "openspec/changes/refactor-unified-runtime-route-catalog/design.md:315-343",
+    "openspec/changes/refactor-unified-runtime-route-catalog/design.md:357-386",
+    "openspec/changes/refactor-unified-runtime-route-catalog/tasks.md:21",
+    "src/main/lib/headless/adapter-selector.ts:83-115",
+    "src/main/lib/agent-runtime/desktop-adapter-metadata.ts:3-21",
+    "src/shared/agent-runtime-capabilities.ts:1-10",
+    "src/shared/local-job-api.ts:27",
+    "docs/local-job-api-v1.schema.json:1383"
+  ],
+  "provenance": {
+    "author": "independent red-test author (catalog-core domain)",
+    "approvedSpec": "a9b745949b02e2b7c1bbd883c224c14b324d3dbc",
+    "base": "19986552",
+    "method": "Synthetic declaration table mirroring the design D1 accepted matrix in the frozen RuntimeRouteDeclaration / RuntimeRouteCatalogReferences shape listed in the catalog-core red report; adapter sources/labels copied from adapter-selector.ts:83-115 and desktop-adapter-metadata.ts:3-21; enforcement baselines from design D1 (claude-code-batch/codex-batch sandbox-level, codex-app-server admission-audit).",
+    "indexMap": "declarations[0]=claude-code {routes[0]=completion,[1]=desktop.agent-sdk,[2]=headless.batch}; declarations[1]=codex {routes[0]=api.policy-grant,[1]=completion,[2]=desktop.app-server,[3]=headless.batch}"
+  },
+  "S01": {
+    "declarations": [
+      {
+        "runtimeId": "claude-code",
+        "label": "Claude Code",
+        "manifestRef": "manifest:claude-code",
+        "cancellation": "abort-signal",
+        "sessionReference": "native-session-id",
+        "routes": [
+          {
+            "routeId": "claude-code.completion",
+            "entries": ["api", "completion"],
+            "kind": "completion",
+            "modes": null,
+            "executionProfile": null,
+            "executionSurface": "completion",
+            "adapterSource": "locus-completion",
+            "adapterLabel": "Locus completion",
+            "transport": "provider-http",
+            "transportId": null,
+            "factoryRef": null,
+            "readinessProbeRef": null,
+            "enforcementEvidenceRef": null,
+            "enforcementEvidence": "none",
+            "extensions": []
+          },
+          {
+            "routeId": "claude-code.desktop.agent-sdk",
+            "entries": ["desktop"],
+            "kind": "agent",
+            "modes": ["plan", "agent"],
+            "executionProfile": "interactive",
+            "executionSurface": "desktop-sdk",
+            "adapterSource": "claude-agent-sdk",
+            "adapterLabel": "Claude Agent SDK",
+            "transport": "agent-sdk",
+            "transportId": "claude-chat-ipc",
+            "factoryRef": "factory:claude-desktop-sdk",
+            "readinessProbeRef": "probe:claude-native",
+            "enforcementEvidenceRef": "evidence:claude-agent-sdk",
+            "enforcementEvidence": "pre-execution",
+            "extensions": []
+          },
+          {
+            "routeId": "claude-code.headless.batch",
+            "entries": ["headless", "api", "protocol"],
+            "kind": "agent",
+            "modes": ["plan", "agent"],
+            "executionProfile": "batch",
+            "executionSurface": "headless-exec",
+            "adapterSource": "claude-code-batch",
+            "adapterLabel": "Claude Code batch",
+            "transport": "process-stdio",
+            "transportId": null,
+            "factoryRef": "factory:claude-code-batch",
+            "readinessProbeRef": "probe:claude-native",
+            "enforcementEvidenceRef": "evidence:claude-code-batch",
+            "enforcementEvidence": "sandbox-level",
+            "extensions": []
+          }
+        ]
+      },
+      {
+        "runtimeId": "codex",
+        "label": "Codex",
+        "manifestRef": "manifest:codex",
+        "cancellation": "abort-signal",
+        "sessionReference": "native-thread-id",
+        "routes": [
+          {
+            "routeId": "codex.api.policy-grant",
+            "entries": ["api"],
+            "kind": "agent",
+            "modes": ["plan", "agent"],
+            "executionProfile": "policy-grant",
+            "executionSurface": "headless-app-server",
+            "adapterSource": "codex-app-server",
+            "adapterLabel": "Codex app-server",
+            "transport": "json-rpc-stdio",
+            "transportId": null,
+            "factoryRef": "factory:codex-headless-app-server",
+            "readinessProbeRef": "probe:codex-rich",
+            "enforcementEvidenceRef": "evidence:codex-app-server",
+            "enforcementEvidence": "admission-audit",
+            "extensions": [
+              {
+                "namespace": "runtime.codex.v1",
+                "schemaVersion": 1,
+                "maturity": "experimental",
+                "schemaRef": "#/$defs/eventPayloadExtensions/properties/runtime.codex.v1",
+                "redactionOwner": "src/main/lib/agent-runtime/run-event-ledger.ts"
+              }
+            ]
+          },
+          {
+            "routeId": "codex.completion",
+            "entries": ["api", "completion"],
+            "kind": "completion",
+            "modes": null,
+            "executionProfile": null,
+            "executionSurface": "completion",
+            "adapterSource": "locus-completion",
+            "adapterLabel": "Locus completion",
+            "transport": "provider-http",
+            "transportId": null,
+            "factoryRef": null,
+            "readinessProbeRef": null,
+            "enforcementEvidenceRef": null,
+            "enforcementEvidence": "none",
+            "extensions": []
+          },
+          {
+            "routeId": "codex.desktop.app-server",
+            "entries": ["desktop"],
+            "kind": "agent",
+            "modes": ["plan", "agent"],
+            "executionProfile": "interactive",
+            "executionSurface": "desktop-app-server",
+            "adapterSource": "codex-app-server",
+            "adapterLabel": "Codex app-server adapter",
+            "transport": "json-rpc-stdio",
+            "transportId": "codex-chat-ipc",
+            "factoryRef": "factory:codex-desktop-app-server",
+            "readinessProbeRef": "probe:codex-rich",
+            "enforcementEvidenceRef": "evidence:codex-app-server-desktop",
+            "enforcementEvidence": "admission-audit",
+            "extensions": [
+              {
+                "namespace": "runtime.codex.v1",
+                "schemaVersion": 1,
+                "maturity": "experimental",
+                "schemaRef": "#/$defs/eventPayloadExtensions/properties/runtime.codex.v1",
+                "redactionOwner": "src/main/lib/agent-runtime/run-event-ledger.ts"
+              }
+            ]
+          },
+          {
+            "routeId": "codex.headless.batch",
+            "entries": ["headless", "api", "protocol"],
+            "kind": "agent",
+            "modes": ["plan", "agent"],
+            "executionProfile": "batch",
+            "executionSurface": "headless-exec",
+            "adapterSource": "codex-batch",
+            "adapterLabel": "Codex headless/batch",
+            "transport": "process-stdio",
+            "transportId": null,
+            "factoryRef": "factory:codex-batch",
+            "readinessProbeRef": "probe:codex-native",
+            "enforcementEvidenceRef": "evidence:codex-batch",
+            "enforcementEvidence": "sandbox-level",
+            "extensions": []
+          }
+        ]
+      }
+    ],
+    "ports": {
+      "manifests": {
+        "manifest:claude-code": "claude-code",
+        "manifest:codex": "codex"
+      },
+      "factories": [
+        "factory:claude-desktop-sdk",
+        "factory:claude-code-batch",
+        "factory:codex-headless-app-server",
+        "factory:codex-desktop-app-server",
+        "factory:codex-batch"
+      ],
+      "probes": {
+        "probe:claude-native": "ready",
+        "probe:codex-native": "ready",
+        "probe:codex-rich": "ready"
+      },
+      "evidence": {
+        "evidence:claude-agent-sdk": "pre-execution",
+        "evidence:claude-code-batch": "sandbox-level",
+        "evidence:codex-app-server": "admission-audit",
+        "evidence:codex-app-server-desktop": "admission-audit",
+        "evidence:codex-batch": "sandbox-level"
+      }
+    },
+    "probeQuery": {
+      "runtimeId": "codex",
+      "entry": "headless",
+      "mode": "agent",
+      "executionProfile": "batch",
+      "source": "cli",
+      "expectRouteId": "codex.headless.batch"
+    },
+    "validVariants": [
+      {
+        "variantId": "valid-synthetic",
+        "mutations": []
+      },
+      {
+        "variantId": "completion-null-probe",
+        "note": "completion routes keep readinessProbeRef:null (null does not mean ready)",
+        "mutations": [
+          {
+            "op": "set",
+            "path": [1, "routes", 1, "readinessProbeRef"],
+            "value": null
+          },
+          {
+            "op": "set",
+            "path": [0, "routes", 0, "readinessProbeRef"],
+            "value": null
+          }
+        ]
+      }
+    ],
+    "invalidVariants": [
+      {
+        "variantId": "duplicate-runtime",
+        "mutations": [
+          {
+            "op": "append",
+            "path": [],
+            "value": {
+              "runtimeId": "codex",
+              "label": "Codex shadow",
+              "manifestRef": "manifest:codex",
+              "cancellation": "abort-signal",
+              "sessionReference": "native-thread-id",
+              "routes": []
+            }
+          }
+        ],
+        "offendingAnyOf": ["codex"]
+      },
+      {
+        "variantId": "duplicate-route",
+        "mutations": [
+          {
+            "op": "set",
+            "path": [0, "routes", 2, "routeId"],
+            "value": "codex.headless.batch"
+          }
+        ],
+        "offendingAnyOf": ["codex.headless.batch"]
+      },
+      {
+        "variantId": "overlap",
+        "mutations": [
+          {
+            "op": "append",
+            "path": [1, "routes"],
+            "value": {
+              "routeId": "codex.headless.batch-shadow",
+              "entries": ["headless"],
+              "kind": "agent",
+              "modes": ["agent"],
+              "executionProfile": "batch",
+              "executionSurface": "headless-exec",
+              "adapterSource": "codex-batch",
+              "adapterLabel": "Codex headless/batch",
+              "transport": "process-stdio",
+              "transportId": null,
+              "factoryRef": "factory:codex-batch",
+              "readinessProbeRef": "probe:codex-native",
+              "enforcementEvidenceRef": "evidence:codex-batch",
+              "enforcementEvidence": "sandbox-level",
+              "extensions": []
+            }
+          }
+        ],
+        "offendingAnyOf": [
+          "codex.headless.batch-shadow",
+          "codex.headless.batch"
+        ]
+      },
+      {
+        "variantId": "agent-missing-factory",
+        "mutations": [
+          {
+            "op": "set",
+            "path": [1, "routes", 3, "factoryRef"],
+            "value": "factory:not-registered"
+          }
+        ],
+        "offendingAnyOf": ["codex.headless.batch"]
+      },
+      {
+        "variantId": "agent-null-factory",
+        "mutations": [
+          {
+            "op": "set",
+            "path": [0, "routes", 2, "factoryRef"],
+            "value": null
+          }
+        ],
+        "offendingAnyOf": ["claude-code.headless.batch"]
+      },
+      {
+        "variantId": "missing-manifest",
+        "mutations": [
+          {
+            "op": "set",
+            "path": [0, "manifestRef"],
+            "value": "manifest:not-registered"
+          }
+        ],
+        "offendingAnyOf": ["claude-code"]
+      },
+      {
+        "variantId": "missing-extension-schema",
+        "mutations": [
+          {
+            "op": "set",
+            "path": [1, "routes", 0, "extensions", 0, "schemaRef"],
+            "value": "#/$defs/eventPayloadExtensions/properties/runtime.codex.v9"
+          }
+        ],
+        "offendingAnyOf": ["codex.api.policy-grant"]
+      },
+      {
+        "variantId": "malformed-namespace",
+        "mutations": [
+          {
+            "op": "set",
+            "path": [1, "routes", 0, "extensions", 0, "namespace"],
+            "value": "codex.runtime.v1"
+          }
+        ],
+        "offendingAnyOf": ["codex.api.policy-grant"]
+      },
+      {
+        "variantId": "enforcement-evidence-mismatch",
+        "mutations": [
+          {
+            "op": "set",
+            "path": [1, "routes", 3, "enforcementEvidence"],
+            "value": "pre-execution"
+          }
+        ],
+        "offendingAnyOf": ["codex.headless.batch"]
+      },
+      {
+        "variantId": "agent-missing-probe",
+        "mutations": [
+          {
+            "op": "set",
+            "path": [1, "routes", 3, "readinessProbeRef"],
+            "value": null
+          }
+        ],
+        "offendingAnyOf": ["codex.headless.batch"]
+      }
+    ]
+  },
+  "S02": {
+    "declarationsRef": "catalog.json#S01.declarations",
+    "orders": ["as-declared", "runtimes-and-routes-reversed"],
+    "queries": [
+      {
+        "queryId": "claude-plan-batch",
+        "a": {
+          "runtimeId": "claude-code",
+          "entry": "headless",
+          "mode": "plan",
+          "executionProfile": "batch",
+          "source": "daemon",
+          "requestedCapabilities": ["planMode", "planMode"]
+        },
+        "b": {
+          "runtimeId": "claude-code",
+          "entry": "headless",
+          "mode": "plan",
+          "executionProfile": "batch",
+          "source": "daemon",
+          "requestedCapabilities": ["planMode"]
+        },
+        "expect": {
+          "routeId": "claude-code.headless.batch",
+          "adapterSource": "claude-code-batch",
+          "executionSurface": "headless-exec",
+          "factoryRef": "factory:claude-code-batch"
+        }
+      },
+      {
+        "queryId": "codex-agent-api",
+        "a": {
+          "runtimeId": "codex",
+          "entry": "api",
+          "mode": "agent",
+          "executionProfile": "batch",
+          "source": "api",
+          "requestedCapabilities": ["usageMetadata", "attachments"]
+        },
+        "b": {
+          "runtimeId": "codex",
+          "entry": "api",
+          "mode": "agent",
+          "executionProfile": "batch",
+          "source": "api",
+          "requestedCapabilities": [
+            "attachments",
+            "usageMetadata",
+            "attachments"
+          ]
+        },
+        "expect": {
+          "routeId": "codex.headless.batch",
+          "adapterSource": "codex-batch",
+          "executionSurface": "headless-exec",
+          "factoryRef": "factory:codex-batch"
+        }
+      },
+      {
+        "queryId": "codex-policy-grant",
+        "a": {
+          "runtimeId": "codex",
+          "entry": "api",
+          "mode": "agent",
+          "executionProfile": "policy-grant",
+          "source": "api",
+          "policyGrant": {
+            "scopes": ["workspace:file-write", "workspace:file-write"]
+          }
+        },
+        "b": {
+          "runtimeId": "codex",
+          "entry": "api",
+          "mode": "agent",
+          "executionProfile": "policy-grant",
+          "source": "api",
+          "policyGrant": {
+            "scopes": ["workspace:file-write"]
+          }
+        },
+        "expect": {
+          "routeId": "codex.api.policy-grant",
+          "adapterSource": "codex-app-server",
+          "executionSurface": "headless-app-server",
+          "factoryRef": "factory:codex-headless-app-server"
+        }
+      }
+    ],
+    "expectedRouteIdOrder": [
+      "claude-code.completion",
+      "claude-code.desktop.agent-sdk",
+      "claude-code.headless.batch",
+      "codex.api.policy-grant",
+      "codex.completion",
+      "codex.desktop.app-server",
+      "codex.headless.batch"
+    ],
+    "mutationAttempt": {
+      "field": "adapterSource",
+      "value": "mutated-by-caller"
+    }
+  },
+  "S33": {
+    "productionRuntimes": ["claude-code", "codex"],
+    "requiredEntries": {
+      "claude-code": ["desktop", "headless", "api", "protocol"],
+      "codex": ["desktop", "headless", "api", "protocol"]
+    },
+    "rendererTransportIds": {
+      "claude-code": "claude-chat-ipc",
+      "codex": "codex-chat-ipc"
+    },
+    "rendererKeys": ["routeId", "runtimeId", "transportId"],
+    "secretPatterns": [
+      "(^|[^A-Za-z0-9_])sk-[A-Za-z0-9_-]{20,}",
+      "access_token",
+      "authorization",
+      "bearer\\s+[A-Za-z0-9._-]+",
+      "refresh_token"
+    ],
+    "duplicateRuntimeVariant": {
+      "mutations": [
+        {
+          "op": "append",
+          "path": [],
+          "value": {
+            "runtimeId": "claude-code",
+            "label": "Claude Code duplicate",
+            "manifestRef": "manifest:claude-code",
+            "cancellation": "abort-signal",
+            "sessionReference": "native-session-id",
+            "routes": []
+          }
+        }
+      ],
+      "offendingAnyOf": ["claude-code"]
+    }
+  }
+}

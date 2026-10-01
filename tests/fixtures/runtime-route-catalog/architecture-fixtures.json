@@ -1,0 +1,1436 @@
+{
+  "fixtureVersion": 1,
+  "evidenceClass": "synthetic",
+  "sourceRefs": [
+    "openspec/changes/refactor-unified-runtime-route-catalog/specs/architecture-ownership/spec.md:72-158",
+    "openspec/changes/refactor-unified-runtime-route-catalog/design.md:395-450",
+    "openspec/changes/refactor-unified-runtime-route-catalog/design.md:59-102",
+    "openspec/changes/refactor-unified-runtime-route-catalog/tasks.md:56-60",
+    "src/renderer/features/agents/main/active-chat.tsx:6053-6086",
+    "src/renderer/features/agents/main/active-chat.tsx:6347-6380",
+    "src/renderer/features/agents/main/active-chat.tsx:346",
+    "src/renderer/features/agents/main/active-chat.tsx:2513",
+    "src/renderer/features/agents/main/active-chat.tsx:2678",
+    "src/renderer/features/agents/main/active-chat.tsx:5866",
+    "src/main/lib/headless/adapters/codex-app-server.ts:49",
+    "src/main/lib/headless/daemon.ts:426-459",
+    "src/main/lib/headless/job-runner.ts:351-357",
+    "src/main/lib/claude/agent-sdk-runtime-lifecycle.ts:4-7",
+    "docs/OWNERSHIP_MAP.md:319-330",
+    "docs/OWNERSHIP_MAP.md:447-470",
+    "docs/OWNERSHIP_MAP.md:540-560",
+    "docs/OWNERSHIP_MAP.md:641-700"
+  ],
+  "provenance": {
+    "capturedFrom": "authored from the approved spec/design (a9b74594) against base 19986552; sources are inline synthetic TypeScript, not copies of production files (active-chat branches follow the 6192b13f shape at :6065/:6355)",
+    "method": "driven through scripts/check-architecture-guards.mjs --runtime-route-catalog-fixtures=<path> exactly like tests/run-event-ledger-guard-self-test.test.ts; every case lists its exact expected finding set (empty for clean/positive cases); a guard that merely fails is not a pass",
+    "author": "independent red author (public-guards domain), 2026-10-02",
+    "secrets": "none",
+    "frozenShapes": [
+      "fixture shape per design D5 (:417-425): top-level S26/S27/S28/S29/S30/S48/S50 -> {cases:[{caseId,files:[{file,source}],expectedFindings:[{rule,file,symbol,owner,ownerSection}]}]}; header keys fixtureVersion/evidenceClass/sourceRefs/provenance sit beside them and are not cases",
+      "caseId unique across the whole file; <matched>/<cases> counts every case of all seven keys",
+      "symbol for route-dispatch-outside-owner = the innermost enclosing named declaration (function, const-bound arrow, or the runtime-keyed map binding itself); lookups into a flagged map are not reported separately",
+      "symbol for retired-route-selector = the canonical retired export name (also when imported under an alias, used through a namespace, re-exported under an alias or bound to a forwarding const); a restored retired module file yields one finding whose symbol is the module basename without extension (adapter-selector, runtime-registry)",
+      "symbol for leaf-adapter-import-outside-catalog = the imported leaf run/create export name; one tuple per symbol per file (import and call collapse into the same tuple); type-only imports are not findings",
+      "symbol for route-catalog-forbidden-dependency = the import specifier exactly as written in the importing file; the readiness cycle is reported on runtime-readiness.ts, a router reached through a one-hop wrapper is reported on the catalog file with the wrapper specifier",
+      "symbol for route-catalog-owner-bypass = the imported owner symbol, \"process.env\", or the imported module specifier for fs/config reads (\"node:fs\", \"../claude-config\"); owner = the existing canonical owner file of the imported symbol, and the catalog file itself for env/fs/config reads",
+      "symbol for duplicate-route-catalog = the imported constructor/validator name used by a production file",
+      "symbol for route-catalog-test-port-in-production = \"runtimeRouteCatalog\" for a non-forwarded host option assignment, or the called query/list/projection function name when a non-forwarded catalog argument is passed",
+      "symbol for renderer-route-projection-bypass = the enclosing named declaration of the runtime branch (getOrCreateChat, createNewSubChat, createRuntimeRouteTransport) or the binding name of a main-side runtimeId->transportId literal map",
+      "owner = src/main/lib/agent-runtime/runtime-route-catalog.ts for every route rule except route-catalog-owner-bypass adjacent-owner violations; ownerSection = Runtime Route Catalog Single Owner for all"
+    ]
+  },
+  "S26": {
+    "cases": [
+      {
+        "caseId": "s26-clean-catalog-owner",
+        "files": [
+          {
+            "file": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "source": "import type { AgentRuntimeContractId } from \"../../../shared/agent-runtime-capabilities\"\nimport { getAgentRuntimeCapabilityManifest } from \"../../../shared/agent-runtime-capabilities\"\nimport { runClaudeAgentSdkDesktopAdapterWithPreparedRuntimeQuery } from \"../claude/agent-sdk-adapter-runner\"\nimport { runCodexAppServerDesktopAdapter } from \"../codex/app-server-adapter-runner\"\nimport { runClaudeCodeHeadlessTask } from \"../headless/adapters/claude-code\"\nimport { createCodexAppServerHeadlessTaskRunner } from \"../headless/adapters/codex-app-server\"\nimport { runCodexHeadlessTask } from \"../headless/adapters/codex\"\n\nconst RUNTIME_ROUTE_DECLARATIONS = [\n  { routeId: \"claude-code.desktop\", runtimeId: \"claude-code\", entry: \"desktop\", adapterSource: \"claude-agent-sdk\", delegate: () => runClaudeAgentSdkDesktopAdapterWithPreparedRuntimeQuery },\n  { routeId: \"codex.desktop\", runtimeId: \"codex\", entry: \"desktop\", adapterSource: \"codex-app-server\", delegate: () => runCodexAppServerDesktopAdapter },\n  { routeId: \"claude-code.headless.batch\", runtimeId: \"claude-code\", entry: \"headless\", adapterSource: \"claude-code-batch\", delegate: () => runClaudeCodeHeadlessTask },\n  { routeId: \"codex.headless.batch\", runtimeId: \"codex\", entry: \"headless\", adapterSource: \"codex-batch\", delegate: () => runCodexHeadlessTask },\n  { routeId: \"codex.api.policy-grant\", runtimeId: \"codex\", entry: \"api\", adapterSource: \"codex-app-server\", delegate: () => createCodexAppServerHeadlessTaskRunner() },\n] as const\n\nexport function resolveRuntimeRoute(query: { runtimeId: AgentRuntimeContractId; entry: string }) {\n  const manifest = getAgentRuntimeCapabilityManifest(query.runtimeId)\n  const route = RUNTIME_ROUTE_DECLARATIONS.find(\n    (candidate) => candidate.runtimeId === query.runtimeId && candidate.entry === query.entry,\n  )\n  return route && manifest ? { ok: true as const, ...route } : { ok: false as const, reason: \"route_not_found\" as const }\n}\n"
+          },
+          {
+            "file": "src/main/lib/headless/job-runner.ts",
+            "source": "import type { CodexAppServerHeadlessAdapterFactory } from \"./adapters/codex-app-server\"\nimport type { CodexHeadlessTaskRunnerDependencies } from \"./adapters/codex\"\n\nexport type HeadlessRunnerFactory = CodexAppServerHeadlessAdapterFactory\nexport type HeadlessRunnerDependencies = CodexHeadlessTaskRunnerDependencies\n"
+          }
+        ],
+        "expectedFindings": []
+      },
+      {
+        "caseId": "s26-if-runtime-branch",
+        "files": [
+          {
+            "file": "src/main/lib/headless/agent-runtime.ts",
+            "source": "import type { AgentRuntimeObserver, AgentRuntimeRunRequest } from \"./agent-runtime-contract\"\nimport { runClaudeCodeHeadlessTask } from \"./adapters/claude-code\"\nimport { runCodexHeadlessTask } from \"./adapters/codex\"\n\nexport async function runAgentTask(request: AgentRuntimeRunRequest, observer: AgentRuntimeObserver) {\n  if (request.context.runtimeId === \"codex\") {\n    return runCodexHeadlessTask(request, observer)\n  }\n  return runClaudeCodeHeadlessTask(request, observer)\n}\n"
+          }
+        ],
+        "expectedFindings": [
+          {
+            "rule": "route-dispatch-outside-owner",
+            "file": "src/main/lib/headless/agent-runtime.ts",
+            "symbol": "runAgentTask",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          },
+          {
+            "rule": "leaf-adapter-import-outside-catalog",
+            "file": "src/main/lib/headless/agent-runtime.ts",
+            "symbol": "runClaudeCodeHeadlessTask",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          },
+          {
+            "rule": "leaf-adapter-import-outside-catalog",
+            "file": "src/main/lib/headless/agent-runtime.ts",
+            "symbol": "runCodexHeadlessTask",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          }
+        ]
+      },
+      {
+        "caseId": "s26-switch-runtime-transport",
+        "files": [
+          {
+            "file": "src/renderer/features/agents/lib/chat-transport-selection.ts",
+            "source": "import { CodexAppServerChatTransport } from \"./codex-app-server-chat-transport\"\nimport { IPCChatTransport } from \"./ipc-chat-transport\"\n\ntype TransportConfig = ConstructorParameters<typeof IPCChatTransport>[0]\n\nexport function selectChatTransport(binding: { runtime: string }, config: TransportConfig) {\n  switch (binding.runtime) {\n    case \"codex\":\n      return new CodexAppServerChatTransport({ ...config, provider: \"codex\" })\n    default:\n      return new IPCChatTransport(config)\n  }\n}\n"
+          }
+        ],
+        "expectedFindings": [
+          {
+            "rule": "route-dispatch-outside-owner",
+            "file": "src/renderer/features/agents/lib/chat-transport-selection.ts",
+            "symbol": "selectChatTransport",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          }
+        ]
+      },
+      {
+        "caseId": "s26-runtime-keyed-factory-map",
+        "files": [
+          {
+            "file": "src/main/lib/trpc/routers/agent-runtime.ts",
+            "source": "import { runClaudeAgentSdkDesktopAdapter } from \"../../claude/agent-sdk-adapter-runner\"\nimport { runCodexAppServerDesktopAdapter } from \"../../codex/app-server-adapter-runner\"\n\nexport const DESKTOP_RUNNERS_BY_RUNTIME = {\n  \"claude-code\": runClaudeAgentSdkDesktopAdapter,\n  codex: runCodexAppServerDesktopAdapter,\n} as const\n"
+          }
+        ],
+        "expectedFindings": [
+          {
+            "rule": "route-dispatch-outside-owner",
+            "file": "src/main/lib/trpc/routers/agent-runtime.ts",
+            "symbol": "DESKTOP_RUNNERS_BY_RUNTIME",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          },
+          {
+            "rule": "leaf-adapter-import-outside-catalog",
+            "file": "src/main/lib/trpc/routers/agent-runtime.ts",
+            "symbol": "runClaudeAgentSdkDesktopAdapter",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          },
+          {
+            "rule": "leaf-adapter-import-outside-catalog",
+            "file": "src/main/lib/trpc/routers/agent-runtime.ts",
+            "symbol": "runCodexAppServerDesktopAdapter",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          }
+        ]
+      },
+      {
+        "caseId": "s26-runtime-keyed-transport-map",
+        "files": [
+          {
+            "file": "src/renderer/features/agents/lib/chat-transport-registry.ts",
+            "source": "import { CodexAppServerChatTransport } from \"./codex-app-server-chat-transport\"\nimport { IPCChatTransport } from \"./ipc-chat-transport\"\n\nexport const TRANSPORT_BY_RUNTIME = {\n  \"claude-code\": IPCChatTransport,\n  codex: CodexAppServerChatTransport,\n} as const\n"
+          }
+        ],
+        "expectedFindings": [
+          {
+            "rule": "route-dispatch-outside-owner",
+            "file": "src/renderer/features/agents/lib/chat-transport-registry.ts",
+            "symbol": "TRANSPORT_BY_RUNTIME",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          }
+        ]
+      },
+      {
+        "caseId": "s26-aliased-retired-selector",
+        "files": [
+          {
+            "file": "src/main/lib/headless/job-runner.ts",
+            "source": "import type { AgentRuntimeRunRequest } from \"./agent-runtime-contract\"\nimport { selectAgentRuntimeAdapter as pickRuntimeAdapter } from \"./adapter-selector\"\n\nexport function selectionFor(request: AgentRuntimeRunRequest) {\n  return pickRuntimeAdapter(request)\n}\n"
+          }
+        ],
+        "expectedFindings": [
+          {
+            "rule": "retired-route-selector",
+            "file": "src/main/lib/headless/job-runner.ts",
+            "symbol": "selectAgentRuntimeAdapter",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          }
+        ]
+      },
+      {
+        "caseId": "s26-namespace-retired-selector",
+        "files": [
+          {
+            "file": "src/main/lib/headless/jobs-stdio.ts",
+            "source": "import * as runtimeSelector from \"./adapter-selector\"\n\nexport function protocolAdapterFor() {\n  return runtimeSelector.getAgentRuntimeAdapter(\"codex\")\n}\n"
+          }
+        ],
+        "expectedFindings": [
+          {
+            "rule": "retired-route-selector",
+            "file": "src/main/lib/headless/jobs-stdio.ts",
+            "symbol": "getAgentRuntimeAdapter",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          }
+        ]
+      },
+      {
+        "caseId": "s26-one-hop-wrapper-renderer",
+        "files": [
+          {
+            "file": "src/renderer/features/agents/lib/chat-transport-wrapper.ts",
+            "source": "import { CodexAppServerChatTransport } from \"./codex-app-server-chat-transport\"\nimport { IPCChatTransport } from \"./ipc-chat-transport\"\n\ntype TransportConfig = ConstructorParameters<typeof IPCChatTransport>[0]\n\nfunction isCodexRuntime(runtime: string) {\n  return runtime === \"codex\"\n}\n\nexport function buildChatTransport(binding: { runtime: string }, config: TransportConfig) {\n  return isCodexRuntime(binding.runtime)\n    ? new CodexAppServerChatTransport({ ...config, provider: \"codex\" })\n    : new IPCChatTransport(config)\n}\n"
+          }
+        ],
+        "expectedFindings": [
+          {
+            "rule": "route-dispatch-outside-owner",
+            "file": "src/renderer/features/agents/lib/chat-transport-wrapper.ts",
+            "symbol": "buildChatTransport",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          }
+        ]
+      },
+      {
+        "caseId": "s26-one-hop-wrapper-main",
+        "files": [
+          {
+            "file": "src/main/lib/codex/desktop-chat-run.ts",
+            "source": "import { runClaudeAgentSdkDesktopAdapter } from \"../claude/agent-sdk-adapter-runner\"\nimport { runCodexAppServerDesktopAdapter } from \"./app-server-adapter-runner\"\n\nconst isCodex = (runtimeId: string) => runtimeId === \"codex\"\n\nexport function desktopRunnerFor(runtimeId: string) {\n  return isCodex(runtimeId) ? runCodexAppServerDesktopAdapter : runClaudeAgentSdkDesktopAdapter\n}\n"
+          }
+        ],
+        "expectedFindings": [
+          {
+            "rule": "route-dispatch-outside-owner",
+            "file": "src/main/lib/codex/desktop-chat-run.ts",
+            "symbol": "desktopRunnerFor",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          },
+          {
+            "rule": "leaf-adapter-import-outside-catalog",
+            "file": "src/main/lib/codex/desktop-chat-run.ts",
+            "symbol": "runClaudeAgentSdkDesktopAdapter",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          },
+          {
+            "rule": "leaf-adapter-import-outside-catalog",
+            "file": "src/main/lib/codex/desktop-chat-run.ts",
+            "symbol": "runCodexAppServerDesktopAdapter",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          }
+        ]
+      },
+      {
+        "caseId": "s26-fixed-runtime-direct-leaf-desktop",
+        "files": [
+          {
+            "file": "src/main/lib/trpc/routers/codex.ts",
+            "source": "import { runCodexAppServerDesktopAdapter } from \"../../codex/app-server-adapter-runner\"\n\nexport async function runCodexChatBody(input: Parameters<typeof runCodexAppServerDesktopAdapter>[0]) {\n  return runCodexAppServerDesktopAdapter(input)\n}\n"
+          }
+        ],
+        "expectedFindings": [
+          {
+            "rule": "leaf-adapter-import-outside-catalog",
+            "file": "src/main/lib/trpc/routers/codex.ts",
+            "symbol": "runCodexAppServerDesktopAdapter",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          }
+        ]
+      },
+      {
+        "caseId": "s26-fixed-runtime-direct-leaf-headless-create",
+        "files": [
+          {
+            "file": "src/main/lib/headless/daemon.ts",
+            "source": "import { createCodexHeadlessTaskRunner } from \"./adapters/codex\"\n\nexport const daemonCodexRunner = createCodexHeadlessTaskRunner()\n"
+          }
+        ],
+        "expectedFindings": [
+          {
+            "rule": "leaf-adapter-import-outside-catalog",
+            "file": "src/main/lib/headless/daemon.ts",
+            "symbol": "createCodexHeadlessTaskRunner",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          }
+        ]
+      },
+      {
+        "caseId": "s26-lifecycle-direct-leaf-import",
+        "files": [
+          {
+            "file": "src/main/lib/claude/agent-sdk-runtime-lifecycle.ts",
+            "source": "import {\n  type RunClaudeAgentSdkDesktopAdapterWithPreparedRuntimeQueryInput,\n  runClaudeAgentSdkDesktopAdapterWithPreparedRuntimeQuery,\n} from \"./agent-sdk-adapter-runner\"\n\nexport async function runClaudeAgentSdkRuntimeLifecycle(input: RunClaudeAgentSdkDesktopAdapterWithPreparedRuntimeQueryInput) {\n  return runClaudeAgentSdkDesktopAdapterWithPreparedRuntimeQuery(input)\n}\n"
+          }
+        ],
+        "expectedFindings": [
+          {
+            "rule": "leaf-adapter-import-outside-catalog",
+            "file": "src/main/lib/claude/agent-sdk-runtime-lifecycle.ts",
+            "symbol": "runClaudeAgentSdkDesktopAdapterWithPreparedRuntimeQuery",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          }
+        ]
+      }
+    ]
+  },
+  "S27": {
+    "cases": [
+      {
+        "caseId": "s27-clean-retained-owners",
+        "files": [
+          {
+            "file": "src/main/lib/agent-runtime/desktop-runner.ts",
+            "source": "import type { DesktopRunRequest } from \"./desktop-run-request\"\n\nexport type DesktopRuntimeAdapterMetadata = { runtimeId: string; adapterSource: string }\n\nexport function assertDesktopRuntimeAdapterMatchesRequest(metadata: DesktopRuntimeAdapterMetadata, request: DesktopRunRequest) {\n  if (metadata.runtimeId !== request.runtimeId) {\n    throw new Error(\"Desktop runtime adapter does not match the request.\")\n  }\n}\n\nexport async function recordDesktopRuntimeAdapterStarted(request: DesktopRunRequest, metadata: DesktopRuntimeAdapterMetadata) {\n  await request.ledger?.appendSystemEvent(\"adapter_started\", metadata)\n}\n"
+          },
+          {
+            "file": "src/main/lib/headless/adapters/codex-app-server.ts",
+            "source": "export function assertAppServerPolicyGrantRequest(request: {\n  context: { runtimeId: string; executionProfile?: string }\n  permissionPolicy: { kind: string; grantedScopes?: readonly string[] }\n}) {\n  if (request.context.runtimeId !== \"codex\") {\n    throw new Error(\"Codex app-server headless adapter requires the codex runtime.\")\n  }\n  if (request.context.executionProfile !== \"policy-grant\") {\n    throw new Error(\"Codex app-server headless adapter requires the policy-grant execution profile.\")\n  }\n  if (!request.permissionPolicy.grantedScopes?.length) {\n    throw new Error(\"Codex app-server headless adapter requires bounded granted scopes.\")\n  }\n}\n"
+          },
+          {
+            "file": "src/main/lib/headless/daemon.ts",
+            "source": "import { runPersistedCompletionJob } from \"./completion-runner\"\nimport { runPersistedAgentJob } from \"./job-runner\"\n\nexport async function pumpQueuedRuns(input: { job: { id: string; kind: string } }) {\n  const runner = input.job.kind === \"completion\" ? runPersistedCompletionJob : runPersistedAgentJob\n  const workerPrefix = input.job.kind === \"completion\" ? \"completion\" : \"daemon\"\n  return { runner, workerPrefix }\n}\n"
+          }
+        ],
+        "expectedFindings": []
+      },
+      {
+        "caseId": "s27-restored-adapter-selector-module",
+        "files": [
+          {
+            "file": "src/main/lib/headless/adapter-selector.ts",
+            "source": "export const restoredSelectorModule = true\n"
+          }
+        ],
+        "expectedFindings": [
+          {
+            "rule": "retired-route-selector",
+            "file": "src/main/lib/headless/adapter-selector.ts",
+            "symbol": "adapter-selector",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          }
+        ]
+      },
+      {
+        "caseId": "s27-restored-runtime-registry-module",
+        "files": [
+          {
+            "file": "src/main/lib/agent-runtime/runtime-registry.ts",
+            "source": "export const restoredRegistryModule = true\n"
+          }
+        ],
+        "expectedFindings": [
+          {
+            "rule": "retired-route-selector",
+            "file": "src/main/lib/agent-runtime/runtime-registry.ts",
+            "symbol": "runtime-registry",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          }
+        ]
+      },
+      {
+        "caseId": "s27-restored-getAgentRuntimeAdapter",
+        "files": [
+          {
+            "file": "src/main/lib/headless/agent-runtime.ts",
+            "source": "export function getAgentRuntimeAdapter(runtime: string) {\n  return runtime\n}\n"
+          }
+        ],
+        "expectedFindings": [
+          {
+            "rule": "retired-route-selector",
+            "file": "src/main/lib/headless/agent-runtime.ts",
+            "symbol": "getAgentRuntimeAdapter",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          }
+        ]
+      },
+      {
+        "caseId": "s27-restored-selectAgentRuntimeAdapter",
+        "files": [
+          {
+            "file": "src/main/lib/headless/job-runner.ts",
+            "source": "export function selectAgentRuntimeAdapter(request: unknown) {\n  return request\n}\n"
+          }
+        ],
+        "expectedFindings": [
+          {
+            "rule": "retired-route-selector",
+            "file": "src/main/lib/headless/job-runner.ts",
+            "symbol": "selectAgentRuntimeAdapter",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          }
+        ]
+      },
+      {
+        "caseId": "s27-restored-SelectAgentRuntimeAdapterOptions",
+        "files": [
+          {
+            "file": "src/main/lib/headless/agent-runtime-contract.ts",
+            "source": "export type SelectAgentRuntimeAdapterOptions = Record<string, never>\n"
+          }
+        ],
+        "expectedFindings": [
+          {
+            "rule": "retired-route-selector",
+            "file": "src/main/lib/headless/agent-runtime-contract.ts",
+            "symbol": "SelectAgentRuntimeAdapterOptions",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          }
+        ]
+      },
+      {
+        "caseId": "s27-restored-preferredAdapterSource",
+        "files": [
+          {
+            "file": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "source": "export type RouteQuery = {\n  runtimeId: string\n  preferredAdapterSource?: string | null\n}\n"
+          }
+        ],
+        "expectedFindings": [
+          {
+            "rule": "retired-route-selector",
+            "file": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "symbol": "preferredAdapterSource",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          }
+        ]
+      },
+      {
+        "caseId": "s27-restored-DesktopRuntimeAdapterFactory",
+        "files": [
+          {
+            "file": "src/main/lib/agent-runtime/desktop-runner.ts",
+            "source": "export class DesktopRuntimeAdapterFactory {\n  get(runtimeId: string) {\n    return runtimeId\n  }\n}\n"
+          }
+        ],
+        "expectedFindings": [
+          {
+            "rule": "retired-route-selector",
+            "file": "src/main/lib/agent-runtime/desktop-runner.ts",
+            "symbol": "DesktopRuntimeAdapterFactory",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          }
+        ]
+      },
+      {
+        "caseId": "s27-restored-resolveCodexDesktopAdapterSelection",
+        "files": [
+          {
+            "file": "src/main/lib/codex/runtime-status.ts",
+            "source": "export function resolveCodexDesktopAdapterSelection() {\n  return { adapterSource: \"codex-app-server\" }\n}\n"
+          }
+        ],
+        "expectedFindings": [
+          {
+            "rule": "retired-route-selector",
+            "file": "src/main/lib/codex/runtime-status.ts",
+            "symbol": "resolveCodexDesktopAdapterSelection",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          }
+        ]
+      },
+      {
+        "caseId": "s27-restored-resolveCodexAppServerDesktopAdapter",
+        "files": [
+          {
+            "file": "src/main/lib/codex/app-server-adapter-runner.ts",
+            "source": "export function resolveCodexAppServerDesktopAdapter() {\n  return null\n}\n"
+          }
+        ],
+        "expectedFindings": [
+          {
+            "rule": "retired-route-selector",
+            "file": "src/main/lib/codex/app-server-adapter-runner.ts",
+            "symbol": "resolveCodexAppServerDesktopAdapter",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          }
+        ]
+      },
+      {
+        "caseId": "s27-restored-resolveClaudeAgentSdkDesktopAdapter",
+        "files": [
+          {
+            "file": "src/main/lib/claude/agent-sdk-adapter-runner.ts",
+            "source": "export function resolveClaudeAgentSdkDesktopAdapter() {\n  return null\n}\n"
+          }
+        ],
+        "expectedFindings": [
+          {
+            "rule": "retired-route-selector",
+            "file": "src/main/lib/claude/agent-sdk-adapter-runner.ts",
+            "symbol": "resolveClaudeAgentSdkDesktopAdapter",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          }
+        ]
+      },
+      {
+        "caseId": "s27-forwarding-alias-reexport",
+        "files": [
+          {
+            "file": "src/main/lib/headless/agent-runtime.ts",
+            "source": "export { resolveRuntimeRoute as selectAgentRuntimeAdapter } from \"../agent-runtime/runtime-route-catalog\"\n"
+          }
+        ],
+        "expectedFindings": [
+          {
+            "rule": "retired-route-selector",
+            "file": "src/main/lib/headless/agent-runtime.ts",
+            "symbol": "selectAgentRuntimeAdapter",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          }
+        ]
+      },
+      {
+        "caseId": "s27-forwarding-alias-const",
+        "files": [
+          {
+            "file": "src/main/lib/agent-runtime/desktop-runner.ts",
+            "source": "import { resolveRuntimeRoute } from \"./runtime-route-catalog\"\n\nexport const resolveClaudeAgentSdkDesktopAdapter = resolveRuntimeRoute\n"
+          }
+        ],
+        "expectedFindings": [
+          {
+            "rule": "retired-route-selector",
+            "file": "src/main/lib/agent-runtime/desktop-runner.ts",
+            "symbol": "resolveClaudeAgentSdkDesktopAdapter",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          }
+        ]
+      },
+      {
+        "caseId": "s27-restored-active-chat-p14-branch",
+        "files": [
+          {
+            "file": "src/renderer/features/agents/main/active-chat.tsx",
+            "source": "import { CodexAppServerChatTransport } from \"../lib/codex-app-server-chat-transport\"\nimport { IPCChatTransport } from \"../lib/ipc-chat-transport\"\n\ntype TransportConfig = ConstructorParameters<typeof IPCChatTransport>[0]\n\nexport function useChatTransports(newSubChat: { binding: { runtime: string } }, config: TransportConfig) {\n  const getOrCreateChat = (binding: { runtime: string }) => {\n    const chatProvider = binding.runtime\n    let transport: IPCChatTransport | CodexAppServerChatTransport | null = null\n    if (chatProvider === \"codex\") {\n      transport = new CodexAppServerChatTransport({ ...config, provider: \"codex\" })\n    } else {\n      transport = new IPCChatTransport(config)\n    }\n    return transport\n  }\n  return { getOrCreateChat }\n}\n"
+          }
+        ],
+        "expectedFindings": [
+          {
+            "rule": "renderer-route-projection-bypass",
+            "file": "src/renderer/features/agents/main/active-chat.tsx",
+            "symbol": "getOrCreateChat",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          }
+        ]
+      },
+      {
+        "caseId": "s27-restored-active-chat-p15-branch",
+        "files": [
+          {
+            "file": "src/renderer/features/agents/main/active-chat.tsx",
+            "source": "import { CodexAppServerChatTransport } from \"../lib/codex-app-server-chat-transport\"\nimport { IPCChatTransport } from \"../lib/ipc-chat-transport\"\n\ntype TransportConfig = ConstructorParameters<typeof IPCChatTransport>[0]\n\nexport function useChatTransports(newSubChat: { binding: { runtime: string } }, config: TransportConfig) {\n  const createNewSubChat = (binding: { runtime: string }) => {\n    const chatProvider = newSubChat.binding.runtime\n    let transport: IPCChatTransport | CodexAppServerChatTransport | null = null\n    if (chatProvider === \"codex\") {\n      transport = new CodexAppServerChatTransport({ ...config, provider: \"codex\" })\n    } else {\n      transport = new IPCChatTransport(config)\n    }\n    return transport\n  }\n  return { createNewSubChat }\n}\n"
+          }
+        ],
+        "expectedFindings": [
+          {
+            "rule": "renderer-route-projection-bypass",
+            "file": "src/renderer/features/agents/main/active-chat.tsx",
+            "symbol": "createNewSubChat",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          }
+        ]
+      }
+    ]
+  },
+  "S28": {
+    "cases": [
+      {
+        "caseId": "s28-clean-lazy-references",
+        "files": [
+          {
+            "file": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "source": "import type { AgentRuntimeContractId } from \"../../../shared/agent-runtime-capabilities\"\nimport { resolveLocalJobApiRuntimeReadiness } from \"../headless/runtime-readiness\"\n\nconst RUNTIME_ROUTE_DECLARATIONS = [\n  {\n    routeId: \"codex.headless.batch\",\n    runtimeId: \"codex\",\n    delegate: async () => (await import(\"../headless/adapters/codex\")).runCodexHeadlessTask,\n    readinessProbe: (runtimeId: AgentRuntimeContractId) => resolveLocalJobApiRuntimeReadiness({ runtimeId }),\n  },\n] as const\n\nexport function listRuntimeRoutes() {\n  return RUNTIME_ROUTE_DECLARATIONS.map((route) => route.routeId)\n}\n"
+          },
+          {
+            "file": "src/main/lib/headless/runtime-readiness.ts",
+            "source": "export async function resolveLocalJobApiRuntimeReadiness(input: { runtimeId: string; probe?: boolean }) {\n  return { state: input.probe === false ? \"unknown\" : \"unknown\", runtimeId: input.runtimeId }\n}\n"
+          }
+        ],
+        "expectedFindings": []
+      },
+      {
+        "caseId": "s28-catalog-imports-electron",
+        "files": [
+          {
+            "file": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "source": "import { ipcMain } from \"electron\"\n\nexport const routeChannel = ipcMain\n"
+          }
+        ],
+        "expectedFindings": [
+          {
+            "rule": "route-catalog-forbidden-dependency",
+            "file": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "symbol": "electron",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          }
+        ]
+      },
+      {
+        "caseId": "s28-catalog-imports-trpc",
+        "files": [
+          {
+            "file": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "source": "import { initTRPC } from \"@trpc/server\"\n\nexport const routeProcedureBuilder = initTRPC\n"
+          }
+        ],
+        "expectedFindings": [
+          {
+            "rule": "route-catalog-forbidden-dependency",
+            "file": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "symbol": "@trpc/server",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          }
+        ]
+      },
+      {
+        "caseId": "s28-catalog-imports-renderer-transport",
+        "files": [
+          {
+            "file": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "source": "import { IPCChatTransport } from \"../../../renderer/features/agents/lib/ipc-chat-transport\"\n\nexport const rendererTransport = IPCChatTransport\n"
+          }
+        ],
+        "expectedFindings": [
+          {
+            "rule": "route-catalog-forbidden-dependency",
+            "file": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "symbol": "../../../renderer/features/agents/lib/ipc-chat-transport",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          }
+        ]
+      },
+      {
+        "caseId": "s28-catalog-imports-preload",
+        "files": [
+          {
+            "file": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "source": "import { exposeLocusBridge } from \"../../../preload/index\"\n\nexport const preloadBridge = exposeLocusBridge\n"
+          }
+        ],
+        "expectedFindings": [
+          {
+            "rule": "route-catalog-forbidden-dependency",
+            "file": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "symbol": "../../../preload/index",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          }
+        ]
+      },
+      {
+        "caseId": "s28-catalog-reverse-imports-router",
+        "files": [
+          {
+            "file": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "source": "import { claudeRouter } from \"../trpc/routers/claude\"\n\nexport const runViaRouter = claudeRouter\n"
+          }
+        ],
+        "expectedFindings": [
+          {
+            "rule": "route-catalog-forbidden-dependency",
+            "file": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "symbol": "../trpc/routers/claude",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          }
+        ]
+      },
+      {
+        "caseId": "s28-catalog-route-through-wrapper",
+        "files": [
+          {
+            "file": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "source": "import { runChatThroughRouter } from \"./router-run-bridge\"\n\nexport const routeRunner = runChatThroughRouter\n"
+          },
+          {
+            "file": "src/main/lib/agent-runtime/router-run-bridge.ts",
+            "source": "import { codexRouter } from \"../trpc/routers/codex\"\n\nexport const runChatThroughRouter = codexRouter\n"
+          }
+        ],
+        "expectedFindings": [
+          {
+            "rule": "route-catalog-forbidden-dependency",
+            "file": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "symbol": "./router-run-bridge",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          }
+        ]
+      },
+      {
+        "caseId": "s28-readiness-catalog-cycle",
+        "files": [
+          {
+            "file": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "source": "import type { AgentRuntimeContractId } from \"../../../shared/agent-runtime-capabilities\"\nimport { resolveLocalJobApiRuntimeReadiness } from \"../headless/runtime-readiness\"\n\nconst RUNTIME_ROUTE_DECLARATIONS = [\n  {\n    routeId: \"codex.headless.batch\",\n    runtimeId: \"codex\",\n    delegate: async () => (await import(\"../headless/adapters/codex\")).runCodexHeadlessTask,\n    readinessProbe: (runtimeId: AgentRuntimeContractId) => resolveLocalJobApiRuntimeReadiness({ runtimeId }),\n  },\n] as const\n\nexport function listRuntimeRoutes() {\n  return RUNTIME_ROUTE_DECLARATIONS.map((route) => route.routeId)\n}\n"
+          },
+          {
+            "file": "src/main/lib/headless/runtime-readiness.ts",
+            "source": "import { listRuntimeRoutes } from \"../agent-runtime/runtime-route-catalog\"\n\nexport async function resolveLocalJobApiRuntimeReadiness(input: { runtimeId: string }) {\n  return { state: listRuntimeRoutes().length > 0 ? \"ready\" : \"unknown\", runtimeId: input.runtimeId }\n}\n"
+          }
+        ],
+        "expectedFindings": [
+          {
+            "rule": "route-catalog-forbidden-dependency",
+            "file": "src/main/lib/headless/runtime-readiness.ts",
+            "symbol": "../agent-runtime/runtime-route-catalog",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          }
+        ]
+      }
+    ]
+  },
+  "S29": {
+    "cases": [
+      {
+        "caseId": "s29-provider-target-and-purpose",
+        "files": [
+          {
+            "file": "src/main/lib/headless/provider-binding.ts",
+            "source": "export function providerTargetForRuntime(runtime: \"claude-code\" | \"codex\") {\n  return runtime === \"codex\" ? \"codex\" : \"claude\"\n}\n\nexport function providerPurposeForRuntime(runtime: \"claude-code\" | \"codex\") {\n  switch (runtime) {\n    case \"codex\":\n      return \"codex-responses\"\n    default:\n      return \"anthropic-messages\"\n  }\n}\n"
+          }
+        ],
+        "expectedFindings": []
+      },
+      {
+        "caseId": "s29-policy-mode-checks",
+        "files": [
+          {
+            "file": "src/main/lib/agent-runtime/permission-policy.ts",
+            "source": "export function sandboxForMode(mode: \"plan\" | \"agent\") {\n  return mode === \"plan\" ? \"read-only\" : \"workspace-write\"\n}\n"
+          }
+        ],
+        "expectedFindings": []
+      },
+      {
+        "caseId": "s29-source-based-job-cancel",
+        "files": [
+          {
+            "file": "src/main/lib/trpc/routers/agent-jobs.ts",
+            "source": "import { cancelDesktopAgentJob } from \"../../desktop-agent-jobs\"\nimport { cancelAgentJob } from \"../../headless/job-store\"\n\nexport async function cancelJobBySource(job: { id: string; source: string }) {\n  if (job.source === \"desktop\") return cancelDesktopAgentJob(job.id)\n  return cancelAgentJob(job.id)\n}\n"
+          }
+        ],
+        "expectedFindings": []
+      },
+      {
+        "caseId": "s29-command-and-method-parsing",
+        "files": [
+          {
+            "file": "src/main/lib/headless/jobs-stdio.ts",
+            "source": "export function methodKind(request: { method: string }) {\n  switch (request.method) {\n    case \"initialize\":\n      return \"initialize\"\n    case \"job.run\":\n      return \"run\"\n    case \"job.cancel\":\n      return \"cancel\"\n    default:\n      return \"unknown\"\n  }\n}\n"
+          },
+          {
+            "file": "src/main/lib/headless/cli-dispatcher.ts",
+            "source": "export function commandFamily(command: { kind: string }) {\n  switch (command.kind) {\n    case \"api-runtimes-list\":\n      return \"discovery\"\n    case \"api-runs-submit\":\n      return \"submission\"\n    default:\n      return \"other\"\n  }\n}\n"
+          }
+        ],
+        "expectedFindings": []
+      },
+      {
+        "caseId": "s29-native-protocol-decoding",
+        "files": [
+          {
+            "file": "src/main/lib/codex/app-server-notifications.ts",
+            "source": "export function decodeNotification(notification: { method: string; params?: unknown }) {\n  switch (notification.method) {\n    case \"turn/completed\":\n      return { kind: \"turn-completed\" as const }\n    case \"item/started\":\n      return { kind: \"item-started\" as const }\n    default:\n      return { kind: \"ignored\" as const }\n  }\n}\n"
+          }
+        ],
+        "expectedFindings": []
+      },
+      {
+        "caseId": "s29-selected-route-assertions",
+        "files": [
+          {
+            "file": "src/main/lib/headless/adapters/codex-app-server.ts",
+            "source": "export function assertAppServerPolicyGrantRequest(request: {\n  context: { runtimeId: string; executionProfile?: string }\n  permissionPolicy: { kind: string; grantedScopes?: readonly string[] }\n}) {\n  if (request.context.runtimeId !== \"codex\") {\n    throw new Error(\"Codex app-server headless adapter requires the codex runtime.\")\n  }\n  if (request.context.executionProfile !== \"policy-grant\") {\n    throw new Error(\"Codex app-server headless adapter requires the policy-grant execution profile.\")\n  }\n  if (!request.permissionPolicy.grantedScopes?.length) {\n    throw new Error(\"Codex app-server headless adapter requires bounded granted scopes.\")\n  }\n}\n"
+          },
+          {
+            "file": "src/main/lib/codex/desktop-chat-run.ts",
+            "source": "import { resolveRuntimeRoute, type RuntimeRouteCatalogState } from \"../agent-runtime/runtime-route-catalog\"\n\nexport type CodexDesktopChatRunOptions = { request: unknown; runtimeRouteCatalog?: RuntimeRouteCatalogState }\n\nexport async function runCodexDesktopChatRun(options: CodexDesktopChatRunOptions) {\n  const route = resolveRuntimeRoute({ runtimeId: \"codex\", entry: \"desktop\" }, options.runtimeRouteCatalog)\n  if (!route.ok || route.runtimeId !== \"codex\" || route.executionSurface !== \"desktop-app-server\") {\n    throw new Error(\"Runtime route catalog is unavailable.\")\n  }\n  return route.delegate(options.request)\n}\n"
+          }
+        ],
+        "expectedFindings": []
+      },
+      {
+        "caseId": "s29-transport-id-only-construction",
+        "files": [
+          {
+            "file": "src/renderer/features/agents/lib/runtime-route-transport.ts",
+            "source": "import { CodexAppServerChatTransport } from \"./codex-app-server-chat-transport\"\nimport { IPCChatTransport } from \"./ipc-chat-transport\"\n\nconst TRANSPORT_CONSTRUCTORS = {\n  \"claude-chat-ipc\": IPCChatTransport,\n  \"codex-chat-ipc\": CodexAppServerChatTransport,\n} as const\n\nexport function createRuntimeRouteTransport(\n  input: { state: \"loaded\"; transportId: string } | { state: \"not-loaded\" } | { state: \"error\" },\n  config: never,\n) {\n  if (input.state === \"not-loaded\") return { ok: false, failure: \"route_descriptor_unavailable\" } as const\n  if (input.state === \"error\") return { ok: false, failure: \"route_descriptor_error\" } as const\n  const Transport = TRANSPORT_CONSTRUCTORS[input.transportId as keyof typeof TRANSPORT_CONSTRUCTORS]\n  if (!Transport) return { ok: false, failure: \"unknown_transport\" } as const\n  return { ok: true, transport: new Transport(config) } as const\n}\n"
+          }
+        ],
+        "expectedFindings": []
+      },
+      {
+        "caseId": "s29-chunk-type-event-state",
+        "files": [
+          {
+            "file": "src/renderer/features/agents/lib/runtime-event-state.ts",
+            "source": "export function reduceRuntimeChunk(state: { questions: number; guards: number }, chunk: { type: string }) {\n  switch (chunk.type) {\n    case \"question\":\n      return { ...state, questions: state.questions + 1 }\n    case \"guard\":\n      return { ...state, guards: state.guards + 1 }\n    default:\n      return state\n  }\n}\n"
+          }
+        ],
+        "expectedFindings": []
+      },
+      {
+        "caseId": "s29-chat-session-binding-admit-and-provider-target",
+        "files": [
+          {
+            "file": "src/main/lib/chat-session-binding.ts",
+            "source": "function rejectStaleRunPayload(binding: { runtime: string }) {\n  return { ok: false as const, runtime: binding.runtime }\n}\n\nexport function providerTargetForBinding(binding: { runtime: string }) {\n  return binding.runtime === \"codex\" ? \"codex\" : \"claude\"\n}\n\nexport function admitClaudeChatSessionBindingRun(binding: { runtime: string }) {\n  if (binding.runtime !== \"claude-code\") return rejectStaleRunPayload(binding)\n  return { ok: true as const, binding }\n}\n\nexport function admitCodexChatSessionBindingRun(binding: { runtime: string }) {\n  if (binding.runtime !== \"codex\") return rejectStaleRunPayload(binding)\n  return { ok: true as const, binding }\n}\n"
+          }
+        ],
+        "expectedFindings": []
+      },
+      {
+        "caseId": "s29-desktop-runtime-allowlist",
+        "files": [
+          {
+            "file": "src/main/lib/desktop-agent-jobs.ts",
+            "source": "export function assertDesktopRuntime(runtime: string): asserts runtime is \"claude-code\" | \"codex\" {\n  if (runtime !== \"claude-code\" && runtime !== \"codex\") {\n    throw new Error(`Unsupported desktop runtime: ${runtime}`)\n  }\n}\n"
+          }
+        ],
+        "expectedFindings": []
+      },
+      {
+        "caseId": "s29-active-chat-adjacent-branches",
+        "files": [
+          {
+            "file": "src/renderer/features/agents/main/active-chat.tsx",
+            "source": "import { trpcClient } from \"../../../lib/trpc\"\n\nexport function newChatSessionBindingDefaults(runtime: string, selection: { codexModelId?: string }) {\n  if (runtime === \"codex\") {\n    return { runtime, modelId: selection.codexModelId ?? \"codex-default\" }\n  }\n  return { runtime, modelId: \"claude-default\" }\n}\n\nexport function totalInputTokens(provider: string, metadata: { inputTokens?: number; totalTokens?: number; outputTokens?: number; cacheReadInputTokens?: number }) {\n  return provider === \"codex\"\n    ? Math.max(0, (metadata.totalTokens ?? 0) - (metadata.outputTokens ?? 0))\n    : (metadata.inputTokens ?? 0) + (metadata.cacheReadInputTokens ?? 0)\n}\n\nexport function codexMcpConfigEnabled(activeSubChatProvider: string) {\n  return activeSubChatProvider === \"codex\"\n}\n\nexport async function respondUserQuestionApproval(provider: string, input: { approvalId: string; approved: boolean }) {\n  if (provider === \"codex\") {\n    return trpcClient.codex.respondToolApproval.mutate(input)\n  }\n  return trpcClient.claude.respondToolApproval.mutate(input)\n}\n"
+          }
+        ],
+        "expectedFindings": []
+      },
+      {
+        "caseId": "s29-runtime-manifest-aliases",
+        "files": [
+          {
+            "file": "src/renderer/features/agents/lib/runtime-manifest-store.ts",
+            "source": "const LEGACY_RUNTIME_ALIASES: Record<string, \"claude-code\" | \"codex\"> = {\n  claude: \"claude-code\",\n}\n\nexport function canonicalRuntimeId(id: string) {\n  return LEGACY_RUNTIME_ALIASES[id] ?? id\n}\n"
+          }
+        ],
+        "expectedFindings": []
+      },
+      {
+        "caseId": "s29-job-runner-seams",
+        "files": [
+          {
+            "file": "src/main/lib/headless/job-runner.ts",
+            "source": "import type { AgentTaskRunner } from \"./agent-runtime-contract\"\n\ndeclare const fakeAgentTaskRunner: AgentTaskRunner\n\nexport async function resolveRunner(runner: AgentTaskRunner | null | undefined, env: NodeJS.ProcessEnv | undefined) {\n  if (runner) return runner\n  if (env?.LOCUS_HEADLESS_FAKE_RUNNER === \"1\") return fakeAgentTaskRunner\n  return (await import(\"./agent-runtime\")).runAgentTask\n}\n\nexport function localJobApiRuntimeOptions(job: { source: string }) {\n  if (job.source !== \"api\") return {}\n  return { executionProfile: \"batch\" as const }\n}\n"
+          }
+        ],
+        "expectedFindings": []
+      },
+      {
+        "caseId": "s29-pump-kind-dispatch",
+        "files": [
+          {
+            "file": "src/main/lib/headless/daemon.ts",
+            "source": "import { runPersistedCompletionJob } from \"./completion-runner\"\nimport { runPersistedAgentJob } from \"./job-runner\"\n\nexport async function pumpQueuedRuns(input: { job: { id: string; kind: string } }) {\n  const runner = input.job.kind === \"completion\" ? runPersistedCompletionJob : runPersistedAgentJob\n  const workerPrefix = input.job.kind === \"completion\" ? \"completion\" : \"daemon\"\n  return { runner, workerPrefix }\n}\n"
+          }
+        ],
+        "expectedFindings": []
+      },
+      {
+        "caseId": "s29-lifecycle-receives-injected-delegate",
+        "files": [
+          {
+            "file": "src/main/lib/claude/agent-sdk-runtime-lifecycle.ts",
+            "source": "import type { RunClaudeAgentSdkDesktopAdapterWithPreparedRuntimeQueryInput } from \"./agent-sdk-adapter-runner\"\n\nexport type ClaudeDesktopRunDelegate = (input: RunClaudeAgentSdkDesktopAdapterWithPreparedRuntimeQueryInput) => Promise<unknown>\n\nexport async function runClaudeAgentSdkRuntimeLifecycle(input: {\n  runDelegate: ClaudeDesktopRunDelegate\n  query: RunClaudeAgentSdkDesktopAdapterWithPreparedRuntimeQueryInput\n}) {\n  return input.runDelegate(input.query)\n}\n"
+          },
+          {
+            "file": "src/main/lib/claude/agent-sdk-desktop-run-runtime.ts",
+            "source": "import { resolveRuntimeRoute, type RuntimeRouteCatalogState } from \"../agent-runtime/runtime-route-catalog\"\nimport { runClaudeAgentSdkRuntimeLifecycle } from \"./agent-sdk-runtime-lifecycle\"\n\nexport async function runClaudeAgentSdkDesktopRuntimeWithMcpReadiness(input: {\n  query: never\n  runtimeRouteCatalog?: RuntimeRouteCatalogState\n}) {\n  const route = resolveRuntimeRoute({ runtimeId: \"claude-code\", entry: \"desktop\" }, input.runtimeRouteCatalog)\n  if (!route.ok || route.runtimeId !== \"claude-code\") {\n    throw new Error(\"Runtime route catalog is unavailable.\")\n  }\n  return runClaudeAgentSdkRuntimeLifecycle({ runDelegate: route.delegate, query: input.query })\n}\n"
+          }
+        ],
+        "expectedFindings": []
+      },
+      {
+        "caseId": "s29-read-model-uses-catalog-projection",
+        "files": [
+          {
+            "file": "src/main/lib/agent-runtime/runtime-route-read-model.ts",
+            "source": "import { projectRuntimeRoutes, type RuntimeRouteCatalogState } from \"./runtime-route-catalog\"\n\nexport function withRuntimeRouteTransportId<T extends { runtime: string }>(binding: T, catalog?: RuntimeRouteCatalogState) {\n  const projection = projectRuntimeRoutes(\"renderer\", catalog)\n  if (!projection.ok) return { ...binding }\n  const route = projection.routes.find((entry) => entry.runtimeId === binding.runtime)\n  return route ? { ...binding, transportId: route.transportId } : { ...binding }\n}\n"
+          }
+        ],
+        "expectedFindings": []
+      },
+      {
+        "caseId": "s29-mutation-assertion-chooses-second-adapter",
+        "files": [
+          {
+            "file": "src/main/lib/headless/adapters/codex-app-server.ts",
+            "source": "import { runCodexHeadlessTask } from \"./codex\"\n\nexport async function runCodexAppServerHeadlessTaskOrBatch(\n  request: { context: { runtimeId: string; executionProfile?: string } },\n  observer: unknown,\n) {\n  if (request.context.runtimeId === \"codex\" && request.context.executionProfile !== \"policy-grant\") {\n    return runCodexHeadlessTask(request as never, observer as never)\n  }\n  return null\n}\n"
+          }
+        ],
+        "expectedFindings": [
+          {
+            "rule": "route-dispatch-outside-owner",
+            "file": "src/main/lib/headless/adapters/codex-app-server.ts",
+            "symbol": "runCodexAppServerHeadlessTaskOrBatch",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          },
+          {
+            "rule": "leaf-adapter-import-outside-catalog",
+            "file": "src/main/lib/headless/adapters/codex-app-server.ts",
+            "symbol": "runCodexHeadlessTask",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          }
+        ]
+      },
+      {
+        "caseId": "s29-mutation-provider-mapping-chooses-adapter",
+        "files": [
+          {
+            "file": "src/main/lib/headless/provider-binding.ts",
+            "source": "import { runClaudeCodeHeadlessTask } from \"./adapters/claude-code\"\nimport { runCodexHeadlessTask } from \"./adapters/codex\"\n\nexport function providerRunnerForRuntime(runtime: \"claude-code\" | \"codex\") {\n  return runtime === \"codex\" ? runCodexHeadlessTask : runClaudeCodeHeadlessTask\n}\n"
+          }
+        ],
+        "expectedFindings": [
+          {
+            "rule": "route-dispatch-outside-owner",
+            "file": "src/main/lib/headless/provider-binding.ts",
+            "symbol": "providerRunnerForRuntime",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          },
+          {
+            "rule": "leaf-adapter-import-outside-catalog",
+            "file": "src/main/lib/headless/provider-binding.ts",
+            "symbol": "runClaudeCodeHeadlessTask",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          },
+          {
+            "rule": "leaf-adapter-import-outside-catalog",
+            "file": "src/main/lib/headless/provider-binding.ts",
+            "symbol": "runCodexHeadlessTask",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          }
+        ]
+      },
+      {
+        "caseId": "s29-mutation-transport-helper-runtime-branch",
+        "files": [
+          {
+            "file": "src/renderer/features/agents/lib/runtime-route-transport.ts",
+            "source": "import { CodexAppServerChatTransport } from \"./codex-app-server-chat-transport\"\nimport { IPCChatTransport } from \"./ipc-chat-transport\"\n\nexport function createRuntimeRouteTransport(binding: { runtime: string }, config: never) {\n  if (binding.runtime === \"codex\") {\n    return { ok: true, transport: new CodexAppServerChatTransport(config) } as const\n  }\n  return { ok: true, transport: new IPCChatTransport(config) } as const\n}\n"
+          }
+        ],
+        "expectedFindings": [
+          {
+            "rule": "renderer-route-projection-bypass",
+            "file": "src/renderer/features/agents/lib/runtime-route-transport.ts",
+            "symbol": "createRuntimeRouteTransport",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          }
+        ]
+      },
+      {
+        "caseId": "s29-mutation-read-model-literal-map",
+        "files": [
+          {
+            "file": "src/main/lib/agent-runtime/runtime-route-read-model.ts",
+            "source": "const TRANSPORT_ID_BY_RUNTIME: Record<string, string> = {\n  \"claude-code\": \"claude-chat-ipc\",\n  codex: \"codex-chat-ipc\",\n}\n\nexport function withRuntimeRouteTransportId<T extends { runtime: string }>(binding: T) {\n  const transportId = TRANSPORT_ID_BY_RUNTIME[binding.runtime]\n  return transportId ? { ...binding, transportId } : { ...binding }\n}\n"
+          }
+        ],
+        "expectedFindings": [
+          {
+            "rule": "renderer-route-projection-bypass",
+            "file": "src/main/lib/agent-runtime/runtime-route-read-model.ts",
+            "symbol": "TRANSPORT_ID_BY_RUNTIME",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          }
+        ]
+      }
+    ]
+  },
+  "S30": {
+    "cases": [
+      {
+        "caseId": "s30-clean-selection-only",
+        "files": [
+          {
+            "file": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "source": "import { getAgentRuntimeCapabilityManifest } from \"../../../shared/agent-runtime-capabilities\"\n\nconst RUNTIME_ROUTE_DECLARATIONS = [\n  { routeId: \"codex.headless.batch\", runtimeId: \"codex\", adapterSource: \"codex-batch\" },\n] as const\n\nexport function resolveRuntimeRoute(query: { runtimeId: \"codex\" }) {\n  const manifest = getAgentRuntimeCapabilityManifest(query.runtimeId)\n  return RUNTIME_ROUTE_DECLARATIONS.find((route) => route.runtimeId === query.runtimeId && manifest) ?? null\n}\n"
+          }
+        ],
+        "expectedFindings": []
+      },
+      {
+        "caseId": "s30-catalog-inserts-job",
+        "files": [
+          {
+            "file": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "source": "import { createAgentJob } from \"../headless/job-store\"\n\nexport async function resolveRuntimeRoute(query: { runtimeId: string }) {\n  await createAgentJob({} as never, {} as never)\n  return { ok: false as const, runtimeId: query.runtimeId }\n}\n"
+          }
+        ],
+        "expectedFindings": [
+          {
+            "rule": "route-catalog-owner-bypass",
+            "file": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "symbol": "createAgentJob",
+            "owner": "src/main/lib/headless/job-store.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          }
+        ]
+      },
+      {
+        "caseId": "s30-catalog-inserts-events",
+        "files": [
+          {
+            "file": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "source": "import { appendExactRunEventBatch } from \"../headless/job-store\"\n\nexport async function resolveRuntimeRoute(query: { runtimeId: string }) {\n  await appendExactRunEventBatch({} as never, {} as never)\n  return { ok: false as const, runtimeId: query.runtimeId }\n}\n"
+          }
+        ],
+        "expectedFindings": [
+          {
+            "rule": "route-catalog-owner-bypass",
+            "file": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "symbol": "appendExactRunEventBatch",
+            "owner": "src/main/lib/headless/job-store.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          }
+        ]
+      },
+      {
+        "caseId": "s30-catalog-claims-queued-job",
+        "files": [
+          {
+            "file": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "source": "import { startAgentJob } from \"../headless/job-store\"\n\nexport async function resolveRuntimeRoute(query: { runtimeId: string }) {\n  await startAgentJob({} as never, {} as never)\n  return { ok: false as const, runtimeId: query.runtimeId }\n}\n"
+          }
+        ],
+        "expectedFindings": [
+          {
+            "rule": "route-catalog-owner-bypass",
+            "file": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "symbol": "startAgentJob",
+            "owner": "src/main/lib/headless/job-store.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          }
+        ]
+      },
+      {
+        "caseId": "s30-catalog-allocates-sequence",
+        "files": [
+          {
+            "file": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "source": "import { createCanonicalRunEventLedger } from \"./run-event-ledger\"\n\nexport async function resolveRuntimeRoute(query: { runtimeId: string }) {\n  await createCanonicalRunEventLedger({} as never)\n  return { ok: false as const, runtimeId: query.runtimeId }\n}\n"
+          }
+        ],
+        "expectedFindings": [
+          {
+            "rule": "route-catalog-owner-bypass",
+            "file": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "symbol": "createCanonicalRunEventLedger",
+            "owner": "src/main/lib/agent-runtime/run-event-ledger.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          }
+        ]
+      },
+      {
+        "caseId": "s30-catalog-settles-terminal",
+        "files": [
+          {
+            "file": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "source": "import { settleQueuedAgentJobFailed } from \"../headless/job-store\"\n\nexport async function resolveRuntimeRoute(query: { runtimeId: string }) {\n  await settleQueuedAgentJobFailed({} as never, \"job\", {} as never)\n  return { ok: false as const, runtimeId: query.runtimeId }\n}\n"
+          }
+        ],
+        "expectedFindings": [
+          {
+            "rule": "route-catalog-owner-bypass",
+            "file": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "symbol": "settleQueuedAgentJobFailed",
+            "owner": "src/main/lib/headless/job-store.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          }
+        ]
+      },
+      {
+        "caseId": "s30-catalog-prepares-artifacts",
+        "files": [
+          {
+            "file": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "source": "import { admitRunDirArtifacts } from \"./run-artifacts\"\n\nexport async function resolveRuntimeRoute(query: { runtimeId: string }) {\n  await admitRunDirArtifacts({} as never)\n  return { ok: false as const, runtimeId: query.runtimeId }\n}\n"
+          }
+        ],
+        "expectedFindings": [
+          {
+            "rule": "route-catalog-owner-bypass",
+            "file": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "symbol": "admitRunDirArtifacts",
+            "owner": "src/main/lib/agent-runtime/run-artifacts.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          }
+        ]
+      },
+      {
+        "caseId": "s30-catalog-reads-provider-storage",
+        "files": [
+          {
+            "file": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "source": "import { getProviderProfileRuntimeConfigFromDatabase } from \"../provider-profiles/storage\"\n\nexport async function resolveRuntimeRoute(query: { runtimeId: string }) {\n  await getProviderProfileRuntimeConfigFromDatabase({} as never, \"profile\")\n  return { ok: false as const, runtimeId: query.runtimeId }\n}\n"
+          }
+        ],
+        "expectedFindings": [
+          {
+            "rule": "route-catalog-owner-bypass",
+            "file": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "symbol": "getProviderProfileRuntimeConfigFromDatabase",
+            "owner": "src/main/lib/provider-profiles/storage.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          }
+        ]
+      },
+      {
+        "caseId": "s30-catalog-reads-process-env",
+        "files": [
+          {
+            "file": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "source": "export function resolveRuntimeRoute(query: { runtimeId: string }) {\n  const table = process.env.LOCUS_RUNTIME_ROUTE_TABLE ?? \"default\"\n  return { ok: false as const, runtimeId: query.runtimeId, table }\n}\n"
+          }
+        ],
+        "expectedFindings": [
+          {
+            "rule": "route-catalog-owner-bypass",
+            "file": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "symbol": "process.env",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          }
+        ]
+      },
+      {
+        "caseId": "s30-catalog-reads-fs",
+        "files": [
+          {
+            "file": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "source": "import { readFileSync } from \"node:fs\"\n\nexport function loadRuntimeRouteDeclarations(path: string) {\n  return JSON.parse(readFileSync(path, \"utf8\"))\n}\n"
+          }
+        ],
+        "expectedFindings": [
+          {
+            "rule": "route-catalog-owner-bypass",
+            "file": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "symbol": "node:fs",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          }
+        ]
+      },
+      {
+        "caseId": "s30-catalog-reads-config",
+        "files": [
+          {
+            "file": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "source": "import { getClaudeConfigPath } from \"../claude-config\"\n\nexport function runtimeRouteConfigSource() {\n  return getClaudeConfigPath()\n}\n"
+          }
+        ],
+        "expectedFindings": [
+          {
+            "rule": "route-catalog-owner-bypass",
+            "file": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "symbol": "../claude-config",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          }
+        ]
+      },
+      {
+        "caseId": "s30-production-second-catalog",
+        "files": [
+          {
+            "file": "src/main/lib/headless/local-job-api.ts",
+            "source": "import { validateRuntimeRouteCatalog } from \"../agent-runtime/runtime-route-catalog\"\n\nconst LOCAL_ROUTE_TABLE = [{ routeId: \"api.codex.batch\" }]\n\nexport const localRouteCatalog = validateRuntimeRouteCatalog(LOCAL_ROUTE_TABLE)\n"
+          }
+        ],
+        "expectedFindings": [
+          {
+            "rule": "duplicate-route-catalog",
+            "file": "src/main/lib/headless/local-job-api.ts",
+            "symbol": "validateRuntimeRouteCatalog",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          }
+        ]
+      },
+      {
+        "caseId": "s30-production-test-constructor",
+        "files": [
+          {
+            "file": "src/main/lib/headless/jobs-stdio.ts",
+            "source": "import { createRuntimeRouteCatalogForTests } from \"../agent-runtime/runtime-route-catalog\"\n\nexport const protocolRouteCatalog = createRuntimeRouteCatalogForTests([], {} as never)\n"
+          }
+        ],
+        "expectedFindings": [
+          {
+            "rule": "duplicate-route-catalog",
+            "file": "src/main/lib/headless/jobs-stdio.ts",
+            "symbol": "createRuntimeRouteCatalogForTests",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          }
+        ]
+      },
+      {
+        "caseId": "s30-non-forwarded-production-option",
+        "files": [
+          {
+            "file": "src/main/lib/trpc/routers/codex.ts",
+            "source": "import { runCodexDesktopChatRun } from \"../../codex/desktop-chat-run\"\n\nexport async function codexChatRunBody(input: { request: unknown; routeCatalog: unknown }) {\n  return runCodexDesktopChatRun({ request: input.request, runtimeRouteCatalog: input.routeCatalog as never })\n}\n"
+          }
+        ],
+        "expectedFindings": [
+          {
+            "rule": "route-catalog-test-port-in-production",
+            "file": "src/main/lib/trpc/routers/codex.ts",
+            "symbol": "runtimeRouteCatalog",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          }
+        ]
+      }
+    ]
+  },
+  "S48": {
+    "cases": [
+      {
+        "caseId": "s48-catalog-declarations-positive",
+        "files": [
+          {
+            "file": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "source": "import type { AgentRuntimeContractId } from \"../../../shared/agent-runtime-capabilities\"\nimport { getAgentRuntimeCapabilityManifest } from \"../../../shared/agent-runtime-capabilities\"\nimport { runClaudeAgentSdkDesktopAdapterWithPreparedRuntimeQuery } from \"../claude/agent-sdk-adapter-runner\"\nimport { runCodexAppServerDesktopAdapter } from \"../codex/app-server-adapter-runner\"\nimport { runClaudeCodeHeadlessTask } from \"../headless/adapters/claude-code\"\nimport { createCodexAppServerHeadlessTaskRunner } from \"../headless/adapters/codex-app-server\"\nimport { runCodexHeadlessTask } from \"../headless/adapters/codex\"\n\nconst RUNTIME_ROUTE_DECLARATIONS = [\n  { routeId: \"claude-code.desktop\", runtimeId: \"claude-code\", entry: \"desktop\", adapterSource: \"claude-agent-sdk\", delegate: () => runClaudeAgentSdkDesktopAdapterWithPreparedRuntimeQuery },\n  { routeId: \"codex.desktop\", runtimeId: \"codex\", entry: \"desktop\", adapterSource: \"codex-app-server\", delegate: () => runCodexAppServerDesktopAdapter },\n  { routeId: \"claude-code.headless.batch\", runtimeId: \"claude-code\", entry: \"headless\", adapterSource: \"claude-code-batch\", delegate: () => runClaudeCodeHeadlessTask },\n  { routeId: \"codex.headless.batch\", runtimeId: \"codex\", entry: \"headless\", adapterSource: \"codex-batch\", delegate: () => runCodexHeadlessTask },\n  { routeId: \"codex.api.policy-grant\", runtimeId: \"codex\", entry: \"api\", adapterSource: \"codex-app-server\", delegate: () => createCodexAppServerHeadlessTaskRunner() },\n  { routeId: \"future-runtime.headless.batch\", runtimeId: \"future-runtime\", entry: \"headless\", adapterSource: \"future-runtime-batch\", delegate: () => null },\n] as const\n\nexport function resolveRuntimeRoute(query: { runtimeId: AgentRuntimeContractId; entry: string }) {\n  const manifest = getAgentRuntimeCapabilityManifest(query.runtimeId)\n  const route = RUNTIME_ROUTE_DECLARATIONS.find(\n    (candidate) => candidate.runtimeId === query.runtimeId && candidate.entry === query.entry,\n  )\n  return route && manifest ? { ok: true as const, ...route } : { ok: false as const, reason: \"route_not_found\" as const }\n}\n"
+          }
+        ],
+        "expectedFindings": []
+      },
+      {
+        "caseId": "s48-trpc-route-second-adapter-table",
+        "files": [
+          {
+            "file": "src/main/lib/trpc/routers/claude.ts",
+            "source": "import { runClaudeCodeHeadlessTask } from \"../../headless/adapters/claude-code\"\nimport { runCodexHeadlessTask } from \"../../headless/adapters/codex\"\n\nexport const ROUTE_HEADLESS_ADAPTERS = {\n  \"claude-code\": runClaudeCodeHeadlessTask,\n  codex: runCodexHeadlessTask,\n} as const\n"
+          }
+        ],
+        "expectedFindings": [
+          {
+            "rule": "route-dispatch-outside-owner",
+            "file": "src/main/lib/trpc/routers/claude.ts",
+            "symbol": "ROUTE_HEADLESS_ADAPTERS",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          },
+          {
+            "rule": "leaf-adapter-import-outside-catalog",
+            "file": "src/main/lib/trpc/routers/claude.ts",
+            "symbol": "runClaudeCodeHeadlessTask",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          },
+          {
+            "rule": "leaf-adapter-import-outside-catalog",
+            "file": "src/main/lib/trpc/routers/claude.ts",
+            "symbol": "runCodexHeadlessTask",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          }
+        ]
+      },
+      {
+        "caseId": "s48-cli-second-adapter-table",
+        "files": [
+          {
+            "file": "src/main/lib/headless/cli-dispatcher.ts",
+            "source": "import { runClaudeCodeHeadlessTask } from \"./adapters/claude-code\"\nimport { runCodexHeadlessTask } from \"./adapters/codex\"\n\nexport const CLI_ADAPTERS = {\n  \"claude-code\": runClaudeCodeHeadlessTask,\n  codex: runCodexHeadlessTask,\n} as const\n"
+          }
+        ],
+        "expectedFindings": [
+          {
+            "rule": "route-dispatch-outside-owner",
+            "file": "src/main/lib/headless/cli-dispatcher.ts",
+            "symbol": "CLI_ADAPTERS",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          },
+          {
+            "rule": "leaf-adapter-import-outside-catalog",
+            "file": "src/main/lib/headless/cli-dispatcher.ts",
+            "symbol": "runClaudeCodeHeadlessTask",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          },
+          {
+            "rule": "leaf-adapter-import-outside-catalog",
+            "file": "src/main/lib/headless/cli-dispatcher.ts",
+            "symbol": "runCodexHeadlessTask",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          }
+        ]
+      },
+      {
+        "caseId": "s48-protocol-second-adapter-table",
+        "files": [
+          {
+            "file": "src/main/lib/headless/jobs-stdio.ts",
+            "source": "import { runClaudeCodeHeadlessTask } from \"./adapters/claude-code\"\nimport { runCodexHeadlessTask } from \"./adapters/codex\"\n\nexport const PROTOCOL_ADAPTERS = {\n  \"claude-code\": runClaudeCodeHeadlessTask,\n  codex: runCodexHeadlessTask,\n} as const\n"
+          }
+        ],
+        "expectedFindings": [
+          {
+            "rule": "route-dispatch-outside-owner",
+            "file": "src/main/lib/headless/jobs-stdio.ts",
+            "symbol": "PROTOCOL_ADAPTERS",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          },
+          {
+            "rule": "leaf-adapter-import-outside-catalog",
+            "file": "src/main/lib/headless/jobs-stdio.ts",
+            "symbol": "runClaudeCodeHeadlessTask",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          },
+          {
+            "rule": "leaf-adapter-import-outside-catalog",
+            "file": "src/main/lib/headless/jobs-stdio.ts",
+            "symbol": "runCodexHeadlessTask",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          }
+        ]
+      },
+      {
+        "caseId": "s48-local-job-api-second-adapter-table",
+        "files": [
+          {
+            "file": "src/main/lib/headless/local-job-api.ts",
+            "source": "import { runClaudeCodeHeadlessTask } from \"./adapters/claude-code\"\nimport { runCodexHeadlessTask } from \"./adapters/codex\"\n\nexport const API_ADAPTERS = {\n  \"claude-code\": runClaudeCodeHeadlessTask,\n  codex: runCodexHeadlessTask,\n} as const\n"
+          }
+        ],
+        "expectedFindings": [
+          {
+            "rule": "route-dispatch-outside-owner",
+            "file": "src/main/lib/headless/local-job-api.ts",
+            "symbol": "API_ADAPTERS",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          },
+          {
+            "rule": "leaf-adapter-import-outside-catalog",
+            "file": "src/main/lib/headless/local-job-api.ts",
+            "symbol": "runClaudeCodeHeadlessTask",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          },
+          {
+            "rule": "leaf-adapter-import-outside-catalog",
+            "file": "src/main/lib/headless/local-job-api.ts",
+            "symbol": "runCodexHeadlessTask",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          }
+        ]
+      }
+    ]
+  },
+  "S50": {
+    "cases": [
+      {
+        "caseId": "s50-clean-catalog-only-path",
+        "files": [
+          {
+            "file": "src/main/lib/headless/agent-runtime.ts",
+            "source": "import { resolveRuntimeRoute, type RuntimeRouteCatalogState } from \"../agent-runtime/runtime-route-catalog\"\nimport type { AgentRuntimeObserver, AgentRuntimeRunRequest } from \"./agent-runtime-contract\"\n\ndeclare function toRouteQuery(request: AgentRuntimeRunRequest): never\n\nexport async function runAgentTask(\n  request: AgentRuntimeRunRequest,\n  observer: AgentRuntimeObserver,\n  options: { runtimeRouteCatalog?: RuntimeRouteCatalogState } = {},\n) {\n  const route = resolveRuntimeRoute(toRouteQuery(request), options.runtimeRouteCatalog)\n  if (!route.ok) throw new Error(\"Runtime route catalog is unavailable.\")\n  return route.delegate(request, observer)\n}\n"
+          }
+        ],
+        "expectedFindings": []
+      },
+      {
+        "caseId": "s50-restored-selector-path",
+        "files": [
+          {
+            "file": "src/main/lib/headless/agent-runtime.ts",
+            "source": "import type { AgentRuntimeObserver, AgentRuntimeRunRequest } from \"./agent-runtime-contract\"\nimport { selectAgentRuntimeAdapter } from \"./adapter-selector\"\n\nexport async function runAgentTask(request: AgentRuntimeRunRequest, observer: AgentRuntimeObserver) {\n  const selection = selectAgentRuntimeAdapter(request)\n  return selection.ok ? selection.adapter.run(request, observer) : selection.result\n}\n"
+          }
+        ],
+        "expectedFindings": [
+          {
+            "rule": "retired-route-selector",
+            "file": "src/main/lib/headless/agent-runtime.ts",
+            "symbol": "selectAgentRuntimeAdapter",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          }
+        ]
+      },
+      {
+        "caseId": "s50-dual-path-flag",
+        "files": [
+          {
+            "file": "src/main/lib/headless/agent-runtime.ts",
+            "source": "import { resolveRuntimeRoute } from \"../agent-runtime/runtime-route-catalog\"\nimport { legacyRouteCatalogState } from \"./legacy-route-catalog-state\"\n\nexport function routeFor(query: never) {\n  const catalog = process.env.LOCUS_RUNTIME_ROUTE_PATH === \"legacy\" ? legacyRouteCatalogState : undefined\n  return resolveRuntimeRoute(query, catalog)\n}\n"
+          }
+        ],
+        "expectedFindings": [
+          {
+            "rule": "route-catalog-test-port-in-production",
+            "file": "src/main/lib/headless/agent-runtime.ts",
+            "symbol": "resolveRuntimeRoute",
+            "owner": "src/main/lib/agent-runtime/runtime-route-catalog.ts",
+            "ownerSection": "Runtime Route Catalog Single Owner"
+          }
+        ]
+      }
+    ]
+  }
+}

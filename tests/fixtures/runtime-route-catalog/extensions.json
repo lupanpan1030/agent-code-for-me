@@ -1,0 +1,254 @@
+{
+  "fixtureVersion": 1,
+  "evidenceClass": "synthetic",
+  "sourceRefs": [
+    "openspec/changes/refactor-unified-runtime-route-catalog/specs/agent-runtime-capabilities/spec.md:32-46 (S13)",
+    "openspec/changes/refactor-unified-runtime-route-catalog/design.md:315-322 (extension declaration format, Codex schemaRef pointer)",
+    "openspec/changes/refactor-unified-runtime-route-catalog/design.md:338-343 (extension item exact keys; batch=[], app-server policy-grant=runtime.codex.v1, completion=[])",
+    "openspec/changes/refactor-unified-runtime-route-catalog/design.md:207-212 (unsupported_required_extension; required extension after refusal chain)",
+    "src/shared/local-job-api.ts:26-44 (runtime.codex.v1 namespace and schemaVersion 1 / experimental)",
+    "docs/local-job-api-v1.schema.json:1383-1390 (eventPayloadExtensions definition; design D3 cites :1388)",
+    "src/main/lib/agent-runtime/run-event-ledger.ts:337, :1205-1220 (actual Codex extension producer)",
+    "tests/fixtures/run-event-ledger/identity-provenance.json (provenanceVariants.runtime, case no-session-observed; copied read-only)",
+    "tests/fixtures/runtime-route-catalog/discovery-reader-before.ts (S22 supporting neutral old reader; imported read-only for the S13 optional-unknown-namespace check)"
+  ],
+  "provenance": {
+    "author": "independent red-test author (capabilities domain)",
+    "baseSha": "19986552",
+    "approvedSpecSha": "a9b74594",
+    "method": "Declaration table is a test-only catalog in the frozen RuntimeRouteDeclarationForTests shape (tests/runtime-route-catalog-capabilities-kit.ts); producer steps and provenance copied verbatim from the archived ledger fixture; expected producer extension recorded by driving the base ledger.",
+    "frozenShapeNote": "The declaration/references shape is a red-author freeze (design D1/tasks 2.2 do not publish fields); the coordinator aligns it with the S01 author's shape.",
+    "adjudicationNote": "shape relinked to catalog.json#S01 core shape by coordinator adjudication P1-1 (2026-10-02): routes carry factoryRef/readinessProbeRef/enforcementEvidenceRef plus the declared enforcementEvidence level, the runtime carries manifestRef/cancellation/sessionReference copied from catalog.json#S01 codex, and the references are a catalog.json#S01-style ports block {manifests, factories, probes, evidence} consumed through createReferencePorts (tests/runtime-route-catalog-core-kit.ts)."
+  },
+  "S13": {
+    "codexExtension": {
+      "namespace": "runtime.codex.v1",
+      "schemaVersion": 1,
+      "maturity": "experimental",
+      "schemaRef": "#/$defs/eventPayloadExtensions/properties/runtime.codex.v1"
+    },
+    "declarations": [
+      {
+        "runtimeId": "codex",
+        "label": "Codex",
+        "manifestRef": "manifest:codex",
+        "cancellation": "abort-signal",
+        "sessionReference": "native-thread-id",
+        "routes": [
+          {
+            "routeId": "fixture.codex.headless.batch",
+            "entries": ["headless", "api", "protocol"],
+            "kind": "agent",
+            "modes": ["plan", "agent"],
+            "executionProfile": "batch",
+            "executionSurface": "headless-exec",
+            "adapterSource": "codex-batch",
+            "adapterLabel": "Codex headless/batch",
+            "transport": "process-stdio",
+            "transportId": null,
+            "factoryRef": "fixture.codex.batch",
+            "readinessProbeRef": "fixture.codex.native",
+            "enforcementEvidenceRef": "fixture.codex.batch",
+            "enforcementEvidence": "sandbox-level",
+            "extensions": []
+          },
+          {
+            "routeId": "fixture.codex.api.policy-grant",
+            "entries": ["api"],
+            "kind": "agent",
+            "modes": ["plan", "agent"],
+            "executionProfile": "policy-grant",
+            "executionSurface": "headless-app-server",
+            "adapterSource": "codex-app-server",
+            "adapterLabel": "Codex app-server",
+            "transport": "json-rpc-stdio",
+            "transportId": null,
+            "factoryRef": "fixture.codex.policyGrant",
+            "readinessProbeRef": "fixture.codex.native",
+            "enforcementEvidenceRef": "fixture.codex.policyGrant",
+            "enforcementEvidence": "admission-audit",
+            "extensions": [
+              {
+                "namespace": "runtime.codex.v1",
+                "schemaVersion": 1,
+                "maturity": "experimental",
+                "schemaRef": "#/$defs/eventPayloadExtensions/properties/runtime.codex.v1",
+                "redactionOwner": "src/main/lib/agent-runtime/run-event-ledger.ts"
+              }
+            ]
+          },
+          {
+            "routeId": "fixture.codex.completion",
+            "entries": ["api", "completion"],
+            "kind": "completion",
+            "modes": null,
+            "executionProfile": null,
+            "executionSurface": "completion",
+            "adapterSource": "locus-completion",
+            "adapterLabel": "Locus completion",
+            "transport": "provider-http",
+            "transportId": null,
+            "factoryRef": null,
+            "readinessProbeRef": null,
+            "enforcementEvidenceRef": null,
+            "enforcementEvidence": "none",
+            "extensions": []
+          }
+        ]
+      }
+    ],
+    "ports": {
+      "manifests": {
+        "manifest:codex": "codex"
+      },
+      "factories": ["fixture.codex.batch", "fixture.codex.policyGrant"],
+      "probes": {
+        "fixture.codex.native": "unknown"
+      },
+      "evidence": {
+        "fixture.codex.batch": "sandbox-level",
+        "fixture.codex.policyGrant": "admission-audit"
+      }
+    },
+    "malformedVariants": [
+      {
+        "caseId": "namespace-without-runtime-prefix",
+        "field": "namespace",
+        "value": "codex.v1"
+      },
+      {
+        "caseId": "namespace-wrong-version-suffix",
+        "field": "namespace",
+        "value": "runtime.codex.v2"
+      },
+      {
+        "caseId": "namespace-empty-runtime-segment",
+        "field": "namespace",
+        "value": "runtime..v1"
+      },
+      {
+        "caseId": "schema-version-not-1",
+        "field": "schemaVersion",
+        "value": 2
+      },
+      {
+        "caseId": "schema-ref-empty",
+        "field": "schemaRef",
+        "value": ""
+      },
+      {
+        "caseId": "schema-ref-not-json-pointer",
+        "field": "schemaRef",
+        "value": "docs/local-job-api-v1.schema.json"
+      },
+      {
+        "caseId": "redaction-owner-missing",
+        "field": "redactionOwner",
+        "value": null
+      }
+    ],
+    "queries": {
+      "policyGrant": {
+        "runtimeId": "codex",
+        "entry": "api",
+        "executionProfile": "policy-grant",
+        "grantedScopes": ["workspace-read"]
+      },
+      "batch": {
+        "runtimeId": "codex",
+        "entry": "api",
+        "executionProfile": "batch"
+      }
+    },
+    "unknownRequiredExtension": "runtime.fixture-unknown.v1",
+    "expectedUnknownRequiredReason": "unsupported_required_extension",
+    "publicExpectations": {
+      "policyGrantExtensions": [
+        {
+          "namespace": "runtime.codex.v1",
+          "schemaVersion": 1,
+          "maturity": "experimental",
+          "schemaRef": "#/$defs/eventPayloadExtensions/properties/runtime.codex.v1"
+        }
+      ],
+      "batchExtensions": [],
+      "completionExtensions": []
+    },
+    "producer": {
+      "runId": "route-catalog-extension-run",
+      "provenance": {
+        "kind": "runtime",
+        "installationId": "inst-codex-0.139.0-linux-x64-0729aedf",
+        "runtimeId": "codex",
+        "adapterSource": "codex-app-server",
+        "version": "0.139.0",
+        "executableRef": "exe-ref-codex-0139",
+        "binarySha256": "0729aedf4fe72971d81ef6803c817b850d711254d3c82ecc756a52f3b533c9f8",
+        "protocolName": "codex-app-server-jsonrpc",
+        "protocolVersion": "v2",
+        "schemaFiles": [
+          {
+            "path": "ServerNotification.ts",
+            "sha256": "bcc5cd580b83e15225dd138c768fafb0cae7d2ab26474a49a8569657f0b944a8"
+          },
+          {
+            "path": "ServerRequest.ts",
+            "sha256": "6274decabc5c0e9b09f144efb1795ca8fc1fe52d8afa42ee5988de2d890f935e"
+          },
+          {
+            "path": "v2/ThreadItem.ts",
+            "sha256": "1aef9163c636246a0d1baec611da798a3e77790b7b8819480162b6e734324038"
+          }
+        ]
+      },
+      "steps": [
+        {
+          "port": "ingestNotification",
+          "observationKey": "idp-nosess-01",
+          "transportId": "t1",
+          "input": {
+            "message": {
+              "method": "turn/started",
+              "params": {
+                "threadId": "th-only",
+                "turn": {
+                  "id": "tu-only",
+                  "items": [],
+                  "status": "inProgress",
+                  "error": null
+                }
+              }
+            }
+          }
+        },
+        {
+          "port": "ingestNotification",
+          "observationKey": "idp-nosess-02",
+          "transportId": "t1",
+          "input": {
+            "message": {
+              "method": "item/agentMessage/delta",
+              "params": {
+                "threadId": "th-only",
+                "turnId": "tu-only",
+                "itemId": "item-only",
+                "delta": "x"
+              }
+            }
+          }
+        }
+      ],
+      "expectedExtensionNamespaces": ["runtime.codex.v1"],
+      "expectedExtensionHeader": {
+        "schemaVersion": 1,
+        "maturity": "experimental"
+      }
+    },
+    "optionalUnknownExtension": {
+      "namespace": "runtime.fixture-optional.v1",
+      "schemaVersion": 1,
+      "maturity": "experimental",
+      "schemaRef": "#/$defs/fixtureOptionalReaderExtension"
+    }
+  }
+}

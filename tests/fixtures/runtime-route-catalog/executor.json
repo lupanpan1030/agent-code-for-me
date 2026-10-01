@@ -1,0 +1,130 @@
+{
+  "fixtureVersion": 1,
+  "evidenceClass": "synthetic",
+  "sourceRefs": [
+    "openspec/changes/refactor-unified-runtime-route-catalog/specs/headless-agent-jobs/spec.md:29-49",
+    "openspec/changes/refactor-unified-runtime-route-catalog/design.md:178-207",
+    "openspec/changes/refactor-unified-runtime-route-catalog/design.md:388-392",
+    "openspec/changes/refactor-unified-runtime-route-catalog/design.md:409-413",
+    "openspec/changes/refactor-unified-runtime-route-catalog/tasks.md:35",
+    "openspec/changes/refactor-unified-runtime-route-catalog/tasks.md:88",
+    "src/main/lib/headless/daemon.ts:337-342",
+    "src/main/lib/headless/daemon.ts:344-381",
+    "src/main/lib/headless/daemon.ts:397-497",
+    "src/main/lib/headless/job-runner.ts:766-777",
+    "src/main/lib/headless/jobs-stdio.ts:265-311",
+    "src/main/lib/headless/cli-dispatcher.ts:1058-1075",
+    "src/main/lib/headless/run-submission.ts:218-260",
+    "tests/fixtures/runtime-route-catalog/catalog.json (S01 shared declaration table, catalog-core author)"
+  ],
+  "provenance": {
+    "author": "independent red-test author (surfaces domain), no implementation context",
+    "approvedSpecSha": "a9b74594",
+    "productBaseSha": "19986552",
+    "createdAt": "2026-10-02",
+    "notes": "Rows are synthesized per test in a temporary migrated SQLite profile through the real CLI/submit/job-store owners; excluded rows use fixed IDs. Per-pump timelines are recorded through the existing claimObserver and providerBindingDependencies seams plus the test catalog's agent-factory reference port; no runner fake is used."
+  },
+  "S16": {
+    "eligibleRows": [
+      {
+        "name": "daemon-agent",
+        "source": "daemon",
+        "kind": "agent",
+        "runtime": "codex",
+        "executionSurface": "headless-exec"
+      },
+      {
+        "name": "schedule-agent",
+        "source": "schedule",
+        "kind": "agent",
+        "runtime": "claude-code",
+        "executionSurface": "headless-exec"
+      },
+      {
+        "name": "api-agent",
+        "source": "api",
+        "kind": "agent",
+        "runtime": "codex",
+        "executionSurface": "headless-exec"
+      },
+      {
+        "name": "api-completion",
+        "source": "api",
+        "kind": "completion",
+        "runtime": "codex",
+        "executionSurface": null
+      }
+    ],
+    "excludedRows": [
+      {
+        "id": "s16-excluded-desktop",
+        "source": "desktop",
+        "runtime": "claude-code"
+      },
+      {
+        "id": "s16-excluded-cli",
+        "source": "cli",
+        "runtime": "codex"
+      },
+      {
+        "id": "s16-excluded-protocol",
+        "source": "protocol",
+        "runtime": "codex"
+      }
+    ],
+    "completionProfileId": "s16-completion-profile",
+    "expectedDispatchOrder": [
+      "daemon-agent",
+      "schedule-agent",
+      "api-agent",
+      "api-completion"
+    ],
+    "winnerAgentSegment": [
+      "attempt",
+      "claimed",
+      "provider",
+      "lookup",
+      "invoke"
+    ],
+    "winnerCompletionSegment": ["attempt", "claimed"],
+    "loserSegment": ["attempt"],
+    "baselineAgentEventTypes": [
+      "job_created",
+      "job_started",
+      "status",
+      "assistant_delta",
+      "completed"
+    ],
+    "forbiddenPayloadKeys": [
+      "routeId",
+      "transportId",
+      "catalog_invalid",
+      "route_not_found"
+    ]
+  },
+  "S17": {
+    "replay": {
+      "consumerId": "s17-replay",
+      "idempotencyKey": "s17-replay-key",
+      "runtime": "codex",
+      "prompt": "S17 keyed replay",
+      "executionSurface": "headless-exec"
+    },
+    "wrapper": {
+      "consumerId": "s17-wrapper",
+      "foreignConsumerId": "s17-foreign",
+      "runtime": "claude-code",
+      "prompt": "S17 own-ID wrapper",
+      "workerPrefix": "headless:",
+      "executionSurface": "headless-exec"
+    },
+    "stdio": {
+      "runtime": "codex",
+      "prompt": "S17 jobs-stdio owned run",
+      "foreignProtocolRowId": "s17-foreign-protocol",
+      "workerPrefix": "protocol:",
+      "ackRequestId": 2,
+      "executionSurface": "headless-exec"
+    }
+  }
+}

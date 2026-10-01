@@ -1,0 +1,248 @@
+{
+  "fixtureVersion": 1,
+  "evidenceClass": "synthetic",
+  "sourceRefs": [
+    "openspec/changes/refactor-unified-runtime-route-catalog/specs/agent-runtime-core/spec.md:65-69",
+    "openspec/changes/refactor-unified-runtime-route-catalog/specs/agent-runtime-core/spec.md:245-250",
+    "openspec/changes/refactor-unified-runtime-route-catalog/design.md:201-221",
+    "openspec/changes/refactor-unified-runtime-route-catalog/design.md:239-241",
+    "openspec/changes/refactor-unified-runtime-route-catalog/design.md:409",
+    "tests/agent-runtime-registry.test.ts:47-69",
+    "tests/local-job-api.test.ts:209-226",
+    "src/shared/local-job-api.ts:534-538",
+    "src/shared/local-job-api.ts:892-899",
+    "src/main/lib/headless/cli-args.ts:242-251",
+    "scripts/check-retired-runtime-residue.mjs:18-28"
+  ],
+  "provenance": {
+    "author": "independent red-test author (catalog-core domain)",
+    "approvedSpec": "a9b745949b02e2b7c1bbd883c224c14b324d3dbc",
+    "base": "19986552",
+    "method": "Unknown runtime id migrated from the registry facade test (tests/agent-runtime-registry.test.ts:47-69); retired ids are the two ids the retired-runtime residue gate names (scripts/check-retired-runtime-residue.mjs:18-28) and tests/local-job-api.test.ts:210 already rejects publicly; public parser messages copied from the cited parser lines at 19986552. This file needs the exact ALLOWED entry design D5 / tasks 6.1 name (reason: S06/S46 retired-ID refusal fixtures).",
+    "declarationsRef": "catalog.json#S01.declarations"
+  },
+  "S06": {
+    "retiredRuntimeIds": ["kun", "qwen-code"],
+    "unknownRuntimeIds": ["future-runtime", "CODEX", "claude-desktop"],
+    "routeNotFound": [
+      {
+        "caseId": "missing-entry-desktop-completion",
+        "query": {
+          "runtimeId": "claude-code",
+          "entry": "desktop",
+          "kind": "completion",
+          "mode": null,
+          "executionProfile": null,
+          "permissionPolicy": null,
+          "requiredCapabilities": [],
+          "requiredExtensions": []
+        }
+      },
+      {
+        "caseId": "missing-entry-headless-completion",
+        "query": {
+          "runtimeId": "codex",
+          "entry": "headless",
+          "kind": "completion",
+          "mode": null,
+          "executionProfile": null,
+          "permissionPolicy": null,
+          "requiredCapabilities": [],
+          "requiredExtensions": []
+        }
+      },
+      {
+        "caseId": "illegal-agent-on-completion-entry",
+        "agent": {
+          "runtimeId": "codex",
+          "entry": "completion",
+          "mode": "agent",
+          "executionProfile": "batch",
+          "source": "api"
+        }
+      },
+      {
+        "caseId": "illegal-desktop-batch",
+        "agent": {
+          "runtimeId": "codex",
+          "entry": "desktop",
+          "mode": "agent",
+          "executionProfile": "batch",
+          "source": "desktop"
+        }
+      },
+      {
+        "caseId": "illegal-unknown-mode",
+        "agent": {
+          "runtimeId": "claude-code",
+          "entry": "headless",
+          "mode": "review",
+          "executionProfile": "batch",
+          "source": "cli"
+        }
+      },
+      {
+        "caseId": "illegal-completion-with-agent-mode",
+        "query": {
+          "runtimeId": "codex",
+          "entry": "api",
+          "kind": "completion",
+          "mode": "agent",
+          "executionProfile": null,
+          "permissionPolicy": null,
+          "requiredCapabilities": [],
+          "requiredExtensions": []
+        }
+      },
+      {
+        "caseId": "illegal-unknown-kind",
+        "query": {
+          "runtimeId": "codex",
+          "entry": "api",
+          "kind": "review",
+          "mode": null,
+          "executionProfile": null,
+          "permissionPolicy": null,
+          "requiredCapabilities": [],
+          "requiredExtensions": []
+        }
+      }
+    ],
+    "runtimeQueryTemplate": {
+      "entry": "headless",
+      "mode": "agent",
+      "executionProfile": "batch",
+      "source": "cli"
+    },
+    "overlappingTable": {
+      "mutations": [
+        {
+          "op": "append",
+          "path": [0, "routes"],
+          "value": {
+            "routeId": "claude-code.api.plan-shadow",
+            "entries": ["api"],
+            "kind": "agent",
+            "modes": ["plan"],
+            "executionProfile": "batch",
+            "executionSurface": "headless-exec",
+            "adapterSource": "claude-code-batch",
+            "adapterLabel": "Claude Code batch",
+            "transport": "process-stdio",
+            "transportId": null,
+            "factoryRef": "factory:claude-code-batch",
+            "readinessProbeRef": "probe:claude-native",
+            "enforcementEvidenceRef": "evidence:claude-code-batch",
+            "enforcementEvidence": "sandbox-level",
+            "extensions": []
+          }
+        }
+      ],
+      "offendingAnyOf": [
+        "claude-code.api.plan-shadow",
+        "claude-code.headless.batch"
+      ]
+    },
+    "forbiddenReasons": ["route_ambiguous"],
+    "controls": [
+      {
+        "caseId": "control-valid-codex-batch",
+        "agent": {
+          "runtimeId": "codex",
+          "entry": "headless",
+          "mode": "agent",
+          "executionProfile": "batch",
+          "source": "cli"
+        },
+        "expect": {
+          "ok": true,
+          "reason": null,
+          "adapterSource": "codex-batch"
+        }
+      },
+      {
+        "caseId": "control-claude-grant-is-diagnostic-refusal",
+        "agent": {
+          "runtimeId": "claude-code",
+          "entry": "api",
+          "mode": "agent",
+          "executionProfile": "policy-grant",
+          "source": "api",
+          "policyGrant": {
+            "scopes": ["workspace:file-write"]
+          }
+        },
+        "expect": {
+          "ok": false,
+          "reason": "policy_refused",
+          "adapterSource": null
+        }
+      },
+      {
+        "caseId": "control-headless-interactive-is-diagnostic-refusal",
+        "agent": {
+          "runtimeId": "codex",
+          "entry": "headless",
+          "mode": "agent",
+          "executionProfile": "interactive",
+          "source": "daemon",
+          "hasVisibleUserInteractionChannel": true
+        },
+        "expect": {
+          "ok": false,
+          "reason": "policy_refused",
+          "adapterSource": null
+        }
+      }
+    ]
+  },
+  "S46": {
+    "unsupportedRuntimeIds": [
+      "future-runtime",
+      "kun",
+      "qwen-code",
+      "gemini-cli"
+    ],
+    "publicAgentRequest": {
+      "apiVersion": "locus.local-job.v1",
+      "consumer": {
+        "id": "s46-consumer"
+      },
+      "project": {
+        "cwd": "{{PROJECT_CWD}}"
+      },
+      "mode": "agent",
+      "prompt": {
+        "text": "Unsupported runtime fixture."
+      }
+    },
+    "publicCompletionRequest": {
+      "apiVersion": "locus.local-job.v1",
+      "kind": "completion",
+      "consumer": {
+        "id": "s46-consumer"
+      },
+      "provider": {
+        "profileId": "completion-main",
+        "model": "provider-model"
+      },
+      "messages": [
+        {
+          "role": "user",
+          "content": "Unsupported runtime fixture."
+        }
+      ],
+      "responseFormat": {
+        "type": "text"
+      }
+    },
+    "publicParserError": "Unsupported runtime.id",
+    "cliParserError": "Unsupported --runtime",
+    "cliParserExitCode": 3,
+    "internalReason": "route_not_found",
+    "supportedControl": {
+      "runtimeId": "codex",
+      "adapterSource": "codex-batch"
+    }
+  }
+}

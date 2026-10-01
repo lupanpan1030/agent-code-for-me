@@ -1,0 +1,335 @@
+{
+  "fixtureVersion": 1,
+  "evidenceClass": "synthetic",
+  "sourceRefs": [
+    "openspec/changes/refactor-unified-runtime-route-catalog/specs/headless-agent-jobs/spec.md:10-25",
+    "openspec/changes/refactor-unified-runtime-route-catalog/design.md:178-207",
+    "openspec/changes/refactor-unified-runtime-route-catalog/design.md:231-237",
+    "openspec/changes/refactor-unified-runtime-route-catalog/design.md:388-394",
+    "openspec/changes/refactor-unified-runtime-route-catalog/tasks.md:87",
+    "src/main/lib/headless/adapter-selector.ts:83-115",
+    "src/main/lib/headless/adapter-selector.ts:292-373",
+    "src/main/lib/headless/agent-runtime.ts:12-45",
+    "src/main/lib/headless/adapters/claude-code.ts:43-57",
+    "src/main/lib/headless/adapters/codex.ts:257-282",
+    "src/main/lib/headless/process-runner.ts:13-25",
+    "src/main/lib/headless/job-runner.ts:351-358",
+    "src/main/lib/headless/cli-args.ts:231-239",
+    "src/main/lib/headless/jobs-stdio.ts:54-61",
+    "src/main/lib/agent-runtime/permission-policy.ts:330-360",
+    "tests/fixtures/runtime-route-catalog/catalog.json (S01 shared declaration table, catalog-core author)"
+  ],
+  "provenance": {
+    "author": "independent red-test author (surfaces domain), no implementation context",
+    "approvedSpecSha": "a9b74594",
+    "productBaseSha": "19986552",
+    "createdAt": "2026-10-02",
+    "notes": "Baseline argv/stdin/source/cancellation values are the 19986552 leaf behaviour observed through the real hosts with only process/native I/O stubbed (design D1 baseline rule); {{CWD}} and {{PROMPT}} are rendered per run, never absolute checkout paths. Mode per host is the parser default (run/jobs-stdio agent, schedules plan; the API request names plan because the v1 parser requires mode)."
+  },
+  "S14": {
+    "hosts": [
+      {
+        "host": "cli",
+        "source": "cli",
+        "mode": "agent"
+      },
+      {
+        "host": "daemon",
+        "source": "daemon",
+        "mode": "agent"
+      },
+      {
+        "host": "schedule",
+        "source": "schedule",
+        "mode": "plan"
+      },
+      {
+        "host": "protocol",
+        "source": "protocol",
+        "mode": "agent"
+      },
+      {
+        "host": "api",
+        "source": "api",
+        "mode": "plan"
+      }
+    ],
+    "runtimes": {
+      "codex": {
+        "executable": "{{CODEX_EXECUTABLE}}",
+        "label": "Codex headless/batch",
+        "argsByMode": {
+          "agent": [
+            "exec",
+            "--cd",
+            "{{CWD}}",
+            "--color",
+            "never",
+            "--sandbox",
+            "workspace-write",
+            "--skip-git-repo-check",
+            "--",
+            "{{PROMPT}}"
+          ],
+          "plan": [
+            "exec",
+            "--cd",
+            "{{CWD}}",
+            "--color",
+            "never",
+            "--sandbox",
+            "read-only",
+            "--skip-git-repo-check",
+            "--",
+            "{{PROMPT}}"
+          ]
+        },
+        "runtimeSelected": {
+          "status": "runtime_selected",
+          "runtime": "codex",
+          "label": "Codex",
+          "adapterSource": "codex-batch",
+          "executionProfile": "batch",
+          "fallbackReason": null
+        }
+      },
+      "claude-code": {
+        "executable": "{{CLAUDE_EXECUTABLE}}",
+        "label": "Claude Code",
+        "argsByMode": {
+          "agent": [
+            "-p",
+            "--output-format",
+            "text",
+            "--no-session-persistence",
+            "--permission-mode",
+            "acceptEdits",
+            "--",
+            "{{PROMPT}}"
+          ],
+          "plan": [
+            "-p",
+            "--output-format",
+            "text",
+            "--no-session-persistence",
+            "--permission-mode",
+            "plan",
+            "--",
+            "{{PROMPT}}"
+          ]
+        },
+        "runtimeSelected": {
+          "status": "runtime_selected",
+          "runtime": "claude-code",
+          "label": "Claude Code",
+          "adapterSource": "claude-code-batch",
+          "executionProfile": "batch",
+          "fallbackReason": null
+        }
+      }
+    },
+    "runtimeSelectedKeys": [
+      "status",
+      "runtime",
+      "label",
+      "source",
+      "adapterSource",
+      "executionProfile",
+      "fallbackReason"
+    ],
+    "forbiddenPayloadKeys": ["routeId", "transportId", "reason"],
+    "batchExecutionSurface": "headless-exec",
+    "richExecutionSurfaces": [
+      "headless-app-server",
+      "desktop-sdk",
+      "desktop-app-server"
+    ]
+  },
+  "S15": {
+    "requests": [
+      {
+        "caseId": "codex-batch-cli",
+        "input": {
+          "jobId": "s15-codex-batch",
+          "runtime": "codex",
+          "mode": "plan",
+          "source": "cli",
+          "prompt": "S15 batch request"
+        },
+        "expect": {
+          "outcome": "selected",
+          "baselineArgs": [
+            "exec",
+            "--cd",
+            "{{CWD}}",
+            "--color",
+            "never",
+            "--sandbox",
+            "read-only",
+            "--skip-git-repo-check",
+            "--",
+            "S15 batch request"
+          ],
+          "status": {
+            "status": "runtime_selected",
+            "runtime": "codex",
+            "label": "Codex",
+            "source": "cli",
+            "adapterSource": "codex-batch",
+            "executionProfile": "batch",
+            "fallbackReason": null
+          },
+          "executionSurface": "headless-exec"
+        }
+      },
+      {
+        "caseId": "claude-batch-daemon",
+        "input": {
+          "jobId": "s15-claude-batch",
+          "runtime": "claude-code",
+          "mode": "agent",
+          "source": "daemon",
+          "prompt": "S15 claude batch request"
+        },
+        "expect": {
+          "outcome": "selected",
+          "baselineArgs": [
+            "-p",
+            "--output-format",
+            "text",
+            "--no-session-persistence",
+            "--permission-mode",
+            "acceptEdits",
+            "--",
+            "S15 claude batch request"
+          ],
+          "status": {
+            "status": "runtime_selected",
+            "runtime": "claude-code",
+            "label": "Claude Code",
+            "source": "daemon",
+            "adapterSource": "claude-code-batch",
+            "executionProfile": "batch",
+            "fallbackReason": null
+          },
+          "executionSurface": "headless-exec"
+        }
+      },
+      {
+        "caseId": "codex-interactive-only-without-channel",
+        "input": {
+          "jobId": "s15-codex-interactive",
+          "runtime": "codex",
+          "mode": "agent",
+          "source": "api",
+          "executionProfile": "interactive",
+          "prompt": "S15 interactive-only request"
+        },
+        "expect": {
+          "outcome": "refused",
+          "result": {
+            "status": "failed",
+            "exitCode": 1,
+            "errorCode": "permission_policy_fail_closed",
+            "errorMessage": "api agent job refused before provider work: interactive approval, AskUserQuestion, MCP elicitation, and unknown side-effect approval require a visible user channel or bounded policy grant."
+          },
+          "status": {
+            "status": "runtime_selection_refused",
+            "runtime": "codex",
+            "source": "api",
+            "adapterSource": "codex-batch",
+            "executionProfile": "interactive",
+            "reason": "no_interaction_channel",
+            "message": "api agent job refused before provider work: interactive approval, AskUserQuestion, MCP elicitation, and unknown side-effect approval require a visible user channel or bounded policy grant.",
+            "errorCode": "permission_policy_fail_closed"
+          }
+        }
+      },
+      {
+        "caseId": "claude-interactive-profile-with-channel",
+        "input": {
+          "jobId": "s15-claude-interactive",
+          "runtime": "claude-code",
+          "mode": "agent",
+          "source": "cli",
+          "executionProfile": "interactive",
+          "hasVisibleUserInteractionChannel": true,
+          "prompt": "S15 interactive profile request"
+        },
+        "expect": {
+          "outcome": "refused",
+          "result": {
+            "status": "failed",
+            "exitCode": 1,
+            "errorCode": "interactive_channel_required",
+            "errorMessage": "Interactive runtime execution requires a visible user interaction channel."
+          },
+          "status": {
+            "status": "runtime_selection_refused",
+            "runtime": "claude-code",
+            "source": "cli",
+            "adapterSource": "claude-code-batch",
+            "executionProfile": "interactive",
+            "reason": "interactive_channel_required",
+            "message": "Interactive runtime execution requires a visible user interaction channel.",
+            "errorCode": "interactive_channel_required"
+          }
+        }
+      },
+      {
+        "caseId": "claude-unsupported-guarded-scope",
+        "input": {
+          "jobId": "s15-claude-guarded",
+          "runtime": "claude-code",
+          "mode": "agent",
+          "source": "cli",
+          "hasScopeContract": true,
+          "prompt": "S15 unsupported guarded scope request"
+        },
+        "expect": {
+          "outcome": "refused",
+          "result": {
+            "status": "failed",
+            "exitCode": 1,
+            "errorCode": "guarded_scope_requires_pre_execution_hook",
+            "errorMessage": "Claude Code batch exposes only sandbox-level enforcement for this headless adapter; guarded scope contracts require a pre-execution hook or must fail closed before provider work."
+          },
+          "status": {
+            "status": "runtime_selection_refused",
+            "runtime": "claude-code",
+            "source": "cli",
+            "adapterSource": "claude-code-batch",
+            "executionProfile": "batch",
+            "reason": "guarded_scope_requires_pre_execution_hook",
+            "message": "Claude Code batch exposes only sandbox-level enforcement for this headless adapter; guarded scope contracts require a pre-execution hook or must fail closed before provider work.",
+            "errorCode": "guarded_scope_requires_pre_execution_hook"
+          }
+        }
+      }
+    ],
+    "runtimeSelectedKeys": [
+      "status",
+      "runtime",
+      "label",
+      "source",
+      "adapterSource",
+      "executionProfile",
+      "fallbackReason"
+    ],
+    "runtimeSelectionRefusedKeys": [
+      "status",
+      "runtime",
+      "source",
+      "adapterSource",
+      "executionProfile",
+      "reason",
+      "message",
+      "errorCode"
+    ],
+    "richExecutionSurfaces": [
+      "headless-app-server",
+      "desktop-sdk",
+      "desktop-app-server"
+    ]
+  }
+}

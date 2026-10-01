@@ -1,0 +1,652 @@
+{
+  "fixtureVersion": 1,
+  "evidenceClass": "synthetic",
+  "sourceRefs": [
+    "openspec/changes/refactor-unified-runtime-route-catalog/specs/agent-runtime-core/spec.md:58-63",
+    "openspec/changes/refactor-unified-runtime-route-catalog/specs/agent-runtime-core/spec.md:77-81",
+    "openspec/changes/refactor-unified-runtime-route-catalog/specs/agent-runtime-core/spec.md:177-187",
+    "openspec/changes/refactor-unified-runtime-route-catalog/specs/agent-runtime-core/spec.md:227-243",
+    "openspec/changes/refactor-unified-runtime-route-catalog/design.md:211-221",
+    "openspec/changes/refactor-unified-runtime-route-catalog/design.md:377-393",
+    "openspec/changes/refactor-unified-runtime-route-catalog/design.md:421-441",
+    "src/main/lib/headless/adapter-selector.ts:209-343",
+    "src/main/lib/headless/adapters/codex-app-server.ts:49-75",
+    "src/main/lib/headless/agent-runtime.ts:17-42",
+    "src/main/lib/agent-runtime/permission-policy.ts:330-407"
+  ],
+  "provenance": {
+    "author": "independent red-test author (catalog-core domain)",
+    "approvedSpec": "a9b745949b02e2b7c1bbd883c224c14b324d3dbc",
+    "base": "19986552",
+    "method": "Baseline codes/messages/candidates recorded by running the base selectAgentRuntimeAdapter (adapter-selector.ts:292-374) on requests built by createAgentRuntimeRunRequest with the listed inputs, and the base createCodexAppServerHeadlessTaskRunner({createDesktopAdapter: recording}) leaf for the three invalid inputs; internal reasons mapped per design D4 :379-386 (policy_refused / capability_refused). The out-of-union executionProfile 'review' is the cast the S05 GIVEN requires.",
+    "declarationsRef": "catalog.json#S01.declarations"
+  },
+  "S05": {
+    "variants": [
+      {
+        "variantId": "codex-policy-grant",
+        "query": {
+          "runtimeId": "codex",
+          "entry": "api",
+          "mode": "agent",
+          "executionProfile": "policy-grant",
+          "source": "api",
+          "policyGrant": {
+            "scopes": ["workspace:file-write"]
+          }
+        },
+        "expect": {
+          "ok": true,
+          "routeId": "codex.api.policy-grant",
+          "executionSurface": "headless-app-server",
+          "adapterSource": "codex-app-server",
+          "adapterLabel": "Codex app-server",
+          "enforcementEvidence": "admission-audit",
+          "policyGrantScopeBinding": "admission-audit-only",
+          "fallbackReason": null,
+          "message": "Selected Codex app-server for api policy-grant execution; declared policy grant scopes are admission/audit metadata and are not bound to app-server permission enforcement in this change."
+        }
+      },
+      {
+        "variantId": "claude-policy-grant",
+        "query": {
+          "runtimeId": "claude-code",
+          "entry": "api",
+          "mode": "agent",
+          "executionProfile": "policy-grant",
+          "source": "api",
+          "policyGrant": {
+            "scopes": ["workspace:file-write"]
+          }
+        },
+        "expect": {
+          "ok": false,
+          "reason": "policy_refused",
+          "candidateAdapterSource": "claude-code-batch",
+          "candidateAdapterLabel": "Claude Code batch",
+          "diagnosticReason": "policy_grant_adapter_unavailable",
+          "errorCode": "policy_grant_adapter_unavailable",
+          "errorMessage": "Claude Code batch exposes only sandbox-level enforcement for this headless adapter; policy-grant execution requires an app-server admission gate or true pre-execution scope binding before provider work.",
+          "exitCode": 1
+        }
+      },
+      {
+        "variantId": "fail-closed",
+        "query": {
+          "runtimeId": "codex",
+          "entry": "api",
+          "mode": "agent",
+          "executionProfile": "policy-grant",
+          "source": "api",
+          "policyGrant": {
+            "scopes": []
+          }
+        },
+        "expect": {
+          "ok": false,
+          "reason": "policy_refused",
+          "candidateAdapterSource": "codex-app-server",
+          "candidateAdapterLabel": "Codex app-server",
+          "diagnosticReason": "missing_policy_grant",
+          "errorCode": "permission_policy_fail_closed",
+          "errorMessage": "api agent job refused before provider work: policy-grant execution requires bounded scopes that can be decided without a visible user.",
+          "exitCode": 1
+        }
+      },
+      {
+        "variantId": "interactive",
+        "query": {
+          "runtimeId": "codex",
+          "entry": "headless",
+          "mode": "agent",
+          "executionProfile": "interactive",
+          "source": "daemon",
+          "hasVisibleUserInteractionChannel": true
+        },
+        "expect": {
+          "ok": false,
+          "reason": "policy_refused",
+          "candidateAdapterSource": "codex-batch",
+          "candidateAdapterLabel": "Codex headless/batch",
+          "diagnosticReason": "interactive_channel_required",
+          "errorCode": "interactive_channel_required",
+          "errorMessage": "Interactive runtime execution requires a visible user interaction channel.",
+          "exitCode": 1
+        }
+      },
+      {
+        "variantId": "invalid-grant",
+        "query": {
+          "runtimeId": "codex",
+          "entry": "api",
+          "mode": "agent",
+          "executionProfile": "policy-grant",
+          "source": "api",
+          "policyGrant": {
+            "scopes": ["workspace:file-write"],
+            "canDecideAutomatically": false
+          }
+        },
+        "expect": {
+          "ok": false,
+          "reason": "policy_refused",
+          "candidateAdapterSource": "codex-app-server",
+          "candidateAdapterLabel": "Codex app-server",
+          "diagnosticReason": "missing_policy_grant",
+          "errorCode": "permission_policy_fail_closed",
+          "errorMessage": "api agent job refused before provider work: policy-grant execution requires bounded scopes that can be decided without a visible user.",
+          "exitCode": 1
+        }
+      },
+      {
+        "variantId": "hard-tool-guard",
+        "query": {
+          "runtimeId": "codex",
+          "entry": "api",
+          "mode": "agent",
+          "executionProfile": "policy-grant",
+          "source": "api",
+          "hasScopeContract": true,
+          "policyGrant": {
+            "scopes": ["workspace:file-write"]
+          }
+        },
+        "expect": {
+          "ok": false,
+          "reason": "policy_refused",
+          "candidateAdapterSource": "codex-app-server",
+          "candidateAdapterLabel": "Codex app-server",
+          "diagnosticReason": "guarded_scope_requires_pre_execution_hook",
+          "errorCode": "guarded_scope_requires_pre_execution_hook",
+          "errorMessage": "Codex app-server exposes only admission-audit enforcement for this headless adapter; guarded scope contracts require a pre-execution hook or must fail closed before provider work.",
+          "exitCode": 1
+        }
+      },
+      {
+        "variantId": "unsupported-profile",
+        "query": {
+          "runtimeId": "codex",
+          "entry": "api",
+          "mode": "agent",
+          "executionProfile": "review",
+          "source": "api",
+          "requestedCapabilities": ["rollback"]
+        },
+        "expect": {
+          "ok": false,
+          "reason": "policy_refused",
+          "candidateAdapterSource": "codex-batch",
+          "candidateAdapterLabel": "Codex headless/batch",
+          "diagnosticReason": "unsupported_execution_profile",
+          "errorCode": "unsupported_execution_profile",
+          "errorMessage": "review runtime execution is not available for current headless adapters.",
+          "exitCode": 1
+        }
+      },
+      {
+        "variantId": "unsupported-capability",
+        "query": {
+          "runtimeId": "codex",
+          "entry": "api",
+          "mode": "agent",
+          "executionProfile": "batch",
+          "source": "api",
+          "requestedCapabilities": ["rollback"]
+        },
+        "expect": {
+          "ok": false,
+          "reason": "capability_refused",
+          "candidateAdapterSource": "codex-batch",
+          "candidateAdapterLabel": "Codex headless/batch",
+          "diagnosticReason": "unsupported_capability",
+          "errorCode": "unsupported_capability",
+          "errorMessage": "Codex Rollback and fork is unsupported. Codex session IDs are persisted, but rollback and fork are not wired through durable shared session references.",
+          "exitCode": 1
+        }
+      },
+      {
+        "variantId": "order-fail-closed-over-guard-and-interactive",
+        "query": {
+          "runtimeId": "codex",
+          "entry": "headless",
+          "mode": "plan",
+          "executionProfile": "interactive",
+          "source": "daemon",
+          "hasScopeContract": true
+        },
+        "expect": {
+          "ok": false,
+          "reason": "policy_refused",
+          "candidateAdapterSource": "codex-batch",
+          "candidateAdapterLabel": "Codex headless/batch",
+          "diagnosticReason": "no_interaction_channel",
+          "errorCode": "permission_policy_fail_closed",
+          "errorMessage": "daemon plan job refused before provider work: interactive approval, AskUserQuestion, MCP elicitation, and unknown side-effect approval require a visible user channel or bounded policy grant.",
+          "exitCode": 1
+        }
+      },
+      {
+        "variantId": "order-grant-over-pre-execution",
+        "query": {
+          "runtimeId": "claude-code",
+          "entry": "api",
+          "mode": "agent",
+          "executionProfile": "policy-grant",
+          "source": "api",
+          "hasScopeContract": true,
+          "policyGrant": {
+            "scopes": ["workspace:file-write"]
+          }
+        },
+        "expect": {
+          "ok": false,
+          "reason": "policy_refused",
+          "candidateAdapterSource": "claude-code-batch",
+          "candidateAdapterLabel": "Claude Code batch",
+          "diagnosticReason": "policy_grant_adapter_unavailable",
+          "errorCode": "policy_grant_adapter_unavailable",
+          "errorMessage": "Claude Code batch exposes only sandbox-level enforcement for this headless adapter; policy-grant execution requires an app-server admission gate or true pre-execution scope binding before provider work.",
+          "exitCode": 1
+        }
+      },
+      {
+        "variantId": "order-pre-execution-over-interactive",
+        "query": {
+          "runtimeId": "claude-code",
+          "entry": "headless",
+          "mode": "agent",
+          "executionProfile": "interactive",
+          "source": "daemon",
+          "hasVisibleUserInteractionChannel": true,
+          "hasScopeContract": true
+        },
+        "expect": {
+          "ok": false,
+          "reason": "policy_refused",
+          "candidateAdapterSource": "claude-code-batch",
+          "candidateAdapterLabel": "Claude Code batch",
+          "diagnosticReason": "guarded_scope_requires_pre_execution_hook",
+          "errorCode": "guarded_scope_requires_pre_execution_hook",
+          "errorMessage": "Claude Code batch exposes only sandbox-level enforcement for this headless adapter; guarded scope contracts require a pre-execution hook or must fail closed before provider work.",
+          "exitCode": 1
+        }
+      },
+      {
+        "variantId": "order-interactive-over-capability",
+        "query": {
+          "runtimeId": "codex",
+          "entry": "headless",
+          "mode": "agent",
+          "executionProfile": "interactive",
+          "source": "daemon",
+          "hasVisibleUserInteractionChannel": true,
+          "requestedCapabilities": ["rollback"]
+        },
+        "expect": {
+          "ok": false,
+          "reason": "policy_refused",
+          "candidateAdapterSource": "codex-batch",
+          "candidateAdapterLabel": "Codex headless/batch",
+          "diagnosticReason": "interactive_channel_required",
+          "errorCode": "interactive_channel_required",
+          "errorMessage": "Interactive runtime execution requires a visible user interaction channel.",
+          "exitCode": 1
+        }
+      },
+      {
+        "variantId": "order-profile-over-capability",
+        "query": {
+          "runtimeId": "codex",
+          "entry": "api",
+          "mode": "agent",
+          "executionProfile": "review",
+          "source": "api",
+          "requestedCapabilities": ["rollback"]
+        },
+        "expect": {
+          "ok": false,
+          "reason": "policy_refused",
+          "candidateAdapterSource": "codex-batch",
+          "candidateAdapterLabel": "Codex headless/batch",
+          "diagnosticReason": "unsupported_execution_profile",
+          "errorCode": "unsupported_execution_profile",
+          "errorMessage": "review runtime execution is not available for current headless adapters.",
+          "exitCode": 1
+        }
+      }
+    ],
+    "leafInvalid": [
+      {
+        "variantId": "wrong-runtime",
+        "request": {
+          "jobId": "job-s05-leaf",
+          "cwd": "{{PROJECT_ROOT}}",
+          "prompt": "fixture prompt",
+          "runtime": "claude-code",
+          "source": "api",
+          "mode": "agent",
+          "executionProfile": "policy-grant",
+          "policyGrant": {
+            "scopes": ["workspace:file-write"]
+          }
+        },
+        "expect": {
+          "status": "failed",
+          "exitCode": 1,
+          "errorCode": "unsupported_runtime",
+          "errorMessage": "Codex app-server headless adapter can only run Codex jobs.",
+          "result": {
+            "error": "Codex app-server headless adapter can only run Codex jobs."
+          }
+        }
+      },
+      {
+        "variantId": "wrong-profile",
+        "request": {
+          "jobId": "job-s05-leaf",
+          "cwd": "{{PROJECT_ROOT}}",
+          "prompt": "fixture prompt",
+          "runtime": "codex",
+          "source": "api",
+          "mode": "agent"
+        },
+        "expect": {
+          "status": "failed",
+          "exitCode": 1,
+          "errorCode": "unsupported_execution_profile",
+          "errorMessage": "Codex app-server headless adapter requires the policy-grant execution profile.",
+          "result": {
+            "error": "Codex app-server headless adapter requires the policy-grant execution profile."
+          }
+        }
+      },
+      {
+        "variantId": "empty-granted-scopes",
+        "request": {
+          "jobId": "job-s05-leaf",
+          "cwd": "{{PROJECT_ROOT}}",
+          "prompt": "fixture prompt",
+          "runtime": "codex",
+          "source": "api",
+          "mode": "agent",
+          "executionProfile": "policy-grant",
+          "policyGrant": {
+            "scopes": ["workspace:file-write"]
+          }
+        },
+        "clearGrantedScopes": true,
+        "expect": {
+          "status": "failed",
+          "exitCode": 1,
+          "errorCode": "permission_policy_fail_closed",
+          "errorMessage": "Codex app-server headless adapter requires a bounded non-desktop policy grant.",
+          "result": {
+            "error": "Codex app-server headless adapter requires a bounded non-desktop policy grant."
+          }
+        }
+      }
+    ],
+    "refusalOrder": [
+      "fail-closed",
+      "grant-enforcement",
+      "pre-execution",
+      "interactive",
+      "unsupported-profile",
+      "capabilities"
+    ]
+  },
+  "S08": {
+    "batchQueries": [
+      {
+        "queryId": "codex-api-batch",
+        "query": {
+          "runtimeId": "codex",
+          "entry": "api",
+          "mode": "agent",
+          "executionProfile": "batch",
+          "source": "api"
+        },
+        "adapterSource": "codex-batch",
+        "runtimeLabel": "Codex",
+        "factoryRef": "factory:codex-batch"
+      },
+      {
+        "queryId": "claude-daemon-plan",
+        "query": {
+          "runtimeId": "claude-code",
+          "entry": "headless",
+          "mode": "plan",
+          "executionProfile": "batch",
+          "source": "daemon"
+        },
+        "adapterSource": "claude-code-batch",
+        "runtimeLabel": "Claude Code",
+        "factoryRef": "factory:claude-code-batch"
+      }
+    ],
+    "interactiveQuery": {
+      "query": {
+        "runtimeId": "codex",
+        "entry": "headless",
+        "mode": "agent",
+        "executionProfile": "interactive",
+        "source": "daemon",
+        "hasVisibleUserInteractionChannel": true
+      },
+      "expect": {
+        "ok": false,
+        "reason": "policy_refused",
+        "candidateAdapterSource": "codex-batch",
+        "candidateAdapterLabel": "Codex headless/batch",
+        "diagnosticReason": "interactive_channel_required",
+        "errorCode": "interactive_channel_required",
+        "errorMessage": "Interactive runtime execution requires a visible user interaction channel.",
+        "exitCode": 1
+      }
+    },
+    "retiredOptionGuardCase": {
+      "fixtureKey": "S27",
+      "caseId": "S08-obsolete-preferred-adapter-source-option",
+      "files": [
+        {
+          "file": "src/main/lib/headless/agent-runtime.ts",
+          "source": "import { preferredAdapterSource } from \"./adapter-selector\"\n\nexport const runtimePreference = { preferredAdapterSource }\n"
+        }
+      ],
+      "expectedFindings": [],
+      "mismatchMustMention": [
+        "retired-route-selector",
+        "preferredAdapterSource"
+      ],
+      "ownerSection": "Runtime Route Catalog Single Owner"
+    },
+    "retiredModulePath": "src/main/lib/headless/adapter-selector.ts",
+    "forbiddenFallbackReason": "preferred_adapter_unavailable"
+  },
+  "S40": {
+    "grantQuery": {
+      "runtimeId": "codex",
+      "entry": "api",
+      "mode": "agent",
+      "executionProfile": "policy-grant",
+      "source": "api",
+      "policyGrant": {
+        "scopes": ["workspace:file-write"]
+      }
+    },
+    "grantExpect": {
+      "executionSurface": "headless-app-server",
+      "adapterSource": "codex-app-server",
+      "enforcementEvidence": "admission-audit",
+      "policyGrantScopeBinding": "admission-audit-only",
+      "messageMustContain": "declared policy grant scopes are admission/audit metadata"
+    },
+    "runtimeSelectedPayload": {
+      "status": "runtime_selected",
+      "runtime": "codex",
+      "label": "Codex",
+      "source": "api",
+      "adapterSource": "codex-app-server",
+      "executionProfile": "policy-grant",
+      "fallbackReason": null,
+      "policyGrantScopeBinding": "admission-audit-only"
+    },
+    "refusals": [
+      {
+        "variantId": "claude-policy-grant",
+        "request": {
+          "runtime": "claude-code",
+          "source": "api",
+          "mode": "agent",
+          "executionProfile": "policy-grant",
+          "policyGrant": {
+            "scopes": ["workspace:file-write"]
+          }
+        },
+        "payload": {
+          "status": "runtime_selection_refused",
+          "runtime": "claude-code",
+          "source": "api",
+          "adapterSource": "claude-code-batch",
+          "executionProfile": "policy-grant",
+          "reason": "policy_grant_adapter_unavailable",
+          "message": "Claude Code batch exposes only sandbox-level enforcement for this headless adapter; policy-grant execution requires an app-server admission gate or true pre-execution scope binding before provider work.",
+          "errorCode": "policy_grant_adapter_unavailable"
+        }
+      },
+      {
+        "variantId": "codex-guarded-scope",
+        "request": {
+          "runtime": "codex",
+          "source": "api",
+          "mode": "agent",
+          "executionProfile": "policy-grant",
+          "hasScopeContract": true,
+          "policyGrant": {
+            "scopes": ["workspace:file-write"]
+          }
+        },
+        "payload": {
+          "status": "runtime_selection_refused",
+          "runtime": "codex",
+          "source": "api",
+          "adapterSource": "codex-app-server",
+          "executionProfile": "policy-grant",
+          "reason": "guarded_scope_requires_pre_execution_hook",
+          "message": "Codex app-server exposes only admission-audit enforcement for this headless adapter; guarded scope contracts require a pre-execution hook or must fail closed before provider work.",
+          "errorCode": "guarded_scope_requires_pre_execution_hook"
+        }
+      }
+    ],
+    "grantRequest": {
+      "runtime": "codex",
+      "source": "api",
+      "mode": "agent",
+      "executionProfile": "policy-grant",
+      "policyGrant": {
+        "scopes": ["workspace:file-write"]
+      }
+    }
+  },
+  "S44": {
+    "request": {
+      "runtime": "codex",
+      "source": "api",
+      "mode": "agent",
+      "interactiveRequirements": [
+        "interactive-approval",
+        "ask-user-question",
+        "mcp-elicitation",
+        "unknown-side-effect-approval"
+      ]
+    },
+    "query": {
+      "runtimeId": "codex",
+      "entry": "api",
+      "mode": "agent",
+      "executionProfile": "batch",
+      "source": "api",
+      "interactiveRequirements": [
+        "interactive-approval",
+        "ask-user-question",
+        "mcp-elicitation",
+        "unknown-side-effect-approval"
+      ]
+    },
+    "expect": {
+      "ok": false,
+      "reason": "policy_refused",
+      "candidateAdapterSource": "codex-batch",
+      "candidateAdapterLabel": "Codex headless/batch",
+      "diagnosticReason": "no_interaction_channel",
+      "errorCode": "permission_policy_fail_closed",
+      "errorMessage": "api agent job refused before provider work: interactive approval, AskUserQuestion, MCP elicitation, and unknown side-effect approval require a visible user channel or bounded policy grant.",
+      "exitCode": 1
+    },
+    "payload": {
+      "status": "runtime_selection_refused",
+      "runtime": "codex",
+      "source": "api",
+      "adapterSource": "codex-batch",
+      "executionProfile": "batch",
+      "reason": "no_interaction_channel",
+      "message": "api agent job refused before provider work: interactive approval, AskUserQuestion, MCP elicitation, and unknown side-effect approval require a visible user channel or bounded policy grant.",
+      "errorCode": "permission_policy_fail_closed"
+    },
+    "promptSentinel": "nonsecret-sentinel-prompt-s44"
+  },
+  "S45": {
+    "batchRequest": {
+      "runtime": "codex",
+      "source": "api",
+      "mode": "agent"
+    },
+    "batchQuery": {
+      "runtimeId": "codex",
+      "entry": "api",
+      "mode": "agent",
+      "executionProfile": "batch",
+      "source": "api"
+    },
+    "runtimeSelectedKeys": [
+      "adapterSource",
+      "executionProfile",
+      "fallbackReason",
+      "label",
+      "runtime",
+      "source",
+      "status"
+    ],
+    "runtimeSelectionRefusedKeys": [
+      "adapterSource",
+      "errorCode",
+      "executionProfile",
+      "message",
+      "reason",
+      "runtime",
+      "source",
+      "status"
+    ],
+    "interactiveRequest": {
+      "runtime": "claude-code",
+      "source": "daemon",
+      "mode": "agent",
+      "executionProfile": "interactive",
+      "hasVisibleUserInteractionChannel": true
+    },
+    "interactivePayload": {
+      "status": "runtime_selection_refused",
+      "runtime": "claude-code",
+      "source": "daemon",
+      "adapterSource": "claude-code-batch",
+      "executionProfile": "interactive",
+      "reason": "interactive_channel_required",
+      "message": "Interactive runtime execution requires a visible user interaction channel.",
+      "errorCode": "interactive_channel_required"
+    },
+    "smuggledPreference": {
+      "preferredAdapterSource": "codex-app-server"
+    },
+    "batchEnforcementEvidence": "sandbox-level"
+  }
+}

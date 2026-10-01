@@ -1,0 +1,657 @@
+{
+  "fixtureVersion": 1,
+  "evidenceClass": "synthetic",
+  "sourceRefs": [
+    "openspec/changes/refactor-unified-runtime-route-catalog/specs/agent-runtime-core/spec.md:46-56",
+    "openspec/changes/refactor-unified-runtime-route-catalog/specs/agent-runtime-core/spec.md:96-100",
+    "openspec/changes/refactor-unified-runtime-route-catalog/specs/agent-runtime-core/spec.md:196-225",
+    "openspec/changes/refactor-unified-runtime-route-catalog/specs/architecture-ownership/spec.md:74-82",
+    "openspec/changes/refactor-unified-runtime-route-catalog/design.md:178-199",
+    "openspec/changes/refactor-unified-runtime-route-catalog/design.md:223-237",
+    "openspec/changes/refactor-unified-runtime-route-catalog/design.md:250-263",
+    "src/main/lib/claude/agent-sdk-desktop-run-runtime.ts:52-71",
+    "src/main/lib/claude/agent-sdk-runtime-lifecycle.ts:239-260",
+    "src/main/lib/codex/app-server-adapter-runner.ts:52-130",
+    "src/main/lib/trpc/routers/codex.ts:787-813",
+    "src/main/lib/chat-session-binding.ts:201-300",
+    "src/main/lib/codex/runtime-status.ts:43-200",
+    "src/main/lib/codex/desktop-adapter-selection.ts:11-20",
+    "src/main/lib/headless/agent-runtime.ts:12-45",
+    "src/main/lib/headless/process-runner.ts:128-420",
+    "src/main/lib/headless/adapters/codex.ts:103-140",
+    "src/main/lib/headless/adapters/claude-code.ts:178-207",
+    "src/shared/agent-runtime-capabilities.ts:207-213"
+  ],
+  "provenance": {
+    "author": "independent red-test author (catalog-core domain)",
+    "approvedSpec": "a9b745949b02e2b7c1bbd883c224c14b324d3dbc",
+    "base": "19986552",
+    "method": "Shared-runner event/result oracles recorded at 19986552 by running the real process runner (process-runner.ts:128) with a fake spawnProcess and the real Codex runner / Claude argv builder; runtime_selected payloads copied from the base selector diagnostic mapping (agent-runtime.ts:31-43). S49 committed-record oracle recorded at 19986552 through the real CLI run + host ledger with the Codex batch leaf module replaced by the same recording delegate body (leaf I/O stub, design D1 :197-199). Codex status oracle recorded from runtime-status.ts:43-53 and desktop-adapter-selection.ts:11-20.",
+    "placeholders": "{{PROJECT_ROOT}}, {{JOB_ID}}, {{WORKER_ID}}, {{WORKER_PID}} and {{CORR_n}} are rendered from the test's own temp profile / committed rows; no absolute checkout path is embedded.",
+    "declarationsRef": "catalog.json#S01.declarations"
+  },
+  "S03": {
+    "bindings": [
+      {
+        "subChatId": "sub-claude",
+        "runtime": "claude-code",
+        "modelSource": "claude-oauth",
+        "modelId": "claude-sonnet",
+        "providerProfileId": null,
+        "thinkingLevel": null
+      },
+      {
+        "subChatId": "sub-codex",
+        "runtime": "codex",
+        "modelSource": "chatgpt",
+        "modelId": "gpt-5.4",
+        "providerProfileId": null,
+        "thinkingLevel": "high"
+      }
+    ],
+    "cases": [
+      {
+        "caseId": "claude-plan",
+        "runtimeId": "claude-code",
+        "mode": "plan",
+        "subChatId": "sub-claude",
+        "admission": {
+          "modelSource": "claude-oauth",
+          "requestedModel": "claude-sonnet"
+        },
+        "factoryRef": "factory:claude-desktop-sdk"
+      },
+      {
+        "caseId": "claude-agent",
+        "runtimeId": "claude-code",
+        "mode": "agent",
+        "subChatId": "sub-claude",
+        "admission": {
+          "modelSource": "claude-oauth",
+          "requestedModel": "claude-sonnet"
+        },
+        "factoryRef": "factory:claude-desktop-sdk"
+      },
+      {
+        "caseId": "codex-plan",
+        "runtimeId": "codex",
+        "mode": "plan",
+        "subChatId": "sub-codex",
+        "admission": {
+          "providerProfileId": null,
+          "codexAuthMethod": "chatgpt",
+          "model": "gpt-5.4/high"
+        },
+        "factoryRef": "factory:codex-desktop-app-server"
+      },
+      {
+        "caseId": "codex-agent",
+        "runtimeId": "codex",
+        "mode": "agent",
+        "subChatId": "sub-codex",
+        "admission": {
+          "providerProfileId": null,
+          "codexAuthMethod": "chatgpt",
+          "model": "gpt-5.4/high"
+        },
+        "factoryRef": "factory:codex-desktop-app-server"
+      }
+    ],
+    "blocked": [
+      {
+        "caseId": "claude-procedure-on-codex-binding",
+        "runtimeId": "claude-code",
+        "subChatId": "sub-codex",
+        "admission": {
+          "modelSource": "claude-oauth",
+          "requestedModel": "claude-sonnet"
+        },
+        "message": "Claude run input no longer matches the durable chat session binding.",
+        "hint": "Refresh this chat and retry with its current runtime, source, and model selection."
+      },
+      {
+        "caseId": "codex-stale-model",
+        "runtimeId": "codex",
+        "subChatId": "sub-codex",
+        "admission": {
+          "providerProfileId": null,
+          "codexAuthMethod": "chatgpt",
+          "model": "gpt-5.4/low"
+        },
+        "message": "Codex run input no longer matches the durable chat session binding.",
+        "hint": "Refresh this chat and retry with its current runtime, source, and model selection."
+      }
+    ],
+    "delegateStop": {
+      "status": "failed",
+      "error": {
+        "message": "fixture delegate stop"
+      }
+    },
+    "claudeHostResult": {
+      "status": "failed",
+      "phase": "adapter",
+      "reachedNaturalFinish": false,
+      "error": {
+        "message": "fixture delegate stop"
+      }
+    },
+    "secretSentinels": {
+      "claudeOauthToken": "nonsecret-sentinel-oauth-s03",
+      "codexAppManagedApiKey": "nonsecret-sentinel-app-key-s03"
+    },
+    "sourceGuards": {
+      "codexRouter": {
+        "file": "src/main/lib/trpc/routers/codex.ts",
+        "admission": "admitCodexChatSessionBindingRun(",
+        "host": "runCodexDesktopChatRun(",
+        "hostImportSpecifier": "../../codex/desktop-chat-run",
+        "forbiddenValueImports": [
+          "runCodexAppServerDesktopAdapter",
+          "app-server-adapter-runner"
+        ]
+      },
+      "claudeRouter": {
+        "file": "src/main/lib/trpc/routers/claude.ts",
+        "admission": "admitClaudeChatSessionBindingRun(",
+        "host": "runClaudeAgentSdkDesktopRuntimeWithMcpReadiness(",
+        "forbiddenValueImports": ["agent-sdk-adapter-runner"]
+      },
+      "claudeLifecycle": {
+        "file": "src/main/lib/claude/agent-sdk-runtime-lifecycle.ts",
+        "forbiddenValueImports": [
+          "runClaudeAgentSdkDesktopAdapterWithPreparedRuntimeQuery"
+        ]
+      }
+    },
+    "codexRuntimeStatus": {
+      "adapters": {
+        "bundledCodexVersion": "0.139.0",
+        "current": {
+          "runtimeId": "codex",
+          "source": "codex-app-server",
+          "label": "Codex app-server adapter",
+          "temporaryFallback": false,
+          "fallbackReason": null,
+          "defaultDisableCondition": null,
+          "removalCondition": null
+        },
+        "selection": {
+          "source": "codex-app-server",
+          "useAppServer": true,
+          "reason": "Codex app-server is the only desktop chat adapter."
+        }
+      },
+      "adapterSourceHint": "codex-app-server: Codex app-server is the only desktop chat adapter. Bundled Codex version: 0.139.0."
+    }
+  },
+  "S04": {
+    "matrix": [
+      {
+        "runtimeId": "claude-code",
+        "entry": "headless",
+        "source": "cli"
+      },
+      {
+        "runtimeId": "claude-code",
+        "entry": "headless",
+        "source": "daemon"
+      },
+      {
+        "runtimeId": "claude-code",
+        "entry": "headless",
+        "source": "schedule"
+      },
+      {
+        "runtimeId": "claude-code",
+        "entry": "api",
+        "source": "api"
+      },
+      {
+        "runtimeId": "claude-code",
+        "entry": "protocol",
+        "source": "protocol"
+      },
+      {
+        "runtimeId": "codex",
+        "entry": "headless",
+        "source": "cli"
+      },
+      {
+        "runtimeId": "codex",
+        "entry": "headless",
+        "source": "daemon"
+      },
+      {
+        "runtimeId": "codex",
+        "entry": "headless",
+        "source": "schedule"
+      },
+      {
+        "runtimeId": "codex",
+        "entry": "api",
+        "source": "api"
+      },
+      {
+        "runtimeId": "codex",
+        "entry": "protocol",
+        "source": "protocol"
+      }
+    ],
+    "expected": {
+      "claude-code": {
+        "adapterSource": "claude-code-batch",
+        "factoryRef": "factory:claude-code-batch"
+      },
+      "codex": {
+        "adapterSource": "codex-batch",
+        "factoryRef": "factory:codex-batch"
+      }
+    },
+    "executionSurface": "headless-exec",
+    "modes": ["plan", "agent"]
+  },
+  "S31": {
+    "request": {
+      "runtimeId": "codex",
+      "mode": "agent"
+    },
+    "failingResult": {
+      "status": "failed",
+      "error": {
+        "message": "fixture app-server failure"
+      }
+    },
+    "selectedFactoryRef": "factory:codex-desktop-app-server",
+    "execFactoryRef": "factory:codex-batch",
+    "otherFactoryRefs": [
+      "factory:codex-headless-app-server",
+      "factory:claude-desktop-sdk",
+      "factory:claude-code-batch"
+    ]
+  },
+  "S41": {
+    "rawRuntimeAlias": "claude",
+    "normalizedRuntimeId": "claude-code",
+    "request": {
+      "jobId": "job-s41",
+      "cwd": "{{PROJECT_ROOT}}",
+      "mode": "plan",
+      "source": "cli",
+      "prompt": "Shared runner fixture."
+    },
+    "processScript": {
+      "stdout": ["claude fixture answer\n"],
+      "exitCode": 0
+    },
+    "factoryRef": "factory:claude-code-batch",
+    "expectedSpawn": [
+      {
+        "executable": "/fixture/bin/claude",
+        "args": [
+          "-p",
+          "--output-format",
+          "text",
+          "--no-session-persistence",
+          "--permission-mode",
+          "plan",
+          "--",
+          "Shared runner fixture."
+        ],
+        "cwd": "{{PROJECT_ROOT}}"
+      }
+    ],
+    "expectedEvents": [
+      {
+        "type": "status",
+        "payload": {
+          "status": "runtime_selected",
+          "runtime": "claude-code",
+          "label": "Claude Code",
+          "source": "cli",
+          "adapterSource": "claude-code-batch",
+          "executionProfile": "batch",
+          "fallbackReason": null
+        }
+      },
+      {
+        "type": "command_started",
+        "payload": {
+          "label": "Claude Code",
+          "executable": "claude",
+          "args": [
+            "-p",
+            "--output-format",
+            "text",
+            "--no-session-persistence",
+            "--permission-mode",
+            "plan",
+            "--",
+            "Shared runner fixture."
+          ],
+          "cwd": "{{PROJECT_ROOT}}"
+        }
+      },
+      {
+        "type": "assistant_delta",
+        "payload": {
+          "text": "claude fixture answer\n"
+        }
+      },
+      {
+        "type": "command_finished",
+        "payload": {
+          "label": "Claude Code",
+          "exitCode": 0,
+          "status": "succeeded"
+        }
+      }
+    ],
+    "expectedResult": {
+      "status": "succeeded",
+      "exitCode": 0,
+      "errorCode": null,
+      "errorMessage": null,
+      "result": {
+        "finalMessage": "claude fixture answer",
+        "stdout": "claude fixture answer",
+        "stderr": "",
+        "signal": null
+      }
+    }
+  },
+  "S42": {
+    "request": {
+      "jobId": "job-s42",
+      "runtime": "codex",
+      "cwd": "{{PROJECT_ROOT}}",
+      "mode": "agent",
+      "source": "api",
+      "prompt": "Shared runner fixture."
+    },
+    "processScript": {
+      "stdout": ["codex fixture answer\n"],
+      "exitCode": 0
+    },
+    "factoryRef": "factory:codex-batch",
+    "expectedSpawn": [
+      {
+        "executable": "/fixture/bin/codex",
+        "args": [
+          "exec",
+          "--cd",
+          "{{PROJECT_ROOT}}",
+          "--color",
+          "never",
+          "--sandbox",
+          "workspace-write",
+          "--skip-git-repo-check",
+          "--",
+          "Shared runner fixture."
+        ],
+        "cwd": "{{PROJECT_ROOT}}"
+      }
+    ],
+    "expectedEvents": [
+      {
+        "type": "status",
+        "payload": {
+          "status": "runtime_selected",
+          "runtime": "codex",
+          "label": "Codex",
+          "source": "api",
+          "adapterSource": "codex-batch",
+          "executionProfile": "batch",
+          "fallbackReason": null
+        }
+      },
+      {
+        "type": "command_started",
+        "payload": {
+          "label": "Codex headless/batch",
+          "executable": "codex",
+          "args": [
+            "exec",
+            "--cd",
+            "{{PROJECT_ROOT}}",
+            "--color",
+            "never",
+            "--sandbox",
+            "workspace-write",
+            "--skip-git-repo-check",
+            "--",
+            "Shared runner fixture."
+          ],
+          "cwd": "{{PROJECT_ROOT}}"
+        }
+      },
+      {
+        "type": "assistant_delta",
+        "payload": {
+          "text": "codex fixture answer\n"
+        }
+      },
+      {
+        "type": "command_finished",
+        "payload": {
+          "label": "Codex headless/batch",
+          "exitCode": 0,
+          "status": "succeeded"
+        }
+      }
+    ],
+    "expectedResult": {
+      "status": "succeeded",
+      "exitCode": 0,
+      "errorCode": null,
+      "errorMessage": null,
+      "result": {
+        "finalMessage": "codex fixture answer",
+        "stdout": "codex fixture answer",
+        "stderr": "",
+        "signal": null
+      }
+    }
+  },
+  "S43": {
+    "cases": [
+      {
+        "caseId": "codex-headless-default",
+        "request": {
+          "jobId": "job-s43-codex-cli",
+          "runtime": "codex",
+          "cwd": "{{PROJECT_ROOT}}",
+          "mode": "agent",
+          "source": "cli",
+          "prompt": "Shared runner fixture."
+        },
+        "entry": "headless",
+        "adapterSource": "codex-batch",
+        "factoryRef": "factory:codex-batch",
+        "label": "Codex"
+      },
+      {
+        "caseId": "codex-api-default",
+        "request": {
+          "jobId": "job-s43-codex-api",
+          "runtime": "codex",
+          "cwd": "{{PROJECT_ROOT}}",
+          "mode": "agent",
+          "source": "api",
+          "prompt": "Shared runner fixture."
+        },
+        "entry": "api",
+        "adapterSource": "codex-batch",
+        "factoryRef": "factory:codex-batch",
+        "label": "Codex"
+      },
+      {
+        "caseId": "claude-headless-default",
+        "request": {
+          "jobId": "job-s43-claude-daemon",
+          "runtime": "claude-code",
+          "cwd": "{{PROJECT_ROOT}}",
+          "mode": "agent",
+          "source": "daemon",
+          "prompt": "Shared runner fixture."
+        },
+        "entry": "headless",
+        "adapterSource": "claude-code-batch",
+        "factoryRef": "factory:claude-code-batch",
+        "label": "Claude Code"
+      },
+      {
+        "caseId": "claude-api-default",
+        "request": {
+          "jobId": "job-s43-claude-api",
+          "runtime": "claude-code",
+          "cwd": "{{PROJECT_ROOT}}",
+          "mode": "agent",
+          "source": "api",
+          "prompt": "Shared runner fixture."
+        },
+        "entry": "api",
+        "adapterSource": "claude-code-batch",
+        "factoryRef": "factory:claude-code-batch",
+        "label": "Claude Code"
+      }
+    ],
+    "providerBinding": {
+      "model": "provider-default-model",
+      "modelSource": "provider-profile:profile-default",
+      "providerProfileId": "profile-default",
+      "providerProfileName": "profile-default-name",
+      "gatewayEndpoint": "http://127.0.0.1:47000/gateway/responses",
+      "gatewayToken": "gateway-sentinel-token-s43",
+      "authMode": "provider-profile",
+      "diagnostics": []
+    },
+    "secretSentinels": ["gateway-sentinel-token-s43"],
+    "richFactoryRefs": [
+      "factory:codex-headless-app-server",
+      "factory:codex-desktop-app-server",
+      "factory:claude-desktop-sdk"
+    ],
+    "processScript": {
+      "stdout": ["default batch answer\n"],
+      "exitCode": 0
+    }
+  },
+  "S49": {
+    "secret": "nonsecret-sentinel-run-secret-s49",
+    "delegateEvents": [
+      {
+        "type": "assistant_delta",
+        "payload": {
+          "text": "fixture output carrying nonsecret-sentinel-run-secret-s49"
+        }
+      },
+      {
+        "type": "command_output",
+        "payload": {
+          "stream": "stderr",
+          "text": "diagnostic nonsecret-sentinel-run-secret-s49"
+        }
+      }
+    ],
+    "delegateResult": {
+      "status": "succeeded",
+      "exitCode": 0,
+      "result": {
+        "finalMessage": "fixture final nonsecret-sentinel-run-secret-s49"
+      }
+    },
+    "factoryRef": "factory:codex-batch",
+    "expectedCommitted": [
+      {
+        "sequence": 1,
+        "type": "job_created",
+        "payload": {
+          "kind": "agent",
+          "source": "cli",
+          "runtime": "codex",
+          "mode": "agent",
+          "cwd": "{{PROJECT_ROOT}}"
+        }
+      },
+      {
+        "sequence": 2,
+        "type": "job_started",
+        "payload": {
+          "workerId": "{{WORKER_ID}}",
+          "workerPid": "{{WORKER_PID}}"
+        }
+      },
+      {
+        "sequence": 3,
+        "type": "status",
+        "payload": {
+          "status": "runtime_selected",
+          "runtime": "codex",
+          "label": "Codex",
+          "source": "cli",
+          "adapterSource": "codex-batch",
+          "executionProfile": "batch",
+          "fallbackReason": null,
+          "subtype": "system_lifecycle"
+        }
+      },
+      {
+        "sequence": 4,
+        "type": "assistant_delta",
+        "payload": {
+          "text": "fixture output carrying <mask>",
+          "item": {
+            "correlationKey": "{{CORR_1}}",
+            "channel": "assistant",
+            "partIndex": 0
+          }
+        }
+      },
+      {
+        "sequence": 5,
+        "type": "command_output",
+        "payload": {
+          "stream": "stderr",
+          "text": "diagnostic <mask>"
+        }
+      },
+      {
+        "sequence": 6,
+        "type": "completed",
+        "payload": {
+          "status": "succeeded",
+          "evidenceKeys": [
+            "policy:no-recorded-denial",
+            "record:4",
+            "runner-result:finalMessage",
+            "postrun:security-cleanup-ok"
+          ],
+          "exitCode": 0,
+          "errorCode": null,
+          "errorMessage": null,
+          "result": {
+            "finalMessage": "fixture final <mask>",
+            "resolvedProvider": {
+              "source": "native",
+              "profileId": null,
+              "model": null
+            }
+          }
+        }
+      }
+    ],
+    "publicEventTypes": [
+      "job_created",
+      "job_started",
+      "status",
+      "assistant_delta",
+      "command_output",
+      "completed"
+    ],
+    "desktopDelegateResult": {
+      "status": "succeeded",
+      "sessionId": "fixture-thread-s49"
+    }
+  }
+}

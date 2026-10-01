@@ -1,0 +1,451 @@
+{
+  "fixtureVersion": 1,
+  "evidenceClass": "synthetic",
+  "sourceRefs": [
+    "openspec/changes/refactor-unified-runtime-route-catalog/specs/agent-runtime-core/spec.md:71-75",
+    "openspec/changes/refactor-unified-runtime-route-catalog/specs/desktop-agent-jobs/spec.md:3-48",
+    "openspec/changes/refactor-unified-runtime-route-catalog/design.md:160-168",
+    "openspec/changes/refactor-unified-runtime-route-catalog/design.md:257",
+    "openspec/changes/refactor-unified-runtime-route-catalog/design.md:276-306",
+    "openspec/changes/refactor-unified-runtime-route-catalog/design.md:420-441",
+    "openspec/changes/refactor-unified-runtime-route-catalog/tasks.md:50",
+    "openspec/changes/refactor-unified-runtime-route-catalog/tasks.md:63",
+    "openspec/changes/refactor-unified-runtime-route-catalog/tasks.md:82",
+    "openspec/changes/refactor-unified-runtime-route-catalog/tasks.md:102",
+    "src/main/lib/chat-session-binding.ts:201-209",
+    "src/main/lib/chat-session-binding.ts:272-280",
+    "src/main/lib/trpc/routers/claude.ts:84-113",
+    "src/main/lib/claude/agent-sdk-runtime-errors.ts:52-96",
+    "src/main/lib/claude/chat-input-schema.ts:30-49",
+    "src/main/lib/codex/chat-input-schema.ts:31-48",
+    "src/main/lib/trpc/routers/chats-sub-chats.ts:79-142",
+    "src/main/lib/trpc/routers/chats-crud.ts:96",
+    "src/renderer/features/agents/main/active-chat.tsx:6006-6090",
+    "src/renderer/features/agents/main/active-chat.tsx:6290-6375",
+    "src/renderer/features/agents/lib/ipc-chat-transport.ts:186-216",
+    "src/renderer/features/agents/lib/codex-app-server-chat-transport.ts:57-129",
+    "src/renderer/features/agents/lib/runtime-event-state.ts:149-219",
+    "tests/fixtures/runtime-route-catalog/catalog.json (S01 shared declaration table, catalog-core author)"
+  ],
+  "provenance": {
+    "author": "independent red-test author (surfaces domain), no implementation context",
+    "approvedSpecSha": "a9b74594",
+    "productBaseSha": "19986552",
+    "createdAt": "2026-10-02",
+    "notes": "S07 strings are copied from chat-session-binding.ts rejectStaleRunPayload and the Claude preflight-blocker prefix; guard case sources are synthetic post-change shapes of the two active-chat construction sites, the renderer helper and a main read-model composition (inline, repo-relative paths, no checkout paths). Mutation cases declare no expected findings on purpose: the guard must report them as unexpected renderer-route-projection-bypass findings, so the finding symbol is not frozen by this suite."
+  },
+  "S07": {
+    "durableSubChat": {
+      "chatId": "s07-chat",
+      "subChatId": "s07-codex-sub",
+      "runtime": "codex",
+      "modelId": "gpt-5.5",
+      "modelSource": "chatgpt",
+      "thinkingLevel": "high"
+    },
+    "staleClaudeChatInput": {
+      "chatId": "s07-chat",
+      "subChatId": "s07-codex-sub",
+      "runId": "s07-stale-claude-run",
+      "prompt": "stale renderer transport invokes claude.chat",
+      "mode": "agent",
+      "model": "claude-sonnet-4-20250514",
+      "modelSource": "claude-oauth"
+    },
+    "expectedChunks": [
+      {
+        "type": "error",
+        "errorText": "Desktop run preflight blocked: Claude run input no longer matches the durable chat session binding."
+      },
+      {
+        "type": "finish"
+      }
+    ],
+    "expectedAdmission": {
+      "ok": false,
+      "message": "Claude run input no longer matches the durable chat session binding.",
+      "hint": "Refresh this chat and retry with its current runtime, source, and model selection."
+    },
+    "descriptorKeys": ["routeId", "transportId"],
+    "descriptorValues": {
+      "routeId": "codex.desktop.app-server",
+      "transportId": "codex-chat-ipc"
+    },
+    "codexChatInput": {
+      "chatId": "s07-chat",
+      "subChatId": "s07-codex-sub",
+      "runId": "s07-codex-run",
+      "prompt": "descriptor must not ride the codex.chat request",
+      "mode": "agent",
+      "model": "gpt-5.5/high",
+      "codexAuthMethod": "chatgpt"
+    },
+    "transportSources": [
+      "src/renderer/features/agents/lib/ipc-chat-transport.ts",
+      "src/renderer/features/agents/lib/codex-app-server-chat-transport.ts"
+    ]
+  },
+  "S18": {
+    "config": {
+      "chatId": "s18-chat",
+      "subChatId": "s18-sub",
+      "projectPath": "{{PROJECT_PATH}}",
+      "mode": "agent"
+    },
+    "bindings": {
+      "claude-code": {
+        "id": "s18-binding-claude",
+        "subChatId": "s18-sub",
+        "runtime": "claude-code",
+        "providerProfileId": null,
+        "modelId": "claude-sonnet-4-20250514",
+        "modelSource": "claude-oauth",
+        "thinkingLevel": null
+      },
+      "codex": {
+        "id": "s18-binding-codex",
+        "subChatId": "s18-sub",
+        "runtime": "codex",
+        "providerProfileId": null,
+        "modelId": "gpt-5.5",
+        "modelSource": "chatgpt",
+        "thinkingLevel": "high"
+      }
+    },
+    "knownTransports": [
+      {
+        "transportId": "claude-chat-ipc",
+        "runtime": "claude-code",
+        "constructor": "IPCChatTransport"
+      },
+      {
+        "transportId": "codex-chat-ipc",
+        "runtime": "codex",
+        "constructor": "CodexAppServerChatTransport"
+      }
+    ],
+    "baselineConfigKeys": [
+      "chatId",
+      "subChatId",
+      "binding",
+      "projectPath",
+      "mode"
+    ],
+    "failureInputs": [
+      {
+        "variant": "descriptor-not-loaded",
+        "input": {
+          "state": "not-loaded"
+        },
+        "result": {
+          "ok": false,
+          "failure": "route_descriptor_unavailable"
+        }
+      },
+      {
+        "variant": "absent-field",
+        "input": {
+          "state": "not-loaded"
+        },
+        "result": {
+          "ok": false,
+          "failure": "route_descriptor_unavailable"
+        }
+      },
+      {
+        "variant": "read-error",
+        "input": {
+          "state": "error"
+        },
+        "result": {
+          "ok": false,
+          "failure": "route_descriptor_error"
+        }
+      },
+      {
+        "variant": "unknown-transport",
+        "input": {
+          "state": "loaded",
+          "transportId": "fixture-unknown-transport"
+        },
+        "result": {
+          "ok": false,
+          "failure": "unknown_transport"
+        }
+      }
+    ],
+    "guard": {
+      "rule": "renderer-route-projection-bypass",
+      "clean": {
+        "caseId": "s18-clean-both-sites",
+        "files": [
+          {
+            "file": "src/renderer/features/agents/main/active-chat.tsx",
+            "source": "import { Chat } from \"@ai-sdk/react\"\nimport { trpcClient } from \"../../../lib/trpc\"\nimport {\n  createRuntimeRouteTransport,\n  type RuntimeRouteTransportInput,\n} from \"../lib/runtime-route-transport\"\n\ntype BindingRead = {\n  status: \"pending\" | \"error\" | \"success\"\n  binding?: { transportId?: string } | null\n}\n\nfunction toRouteTransportInput(read: BindingRead): RuntimeRouteTransportInput {\n  if (read.status === \"error\") return { state: \"error\" }\n  const transportId = read.binding?.transportId\n  if (read.status !== \"success\" || !transportId) return { state: \"not-loaded\" }\n  return { state: \"loaded\", transportId }\n}\n\nexport function useRuntimeRouteChats(ctx: ChatSiteContext) {\n  const getOrCreateChat = (subChatId: string): Chat<unknown> | null => {\n    const existing = ctx.agentChatStore.get(subChatId)\n    if (existing) return existing\n    const subChat = ctx.subChats.find((candidate) => candidate.id === subChatId)\n    const binding = subChat?.binding\n    if (!binding) return null\n    const route = createRuntimeRouteTransport(\n      toRouteTransportInput({ status: ctx.chatQuery.status, binding }),\n      { chatId: ctx.chatId, subChatId, binding, projectPath: ctx.projectPath, mode: ctx.mode },\n    )\n    if (!route.ok) {\n      ctx.setRouteFailure(subChatId, route.failure)\n      return null\n    }\n    const newChat = new Chat({ id: subChatId, messages: subChat.messages, transport: route.transport })\n    ctx.agentChatStore.set(subChatId, newChat)\n    return newChat\n  }\n\n  const createNewSubChat = async (): Promise<void> => {\n    let created: { id: string; binding: { transportId?: string } }\n    try {\n      created = await trpcClient.chats.createSubChat.mutate({\n        chatId: ctx.chatId,\n        mode: ctx.mode,\n        binding: ctx.newBinding,\n      })\n    } catch {\n      const failed = createRuntimeRouteTransport(\n        toRouteTransportInput({ status: \"error\" }),\n        { chatId: ctx.chatId, subChatId: \"\", binding: ctx.newBinding, projectPath: ctx.projectPath, mode: ctx.mode },\n      )\n      if (!failed.ok) ctx.setRouteFailure(ctx.chatId, failed.failure)\n      return\n    }\n    const route = createRuntimeRouteTransport(\n      toRouteTransportInput({ status: \"success\", binding: created.binding }),\n      { chatId: ctx.chatId, subChatId: created.id, binding: created.binding, projectPath: ctx.projectPath, mode: ctx.mode },\n    )\n    if (!route.ok) {\n      ctx.setRouteFailure(created.id, route.failure)\n      return\n    }\n    const newChat = new Chat({ id: created.id, messages: [], transport: route.transport })\n    ctx.agentChatStore.set(created.id, newChat)\n  }\n\n  return { getOrCreateChat, createNewSubChat }\n}\n"
+          }
+        ],
+        "expectedFindings": []
+      },
+      "mutations": [
+        {
+          "caseId": "s18-mutation-cache-chat-on-failure",
+          "files": [
+            {
+              "file": "src/renderer/features/agents/main/active-chat.tsx",
+              "source": "import { Chat } from \"@ai-sdk/react\"\nimport { trpcClient } from \"../../../lib/trpc\"\nimport {\n  createRuntimeRouteTransport,\n  type RuntimeRouteTransportInput,\n} from \"../lib/runtime-route-transport\"\n\ntype BindingRead = {\n  status: \"pending\" | \"error\" | \"success\"\n  binding?: { transportId?: string } | null\n}\n\nfunction toRouteTransportInput(read: BindingRead): RuntimeRouteTransportInput {\n  if (read.status === \"error\") return { state: \"error\" }\n  const transportId = read.binding?.transportId\n  if (read.status !== \"success\" || !transportId) return { state: \"not-loaded\" }\n  return { state: \"loaded\", transportId }\n}\n\nexport function useRuntimeRouteChats(ctx: ChatSiteContext) {\n  const getOrCreateChat = (subChatId: string): Chat<unknown> | null => {\n    const existing = ctx.agentChatStore.get(subChatId)\n    if (existing) return existing\n    const subChat = ctx.subChats.find((candidate) => candidate.id === subChatId)\n    const binding = subChat?.binding\n    if (!binding) return null\n    const route = createRuntimeRouteTransport(\n      toRouteTransportInput({ status: ctx.chatQuery.status, binding }),\n      { chatId: ctx.chatId, subChatId, binding, projectPath: ctx.projectPath, mode: ctx.mode },\n    )\n    if (!route.ok) {\n      ctx.setRouteFailure(subChatId, route.failure)\n      const placeholder = new Chat({ id: subChatId, messages: subChat.messages })\n      ctx.agentChatStore.set(subChatId, placeholder)\n      return placeholder\n    }\n    const newChat = new Chat({ id: subChatId, messages: subChat.messages, transport: route.transport })\n    ctx.agentChatStore.set(subChatId, newChat)\n    return newChat\n  }\n\n  const createNewSubChat = async (): Promise<void> => {\n    let created: { id: string; binding: { transportId?: string } }\n    try {\n      created = await trpcClient.chats.createSubChat.mutate({\n        chatId: ctx.chatId,\n        mode: ctx.mode,\n        binding: ctx.newBinding,\n      })\n    } catch {\n      const failed = createRuntimeRouteTransport(\n        toRouteTransportInput({ status: \"error\" }),\n        { chatId: ctx.chatId, subChatId: \"\", binding: ctx.newBinding, projectPath: ctx.projectPath, mode: ctx.mode },\n      )\n      if (!failed.ok) ctx.setRouteFailure(ctx.chatId, failed.failure)\n      return\n    }\n    const route = createRuntimeRouteTransport(\n      toRouteTransportInput({ status: \"success\", binding: created.binding }),\n      { chatId: ctx.chatId, subChatId: created.id, binding: created.binding, projectPath: ctx.projectPath, mode: ctx.mode },\n    )\n    if (!route.ok) {\n      ctx.setRouteFailure(created.id, route.failure)\n      return\n    }\n    const newChat = new Chat({ id: created.id, messages: [], transport: route.transport })\n    ctx.agentChatStore.set(created.id, newChat)\n  }\n\n  return { getOrCreateChat, createNewSubChat }\n}\n"
+            }
+          ],
+          "expectedFindings": []
+        },
+        {
+          "caseId": "s18-mutation-runtime-comparison",
+          "files": [
+            {
+              "file": "src/renderer/features/agents/main/active-chat.tsx",
+              "source": "import { Chat } from \"@ai-sdk/react\"\nimport { trpcClient } from \"../../../lib/trpc\"\nimport {\n  createRuntimeRouteTransport,\n  type RuntimeRouteTransportInput,\n} from \"../lib/runtime-route-transport\"\n\ntype BindingRead = {\n  status: \"pending\" | \"error\" | \"success\"\n  binding?: { transportId?: string } | null\n}\n\nfunction toRouteTransportInput(read: BindingRead): RuntimeRouteTransportInput {\n  if (read.status === \"error\") return { state: \"error\" }\n  const transportId = read.binding?.transportId\n  if (read.status !== \"success\" || !transportId) return { state: \"not-loaded\" }\n  return { state: \"loaded\", transportId }\n}\n\nexport function useRuntimeRouteChats(ctx: ChatSiteContext) {\n  const getOrCreateChat = (subChatId: string): Chat<unknown> | null => {\n    const existing = ctx.agentChatStore.get(subChatId)\n    if (existing) return existing\n    const subChat = ctx.subChats.find((candidate) => candidate.id === subChatId)\n    const binding = subChat?.binding\n    if (!binding) return null\n    const route = createRuntimeRouteTransport(\n      toRouteTransportInput({ status: ctx.chatQuery.status, binding }),\n      { chatId: ctx.chatId, subChatId, binding, projectPath: ctx.projectPath, mode: ctx.mode },\n    )\n    if (!route.ok) {\n      ctx.setRouteFailure(subChatId, route.failure)\n      return null\n    }\n    const newChat = new Chat({ id: subChatId, messages: subChat.messages, transport: route.transport })\n    ctx.agentChatStore.set(subChatId, newChat)\n    return newChat\n  }\n\n  const createNewSubChat = async (): Promise<void> => {\n    let created: { id: string; binding: { transportId?: string } }\n    try {\n      created = await trpcClient.chats.createSubChat.mutate({\n        chatId: ctx.chatId,\n        mode: ctx.mode,\n        binding: ctx.newBinding,\n      })\n    } catch {\n      const failed = createRuntimeRouteTransport(\n        toRouteTransportInput({ status: \"error\" }),\n        { chatId: ctx.chatId, subChatId: \"\", binding: ctx.newBinding, projectPath: ctx.projectPath, mode: ctx.mode },\n      )\n      if (!failed.ok) ctx.setRouteFailure(ctx.chatId, failed.failure)\n      return\n    }\n    const route =\n      created.binding.runtime === \"codex\"\n        ? createRuntimeRouteTransport(\n            { state: \"loaded\", transportId: \"codex-chat-ipc\" },\n            { chatId: ctx.chatId, subChatId: created.id, binding: created.binding, projectPath: ctx.projectPath, mode: ctx.mode },\n          )\n        : createRuntimeRouteTransport(\n            toRouteTransportInput({ status: \"success\", binding: created.binding }),\n            { chatId: ctx.chatId, subChatId: created.id, binding: created.binding, projectPath: ctx.projectPath, mode: ctx.mode },\n          )\n    if (!route.ok) {\n      ctx.setRouteFailure(created.id, route.failure)\n      return\n    }\n    const newChat = new Chat({ id: created.id, messages: [], transport: route.transport })\n    ctx.agentChatStore.set(created.id, newChat)\n  }\n\n  return { getOrCreateChat, createNewSubChat }\n}\n"
+            }
+          ],
+          "expectedFindings": []
+        },
+        {
+          "caseId": "s18-mutation-read-error-not-mapped",
+          "files": [
+            {
+              "file": "src/renderer/features/agents/main/active-chat.tsx",
+              "source": "import { Chat } from \"@ai-sdk/react\"\nimport { trpcClient } from \"../../../lib/trpc\"\nimport {\n  createRuntimeRouteTransport,\n  type RuntimeRouteTransportInput,\n} from \"../lib/runtime-route-transport\"\n\ntype BindingRead = {\n  status: \"pending\" | \"error\" | \"success\"\n  binding?: { transportId?: string } | null\n}\n\nfunction toRouteTransportInput(read: BindingRead): RuntimeRouteTransportInput {\n  const transportId = read.binding?.transportId\n  if (read.status !== \"success\" || !transportId) return { state: \"not-loaded\" }\n  return { state: \"loaded\", transportId }\n}\n\nexport function useRuntimeRouteChats(ctx: ChatSiteContext) {\n  const getOrCreateChat = (subChatId: string): Chat<unknown> | null => {\n    const existing = ctx.agentChatStore.get(subChatId)\n    if (existing) return existing\n    const subChat = ctx.subChats.find((candidate) => candidate.id === subChatId)\n    const binding = subChat?.binding\n    if (!binding) return null\n    const route = createRuntimeRouteTransport(\n      toRouteTransportInput({ status: ctx.chatQuery.status, binding }),\n      { chatId: ctx.chatId, subChatId, binding, projectPath: ctx.projectPath, mode: ctx.mode },\n    )\n    if (!route.ok) {\n      ctx.setRouteFailure(subChatId, route.failure)\n      return null\n    }\n    const newChat = new Chat({ id: subChatId, messages: subChat.messages, transport: route.transport })\n    ctx.agentChatStore.set(subChatId, newChat)\n    return newChat\n  }\n\n  const createNewSubChat = async (): Promise<void> => {\n    let created: { id: string; binding: { transportId?: string } }\n    try {\n      created = await trpcClient.chats.createSubChat.mutate({\n        chatId: ctx.chatId,\n        mode: ctx.mode,\n        binding: ctx.newBinding,\n      })\n    } catch {\n      const failed = createRuntimeRouteTransport(\n        toRouteTransportInput({ status: \"error\" }),\n        { chatId: ctx.chatId, subChatId: \"\", binding: ctx.newBinding, projectPath: ctx.projectPath, mode: ctx.mode },\n      )\n      if (!failed.ok) ctx.setRouteFailure(ctx.chatId, failed.failure)\n      return\n    }\n    const route = createRuntimeRouteTransport(\n      toRouteTransportInput({ status: \"success\", binding: created.binding }),\n      { chatId: ctx.chatId, subChatId: created.id, binding: created.binding, projectPath: ctx.projectPath, mode: ctx.mode },\n    )\n    if (!route.ok) {\n      ctx.setRouteFailure(created.id, route.failure)\n      return\n    }\n    const newChat = new Chat({ id: created.id, messages: [], transport: route.transport })\n    ctx.agentChatStore.set(created.id, newChat)\n  }\n\n  return { getOrCreateChat, createNewSubChat }\n}\n"
+            }
+          ],
+          "expectedFindings": []
+        }
+      ]
+    }
+  },
+  "S19": {
+    "fixtureRuntimeId": "fixture-runtime",
+    "fixtureDeclaration": {
+      "runtimeId": "fixture-runtime",
+      "label": "Fixture Runtime",
+      "manifestRef": "manifest:fixture-runtime",
+      "cancellation": "abort-signal",
+      "sessionReference": "native-session-id",
+      "routes": [
+        {
+          "routeId": "fixture-runtime.desktop.existing-wire",
+          "entries": ["desktop"],
+          "kind": "agent",
+          "modes": ["plan", "agent"],
+          "executionProfile": "interactive",
+          "executionSurface": "desktop-sdk",
+          "adapterSource": "fixture-runtime-adapter",
+          "adapterLabel": "Fixture Runtime adapter",
+          "transport": "agent-sdk",
+          "transportId": "claude-chat-ipc",
+          "factoryRef": "factory:fixture-runtime-desktop",
+          "readinessProbeRef": "probe:fixture-runtime",
+          "enforcementEvidenceRef": "evidence:fixture-runtime",
+          "enforcementEvidence": "pre-execution",
+          "extensions": []
+        }
+      ]
+    },
+    "fixturePorts": {
+      "manifests": {
+        "manifest:fixture-runtime": "fixture-runtime"
+      },
+      "factories": ["factory:fixture-runtime-desktop"],
+      "probes": {
+        "probe:fixture-runtime": "unknown"
+      },
+      "evidence": {
+        "evidence:fixture-runtime": "pre-execution"
+      }
+    },
+    "fixtureManifest": {
+      "baseManifest": "claude-code",
+      "runtimeId": "fixture-runtime",
+      "label": "Fixture Runtime",
+      "description": "Synthetic third Runtime for S19 (test catalog only)."
+    },
+    "query": {
+      "runtimeId": "fixture-runtime",
+      "entry": "desktop",
+      "requiredCapabilities": [],
+      "requiredExtensions": [],
+      "kind": "agent",
+      "mode": "agent",
+      "executionProfile": "interactive",
+      "permissionPolicy": {
+        "kind": "desktop",
+        "interaction": "visible-user",
+        "enforcement": "desktop-runtime-policy",
+        "diagnostics": []
+      }
+    },
+    "expectedResolved": {
+      "ok": true,
+      "runtimeId": "fixture-runtime",
+      "entry": "desktop",
+      "executionSurface": "desktop-sdk",
+      "adapterSource": "fixture-runtime-adapter"
+    },
+    "existingWireTransportId": "claude-chat-ipc",
+    "rendererProjectionKeys": ["routeId", "runtimeId", "transportId"],
+    "productionRendererProjection": {
+      "claude-code": "claude-chat-ipc",
+      "codex": "codex-chat-ipc"
+    },
+    "productionRuntimeIds": ["claude-code", "codex"],
+    "context": {
+      "subChatId": "s19-fixture-sub",
+      "parentChatId": "s19-fixture-chat"
+    },
+    "chunks": {
+      "question": {
+        "type": "ask-user-question",
+        "approvalId": "s19-approval",
+        "toolUseId": "s19-tool",
+        "questions": [
+          {
+            "question": "Continue?",
+            "header": "Confirm",
+            "options": [
+              {
+                "label": "Yes",
+                "description": "Continue."
+              }
+            ],
+            "multiSelect": false
+          }
+        ]
+      },
+      "guardEvent": {
+        "type": "guard-event",
+        "event": {
+          "id": "s19-guard-event",
+          "runId": "s19-run",
+          "contractId": "s19-contract",
+          "type": "scope-expansion-request",
+          "toolName": "Edit",
+          "toolUseId": "s19-guard-tool",
+          "path": "src/fixture.ts",
+          "reason": "outside editable scope",
+          "createdAt": "2026-10-02T00:00:00.000Z"
+        }
+      },
+      "finish": {
+        "type": "finish"
+      }
+    },
+    "guard": {
+      "rule": "renderer-route-projection-bypass",
+      "clean": {
+        "caseId": "s19-clean-helper",
+        "files": [
+          {
+            "file": "src/renderer/features/agents/lib/runtime-route-transport.ts",
+            "source": "import { CodexAppServerChatTransport } from \"./codex-app-server-chat-transport\"\nimport { IPCChatTransport } from \"./ipc-chat-transport\"\n\nexport type RuntimeRouteTransportInput =\n  | { state: \"loaded\"; transportId: string }\n  | { state: \"not-loaded\" }\n  | { state: \"error\" }\n\nexport type RuntimeRouteTransportFailure =\n  | \"route_descriptor_unavailable\"\n  | \"route_descriptor_error\"\n  | \"unknown_transport\"\n\ntype RouteTransportConfig = ConstructorParameters<typeof IPCChatTransport>[0]\ntype RouteTransport = IPCChatTransport | CodexAppServerChatTransport\n\nconst TRANSPORT_CONSTRUCTORS: Readonly<\n  Record<string, (config: RouteTransportConfig) => RouteTransport>\n> = {\n  \"claude-chat-ipc\": (config) => new IPCChatTransport(config),\n  \"codex-chat-ipc\": (config) => new CodexAppServerChatTransport(config),\n}\n\nexport function createRuntimeRouteTransport(\n  input: RuntimeRouteTransportInput,\n  config: RouteTransportConfig,\n):\n  | { ok: true; transport: RouteTransport }\n  | { ok: false; failure: RuntimeRouteTransportFailure } {\n  if (input.state === \"error\") {\n    return { ok: false, failure: \"route_descriptor_error\" }\n  }\n  if (input.state !== \"loaded\") {\n    return { ok: false, failure: \"route_descriptor_unavailable\" }\n  }\n  const construct = TRANSPORT_CONSTRUCTORS[input.transportId]\n  if (!construct) return { ok: false, failure: \"unknown_transport\" }\n  return { ok: true, transport: construct(config) }\n}\n"
+          }
+        ],
+        "expectedFindings": []
+      },
+      "mutations": [
+        {
+          "caseId": "s19-mutation-helper-runtime-branch",
+          "files": [
+            {
+              "file": "src/renderer/features/agents/lib/runtime-route-transport.ts",
+              "source": "import { CodexAppServerChatTransport } from \"./codex-app-server-chat-transport\"\nimport { IPCChatTransport } from \"./ipc-chat-transport\"\n\nexport type RuntimeRouteTransportInput =\n  | { state: \"loaded\"; transportId: string }\n  | { state: \"not-loaded\" }\n  | { state: \"error\" }\n\nexport type RuntimeRouteTransportFailure =\n  | \"route_descriptor_unavailable\"\n  | \"route_descriptor_error\"\n  | \"unknown_transport\"\n\ntype RouteTransportConfig = ConstructorParameters<typeof IPCChatTransport>[0]\ntype RouteTransport = IPCChatTransport | CodexAppServerChatTransport\n\nconst TRANSPORT_CONSTRUCTORS: Readonly<\n  Record<string, (config: RouteTransportConfig) => RouteTransport>\n> = {\n  \"claude-chat-ipc\": (config) => new IPCChatTransport(config),\n  \"codex-chat-ipc\": (config) => new CodexAppServerChatTransport(config),\n}\n\nexport function createRuntimeRouteTransport(\n  input: RuntimeRouteTransportInput,\n  config: RouteTransportConfig,\n):\n  | { ok: true; transport: RouteTransport }\n  | { ok: false; failure: RuntimeRouteTransportFailure } {\n  if (input.state === \"error\") {\n    return { ok: false, failure: \"route_descriptor_error\" }\n  }\n  if (input.state !== \"loaded\") {\n    return { ok: false, failure: \"route_descriptor_unavailable\" }\n  }\n  if (config.binding.runtime === \"codex\") {\n    return { ok: true, transport: new CodexAppServerChatTransport(config) }\n  }\n  const construct = TRANSPORT_CONSTRUCTORS[input.transportId]\n  if (!construct) return { ok: true, transport: new IPCChatTransport(config) }\n  return { ok: true, transport: construct(config) }\n}\n"
+            }
+          ],
+          "expectedFindings": []
+        }
+      ]
+    }
+  },
+  "S53": {
+    "chat": {
+      "chatId": "s53-chat",
+      "projectId": "s53-project",
+      "projectPath": "/fixture/s53-project"
+    },
+    "subChats": [
+      {
+        "subChatId": "s53-claude-sub",
+        "binding": {
+          "runtime": "claude-code",
+          "modelId": "claude-sonnet-4-20250514",
+          "modelSource": "claude-oauth",
+          "thinkingLevel": null
+        },
+        "transportId": "claude-chat-ipc"
+      },
+      {
+        "subChatId": "s53-codex-sub",
+        "binding": {
+          "runtime": "codex",
+          "modelId": "gpt-5.5",
+          "modelSource": "chatgpt",
+          "thinkingLevel": "high"
+        },
+        "transportId": "codex-chat-ipc"
+      }
+    ],
+    "createSubChatBindings": [
+      {
+        "runtime": "claude-code",
+        "modelId": "claude-sonnet-4-20250514",
+        "modelSource": "claude-oauth"
+      },
+      {
+        "runtime": "codex",
+        "modelId": "gpt-5.5",
+        "modelSource": "chatgpt",
+        "thinkingLevel": "high"
+      }
+    ],
+    "durableBindingKeys": [
+      "id",
+      "subChatId",
+      "runtime",
+      "providerProfileId",
+      "modelId",
+      "modelSource",
+      "thinkingLevel",
+      "createdAt",
+      "updatedAt"
+    ],
+    "forbiddenColumns": ["transport_id", "transportId", "route_id", "routeId"],
+    "failureStateMappedInput": {
+      "state": "not-loaded"
+    },
+    "failureStateResult": {
+      "ok": false,
+      "failure": "route_descriptor_unavailable"
+    },
+    "guard": {
+      "rule": "renderer-route-projection-bypass",
+      "clean": {
+        "caseId": "s53-clean-main-read-model",
+        "files": [
+          {
+            "file": "src/main/lib/trpc/routers/chats-sub-chats.ts",
+            "source": "import { withRuntimeRouteTransportId } from \"../../agent-runtime/runtime-route-read-model\"\nimport { type ChatSessionBindingExecutor, getSubChatBinding } from \"../../chat-session-binding\"\n\nexport function readSubChatBindingReadModel(\n  db: ChatSessionBindingExecutor,\n  subChatId: string,\n) {\n  return withRuntimeRouteTransportId(getSubChatBinding(db, subChatId))\n}\n"
+          }
+        ],
+        "expectedFindings": []
+      },
+      "mutations": [
+        {
+          "caseId": "s53-mutation-main-literal-mapping",
+          "files": [
+            {
+              "file": "src/main/lib/trpc/routers/chats-sub-chats.ts",
+              "source": "import { type ChatSessionBindingExecutor, getSubChatBinding } from \"../../chat-session-binding\"\n\nconst TRANSPORT_ID_BY_RUNTIME = {\n  \"claude-code\": \"claude-chat-ipc\",\n  codex: \"codex-chat-ipc\",\n} as const\n\nexport function readSubChatBindingReadModel(\n  db: ChatSessionBindingExecutor,\n  subChatId: string,\n) {\n  const binding = getSubChatBinding(db, subChatId)\n  return { ...binding, transportId: TRANSPORT_ID_BY_RUNTIME[binding.runtime] }\n}\n"
+            }
+          ],
+          "expectedFindings": []
+        }
+      ]
+    }
+  }
+}
