@@ -3,28 +3,27 @@
 ### Requirement: Asynchronous Run Submission
 
 The Local Job API SHALL expose `locus api runs submit --request <path|-> --json`
-using the existing agent/completion create request with an optional idempotencyKey.
-Fresh submission SHALL return `{apiVersion:"locus.local-job.v1",job}` with a queued
-admission snapshot and exit 0 after durable creation and required initial artifact
-admission, without waiting for execution. The snapshot SHALL NOT imply that the Run
-is still queued when the client receives it. Replay SHALL return the existing Run's
-current state. Validation, source=api, capability/profile/provider and filesystem
-boundaries SHALL remain those of the existing create contract.
+using the existing agent/completion request plus optional idempotencyKey. Fresh
+submission SHALL return `{apiVersion:"locus.local-job.v1",job}` with a queued admission
+snapshot and exit 0 after committed creation and required initial artifact admission,
+without waiting for execution. Replay SHALL return the retained job's current state.
+The create request SHALL remain field-for-field unchanged; keys SHALL be accepted only
+on submit and retry --request. Validation, source=api and existing admission boundaries
+SHALL remain in their canonical owners. A claim following admission SHALL be visible
+through status, independently of the already emitted queued snapshot.
 
 #### Scenario: S01 Submit returns before execution is released
-- **GIVEN** a temporary registered project and SQLite profile, fixed clock/IDs, an agent
-  request with runtime codex, mode plan, prompt "Return OK", consumer fixture-a and no
-  artifacts, and an existing executor whose runner is blocked on a test latch
-- **WHEN** `locus api runs submit --request - --json` receives that JSON
-- **THEN** stdout contains one complete v1 job envelope without result and the command
-  exits 0 before the runner latch is released
-- **AND** getAgentJob and readCommittedRunEvents show the same API job and committed
-  `job_created` at sequence 1 with observation key `lifecycle:job-created:<id>` and fact key ending in `:0` before ack
-- **AND** with claim paused the ack status is queued; allowing claim afterward never
-  changes that returned admission snapshot or creates another job
+- **GIVEN** `tests/fixtures/local-job-api-async/public-submission.json#S01`, with an artifact-free codex/plan request, registered temporary project/profile,
+  fixed IDs/clock and a pump paused at claim with its runtime blocked on a second latch
+- **WHEN** `locus api runs submit --request - --json` receives the request
+- **THEN** it exits 0 with exactly one queued job envelope, no result, before runtime release
+- **AND** getAgentJob and readCommittedRunEvents show that job and exactly one sequence-1
+  job_created with observationKey=lifecycle:job-created:<id> and factKey ending :0 before ack
+- **AND** releasing claim makes `runs status <id> --json` report running while captured
+  submit stdout still contains queued and the DB still has exactly one job
 
 #### Scenario: S02 Existing admission gates run before provider work
-- **GIVEN** separate temporary-profile fixtures for unregistered cwd, an unsupported
+- **GIVEN** `tests/fixtures/local-job-api-async/public-submission.json#S02`, with separate temporary-profile fixtures for unregistered cwd, an unsupported
   required capability, an invalid execution profile/grant, an unusable explicit
   provider profile, a secret-bearing input and a completion containing agent-only fields
 - **WHEN** each is submitted through `runs submit --request - --json`
@@ -35,29 +34,64 @@ boundaries SHALL remain those of the existing create contract.
 
 ### Requirement: Synchronous Operations Use Submit And Wait
 
-`runs create` and the default `runs retry <id>` SHALL submit through the same core and
-wait for committed, published completion. Existing requests SHALL retain complete
-terminal response bytes and existing outcome-derived 0–8 exit meanings. They SHALL
-NOT call a runtime runner inline. Only explicitly keyed replay responses MAY add
-`idempotentReplay:true`; unkeyed terminal responses SHALL NOT add submission/executor
-metadata. Retry `--async` SHALL opt into the submit response. An internal wait timeout SHALL NOT be converted into a Run outcome, a terminal
-stdout response or exit 9 from create/retry. The wrapper SHALL use the same read-only
-wait core and SHALL NOT change existing Run exit semantics to conceal executor or
-publication failure.
+Create and default retry SHALL use the same submit and wait owners; API handlers
+SHALL NOT directly call either runtime runner. Normal unkeyed terminal stdout,
+newline and 0–8 outcome exits SHALL match baseline. Retry --async SHALL return
+admission; keyed retry replay MAY add idempotentReplay. Exit 9 SHALL belong only to
+runs wait, never create/retry. An internal wait timeout SHALL NOT be a Run outcome.
+
+Wrapper failure behavior SHALL be conditional on the Owner's Q2 choice, not an
+unbounded default: **统筹预设（推荐，Owner 可改）(a)** invokes the canonical
+pumpQueuedRuns scoped to its own admitted ID, claims through startAgentJob, composes
+the same terminal artifacts and waits; a daemon claim winner makes it only wait.
+(b) SHALL require an explicit daemon; (c) SHALL launch a new detached daemon, a new
+C7 #9 surface. Under (b)/(c), no executor/start failure after 30000 ms SHALL produce
+stdout `{apiVersion,job,wait:{state:"error",reason}}`, exit 8 and no result (L2 exception).
+With neither committed high-water nor heartbeat progress for 30000 ms, all branches
+SHALL use a bounded observer error even if a PID is alive; this SHALL NOT declare the
+Run dead. Healthy long work with heartbeat progress SHALL retain existing runtime
+timeouts and S25 behavior. Existing recovery SHALL alone decide
+whether a stopped worker is interrupted, never an unknown liveness probe.
+
+Today's publish failure returns artifacts:[] with the committed outcome exit. In (a)
+the locally completed pump SHALL preserve those exact failure bytes; it SHALL NOT
+label that failure response as wait-ready. For a remote claimant under (a), or (b)/(c),
+terminal files still pending 30000 ms after observing completed SHALL yield the
+identified error/8, reason=terminal_artifacts_pending. The independent wait operation
+SHALL keep its stricter publication barrier in every case. These R1 exceptions SHALL
+be explicitly accepted at APPROVED, never hidden in the normal-byte oracle.
+
+Non-outcome read failure under (a) with an owned child SHALL stop that execution tree
+and preserve baseline stderr/8 without a false terminal; an admitted but not yet
+started own Run SHALL use existing queued cancel cleanup. Under (b)/(c) or a remote
+claimant it SHALL return stdout `{apiVersion,job,wait:{state:"error",reason:"observation_failed"}}`
+with the admitted job ID, exit 8 and no result, so the consumer can cancel.
+R4 SHALL remain an Owner choice for (b)/(c): the recommended choice cancels only the
+wrapper's Run on SIGINT/SIGTERM/stdin EOF; the alternative leaves it running and requires
+consumer cancel by ID. Signal cleanup SHALL wait at most 5000 ms before signal exit;
+EOF cleanup SHALL exit 8 without a terminal envelope. EOF SHALL mean a lifecycle
+closure received after admission, not replay of the pre-admission EOF that delimits
+a --request - JSON body. SIGKILL cannot be caught.
+Under (a) local process-tree abort behavior SHALL remain as today; catchable abort
+SHALL relay own cancel if the daemon claimed first. Independent submit exit SHALL
+not cancel admitted work. The daemon-first SIGKILL limitation SHALL be disclosed.
 
 #### Scenario: S03 Old create matches submit plus wait byte for byte
-- **GIVEN** independent equivalent profiles with fixed IDs, clock, worker identity,
-  app version, paths and sanitized deterministic results for succeeded, failed,
-  canceled and interrupted, plus each existing specialized exit-code case
-- **WHEN** one invokes old-shaped `runs create` and another invokes submit then wait
-  with an available existing executor
-- **THEN** create's entire stdout including newline equals the terminal wait stdout
-  and the baseline create golden bytes without deleting or normalizing output fields
-- **AND** process exit codes equal the baseline 0–8 mapping, one job_created and one
-  completed exist, and the submitter's runner/child-process spy is never invoked
+- **GIVEN** `tests/fixtures/local-job-api-async/terminal-bytes.json#S03`, with independent profiles with injected job ID, createdAt/startedAt/completedAt,
+  workerId, workerPid, appVersion, cwd/artifact paths and sanitized deterministic runtime
+  results for succeeded/failed/canceled/interrupted and specialized baseline 0–8 exits
+- **WHEN** old-shaped create under Q2(a) and submit+wait through the same canonical pump
+  run separately with equivalent inputs and all terminal files published
+- **THEN** complete stdout including newline and exit match the frozen baseline golden
+  byte-for-byte, with no removed fields or post-output normalization
+- **AND** result.artifacts equals the terminal preparer's registered prepared tail in
+  order, including manifest ref, without the state refs' sequence members
+- **AND** each has exactly one job_created/completed; API handler direct-runner spy is
+  zero and pump dispatch is exactly one; a separate real-process variant asserts
+  workerId/workerPid identify the actual wrapper or daemon that won claim, not injected values
 
 #### Scenario: S04 Default retry retains synchronous response and lineage
-- **GIVEN** identical retained failed API source jobs in equivalent fixed-clock profiles
+- **GIVEN** `tests/fixtures/local-job-api-async/terminal-bytes.json#S04`, with identical retained failed API source jobs in equivalent fixed-clock profiles
 - **WHEN** one calls `runs retry <source-id> --json` with no new flags and the other
   calls `runs retry <source-id> --async --json` followed by wait through an available executor
 - **THEN** the first response is emitted only after terminal publication and its full
@@ -66,7 +100,7 @@ publication failure.
   attempt=source.attempt+1, without changing the source job/events/artifact bytes
 
 #### Scenario: S25 Internal wait timeout does not become a create result
-- **GIVEN** a valid create request, an available executor whose runtime latch remains
+- **GIVEN** `tests/fixtures/local-job-api-async/terminal-bytes.json#S25`, with a valid create request, an available executor whose runtime latch remains
   held for the first 30000 ms, and a fake monotonic clock
 - **WHEN** the internal wait deadline expires and then the executor is released to
   commit and publish a successful terminal in the next bounded observation interval
@@ -74,41 +108,109 @@ publication failure.
   eventually returns the baseline complete terminal envelope with exit 0
 - **AND** store reads show one attempt, no timeout error/completed and no repeated execution
 
+#### Scenario: S34 Create and retry run without an external executor
+- **GIVEN** `tests/fixtures/local-job-api-async/terminal-bytes.json#S34`, with isolated profiles with no daemon lock, valid agent/completion create requests,
+  terminal retry sources, controlled pump and launcher ports, and selected Q2 branch
+- **WHEN** create/default retry runs and the deterministic worker is released
+- **THEN** for recommended (a) exactly the own admitted ID is claimed by pumpQueuedRuns,
+  no daemon launches, unrelated queued work is untouched and stdout/exit equal baseline
+- **AND** for (b) no executor for 30000 ms gives identified executor_unavailable error/8;
+  for (c) launcher success uses the same pump/claim, launcher failure at 30000 ms gives
+  identified error/8; neither gives timeout/9 or claims a false Run outcome
+- **AND** a daemon-first variant never double-dispatches; a stalled unknown worker with
+  no heartbeat/high-water progress yields identified executor_unknown/8 within 30000 ms
+
+#### Scenario: S35 Aborting a wrapper applies the chosen cancel policy
+- **GIVEN** `tests/fixtures/local-job-api-async/controls.json#S35`, with a running wrapper-owned child, a daemon-first Run, two unrelated Runs and
+  (b)/(c) signal/EOF cases with cancel-on-signal and explicit consumer-cancel alternatives
+- **WHEN** the test harness sends SIGINT/SIGTERM, closes stdin or kills the wrapper group;
+  a separate case sends SIGKILL only to the waiter process; file-based requests keep stdin open past admission
+- **THEN** (a)'s owned-tree case matches baseline abort/EOF receipts, and catchable
+  daemon-first abort requests cancellation only for its admitted ID
+- **AND** recommended (b)/(c) sends that cancel on each signal/EOF, waits at most 5000 ms
+  for acknowledgement and preserves signal exit (EOF exit 8); the alternative does not
+  cancel and the harness must issue runs cancel by the saved ID; unrelated Runs continue
+- **AND** SIGKILL of a daemon-backed waiter cannot issue cancel, the Run remains queryable
+  until explicit cancel/recovery, and no test calls this preserved local-tree behavior; ordinary --request - EOF
+  consumed before admission does not immediately cancel the submitted Run
+
 ### Requirement: Bounded Wait For Published Terminal Result
 
-`runs wait <job-id> [--timeout <milliseconds>] --json` SHALL read only API jobs and
-SHALL return the create terminal envelope only after a committed completed record and
-verified publication of all required terminal files. Without artifacts the publication
-condition SHALL be vacuous. Default timeout SHALL be 30000 ms; explicit timeout SHALL
-be an integer from 0 to 86400000 inclusive, with 0 a single observation. A final ready
-observation at the deadline SHALL win over timeout. Otherwise stdout SHALL be
-`{apiVersion,job,wait:{state:"timeout",timeoutMs,reason}}`, without result, and exit 9.
-Reason SHALL distinguish executor_unavailable, executor_unknown, run_pending and
-terminal_artifacts_pending. A terminal job status with pending files SHALL remain
-terminal in this non-ready response. Wait SHALL NOT settle, cancel, retry or expire a
-Run and SHALL NOT use events-follow completion as a publication barrier.
+Runs wait SHALL read only API jobs. Ready SHALL require committed completed and
+verified publication of every terminal ref registered by that commit. The result
+artifact list SHALL be the preparer's persisted prepared tail (state refs carry
+sequence and are excluded), in its original order without sequence. No-preparer
+recovery and missing-admission cancel SHALL register no terminal refs; their required
+set is empty, they are ready at settlement, result.artifacts=[], and initial refs
+remain accessible as history rather than being relabeled terminal files.
+
+Timeout SHALL default to 30000 ms and accept integers 0–86400000 inclusive; zero SHALL
+perform one observation. Ready at the final deadline read SHALL win. Otherwise stdout
+SHALL be one `{apiVersion,job,wait:{state:"timeout",timeoutMs,reason}}`, exit 9, no result.
+The following precedence table SHALL be shared by wait and status observation:
+
+| Job | Admission / executor state | Terminal publication | Wait reason |
+| --- | --- | --- | --- |
+| queued | missing initial admission (highest priority) | N/A | admission_incomplete |
+| queued | available | N/A | run_pending |
+| queued | unavailable | N/A | executor_unavailable |
+| queued | unknown | N/A | executor_unknown |
+| running | any | N/A | run_pending |
+| terminal | any | all registered terminal refs verified, including empty set | ready: terminal envelope/outcome exit |
+| terminal | any | missing/mismatching registered terminal refs | terminal_artifacts_pending |
+
+A pending response SHALL preserve terminal job status. The wait/status observation
+itself SHALL NOT settle, cancel, retry, expire or change a Run; the pre-existing CLI
+recovery prologue SHALL remain unchanged and MAY settle confirmed-stopped workers
+before observation. Events-follow completion SHALL NOT serve as a publication barrier.
+
+New errors SHALL use these exact stream/exit/code rules (structured errors are one
+`{apiVersion,error:{code,message}}`, sanitized message, no raw input/key):
+
+| Condition | Stream | Exit | error.code / wait reason |
+| --- | --- | --- | --- |
+| wait unknown or non-API ID | stderr, empty stdout | 3 | job_not_found (same for both) |
+| invalid timeout | stderr, empty stdout | 2 | invalid_timeout |
+| retry --request consumer mismatch | stdout, no job id | 2 | consumer_mismatch |
+| malformed key | stdout | 2 | invalid_idempotency_key |
+| secret-like key (existing assertNoSecretText/SECRET_VALUE_PATTERNS) | stdout | 2 | secret_in_request |
+| keyed create | stdout | 2 | idempotency_key_not_supported |
+| different normalized request at same scoped key | stdout | 2 | idempotency_conflict |
+| missing committed creation/admission | stdout | 8 | submission_pending, additionally error.retryable=true |
+| wait read fault after a valid job snapshot | stdout `{apiVersion,job,wait:{state:"error",reason:"observation_failed"}}`, no result | 8 | wait reason observation_failed |
+| wait read fault before any job snapshot | stderr, empty stdout | 8 | observation_failed |
+
+These are non-outcome errors, not Run statuses. Existing command errors not listed
+here SHALL retain their baseline shapes/streams/exits.
 
 #### Scenario: S05 Wait observes both commit and publication
-- **GIVEN** an artifact-bearing API job, frozen final files, and separate latches before
-  terminal SQL commit and before the last final-file rename
+- **GIVEN** `tests/fixtures/local-job-api-async/publication.json#S05`, with artifact-bearing job fixtures with terminal commit and last-rename latches,
+  prepared-tail golden refs and a variant whose publisher throws on the final rename
 - **WHEN** `runs wait <id> --timeout 1000 --json` observes each stage
-- **THEN** neither a staged file before commit nor a completed record before full
-  publication produces a terminal response
-- **AND** releasing all renames before the deadline produces one complete create
-  envelope whose artifact paths/digests match that commit and its outcome exit code
-- **AND** an artifact-free completion fixture returns ready immediately after commit
+- **THEN** staging before commit and completed before full publication are non-ready;
+  releasing renames before deadline returns exactly the golden create envelope/outcome exit
+- **AND** result.artifacts is the prepared tail without sequence, not the initial state
+  refs or the runs-result default subset; artifact-free completion is ready at commit
+- **AND** throwing publish leaves wait non-ready/terminal_artifacts_pending/exit 9;
+  Q2(a) locally completed create returns the baseline artifacts:[] and outcome exit,
+  whereas (b)/(c) or daemon-first wrapper returns identified error/8 after 30000 ms
 
 #### Scenario: S06 Wait has explicit bounded timeout semantics
-- **GIVEN** queued and running API fixtures, a fake monotonic clock and no terminal commit
-- **WHEN** wait is invoked with no timeout, timeout 0 and timeout 25 respectively
-- **THEN** each returns a non-ready envelope at 30000, one observation, and 25 ms
-  respectively with exit 9, no result and the expected current job status/reason
-- **AND** negative, fractional, NaN, Infinity or greater-than-86400000 values exit 2
-  without Run mutations; a ready final observation exactly at deadline returns terminal
-- **AND** stdout has one JSON value, diagnostics use stderr, and no new completed exists
+- **GIVEN** `tests/fixtures/local-job-api-async/wait-observation.json#S06`, with fake-clock cases queued+available, queued+no-lock, queued+legacy-lock,
+  queued+missing-admission, running+dead-lock without recovery eligibility, and
+  terminal+missing-file; expected reasons respectively run_pending, executor_unavailable,
+  executor_unknown, admission_incomplete, run_pending and terminal_artifacts_pending
+- **WHEN** each calls wait with omitted timeout, 0 and 25
+- **THEN** one timeout envelope appears at 30000 ms, one observation and 25 ms respectively,
+  exit 9, no result, exact fixture reason and unmodified status
+- **AND** -1, 0.5, NaN, Infinity and 86400001 yield stderr invalid_timeout/2 and empty stdout;
+  86400000 is accepted; ready exactly at deadline yields outcome, not timeout
+- **AND** the admitted running fixture with an injected second-read SQLITE_BUSY returns
+  stdout wait.state=error/reason=observation_failed with job ID, exit 8, no result;
+  the worker continues once and no observer creates a completed or another attempt
 
 #### Scenario: S07 Multiple waiters and late facts cannot change the result
-- **GIVEN** two wait processes on one API job, with commit occurring between their
+- **GIVEN** `tests/fixtures/local-job-api-async/publication.json#S07`, with two wait processes on one API job, with commit occurring between their
   initial read and wakeup registration, then published files and a late diagnostic
 - **WHEN** both waiters re-read committed facts and a third waiter opens after completion
 - **THEN** all return the same terminal envelope/outcome without missing the commit,
@@ -117,50 +219,61 @@ Run and SHALL NOT use events-follow completion as a publication barrier.
 
 ### Requirement: Consumer Scoped Idempotent Submission
 
-Submit/create and retry SHALL accept an optional idempotencyKey, 1–160 ASCII characters
-from `[A-Za-z0-9._:-]`, case-sensitive with no trimming. Its namespace SHALL be existing
-normalized consumer.id plus the key. Matching normalized intent SHALL replay the same
-retained job with optional top-level idempotentReplay=true and zero extra execution;
-a different intent SHALL return the existing apiVersion+error outer shape with
-code=idempotency_conflict and exit 2, without echoing input/key.
+Only submit and retry --request SHALL accept optional idempotencyKey, 1–160 ASCII
+`[A-Za-z0-9._:-]`, case-sensitive without trimming. The namespace SHALL be validated
+normalized consumer.id plus key; an ID changed by redactSecretText SHALL be rejected
+before insert, and stored apiConsumerId/retry match SHALL use that same normalized ID.
+Same normalized intent SHALL replay the retained Run with idempotentReplay=true;
+different intent SHALL return stdout idempotency_conflict/2. The error table above
+SHALL govern all new failures. Secret-like keys SHALL reuse assertNoSecretText's
+SECRET_VALUE_PATTERNS; no second detector SHALL be invented.
 
-Fingerprint normalization SHALL preserve current defaults and runtime aliases, use
-canonical cwd/project/artifact-base identities, sort object keys and capability sets,
-preserve all other array order, and include consumer external ID, kind, execution
-profile/grant, provider selection intent, prompt/input or completion messages/schema/
-tuning. It SHALL exclude raw key, sync/async/wait controls, generated IDs/times and
-credentials. Create and submit SHALL share the submit intent; retry SHALL include its
-source job ID and stored input snapshot under a distinct retry intent. Omitted provider
-selection SHALL remain distinguishable from explicit selection. No domain-specific
-interpretation of opaque input or response schemas SHALL be introduced.
+Fingerprint SHALL normalize current defaults/runtime aliases, canonical cwd/project/
+artifact-base identity, sorted object keys/capability sets and ordered other arrays;
+it SHALL include external ID, kind, profile/grant, provider selection intent and
+prompt/input or completion messages/schema/tuning. It SHALL exclude key, execution
+controls, generated ID/time and credentials. Internal create/submit share submit
+intent; only submit exposes its key. Retry includes source ID and stored input under
+a distinct intent. Omitted and explicit provider choices SHALL remain distinct;
+opaque consumer data SHALL not acquire domain semantics.
 
-Reservation SHALL store only consumer identity, domain-separated key hash, normalized
-request hash/version, job reference and retention metadata. Reservation and job insert
-SHALL commit together under a unique consumer/key constraint. Creation compensation
-SHALL release them together only if the job is still queued with no committed facts.
-A reservation lacking committed creation SHALL NOT be replay-acknowledged or executed.
-A nonterminal reservation SHALL additionally require initial artifact admission when
-its request needs artifacts. Either missing prerequisite SHALL report submission_pending
-through apiVersion+error with exit 8.
+Reservation SHALL store consumer, domain-separated key hash, request hash/version,
+job FK and retention metadata. Job and reservation SHALL be inserted in one SQLite
+transaction with unique(consumer,keyHash). Only the winner SHALL mkdir the run-dir,
+after creation commit; rollback/loser/creation compensation SHALL leave no stray dir.
+Queued/no-facts creation compensation SHALL delete both via FK cascade. Missing
+creation or required nonterminal initial admission SHALL return submission_pending/8,
+error.retryable=true, never replay success or execute. Retryable SHALL mean same-key
+retry is safe, not that an orphan will eventually recover. Orphans SHALL persist until
+TICKET-128 repair; a new key is an explicit remedy with duplicate risk if the creator
+was still live, not automatic recovery. Missing-admission jobs with a known ID SHALL
+allow cancel to settle without terminal refs and then age out normally.
 
-Retention SHALL be at least 30 days after verified terminal publication, with expiresAt
-set once by the publishing/execution owner, never by the read-only waiter. Nonterminal,
-unpublished-terminal and orphan reservations SHALL NOT automatically expire. Replay
-SHALL NOT extend expiration. Expiry cleanup SHALL remove only reservation metadata;
-existing authorized job deletion SHALL cascade its reservation. Original key SHALL NOT
-appear in stored requests, request artifacts, ledger records, public responses or logs.
+Retention SHALL be at least 30 days after verified terminal publication. The lifecycle
+host SHALL set expiresAt once after successful preparer publish plus verification;
+artifact-free/recovery/missing-admission cancel/preparation-failure-without-refs SHALL
+set it at terminal settle. Publication failure or a crash before the setter SHALL
+leave it NULL, conservatively retained. Readers and replay SHALL not set or extend it.
+Job-store cleanupExpiredAgentJobIdempotency(db,{now,consumerId?}) SHALL delete only
+expired terminal reservations: same-consumer cleanup before submit lookup, all-consumer
+cleanup each daemon loop tick. Nonterminal/unpublished/orphan reservations SHALL not
+automatically expire. Jobs/events/files SHALL remain; there is no public job-deletion
+cleanup path. Raw key SHALL never be stored/emitted in requests/artifacts/events/results/
+logs; hashes SHALL not be represented as encryption or consumer authentication.
 
-#### Scenario: S08 Normalized replay spans create and submit
-- **GIVEN** a retained published API job submitted with consumer fixture-a, key req-1,
-  runtime claude alias and omitted defaults in a fixed project
-- **WHEN** submit then create repeat its equivalent request using claude-code, explicit
-  equivalent defaults and reordered object keys with the same key
-- **THEN** both identify the existing job with idempotentReplay=true, create returns its
-  retained terminal envelope, and store job/event counts and provider-call count do not grow
-- **AND** replay still returns that attempt if its provider configuration later changes
+#### Scenario: S08 Normalized replay stays on supported key surfaces
+- **GIVEN** `tests/fixtures/local-job-api-async/idempotency.json#S08`, with a published keyed submit with consumer fixture-a, runtime claude alias and
+  omitted defaults, and matching terminal retry-source/child fixtures
+- **WHEN** submit repeats using claude-code, equivalent explicit defaults and reordered
+  keys; retry repeats the same --request once asynchronously and once synchronously
+- **THEN** each replays its own retained attempt with idempotentReplay=true, synchronous
+  retry returns that child's terminal, and jobs/events/provider calls do not grow
+- **AND** later provider config changes do not rerun the attempt; keyed create returns
+  stdout idempotency_key_not_supported/2 and no work, while old-shaped unkeyed create
+  remains a fresh submit intent and produces the baseline bytes
 
 #### Scenario: S09 Changed request conflicts without exposing the key
-- **GIVEN** a committed key binding for a request and variants changing prompt, mode,
+- **GIVEN** `tests/fixtures/local-job-api-async/idempotency.json#S09`, with a committed key binding for a request and variants changing prompt, mode,
   provider intent, artifact base, completion messages/schema or consumer external ID
 - **WHEN** each variant is submitted under the same consumer/key
 - **THEN** it exits 2 with error.code=idempotency_conflict in a v1 error envelope,
@@ -168,7 +281,7 @@ appear in stored requests, request artifacts, ledger records, public responses o
 - **AND** neither stdout nor stderr contains the key or stored request content
 
 #### Scenario: S10 Same key cannot replay across consumers
-- **GIVEN** two valid requests identical except consumer.id=fixture-a and fixture-b,
+- **GIVEN** `tests/fixtures/local-job-api-async/idempotency.json#S10`, with two valid requests identical except consumer.id=fixture-a and fixture-b,
   both with key req-1, and an executor paused before claim
 - **WHEN** both invoke submit
 - **THEN** distinct job IDs and reservations exist, neither response is a replay and
@@ -176,61 +289,81 @@ appear in stored requests, request artifacts, ledger records, public responses o
 - **AND** repeating fixture-b returns only fixture-b's ID, never fixture-a's
 
 #### Scenario: S11 Concurrent requests reserve one attempt
-- **GIVEN** two independent SQLite connections and concurrent submit processes for one
-  consumer/key with identical input, followed by a differing-input contender
-- **WHEN** transactions are interleaved before insert, after reservation, after creation commit but before required initial artifact admission,
-  and after all admission facts commit
-- **THEN** at most one job/reservation is inserted and at most one execution is claimed;
-  contenders report matching replay only after required admission commits, pending before them, or conflict
-- **AND** a fresh DB connection sees no reservation pointing at an uncommitted job
+- **GIVEN** `tests/fixtures/local-job-api-async/idempotency.json#S11`, with two SQLite connections/processes with the same consumer/key/artifact request
+  and a third different-input contender, with transaction and admission latches
+- **WHEN** submit interleaves before insert, after reservation, after creation commit
+  and after initial admission, then the single eligible executor is released
+- **THEN** exactly one job/reservation and one winner run-dir exist; loser IDs leave no
+  directories, and a fresh connection sees no reservation to an uncommitted job
+- **AND** matching contenders return pending/8+retryable before admission, replay after it,
+  the changed request conflicts/2, and provider/claim count is zero while paused and
+  exactly one after executor release
 
 #### Scenario: S12 Rollback and creation compensation release the key
-- **GIVEN** reservation fault fixtures throwing before SQL commit and throwing on
-  creation-fact append after job/reservation commit with ordinary compensation permitted
-- **WHEN** submit fails and a new connection inspects jobs, reservations and events
-- **THEN** all three contain no rows for the failed submission and no ack was emitted
-- **AND** retrying the same consumer/key with the fault removed creates one job and
-  one creation fact without idempotentReplay=true
+- **GIVEN** `tests/fixtures/local-job-api-async/idempotency.json#S12`, with faults before job/reservation SQL commit and on creation append after their
+  commit, with queued/no-facts compensation permitted and artifact paths enabled
+- **WHEN** submit fails and an independent connection plus directory listing inspect state
+- **THEN** jobs/reservations/events contain zero failed-submission rows, no ack was
+  emitted and no loser/rolled-back run-dir exists
+- **AND** removing the fault and retrying the same key yields exactly one job, one
+  creation fact and one admitted directory, without idempotentReplay
 
 #### Scenario: S13 Crashed creation never becomes a successful replay
-- **GIVEN** a process killed after job/reservation commit but before creation, plus a
-  compensation-failure fixture and a concurrent still-live creator paused at that boundary
-- **WHEN** another process submits the same key or the daemon polls the queue
-- **THEN** each missing-fact reservation returns submission_pending/exit 8, never a
-  successful job ack; list/start admit none of those jobs and provider calls stay zero
-- **AND** the second process does not delete a potentially live creator's reservation
+- **GIVEN** `tests/fixtures/local-job-api-async/idempotency.json#S13`, with a killed creator after job/reservation commit before creation, a failed
+  compensation case and a still-live creator paused at that same boundary
+- **WHEN** submit repeats each key, daemon list/start runs and cleanup advances past 30 days
+- **THEN** each returns stdout error.code=submission_pending,error.retryable=true/exit 8,
+  empty success ack; zero provider calls/claims occur and no reservation is deleted
+- **AND** same-key retry after releasing the live creator replays its single admitted ID;
+  an explicit new-key submission for the killed fixture can succeed with a new ID while
+  its original orphan remains, demonstrating the documented remedy without TTL repair
 
 #### Scenario: S14 Retention has a declared endpoint
-- **GIVEN** a fake clock, a published terminal with expiresAt exactly publication+30 days,
-  and nonterminal, unpublished-terminal and orphan reservations of greater age
-- **WHEN** replay/cleanup runs just before expiry, at expiry and after expiry
-- **THEN** only the expired published reservation is released; its next submission
-  creates a new job without replay, while the other reservations stay bound
-- **AND** job/event/artifact bytes are retained, replay never extends expiresAt, and
-  an independently authorized job deletion cascades only that job's reservation
+- **GIVEN** `tests/fixtures/local-job-api-async/idempotency.json#S14`, with a fake clock and worker-published, artifact-free, recovery, admitted-cancel,
+  missing-admission-cancel terminals, plus running/unpublished/orphan reservations;
+  successful cases have expiresAt=verified-publish-or-empty-settle-time+2592000000
+- **WHEN** same-key replay reads just before expiry, same-consumer submit triggers cleanup
+  at expiry, and a daemon tick triggers cleanup for a different consumer after expiry
+- **THEN** replay never extends expiresAt; expired eligible reservations alone disappear,
+  next same-key submission creates a new job without replay and all history/files remain
+- **AND** NULL-expiry cases stay bound; fault after publish before expiry setter keeps NULL;
+  wait/status reads never repair TTL; no nonexistent job-deletion command is assumed
 
 #### Scenario: S15 Idempotency key stays out of durable and diagnostic output
-- **GIVEN** a unique non-secret sentinel key and a request with artifacts in an admitted run-dir
-- **WHEN** submit, replay and conflict complete, then store readers, request.json,
-  events.jsonl, result.json, manifests and captured stdout/stderr are inspected
-- **THEN** none contains the original key; reservation stores a hash, not the raw key
-- **AND** empty, whitespace, overlength and secret-like key values reject before
-  runnable work without echoing them or relaxing existing secret rejection
+- **GIVEN** `tests/fixtures/local-job-api-async/idempotency.json#S15`, with a unique non-secret key, admitted artifact request and key variants empty,
+  whitespace, 161 characters and sk- followed by 24 ASCII letters (secret-like fixture)
+- **WHEN** submit/replay/conflict run and DB, request.json/events.jsonl/result.json,
+  manifests, stdout and stderr are inspected
+- **THEN** raw sentinel never appears; only domain-separated key hash is stored
+- **AND** malformed keys emit stdout invalid_idempotency_key/2, the secret-like variant
+  emits stdout secret_in_request/2, without echo/spawn/runnable row; a consumer ID that
+  redactSecretText would alter is rejected before reservation, not silently redacted
 
 ### Requirement: Executor Availability Observation
 
-`runs status <id> --json` SHALL include optional top-level execution with state
-available, unavailable or unknown; reason executor_observed, no_executor or
-probe_unavailable; observedAt; and a sanitized local startup hint when applicable.
-It SHALL be advisory and distinct from runtime credential readiness. Availability
-SHALL require evidence that an eligible executor for the same local profile supports
-API work; a lock file alone SHALL NOT suffice. Absent or confirmed-stopped executor
-SHALL report unavailable; indeterminate identity/liveness SHALL report unknown.
-Observation SHALL NOT expose PID, hostname, nonce, lock paths or secrets and SHALL
-NOT start a daemon, acquire its lock or alter job status.
+API status SHALL include execution for queued/running jobs and omit it for terminal
+jobs. For missing initial admission it SHALL be unknown/admission_incomplete with
+observedAt and no hint. Otherwise state/reason SHALL be available/executor_observed,
+unavailable/no_executor or unknown/probe_unavailable. Only unavailable SHALL carry
+hint="locus daemon run". This SHALL be advisory, distinct from CLI runtime readiness.
+API-capable daemons SHALL require lockPath and write lock v2
+{pid,nonce,startedAt,lockFormat:2,apiCapable:true,heartbeatAt} every loop iteration,
+at most 1000 ms apart even during execution; writers SHALL check their nonce before
+atomic update/release. Fresh SHALL mean heartbeat age 0–5000 ms inclusive.
+Alive+fresh+v2+apiCapable+stable nonce SHALL mean available; no lock/ESRCH unavailable;
+stale/legacy/EPERM/no lockPath/bad format/future heartbeat/swapped nonce unknown.
+Swapped nonce SHALL mean different nonce between reader snapshots or different from
+the writer's last value; the old writer SHALL not overwrite/unlink its successor.
+Running scoped work SHALL use its committed worker identity/heartbeat/liveness without
+requiring a daemon lock: confirmed alive within the existing 120 s recovery heartbeat
+window means available; ESRCH means unavailable; stale/EPERM/uncertain means unknown.
+A different daemon lock SHALL not substitute for that Run's worker evidence. The decision table above SHALL determine wait reason.
+No new PID exposure beyond existing job.workerPid SHALL be added: execution SHALL omit
+PID, nonce, hostname, lock paths and secrets. Observation itself SHALL not launch a
+daemon, acquire its lock or change status; the existing recovery prologue is unchanged.
 
 #### Scenario: S16 Submission without an executor is observable
-- **GIVEN** a valid artifact-free request and an isolated profile with no executor lock
+- **GIVEN** `tests/fixtures/local-job-api-async/wait-observation.json#S16`, with a valid artifact-free request and an isolated profile with no executor lock
 - **WHEN** submit succeeds, status reads its ID and wait reaches its deadline
 - **THEN** creation is committed, status reports execution.state=unavailable,
   reason=no_executor and hint="locus daemon run", and wait reports executor_unavailable/exit 9
@@ -238,12 +371,15 @@ NOT start a daemon, acquire its lock or alter job status.
   the existing desktop/store overview reads that same queued API job and consumer
 
 #### Scenario: S17 Lock observations do not invent liveness
-- **GIVEN** fixtures for a matching live API-capable daemon lock/nonce, confirmed dead
-  process, legacy lock without capability metadata, permission-denied probe and swapped nonce
-- **WHEN** `runs status` reads each fixture through injected filesystem/liveness ports
-- **THEN** states are respectively available, unavailable, unknown, unknown and unknown
-- **AND** no PID, nonce, hostname, lock path or credential sentinel is returned, no
-  lock is changed, and runtime.readiness authentication states are unaffected
+- **GIVEN** `tests/fixtures/local-job-api-async/wait-observation.json#S17`, with same-profile fixtures for alive v2/apiCapable/fresh lock, absent lock, ESRCH,
+  alive stale, legacy, EPERM, missing lockPath, future heartbeat and nonce A→B between reads
+- **WHEN** runs status reads a queued admitted job through filesystem/liveness/clock seams
+- **THEN** states are available, unavailable, unavailable, unknown, unknown, unknown,
+  unknown, unknown, unknown with reasons/hints exactly as the availability requirement
+- **AND** a writer last holding A cannot refresh or unlink B; a normal tick updates
+  heartbeatAt without changing nonce; status reads themselves write no lock
+- **AND** execution has no PID/nonce/hostname/path/secret sentinel; existing job.workerPid
+  stays intact, terminal status omits execution and runtime credential readiness is unchanged
 
 ### Requirement: Async Control Preserves Run Identity
 
@@ -255,44 +391,48 @@ New retry request consumer.id SHALL match the stored source consumer; no new req
 body SHALL be required for existing retry/cancel calls.
 
 #### Scenario: S18 Queued cancel wins claim without a second terminal
-- **GIVEN** a freshly acknowledged API job and paused daemon, plus a second variant
-  pausing after worker claim; include artifact-bearing and artifact-free fixtures
-- **WHEN** `runs cancel <id> --json` races with executor release in both winner orders
-- **THEN** cancel-first produces one committed canceled completed, no worker spawn,
-  and wait returns the canceled envelope/exit 5 after required publication
-- **AND** start-first only records the cancel request until worker confirmation, then
-  one completed appears; repeated cancel and Workbench/store reads do not create another terminal
+- **GIVEN** `tests/fixtures/local-job-api-async/controls.json#S18`, with artifact/no-artifact admitted jobs with paused claim, two cancel processes,
+  and a slow-cancel preparation racing a claimed runner that fails immediately
+- **WHEN** runs cancel races claim in both orders, cancel races cancel, and slow cancel
+  resumes after the failing claimant commits; capture each preparation attempt's files
+- **THEN** cancel-first yields exactly one canceled completed, zero spawn and ready wait/5;
+  start-first records cancel intent until worker confirmation, then exactly one completed
+- **AND** cancel/cancel and slow-cancel/failing-claim each commit exactly one terminal;
+  staging names differ by process+attempt, loser discard touches only its files, winner
+  files verify and wait returns that winner's outcome with no terminal overwrite
+- **AND** repeated cancel/Workbench reads create no extra completed or provider call
 
 #### Scenario: S19 Retry key replays the child and preserves the parent
-- **GIVEN** a terminal failed API job with consumer fixture-a and a retry request
+- **GIVEN** `tests/fixtures/local-job-api-async/controls.json#S19`, with a terminal failed API job with consumer fixture-a and a retry request
   `{apiVersion:"locus.local-job.v1",consumer:{id:"fixture-a"},idempotencyKey:"retry-1"}`
 - **WHEN** two `runs retry <id> --request - --async --json` calls and one synchronous
   retry with that request execute concurrently through an available executor
 - **THEN** all refer to one new child ID with original retryOfJobId and attempt+1,
   replay responses are marked, and the synchronous call waits for that child's result
 - **AND** changing the source ID with the same scoped key conflicts; changing consumer
-  to fixture-b rejects before lookup; parent events/results/artifacts stay byte-identical
+  to fixture-b emits stdout consumer_mismatch/exit 2 before key lookup, without a job id;
+  same-key different source emits stdout idempotency_conflict/2; parent events/results/artifacts stay byte-identical
 
 #### Scenario: S20 API reads and control stay source-scoped
-- **GIVEN** desktop, cli, protocol and unknown job IDs, plus succeeded and queued API jobs
-- **WHEN** wait/retry and existing cancel/events operations are exercised
-- **THEN** non-API or missing IDs are rejected by API readers/control as before; retry
-  of succeeded or queued jobs is rejected, with zero new jobs or provider work
-- **AND** no read/control request needs provider credentials from the consumer
+- **GIVEN** `tests/fixtures/local-job-api-async/controls.json#S20`, with desktop/cli/protocol/missing IDs plus succeeded/queued API jobs and frozen
+  baseline cancel/events/retry error stream/exit fixtures
+- **WHEN** wait/retry and existing cancel/events operations receive those IDs
+- **THEN** wait for missing or non-API IDs emits only stderr v1 error code=job_not_found,
+  exits 3 and reveals no job; no result or provider credentials are required
+- **AND** cancel/events/retry retain their recorded baseline error stream/exits for
+  unsupported sources/states, retry rejects succeeded/queued, and zero new jobs/spawns occur
 
 ### Requirement: Async Features Preserve Existing V1 Contracts
 
-The discovery features array SHALL add async-submit while keeping exact
-apiVersion=locus.local-job.v1 and all existing identifiers. Consumers requiring the
-feature SHALL reject its absence before dispatch; unknown versions SHALL NOT be
-silently accepted. The machine-readable discoveryFeature enum SHALL include the new
-identifier. Existing event types, six-field envelopes, dense sequences, after/follow,
-result/artifact contracts and 0–8 exit meanings SHALL remain unchanged. Optional
-response fields SHALL be safely ignorable. Adding an identifier SHALL NOT imply a
-pinned older closed-enum schema will accept it.
+Existing v1 event types, six-field envelopes, dense sequences, after/follow,
+result/artifact names/roles/digests/retention and 0–8 outcome exit meanings SHALL remain
+unchanged. Optional response fields SHALL remain safely ignorable; a new enum value
+SHALL NOT be treated as an unknown optional field. Agent/completion execution SHALL
+share submission, claim and terminal ownership. Discovery is modified below under
+its existing Requirement, not defined by a competing ADDED requirement.
 
 #### Scenario: S21 V1 event and artifact regression is unchanged
-- **GIVEN** baseline public-v1/public-results fixtures containing all 12 event types,
+- **GIVEN** `tests/fixtures/local-job-api-async/public-v1.json#S21`, with baseline public-v1/public-results fixtures containing all 12 event types,
   committed initial artifact refs before job_started, a completed and late diagnostics
 - **WHEN** runs events with --after 2, --follow --jsonl, runs result and a terminal wait
   consume the fixtures produced by the queued executor
@@ -303,29 +443,76 @@ pinned older closed-enum schema will accept it.
 - **AND** artifact names, roles, SHA-256, result fields and retention equal baseline
   fixtures, with no native raw event union, new event enum or vendor-specific consumer branch
 
-#### Scenario: S22 Discovery advertises the extension with explicit schema evolution
-- **GIVEN** a migrated async-enabled profile, the baseline pinned v1 schema with closed
-  discoveryFeature enum, and the updated schema fixture including async-submit
-- **WHEN** runtimes list --json output is validated against both schema fixtures
-- **THEN** it retains locus.local-job.v1 and existing features, includes async-submit,
-  passes the updated schema and fails the older enum at the new identifier
-- **AND** a consumer ignoring optional status/replay fields can still read old envelopes;
-  an unmigrated build does not advertise async-submit
-
-#### Scenario: S23 Unsupported version and absent feature fail closed
-- **GIVEN** a no-feature discovery fixture and a valid request with only apiVersion
-  replaced by locus.local-job.v1.1 or an unknown version
-- **WHEN** a neutral feature-dependent client reads that discovery, and the CLI parses
-  each unsupported-version request separately
-- **THEN** the client dispatch spy records zero submissions; the CLI exits 2 with the
-  existing "apiVersion must be locus.local-job.v1" validation and no new job
-- **AND** no key is assumed honored by an older build and no silent downgrade occurs
-
 #### Scenario: S24 Completion uses the same queued admission
-- **GIVEN** a reference-only usable completion provider, opaque json_schema response
+- **GIVEN** `tests/fixtures/local-job-api-async/public-submission.json#S24`, with a reference-only usable completion provider, opaque json_schema response
   format, deterministic upstream fetch fixture and no agent-only fields
 - **WHEN** submit acknowledges the completion, an existing daemon executes it and wait returns
 - **THEN** exactly one upstream call occurs after claim, its structured output and
   usage use the existing result/event contract, and no runtime child or run-dir exists
 - **AND** completion create through the same fixtures matches its baseline terminal
   stdout/exit; explicit profile failure never falls back to native credentials
+
+## MODIFIED Requirements
+
+### Requirement: Discovery Feature Advertisement
+The runtime discovery envelope SHALL include a top-level features array of stable
+string identifiers for additive contract capabilities, keeping exact
+apiVersion=locus.local-job.v1. canonical-run-ledger SHALL identify the dense committed
+ledger projection, corrected terminal truth and optional metadata. The optional
+runtime.codex.v1 namespace SHALL declare schemaVersion=1 and maturity=experimental;
+this SHALL not claim native protocol stability or live-attach support.
+The features array and closed discoveryFeature schema enum SHALL additionally include
+async-submit once storage/claim activation is complete. The existing preflight rule
+SHALL apply; pinned schema consumers SHALL refresh as predeclared in the guide.
+The R2 direct extension remains conditional on Owner approval, with pinned-old-schema
+failure evidence retained.
+
+#### Scenario: Consumer detects readiness support
+<!-- Scenario register: S52 (retained living scenario; title unchanged for MODIFIED archive) -->
+- **GIVEN** `tests/fixtures/local-job-api-async/discovery.json#S52`, with current discovery JSON with runtime-readiness and explicit ready/needs-auth runtime entries
+- **WHEN** the discovery reader is exercised with `discovery.json` containing current
+  readiness-enabled runtime fixtures
+- **THEN** features contains runtime-readiness and the per-runtime readiness objects
+  are present as in the existing contract
+
+#### Scenario: Older build lacks the feature
+<!-- Scenario register: S53 (retained living scenario; title unchanged for MODIFIED archive) -->
+- **GIVEN** `tests/fixtures/local-job-api-async/discovery.json#S53`, with the executable neutral preflight helper, no-feature discovery JSON and a recording dispatch port
+- **WHEN** a consumer reads the discovery envelope from a build without a given feature identifier
+- **THEN** the preflight helper returns unsupported and its dispatch spy stays zero,
+  instead of assuming silently-dropped request fields were honored
+
+#### Scenario: Consumer detects canonical ledger support
+<!-- Scenario register: S54 (retained living scenario; title unchanged for MODIFIED archive) -->
+- **GIVEN** `tests/fixtures/local-job-api-async/discovery.json#S54`, with canonical-run-ledger discovery JSON and runtime.codex.v1 extension metadata fixture
+- **WHEN** the implemented discovery reader is exercised with the ledger-enabled
+  discovery.json fixture
+- **THEN** features contains canonical-run-ledger alongside existing features, and the
+  documented optional extension has namespace runtime.codex.v1, schemaVersion=1 and
+  experimental maturity matching its emitted metadata
+
+#### Scenario: S22 Discovery advertises the extension with explicit schema evolution
+- **GIVEN** `tests/fixtures/local-job-api-async/discovery.json#S22`, with a new executable with migrated isolated profile and async activation enabled,
+  pinned schema from b26c0651, updated schema, and a separately pinned old discovery output
+- **WHEN** runtimes list --json is validated with each schema and baseline output is read
+- **THEN** new output retains v1/existing features, adds async-submit, passes new schema
+  and fails old discoveryFeature enum specifically at async-submit
+- **AND** baseline old output contains no async-submit; a failed migration fixture exits
+  before discovery activation and never advertises the feature; optional response-field
+  ignoring remains valid without claiming closed-enum compatibility
+- **AND** the activation/rollback fixture stops old writers and gives the old executable
+  a separate profile path; deliberately pointing it at a new marker proves it does not
+  understand that marker, so same-profile mixed execution is rejected by rollout
+  policy rather than falsely certified as a technical old-build fence
+
+#### Scenario: S23 Unsupported version and absent feature fail closed
+- **GIVEN** `tests/fixtures/local-job-api-async/discovery.json#S23`, with the executable neutral consumer-preflight fixture with a dispatch spy,
+  no-feature discovery JSON and requests using locus.local-job.v1.1 or unknown version;
+  the baseline b26c0651 CLI parser is pinned separately for old-build shape tests
+- **WHEN** the neutral helper reads discovery, the current CLI parses wrong-version
+  submit requests, and the old parser receives submit or retry --request
+- **THEN** the helper returns unsupported and dispatch count zero; version failures use
+  existing stderr "apiVersion must be locus.local-job.v1"/2 with no job; old shapes
+  are rejected stderr/2 (unknown command / unexpected argument), never unkeyed execution
+- **AND** the fixture includes old keyed-create silent-drop counterevidence to document
+  why the recommended key surface excludes create; no consumer silently downgrades

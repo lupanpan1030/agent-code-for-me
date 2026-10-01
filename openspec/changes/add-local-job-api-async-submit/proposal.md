@@ -1,6 +1,6 @@
 # Change: Add Local Job API Async Submit
 
-Status: **DRAFT — awaiting Owner APPROVED**
+Status: **DRAFT — awaiting Owner APPROVED**（第二版；fresh synthesis @ b26c0651）
 
 ## Why
 
@@ -13,12 +13,13 @@ Phase 3 需要立即可引用的 Run identity 和重试安全的提交入口。�
 
 - 新增 `runs submit`、有限时 `runs wait`，retry 增加 opt-in async，agent/completion 同核。
 - create/submit/retry 及 jobs-stdio 的 job.run 共用提交 owner，daemon/既有 session executor 经原 claim 执行；删除 API CLI 内联 runner 路径。
-- consumer-scoped optional idempotencyKey，规范化请求重放/冲突，job+key 原子占用与补偿释放。
+- 仅 submit / retry --request 接受 consumer-scoped optional idempotencyKey，规范化请求重放/冲突，job+key 原子占用与补偿释放。
 - creation fact 提交才 ack；wait 同时验证 completed commit 与完整文件 publish；不创造 Run/queue/terminal 状态机。
 - 状态查询增加 optional executor 可观测信息，保持 existing runtime readiness 的认证含义。
-- **Potential BREAKING — Red R1, Owner decision needed**：旧 create/retry 自带执行；移交队列后的执行者启动/异常完成策略尚未证明兼容。保留 L2，不自行引入 daemon 前提或 timeout 退出；若 Owner 选择改变，须批准并修订规格。
+- **Red R1, Owner decision needed**：统筹预设（推荐，Owner 可改）Q2(a) 同步 wrapper 调用与 stdio 相同的 own-Run scoped pump，保留无 daemon 可用及本地 L2；daemon-first / stalled executor / publish failure 的条件行为见 design D2，不能只靠正常 golden 宣称全兼容。
 - **BREAKING — proposed Red R2, Owner decision needed**：`async-submit` 扩展 discovery 的封闭 feature enum，固定旧 schema 的校验器需要更新。
-- wire `apiVersion` 推荐继续 `locus.local-job.v1`；是否采用 `locus.local-job.v1.1` 请求门控仍由 Owner 选择。
+- **Red R3 / R4, Owner decision needed**：daemon 环境/native credential home 来源，以及 waiter abort 与取消的关系必须明确接受；不持久化 env。
+- wire `apiVersion` 统筹预设（推荐，Owner 可改）继续 `locus.local-job.v1`；是否采用 `locus.local-job.v1.1` 请求门控仍由 Owner 选择。
 
 ## Non-goals
 
@@ -26,7 +27,8 @@ Interaction/cursor reconnect → `add-durable-agent-interactions`；Session/cont
 `add-durable-session-bindings`，FROZEN 1.1 continuationHandle 留给 Phase 5；HTTP/socket 服务、远程、
 多租户、优先级队列、SDK 生成、Runtime 交付均排除。TICKET-128 全量创建原子化与可恢复发布、
 TICKET-127 Windows run-dir 后端不借本提案实施；本切片的最小 ack/claim/read barrier 与未修复残差
-在 design D3/D5 和 Q4 明列。不改变 Desktop chat、人用 one-shot CLI 或 provider/profile 默认。
+在 design D3/D5 和 Q4 明列。Phase 3 的新增公共 artifact-ref 寻址/搬运能力留给独立 artifact-ref proposal，本切片只消费既有 refs。
+不改变 Desktop chat、人用 one-shot CLI 或显式 provider/profile 选择；R3 的执行环境来源变化单列。
 
 ## Impact and four delivery anchors
 
@@ -35,7 +37,7 @@ TICKET-127 Windows run-dir 后端不借本提案实施；本切片的最小 ack/
 - **Migration gate**：additive idempotency reservation migration + 旧 writer 停止 + claim/admission 一致 + 单一路径守卫 + schema/conformance 同步，完成后才广告 feature。
 - **验证消费者**：Locus-owned neutral batch/structured-output、CLI/daemon/stdio、store/Workbench；真实消费者 receipt 分列 unknown。
 
-Affected deltas：local-job-api、headless-agent-jobs、agent-runtime-core、architecture-ownership。
+Affected deltas：local-job-api、headless-agent-jobs、agent-protocol-interfaces、agent-runtime-core、architecture-ownership。
 Desktop living spec 作为回归约束，无行为变更因此无 delta。实施影响 owner map、shared types、
 CLI parser/dispatcher、store/schema/migration、daemon/stdio、artifact read composition、schema/中英文指南及
 tests/architecture guards；**本次起草只写本 change 文档与 STATUS 一行，不改这些实施文件**。
@@ -66,32 +68,36 @@ Why: 公共 batch 与异步消费共用可观察、可取消、可去重的同�
 
 | Contract / version | Surface | 当前 → proposed | Breaking? / 分类 | 证据 |
 | --- | --- | --- | --- | --- |
-| locus.local-job.v1 | submit/wait、retry --async | 无 → 新操作、新 timeout envelope/exit 9 | 新操作 additive；旧 0–8 数值含义不变，需 Q6 | design D2；consumer-guide:91,982 |
-| same | create/retry | inline terminal → submit+wait terminal；executor absent 分支尚待决策 | **Red R1 decision needed**，正常终态 bytes 不足以证明启动语义兼容 | cli-dispatcher:451,499,865；guide:113 |
-| same | optional idempotencyKey/replay、冲突错误 | 无 key：原行为；有 key：同 consumer 重放或 idempotency_conflict/exit 2 | opt-in additive，规范化/保留期是新增合同，Q5 | shared/local-job-api:175,204；design D4 |
-| same | status optional execution | 只有 job → job + advisory executor observation | additive unknown optional field，非 auth readiness 替代 | guide:1134；design D5 |
-| same | runtimes list features/schema | closed enum 增加 async-submit | **Red R2** 对 pinned old schema | schema:106,1307；guide:209 |
-| same | events/after/follow、result/artifacts | 六字段、12 types、原顺序/路径/digest/retention 保持；新 wait 检查 publish | non-breaking；不改变旧 follow 为文件 barrier | living local-job-api:52,99；design D5 |
-| locus-jobs-stdio.v1 | initialize/job.run/job.cancel/shutdown | 协议不变，提交与执行编排迁至同 core/pump | 内部原子替换；protocol 不依赖外部 daemon | jobs-stdio:247,268,322,381 |
-| wire version alternative | apiVersion | 目前只接受 locus.local-job.v1；若采用 v1.1 必须显式门控 | **Owner decision needed Q1**，本稿不自行接受/升级版本 | shared/local-job-api:813 |
+| locus.local-job.v1 | submit/wait、retry --async/--request | 新 opt-in command/shape，wait timeout envelope + exit 9 | additive，旧 0–8 编号不变；Q6 | design D2 |
+| same | create/default retry | inline → submit + scoped canonical pump + wait（Q2(a)）；(b)/(c) 是 daemon 前提/launcher | **Red R1**：无 executor/stalled/publish failure 与 observer error 条件必须选择；本地正常 bytes 保持 | cli-dispatcher.ts:451-528；design D2 |
+| same | execution context | caller env → 实际 claimant env/native home；CLI readiness 仍只检查 caller | **Red R3 #6/#7/#9**，接受 daemon 环境为统筹预设 | process-runner.ts:229-234；daemon.ts:162；design D2 |
+| same | waiter abort | 今日 process-tree kill 终止本地工作；远端 claimant 不会随 waiter 消失 | **Red R4 #4/#9**；(b)/(c) 预设 signal/EOF cancel own ID；SIGKILL 残余 | guide:787,817；design D2 |
+| same | job.workerId / workerPid | 字段不变；daemon-first 值指向 shared executor，不再是 caller | #3 provenance 披露（P3），不要 signal workerPid；调用 runs cancel | schema:1063-1064；cli-output.ts:124-125 |
+| same | idempotency/replay/conflict | 仅 submit/retry body 可选 key，同 consumer/request 重放；conflict exit 2 | opt-in additive #5；create 原字段不变；Q1/Q5 | design D4 |
+| same | submission_pending | 原无此 code；live creator / permanent orphan 均 exit 8 + retryable:true | #5 新语义，需 Owner Q4/Q6；retryable 不承诺最终解除 | synthesis SYN-09；design D3 |
+| same | wait/status observation | status queued/running 必有 execution；terminal 省略；wait 根据表给 reason | additive fields，read 本身只观察，既有 recovery prologue 不变 | design D5 |
+| same | discoveryFeature | closed enum 加 async-submit | **Red R2 / Q3** pinned-old-schema 失败；预声明 refresh 规则支持 direct | guide:209-216；living Discovery:476-478 |
+| same | terminal result/artifacts | normal prepared tail 与今日 terminal.artifacts() 相等；recovery 无 terminal refs、ready 返回 artifacts:[] | #5/#8 明示异常行为；旧 publish failure 本来就返回 artifacts:[] + outcome exit，Q2(a) 本地保持，(b)/(c)/daemon-first 可能 error/8 | run-event-ledger.ts:1498-1500,1582-1595；design D2/D5 |
+| same | key request gating / guide | 推荐只新 command shape 接 key；备选 keyed create 会改变 guide:210 规则 | #10 备选变化必须 Owner 选择；旧 create silent drop 可重复执行 | shared/local-job-api.ts:828,875；C7 §9.8 |
+| locus-jobs-stdio.v1 | initialize/job.run/job.cancel/shutdown | envelopes 不变，调用同 submission/pump owner，无外部 daemon 前提 | internal 原子替换，MODIFIED 正确 capability | agent-protocol-interfaces:35-69 |
+| wire alternative | apiVersion | 推荐保持 locus.local-job.v1；另发 v1.1 需硬门控/版本组合 | Q1 Owner decision，当前未接受 v1.1 | shared/local-job-api.ts:813 |
 
-上表简写文件的完整路径与准确行见 design source basis。以下按 **C7 §9.2 十条逐条**分类，覆盖以上每处变化：
+短路径见 design source basis。**C7 §9.2 十条**逐项分类：
 
-| # | C7 类别 | 本稿分类与影响 |
+| # | C7 类别 | 分类、变化及 Owner 接受点 |
 | --- | --- | --- |
-| 1 | 删除/重命名 | non-breaking：无 public 删除/更名；删除的是 internal inline worker/创建 helper。 |
-| 2 | type/requiredness/nullable/enum/default/validation | 旧请求零变化；新 optional key、retry body/async、timeout 只 opt-in。**Red R2** 涉及 feature enum 扩展；Q1 若改 apiVersion literal 另为 Red，不暗改。 |
-| 3 | identity | non-breaking：job.id 就是同一 Run，retry 新 ID/原链不改；key replay 返回既有 attempt 是新 opt-in 行为，不把 retry 变成 resume。 |
-| 4 | lifecycle | **Red R1 decision needed**：CLI 自执行移交队列；create/retry 保留等待终态，无执行者/异常 publish 的可完成性需 Q2，不能默认改变旧行为。submit immediate 与独立 wait 是新增操作；cancel 原语义保留。 |
-| 5 | ordering/cursor/idempotency/retry/terminal | 新 key/replay/conflict/30 天规则 additive；不改无 key retry、12-type dense order、after/follow 或 terminal truth。wait 新增 commit+publish predicate，超时不改 outcome；wrapper 若改变异常分支归 **R1**，本稿未选择此例外。 |
-| 6 | Runtime/provider/model/policy | non-breaking：默认 batch、provider/reference、capability/profile gate 与 completion 选择不变；queue consumer 不自行换 adapter。 |
-| 7 | auth/trust/secret/FS/network | non-breaking：本地 attribution 隔离、hash-only key，无新 secret/FS/network 授权；不声称 consumer.id 是强认证。 |
-| 8 | artifact path/ref/digest/retention | non-breaking：现有路径/角色/retention 保留，native refs 仍由账本登记；wait 检查已有文件。key 的 TTL 不是 artifact TTL。TICKET-128 未来公开可见修复另过 C7。 |
-| 9 | transport/Host discovery/start/platform | **Red R1** 若新增显式 executor 前提或改变启动方式；optional execution 字段 additive；stdio session/关闭范围不变，不增加 HTTP/socket 或新平台承诺。 |
-| 10 | 必须理解的新 event/enum/extension | 无新 event/native extension；旧消费者可忽略新 optional fields，但 closed feature enum 的 **Red R2** 不能忽略。新消费者先查 feature，不支持不 dispatch。 |
+| 1 | 删除/重命名 | 无 public 删除；internal inline runner/helper 原子删除，scoped pump 同核。 |
+| 2 | type/enum/default/validation | 新操作/timeout/key opt-in；**R2** 扩 enum；claim-time revalidation/max queued age=24 h 新增可拒绝执行的边界需披露；Q1 若改 version 另属 Red。 |
+| 3 | identity | Run/job identity 与 retry lineage 不变；workerId/workerPid 真实指向 executor，daemon-first 来源改变，S03 不掩盖。 |
+| 4 | lifecycle | **R1** wrapper 执行/异常分支；**R4** waiter death ≠ 自动远端 cancel；signal/EOF 策略待 Owner；正常 queued/running cancel 原语义不变。 |
+| 5 | ordering/idempotency/retry/terminal | key/replay/conflict/TTL opt-in；submission_pending/8+retryable 可永久占 key，需指南救济；wait committed+published，recovery 空 refs；publication/observer error 为 R1 披露，不改 12 events/order/after/follow。 |
+| 6 | Runtime/provider/model/policy | 显式选择与 selector 不变；**Red R3** claimant env/native config home 会改变原生凭据来源与可用性；CLI readiness 不等于 daemon readiness。claim 前复核 project/cwd/profile/grant，失败关闭，不自动换 provider。 |
+| 7 | auth/trust/secret/FS/network | **Red R3** HOME/CODEX_HOME/CLAUDE_CONFIG_DIR/proxy/PATH 来源迁移；双方都 strip secrets；不得持久化 env。raw key never stored，consumer 是 attribution 非 auth；不扩 root/network 权限。 |
+| 8 | artifacts/retention | 正常路径/roles/digest/retention 不变；key TTL 非文件 TTL；异常 publish 的 wrapper baseline 与 Q2 例外、recovery 空 terminal refs 必须披露。跨进程验证/receipts 不暴露 dev/ino。 |
+| 9 | transport/Host/start/platform | **R1** 三种真实 executor 选项；**R3** environment 来源；**R4** shutdown/cancel；(c) 新 detached launcher 是新增启动 surface。无 HTTP/socket/新平台承诺。 |
+| 10 | unknown/new enum/extension | **R2** pinned enum 更新；Q1 若 keyed create 则 guide:210 需改，不能认为旧 build 尊重 silently dropped key。推荐新形状保持原 create 规则并加新操作 preflight 说明。无新 event/native extension。 |
 
-C7 §9.1：reservation table、私有 pump、submit/wait seams 属 internal；CLI/stdio/schema/退出码/feature
-属 public 或独立版本；Runtime-native 信息不变、不公开 raw union。没有把任一 Red 隐藏在“JSON 可解析”下。
+C7 §9.1：reservation、pump、seams 属 internal；CLI/stdio/schema/errors/feature 属 public 或独立版本；Runtime-native raw union 不公开。所有 R1–R4 保持待 Owner，不将 JSON 可解析当作兼容结论。
 
 ### 4. Current 与 proposed 示例
 
@@ -127,12 +133,23 @@ Proposed：同一输入改调用 submit；可选加 `"idempotencyKey":"req-001"`
 {"apiVersion":"locus.local-job.v1","job":{"id":"job-A","status":"queued"},"execution":{"state":"unavailable","reason":"no_executor","observedAt":"2026-10-01T00:00:00.000Z","hint":"locus daemon run"}}
 ```
 
-wait ready 和旧请求 create 保留 Current 的**完整**终态 envelope；keyed create replay 只 opt-in 增加标志。
+wait ready 和旧请求 create 保留 Current 的**完整**正常终态 envelope；只有 keyed submit/retry replay 增加标志，create 不接 key。
 以下事件在 current/proposed 完全相同，不新增 async event：
 
 ```json
 {"apiVersion":"locus.local-job.v1","jobId":"job-A","sequence":1,"type":"job_created","createdAt":"2026-10-01T00:00:00.000Z","payload":{"source":"api","runtime":"codex","mode":"plan","cwd":"/workspace/demo"}}
 ```
+
+新增 pending / observer error 示例（error stdout，exit 8；后者携带 job id，不能当作 Run 终态）：
+
+```json
+{"apiVersion":"locus.local-job.v1","error":{"code":"submission_pending","message":"Submission is not yet admitted; retry the same key.","retryable":true}}
+{"apiVersion":"locus.local-job.v1","job":{"id":"job-A","status":"running"},"wait":{"state":"error","reason":"observation_failed"}}
+```
+
+submission_pending 可能是仍在提交也可能是永久 orphan；重试同 key 不生成第二 attempt。未解决时可改新 key，但活跃原 creator 仍可能完成，必须明确承担重复风险；orphan 不自动过期，修复归 TICKET-128。
+
+环境例：submitter 用 CODEX_HOME=A，daemon 用 CODEX_HOME=B；daemon claim 的 child 用 B，即使 CLI runtimes list 在 A 显示 ready。两条路径都剥离 secret env，不传 env 快照。abort 例：今日杀 create 进程树停止 child；daemon-first 杀 waiter 不会杀 daemon，推荐可捕获 signal/EOF 转发 own cancel，SIGKILL 做不到。今日 publish 抛错时 create 仍返回 artifacts:[] 和 outcome exit；Q2(a) 本地保留，独立 wait 则 pending/9，(b)/(c) 的 bounded error 为明确 L2 例外。
 
 纯 schema diff 无法表达：ack 已持久化但未必执行；queued snapshot 可随即变 running；Run terminal 不等于
 文件已 publish；wait timeout 不是 Run failure；executor 前提改变旧 create 的启动体验；相同 key 的
@@ -142,7 +159,7 @@ replay 不触发新 provider 工作。Q2 对异常 wrapper 的决定是 L2 完�
 
 | Consumer | 使用证据 | 受影响调用 | 所需修改 | Consumer-owned test/E2E |
 | --- | --- | --- | --- | --- |
-| Career Kit | strategy:89 的 batch/structured-output、consumer.id=career-kit；其历史 adapter/contract 链接见 strategy:99 | create/result/provider/structured output；当前具体版本 unknown | 采用 async/key 时先 feature detect；若 Q2 明确批准显式 daemon 例外需准备 executor；固定 schema 需刷新。领域 review/apply 不变。 | 本切片 unknown；历史 smoke 不能冒充本次验收 |
+| Career Kit | **仅证据**：career-application-kit@6d6a333，locus-adapter.cjs:26 固定 locus.local-job.v1；strategy:93；adapter :42 的 5 min timeout，:4137-4150 sanitized env allowlist，:4179-4215 detached spawn/process-group kill，:5730-5752 仅恢复到 ID 才 cancel，:5360-5376 validateLocusCreateEnvelope 要求 succeeded + consumer/createdAt 在 create 时间窗匹配 | create；runtimes list（:3890,:3965，检查 runtime-readiness）；projects status (:4748)、runs status (:4804)、cancel (:4839)、result (:5769)；batch/structured-output | 采用 async/key 需 feature preflight、保存 ID、处理 pending/observer error；旧 attempt replay 会被当前 createdAt window validator 拒绝，需 consumer 自行调整；评估 R3 env 与 R4 kill、刷新 pinned schema；领域 review/apply 不变 | 本切片 receipt unknown；上述版本/行为是核实事实，不是协商、路线重排或本次验收 |
 | Amadeus | strategy:108 的已接入事实；本次 Owner 派单明确 Windows 接入方 | 当前具体 v1 命令/版本及 key 需求 unknown | 按其实际使用评估新操作、R1/R2；Windows artifacts 现有限制见 TICKET-127 | unknown；只列事实，不协商、不重排路线、不代其写 adapter |
 | Other | unknown | unknown | 发布 consumer-neutral guide/schema/fixtures | unknown |
 
@@ -152,12 +169,14 @@ Locus 自己负责 neutral contract conformance；不建立跨应用业务矩阵
 
 | Option | Locus 变化 | Consumer 变化 | 维护成本 | 风险 | 删除条件 |
 | --- | --- | --- | --- | --- | --- |
-| Direct new standard（推荐 R2；R1 仅备选，待 Owner） | 同 v1 扩 feature enum；若选 R1 则明改 daemon 前提 | 更新 pinned schema；若选 R1 则准备 executor；新操作 opt-in | 低，单 core | 老调用启动/固定 schema 受影响 | 无旧 core；无临时 facade |
+| Direct new standard（推荐 R2；R1 仅备选，待 Owner） | 同 v1 扩 feature enum；Q2(a) 同 scoped pump；明确接受 R1/R3/R4 条件 | 更新 pinned schema；接受 daemon env 来源；按 R4 取消；(b) 才要求 daemon | 低，单 core | 老调用启动/固定 schema 受影响 | 无旧 core；无临时 facade |
 | New public version | 新 version parser/serializer → 同一 core | 显式版本选择，旧版保留范围另定 | 中，多版本 fixtures | 版本号本身不能恢复旧自执行行为 | Owner 定旧版 sunset 后删翻译 |
-| Temporary facade | 旧 envelope 翻译 → 同一 submit+wait | 暂留旧字段；若要旧启动体验需批准同 daemon 的启动编排 | 中 | facade 不能伪造完成/另建 worker；无法单靠翻译消除 R1 | Owner 定具体 sunset/移除条件 |
+| Temporary facade | 旧 envelope 翻译 → 同一 submit+wait | 暂留旧字段；旧启动体验可由同 canonical scoped pump 实现；不得暗增 detached launcher | 中 | facade 不能伪造完成/另建 worker；无法单靠翻译消除 R1 | Owner 定具体 sunset/移除条件 |
 | Defer / reject | 暂不实施受影响 public change | 无 | 延期 | async 与去重需求未交付 | 新决定后重提 |
 
-R1 优先保留 L2、复用既有 daemon 的启动编排；其可行性须 Q2 前置决定，不能以新增 worker 兼容。
+统筹预设（推荐，Owner 可改）：Q2(a) scoped pump；R3 接受实际 executor env/native home；R4 在 (b)/(c) 下 signal/EOF cancel；Q1 v1 + submit/retry-only key；R2 direct；Q4/Q5/Q6 最小 barrier、30 天 TTL/命名 cleanup、wait 30 s/24 h/9、pending 8+retryable。
+Q2 的备选 (b) 是 explicit daemon + bounded error（L2 例外）；(c) 是全新 detached launcher，新增 #9 surface，不推荐。保留 caller-process execution 是 R3 的环境保真备选，persist env 被 living headless:174 排除。R2 direct 援引指南 :209-216/living Discovery 预声明规则和 canonical-run-ledger 先例，仍需本次 Owner 决定。
+Q1 备选 keyed create 必须改 guide:210（#10），并披露旧 build 忽略 key 导致重复执行；v1.1 不能解决 executor/abort/environment，仅增加版本翻译与 sunset 成本。
 正常 create 的长期 convenience wrapper 是 C7 §9.6 的同核操作，不是保留旧实现。
 不把 old core/DB/queue/worker/state machine 列为任何选项。
 
@@ -182,14 +201,14 @@ Architecture guard / contract tests: S32/S33 及旧请求 byte fixtures；不存
 ```text
 Release order: Owner C7 + APPROVED → 独立 red tests → additive migration/原子删除旧路径 →
   schema/双语指南/examples/feature 一致 → 同 SHA 验证与 fresh review → Owner ACCEPTED。
-Old consumer → new Locus: 正常终态 bytes 保留；R1 的启动兼容尚未证明，R2 pinned schema 需更新，不能宣称全兼容。
-New consumer → old Locus: async-submit feature 缺失即拒绝依赖能力；不得发送 key 后假设被执行。
+Old consumer → new Locus: Q2(a) 本地正常终态 bytes 保留；R1 异常、R3 环境、R4 abort 已披露，R2 pinned schema 需刷新，不能宣称全兼容。
+New consumer → old Locus: 缺 feature 不 dispatch；submit / retry --request 由旧 parser 按形状 exit 2；不得 keyed create 后假设 key 被执行。
 Unsupported version: 当前 exact-version 校验错误 apiVersion must be locus.local-job.v1，exit 2；
   没有现成独立 unsupported-version JSON code，不能虚构；若 Q1 变更须同改合同。
 Downgrade: 不静默降到无幂等 create；只可由 consumer 显式选用原有无-key 语义。
 Rollback: 停 writer/drain 后旧构建用隔离 profile，或另行验证的 backup restore；不混用 old/new writer。
 External data/artifact: 不动消费者数据库、不删项目或 run files；TICKET-128 残差诚实报告。
-Security: 无新 credential/FS/network scope；key hash-only；status 不暴露宿主身份秘密。
+Security: R3 明示 executor native-home/env 来源；无 env 快照或新增 secret 入口；raw key never stored；execution 无新增 PID，job.workerPid 仍是真实执行者。
 ```
 
 普通 append 失败原子补偿 key/job；崩溃 orphan 不 ack、不执行、保留 reservation 并报 submission_pending；
@@ -211,8 +230,8 @@ partial publish 的 wait 超时不改变 ledger outcome，修复仍由 TICKET-12
 
 ```text
 Decision: PENDING — Owner decision needed（非 APPROVED）
-Approved exact scope: none；待 Q1–Q6 与 R1/R2 的精确决定
-Compatibility obligation: 待决定；推荐正常 v1 终态 bytes + 明示 R1/R2 升级影响
+Approved exact scope: none；待 design 六组 Q1–Q6 与 R1–R4 的精确决定
+Compatibility obligation: 待决定；推荐本地 v1 正常终态 bytes + 明示 R1–R4、pending 与 publish/recovery 异常语义
 Sunset/deletion condition: N/A 推荐无临时 facade；若选择版本/facade 则需填写
 Consumer coordination required: 发布中立材料；Amadeus 只列事实，无专属协商/排序
 Owner: Repository Owner — signature pending

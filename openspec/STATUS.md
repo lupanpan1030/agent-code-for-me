@@ -8,7 +8,7 @@ Updated: 2026-10-01 (Pacific/Auckland); previous: 2026-09-30 (Pacific/Auckland)
 
 | Active change | Status | Scope / next gate |
 | --- | --- | --- |
-| [add-local-job-api-async-submit](changes/add-local-job-api-async-submit/proposal.md) | DRAFT — awaiting Owner APPROVED | Phase 3 async submit; docs only; Owner C7 R1/R2 and Q1–Q6 decision before implementation |
+| [add-local-job-api-async-submit](changes/add-local-job-api-async-submit/proposal.md) | DRAFT — awaiting Owner APPROVED | Phase 3 async submit DRAFT v2 per fresh synthesis b26c0651; docs only; six Owner decision groups (R1–R4 / Q1–Q6) pending before implementation |
 
 Parked proposals are indexed in [`deferred/README.md`](deferred/README.md) and
 do not appear in the active list.
