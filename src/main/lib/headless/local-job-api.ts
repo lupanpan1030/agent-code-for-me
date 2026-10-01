@@ -1,4 +1,11 @@
-import { existsSync, lstatSync, mkdirSync, realpathSync } from "node:fs"
+import { randomUUID } from "node:crypto"
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  realpathSync,
+  statSync,
+} from "node:fs"
 import {
   basename,
   dirname,
@@ -7,6 +14,7 @@ import {
   relative,
   resolve,
 } from "node:path"
+import { eq } from "drizzle-orm"
 import type { AgentRuntimeContractId } from "../../../shared/agent-runtime-capabilities"
 import {
   assertLocalJobApiCreateRequest,
@@ -52,7 +60,7 @@ import {
   checkRegisteredAgentRuntimeCapability,
   listRegisteredAgentRuntimeManifests,
 } from "../agent-runtime/runtime-registry"
-import type { AgentJob, AgentJobEvent } from "../db/schema"
+import { type AgentJob, type AgentJobEvent, projects } from "../db/schema"
 import { createId } from "../db/utils"
 import {
   assertStableDirectoryPath,
@@ -64,10 +72,15 @@ import {
   stableDirectoryChildPath,
 } from "../filesystem/stable-directory"
 import {
+  getProjectRegistrationForCwd,
+  isProjectRegistrationError,
+} from "../projects/registry"
+import {
   parsePublicJobResult,
   serializeAgentJob,
   serializeAgentJobEvent,
 } from "./cli-output"
+import type { RunClaimGateDecision } from "./job-runner"
 import {
   type AgentJobDatabase,
   type AgentJobIdempotencyReservationInput,
@@ -81,6 +94,7 @@ import {
 import {
   assertHeadlessProviderSelectionUsableAtCreate,
   type HeadlessProviderBindingDependencies,
+  HeadlessProviderBindingError,
   inspectHeadlessDefaultProviderBinding,
   resolveExplicitHeadlessProviderProfile,
 } from "./provider-binding"
@@ -770,6 +784,51 @@ export type LocalJobApiAdmissionOptions = {
   reservation?: AgentJobIdempotencyReservationInput | null
 }
 
+export type LocalJobApiProjectIdentity = {
+  canonicalPath: string
+  dev: string
+  ino: string
+}
+
+/**
+ * Canonical identity of an admitted cwd (design D5): its canonical path and
+ * device/inode, kept only in the job's internal inputJson
+ * `submissionContext.projectIdentity` (never serialized or written to
+ * request.json).
+ */
+export function localJobApiProjectIdentity(
+  cwd: string,
+): LocalJobApiProjectIdentity {
+  const canonicalPath = realpathSync(cwd)
+  const stat = statSync(canonicalPath, { bigint: true })
+  if (!stat.isDirectory()) throw new Error("API run cwd is not a directory")
+  return {
+    canonicalPath,
+    dev: stat.dev.toString(),
+    ino: stat.ino.toString(),
+  }
+}
+
+function storedProjectIdentity(
+  job: AgentJob,
+): LocalJobApiProjectIdentity | null {
+  const context = parseJobInput(job).submissionContext
+  const identity = isRecord(context) ? context.projectIdentity : null
+  if (
+    !isRecord(identity) ||
+    typeof identity.canonicalPath !== "string" ||
+    typeof identity.dev !== "string" ||
+    typeof identity.ino !== "string"
+  ) {
+    return null
+  }
+  return {
+    canonicalPath: identity.canonicalPath,
+    dev: identity.dev,
+    ino: identity.ino,
+  }
+}
+
 function plannedRunDirPaths(
   artifactBaseDir: string | null,
   jobId: string,
@@ -894,6 +953,9 @@ export async function createLocalJobApiJob(
         input: request.input,
         artifacts: request.artifacts,
         prompt: request.prompt.text,
+        submissionContext: {
+          projectIdentity: localJobApiProjectIdentity(project.cwd),
+        },
       },
       projectId: project.project.id,
       apiConsumerId: request.consumer.id,
@@ -990,6 +1052,12 @@ export async function retryLocalJobApiJob(
   const planned = plannedRunDirPaths(request.artifacts.baseDir, retryId)
   const retry = await retryAgentJob(db, job.id, {
     id: retryId,
+    input: {
+      ...parseJobInput(job),
+      submissionContext: {
+        projectIdentity: localJobApiProjectIdentity(project.cwd),
+      },
+    },
     artifactBaseDir: planned?.runDirPath ?? request.artifacts.baseDir,
     artifactManifestPath: planned?.manifestPath ?? null,
     reservation: options.reservation,
@@ -1195,8 +1263,15 @@ export type StagedLocalJobApiFinalArtifacts = {
   discard(): void
 }
 
-function stagedLocalJobApiArtifactName(fileName: string): string {
-  return `.${fileName}.locus-staged`
+/**
+ * Staged terminal names are unique per process and preparation attempt
+ * (design D5): a losing preparer can only discard its own staging.
+ */
+function stagedLocalJobApiArtifactName(
+  fileName: string,
+  attemptToken: string,
+): string {
+  return `.${fileName}.locus-staged-${process.pid}-${attemptToken}`
 }
 
 /**
@@ -1213,8 +1288,9 @@ export function stageLocalJobApiFinalArtifacts(
   if (!runDir) return { artifacts: [], publish() {}, discard() {} }
   const nativeArtifacts = [...(input.nativeArtifacts ?? [])]
   const staged: Array<{ stagedName: string; finalName: string }> = []
+  const attemptToken = randomUUID()
   const stage = (finalName: string, content: string): string => {
-    const stagedName = stagedLocalJobApiArtifactName(finalName)
+    const stagedName = stagedLocalJobApiArtifactName(finalName, attemptToken)
     writeRunArtifactFile(runDir, stagedName, content, input.filesystemHooks)
     staged.push({ stagedName, finalName })
     return stagedName
@@ -1505,34 +1581,197 @@ function committedInitialRunDirRefs(
   return refs
 }
 
-export type LocalJobApiExecution = {
-  /** The reopened admitted run directory (artifact-bearing agent Runs). */
-  runDir: LocalJobApiArtifactRunDir | null
-  /** Terminal run-dir preparation registered with the one completed. */
-  terminalArtifacts: ReturnType<
-    typeof createLocalJobApiTerminalArtifacts
-  >["preparer"]
-  close(): void
+export type LocalJobApiClaimGateOptions = {
+  /** Clock of the claim-time age check. */
+  now?: Date
+  /** Maximum queued age from createdAt to claim (equal is rejected). */
+  maxQueuedApiAgeMs: number
+  providerBindingDependencies?: HeadlessProviderBindingDependencies
+  onHostDiagnostic?: (message: string) => void
+}
+
+function claimGateFail(
+  reason: string,
+  errorCode: string,
+  error: unknown,
+  fallback: string,
+): RunClaimGateDecision {
+  return {
+    kind: "fail",
+    reason,
+    errorCode,
+    errorMessage: error instanceof Error ? error.message : fallback,
+  }
 }
 
 /**
- * Executor composition of one claimed API Run (design D1/D5): the executing
- * process reopens the admitted run directory from the committed initial refs
- * and registers the same terminal preparer the inline create used. Runs
- * without an artifact manifest compose nothing.
+ * Claim-time re-validation of an API Run's registered project and its
+ * canonical cwd identity (design D5). Returns the current registration or a
+ * fail-closed decision.
  */
-export function openLocalJobApiExecution(
+function revalidateClaimedLocalJobApiProject(
   db: AgentJobDatabase,
   job: AgentJob,
-  options: { onHostDiagnostic?: (message: string) => void } = {},
-): LocalJobApiExecution {
-  if (job.source !== "api" || !job.artifactManifestPath) {
-    return { runDir: null, terminalArtifacts: undefined, close() {} }
+):
+  | { ok: true; projectCwd: string }
+  | { ok: false; decision: RunClaimGateDecision } {
+  const unregistered = (error: unknown) => ({
+    ok: false as const,
+    decision: claimGateFail(
+      "project_unregistered",
+      "project_unregistered",
+      error,
+      "The Run's project is no longer registered.",
+    ),
+  })
+  const identityChanged = (error: unknown) => ({
+    ok: false as const,
+    decision: claimGateFail(
+      "cwd_identity_changed",
+      "cwd_identity_changed",
+      error,
+      "The Run's cwd no longer has its admitted identity.",
+    ),
+  })
+  if (job.projectId) {
+    const project = db
+      .select()
+      .from(projects)
+      .where(eq(projects.id, job.projectId))
+      .get()
+    if (!project || project.removedAt) return unregistered(null)
   }
-  const runDir = reopenAdmittedRunDir(
-    job,
-    committedInitialRunDirRefs(db, job.id),
-  )
+  let registration: ReturnType<typeof getProjectRegistrationForCwd>
+  try {
+    registration = getProjectRegistrationForCwd({
+      db,
+      cwd: job.cwd,
+      projectId: job.projectId,
+      label: "API run cwd",
+    })
+  } catch (error) {
+    return isProjectRegistrationError(error) && error.code === "unknown_project"
+      ? unregistered(error)
+      : identityChanged(error)
+  }
+  if (!registration.registered) return unregistered(null)
+  if (registration.cwd !== job.cwd) return identityChanged(null)
+  const stored = storedProjectIdentity(job)
+  if (stored) {
+    let current: LocalJobApiProjectIdentity
+    try {
+      current = localJobApiProjectIdentity(job.cwd)
+    } catch (error) {
+      return identityChanged(error)
+    }
+    if (
+      current.canonicalPath !== stored.canonicalPath ||
+      current.dev !== stored.dev ||
+      current.ino !== stored.ino
+    ) {
+      return identityChanged(null)
+    }
+  }
+  return { ok: true, projectCwd: registration.cwd }
+}
+
+/**
+ * Claim-time host gate of a claimed API Run (design D5), run after the
+ * conditional claim and before any provider call or spawn: the registered
+ * project still exists, the stored canonical cwd identity is unchanged, the
+ * stored execution profile/grant and provider reference are still valid,
+ * the queued age is below the bound, and the admitted run directory
+ * reopens with every committed initial ref verified. The executing process
+ * then registers the same terminal preparer the inline create used.
+ */
+export function openClaimedLocalJobApiExecution(
+  db: AgentJobDatabase,
+  job: AgentJob,
+  options: LocalJobApiClaimGateOptions,
+): RunClaimGateDecision {
+  if (job.source !== "api") return { kind: "proceed" }
+  let projectCwd: string | null = null
+  if (job.kind !== "completion") {
+    const project = revalidateClaimedLocalJobApiProject(db, job)
+    if (!project.ok) return project.decision
+    projectCwd = project.projectCwd
+  }
+  let request: NormalizedLocalJobApiCreateRequest
+  try {
+    request = getLocalJobApiStoredRequest(job)
+    if (request.kind === "agent") {
+      validateLocalJobApiRequiredCapabilities(request)
+    }
+  } catch (error) {
+    return claimGateFail(
+      "execution_profile_invalid",
+      "execution_profile_invalid",
+      error,
+      "The Run's stored execution profile is no longer valid.",
+    )
+  }
+  const profileId = request.provider.profileId
+  if (profileId || request.kind === "completion") {
+    try {
+      resolveExplicitHeadlessProviderProfile({
+        db,
+        runtime: request.runtime.id,
+        providerProfileId: profileId,
+        modelOverride: request.provider.model,
+        dependencies: options.providerBindingDependencies,
+      })
+    } catch (error) {
+      return claimGateFail(
+        "execution_profile_invalid",
+        error instanceof HeadlessProviderBindingError
+          ? error.code
+          : "execution_profile_invalid",
+        error,
+        "The Run's provider reference is no longer usable.",
+      )
+    }
+  }
+  const nowMs = (options.now ?? new Date()).getTime()
+  const createdAtMs = job.createdAt ? job.createdAt.getTime() : nowMs
+  if (nowMs - createdAtMs >= options.maxQueuedApiAgeMs) {
+    return claimGateFail(
+      "queued_age_exceeded",
+      "queued_age_exceeded",
+      null,
+      "The Run stayed queued longer than the maximum queued age.",
+    )
+  }
+  if (!job.artifactManifestPath || request.kind !== "agent" || !projectCwd) {
+    return { kind: "proceed" }
+  }
+  let runDir: LocalJobApiArtifactRunDir
+  try {
+    validateLocalJobApiArtifactBaseDirForProject(
+      request.artifacts.baseDir,
+      projectCwd,
+    )
+    const planned = plannedRunDirPaths(request.artifacts.baseDir, job.id)
+    if (
+      !planned ||
+      planned.runDirPath !== job.artifactBaseDir ||
+      planned.manifestPath !== job.artifactManifestPath
+    ) {
+      throw new Error(
+        "Admitted run directory does not match the stored request",
+      )
+    }
+    runDir = reopenAdmittedRunDir(job, committedInitialRunDirRefs(db, job.id), {
+      projectRoot: projectCwd,
+      artifactsBaseDir: dirname(planned.runDirPath),
+    })
+  } catch (error) {
+    return claimGateFail(
+      "artifact_admission_mismatch",
+      "artifact_admission_mismatch",
+      error,
+      "The admitted run directory no longer matches its committed refs.",
+    )
+  }
   const terminal = createLocalJobApiTerminalArtifacts({
     db,
     runDir,
@@ -1542,6 +1781,7 @@ export function openLocalJobApiExecution(
       : {}),
   })
   return {
+    kind: "proceed",
     runDir,
     terminalArtifacts: terminal.preparer,
     close: () => closeLocalJobApiArtifactRunDir(runDir),

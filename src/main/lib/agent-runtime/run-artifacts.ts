@@ -301,6 +301,12 @@ export class RunArtifactAdmissionMismatchError extends Error {
 export function reopenAdmittedRunDir(
   job: { id: string; artifactBaseDir: string | null },
   committedInitialRefs: readonly RunDirArtifact[],
+  containment: {
+    /** Registered project root the run directory must stay inside. */
+    projectRoot?: string | null
+    /** Canonical artifacts base directory that must contain the run dir. */
+    artifactsBaseDir?: string | null
+  } = {},
 ): RunArtifactRunDir {
   if (!job.artifactBaseDir) {
     throw new RunArtifactAdmissionMismatchError(
@@ -320,6 +326,22 @@ export function reopenAdmittedRunDir(
       throw new RunArtifactAdmissionMismatchError(
         "Artifact run directory does not belong to the Run",
       )
+    }
+    if (
+      containment.artifactsBaseDir &&
+      dirname(directory.path) !== containment.artifactsBaseDir
+    ) {
+      throw new RunArtifactAdmissionMismatchError(
+        "Artifact run directory is not inside its artifacts base",
+      )
+    }
+    if (containment.projectRoot) {
+      const inside = relative(containment.projectRoot, directory.path)
+      if (!inside || inside.startsWith("..") || isAbsolute(inside)) {
+        throw new RunArtifactAdmissionMismatchError(
+          "Artifact run directory is not inside the registered project",
+        )
+      }
     }
     const receipts = new Map<string, RunArtifactFileReceipt>()
     for (const ref of committedInitialRefs) {

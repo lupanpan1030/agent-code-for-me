@@ -122,6 +122,8 @@ export type RetryAgentJobOptions =
   | {
       now?: Date
       id?: string
+      /** Replacement stored input of the new attempt (default: the source's). */
+      input?: unknown
       artifactBaseDir?: string | null
       artifactManifestPath?: string | null
       reservation?: AgentJobIdempotencyReservationInput | null
@@ -938,7 +940,8 @@ export async function retryAgentJob(
       chatId: job.chatId,
       subChatId: job.subChatId,
       promptPreview: job.promptPreview,
-      inputJson: job.inputJson,
+      inputJson:
+        options.input === undefined ? job.inputJson : toJson(options.input),
       apiConsumerId: job.apiConsumerId,
       apiConsumerRunId: job.apiConsumerRunId,
       artifactBaseDir:

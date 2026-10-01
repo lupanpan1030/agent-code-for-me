@@ -27,7 +27,7 @@ import {
   listQueuedAgentJobsForIds,
   listQueuedAgentJobsForSource,
 } from "./job-store"
-import { openLocalJobApiExecution } from "./local-job-api"
+import { openClaimedLocalJobApiExecution } from "./local-job-api"
 import type { HeadlessProviderBindingDependencies } from "./provider-binding"
 import { evaluateDueAgentSchedules } from "./schedules"
 
@@ -51,7 +51,15 @@ export type RunLocalAgentDaemonOptions = {
   providerBindingDependencies?: HeadlessProviderBindingDependencies
   /** Locus build executing claimed completion Runs. */
   appVersion?: string | null
+  /**
+   * Internal claim-time bound of a queued API Run's age (test-injectable;
+   * not a user setting). Defaults to MAX_QUEUED_API_AGE_MS.
+   */
+  maxQueuedApiAgeMs?: number
 }
+
+/** Default maximum queued age of an API Run at claim (24 h; equal rejects). */
+export const MAX_QUEUED_API_AGE_MS = 86_400_000
 
 export type RunLocalAgentDaemonResult = {
   scheduledJobs: number
@@ -321,8 +329,13 @@ export function observeRunWorker(
 // existing runners; no worker, queue table or state machine is added.
 // ---------------------------------------------------------------------------
 
-/** Sources the ordinary daemon claims, in slot order. */
-const DAEMON_PUMP_SOURCES = ["daemon", "schedule", "api"] as const
+/**
+ * Sources the ordinary daemon claims, in slot order. Only an API-capable
+ * daemon (one holding a lock v2) claims `api`; desktop, default cli and
+ * protocol Runs are never claimed by a plain daemon.
+ */
+const DAEMON_PUMP_SOURCES = ["daemon", "schedule"] as const
+const API_CAPABLE_DAEMON_PUMP_SOURCES = ["daemon", "schedule", "api"] as const
 
 export type PumpQueuedRunsOptions = {
   db: AgentJobDatabase
@@ -340,6 +353,12 @@ export type PumpQueuedRunsOptions = {
   excludeIds?: ReadonlySet<string>
   /** `daemon` names claims `daemon:<pid>:…`; scoped pumps keep runner IDs. */
   workerKind?: "daemon"
+  /** Unscoped passes claim `api` only when the pump is API-capable. */
+  apiCapable?: boolean
+  /** Clock of the claim-time age check (default: the current time). */
+  now?: Date
+  /** Claim-time bound of a queued API Run's age (default 24 h). */
+  maxQueuedApiAgeMs?: number
   signal?: AbortSignal
   /** Called synchronously for every dispatched Run (daemon slot tracking). */
   onDispatch?: (job: AgentJob, dispatch: Promise<PumpQueuedRunResult>) => void
@@ -373,7 +392,11 @@ function listPumpWork(options: PumpQueuedRunsOptions): AgentJob[] {
       .slice(0, limit)
   }
   const jobs: AgentJob[] = []
-  for (const source of DAEMON_PUMP_SOURCES) {
+  const sources =
+    options.apiCapable === false
+      ? DAEMON_PUMP_SOURCES
+      : API_CAPABLE_DAEMON_PUMP_SOURCES
+  for (const source of sources) {
     const remaining = limit - jobs.length
     if (remaining <= 0) break
     jobs.push(
@@ -401,14 +424,16 @@ async function dispatchQueuedRun(
     workerId: `${prefix}:${process.pid}:${Date.now()}:${createId()}:${job.id}`,
     workerPid: process.pid,
   }
-  let execution: ReturnType<typeof openLocalJobApiExecution>
-  try {
-    execution = openLocalJobApiExecution(options.db, job, {
+  // Claim-time host gate (design D5): runs inside the runner after the
+  // conditional claim and before any provider call or spawn, so only the
+  // claimant reopens the admitted run directory.
+  const claimGate = (claimed: AgentJob) =>
+    openClaimedLocalJobApiExecution(options.db, claimed, {
+      now: options.now,
+      maxQueuedApiAgeMs: options.maxQueuedApiAgeMs ?? MAX_QUEUED_API_AGE_MS,
+      providerBindingDependencies: options.providerBindingDependencies,
       onHostDiagnostic: (message) => writeLine(options.stderr, message),
     })
-  } catch (error) {
-    return { jobId: job.id, claimed: false, exitCode: null, error }
-  }
   try {
     const result =
       job.kind === "completion"
@@ -419,10 +444,8 @@ async function dispatchQueuedRun(
             providerBindingDependencies: options.providerBindingDependencies,
             locusBuild: options.appVersion ?? null,
             signal: options.signal,
+            claimGate,
             ...worker,
-            ...(execution.terminalArtifacts
-              ? { terminalArtifacts: execution.terminalArtifacts }
-              : {}),
           })
         : await runPersistedAgentJob({
             db: options.db,
@@ -431,11 +454,8 @@ async function dispatchQueuedRun(
             env: options.env,
             providerBindingDependencies: options.providerBindingDependencies,
             signal: options.signal,
+            claimGate,
             ...worker,
-            ...(execution.terminalArtifacts
-              ? { terminalArtifacts: execution.terminalArtifacts }
-              : {}),
-            ...(execution.runDir ? { artifactRunDir: execution.runDir } : {}),
           })
     // Lifecycle host: retention starts once the terminal refs are verified
     // published (a failed publication keeps a NULL expiry).
@@ -451,8 +471,6 @@ async function dispatchQueuedRun(
       return { jobId: job.id, claimed: false, exitCode: null, error: null }
     }
     return { jobId: job.id, claimed: true, exitCode: null, error }
-  } finally {
-    execution.close()
   }
 }
 
@@ -556,6 +574,9 @@ export async function runLocalAgentDaemon(
           concurrency: available,
           excludeIds: failedIds,
           workerKind: "daemon",
+          apiCapable: lock !== null,
+          now: options.now,
+          maxQueuedApiAgeMs: options.maxQueuedApiAgeMs,
           onDispatch: (job, dispatch) => {
             result.startedJobs += 1
             const tracked = dispatch
@@ -588,6 +609,7 @@ export async function runLocalAgentDaemon(
           db: options.db,
           concurrency: 1,
           excludeIds: failedIds,
+          apiCapable: lock !== null,
         })
         if (queued.length === 0) break
       }

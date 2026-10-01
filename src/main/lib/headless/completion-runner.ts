@@ -26,7 +26,12 @@ import {
   buildUtilityProviderHeaders,
   redactAndTruncateUtilityProviderText,
 } from "../utility-chat-completion"
-import { normalizeHeadlessExitCode } from "./job-runner"
+import {
+  claimGateFailure,
+  normalizeHeadlessExitCode,
+  type RunClaimGate,
+  type RunClaimGateDecision,
+} from "./job-runner"
 import {
   type AgentJobDatabase,
   getAgentJob,
@@ -61,6 +66,8 @@ export type RunPersistedCompletionJobOptions = {
   locusBuild?: string | null
   /** Terminal run-dir preparation registered with the one completed. */
   terminalArtifacts?: CreateCanonicalRunEventLedgerOptions["terminalArtifacts"]
+  /** Claim-time host gate of a claimed Run (queue executors only). */
+  claimGate?: RunClaimGate
 }
 
 export type RunPersistedCompletionJobResult = {
@@ -480,6 +487,7 @@ function completionOutcomeEvidence(input: {
   jobId: string
   status: "succeeded" | "failed" | "canceled"
   content: unknown
+  hostReasons?: string[]
 }): OutcomeEvidence {
   const observationKey = `completion-result:${input.jobId}`
   const hasContent =
@@ -490,7 +498,14 @@ function completionOutcomeEvidence(input: {
     trigger:
       input.status === "canceled"
         ? { kind: "cancel", reason: "job_canceled", observationKey }
-        : { kind: "host_result", status: input.status, observationKey },
+        : {
+            kind: "host_result",
+            status: input.status,
+            observationKey,
+            ...(input.hostReasons?.length
+              ? { reasons: input.hostReasons }
+              : {}),
+          },
     policy: { denied: false, evidenceKeys: ["policy:provider-only"] },
     output: {
       valid: input.status === "succeeded",
@@ -559,12 +574,22 @@ export async function runPersistedCompletionJob(
     workerId,
     workerPid,
   })
+  // Claim-time host gate (design D5): after the conditional claim and before
+  // the upstream call. A failure settles without terminal refs.
+  let gate: RunClaimGateDecision
+  try {
+    gate = options.claimGate
+      ? await options.claimGate(job)
+      : { kind: "proceed", terminalArtifacts: options.terminalArtifacts }
+  } catch (error) {
+    gate = claimGateFailure(error)
+  }
+  const terminalArtifacts =
+    gate.kind === "proceed" ? gate.terminalArtifacts : undefined
   // The executing host registers the Run's terminal projection once; every
   // settlement without its own job-row fields uses it.
   const ledger = await getOrCreateRunEventLedger(options.db, job, {
-    ...(options.terminalArtifacts
-      ? { terminalArtifacts: options.terminalArtifacts }
-      : {}),
+    ...(terminalArtifacts ? { terminalArtifacts } : {}),
     terminalJobFields: (outcome) =>
       completionJobFields(outcome, {
         errorCode: null,
@@ -579,18 +604,18 @@ export async function runPersistedCompletionJob(
     errorCode: string | null
     errorMessage: string | null
     result: unknown
+    hostReasons?: string[]
   }): Promise<RunPersistedCompletionJobResult> => {
     await ledger.settle(
       completionOutcomeEvidence({
         jobId: job.id,
         status: input.status,
         content: input.content,
+        ...(input.hostReasons ? { hostReasons: input.hostReasons } : {}),
       }),
       {
         jobFields: (outcome) => completionJobFields(outcome, input),
-        ...(options.terminalArtifacts
-          ? { terminalArtifacts: options.terminalArtifacts }
-          : {}),
+        ...(terminalArtifacts ? { terminalArtifacts } : {}),
       },
     )
     const outcome = await ledger.readOutcome()
@@ -607,6 +632,16 @@ export async function runPersistedCompletionJob(
   }
 
   try {
+    if (gate.kind === "fail") {
+      return await settleCompletion({
+        status: "failed",
+        content: null,
+        errorCode: gate.errorCode,
+        errorMessage: gate.errorMessage,
+        result: null,
+        hostReasons: [gate.reason],
+      })
+    }
     const provider = resolveExplicitHeadlessProviderProfile({
       db: options.db,
       runtime: request.runtime.id,
@@ -688,5 +723,6 @@ export async function runPersistedCompletionJob(
     })
   } finally {
     releaseRunEventLedger(options.db, job.id)
+    if (gate.kind === "proceed") gate.close?.()
   }
 }

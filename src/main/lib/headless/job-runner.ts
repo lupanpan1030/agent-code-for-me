@@ -67,6 +67,42 @@ export const HEADLESS_EXIT_CODES = {
   internalFailure: 8,
 } as const
 
+/**
+ * Claim-time host decision of one claimed Run (add-local-job-api-async-submit
+ * D5), taken after the conditional claim and before any provider call or
+ * child spawn. `proceed` carries the executing process's reopened run
+ * directory and terminal preparer; `fail` is settled `failed` by the host
+ * with its fixed reason, without terminal refs and without provider work.
+ */
+export type RunClaimGateDecision =
+  | {
+      kind: "proceed"
+      runDir?: RunArtifactRunDir | null
+      terminalArtifacts?: CreateCanonicalRunEventLedgerOptions["terminalArtifacts"]
+      close?: () => void
+    }
+  | {
+      kind: "fail"
+      reason: string
+      errorCode: string
+      errorMessage: string
+    }
+
+/** An unexpected claim-gate error fails closed as an internal host failure. */
+export function claimGateFailure(error: unknown): RunClaimGateDecision {
+  return {
+    kind: "fail",
+    reason: "claim_gate_failed",
+    errorCode: "internal_error",
+    errorMessage:
+      error instanceof Error ? error.message : "Claim-time gate failed.",
+  }
+}
+
+export type RunClaimGate = (
+  job: AgentJob,
+) => RunClaimGateDecision | Promise<RunClaimGateDecision>
+
 export type RunPersistedAgentJobOptions = {
   db: AgentJobDatabase
   jobId: string
@@ -85,6 +121,8 @@ export type RunPersistedAgentJobOptions = {
   artifactRunDir?: RunArtifactRunDir | null
   /** Sanitized host diagnostics (never persisted as Run events). */
   onHostDiagnostic?: (message: string) => void
+  /** Claim-time host gate of a claimed Run (queue executors only). */
+  claimGate?: RunClaimGate
 }
 
 export type RunPersistedAgentJobResult = {
@@ -150,7 +188,16 @@ export function normalizeHeadlessExitCode(input: {
   if (isLocalOnlyHeadlessProviderBindingCode(input.errorCode)) {
     return HEADLESS_EXIT_CODES.localOnlyBlocked
   }
-  if (input.errorCode === "invalid_cwd") return HEADLESS_EXIT_CODES.invalidCwd
+  if (
+    input.errorCode === "invalid_cwd" ||
+    input.errorCode === "project_unregistered" ||
+    input.errorCode === "cwd_identity_changed"
+  ) {
+    return HEADLESS_EXIT_CODES.invalidCwd
+  }
+  if (input.errorCode === "execution_profile_invalid") {
+    return HEADLESS_EXIT_CODES.unsupportedRuntimeOrMode
+  }
   if (
     input.errorCode === "spawn_failed" ||
     input.errorCode === "heartbeat_failed" ||
@@ -447,6 +494,8 @@ function headlessOutcomeEvidence(input: {
   canceled: boolean
   credentialsSafe: boolean
   failed: boolean
+  /** Fixed host failure reasons of a claim-time gate settlement. */
+  hostReasons?: string[]
 }): OutcomeEvidence {
   const observationKey = `runner-result:${input.jobId}`
   const denials = input.records.filter(isRecordedDenial)
@@ -502,6 +551,9 @@ function headlessOutcomeEvidence(input: {
                   ? "succeeded"
                   : "failed",
               observationKey,
+              ...(input.hostReasons?.length
+                ? { reasons: input.hostReasons }
+                : {}),
             }
   return {
     trigger,
@@ -564,15 +616,30 @@ export async function runPersistedAgentJob(
     workerId,
     workerPid,
   })
+  // Claim-time host gate (design D5): after the conditional claim and before
+  // any provider call or spawn. A failure settles without terminal refs.
+  let gate: RunClaimGateDecision
+  try {
+    gate = options.claimGate
+      ? await options.claimGate(job)
+      : {
+          kind: "proceed",
+          runDir: options.artifactRunDir ?? null,
+          terminalArtifacts: options.terminalArtifacts,
+        }
+  } catch (error) {
+    gate = claimGateFailure(error)
+  }
+  const terminalArtifacts =
+    gate.kind === "proceed" ? gate.terminalArtifacts : undefined
+  const artifactRunDir = gate.kind === "proceed" ? (gate.runDir ?? null) : null
   let providerResolution: HeadlessProviderBindingResolution | null = null
   // The executing host registers the Run's terminal projection once, so a
   // settlement minted by another port (a transport exit ingested by the
   // adapter) still writes the job-row diagnostics, result and final run-dir
   // files. The runner's own settle keeps passing its own evidence.
   const ledger = await getOrCreateRunEventLedger(options.db, job, {
-    ...(options.terminalArtifacts
-      ? { terminalArtifacts: options.terminalArtifacts }
-      : {}),
+    ...(terminalArtifacts ? { terminalArtifacts } : {}),
     terminalJobFields: (outcome) => {
       const errorCode = outcomeErrorCode(outcome, null)
       return {
@@ -609,11 +676,11 @@ export async function runPersistedAgentJob(
     registerSecretHints: (hints) => {
       ledger.addSecretHints(hints.filter((hint) => Boolean(hint)))
     },
-    artifactCandidates: options.artifactRunDir
+    artifactCandidates: artifactRunDir
       ? createRunArtifactCandidateSink({
           ledger,
           runId: job.id,
-          runDir: options.artifactRunDir,
+          runDir: artifactRunDir,
           cwd: job.cwd,
           ...(options.onHostDiagnostic
             ? { onHostDiagnostic: options.onHostDiagnostic }
@@ -633,6 +700,7 @@ export async function runPersistedAgentJob(
     errorCode: string | null | undefined
     errorMessage: string | null | undefined
     resultValue: Record<string, unknown>
+    hostReasons?: string[]
   }): Promise<RunPersistedAgentJobResult> => {
     await observerController.drain()
     const records = (await ledger.read(0)) as LedgerRecord[]
@@ -644,6 +712,7 @@ export async function runPersistedAgentJob(
         canceled: input.canceled,
         credentialsSafe: input.credentialsSafe,
         failed: input.failed,
+        ...(input.hostReasons ? { hostReasons: input.hostReasons } : {}),
       }),
       {
         jobFields: (outcome) => {
@@ -658,9 +727,7 @@ export async function runPersistedAgentJob(
             result: input.resultValue,
           }
         },
-        ...(options.terminalArtifacts
-          ? { terminalArtifacts: options.terminalArtifacts }
-          : {}),
+        ...(terminalArtifacts ? { terminalArtifacts } : {}),
       },
     )
     const outcome = await ledger.readOutcome()
@@ -677,6 +744,21 @@ export async function runPersistedAgentJob(
   }
 
   try {
+    if (gate.kind === "fail") {
+      return await settleRun({
+        result: null,
+        canceled: false,
+        credentialsSafe: true,
+        failed: true,
+        errorCode: gate.errorCode,
+        errorMessage: gate.errorMessage,
+        resultValue: resultWithResolvedProvider(
+          null,
+          resolvedProviderForError(null, job, null),
+        ),
+        hostReasons: [gate.reason],
+      })
+    }
     providerResolution = await resolveHeadlessProviderBinding({
       db: options.db,
       runtime: job.runtime as AgentJobContractRuntime,
@@ -768,5 +850,6 @@ export async function runPersistedAgentJob(
     }
     releaseRunEventLedger(options.db, job.id)
     options.signal?.removeEventListener("abort", abortFromExternalSignal)
+    if (gate.kind === "proceed") gate.close?.()
   }
 }
