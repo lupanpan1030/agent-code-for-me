@@ -6,7 +6,9 @@ ratified strategy and interoperability contract.
 
 Updated: 2026-10-01 (Pacific/Auckland); previous: 2026-09-30 (Pacific/Auckland)
 
-No active changes.
+| Active change | Status | Scope / next gate |
+| --- | --- | --- |
+| [add-local-job-api-async-submit](changes/add-local-job-api-async-submit/proposal.md) | DRAFT — awaiting Owner APPROVED | Phase 3 async submit; docs only; Owner C7 R1/R2 and Q1–Q6 decision before implementation |
 
 Parked proposals are indexed in [`deferred/README.md`](deferred/README.md) and
 do not appear in the active list.
