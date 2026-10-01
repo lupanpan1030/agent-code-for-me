@@ -802,23 +802,58 @@ export function checkAgentRuntimeCapability(input: {
   if (!runtimeId) {
     throw new Error(`Unknown agent runtime: ${input.runtime}`)
   }
-  const capability = getAgentRuntimeCapability(runtimeId, input.capabilityId)
+  return checkAgentRuntimeManifestCapability({
+    manifest: getAgentRuntimeCapabilityManifest(runtimeId),
+    capabilityId: input.capabilityId,
+  })
+}
+
+/**
+ * The capability gate applied to one manifest a caller holds by reference
+ * (the runtime route catalog's manifest port). Same truth, states and
+ * diagnostic template as `checkAgentRuntimeCapability`; no second table.
+ */
+export function checkAgentRuntimeManifestCapability(input: {
+  manifest: AgentRuntimeCapabilityManifest
+  capabilityId: AgentRuntimeCapabilityId
+}): AgentRuntimeCapabilityGate {
+  const { manifest } = input
+  const found = manifest.capabilities.find(
+    (candidate) => candidate.id === input.capabilityId,
+  )
+  if (!found) {
+    throw new Error(
+      `Unknown ${manifest.runtimeId} runtime capability: ${input.capabilityId}`,
+    )
+  }
+  const capability = cloneCapability(found)
   if (capability.status === "supported") {
     return {
       ok: true,
-      runtimeId,
+      runtimeId: manifest.runtimeId,
       capability,
     }
   }
 
+  const message = `${manifest.label} ${capability.label} is ${capability.status}. ${capability.reason}`
+  assertNoSecretText(
+    message,
+    `${manifest.runtimeId} ${capability.id} diagnostic message`,
+  )
   return {
     ok: false,
-    runtimeId,
+    runtimeId: manifest.runtimeId,
     capability,
-    diagnostic: buildAgentRuntimeCapabilityDiagnostic({
-      runtime: runtimeId,
-      capabilityId: input.capabilityId,
-    }),
+    diagnostic: {
+      type: "unsupported-capability",
+      runtimeId: manifest.runtimeId,
+      capability: capability.id,
+      status: capability.status,
+      scope: capability.scope,
+      message,
+      reason: capability.reason,
+      hint: capability.hint,
+    },
   }
 }
 
