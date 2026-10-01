@@ -108,7 +108,8 @@
         "runtime-readiness",
         "provider-binding",
         "completion",
-        "canonical-run-ledger"
+        "canonical-run-ledger",
+        "async-submit"
       ]
     },
     "jobKind": {
@@ -1291,6 +1292,13 @@
         },
         "job": {
           "$ref": "#/$defs/serializedAgentJob"
+        },
+        "idempotentReplay": {
+          "const": true,
+          "description": "Feature async-submit: present only on a keyed submit or retry --request replay of a retained Run."
+        },
+        "execution": {
+          "$ref": "#/$defs/executionObservation"
         }
       }
     },
@@ -1473,6 +1481,155 @@
           "$ref": "#/$defs/resolvedProvider"
         },
         "result": true
+      }
+    },
+    "idempotencyKey": {
+      "description": "Feature async-submit: optional key accepted only by `runs submit` and `runs retry --request`; scoped by normalized consumer.id, case-sensitive and never trimmed. `runs create` rejects it with idempotency_key_not_supported.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^[A-Za-z0-9._:-]+$"
+    },
+    "retryRequest": {
+      "description": "Feature async-submit: body of `runs retry <id> --request <path|->`.",
+      "type": "object",
+      "required": ["apiVersion", "consumer"],
+      "additionalProperties": false,
+      "properties": {
+        "apiVersion": {
+          "$ref": "#/$defs/apiVersion"
+        },
+        "consumer": {
+          "type": "object",
+          "required": ["id"],
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/boundedId80"
+            }
+          }
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/idempotencyKey"
+        }
+      }
+    },
+    "executionObservation": {
+      "description": "Feature async-submit: advisory executor observation on `runs status` for queued/running jobs only; omitted for terminal jobs.",
+      "type": "object",
+      "required": ["state", "reason", "observedAt"],
+      "additionalProperties": false,
+      "properties": {
+        "state": {
+          "enum": ["available", "unavailable", "unknown"]
+        },
+        "reason": {
+          "enum": [
+            "executor_observed",
+            "no_executor",
+            "probe_unavailable",
+            "admission_incomplete"
+          ]
+        },
+        "observedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "hint": {
+          "const": "locus daemon run"
+        }
+      }
+    },
+    "waitReason": {
+      "enum": [
+        "admission_incomplete",
+        "run_pending",
+        "executor_unavailable",
+        "executor_unknown",
+        "terminal_artifacts_pending",
+        "observation_failed"
+      ]
+    },
+    "waitEnvelope": {
+      "description": "Feature async-submit: non-ready `runs wait` (timeout, exit 9) or observer error (exit 8). It carries no result and is not a Run outcome.",
+      "type": "object",
+      "required": ["apiVersion", "job", "wait"],
+      "properties": {
+        "apiVersion": {
+          "$ref": "#/$defs/apiVersion"
+        },
+        "job": {
+          "$ref": "#/$defs/serializedAgentJob"
+        },
+        "wait": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": ["state", "timeoutMs", "reason"],
+              "additionalProperties": false,
+              "properties": {
+                "state": {
+                  "const": "timeout"
+                },
+                "timeoutMs": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 86400000
+                },
+                "reason": {
+                  "$ref": "#/$defs/waitReason"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": ["state", "reason"],
+              "additionalProperties": false,
+              "properties": {
+                "state": {
+                  "const": "error"
+                },
+                "reason": {
+                  "$ref": "#/$defs/waitReason"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "asyncErrorEnvelope": {
+      "description": "Feature async-submit: stdout v1 error of submit/create/retry --request. It never echoes the key or stored request content.",
+      "type": "object",
+      "required": ["apiVersion", "error"],
+      "additionalProperties": false,
+      "properties": {
+        "apiVersion": {
+          "$ref": "#/$defs/apiVersion"
+        },
+        "error": {
+          "type": "object",
+          "required": ["code", "message"],
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "enum": [
+                "idempotency_key_not_supported",
+                "idempotency_conflict",
+                "consumer_mismatch",
+                "invalid_idempotency_key",
+                "secret_in_request",
+                "submission_pending"
+              ]
+            },
+            "message": {
+              "type": "string"
+            },
+            "retryable": {
+              "const": true
+            }
+          }
+        }
       }
     },
     "createResponseEnvelope": {

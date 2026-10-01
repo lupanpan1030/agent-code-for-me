@@ -10,6 +10,7 @@ import {
 import type { AgentRuntimeContractId } from "../../../shared/agent-runtime-capabilities"
 import {
   assertLocalJobApiCreateRequest,
+  assertLocalJobApiRetryRequest,
   assertLocalJobApiRuntimeReadiness,
   LOCAL_JOB_API_DISCOVERY_FEATURES,
   LOCAL_JOB_API_EVENT_TYPES,
@@ -21,9 +22,11 @@ import {
   type LocalJobApiEventType,
   type LocalJobApiResolvedProvider,
   type LocalJobApiResultEnvelope,
+  type LocalJobApiRetryRequest,
   type LocalJobApiRuntimeManifestEnvelope,
   type NormalizedLocalJobApiCompletionCreateRequest,
   type NormalizedLocalJobApiCreateRequest,
+  splitLocalJobApiIdempotencyKey,
 } from "../../../shared/local-job-api"
 import {
   admitRunDirArtifacts,
@@ -35,7 +38,10 @@ import {
   type RunArtifactFileReceipt,
   type RunArtifactFilesystemHooks,
   type RunArtifactRunDir,
+  type RunDirArtifact,
   readRunArtifactFile,
+  reopenAdmittedRunDir,
+  runDirInitialArtifactsObservationKey,
   verifyRunDirArtifactRef,
   writeRunArtifactFile,
 } from "../agent-runtime/run-artifacts"
@@ -64,10 +70,13 @@ import {
 } from "./cli-output"
 import {
   type AgentJobDatabase,
+  type AgentJobIdempotencyReservationInput,
   createAgentJob,
   getAgentJob,
   listAgentJobEvents,
+  lookupCommittedRunEventFact,
   retryAgentJob,
+  settleQueuedAgentJobFailed,
 } from "./job-store"
 import {
   assertHeadlessProviderSelectionUsableAtCreate,
@@ -138,6 +147,31 @@ export function parseLocalJobApiCreateRequestJson(
   value: string,
 ): NormalizedLocalJobApiCreateRequest {
   return assertLocalJobApiCreateRequest(parseJson(value))
+}
+
+/**
+ * Parses a create/submit body: the optional `idempotencyKey` member is split
+ * off before the existing create normalizer runs, so it never reaches the
+ * normalized, stored or written request. `hasKey` lets create refuse it.
+ */
+export function parseLocalJobApiSubmitRequestJson(value: string): {
+  request: NormalizedLocalJobApiCreateRequest
+  hasKey: boolean
+  idempotencyKey: unknown
+} {
+  const { body, hasKey, key } = splitLocalJobApiIdempotencyKey(parseJson(value))
+  return {
+    request: assertLocalJobApiCreateRequest(body),
+    hasKey,
+    idempotencyKey: key,
+  }
+}
+
+/** Parses a `runs retry --request` body (apiVersion, consumer.id, key). */
+export function parseLocalJobApiRetryRequestJson(
+  value: string,
+): LocalJobApiRetryRequest {
+  return assertLocalJobApiRetryRequest(parseJson(value))
 }
 
 function isPathInside(parentPath: string, childPath: string): boolean {
@@ -731,10 +765,57 @@ export function validateLocalJobApiRequiredCapabilities(
   }
 }
 
+export type LocalJobApiAdmissionOptions = {
+  /** Idempotency reservation inserted with the job row (one transaction). */
+  reservation?: AgentJobIdempotencyReservationInput | null
+}
+
+function plannedRunDirPaths(
+  artifactBaseDir: string | null,
+  jobId: string,
+): { runDirPath: string; manifestPath: string } | null {
+  if (!artifactBaseDir) return null
+  const runDirPath = join(
+    canonicalizePathWithExistingPrefix(artifactBaseDir),
+    jobId,
+  )
+  return { runDirPath, manifestPath: join(runDirPath, "artifacts.json") }
+}
+
+/**
+ * Creates the admitted run directory of a job whose creation fact already
+ * committed (design D3: only the reservation winner mkdirs, after the
+ * creation commit). The opened directory must be the one the job row names.
+ */
+function createAdmittedRunDir(
+  artifactBaseDir: string | null,
+  job: AgentJob,
+  projectCwd: string,
+): LocalJobApiArtifactRunDir | null {
+  if (!artifactBaseDir) return null
+  const runDir = prepareLocalJobApiArtifactRunDir(
+    artifactBaseDir,
+    job.id,
+    projectCwd,
+  )
+  if (runDir && runDir.path !== job.artifactBaseDir) {
+    closeLocalJobApiArtifactRunDir(runDir)
+    throw new Error("Artifact run directory does not match the admitted job")
+  }
+  return runDir
+}
+
+/**
+ * Admission adapter of an API create/submit intent: existing v1 gates, then
+ * the queued job row (+ optional reservation) and its committed creation
+ * fact, then the winner-only run directory. The submission core
+ * (run-submission.ts) orchestrates idempotency, initial admission and ack.
+ */
 export async function createLocalJobApiJob(
   db: AgentJobDatabase,
   request: NormalizedLocalJobApiCreateRequest,
   appVersion: string | null | undefined,
+  options: LocalJobApiAdmissionOptions = {},
 ): Promise<LocalJobApiCreatePrepared> {
   if (request.kind === "completion") {
     resolveExplicitHeadlessProviderProfile({
@@ -743,31 +824,35 @@ export async function createLocalJobApiJob(
       providerProfileId: request.provider.profileId,
       modelOverride: request.provider.model,
     })
-    const job = await createAgentJob(db, {
-      id: createId(),
-      kind: "completion",
-      source: "api",
-      runtime: completionStorageRuntime(request),
-      mode: "agent",
-      cwd: process.cwd(),
-      prompt: completionPromptPreview(request) || "Completion request",
-      input: {
-        apiVersion: request.apiVersion,
-        kind: request.kind,
-        consumer: request.consumer,
-        runtime: request.runtime,
-        provider: request.provider,
-        messages: request.messages,
-        maxTokens: request.maxTokens,
-        temperature: request.temperature,
-        responseFormat: request.responseFormat,
+    const job = await createAgentJob(
+      db,
+      {
+        id: createId(),
+        kind: "completion",
+        source: "api",
+        runtime: completionStorageRuntime(request),
+        mode: "agent",
+        cwd: process.cwd(),
+        prompt: completionPromptPreview(request) || "Completion request",
+        input: {
+          apiVersion: request.apiVersion,
+          kind: request.kind,
+          consumer: request.consumer,
+          runtime: request.runtime,
+          provider: request.provider,
+          messages: request.messages,
+          maxTokens: request.maxTokens,
+          temperature: request.temperature,
+          responseFormat: request.responseFormat,
+        },
+        apiConsumerId: request.consumer.id,
+        apiConsumerRunId: request.consumer.runExternalId,
+        providerProfileId: request.provider.profileId,
+        modelOverride: request.provider.model,
+        createdByVersion: appVersion ?? null,
       },
-      apiConsumerId: request.consumer.id,
-      apiConsumerRunId: request.consumer.runExternalId,
-      providerProfileId: request.provider.profileId,
-      modelOverride: request.provider.model,
-      createdByVersion: appVersion ?? null,
-    })
+      { reservation: options.reservation },
+    )
     return { request, job: getAgentJob(db, job.id) ?? job, runDir: null }
   }
 
@@ -784,15 +869,15 @@ export async function createLocalJobApiJob(
     request.project.projectId,
     "API run cwd",
   )
-  const jobId = createId()
-  const runDir = prepareLocalJobApiArtifactRunDir(
+  validateLocalJobApiArtifactBaseDirForProject(
     request.artifacts.baseDir,
-    jobId,
     project.cwd,
   )
-  const manifestPath = runDir ? join(runDir.path, "artifacts.json") : null
-  try {
-    const job = await createAgentJob(db, {
+  const jobId = createId()
+  const planned = plannedRunDirPaths(request.artifacts.baseDir, jobId)
+  const job = await createAgentJob(
+    db,
+    {
       id: jobId,
       source: "api",
       runtime: request.runtime.id,
@@ -813,23 +898,66 @@ export async function createLocalJobApiJob(
       projectId: project.project.id,
       apiConsumerId: request.consumer.id,
       apiConsumerRunId: request.consumer.runExternalId,
-      artifactBaseDir: runDir?.path ?? request.artifacts.baseDir,
-      artifactManifestPath: manifestPath,
+      artifactBaseDir: planned?.runDirPath ?? request.artifacts.baseDir,
+      artifactManifestPath: planned?.manifestPath ?? null,
       providerProfileId: request.provider.profileId,
       modelOverride: request.provider.model,
       createdByVersion: appVersion ?? null,
-    })
+    },
+    { reservation: options.reservation },
+  )
+  const created = getAgentJob(db, job.id) ?? job
+  const runDir = await admittedRunDirOrSettleFailed(db, created, () =>
+    createAdmittedRunDir(request.artifacts.baseDir, created, project.cwd),
+  )
+  return { request, job: created, runDir }
+}
 
-    return { request, job: getAgentJob(db, job.id) ?? job, runDir }
+/**
+ * The creation fact already committed: a run directory that cannot be
+ * created settles the attempt failed through the host (the attempt and its
+ * reservation are kept, no committed fact is deleted).
+ */
+async function admittedRunDirOrSettleFailed(
+  db: AgentJobDatabase,
+  job: AgentJob,
+  create: () => LocalJobApiArtifactRunDir | null,
+): Promise<LocalJobApiArtifactRunDir | null> {
+  try {
+    return create()
   } catch (error) {
-    closeLocalJobApiArtifactRunDir(runDir)
+    await settleLocalJobApiAdmissionFailure(db, job.id, error)
     throw error
   }
 }
 
+/** Host settlement of an admitted-but-not-started API Run whose admission failed. */
+export async function settleLocalJobApiAdmissionFailure(
+  db: AgentJobDatabase,
+  jobId: string,
+  error: unknown,
+): Promise<void> {
+  try {
+    await settleQueuedAgentJobFailed(db, jobId, {
+      errorCode: "artifact_admission_failed",
+      errorMessage:
+        error instanceof Error ? error.message : "Run admission failed.",
+    })
+  } catch {
+    // The admission error stays the reported failure; a job that cannot be
+    // settled remains queued without admission and is never claimed.
+  }
+}
+
+/**
+ * Admission adapter of an API retry intent: a new attempt of a terminal
+ * source with its stored input, gated like create, plus the winner-only
+ * run directory.
+ */
 export async function retryLocalJobApiJob(
   db: AgentJobDatabase,
   job: AgentJob,
+  options: LocalJobApiAdmissionOptions = {},
 ): Promise<LocalJobApiCreatePrepared> {
   const request = getLocalJobApiStoredRequest(job)
   if (request.kind === "completion") {
@@ -843,6 +971,7 @@ export async function retryLocalJobApiJob(
       id: createId(),
       artifactBaseDir: null,
       artifactManifestPath: null,
+      reservation: options.reservation,
     })
     return { request, job: retry, runDir: null }
   }
@@ -853,22 +982,82 @@ export async function retryLocalJobApiJob(
     request.project.projectId,
     "API retry cwd",
   )
-  const retryId = createId()
-  const runDir = prepareLocalJobApiArtifactRunDir(
+  validateLocalJobApiArtifactBaseDirForProject(
     request.artifacts.baseDir,
-    retryId,
     project.cwd,
   )
-  try {
-    const retry = await retryAgentJob(db, job.id, {
-      id: retryId,
-      artifactBaseDir: runDir?.path ?? request.artifacts.baseDir,
-      artifactManifestPath: runDir ? join(runDir.path, "artifacts.json") : null,
-    })
-    return { request, job: retry, runDir }
-  } catch (error) {
-    closeLocalJobApiArtifactRunDir(runDir)
-    throw error
+  const retryId = createId()
+  const planned = plannedRunDirPaths(request.artifacts.baseDir, retryId)
+  const retry = await retryAgentJob(db, job.id, {
+    id: retryId,
+    artifactBaseDir: planned?.runDirPath ?? request.artifacts.baseDir,
+    artifactManifestPath: planned?.manifestPath ?? null,
+    reservation: options.reservation,
+  })
+  const runDir = await admittedRunDirOrSettleFailed(db, retry, () =>
+    createAdmittedRunDir(request.artifacts.baseDir, retry, project.cwd),
+  )
+  return { request, job: retry, runDir }
+}
+
+/**
+ * Canonical submission intent of an API create/submit request for the
+ * idempotency fingerprint (design D4): canonical cwd and artifact base,
+ * current defaults and runtime aliases already normalized, the capability
+ * set sorted; key, execution controls, generated IDs/times and credentials
+ * excluded. Opaque input/schema stay uninterpreted (key order is canonical).
+ */
+export function localJobApiSubmissionFingerprint(
+  request: NormalizedLocalJobApiCreateRequest,
+): Record<string, unknown> {
+  if (request.kind === "completion") {
+    return {
+      intent: "submit",
+      kind: "completion",
+      consumer: { runExternalId: request.consumer.runExternalId },
+      runtime: { id: request.runtime.id },
+      provider: request.provider,
+      messages: request.messages,
+      maxTokens: request.maxTokens,
+      temperature: request.temperature,
+      responseFormat: request.responseFormat,
+    }
+  }
+  return {
+    intent: "submit",
+    kind: "agent",
+    consumer: { runExternalId: request.consumer.runExternalId },
+    project: {
+      cwd: canonicalizePathWithExistingPrefix(request.project.cwd),
+      projectId: request.project.projectId,
+    },
+    runtime: {
+      id: request.runtime.id,
+      requiredCapabilities: [...request.runtime.requiredCapabilities].sort(),
+      executionProfile: request.runtime.executionProfile,
+      policyGrant: request.runtime.policyGrant,
+    },
+    mode: request.mode,
+    prompt: request.prompt.text,
+    provider: request.provider,
+    input: request.input,
+    artifacts: {
+      baseDir: request.artifacts.baseDir
+        ? canonicalizePathWithExistingPrefix(request.artifacts.baseDir)
+        : null,
+      writePolicy: request.artifacts.writePolicy,
+    },
+  }
+}
+
+/** Canonical retry intent: the source attempt and its stored input. */
+export function localJobApiRetryFingerprint(
+  source: AgentJob,
+): Record<string, unknown> {
+  return {
+    intent: "retry",
+    sourceJobId: source.id,
+    sourceInput: parseJobInput(source),
   }
 }
 
@@ -1275,6 +1464,120 @@ export function createLocalJobApiTerminalArtifacts(input: {
       discard: discardStaged,
     },
     artifacts: () => published,
+  }
+}
+
+/** Committed refs of a Run's one initial run-dir admission batch. */
+function committedInitialRunDirRefs(
+  db: AgentJobDatabase,
+  jobId: string,
+): RunDirArtifact[] {
+  const refs: RunDirArtifact[] = []
+  for (const record of lookupCommittedRunEventFact(
+    db,
+    jobId,
+    runDirInitialArtifactsObservationKey(jobId),
+  )) {
+    if (record.type !== "artifact_created") continue
+    const payload = isRecord(record.payload) ? record.payload : {}
+    for (const entry of Array.isArray(payload.artifacts)
+      ? payload.artifacts
+      : []) {
+      if (!isRecord(entry)) continue
+      if (
+        typeof entry.role !== "string" ||
+        typeof entry.path !== "string" ||
+        typeof entry.sha256 !== "string" ||
+        typeof entry.contentType !== "string" ||
+        typeof entry.sizeBytes !== "number"
+      ) {
+        continue
+      }
+      refs.push({
+        role: entry.role,
+        path: entry.path,
+        sha256: entry.sha256,
+        contentType: entry.contentType,
+        sizeBytes: entry.sizeBytes,
+      })
+    }
+  }
+  return refs
+}
+
+export type LocalJobApiExecution = {
+  /** The reopened admitted run directory (artifact-bearing agent Runs). */
+  runDir: LocalJobApiArtifactRunDir | null
+  /** Terminal run-dir preparation registered with the one completed. */
+  terminalArtifacts: ReturnType<
+    typeof createLocalJobApiTerminalArtifacts
+  >["preparer"]
+  close(): void
+}
+
+/**
+ * Executor composition of one claimed API Run (design D1/D5): the executing
+ * process reopens the admitted run directory from the committed initial refs
+ * and registers the same terminal preparer the inline create used. Runs
+ * without an artifact manifest compose nothing.
+ */
+export function openLocalJobApiExecution(
+  db: AgentJobDatabase,
+  job: AgentJob,
+  options: { onHostDiagnostic?: (message: string) => void } = {},
+): LocalJobApiExecution {
+  if (job.source !== "api" || !job.artifactManifestPath) {
+    return { runDir: null, terminalArtifacts: undefined, close() {} }
+  }
+  const runDir = reopenAdmittedRunDir(
+    job,
+    committedInitialRunDirRefs(db, job.id),
+  )
+  const terminal = createLocalJobApiTerminalArtifacts({
+    db,
+    runDir,
+    jobId: job.id,
+    ...(options.onHostDiagnostic
+      ? { onHostDiagnostic: options.onHostDiagnostic }
+      : {}),
+  })
+  return {
+    runDir,
+    terminalArtifacts: terminal.preparer,
+    close: () => closeLocalJobApiArtifactRunDir(runDir),
+  }
+}
+
+/** Committed events up to a terminal's seal (the frozen terminal prefix). */
+export function localJobApiTerminalEvents(
+  db: AgentJobDatabase,
+  job: AgentJob,
+): AgentJobEvent[] {
+  const events = listAgentJobEvents(db, job.id)
+  const sealed = job.ledgerSealedSequence
+  return sealed === null
+    ? events
+    : events.filter((event) => event.sequence <= sealed)
+}
+
+/**
+ * The create/default-retry terminal envelope `{apiVersion, job, result}`,
+ * byte-compatible with the 2c59664f inline create: `result.artifacts` is
+ * the terminal commit's prepared tail (or `[]` when its publication failed).
+ */
+export function toLocalJobApiTerminalEnvelope(
+  job: AgentJob,
+  artifacts: readonly Record<string, unknown>[],
+  events: AgentJobEvent[],
+) {
+  return {
+    apiVersion: LOCAL_JOB_API_VERSION,
+    job: serializeAgentJob(job),
+    result: toLocalJobApiResultEnvelope(
+      job,
+      artifacts as unknown as LocalJobApiArtifact[],
+      events,
+    ),
   }
 }
 

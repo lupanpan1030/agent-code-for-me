@@ -5,21 +5,30 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
+  renameSync,
   unlinkSync,
   writeFileSync,
-} from "fs"
-import { dirname } from "path"
+} from "node:fs"
+import { dirname } from "node:path"
+import { recordVerifiedRunRetention } from "../agent-runtime/run-event-ledger-host"
 import type { AgentJob } from "../db/schema"
-import {
-  listQueuedAgentJobsForSource,
-  type AgentJobDatabase,
-} from "./job-store"
-import { recoverStaleAgentJobs } from "./job-recovery"
-import {
-  runPersistedAgentJob,
-  type RunPersistedAgentJobOptions,
-} from "./job-runner"
+import { createId } from "../db/utils"
 import type { AgentTaskRunner } from "./agent-runtime-contract"
+import {
+  type RunPersistedCompletionJobOptions,
+  runPersistedCompletionJob,
+} from "./completion-runner"
+import { recoverStaleAgentJobs } from "./job-recovery"
+import { runPersistedAgentJob } from "./job-runner"
+import {
+  type AgentJobDatabase,
+  cleanupExpiredAgentJobIdempotency,
+  isAgentJobClaimLostError,
+  listQueuedAgentJobsForIds,
+  listQueuedAgentJobsForSource,
+} from "./job-store"
+import { openLocalJobApiExecution } from "./local-job-api"
+import type { HeadlessProviderBindingDependencies } from "./provider-binding"
 import { evaluateDueAgentSchedules } from "./schedules"
 
 type Writer = {
@@ -37,6 +46,11 @@ export type RunLocalAgentDaemonOptions = {
   lockPath?: string | null
   signal?: AbortSignal
   now?: Date
+  /** Upstream fetch of claimed API completion Runs (test-injectable). */
+  completionFetch?: RunPersistedCompletionJobOptions["fetchImpl"]
+  providerBindingDependencies?: HeadlessProviderBindingDependencies
+  /** Locus build executing claimed completion Runs. */
+  appVersion?: string | null
 }
 
 export type RunLocalAgentDaemonResult = {
@@ -48,30 +62,62 @@ export type RunLocalAgentDaemonResult = {
   stoppedBy: "once" | "signal"
 }
 
-type DaemonLock = {
-  release(): void
-}
-
 function writeLine(writer: Writer | undefined, line: string): void {
   writer?.write(`${line}\n`)
 }
 
-function isPidAlive(pid: number): boolean {
-  if (!Number.isSafeInteger(pid) || pid <= 0) return false
+// ---------------------------------------------------------------------------
+// Daemon lock (lock v2) and executor observation
+// (add-local-job-api-async-submit D5)
+// ---------------------------------------------------------------------------
+
+/** Lock format of an API-capable daemon. */
+export const DAEMON_LOCK_FORMAT = 2
+/** A lock heartbeat is fresh while 0 <= age <= 5000 ms. */
+export const DAEMON_LOCK_FRESH_MS = 5_000
+/** The writer refreshes its heartbeat at most this far apart. */
+export const DAEMON_LOCK_HEARTBEAT_INTERVAL_MS = 500
+/** Existing recovery stale window of a claimed Run's worker heartbeat. */
+export const RUN_WORKER_HEARTBEAT_WINDOW_MS = 120_000
+
+type DaemonLockBody = {
+  pid: number
+  nonce: string
+  startedAt: string
+  lockFormat: typeof DAEMON_LOCK_FORMAT
+  apiCapable: true
+  heartbeatAt: string
+}
+
+type DaemonLock = {
+  /** Atomically rewrites heartbeatAt while the file still carries our nonce. */
+  heartbeat(): void
+  release(): void
+}
+
+type ProcessProbe = "alive" | "absent" | "denied" | "unknown"
+
+function probeProcess(pid: unknown): ProcessProbe {
+  if (typeof pid !== "number" || !Number.isSafeInteger(pid) || pid <= 0) {
+    return "unknown"
+  }
   try {
     process.kill(pid, 0)
-    return true
+    return "alive"
   } catch (error) {
-    if (
-      error &&
-      typeof error === "object" &&
-      "code" in error &&
-      error.code === "ESRCH"
-    ) {
-      return false
-    }
-    return true
+    const code =
+      error && typeof error === "object" && "code" in error
+        ? (error as { code?: unknown }).code
+        : null
+    if (code === "ESRCH") return "absent"
+    if (code === "EPERM") return "denied"
+    return "unknown"
   }
+}
+
+function isPidAlive(pid: number): boolean {
+  const probe = probeProcess(pid)
+  return probe !== "absent" && probe !== "unknown"
 }
 
 function readLockPid(lockPath: string): number | null {
@@ -82,6 +128,15 @@ function readLockPid(lockPath: string): number | null {
     return typeof parsed.pid === "number" ? parsed.pid : null
   } catch {
     return null
+  }
+}
+
+function readLockNonce(lockPath: string): unknown {
+  try {
+    return (JSON.parse(readFileSync(lockPath, "utf-8")) as { nonce?: unknown })
+      .nonce
+  } catch {
+    return undefined
   }
 }
 
@@ -101,30 +156,327 @@ export function acquireDaemonLock(lockPath: string): DaemonLock {
     unlinkSync(lockPath)
   }
 
+  const startedAt = new Date().toISOString()
+  const body = (): DaemonLockBody => ({
+    pid: process.pid,
+    nonce,
+    startedAt,
+    lockFormat: DAEMON_LOCK_FORMAT,
+    apiCapable: true,
+    heartbeatAt: new Date().toISOString(),
+  })
   const fd = openSync(lockPath, "wx", 0o600)
   try {
-    writeFileSync(
-      fd,
-      JSON.stringify({
-        pid: process.pid,
-        nonce,
-        startedAt: new Date().toISOString(),
-      }),
-    )
+    writeFileSync(fd, JSON.stringify(body()))
   } finally {
     closeSync(fd)
   }
 
+  // Once the file carries another nonce (a successor), this writer never
+  // refreshes or unlinks it again.
+  let swapped = false
   return {
-    release() {
+    heartbeat() {
+      if (swapped) return
+      if (readLockNonce(lockPath) !== nonce) {
+        swapped = true
+        return
+      }
+      const temp = `${lockPath}.${process.pid}.tmp`
       try {
-        const current = JSON.parse(readFileSync(lockPath, "utf-8")) as {
-          nonce?: unknown
+        writeFileSync(temp, JSON.stringify(body()), { mode: 0o600 })
+        if (readLockNonce(lockPath) !== nonce) {
+          swapped = true
+          unlinkSync(temp)
+          return
         }
-        if (current.nonce === nonce) unlinkSync(lockPath)
+        renameSync(temp, lockPath)
+      } catch {
+        try {
+          unlinkSync(temp)
+        } catch {}
+      }
+    },
+    release() {
+      if (swapped) return
+      try {
+        if (readLockNonce(lockPath) === nonce) unlinkSync(lockPath)
       } catch {}
     },
   }
+}
+
+export type ExecutorAvailabilityState = "available" | "unavailable" | "unknown"
+
+export type ExecutorAvailability = {
+  state: ExecutorAvailabilityState
+  reason: "executor_observed" | "no_executor" | "probe_unavailable"
+}
+
+const EXECUTOR_AVAILABLE: ExecutorAvailability = {
+  state: "available",
+  reason: "executor_observed",
+}
+const EXECUTOR_UNAVAILABLE: ExecutorAvailability = {
+  state: "unavailable",
+  reason: "no_executor",
+}
+const EXECUTOR_UNKNOWN: ExecutorAvailability = {
+  state: "unknown",
+  reason: "probe_unavailable",
+}
+
+type LockRead =
+  | { kind: "absent" }
+  | { kind: "unreadable" }
+  | { kind: "read"; body: Record<string, unknown> }
+
+function readLockForObservation(lockPath: string): LockRead {
+  let text: string
+  try {
+    text = readFileSync(lockPath, "utf-8")
+  } catch (error) {
+    return (error as NodeJS.ErrnoException)?.code === "ENOENT"
+      ? { kind: "absent" }
+      : { kind: "unreadable" }
+  }
+  try {
+    const parsed = JSON.parse(text) as unknown
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? { kind: "read", body: parsed as Record<string, unknown> }
+      : { kind: "unreadable" }
+  } catch {
+    return { kind: "unreadable" }
+  }
+}
+
+/**
+ * Read-only same-profile executor observation from the daemon lock: no lock
+ * or ESRCH is unavailable; an alive, v2, API-capable lock with a fresh
+ * heartbeat and a stable nonce across two reads is available; everything
+ * else (stale/legacy/EPERM/no lockPath/bad format/future heartbeat/swapped
+ * nonce) is unknown. It never writes, acquires or launches anything.
+ */
+export function observeDaemonExecutor(
+  lockPath: string | null | undefined,
+  nowMs = Date.now(),
+): ExecutorAvailability {
+  if (!lockPath) return EXECUTOR_UNKNOWN
+  const first = readLockForObservation(lockPath)
+  if (first.kind === "absent") return EXECUTOR_UNAVAILABLE
+  if (first.kind === "unreadable") return EXECUTOR_UNKNOWN
+  const probe = probeProcess(first.body.pid)
+  if (probe === "absent") return EXECUTOR_UNAVAILABLE
+  if (probe !== "alive") return EXECUTOR_UNKNOWN
+  if (
+    first.body.lockFormat !== DAEMON_LOCK_FORMAT ||
+    first.body.apiCapable !== true ||
+    typeof first.body.heartbeatAt !== "string"
+  ) {
+    return EXECUTOR_UNKNOWN
+  }
+  const heartbeat = Date.parse(first.body.heartbeatAt)
+  const age = nowMs - heartbeat
+  if (Number.isNaN(heartbeat) || age < 0 || age > DAEMON_LOCK_FRESH_MS) {
+    return EXECUTOR_UNKNOWN
+  }
+  const second = readLockForObservation(lockPath)
+  if (second.kind !== "read" || second.body.nonce !== first.body.nonce) {
+    return EXECUTOR_UNKNOWN
+  }
+  return EXECUTOR_AVAILABLE
+}
+
+/**
+ * Worker evidence of a claimed Run (no daemon lock required): its committed
+ * worker identity with a heartbeat inside the existing 120 s recovery window
+ * and a confirmed-alive PID is available; ESRCH is unavailable; a stale
+ * heartbeat, EPERM or an uncertain identity is unknown.
+ */
+export function observeRunWorker(
+  job: Pick<AgentJob, "workerId" | "workerPid" | "heartbeatAt">,
+  nowMs = Date.now(),
+): ExecutorAvailability {
+  if (!job.workerId || job.workerPid === null) return EXECUTOR_UNKNOWN
+  const probe = probeProcess(job.workerPid)
+  if (probe === "absent") return EXECUTOR_UNAVAILABLE
+  if (probe !== "alive") return EXECUTOR_UNKNOWN
+  const heartbeat = job.heartbeatAt
+    ? new Date(job.heartbeatAt).getTime()
+    : Number.NaN
+  if (
+    Number.isNaN(heartbeat) ||
+    nowMs - heartbeat > RUN_WORKER_HEARTBEAT_WINDOW_MS
+  ) {
+    return EXECUTOR_UNKNOWN
+  }
+  return EXECUTOR_AVAILABLE
+}
+
+// ---------------------------------------------------------------------------
+// Canonical pump (add-local-job-api-async-submit D1/D5): the one dispatch
+// implementation of queued Runs. The daemon pumps daemon → schedule → api;
+// scoped callers (the create/retry wrapper, a protocol session) pass their
+// own admitted IDs. Claims go through job-store startAgentJob inside the
+// existing runners; no worker, queue table or state machine is added.
+// ---------------------------------------------------------------------------
+
+/** Sources the ordinary daemon claims, in slot order. */
+const DAEMON_PUMP_SOURCES = ["daemon", "schedule", "api"] as const
+
+export type PumpQueuedRunsOptions = {
+  db: AgentJobDatabase
+  env?: NodeJS.ProcessEnv
+  runner?: AgentTaskRunner | null
+  stderr?: Writer
+  completionFetch?: RunPersistedCompletionJobOptions["fetchImpl"]
+  providerBindingDependencies?: HeadlessProviderBindingDependencies
+  appVersion?: string | null
+  /** Maximum Runs this pass dispatches (default 1). */
+  concurrency?: number
+  /** Scope of a scoped caller: only these admitted Run IDs are claimed. */
+  admittedIds?: readonly string[]
+  /** Runs this pass must not dispatch again (e.g. failed reopen). */
+  excludeIds?: ReadonlySet<string>
+  /** `daemon` names claims `daemon:<pid>:…`; scoped pumps keep runner IDs. */
+  workerKind?: "daemon"
+  signal?: AbortSignal
+  /** Called synchronously for every dispatched Run (daemon slot tracking). */
+  onDispatch?: (job: AgentJob, dispatch: Promise<PumpQueuedRunResult>) => void
+}
+
+export type PumpQueuedRunResult = {
+  jobId: string
+  /** False when another claimant or a settlement won the claim. */
+  claimed: boolean
+  exitCode: number | null
+  /** A non-outcome failure (the Run outcome itself is committed state). */
+  error: unknown
+}
+
+export type PumpQueuedRunsResult = {
+  runs: PumpQueuedRunResult[]
+}
+
+function listPumpWork(options: PumpQueuedRunsOptions): AgentJob[] {
+  const limit = Math.max(1, Math.min(options.concurrency ?? 1, 16))
+  const excluded = options.excludeIds
+  const keep = (job: AgentJob) => !excluded?.has(job.id)
+  const extra = excluded?.size ?? 0
+  if (options.admittedIds) {
+    return listQueuedAgentJobsForIds(
+      options.db,
+      options.admittedIds,
+      limit + extra,
+    )
+      .filter(keep)
+      .slice(0, limit)
+  }
+  const jobs: AgentJob[] = []
+  for (const source of DAEMON_PUMP_SOURCES) {
+    const remaining = limit - jobs.length
+    if (remaining <= 0) break
+    jobs.push(
+      ...listQueuedAgentJobsForSource(options.db, source, remaining + extra)
+        .filter(keep)
+        .slice(0, remaining),
+    )
+  }
+  return jobs
+}
+
+async function dispatchQueuedRun(
+  job: AgentJob,
+  options: PumpQueuedRunsOptions,
+): Promise<PumpQueuedRunResult> {
+  // Every claim names a unique worker identity (its `job_started` fact key):
+  // two pumps of one process must never share a claim observation.
+  const prefix =
+    options.workerKind === "daemon"
+      ? "daemon"
+      : job.kind === "completion"
+        ? "completion"
+        : "headless"
+  const worker = {
+    workerId: `${prefix}:${process.pid}:${Date.now()}:${createId()}:${job.id}`,
+    workerPid: process.pid,
+  }
+  let execution: ReturnType<typeof openLocalJobApiExecution>
+  try {
+    execution = openLocalJobApiExecution(options.db, job, {
+      onHostDiagnostic: (message) => writeLine(options.stderr, message),
+    })
+  } catch (error) {
+    return { jobId: job.id, claimed: false, exitCode: null, error }
+  }
+  try {
+    const result =
+      job.kind === "completion"
+        ? await runPersistedCompletionJob({
+            db: options.db,
+            jobId: job.id,
+            fetchImpl: options.completionFetch,
+            providerBindingDependencies: options.providerBindingDependencies,
+            locusBuild: options.appVersion ?? null,
+            signal: options.signal,
+            ...worker,
+            ...(execution.terminalArtifacts
+              ? { terminalArtifacts: execution.terminalArtifacts }
+              : {}),
+          })
+        : await runPersistedAgentJob({
+            db: options.db,
+            jobId: job.id,
+            runner: options.runner,
+            env: options.env,
+            providerBindingDependencies: options.providerBindingDependencies,
+            signal: options.signal,
+            ...worker,
+            ...(execution.terminalArtifacts
+              ? { terminalArtifacts: execution.terminalArtifacts }
+              : {}),
+            ...(execution.runDir ? { artifactRunDir: execution.runDir } : {}),
+          })
+    // Lifecycle host: retention starts once the terminal refs are verified
+    // published (a failed publication keeps a NULL expiry).
+    recordVerifiedRunRetention(options.db, job.id)
+    return {
+      jobId: job.id,
+      claimed: true,
+      exitCode: result.exitCode,
+      error: null,
+    }
+  } catch (error) {
+    if (isAgentJobClaimLostError(error)) {
+      return { jobId: job.id, claimed: false, exitCode: null, error: null }
+    }
+    return { jobId: job.id, claimed: true, exitCode: null, error }
+  } finally {
+    execution.close()
+  }
+}
+
+/**
+ * One pump pass: lists claimable queued Runs (the D3 predicate) within the
+ * caller's scope and slots, dispatches each to its existing runner and
+ * resolves when they settle.
+ */
+export function pumpQueuedRuns(
+  options: PumpQueuedRunsOptions,
+): Promise<PumpQueuedRunsResult> {
+  return runPumpPass(options)
+}
+
+/** The pass shared by the exported pump and this file's daemon loop. */
+function runPumpPass(
+  options: PumpQueuedRunsOptions,
+): Promise<PumpQueuedRunsResult> {
+  const dispatches = listPumpWork(options).map((job) => {
+    const dispatch = dispatchQueuedRun(job, options)
+    options.onDispatch?.(job, dispatch)
+    return dispatch
+  })
+  return Promise.all(dispatches).then((runs) => ({ runs }))
 }
 
 function delay(ms: number, signal: AbortSignal | undefined): Promise<void> {
@@ -139,33 +491,6 @@ function delay(ms: number, signal: AbortSignal | undefined): Promise<void> {
   })
 }
 
-function listQueuedDaemonWork(
-  db: AgentJobDatabase,
-  limit: number,
-): AgentJob[] {
-  const jobs: AgentJob[] = []
-  for (const source of ["daemon", "schedule"] as const) {
-    if (jobs.length >= limit) break
-    jobs.push(...listQueuedAgentJobsForSource(db, source, limit - jobs.length))
-  }
-  return jobs
-}
-
-async function runDaemonJob(
-  job: AgentJob,
-  options: RunLocalAgentDaemonOptions,
-): Promise<void> {
-  const runOptions: RunPersistedAgentJobOptions = {
-    db: options.db,
-    jobId: job.id,
-    runner: options.runner,
-    env: options.env,
-    workerId: `daemon:${process.pid}:${Date.now()}:${job.id}`,
-    workerPid: process.pid,
-  }
-  await runPersistedAgentJob(runOptions)
-}
-
 export async function runLocalAgentDaemon(
   options: RunLocalAgentDaemonOptions,
 ): Promise<RunLocalAgentDaemonResult> {
@@ -175,7 +500,13 @@ export async function runLocalAgentDaemon(
     Math.min(options.pollIntervalMs ?? 1000, 60_000),
   )
   const lock = options.lockPath ? acquireDaemonLock(options.lockPath) : null
-  const active = new Set<Promise<void>>()
+  const heartbeatTimer = lock
+    ? setInterval(() => lock.heartbeat(), DAEMON_LOCK_HEARTBEAT_INTERVAL_MS)
+    : null
+  const active = new Set<Promise<unknown>>()
+  // Runs this daemon could not dispatch (non-outcome failure) are not
+  // retried by the same daemon pass.
+  const failedIds = new Set<string>()
   const result: RunLocalAgentDaemonResult = {
     scheduledJobs: 0,
     startedJobs: 0,
@@ -203,6 +534,10 @@ export async function runLocalAgentDaemon(
     }
 
     while (!options.signal?.aborted) {
+      lock?.heartbeat()
+      cleanupExpiredAgentJobIdempotency(options.db, {
+        now: options.now ?? new Date(),
+      })
       const available = concurrency - active.size
       if (available > 0) {
         const scheduled = await evaluateDueAgentSchedules(options.db, {
@@ -210,32 +545,50 @@ export async function runLocalAgentDaemon(
           limit: available,
         })
         result.scheduledJobs += scheduled.length
-        const queued = listQueuedDaemonWork(options.db, available)
-        for (const job of queued) {
-          result.startedJobs += 1
-          let promise: Promise<void>
-          promise = runDaemonJob(job, options)
-            .then(() => {
-              result.completedJobs += 1
-            })
-            .catch((error) => {
-              result.failedJobs += 1
-              writeLine(
-                options.stderr,
-                `[Daemon] Failed job ${job.id}: ${
-                  error instanceof Error ? error.message : String(error)
-                }`,
-              )
-            })
-            .finally(() => {
-              active.delete(promise)
-            })
-          active.add(promise)
-        }
+        void runPumpPass({
+          db: options.db,
+          env: options.env,
+          runner: options.runner,
+          stderr: options.stderr,
+          completionFetch: options.completionFetch,
+          providerBindingDependencies: options.providerBindingDependencies,
+          appVersion: options.appVersion,
+          concurrency: available,
+          excludeIds: failedIds,
+          workerKind: "daemon",
+          onDispatch: (job, dispatch) => {
+            result.startedJobs += 1
+            const tracked = dispatch
+              .then((run) => {
+                if (run.error) {
+                  failedIds.add(job.id)
+                  result.failedJobs += 1
+                  writeLine(
+                    options.stderr,
+                    `[Daemon] Failed job ${job.id}: ${
+                      run.error instanceof Error
+                        ? run.error.message
+                        : String(run.error)
+                    }`,
+                  )
+                } else if (run.claimed) {
+                  result.completedJobs += 1
+                }
+              })
+              .finally(() => {
+                active.delete(tracked)
+              })
+            active.add(tracked)
+          },
+        })
       }
 
       if (options.once && active.size === 0) {
-        const queued = listQueuedDaemonWork(options.db, 1)
+        const queued = listPumpWork({
+          db: options.db,
+          concurrency: 1,
+          excludeIds: failedIds,
+        })
         if (queued.length === 0) break
       }
 
@@ -246,6 +599,7 @@ export async function runLocalAgentDaemon(
     await Promise.allSettled(active)
     return result
   } finally {
+    if (heartbeatTimer) clearInterval(heartbeatTimer)
     lock?.release()
     writeLine(options.stderr, "[Daemon] Stopped local agent daemon")
   }

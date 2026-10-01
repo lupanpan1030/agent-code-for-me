@@ -30,6 +30,7 @@ import { normalizeHeadlessExitCode } from "./job-runner"
 import {
   type AgentJobDatabase,
   getAgentJob,
+  heartbeatAgentJob,
   listAgentJobEvents,
   startAgentJob,
 } from "./job-store"
@@ -44,6 +45,9 @@ type CompletionFetch = (
   input: string | URL | Request,
   init?: RequestInit,
 ) => Promise<Response>
+
+/** Worker heartbeat cadence during the one upstream completion call. */
+const COMPLETION_HEARTBEAT_INTERVAL_MS = 15_000
 
 export type RunPersistedCompletionJobOptions = {
   db: AgentJobDatabase
@@ -627,16 +631,31 @@ export async function runPersistedCompletionJob(
     )
     const model =
       provider.resolvedProvider.model ?? provider.profile.defaultModel
-    const result = await performCompletion({
-      profile: provider.profile,
-      model,
-      messages: request.messages,
-      maxTokens: request.maxTokens,
-      temperature: request.temperature,
-      responseFormat: request.responseFormat,
-      fetchImpl: options.fetchImpl ?? fetch,
-      signal: options.signal,
-    })
+    // The single upstream call has no runtime observations: the claimant
+    // keeps its worker heartbeat fresh while it waits, so a long call is
+    // never mistaken for a stale worker (closure-check residual (1)).
+    const heartbeat = setInterval(() => {
+      try {
+        heartbeatAgentJob(options.db, job.id, workerId)
+      } catch {
+        // A heartbeat on a no-longer-running job is not an upstream error.
+      }
+    }, COMPLETION_HEARTBEAT_INTERVAL_MS)
+    let result: Awaited<ReturnType<typeof performCompletion>>
+    try {
+      result = await performCompletion({
+        profile: provider.profile,
+        model,
+        messages: request.messages,
+        maxTokens: request.maxTokens,
+        temperature: request.temperature,
+        responseFormat: request.responseFormat,
+        fetchImpl: options.fetchImpl ?? fetch,
+        signal: options.signal,
+      })
+    } finally {
+      clearInterval(heartbeat)
+    }
     await ledger.ingestRuntimeObservation({
       observationKey: `completion-usage:${job.id}`,
       type: "usage_update",

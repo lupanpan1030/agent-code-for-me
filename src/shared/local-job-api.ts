@@ -20,6 +20,7 @@ export const LOCAL_JOB_API_DISCOVERY_FEATURES = [
   "provider-binding",
   "completion",
   "canonical-run-ledger",
+  "async-submit",
 ] as const
 
 /** Namespace of the optional experimental Codex native metadata extension. */
@@ -1031,4 +1032,207 @@ export function normalizeLocalJobApiRuntimeReadiness(
   }
   assertLocalJobApiRuntimeReadiness(normalized)
   return normalized
+}
+
+// ---------------------------------------------------------------------------
+// Async submit, wait and idempotency (add-local-job-api-async-submit, feature
+// `async-submit`). These are parse/normalize helpers and wire types only; the
+// submission core (headless/run-submission.ts) owns storage and dispatch.
+// ---------------------------------------------------------------------------
+
+export const LOCAL_JOB_API_IDEMPOTENCY_KEY_MAX_LENGTH = 160
+export const LOCAL_JOB_API_WAIT_DEFAULT_TIMEOUT_MS = 30_000
+export const LOCAL_JOB_API_WAIT_MAX_TIMEOUT_MS = 86_400_000
+export const LOCAL_JOB_API_WAIT_EXIT_CODE = 9
+
+/** Structured (stdout) error codes added by the async-submit feature. */
+export const LOCAL_JOB_API_ASYNC_ERROR_CODES = [
+  "idempotency_key_not_supported",
+  "idempotency_conflict",
+  "consumer_mismatch",
+  "invalid_idempotency_key",
+  "secret_in_request",
+  "submission_pending",
+] as const
+
+export type LocalJobApiAsyncErrorCode =
+  (typeof LOCAL_JOB_API_ASYNC_ERROR_CODES)[number]
+
+export const LOCAL_JOB_API_WAIT_REASONS = [
+  "admission_incomplete",
+  "run_pending",
+  "executor_unavailable",
+  "executor_unknown",
+  "terminal_artifacts_pending",
+  "observation_failed",
+] as const
+
+export type LocalJobApiWaitReason = (typeof LOCAL_JOB_API_WAIT_REASONS)[number]
+
+export type LocalJobApiWaitObservation =
+  | { state: "timeout"; timeoutMs: number; reason: LocalJobApiWaitReason }
+  | { state: "error"; reason: LocalJobApiWaitReason }
+
+export type LocalJobApiExecutionState = "available" | "unavailable" | "unknown"
+
+export type LocalJobApiExecutionReason =
+  | "executor_observed"
+  | "no_executor"
+  | "probe_unavailable"
+  | "admission_incomplete"
+
+/** Advisory executor observation of a queued/running API job's status. */
+export type LocalJobApiExecutionObservation = {
+  state: LocalJobApiExecutionState
+  reason: LocalJobApiExecutionReason
+  observedAt: string
+  hint?: "locus daemon run"
+}
+
+export type LocalJobApiErrorEnvelope = {
+  apiVersion: typeof LOCAL_JOB_API_VERSION
+  error: {
+    code: LocalJobApiAsyncErrorCode
+    message: string
+    retryable?: true
+  }
+}
+
+/** Retry `--request` body: only the consumer and an optional key. */
+export type LocalJobApiRetryRequest = {
+  apiVersion: typeof LOCAL_JOB_API_VERSION
+  consumer: { id: string }
+  idempotencyKey: string | null
+}
+
+/**
+ * A request failure reported as one stdout v1 error envelope (never echoing
+ * the key or stored request content), as opposed to a plain-text diagnostic.
+ */
+export class LocalJobApiRequestError extends Error {
+  readonly code: LocalJobApiAsyncErrorCode
+  readonly retryable: boolean
+
+  constructor(
+    code: LocalJobApiAsyncErrorCode,
+    message: string,
+    options: { retryable?: boolean } = {},
+  ) {
+    super(message)
+    this.name = "LocalJobApiRequestError"
+    this.code = code
+    this.retryable = options.retryable === true
+  }
+}
+
+export function isLocalJobApiRequestError(
+  error: unknown,
+): error is LocalJobApiRequestError {
+  return error instanceof LocalJobApiRequestError
+}
+
+export function toLocalJobApiErrorEnvelope(
+  error: LocalJobApiRequestError,
+): LocalJobApiErrorEnvelope {
+  return {
+    apiVersion: LOCAL_JOB_API_VERSION,
+    error: {
+      code: error.code,
+      message: error.message,
+      ...(error.retryable ? { retryable: true as const } : {}),
+    },
+  }
+}
+
+const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9._:-]+$/
+
+/**
+ * Validates an idempotency key without trimming: the existing secret-value
+ * patterns run first (a key failing both is secret_in_request), then the
+ * 1-160 ASCII `[A-Za-z0-9._:-]` charset/length rule. Neither error echoes it.
+ */
+export function assertLocalJobApiIdempotencyKey(value: unknown): string {
+  if (
+    typeof value === "string" &&
+    SECRET_VALUE_PATTERNS.some((pattern) => pattern.test(value))
+  ) {
+    throw new LocalJobApiRequestError(
+      "secret_in_request",
+      "idempotencyKey contains secret-like text",
+    )
+  }
+  if (
+    typeof value !== "string" ||
+    value.length === 0 ||
+    value.length > LOCAL_JOB_API_IDEMPOTENCY_KEY_MAX_LENGTH ||
+    !IDEMPOTENCY_KEY_PATTERN.test(value)
+  ) {
+    throw new LocalJobApiRequestError(
+      "invalid_idempotency_key",
+      `idempotencyKey must be 1-${LOCAL_JOB_API_IDEMPOTENCY_KEY_MAX_LENGTH} chars: letters, numbers, '.', '_', ':', '-'`,
+    )
+  }
+  return value
+}
+
+/**
+ * Splits the optional `idempotencyKey` member off a parsed request body. The
+ * remaining body is validated by the existing create normalizer, so the key
+ * is never part of a normalized, stored or written request.
+ */
+export function splitLocalJobApiIdempotencyKey(value: unknown): {
+  body: unknown
+  hasKey: boolean
+  key: unknown
+} {
+  if (!isRecord(value) || !Object.hasOwn(value, "idempotencyKey")) {
+    return { body: value, hasKey: false, key: undefined }
+  }
+  const { idempotencyKey, ...body } = value
+  return { body, hasKey: idempotencyKey !== undefined, key: idempotencyKey }
+}
+
+/** Validates a `runs retry --request` body (apiVersion, consumer.id, key). */
+export function assertLocalJobApiRetryRequest(
+  value: unknown,
+): LocalJobApiRetryRequest {
+  if (!isRecord(value)) throw new Error("Request must be a JSON object")
+  const { body, hasKey, key } = splitLocalJobApiIdempotencyKey(value)
+  const errors: string[] = []
+  const record = body as Record<string, unknown>
+  if (record.apiVersion !== LOCAL_JOB_API_VERSION) {
+    errors.push(`apiVersion must be ${LOCAL_JOB_API_VERSION}`)
+  }
+  for (const field of Object.keys(record)) {
+    if (field !== "apiVersion" && field !== "consumer") {
+      errors.push(`${field} is not accepted for retry requests`)
+    }
+  }
+  const consumerInput = isRecord(record.consumer) ? record.consumer : null
+  if (consumerInput) {
+    for (const field of Object.keys(consumerInput)) {
+      if (field !== "id") {
+        errors.push(`consumer.${field} is not accepted for retry requests`)
+      }
+    }
+  }
+  const consumerId =
+    consumerInput && typeof consumerInput.id === "string"
+      ? consumerInput.id.trim()
+      : ""
+  if (!isBoundedId(consumerId, MAX_CONSUMER_ID_LENGTH)) {
+    errors.push(
+      `consumer.id must be 1-${MAX_CONSUMER_ID_LENGTH} chars: letters, numbers, '.', '_', ':', '-'`,
+    )
+  } else if (
+    SECRET_VALUE_PATTERNS.some((pattern) => pattern.test(consumerId))
+  ) {
+    errors.push("consumer.id contains secret-like text")
+  }
+  if (errors.length > 0) throw new Error(errors.join("; "))
+  return {
+    apiVersion: LOCAL_JOB_API_VERSION,
+    consumer: { id: consumerId },
+    idempotencyKey: hasKey ? assertLocalJobApiIdempotencyKey(key) : null,
+  }
 }

@@ -2,6 +2,7 @@ import { and, eq, isNull, lt, or } from "drizzle-orm"
 import type { SettleOptions } from "../agent-runtime/run-event-ledger"
 import {
   getOrCreateRunEventLedger,
+  recordVerifiedRunRetention,
   releaseRunEventLedger,
 } from "../agent-runtime/run-event-ledger-host"
 import type { AgentJob } from "../db/schema"
@@ -172,7 +173,12 @@ export async function recoverStaleAgentJobs(
       )
       releaseRunEventLedger(db, job.id)
       const settled = getAgentJob(db, job.id)
-      if (settled && settled.status === "interrupted") recovered.push(settled)
+      if (settled && settled.status === "interrupted") {
+        // Recovery registers no terminal refs: retention starts at the
+        // settlement (design D4/D5).
+        recordVerifiedRunRetention(db, job.id)
+        recovered.push(settled)
+      }
     } catch {
       // A changed claim/heartbeat at commit or a concurrent terminal means the
       // worker is not confirmed stopped any more; nothing is written.
