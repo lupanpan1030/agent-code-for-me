@@ -1,6 +1,6 @@
 # Implementation tasks
 
-Status: **FINAL FROZEN CANDIDATE — 2026-10-02 (post-T2 documentation closure; SHA resolves via verification.md); awaiting same-SHA Codex IMPLEMENTATION_VERIFIED + Claude REVIEW_APPROVED**
+Status: **ACCEPTED 2026-10-02 (coordinator under the Owner self-iteration mandate) @ 432cc160; integration in progress; accepted deferrals remain unchecked.**
 
 执行顺序为 1 → 7 的独立 red fixtures（`20e7bfcf`，seam 批准 `8974c9ed`）→ 2–6（Phase I `89b68393`..`0ae41f47`，红套件裁定 `d59b1142`/`770c78ad`，Phase II `2385df4e`..`84c622ce`，T1 `74e30df9`..`e0a9a967`）→ 7 green（四个红文件 79/79）→ 8。
 Phase III（文档、登记、smoke、冻结候选）只改 docs/openspec，无 src/tests 变更；T2（Phase III 检查 `887df155` 的修复）再改 src/tests/docs，产生新的冻结候选。每项勾选后附提交证据；未勾选项写明缺什么，不以环境失败或部分覆盖冒充完成。证据中仍有开放子项的条目不勾选，标 PARTIAL 并列出开放子项（8.1 以这些子项为准）。
@@ -160,18 +160,14 @@ Phase III（文档、登记、smoke、冻结候选）只改 docs/openspec，无 
 ## 8. 验证 / 评审 / 停止门
 
 - [ ] 8.1 所有 S01–S54 登记、red→green evidence 齐全；targeted bun、architecture guard、migration/rollback、secret/fault suites 实际执行。
-  未完成：S01–S54 登记与 red→green 证据已齐（verification），但 4.9 迁移/回滚夹具与 red-receipt §6 未覆盖子项仍开放。
+  接受延期：S01–S54 登记与 red→green 证据已齐；4.9 与 red-receipt §6 未覆盖子项转 TICKET-131，保持未勾，不声称全部覆盖。
 - [x] 8.2 在冻结的精确 source SHA 跑 `bun run check:full`、本 change 与全量 strict OpenSpec、`git diff --check`；记录命令/exit/count/log，不能把环境失败算 pass。
   证据（T5 候选）：`bun run check:full` 在 `b26ec29a` exit 0（2907 pass / 2 skip（win32 门控）/ 0 fail、strict 54/54、build、diff:check），并在 T5 记录提交复跑（结果见 handoff `impl-async-submit-t5.report.md`）；四个红文件 79/79、S35 与 `tests/local-job-api-wrapper-relay*.test.ts` 连续三次全绿、PR-base lint、`git diff --check` 同。T4 候选（`bb194738`）证据见 handoff `impl-async-submit-t4.report.md`，T3 候选（`76e8889d`）见 `impl-async-submit-t3.report.md`；`37de7fce` 首次精确 SHA check:full 曾因 S35 关窗竞争红一次（2881/1），统筹复跑绿（2882/0）——该窗口由 T3 `36dc9c12` 关闭，T4 `3d1e73b3` 补齐 own claim 与 admission 窗口，T5 `7ac84582`/`d556de52` 补齐命令报告前与 arming 期间捕获的信号（verification「Gates」「Disclosures」）。
 - [ ] 8.3 disposable-profile 手工及 packaged smoke：submit 后 submitter 退出仍可被 daemon 执行；agent/completion wait/result；queued cancel/cancel；retry key；daemon death→recovery→wait；真实 cross-process publish；env sentinel；stdio session shutdown；Workbench 可见。macOS/Windows 分别记录，WSL 不代替 packaged 证据。
   未完成：本 WSL 主机 Electron 缺共享库（exit 127）、无 bundled runtimes/凭据、无 macOS/Windows 主机；见 verification smoke 矩阵与重跑命令（T5 增列 packaged own-pump SIGTERM/SIGINT 回执，Electron main 信号处置未取证）。
 - [ ] 8.4 Windows 有/无 artifacts 分开验收；TICKET-127 未修复时 artifact fixture 预期 fail closed，不宣称已交付 Windows artifact refs。TICKET-128 部分发布预期 non-ready，不算恢复成功。
-  未完成：无 Windows 主机。
-- [ ] 8.5 Codex `IMPLEMENTATION_VERIFIED` 与 fresh-context Claude Code `REVIEW_APPROVED` 必须绑定同一精确 source SHA；代码再改则两者失效；独立 security review 覆盖 key scope、reopen/receipts/staging、claim revalidation、R3 env/R4 abort、lock 观察与回滚。
-  未完成：Codex IMPLEMENTATION_VERIFIED 与 fresh-context Claude REVIEW_APPROVED 需绑定同一冻结候选 SHA；当前均未签发。
-- [ ] 8.6 汇总 consumer-neutral fixtures 与已知 consumer receipts/unknown，记录未覆盖平台、TICKET-128 residual、R1–R4 升级影响，提交统筹代行产品验收；开放 Red 回 Owner。
-  未完成：verification 已汇总 consumer-neutral 证据、unknown receipts、未覆盖平台与 TICKET-128 残余；提交统筹代行验收待 8.5。
-- [ ] 8.7 **ACCEPTED 停止门（Owner 2026-10-02 授权自我迭代）**：Codex IMPLEMENTATION_VERIFIED + fresh-context Claude REVIEW_APPROVED 同 source SHA、无开放 Red 时，由统筹代行 ACCEPTED；只有红灯项回 Owner。未记录 ACCEPTED 不宣称产品接受，不归档；本次派单不授权 merge。将来的本地集成须另获授权并验证 merge SHA。
-  未完成：待 8.5 双标记绑定同一 SHA 且无开放 Red 后由统筹按 Owner 2026-10-02 自我迭代授权代行 ACCEPTED。
-- [ ] 8.8 **Push 未授权**：push、远程 PR 创建/修改、remote merge、release、规则更改一律 not authorized / not performed；本地提交不隐含远程权限。
-  保持：本次派单未授权也未执行任何 push/PR/merge/release/规则变更。
+  接受延期：无 Windows 主机，not claimed；TICKET-127/130 跟进，有/无 artifacts 分开验收。
+- [ ] 8.5 同 SHA 双签与实际宿主 smoke 证据：Codex `IMPLEMENTATION_VERIFIED` + fresh-context Claude `REVIEW_APPROVED` 均绑定 `432cc160`（引用见 verification「ACCEPTED」）；后续代码修改使双签失效。按本次统筹派单保持未勾：runtime/daemon/stdio/packaged smoke host-blocked，macOS/Windows not claimed；双签已满足，未勾仅保留 smoke 缺口，不表示双签待签。独立 security/C7 评审覆盖已登记。
+- [x] 8.6 consumer-neutral fixtures、consumer receipts/unknown、未覆盖平台、TICKET-128 residual 与 R1–R4 升级影响已汇总并提交统筹代行验收；consumer E2E unknown；接受披露和逐条延期见 verification。
+- [x] 8.7 **ACCEPTED 2026-10-02 (coordinator, mandate) @ 432cc160**：依 Owner 2026-10-02 自我迭代指示，统筹在同 SHA 双签、无开放 Red 下代行；C7 #4/#5/#10 admission 行为由批准的 D3 覆盖。此次收尾派单明确授权本地 no-ff 合入 main、合并 SHA 门禁及归档。
+- [x] 8.8 **Push authority recorded**：按 2026-09-04 push 规矩，统筹此次明确派 Codex 仅执行 `git push origin main`，必须在门禁/归档通过及远端仍为 `2c59664f` 后执行，禁止 force。实际推送与 ls-remote 结果由 STATUS/最终回执记录；不授权其他分支、tag、release、PR 或规则更改。

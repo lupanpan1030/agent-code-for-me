@@ -160,3 +160,14 @@ Owner 对 `add-renderer-untrusted-content-hardening` 选择先合入、开票补
 |------|------|------|------|
 | [TICKET-128](TICKET-128-run-ledger-creation-atomicity-and-terminal-publish.md) | Run 创建事实原子性与终态制品发布/崩溃恢复 | 🟡 数据一致性 | 待独立 OpenSpec / 未授权实施 |
 | [TICKET-129](TICKET-129-native-run-success-evidence-and-artifact-read-hardening.md) | Native 成功证据、顺序/折叠一致性与制品读取加固 | 🟡 Runtime/安全 | 待独立 OpenSpec / 未授权实施 |
+
+## 第十二批 — Async submit 统筹代行验收后续（2026-10-02）
+
+来源：`add-local-job-api-async-submit` coordinator ACCEPTED @ `432cc160`，
+依据 Owner 2026-10-02 自我迭代授权；双签同 SHA、无开放 Red。
+以下是接受的未完成项，仅登记，实施需另行批准，不声称宿主 smoke 通过。
+
+| 工单 | 标题 | 级别 | 状态 |
+|------|------|------|------|
+| [TICKET-130](TICKET-130-async-submit-relay-and-windows-verification.md) | R4 最终让出窗口、held abort、Windows 退出码与 Electron packaged 信号验证 | 🟡 转发/平台验证 | Open / 待独立批准与宿主回执 |
+| [TICKET-131](TICKET-131-async-submit-followups.md) | 迁移/回滚夹具、并发 PARTIAL、SYN-25 缓存与守卫检测增强 | 🟡 验证/优化 | Open / 未授权实施 |

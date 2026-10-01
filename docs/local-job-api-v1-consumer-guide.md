@@ -1191,9 +1191,10 @@ prove that the daemon is ready.
 
 #### Aborting a waiting command
 
-When the command runs its own run in-process, aborting it behaves as before:
-killing the command's process tree stops the runtime child, and stdin EOF
-does not cancel it.
+When the command runs its own run in-process, Bun tests show that killing
+the command's process tree stops the runtime child, and stdin EOF does not
+cancel it. Windows signal exit codes are inferred, and the Electron packaged
+own-pump signal baseline has not been verified (see the platform limits below).
 
 When a daemon claimed the run, the daemon keeps running it after the waiting
 command dies. To cover that, the command relays a cancel of its own run, and
@@ -1429,7 +1430,8 @@ acknowledged only for a committed run), not before:
   directory or the initial artifact admission fails, stderr and the exit are
   as before, but a `failed` job with `job.errorCode`
   `artifact_admission_failed` (exit `1` through `runs wait`) now remains. Older
-  builds left no job. `runs list`, `runs status` and the Workbench show it.
+  builds left no job when mkdir failed; that comparison does not cover initial
+  admission failures after mkdir. `runs list`, `runs status` and the Workbench show it.
 - `runs submit` with a key: the key stays bound to that failed attempt for
   the retention period; resubmitting it replays the failed job with
   `idempotentReplay: true`. Use a new key for a new attempt.

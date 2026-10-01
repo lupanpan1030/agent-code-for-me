@@ -1,30 +1,12 @@
 # Verification
 
-Status: **FINAL FROZEN CANDIDATE — 2026-10-02 (T5: the `bb194738` T4 review P3s closed); awaiting same-SHA Codex IMPLEMENTATION_VERIFIED + Claude REVIEW_APPROVED**
+Status: **ACCEPTED 2026-10-02 (coordinator under the Owner self-iteration mandate) @ 432cc160; integration in progress.**
 
 ## Candidate
 
 - Change: `add-local-job-api-async-submit` (Phase 3, second proposal).
-- Candidate source SHA: the T5 re-freeze commit
-  `docs(openspec): re-freeze the async submit T5 candidate` is the **final
-  frozen candidate** (the first T5 record `06afaee9` was superseded by the
-  guide fix `95aaa6a9` before any gate run or verdict bound it), superseding
-  the T4 candidate
-  `bb194738606e6c427c7554c7e3b0603b8a4f2a8f` (itself superseding the T3
-  candidate `76e8889d` and the documentation-closure candidate `37de7fce`).
-  A commit cannot contain its own SHA; the exact value is recorded in the T5
-  handoff (`impl-async-submit-t5.report.md`) and resolves with
-  `git log -1 --format=%H -- openspec/changes/add-local-job-api-async-submit/verification.md`.
-  On the frozen branch this must equal `git rev-parse HEAD`, and its subject
-  must match the subject above. T5 changed product code, so no verdict bound
-  to `bb194738`, `76e8889d`, `37de7fce`, `b7b408d1`, `887df155` or
-  `e0a9a967` carries over; the `bb194738` review (Claude design/probes
-  REVIEW_APPROVED for that SHA with four P3s: P3-1 and P3-2 reproduced,
-  P3-3 win32 exits, P3-4 Electron-main baseline) is the input T5 closes, as
-  the `76e8889d` reviews were T4's.
-- Worktree / branch: `/home/chen/projects/locus-add-local-job-api-async-submit-draft`,
-  `codex/add-local-job-api-async-submit-draft`. Remote push, PR, merge, release
-  and rules changes: not authorized, not performed.
+- Final candidate source SHA: `432cc1600455a803ad05660dfaa84e39e78bd3f5` (T5 re-freeze). All earlier candidate verdicts are historical; final dual signatures below bind this exact candidate. This acceptance commit only changes documentation, not product source, tests or the immutable red set.
+- Worktree / branch: `/home/chen/projects/locus-add-local-job-api-async-submit-draft`, `codex/add-local-job-api-async-submit-draft`. This closeout dispatch authorizes local merge into `main`, gates, archive and only `git push origin main` under the 2026-09-04 push policy. No tag/release/PR/rules change or other branch push is authorized.
 - Product baseline: `2c59664f1b80a5f782eb05f82d33f718d9bc7053` (main after the
   canonical run event ledger archive `87eb6b01`). Owner APPROVED decisions
   bound to `0f998436`, recorded at `0447d02d`. Independent red suite
@@ -70,7 +52,7 @@ Status: **FINAL FROZEN CANDIDATE — 2026-10-02 (T5: the `bb194738` T4 review P3
 | Final documentation closure | `37de7fce` | Codex R1 `async-submit-negotiation-r1-codex-37de7fce.md`: NOT_VERIFIED (P1-1 fresh ack re-read, P1-2 relay armed too late; A2/A8 PARTIAL); Claude `async-submit-final-review-design-correctness-37de7fce.md` CHANGES_REQUESTED (F1 P2, F2/F3 P3), `…-security-c7-37de7fce.md` CHANGES_REQUESTED (P1-1 disclosure, P3-1/P3-2), `…-tests-arch-37de7fce.md` REVIEW_APPROVED (4 P3) |
 | T3 | `5fa48189` (fresh ack snapshot), `29edbf39` (halted ledger release, bounded own cancel and over-age tick), `96dbc22d` (dispatch backoff), `36dc9c12` (relay armed at admission), `a90361ee` (generic malformed-JSON diagnostic), `528f05d9` (guard detection), `9f0fde7f` (test title), `a30cdd6d` (guides), `e6842e5d` (proposal rows, design F3), `76e8889d` (T3 record) | Closes every 37de7fce finding (see Disclosures). `async-submit-t3-review-design-probes-76e8889d….md` CHANGES_REQUESTED (F1 P2 own-claim disarm swallowed a caught signal, F2 P3 unarmed pre-arm window); `async-submit-t3-review-security-c7-76e8889d….md` CHANGES_REQUESTED (P1-1 already-closed stdin armed EOF, P3-1 replay waiter relayed, P3-2 TICKET-127 text) |
 | T4 | `cb1e1e2a` (already-closed stdin never arms EOF), `3d1e73b3` (relay armed before admission, mode switches instead of disarm, observe-only replay waiter), `e571d895` (guides), `d4a2cd1c` (TICKET-127), `f87eb937` (proposal R4 rows), T4 record commit `bb194738` | Closes every 76e8889d finding (see Disclosures). `async-submit-t4-review-bb194738….md`: REVIEW_APPROVED for `bb194738` only, with four P3s (P3-1 and P3-2 reproduced: a caught signal lost at command end; a Run admitted then canceled for an abort while arming) |
-| T5 | `7ac84582` (caught abort dispatched before the wrapper reports or disarms), `d556de52` (no admission for an abort while the relay arms), `805e5636` (guides: relay span, Windows default-disposition exits), `b26ec29a` (proposal R4 rows), `4c437158` (relay comments), `06afaee9` (first T5 record, superseded), `95aaa6a9` (guides: no unevidenced no-relay equivalence), T5 re-freeze commit (SHA resolves under Candidate) | Closes the four bb194738 P3s (see Disclosures); final same-SHA dual verdicts pending |
+| T5 | `7ac84582` (caught abort dispatched before the wrapper reports or disarms), `d556de52` (no admission for an abort while the relay arms), `805e5636` (guides: relay span, Windows default-disposition exits), `b26ec29a` (proposal R4 rows), `4c437158` (relay comments), `06afaee9` (first T5 record, superseded), `95aaa6a9` (guides: no unevidenced no-relay equivalence), T5 re-freeze commit (SHA resolves under Candidate) | Closes the four bb194738 P3s (see Disclosures); final same-SHA dual verdicts bind 432cc160 (see ACCEPTED) |
 
 Every P2 above is closed at `e0a9a967`: Phase I design P2-1 (retry error
 baseline, `ac1e2f74`) and P2-2 (R4 relay race, `84c622ce`); Phase I security
@@ -494,26 +476,61 @@ $L api runs retry "$Q" --request "$PROJ/retry.json" --async --json
 | Amadeus | Windows consumer; current v1 commands, version and key needs | unknown; no negotiation or roadmap ordering |
 | Other | — | unknown |
 
+## ACCEPTED (coordinator on the Owner's 2026-10-02 self-iteration mandate)
+
+**ACCEPTED 2026-10-02 @ 432cc1600455a803ad05660dfaa84e39e78bd3f5.** The coordinator supplied the acceptance and same-SHA evidence in the second closeout dispatch (the first dispatch was BLOCKED for a stale candidate SHA). Codex records that acceptance here; this is not a new product verdict. No open Red remains per the coordinator. Owner APPROVED remains bound to `0f998436`; Owner's 2026-10-02 self-iteration mandate delegates acceptance on same-SHA dual signatures and no open Red.
+
+| Receipt | Binding / result | Coordinator evidence reference |
+| --- | --- | --- |
+| Codex gpt-6-astra R2 | IMPLEMENTATION_VERIFIED @ 432cc160; R1 P1-1/P1-2 and F1/F2 experimentally closed; C7 appropriate, no new Red | `reviews/async-submit-negotiation-r2-codex-432cc160.md` |
+| Fresh-context Claude | REVIEW_APPROVED bound to 432cc160; three-view review and T3/T4/T5 rechecks | `reviews/async-submit-t5-binding-432cc160.md` |
+| Coordinator independent aggregate | check:full exit 0, 2907 pass / 0 fail / 2 win32 skips @ 432cc160 | `reviews/async-submit-checkfull-432cc160.log` |
+| Coordinator PR-base lint | exit 0 @ 432cc160 | `reviews/async-submit-lint-prbase-432cc160.log` |
+
+These are coordinator-provided receipt references from the authorized dispatch, not files copied into this repository; they were not available locally during closeout. Post-merge commands below are separately executed by Codex and do not replace the candidate signatures.
+
+### Accepted disclosures and residuals
+
+1. Runtime/daemon/stdio/packaged smoke is host-blocked on this WSL host; macOS/Windows not claimed; consumer E2E unknown. In-process and Bun signal tests are test evidence, not packaged receipts. Tasks 8.3/8.4/8.5 retain the gap; TICKET-130 and the smoke matrix provide the rerun scope.
+2. Creation commits before admission: failure leaves a durable `failed` job with `artifact_admission_failed`, including old-request create/default retry. A key remains bound to that attempt. Before TICKET-127 is fixed every artifact-bearing win32 attempt leaves a failed row. C7 #4/#5/#10 is covered by approved D3, not new Red; TICKET-127/128 remain open. Codex R2 P3 corrected both guides: only old **mkdir failure** left no job; do not generalize to old initial-admission failure.
+3. `workerId` gained a uniqueness segment; it is an opaque string (C7 #3/#10).
+4. R4 residuals accepted: win32 exit 1/8 versus 0xC000013A is inferred, not measured; Electron packaged own-pump signal baseline unverified; a signal arriving after the final finally poll yield may be lost; held abort waits if admission stalls. Uncatchable kill and a consumer's 500 ms kill grace can truncate the 5 s acknowledgment wait. TICKET-130 tracks them. Claude N1/N2 corrected both guides' opening claim to Bun evidence/platform limits and proposal's absolute “不被吞” wording.
+5. Daemon tick settles at most 16 over-age rows per round; `overAgeFailedIds` excludes settlement failures within that invocation; tick and claim gate check priorities differ. These implementation decisions are accepted, not a claim of unlimited settlement or identical priority.
+6. Structural guards have disclosed detection limits (aliases, `.call`, raw SQL and equivalent indirect paths); enhancement is TICKET-131, not proof of exhaustive detection.
+7. TICKET-128 full creation/publication crash recovery remains outside this approved minimal ack/claim/read barrier; SYN-25 hashes are recomputed without stat/identity caching. No wait path repairs publication or claims missing files are ready.
+
+### Accepted task deferrals (unchecked means incomplete)
+
+| Task | Deferred sub-item and disposition |
+| --- | --- |
+| 1.4 / 7.2 | Windows abort matrix (Ctrl+C/Ctrl+Break/console close/child.kill/TerminateProcess), inferred win32 exits, POSIX process-group kill with real grandchildren, packaged Electron own-pump signals → TICKET-130; macOS/Windows not claimed |
+| 3.3 | SYN-25 stat/identity/size/mtime/ctime hash cache absent; bounded rereads implemented → TICKET-131 |
+| 4.9 | Migration failure, isolated userData profiles, old binary/new marker negative case and rollback fixtures absent → TICKET-131 |
+| 7.3 | S07 initial-read/wakeup-registration commit latch absent → TICKET-131 |
+| 7.4 | S11 real concurrent interleave after creation commit but before initial admission absent → TICKET-131 |
+| 7.6 | S17 reader-side nonce A→B between two reads absent → TICKET-131 |
+| 7.7 | S18 slow-cancel preparation versus immediately failing claimant absent → TICKET-131 |
+| 7.9 | S27 faults after every staged write; S37 create/default-retry wrapper paused after admission absent → TICKET-131 |
+| 7.10 | S39 wrapper-paused variant and S40 cross-process probing readiness absent → TICKET-131; win32 allowlist unverified → TICKET-130 |
+| 8.1 | S01–S54 register and red→green evidence exist, but migration/rollback and remaining red-receipt §6 sub-items are incomplete; deferred via TICKET-130/131, no full-coverage claim |
+| 8.3 | Disposable-profile manual/runtime/daemon/stdio/Workbench/cross-process/packaged smoke host-blocked; packaged signal baseline to TICKET-130; retain smoke matrix and rerun commands |
+| 8.4 | Windows with/without artifacts untested; TICKET-127 fail-closed expectation retained, TICKET-130 host verification; TICKET-128 partial publication remains non-ready |
+| 8.5 | Dual signatures satisfied at 432cc160; kept unchecked per dispatch solely to retain host-blocked/not-claimed smoke gap |
+
+### Future Implementation Receipts
+
+| Item | Current receipt / next action |
+| --- | --- |
+| Final candidate | 432cc160; same-SHA Codex IMPLEMENTATION_VERIFIED and Claude REVIEW_APPROVED above |
+| Acceptance | Coordinator ACCEPTED 2026-10-02 under Owner mandate, recorded by this docs-only commit (resolve SHA from git history) |
+| Integration | Authorized no-ff merge from main 2c59664f; merge SHA and conflict disposition recorded in closeout receipt |
+| Post-merge gates | Run check:full + PR-base lint on the merge SHA; strict validation after archive; exact command/results recorded at closeout |
+| Archive / push | Authorized standard archive and main-only non-force push after unchanged remote check; commits and pre/post ls-remote recorded in STATUS and closeout receipt |
+| Residual implementation | TICKET-127/128/130/131 remain open; requires separately approved scope and exact-SHA receipts, no implementation authorized by these tickets |
+
 ## Stop gates
 
-- Tasks 8.5: Codex `IMPLEMENTATION_VERIFIED` and a fresh-context Claude
-  `REVIEW_APPROVED` must both bind this candidate SHA. Both are pending. The
-  T1 `REVIEW_APPROVED` binds `e0a9a967`, the Phase III check binds
-  `887df155`, the T2 closure review binds `b7b408d1`, the `37de7fce`,
-  `76e8889d` and `bb194738` reviews bind those SHAs; none is a substitute
-  for final verdicts on the T5 candidate.
-- Tasks 8.7: once both verdicts bind the same SHA and no Red item is open, the
-  coordinator records ACCEPTED under the Owner's 2026-10-02 self-iteration
-  mandate. Red items return to the Owner. Not recorded yet.
-- Tasks 8.8: this dispatch does not authorize push, remote PR changes, remote
-  merge, release or repository-rules changes; none was performed. A local
-  merge needs its own authorization and post-merge gates.
-- Open before acceptance can be argued complete: tasks 1.4 (Windows
-  receipts), 3.3 (SYN-25 cache), 4.9
-  (migration/rollback fixture), the PARTIAL rows 7.2, 7.3, 7.4, 7.6, 7.7, 7.9
-  and 7.10, 8.1, 8.3, 8.4, and the sub-clauses listed above. The coordinator
-  decides which of these are acceptance blockers.
-- Any later code change invalidates both technical verdicts.
+Candidate signatures and coordinator ACCEPTED are recorded above. A later product-code change invalidates both signatures. Integration must stop on unexpected SHA/dirty state, any conflict outside STATUS, failed required gates/archive/strict validation, or remote main moving from 2c59664f. Only main and this candidate branch may be changed; no force push. Accepted unchecked tasks remain incomplete and are not new Red under this dispatch.
 
 ## History (pre-implementation records)
 

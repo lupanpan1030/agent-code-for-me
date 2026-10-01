@@ -1097,8 +1097,9 @@ runtime adapter 允许的 native-home 变量（例如 POSIX 上的 `HOME`、`COD
 
 #### Aborting a waiting command
 
-命令在进程内执行自己的 run 时，中止行为与以前相同：杀掉命令的进程树会停止
-runtime 子进程，stdin EOF 不会取消它。
+命令在进程内执行自己的 run 时，Bun 测试证明杀掉命令的进程树会停止 runtime
+子进程，stdin EOF 不会取消它。Windows 信号退出码为推断；Electron packaged
+own-pump 信号基线尚未验证（见下方平台限制）。
 
 daemon 认领了 run 时，等待中的命令退出后 daemon 仍会继续执行。为此，命令会在
 可捕获的中止时转发对自己 run（且仅限自己的 run）的取消。转发在 run admission
@@ -1285,7 +1286,7 @@ run 没有登记终态文件时（无 artifact 的 run、recovery、admission �
 - 带 artifacts 的 `runs create` 与 `runs retry <job-id>`：run directory 或初始
   artifact admission 失败时，stderr 与 exit 与以前相同，但现在会留下一个
   `job.errorCode` 为 `artifact_admission_failed` 的 `failed` job（经 `runs wait`
-  为 exit `1`）。旧版不留下 job。`runs list`、`runs status` 与 Workbench 都会显示它。
+  为 exit `1`）。旧版在 mkdir 失败时不留下 job；该比较不涵盖 mkdir 后的 initial admission 失败。`runs list`、`runs status` 与 Workbench 都会显示它。
 - 带 key 的 `runs submit`：该 key 在保留期内绑定到这个失败的 attempt；重新提交会以
   `idempotentReplay: true` 重放该失败 job。新的尝试请用新 key。
 - `runs retry <job-id>` 先检查源 run 的状态，再创建 run directory；旧版先创建目录。
