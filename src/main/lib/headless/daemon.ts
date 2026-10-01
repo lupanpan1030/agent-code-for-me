@@ -366,6 +366,17 @@ export type PumpQueuedRunsOptions = {
   signal?: AbortSignal
   /** Called synchronously for every dispatched Run (daemon slot tracking). */
   onDispatch?: (job: AgentJob, dispatch: Promise<PumpQueuedRunResult>) => void
+  /**
+   * Claim observer of a scoped caller (the create/default-retry wrapper's R4
+   * relay): `attempting` receives the worker identity minted for the
+   * conditional claim before it is attempted; `claimed` runs synchronously
+   * right after a successful claim, before the claim-time gate, any provider
+   * call or spawn.
+   */
+  claimObserver?: {
+    attempting(job: AgentJob, workerId: string): void
+    claimed(job: AgentJob): void
+  }
 }
 
 export type PumpQueuedRunResult = {
@@ -430,16 +441,19 @@ async function dispatchQueuedRun(
     workerId: `${prefix}:${process.pid}:${Date.now()}:${createId()}:${job.id}`,
     workerPid: process.pid,
   }
+  options.claimObserver?.attempting(job, worker.workerId)
   // Claim-time host gate (design D5): runs inside the runner after the
   // conditional claim and before any provider call or spawn, so only the
   // claimant reopens the admitted run directory.
-  const claimGate = (claimed: AgentJob) =>
-    openClaimedLocalJobApiExecution(options.db, claimed, {
+  const claimGate = (claimed: AgentJob) => {
+    options.claimObserver?.claimed(claimed)
+    return openClaimedLocalJobApiExecution(options.db, claimed, {
       now: options.now,
       maxQueuedApiAgeMs: options.maxQueuedApiAgeMs ?? MAX_QUEUED_API_AGE_MS,
       providerBindingDependencies: options.providerBindingDependencies,
       onHostDiagnostic: (message) => writeLine(options.stderr, message),
     })
+  }
   try {
     const result =
       job.kind === "completion"

@@ -583,7 +583,7 @@ function isOpenStdinPipe(stream: Readable | undefined): boolean {
   }
 }
 
-/** A relayed catchable abort of a daemon-first wrapper. */
+/** A relayed catchable abort of a create/default-retry wrapper. */
 type RelayedAbort = {
   /** The re-raised signal, or null for an armed stdin EOF (exit 8). */
   signal: NodeJS.Signals | null
@@ -591,14 +591,14 @@ type RelayedAbort = {
   relayed: Promise<void>
 }
 
-type DaemonFirstRelay = {
-  /** Resolves as soon as a catchable signal or an armed EOF arrives. */
+type WrapperAbortRelay = {
+  /** Resolves as soon as a relayed catchable signal or armed EOF arrives. */
   aborted: Promise<RelayedAbort>
   disarm(): void
 }
 
 /**
- * Catchable aborts a daemon-first wrapper relays (R4), per platform.
+ * Catchable aborts a create/default-retry wrapper relays (R4), per platform.
  *
  * - POSIX: SIGINT, SIGTERM and SIGHUP (terminal hangup).
  * - Windows (Node/libuv console control handler): SIGINT (Ctrl+C),
@@ -620,34 +620,49 @@ export function daemonFirstRelaySignals(
 }
 
 /**
- * R4 relay of a daemon-first wrapper: a catchable signal of
- * daemonFirstRelaySignals or an armed stdin EOF immediately stops the
- * wrapper's own wait (no terminal envelope is written after the abort),
- * forwards one cancel for the wrapper's own admitted Run through the
- * existing cancel owner and waits at most 5000 ms for its terminal. The
- * wrapper then re-raises the signal (or ends with exit 8 on EOF).
+ * R4 relay of a create/default-retry wrapper, armed at admission — before
+ * the own pump attempts its claim — so no catchable abort is lost:
+ *
+ * - Until the own pump claims the Run (it is still queued, or another
+ *   executor claimed it first: daemon-first), a catchable signal of
+ *   daemonFirstRelaySignals or an armed stdin EOF stops the wrapper's own
+ *   pump attempt and wait (no envelope is written after the abort),
+ *   forwards one cancel for the wrapper's own admitted Run through the
+ *   existing cancel owner (a queued Run settles canceled; a Run another
+ *   executor claimed gets its cancel request) and waits at most 5000 ms
+ *   for its terminal. The wrapper then re-raises the signal (or ends with
+ *   exit 8 on EOF).
+ * - Once the own pump claimed the Run, the wrapper disarms: the local
+ *   execution keeps the 2c59664f disposition (default signal termination,
+ *   stdin EOF ignored). A signal caught between the claim commit and that
+ *   disarm is re-raised at once with the default disposition.
+ *
  * Uncatchable terminations relay nothing; the Run stays queryable by ID.
  */
-function armDaemonFirstRelay(
+function armWrapperAbortRelay(
   jobId: string,
   options: RunHeadlessCliCommandOptions,
   stdinArmed: boolean,
-): DaemonFirstRelay {
+  ownWorkerId: () => string | null,
+): WrapperAbortRelay {
   let disarmed = false
-  // Persists the own cancel request, then waits at most 5000 ms for the
-  // claimant to acknowledge it with a terminal (a hard kill may truncate
-  // the wait; the persisted request stays).
+  // Persists the own cancel request, then waits for the claimant (or the
+  // queued cancel itself) to settle a terminal; at most 5000 ms in total,
+  // and a hard kill may truncate it (the persisted request stays).
   const relayCancel = async () => {
     const deadline = Date.now() + RELAY_CANCEL_ACK_MS
-    try {
-      await cancelAgentJob(options.db, jobId, {
+    let persisted = false
+    await settledWithin(
+      cancelAgentJob(options.db, jobId, {
         requestedBy: "api",
         queuedCancelFields: PRE_START_CANCEL_FIELDS,
         queuedTerminalProjection: queuedCancelTerminalProjection(options.db),
-      })
-    } catch {
-      return
-    }
+      }).then(() => {
+        persisted = true
+      }),
+      RELAY_CANCEL_ACK_MS,
+    )
+    if (!persisted) return
     while (Date.now() < deadline) {
       const current = getAgentJob(options.db, jobId)
       if (
@@ -665,9 +680,24 @@ function armDaemonFirstRelay(
   const aborted = new Promise<RelayedAbort>((resolve) => {
     resolveAborted = resolve
   })
+  /** True when the own pump already holds the claim (local execution). */
+  const ownClaimed = () => {
+    const own = ownWorkerId()
+    if (own === null) return false
+    try {
+      return getAgentJob(options.db, jobId)?.workerId === own
+    } catch {
+      return false
+    }
+  }
   const relay = (signal: NodeJS.Signals | null) => {
     if (disarmed) return
     disarm()
+    if (ownClaimed()) {
+      // Local execution: the baseline default disposition, EOF ignored.
+      if (signal) reraiseWithDefaultDisposition(signal)
+      return
+    }
     resolveAborted({ signal, relayed: relayCancel().catch(() => undefined) })
   }
   const signalHandlers = daemonFirstRelaySignals(process.platform).map(
@@ -698,19 +728,40 @@ function armDaemonFirstRelay(
   return { aborted, disarm }
 }
 
+/**
+ * Re-raises `signal` after this wrapper's listeners were removed, so the
+ * runtime's default disposition ends the process as if none had been armed.
+ * A signal the runtime cannot raise (Windows SIGBREAK/SIGHUP) ends the
+ * process with exit 8 instead.
+ */
+function reraiseWithDefaultDisposition(signal: NodeJS.Signals): void {
+  try {
+    process.kill(process.pid, signal)
+  } catch {
+    process.exit(HEADLESS_EXIT_CODES.internalFailure)
+  }
+}
+
 /** Bound on waiting for a re-raised signal to end this process. */
 const RELAY_RERAISE_GRACE_MS = 1_000
 
 /**
- * Ends a relayed abort: waits for the relayed cancel (≤5 s), then
+ * Ends a relayed abort: waits for the relayed cancel (≤5 s) and for the own
+ * pump attempt that the abort stopped (within the same window), then
  * re-raises the original signal (so a POSIX parent observes it) or returns
  * exit 8 for an armed EOF. Nothing is written to stdout. Windows has no
  * signal exit status: Node raises SIGINT/SIGTERM there as a termination
  * with exit 1 and cannot raise SIGBREAK/SIGHUP at all, so those fall back
  * to exit 8.
  */
-async function finishRelayedAbort(abort: RelayedAbort): Promise<number> {
+async function finishRelayedAbort(
+  abort: RelayedAbort,
+  ownDispatch: OwnDispatch | null,
+): Promise<number> {
   await abort.relayed
+  if (ownDispatch) {
+    await settledWithin(ownDispatch.promise, RELAY_CANCEL_ACK_MS)
+  }
   if (abort.signal) {
     try {
       process.kill(process.pid, abort.signal)
@@ -728,7 +779,8 @@ async function finishRelayedAbort(abort: RelayedAbort): Promise<number> {
  * Q2(a) synchronous wrapper of create/default retry: its own admitted Run is
  * claimed through the canonical scoped pump (unless another claimant won it
  * first, then it only waits) and its committed, published terminal is
- * printed with the 2c59664f bytes and outcome exit.
+ * printed with the 2c59664f bytes and outcome exit. The R4 relay is armed
+ * from admission until the own pump claims the Run.
  */
 async function runLocalJobApiWrapper(
   jobId: string,
@@ -736,76 +788,84 @@ async function runLocalJobApiWrapper(
   stdinArmable: boolean,
   onError: ApiCommandErrorMapper,
 ): Promise<number> {
-  await options.beforeOwnPumpClaim?.(jobId)
-  let ownDispatch: OwnDispatch | null = null
-  const own: { result: PumpQueuedRunResult | null } = { result: null }
-  const relayHolder: {
-    relay: DaemonFirstRelay | null
-    abort: RelayedAbort | null
-  } = { relay: null, abort: null }
-  let resolveAbort!: () => void
-  const abort = new Promise<void>((resolve) => {
-    resolveAbort = resolve
+  const ownAbort = new AbortController()
+  const ownClaim: { workerId: string | null } = { workerId: null }
+  const relay = armWrapperAbortRelay(
+    jobId,
+    options,
+    stdinArmable,
+    () => ownClaim.workerId,
+  )
+  const relayed: { abort: RelayedAbort | null } = { abort: null }
+  const abort = relay.aborted.then((received) => {
+    relayed.abort = received
+    // Stops an own pump attempt that has not claimed (or races the cancel).
+    ownAbort.abort()
   })
-  const becomeDaemonFirst = () => {
-    if (relayHolder.relay) return
-    const relay = armDaemonFirstRelay(jobId, options, stdinArmable)
-    relayHolder.relay = relay
-    void relay.aborted.then((relayed) => {
-      relayHolder.abort = relayed
-      resolveAbort()
-    })
-  }
-  if (getAgentJob(options.db, jobId)?.status === "queued") {
-    let state: ReturnType<OwnDispatch["state"]> = "pending"
-    const ownAbort = new AbortController()
-    const promise = pumpQueuedRuns({
-      db: options.db,
-      env: options.env,
-      runner: options.runner,
-      completionFetch: options.completionFetch,
-      providerBindingDependencies: options.providerBindingDependencies,
-      appVersion: options.appVersion,
-      admittedIds: [jobId],
-      concurrency: 1,
-      signal: ownAbort.signal,
-    }).then(
-      (result) => {
-        own.result = result.runs.find((run) => run.jobId === jobId) ?? null
-        state = own.result?.error
-          ? "failed"
-          : own.result?.claimed
-            ? "claimed"
-            : "lost"
-        if (state === "lost") becomeDaemonFirst()
-      },
-      (error) => {
-        own.result = { jobId, claimed: false, exitCode: null, error }
-        state = "failed"
-      },
-    )
-    ownDispatch = {
-      promise,
-      state: () => state,
-      stop: async () => {
-        ownAbort.abort()
-        await promise
-      },
-    }
-  } else {
-    becomeDaemonFirst()
-  }
+  let ownDispatch: OwnDispatch | null = null
   try {
-    const result = await waitForAdmittedRun(options.db, jobId, {
-      clock: options.monotonicClock ?? DEFAULT_MONOTONIC_CLOCK,
-      lockPath: options.daemonLockPath,
-      ownDispatch,
-      abort,
-    })
+    try {
+      await options.beforeOwnPumpClaim?.(jobId)
+    } catch (error) {
+      if (!relayed.abort) throw error
+    }
+    const own: { result: PumpQueuedRunResult | null } = { result: null }
+    if (!relayed.abort && getAgentJob(options.db, jobId)?.status === "queued") {
+      let state: ReturnType<OwnDispatch["state"]> = "pending"
+      const promise = pumpQueuedRuns({
+        db: options.db,
+        env: options.env,
+        runner: options.runner,
+        completionFetch: options.completionFetch,
+        providerBindingDependencies: options.providerBindingDependencies,
+        appVersion: options.appVersion,
+        admittedIds: [jobId],
+        concurrency: 1,
+        signal: ownAbort.signal,
+        claimObserver: {
+          attempting: (_job, workerId) => {
+            ownClaim.workerId = workerId
+          },
+          // Local execution keeps the baseline abort/EOF disposition.
+          claimed: () => relay.disarm(),
+        },
+      }).then(
+        (result) => {
+          own.result = result.runs.find((run) => run.jobId === jobId) ?? null
+          state = own.result?.error
+            ? "failed"
+            : own.result?.claimed
+              ? "claimed"
+              : "lost"
+        },
+        (error) => {
+          own.result = { jobId, claimed: false, exitCode: null, error }
+          state = "failed"
+        },
+      )
+      ownDispatch = {
+        promise,
+        state: () => state,
+        stop: async () => {
+          ownAbort.abort()
+          await promise
+        },
+      }
+    }
+    const result = relayed.abort
+      ? null
+      : await waitForAdmittedRun(options.db, jobId, {
+          clock: options.monotonicClock ?? DEFAULT_MONOTONIC_CLOCK,
+          lockPath: options.daemonLockPath,
+          ownDispatch,
+          abort,
+        })
     // A relayed abort wins over anything observed after it: no stale
     // terminal or observer envelope is written once the abort arrived.
-    if (relayHolder.abort) return await finishRelayedAbort(relayHolder.abort)
-    switch (result.kind) {
+    if (relayed.abort) {
+      return await finishRelayedAbort(relayed.abort, ownDispatch)
+    }
+    switch (result?.kind) {
       case "ready":
       case "unpublished":
         writeJson(options.stdout, result.envelope)
@@ -821,15 +881,21 @@ async function runLocalJobApiWrapper(
       case "own_dispatch_failed":
         // A non-outcome failure of the own pump: no terminal is fabricated.
         await cancelOwnQueuedRun(jobId, options)
+        if (relayed.abort) {
+          return await finishRelayedAbort(relayed.abort, ownDispatch)
+        }
         return onError(own.result?.error, options)
       case "own_observation_failed":
         // The own execution tree was stopped; the baseline error is kept.
         await cancelOwnQueuedRun(jobId, options)
+        if (relayed.abort) {
+          return await finishRelayedAbort(relayed.abort, ownDispatch)
+        }
         return onError(result.error, options)
     }
     return HEADLESS_EXIT_CODES.internalFailure
   } finally {
-    relayHolder.relay?.disarm()
+    relay.disarm()
   }
 }
 
