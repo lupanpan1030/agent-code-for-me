@@ -55,10 +55,12 @@ and the T1 review's P3-2/P3-3 are dispositioned under Disclosures.
 
 ## Gates
 
-Run on the T2 candidate tree. Every gate below ran on the candidate's parent
-`b63f9965` (whose only later change is this record, `STATUS.md`, task 8.2
-and status lines) and was re-run on the candidate itself after the re-freeze
-commit; the counts are identical (T2 handoff report).
+Run on the T2 candidate tree. Every gate below ran on `b63f9965` (the last
+code/test commit; later commits change only this record, `STATUS.md`,
+`tasks.md` and `proposal.md` status lines) and was re-run on the candidate
+itself; the counts are identical (T2 handoff report). One intermediate
+`check:full` run on `cfe73cf5` failed one red-file test under full-suite load
+and passed on rerun; see the S35 timing disclosure below.
 
 | Gate | Command | Result |
 | --- | --- | --- |
@@ -234,6 +236,7 @@ is either documented for consumers or recorded here for a follow-up.
 | R1 (accepted) | Daemon-first `wait.state:"error"` / 8 branches and the local publish-failure `artifacts:[]` baseline | Documented in both guides. |
 | R3 (accepted) | Daemon-claimed runs use the daemon's environment and native credential homes | Documented in both guides. |
 | R4 (accepted) | `SIGKILL`, Windows `TerminateProcess` / `child.kill()` and the logoff/shutdown console events (libuv does not deliver them) cannot relay; 500 ms kill grace and the Windows console-close grace truncate the 5 s ack; Windows exits after a relayed signal (Ctrl+C → 1, Ctrl+Break / console close → 8) not verified on Windows (closure residual 3) | Documented in both guides; Windows host-blocked. The win32 `SIGBREAK`/`SIGHUP` tests in `tests/local-job-api-wrapper-relay-signals.test.ts` are platform-gated and skipped on this Linux host. |
+| S35 timing (T2 observation) | Once in four full-suite runs, the immutable "Career Kit SIGTERM then SIGKILL" S35 test saw the wrapper die by `SIGTERM` with no relayed cancel. The harness sends `SIGTERM` as soon as the child prints `CLAIMED` from inside the `beforeOwnPumpClaim` seam, while the wrapper arms its relay only after the seam returns and it reads the Run as claimed by another executor. Under load the signal can land in that window, where the default disposition still applies. 6/6 isolated reruns and the other full runs passed; the same window exists at `887df155` (T2 did not change that path). For a consumer, a catchable signal that arrives between admission and the daemon-first decision ends the wrapper without relaying; the Run stays queryable and cancelable by ID. | Disclosed residual; not fixed in T2 (closing it needs a handler armed from admission that also preserves the own-pump default-disposition receipts). |
 | Phase III check P3-1 | A wrapper store-read failure returned `observation_failed`/8 even while its own pump ran the Run | Closed in T2 (`674ab421`): with a pending or completed own dispatch the wrapper aborts its own pump (the runner's abort signal stops the runtime tree), closes a never-started Run by queued cancel and keeps the baseline stderr/exit (create 2, retry 3); the stopped Run settles `canceled` when the store allows it, otherwise it stays for recovery. Only a remote claimant gets `observation_failed`/8. Both guides state the split. |
 | Phase III check P3-3 | Tasks 7.2, 7.3, 7.4, 7.6, 7.7, 7.9, 7.10 were ticked with open sub-clauses | T2 (`b63f9965`): unticked and marked PARTIAL with the open sub-clauses listed; tasks.md states the rule. |
 | Phase III check P3-4 | Task 1.6 receipt (post-prune closure re-check) missing | Open for the coordinator: the `25575cc3`/`abec16a5` closure checks predate the `0447d02d` prune and cannot stand in; the Phase III check's delta grep at `887df155` found no leftover conditional wording. The proposal §1 gate block now records the candidate state. |
