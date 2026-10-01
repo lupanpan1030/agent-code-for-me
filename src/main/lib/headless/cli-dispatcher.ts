@@ -481,22 +481,32 @@ function admissionEnvelope(admitted: SubmitRunResult, keyed: boolean) {
     : toLocalJobApiJobEnvelope(admitted.job)
 }
 
-/**
- * Errors of the submission core: async-submit request errors and the
- * existing project/provider errors are stdout v1 envelopes; everything else
- * keeps its plain-text stderr diagnostic and the caller's baseline exit.
- */
-function apiSubmissionError(
+type ApiCommandErrorMapper = (
   error: unknown,
   options: RunHeadlessCliCommandOptions,
-  fallbackCode: (error: unknown) => number,
+) => number
+
+function apiRequestError(
+  error: LocalJobApiRequestError,
+  options: RunHeadlessCliCommandOptions,
 ): number {
-  if (isLocalJobApiRequestError(error)) {
-    writeJson(options.stdout, toLocalJobApiErrorEnvelope(error))
-    return error.code === "submission_pending"
-      ? HEADLESS_EXIT_CODES.internalFailure
-      : HEADLESS_EXIT_CODES.invalidArguments
-  }
+  writeJson(options.stdout, toLocalJobApiErrorEnvelope(error))
+  return error.code === "submission_pending"
+    ? HEADLESS_EXIT_CODES.internalFailure
+    : HEADLESS_EXIT_CODES.invalidArguments
+}
+
+/**
+ * Errors of submit/create (2c59664f create baseline): the new async-submit
+ * request errors and the existing project/provider errors are stdout v1
+ * envelopes; everything else keeps its plain-text stderr diagnostic and the
+ * create exit (2, or 3 for unsupported).
+ */
+function apiCreateError(
+  error: unknown,
+  options: RunHeadlessCliCommandOptions,
+): number {
+  if (isLocalJobApiRequestError(error)) return apiRequestError(error, options)
   if (isLocalJobApiProjectNotRegisteredError(error)) {
     writeJson(options.stdout, toLocalJobApiProjectErrorEnvelope(error))
     return HEADLESS_EXIT_CODES.invalidCwd
@@ -506,11 +516,33 @@ function apiSubmissionError(
     return localJobApiCreateErrorCode(error)
   }
   const message = error instanceof Error ? error.message : String(error)
-  return commandError(options.stderr, message, fallbackCode(error))
+  return commandError(
+    options.stderr,
+    message,
+    localJobApiCreateErrorCode(error),
+  )
 }
 
-function retryErrorCode(): number {
-  return HEADLESS_EXIT_CODES.unsupportedRuntimeOrMode
+/**
+ * Errors of retry (2c59664f retry baseline): only provider-binding errors
+ * are stdout envelopes; every other existing error (including an
+ * unregistered project) keeps its stderr text and exit 3. The new
+ * async-submit request errors are stdout v1 envelopes.
+ */
+function apiRetryError(
+  error: unknown,
+  options: RunHeadlessCliCommandOptions,
+): number {
+  if (isLocalJobApiRequestError(error)) return apiRequestError(error, options)
+  if (error instanceof HeadlessProviderBindingError) {
+    writeJson(options.stdout, toLocalJobApiProviderErrorEnvelope(error))
+    return localJobApiCreateErrorCode(error)
+  }
+  return commandError(
+    options.stderr,
+    error instanceof Error ? error.message : String(error),
+    HEADLESS_EXIT_CODES.unsupportedRuntimeOrMode,
+  )
 }
 
 function waitEnvelope(
@@ -637,7 +669,7 @@ async function runLocalJobApiWrapper(
   jobId: string,
   options: RunHeadlessCliCommandOptions,
   stdinArmable: boolean,
-  fallbackCode: (error: unknown) => number,
+  onError: ApiCommandErrorMapper,
 ): Promise<number> {
   await options.beforeOwnPumpClaim?.(jobId)
   let ownDispatch: OwnDispatch | null = null
@@ -714,7 +746,7 @@ async function runLocalJobApiWrapper(
             queuedCancelFields: PRE_START_CANCEL_FIELDS,
           }).catch(() => undefined)
         }
-        return apiSubmissionError(failure?.error, options, fallbackCode)
+        return onError(failure?.error, options)
       }
     }
     return HEADLESS_EXIT_CODES.internalFailure
@@ -745,7 +777,7 @@ async function apiRunsSubmitCommand(
     )
     return HEADLESS_EXIT_CODES.success
   } catch (error) {
-    return apiSubmissionError(error, options, localJobApiCreateErrorCode)
+    return apiCreateError(error, options)
   }
 }
 
@@ -770,13 +802,13 @@ async function apiRunsCreateCommand(
       { appVersion: options.appVersion },
     )
   } catch (error) {
-    return apiSubmissionError(error, options, localJobApiCreateErrorCode)
+    return apiCreateError(error, options)
   }
   return runLocalJobApiWrapper(
     admitted.job.id,
     options,
     command.requestPath !== "-" && isOpenStdinPipe(options.stdin),
-    localJobApiCreateErrorCode,
+    apiCreateError,
   )
 }
 
@@ -1206,7 +1238,7 @@ async function apiRunsRetryCommand(
       { appVersion: options.appVersion },
     )
   } catch (error) {
-    return apiSubmissionError(error, options, retryErrorCode)
+    return apiRetryError(error, options)
   }
   if (command.async) {
     writeJson(
@@ -1219,7 +1251,7 @@ async function apiRunsRetryCommand(
     admitted.job.id,
     options,
     command.requestPath !== "-" && isOpenStdinPipe(options.stdin),
-    retryErrorCode,
+    apiRetryError,
   )
 }
 

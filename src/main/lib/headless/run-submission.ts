@@ -197,18 +197,6 @@ function resolveReservation(
   return { job, replay: true }
 }
 
-function assertRetrySourceStatus(source: AgentJob): void {
-  if (
-    source.status !== "failed" &&
-    source.status !== "canceled" &&
-    source.status !== "interrupted"
-  ) {
-    throw new Error(
-      `Job ${source.id} cannot be retried from status ${source.status}`,
-    )
-  }
-}
-
 async function createAdmission(
   db: AgentJobDatabase,
   intent: ApiSubmitRunIntent,
@@ -233,7 +221,9 @@ export async function submitRun(
   dependencies: SubmitRunDependencies = {},
 ): Promise<SubmitRunResult> {
   if (intent.kind === "protocol-run") return submitProtocolRun(db, intent)
-  if (intent.kind === "api-retry") assertRetrySourceStatus(intent.source)
+  // A retry keeps the 2c59664f gate order: stored request, provider,
+  // capability and project gates first, then the source status check inside
+  // job-store retryAgentJob (before any row or reservation is inserted).
   const consumerId = intentConsumerId(intent)
   const key = intent.idempotencyKey
   if (
