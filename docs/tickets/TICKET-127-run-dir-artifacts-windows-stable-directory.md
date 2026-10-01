@@ -25,12 +25,20 @@ product gap on a target platform, not a development-host limitation.
 ## Affected surfaces
 
 - **Local Job API run-dir artifacts.** `prepareLocalJobApiArtifactRunDir`
-  (`src/main/lib/headless/local-job-api.ts:275`, via `openOrCreateArtifactBaseDirectory`
-  at `:227-236` and `openStableDirectoryChild` at `:311`) is called by API create and
-  retry before the job row exists (`:788`, `:857`). A request with `artifacts.baseDir`
-  therefore fails before job creation on Windows. Requests without `artifacts.baseDir`
-  are unaffected. The manifest reader behind `runs result` (`readArtifacts`, `:559-575`)
-  returns no entries when it cannot anchor the manifest directory.
+  (`src/main/lib/headless/local-job-api.ts:342`, via `openOrCreateArtifactBaseDirectory`
+  at `:294` and `openStableDirectoryChild` at `:321`/`:378`) is called through
+  `createAdmittedRunDir` (`:868`) by API create/submit and retry **after** the
+  creation commit (design D3 of `add-local-job-api-async-submit`: only the
+  reservation winner creates the run directory, at `:993` and `:1086`). On Windows
+  every request with `artifacts.baseDir` therefore fails there, and the host settles
+  the already-created attempt `failed` with `errorCode` `artifact_admission_failed`
+  (`admittedRunDirOrSettleFailed`, `:1003`): each artifact-bearing attempt leaves a
+  durable failed row (and a `runs submit` key stays bound to it), while stderr and the
+  exit code of `runs create` / default `runs retry` are unchanged. Before that change
+  the request failed before the job row existed and left no row. Requests without
+  `artifacts.baseDir` are unaffected. The manifest reader behind `runs result`
+  (`readArtifacts`, `:624`) returns no entries when it cannot anchor the manifest
+  directory.
 - **Run-dir file writing and terminal files.** `writeRunArtifactFile`,
   `readRunArtifactFile`, `describeRunArtifactFile` and the staged terminal publish
   (`publishRunArtifactFile`) in `src/main/lib/agent-runtime/run-artifacts.ts` all
@@ -53,8 +61,9 @@ product gap on a target platform, not a development-host limitation.
 
 Fail closed. No path-only fallback writes or reads any run-dir file, and no native
 artifact is published. There is no silent success. The cost is the loss of the
-feature on Windows: API runs cannot request an artifact directory, and consumers get
-no run-dir files or native artifact refs.
+feature on Windows: API runs cannot request an artifact directory (each such attempt
+leaves a `failed` / `artifact_admission_failed` job), and consumers get no run-dir
+files or native artifact refs.
 
 ## Proposed scope for a platform-specific OpenSpec
 
@@ -77,8 +86,10 @@ no run-dir files or native artifact refs.
 4. Update the Local Job API consumer guides and the OWNERSHIP_MAP entry, and re-verify
    the related users listed above. The shell-snapshot scrub and local-browser file
    preview can land in the same change or be split out explicitly.
-5. Until then, the consumer guides should state that `artifacts.baseDir` is
-   unavailable on Windows (docs-only interim step, to be scheduled by the Owner).
+5. Until then, the consumer guides state that `artifacts.baseDir` is unavailable on
+   Windows and that each attempt leaves a `failed` / `artifact_admission_failed` job
+   ("Admission failure after creation" and "Known limits", landed with
+   `add-local-job-api-async-submit`).
 
 ## References
 
