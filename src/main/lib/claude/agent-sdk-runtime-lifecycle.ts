@@ -1,10 +1,8 @@
 import type { AgentGuardEvent } from "../../../shared/agent-scope-contracts"
 import { deleteActiveGuardedContractIfMatch } from "../agent-guard"
 import type { DesktopRunResult } from "../agent-runtime/desktop-run-request"
-import {
-  type RunClaudeAgentSdkDesktopAdapterWithPreparedRuntimeQueryInput,
-  runClaudeAgentSdkDesktopAdapterWithPreparedRuntimeQuery,
-} from "./agent-sdk-adapter-runner"
+import type { RunClaudeAgentSdkDesktopAdapterWithPreparedRuntimeQueryInput } from "./agent-sdk-adapter-runner"
+import { runCatalogClaudeAgentSdkDesktopAdapter } from "./agent-sdk-desktop-route"
 import {
   type PrepareClaudeAgentSdkRuntimePromptForDesktopRunInput,
   prepareClaudeAgentSdkRuntimePromptForDesktopRun,
@@ -69,6 +67,14 @@ export type RunClaudeAgentSdkDesktopRuntimeLifecycleQueryInput = Omit<
     >
   >
 
+/**
+ * The typed Claude desktop leaf delegate the runtime route catalog selects
+ * (P34): the named host injects it after asserting its route.
+ */
+export type ClaudeAgentSdkDesktopAdapterDelegate = (
+  input: RunClaudeAgentSdkDesktopAdapterWithPreparedRuntimeQueryInput,
+) => Promise<DesktopRunResult>
+
 export type RunClaudeAgentSdkDesktopRuntimeLifecycleInput = Omit<
   RunClaudeAgentSdkDesktopAdapterWithPreparedRuntimeQueryInput,
   | "runtimeQuery"
@@ -100,6 +106,11 @@ export type RunClaudeAgentSdkDesktopRuntimeLifecycleInput = Omit<
   desktopJobSawError: boolean
   streamStart: number
   nowMs?: () => number
+  /**
+   * The catalog-selected Agent SDK delegate injected by the named host;
+   * without one the production catalog's Claude desktop route is resolved.
+   */
+  runDesktopAdapter?: ClaudeAgentSdkDesktopAdapterDelegate
 }
 
 export type RunClaudeAgentSdkDesktopRuntimeLifecycleResult =
@@ -126,6 +137,7 @@ export async function runClaudeAgentSdkDesktopRuntimeLifecycle(
     guardEvents,
     guardedRunStartedAt = new Date().toISOString(),
     runtimeStreamSetup,
+    runDesktopAdapter = runCatalogClaudeAgentSdkDesktopAdapter,
     ...adapterInput
   } = input
   const { request } = input
@@ -236,20 +248,19 @@ export async function runClaudeAgentSdkDesktopRuntimeLifecycle(
     parts,
     stderrLines,
   })
-  const adapterResult =
-    await runClaudeAgentSdkDesktopAdapterWithPreparedRuntimeQuery({
-      ...adapterInput,
-      request,
-      deleteContract,
-      runtimeQuery,
-      guardEvents: runtimeQuery.guardEvents,
-      guardedRunStartedAt,
-      resolvedModel: runtimeResolvedModel,
-      hasExistingApiConfig: runtimeHasExistingApiConfig,
-      transform: streamSetup.transform,
-      parts,
-      stderrLines,
-    })
+  const adapterResult = await runDesktopAdapter({
+    ...adapterInput,
+    request,
+    deleteContract,
+    runtimeQuery,
+    guardEvents: runtimeQuery.guardEvents,
+    guardedRunStartedAt,
+    resolvedModel: runtimeResolvedModel,
+    hasExistingApiConfig: runtimeHasExistingApiConfig,
+    transform: streamSetup.transform,
+    parts,
+    stderrLines,
+  })
   if (adapterResult.status !== "succeeded") {
     return {
       status: "failed",
