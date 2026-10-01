@@ -13,6 +13,11 @@
  *   signalOn    optional { eventType, signal }: the store hook sends `signal`
  *               to this process synchronously when the INSERT of the first
  *               `agent_job_events` row of that type runs (`SIGNALED <type>`)
+ *   signalOnStdinResume
+ *               optional signal: the first `process.stdin.resume()` (the
+ *               relay's stdin probe, after its listeners are installed and
+ *               before admission) sends it to this process synchronously
+ *               (`SIGNALED stdin.resume`)
  *   seam        optional `beforeOwnPumpClaim` behaviour: removes
  *               `removePath` first when given (`SEAM_REMOVED`), prints
  *               `SEAM <jobId>`, first claims the Run as a daemon worker of
@@ -42,6 +47,7 @@ const config = JSON.parse(process.env.RELAY_MODES_CHILD_CONFIG ?? "{}") as {
   lockPath: string | null
   runner: "succeed" | "block"
   signalOn?: { eventType: string; signal: NodeJS.Signals } | null
+  signalOnStdinResume?: NodeJS.Signals | null
   seam?: {
     holdMs: number
     removePath?: string | null
@@ -63,6 +69,21 @@ function storeHook(sql: string, params: unknown[]): void {
     signaled = true
     process.stderr.write(`SIGNALED ${signalOn.eventType}\n`)
     process.kill(process.pid, signalOn.signal)
+  }
+}
+
+const stdinResumeSignal = config.signalOnStdinResume ?? null
+if (stdinResumeSignal) {
+  const resume = process.stdin.resume.bind(process.stdin)
+  let fired = false
+  process.stdin.resume = () => {
+    const stream = resume()
+    if (!fired) {
+      fired = true
+      process.stderr.write("SIGNALED stdin.resume\n")
+      process.kill(process.pid, stdinResumeSignal)
+    }
+    return stream
   }
 }
 

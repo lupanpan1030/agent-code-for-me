@@ -14,6 +14,8 @@
  * - Admission (design-probes F2): a signal caught while the Run is being
  *   admitted is held and, once the ID is known, cancels the queued own Run;
  *   when admission throws, it is re-raised with the default disposition.
+ *   T5 (bb194738 review P3-2): a signal dispatched while the relay arms,
+ *   before admission starts, admits nothing.
  * - Keyed replay (security P3-1): a keyed sync retry waiter that replays a
  *   retained child does not own it; its abort never cancels that child.
  */
@@ -57,6 +59,7 @@ type ChildConfig = {
   argv: string[]
   runner: "succeed" | "block"
   signalOn?: { eventType: string; signal: NodeJS.Signals } | null
+  signalOnStdinResume?: NodeJS.Signals | null
   seam?: {
     holdMs: number
     removePath?: string | null
@@ -488,6 +491,41 @@ test.skipIf(!POSIX)(
 // ---------------------------------------------------------------------------
 // Admission (P3)
 // ---------------------------------------------------------------------------
+
+test.skipIf(!POSIX)(
+  "a SIGTERM dispatched while the relay arms (its stdin probe), before admission starts, admits no Run and ends the wrapper by SIGTERM",
+  async () => {
+    const p = profile()
+    const requestPath = writeRequest(p, agentRequest(p))
+    const child = spawnWrapper(
+      p,
+      {
+        argv: createArgv(requestPath),
+        runner: "block",
+        signalOnStdinResume: "SIGTERM",
+      },
+      "pipe",
+    )
+    try {
+      const exit = await child.exitWithin(9_000)
+      expect({
+        signaled: /SIGNALED stdin.resume/.test(child.stderr()),
+        exitSignal: exit.signal,
+        stdout: child.stdout(),
+        rows: apiJobRows(p).length,
+      }).toEqual({
+        signaled: true,
+        exitSignal: "SIGTERM",
+        stdout: "",
+        rows: 0,
+      })
+    } finally {
+      child.proc.kill("SIGKILL")
+      await child.exited
+    }
+  },
+  30_000,
+)
 
 for (const variant of [
   { eventType: "job_created", artifacts: false },

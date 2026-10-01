@@ -681,6 +681,14 @@ type WrapperAbortRelay = {
   aborted: Promise<RelayedAbort>
   /** The relayed abort once one arrived, else null. */
   received(): RelayedAbort | null
+  /**
+   * Called before admission starts: when an abort was already dispatched
+   * while the relay armed (its stdin probe turns the event loop), the relay
+   * switches to observe-only (a held signal is re-raised at once) and this
+   * returns that abort (signal null for an armed EOF), so nothing is
+   * admitted; otherwise null.
+   */
+  abortedBeforeAdmission(): { signal: NodeJS.Signals | null } | null
   /** Admission returned the own Run: an abort held during admission relays now. */
   admitted(jobId: string): void
   /**
@@ -731,11 +739,13 @@ export function daemonFirstRelaySignals(
  * runtime caught while the command runs is dispatched to a live handler —
  * and moved through these modes:
  *
- * - pending (admission in progress, no ID yet): a catchable signal of
- *   daemonFirstRelaySignals or an armed stdin EOF is held. When admission
- *   returns the own ID the held abort takes the owner path below; when
- *   admission throws a held signal is re-raised with the default
- *   disposition (a held EOF is dropped: there is no Run).
+ * - pending (arming and admission in progress, no ID yet): a catchable
+ *   signal of daemonFirstRelaySignals or an armed stdin EOF is held. An
+ *   abort already held when arming returns came before admission: nothing
+ *   is admitted (abortedBeforeAdmission). When admission returns the own ID
+ *   the held abort takes the owner path below; when admission throws a held
+ *   signal is re-raised with the default disposition (a held EOF is
+ *   dropped: there is no Run).
  * - owner (until the own pump claims the Run: it is still queued, or another
  *   executor claimed it first — daemon-first): the abort stops the wrapper's
  *   own pump attempt and wait (no envelope is written after the abort),
@@ -745,7 +755,8 @@ export function daemonFirstRelaySignals(
  *   its terminal. The wrapper then re-raises the signal (or ends with exit
  *   8 on EOF).
  * - own-claimed (the own pump claimed the Run: local execution),
- *   observe-only (a keyed replay waiter, or a failed admission) and ended (the wait ended; the command only reports):
+ *   observe-only (a keyed replay waiter, an abort before admission, or a
+ *   failed admission) and ended (the wait ended; the command only reports):
  *   the handlers stay installed and re-raise the signal with the default
  *   disposition, which is the 2c59664f behaviour of a local execution; stdin
  *   EOF is ignored. A signal caught between the own claim commit and the
@@ -882,6 +893,11 @@ async function armWrapperAbortRelay(
   return {
     aborted,
     received: () => receivedAbort,
+    abortedBeforeAdmission() {
+      const early = mode === "pending" ? held : null
+      if (early) toPassthrough()
+      return early
+    },
     admitted(id) {
       if (mode !== "pending") return
       jobId = id
@@ -956,8 +972,9 @@ async function finishRelayedAbort(
 /**
  * Admits the Run of a synchronous create/default retry under the R4 relay
  * and runs its wrapper. The relay is armed before `admit` runs (an abort
- * during admission is held) and its listeners are removed only when the
- * command ends, after a final event-loop turn. A keyed replay (`replay: true`) does not own the
+ * dispatched while it arms admits nothing; an abort during admission is
+ * held) and its listeners are removed only when the command ends, after a
+ * final event-loop turn. A keyed replay (`replay: true`) does not own the
  * retained Run, so its waiter only observes: no relayed cancel, default
  * disposition.
  */
@@ -969,6 +986,18 @@ async function admitUnderWrapperRelay(
 ): Promise<number> {
   const relay = await armWrapperAbortRelay(options, stdinArmable)
   try {
+    // The stdin probe turns the event loop: an abort it dispatched came
+    // before admission. A signal was re-raised with the default
+    // disposition; an EOF ends the command with exit 8 and no stdout.
+    const early = relay.abortedBeforeAdmission()
+    if (early) {
+      if (early.signal) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, RELAY_RERAISE_GRACE_MS),
+        )
+      }
+      return HEADLESS_EXIT_CODES.internalFailure
+    }
     let admitted: SubmitRunResult
     try {
       admitted = await admit()
