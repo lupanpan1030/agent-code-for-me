@@ -572,18 +572,28 @@ function isOpenStdinPipe(stream: Readable | undefined): boolean {
   }
 }
 
+/** A relayed catchable abort of a daemon-first wrapper. */
+type RelayedAbort = {
+  /** The re-raised signal, or null for an armed stdin EOF (exit 8). */
+  signal: NodeJS.Signals | null
+  /** Settles after the own cancel was persisted and acknowledged (≤5 s). */
+  relayed: Promise<void>
+}
+
 type DaemonFirstRelay = {
-  /** Resolves after an armed stdin EOF relayed the own cancel. */
-  eof: Promise<void>
+  /** Resolves as soon as a catchable signal or an armed EOF arrives. */
+  aborted: Promise<RelayedAbort>
   disarm(): void
 }
 
 /**
  * R4 relay of a daemon-first wrapper: a catchable SIGINT/SIGTERM or an armed
- * stdin EOF forwards one cancel for the wrapper's own admitted Run through
- * the existing cancel owner, waits at most 5000 ms for it, then re-raises
- * the signal (or ends the wrapper with exit 8 on EOF). SIGKILL and other
- * uncatchable terminations relay nothing; the Run stays queryable by ID.
+ * stdin EOF immediately stops the wrapper's own wait (no terminal envelope
+ * is written after the abort), forwards one cancel for the wrapper's own
+ * admitted Run through the existing cancel owner and waits at most 5000 ms
+ * for its terminal. The wrapper then re-raises the signal (or ends with
+ * exit 8 on EOF). SIGKILL and other uncatchable terminations relay nothing;
+ * the Run stays queryable by ID.
  */
 function armDaemonFirstRelay(
   jobId: string,
@@ -617,28 +627,22 @@ function armDaemonFirstRelay(
       )
     }
   }
-  const onSignal = (signal: NodeJS.Signals) => {
+  let resolveAborted!: (abort: RelayedAbort) => void
+  const aborted = new Promise<RelayedAbort>((resolve) => {
+    resolveAborted = resolve
+  })
+  const relay = (signal: NodeJS.Signals | null) => {
     if (disarmed) return
     disarm()
-    void relayCancel().finally(() => {
-      process.kill(process.pid, signal)
-    })
+    resolveAborted({ signal, relayed: relayCancel().catch(() => undefined) })
   }
-  const onSigint = () => onSignal("SIGINT")
-  const onSigterm = () => onSignal("SIGTERM")
+  const onSigint = () => relay("SIGINT")
+  const onSigterm = () => relay("SIGTERM")
   process.on("SIGINT", onSigint)
   process.on("SIGTERM", onSigterm)
-  let resolveEof!: () => void
-  const eof = new Promise<void>((resolve) => {
-    resolveEof = resolve
-  })
   const stdin = stdinArmed ? options.stdin : undefined
   const noop = () => {}
-  const onEnd = () => {
-    if (disarmed) return
-    disarm()
-    void relayCancel().finally(resolveEof)
-  }
+  const onEnd = () => relay(null)
   if (stdin) {
     stdin.on("data", noop)
     stdin.once("end", onEnd)
@@ -656,7 +660,26 @@ function armDaemonFirstRelay(
       stdin.pause()
     }
   }
-  return { eof, disarm }
+  return { aborted, disarm }
+}
+
+/** Bound on waiting for a re-raised signal to end this process. */
+const RELAY_RERAISE_GRACE_MS = 1_000
+
+/**
+ * Ends a relayed abort: waits for the relayed cancel (≤5 s), then
+ * re-raises the original signal (so the parent observes it) or returns
+ * exit 8 for an armed EOF. Nothing is written to stdout.
+ */
+async function finishRelayedAbort(abort: RelayedAbort): Promise<number> {
+  await abort.relayed
+  if (abort.signal) {
+    process.kill(process.pid, abort.signal)
+    // The default disposition ends the process; only a foreign handler
+    // that keeps it alive lets this bounded fallback return.
+    await new Promise((resolve) => setTimeout(resolve, RELAY_RERAISE_GRACE_MS))
+  }
+  return HEADLESS_EXIT_CODES.internalFailure
 }
 
 /**
@@ -674,7 +697,10 @@ async function runLocalJobApiWrapper(
   await options.beforeOwnPumpClaim?.(jobId)
   let ownDispatch: OwnDispatch | null = null
   const own: { result: PumpQueuedRunResult | null } = { result: null }
-  const relayHolder: { relay: DaemonFirstRelay | null } = { relay: null }
+  const relayHolder: {
+    relay: DaemonFirstRelay | null
+    abort: RelayedAbort | null
+  } = { relay: null, abort: null }
   let resolveAbort!: () => void
   const abort = new Promise<void>((resolve) => {
     resolveAbort = resolve
@@ -683,7 +709,10 @@ async function runLocalJobApiWrapper(
     if (relayHolder.relay) return
     const relay = armDaemonFirstRelay(jobId, options, stdinArmable)
     relayHolder.relay = relay
-    void relay.eof.then(resolveAbort)
+    void relay.aborted.then((relayed) => {
+      relayHolder.abort = relayed
+      resolveAbort()
+    })
   }
   if (getAgentJob(options.db, jobId)?.status === "queued") {
     let state: ReturnType<OwnDispatch["state"]> = "pending"
@@ -722,6 +751,9 @@ async function runLocalJobApiWrapper(
       ownDispatch,
       abort,
     })
+    // A relayed abort wins over anything observed after it: no stale
+    // terminal or observer envelope is written once the abort arrived.
+    if (relayHolder.abort) return await finishRelayedAbort(relayHolder.abort)
     switch (result.kind) {
       case "ready":
       case "unpublished":
