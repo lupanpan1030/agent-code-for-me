@@ -1,15 +1,15 @@
 # Tasks: Unified Runtime Route Catalog
 
-Status: **DRAFT v3 — APPROVED candidate; awaiting Owner APPROVED**
+Status: **APPROVED 2026-10-02 (coordinator-acted under Owner mandate, bound to a9b74594; Owner may revoke) — awaiting red suite (test-first)**
 
-本表是批准后的实施清单，全部未执行；本次起草不勾选产品任务。章节是责任划分，
+本表是批准后的实施清单；仅 1.1 治理批准已完成，其余任务未执行，本次不勾选产品任务。章节是责任划分，
 **执行依赖为 1 → 2 → 6/7（独立 RED suite 冻结）→ 3/4/5 → 8**，不是先写产品再补测试。
 每项以 spec 的 observable assertion 为准；场景登记、synthetic pass、source tests、GUI 与 packaged
 证据分别记录，不能互相替代。fixtures 的唯一目录约定是 §7。
 
 ## 1. 治理与基线
 
-- [ ] 1.1 Owner 对准确 draft SHA 标记 APPROVED；填写 proposal Consumer Impact §10，确认 design Q1–Q5 的统筹预设；Q1 若选不发布 optional summary，先删改相应 delta/场景后重新校验批准；Q2 若拒绝 binding read model，必须先选择可行数据路径并同步重写 S18/S19/S53/desktop delta，不留可跳过场景。
+- [x] 1.1 统筹代行 APPROVED（Owner 2026-10-02 授权）绑定 a9b74594；§10 已填；Q1–Q5 预设采纳（Owner 可改）。
 - [ ] 1.2 核对实施 base/target SHA、干净 worktree、active overlap；再次读 ownership map、C1–C9、ledger/async-submit 当前 owner，不使用 archived proposal 的旧行号推断最新实现。
 - [ ] 1.3 明确 implementer、独立测试作者、fresh-context Claude Code reviewer、安全 reviewer 和 Integrator；测试作者只按批准 spec 写 RED，不以产品实现作 oracle。单文件单 writer。
 - [ ] 1.4 记录 runtime/GUI/packaged host 可用性、既有 smoke 缺口与 TICKET-127–131 disposition；未运行的平台不得提前勾通过。
@@ -108,7 +108,7 @@ spec GIVEN 的 `file.json#Sxx` 是准确键，不是随意 prose anchor。当前
 - [ ] 8.3 CLI/daemon/stdio smoke：两 runtime batch、Codex policy-grant、completion、create/submit/wait/retry/cancel/events、daemon-first 与 own-pump、未知 required capability、no-probe readiness、无凭据拒绝与 child teardown；stdout/stderr/exit 留脱敏回执。
 - [ ] 8.4 macOS/Windows packaged 分别记录 app/runtime SHA/digest/OS/arch、同 neutral fixtures；Windows artifact-bearing request 的既有失败单列。Linux/WSL source 通过不替代 Tier-1 stable gate，不宣称 TICKET-130 平台矩阵已完成。
 - [ ] 8.5 Codex IMPLEMENTATION_VERIFIED 与 fresh-context Claude Code REVIEW_APPROVED 绑定同一准确 source SHA；另有 fresh security lens 验 factory/secret/descriptor boundary。P0/P1 必须解决，P2 有明确 disposition，后续代码变化使两 verdict 失效。
-- [ ] 8.6 **停止门**：无 Owner APPROVED/独立 RED、缺 mandatory evidence、旧 selector 残留、未裁定 Red 或必要前置越界时不宣称实施完成/接受；Green 自主修，Yellow 只登记 follow-up，Red 回 Owner。host-blocked 只能列具体缺口，不能记通过。
+- [ ] 8.6 **停止门**：无有效 APPROVED（含本次统筹代行）/独立 RED、缺 mandatory evidence、旧 selector 残留、未裁定 Red 或必要前置越界时不宣称实施完成/接受；Green 自主修，Yellow 只登记 follow-up，Red 回 Owner。host-blocked 只能列具体缺口，不能记通过。
 - [ ] 8.7 **统筹代行 ACCEPTED 条件声明（OD-5 统筹预设，Owner 可改）**：统筹登记（非 Owner 签署；统筹记录，Owner 可撤回）：Owner 2026-10-02 自我迭代指示覆盖统筹代行 ACCEPTED（条件见本条）；本行不构成当前 APPROVED/ACCEPTED；Owner 可在 APPROVED 时改为亲自验收；push 依 2026-09-04 规矩由统筹派 Codex。统筹代行须同 SHA Codex IMPLEMENTATION_VERIFIED + Claude REVIEW_APPROVED、无开放 Red、全部验收/残余逐项裁定、未测场景如实记载，记录授权依据/统筹身份/日期/SHA。条件未满足不得代行，也不代替批准 spec 的门禁。
 - [ ] 8.8 后续本地 merge/archive 仅按届时批准范围和派单处理，merge SHA 重跑门禁；冲突/target 前移/代码变化重新双验。本次起草明确不 merge、不 archive。
-- [ ] 8.9 **Push 规矩**：OD-5 确认依 Owner 2026-09-04 规矩由统筹派 Codex；后续 push 派单须固定准确 source SHA/remote target/通过门禁并遵守授权范围，不扩到其他 refs、远程 PR mutation/merge/tag/release。本次派单明确不 push、不 merge，唯一 Git 产物为本地单一文档提交。
+- [ ] 8.9 **Push 规矩**：OD-5 确认依 Owner 2026-09-04 规矩由统筹派 Codex；后续 push 派单须固定准确 source SHA/remote target/通过门禁并遵守授权范围，不扩到其他 refs、远程 PR mutation/merge/tag/release。本次派单明确不 push、不 merge，唯一 Git 产物为本地 A、B 两个文档提交，APPROVED 绑定 A。

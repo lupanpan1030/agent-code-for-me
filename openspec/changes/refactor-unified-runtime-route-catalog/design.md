@@ -1,10 +1,10 @@
 # Design: Unified Runtime Route Catalog
 
-Status: **DRAFT v3 — APPROVED candidate; awaiting Owner APPROVED**
+Status: **APPROVED 2026-10-02 (coordinator-acted under Owner mandate, bound to a9b74594; Owner may revoke) — awaiting red suite (test-first)**
 
 ## 1. Context and source basis
 
-本稿是 Phase 3 第三份切片，仅起草，不是实现授权。基线为
+本稿是 Phase 3 第三份切片，已登记统筹代行 APPROVED；本次仅改文档，产品实现仍须先冻结独立 RED suite。基线为
 `6192b13f74603fbcc57c8ba858cb6b0f0d0ac776`；2026-10-02 已核对主检出 HEAD、
 本地 origin/main 与 `git ls-remote origin refs/heads/main` 三者一致。主检出干净；
 新 worktree 为 `/home/chen/projects/locus-refactor-unified-runtime-route-catalog-draft`，
@@ -32,7 +32,7 @@ OD-1–OD-5 与 Must-stay 不变，本次不重新核对远端。以下当前事
 | `docs/OWNERSHIP_MAP.md:8`, `:24`, `:60`, `:83`, `:297`, `:319`, `:332`, `:350`, `:471`, `:497`, `:540` | capability、projection、renderer event、binding、preflight、selection、desktop、ledger、Claude/Codex、submission/pump 的当前 owner。目录只接收路由选择职责。 |
 | `openspec/changes/archive/2026-10-01-refactor-canonical-run-event-ledger/proposal.md:45`, `:60`; 同目录 `design.md:168`, `:235`, `:420`, `:546` | ledger/host、provenance、artifact 已归档；当时明确不改 runtime selection。本稿不重做其业务 owner。 |
 | `openspec/changes/archive/2026-10-02-add-local-job-api-async-submit/proposal.md:39`, `:260`; 同目录 `design.md:72`, `:79`, `:142`, `:174` | async-submit 已归档到本基线；submitRun/waitForRun、pumpQueuedRuns、claim gate、publication readiness、idempotency 等原入口保留。目录不能取代队列 dispatch owner。 |
-| `docs/consumer-impact-template.zh-CN.md:17` | proposal 十节逐项填写；第 10 节保持未批准。 |
+| `docs/consumer-impact-template.zh-CN.md:17` | proposal 十节逐项填写；第 10 节已登记统筹代行 APPROVED（非 Owner 签署）。 |
 
 Living specs 的约束审阅及 delta 选择：
 
@@ -103,10 +103,12 @@ desktop factory caller、两处 renderer transport 构造分支，以及 discove
 
 ## Decisions — 统筹预设 L1–L10（Owner 可改）
 
+2026-10-02 统筹代行 APPROVED 采纳（绑定 a9b74594）。
+
 | ID | 原预设及本稿落实 |
 | --- | --- |
 | L1 | 单一 main owner `src/main/lib/agent-runtime/runtime-route-catalog.ts`，按 `(runtimeId, entry=desktop\|headless\|completion\|protocol\|api, kind, mode, executionProfile, capabilities)` 解析 adapter factory、transport、能力引用、就绪探针；所有 runtime 选择改查目录并删旧分派。executionSurface 是输出，不能由 caller 预选 leaf；L1 限定见 D2。 |
-| L2 | 声明式 TypeScript 常量、schema 校验/守卫、可枚举；discovery/renderer 只读。**OD-1 缩窄 L2：统筹预设（推荐默认，Owner 可改）**：本切片支持目录条目 + adapter 包 + 自有 main chat router/transport 通过静态编译映射注册；不修改 main 中央分派。renderer 只读投影，现有 transport 构造及事件状态机语义保持；新 wire family 仍需加 renderer transport 和修改 transportId→constructor 静态映射，不承诺所有 renderer switch 零改动。Phase 7 全验收留具名残余。 |
+| L2 | 声明式 TypeScript 常量、schema 校验/守卫、可枚举；discovery/renderer 只读。**OD-1 缩窄 L2：已采纳（2026-10-02，Owner 可改）**：本切片支持目录条目 + adapter 包 + 自有 main chat router/transport 通过静态编译映射注册；不修改 main 中央分派。renderer 只读投影，现有 transport 构造及事件状态机语义保持；新 wire family 仍需加 renderer transport 和修改 transportId→constructor 静态映射，不承诺所有 renderer switch 零改动。Phase 7 全验收留具名残余。 |
 | L3 | 引用现有 capability manifest 与 readiness probes，不复制；无条目 fail closed，内部结构化失败经既有错误信封投影。advisory readiness 不是启动授权。 |
 | L4 | Local Job API v1（含 async-submit）、jobs-stdio 与 chat request/stream/cancel envelopes 不变；OD-3 增加内部 read-model transportId（C7 §9.1 internal）；discovery optional 追加；C7 十类逐条分类，Red 交 Owner。 |
 | L5 | ledger/host、run-submission/pumpQueuedRuns、run-artifacts 仅是既有目标/端口；目录没有 ID、queue、claim、event、artifact 或 terminal 状态。 |
@@ -114,7 +116,7 @@ desktop factory caller、两处 renderer transport 构造分支，以及 discove
 | L7 | runtime 特有 metadata 按 `runtime.<id>.v1` 声明 namespace、schema 来源、version、maturity、redaction；现有 `runtime.codex.v1` 只引用。 |
 | L8 | 第三 Runtime 接入、Runtime 版本交付、renderer UI 重构、Interaction/Session 均非目标；conformance/delivery 分属 `add-harness-runtime-conformance` / `add-managed-codex-runtime-delivery` 等切片。 |
 | L9 | 每个 Scenario 有 bun 测试入口、fixture、observable oracle；独立作者先 RED。fixture 根 `tests/fixtures/runtime-route-catalog/`，**扁平**约定固定于 tasks §7。退出码以代码为依据。 |
-| L10 | canonical owner、删除点、migration gate、验证消费者、owner 文件映射齐全；OWNERSHIP_MAP 新行仅列实施任务，本 DRAFT 不改 docs。 |
+| L10 | canonical owner、删除点、migration gate、验证消费者、owner 文件映射齐全；OWNERSHIP_MAP 新行仅列实施任务，本次文档登记不改 docs。 |
 
 ## D1. 目录模型、匹配与无状态边界
 
@@ -271,7 +273,7 @@ job-source cancellation 以及 chunk.type 状态机保留原 owner。禁止用 b
 
 ## D3. Renderer、capability、readiness 与 extension 投影
 
-**OD-3：统筹预设（推荐默认，Owner 可改）采用 binding read model。** main 在 chat 查询与
+**OD-3：已采纳（2026-10-02，Owner 可改）采用 binding read model。** main 在 chat 查询与
 createSubChat 已返回的绑定读模型上盖 `transportId`（内部 additive read-model 字段，不持久化）。
 NEW `src/main/lib/agent-runtime/runtime-route-read-model.ts` 的
 `withRuntimeRouteTransportId(binding, catalog?: RuntimeRouteCatalogState)` 为具名 read-model helper：
@@ -319,7 +321,7 @@ union，不对每条记录强制添加 extension，不 retroactively 延展 pend
 unknown optional extension 被只读消费者忽略；internal required extension 未注册则查询失败。
 **不新增 v1 requiredExtensions 字段**；真实 public negotiation 另行 C7 决策。
 
-**OD-2：统筹预设（推荐默认，Owner 可改）允许受约束 optional `runtimes[].routes`。**
+**OD-2：已采纳（2026-10-02，Owner 可改）允许受约束 optional `runtimes[].routes`。**
 routes block maturity 为 experimental；每项 exact keys 为
 `{routeId,surface,kind,executionProfile,adapterSource,transport,extensions}`，新 schema definition
 设 additionalProperties:false；投影必须逐字段构建而不是 spread 内部 descriptor。
@@ -482,15 +484,15 @@ Red：新 public 字段超出 optional discovery、feature/enum/error/默认值�
 新 transport/Host、认证或文件边界、DB/lease/Runtime installation、把状态 owner 搬进目录。
 Red 只停受影响部分；若它是完成 L1/L2 的必要前置，则本切片回到 Owner 决策，不能私自缩小验收。
 
-## Open questions（统筹预设（推荐默认，Owner 可改））
+## Decisions adopted 2026-10-02（统筹代行，Owner 可改）
 
-本次 2026-10-02 派单已给出五项默认；以下保留备选与后果，不重复索要授权。
-对五项裁定无异议；APPROVED 仍需绑定准确草案 SHA，Consumer Impact §10 不代签。
+统筹依据 Owner 2026-10-02 自我迭代授权代行 APPROVED，绑定 `a9b74594`；五项推荐默认均已采纳。
+以下保留备选与后果，标为已否决的备选，不实现（Owner 可重开）；Consumer Impact §10 由统筹记录，非 Owner 签署。
 
-1. **Q1 / OD-2 — discovery**：默认受约束 experimental optional routes（D3）；备选去掉 adapterSource/transport 则同步缩小 schema/fixtures，或 internal-only 则批准前删除 public delta/S22；无约束 closed/stable vocabulary 会使后续 runtime/adapter 演进触发 C7 #2/#10，不选。
-2. **Q2 / OD-3 — renderer 数据**：默认 main 在既有 chat/createSubChat binding read model 盖 transportId，不新增 listRoutes；备选 listRoutes 需要 renderer lookup 或 async Chat lifecycle（均扩大当前边界），拒绝读模型且无替代则必须重写 S18/S19/S53/desktop delta 并重新审批，不能留下不可实现承诺。
-3. **Q3 / OD-5 — 验收代行**：统筹登记（非 Owner 签署；统筹记录，Owner 可撤回）：Owner 2026-10-02 自我迭代指示覆盖统筹代行 ACCEPTED（条件见 tasks 8.7）；本行不构成当前 APPROVED/ACCEPTED；Owner 可在 APPROVED 时改为亲自验收；push 依 2026-09-04 规矩由统筹派 Codex。备选亲自验收仅改变验收人，不免除同 SHA 双 verdict、无开放 Red 与残余裁定；本次不推导任何远程授权。
-4. **Q4 / OD-1 — L2/L4**：默认缩窄 L2 到 D3 的静态 main 注册 + renderer 只读投影，Phase 4/conformance 承接 neutral chat/approval IPC；备选本次批准 runtime-neutral agentRuntime.chat/respondToolApproval（C7 internal，但偏离 L4、进入 C5 并重开 Claude 全路由抽取边界）；两项都不选则原 Phase 7 SHALL NOT 无法兑现，阻断实施。
-5. **Q5 / OD-4 — pump**：默认 P23→B，保留 job.kind→runner，目录在 agent runner claim 后查询；备选 catalog dispatch 必须重新裁定 L5、循环依赖、pre-claim failure 与 async guard ratchet 放宽，不能当 Green 实施。
+1. **Q1 / OD-2 — discovery，已选 SHALL**：本切片 SHALL 允许 D3 的受约束 experimental optional `runtimes[].routes`；描述串开放、routeId 非身份，消费者不得按 adapterSource/transport 分支；C7 #2/#10 为 additive Yellow，S22 旧 reader 通过后关闭。**已否决的备选，不实现（Owner 可重开）**：去掉 adapterSource/transport 则同步缩小 schema/fixtures；internal-only 则删除 public delta/S22 并重新校验批准；无约束 closed/stable vocabulary 会使后续 runtime/adapter 演进触发 C7 #2/#10。
+2. **Q2 / OD-3 — renderer 数据，已选 SHALL**：main SHALL 在既有 chat/createSubChat binding read model 盖 transportId（C7 internal），SHALL NOT 新增 listRoutes。**已否决的备选，不实现（Owner 可重开）**：listRoutes 需要 renderer lookup 或 async Chat lifecycle（均扩大当前边界）；拒绝读模型且无替代则必须重写 S18/S19/S53/desktop delta 并重新审批，不能留下不可实现承诺。
+3. **Q3 / OD-5 — 验收代行，已选 SHALL**：统筹 SHALL 仅在同 SHA Codex IMPLEMENTATION_VERIFIED + Claude REVIEW_APPROVED、无开放 Red、全部验收/残余逐项裁定且未测场景如实记载后代行 ACCEPTED（条件见 tasks 8.7），记录授权依据/统筹身份/日期/SHA；非 Owner 签署，Owner 可改为亲自验收；push 仍依 2026-09-04 规矩由统筹派 Codex。**已否决的备选，不实现（Owner 可重开）**：Owner 亲自验收仅改变验收人，不免除同 SHA 双 verdict、无开放 Red 与残余裁定；本次不推导任何远程授权。
+4. **Q4 / OD-1 — L2/L4，已选 SHALL**：本切片 SHALL 只保证 D3 的目录条目 + adapter 包 + 自有 main chat router/transport 静态注册与 renderer 只读投影；Phase 7「新 Runtime 不改 renderer switch」SHALL NOT 由本切片验收；approval 分派（含 Claude 默认）、admit gates、P28 provider 三元、alias 表 SHALL 留具名残余给 Phase 4 / harness-conformance。**已否决的备选，不实现（Owner 可重开）**：本次批准 runtime-neutral agentRuntime.chat/respondToolApproval 虽属 C7 internal，但偏离 L4、进入 C5 并重开 Claude 全路由抽取边界；两项都不选则原 Phase 7 SHALL NOT 无法兑现，阻断实施。
+5. **Q5 / OD-4 — pump，已选 SHALL**：P23 SHALL 保留 B，pump SHALL 保留 job.kind→runner，目录 SHALL 只在 agent runner claim 后查询，SHALL NOT 放宽 async guard。**已否决的备选，不实现（Owner 可重开）**：catalog dispatch 必须重新裁定 L5、循环依赖、pre-claim failure 与 async guard ratchet 放宽，不能当 Green 实施。
 
-无产品实现、独立技术 verdict、Owner APPROVED/ACCEPTED、合并或外部写入。
+本次仅登记统筹代行 APPROVED 与五项已采纳决定；无产品实现、独立技术 verdict、ACCEPTED、合并或外部写入。

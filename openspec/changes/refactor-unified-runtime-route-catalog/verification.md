@@ -1,6 +1,6 @@
 # Verification: Unified Runtime Route Catalog
 
-Status: **DRAFT v3 — APPROVED candidate; awaiting Owner APPROVED**
+Status: **APPROVED 2026-10-02 (coordinator-acted under Owner mandate, bound to a9b74594; Owner may revoke) — awaiting red suite (test-first)**
 
 本文件是实施验证骨架与起草校验回执。没有产品实现、RED suite、技术 verdict 或验收；
 S01–S53 全部 **NOT RUN**。文档可解析不证明目录或 Runtime 行为已实现。
@@ -16,10 +16,11 @@ S01–S53 全部 **NOT RUN**。文档可解析不证明目录或 Runtime 行为�
 | Touch-up authority | `route-catalog-redraft-synthesis-283f29ca.md` §3 T1–T20 / §4；OD-1–OD-5 / Must-stay 不变 |
 | Worktree | `/home/chen/projects/locus-refactor-unified-runtime-route-catalog-draft` |
 | Branch | `codex/refactor-unified-runtime-route-catalog-draft` |
-| Draft receipt SHA | 含本回执的单一本地文档提交；由交付报告给出准确 SHA，不自引用提交内容 |
-| Owner APPROVED / Consumer Impact §10 | PENDING；本派单仅授权起草 |
-| Q1–Q5 / OD-1–OD-5 | 统筹预设（推荐默认，Owner 可改）已登记；无异议。缩窄 L2 / 受约束 optional routes / binding read model / P23→B / 验收代行为统筹记录（非 Owner 签署，Owner 可撤回），见 design Open questions |
-| Approved spec SHA | — |
+| Draft receipt SHA | 精度修补提交 A = `a9b74594`；审批登记提交 B 由交付报告给出，不自引用其内容 |
+| 闭合检查输入历史 | 第三份草案 v3 **bf48bd4f** 经二审（route-catalog-redraft-synthesis-283f29ca.md：0 P0/P1、无 C7 Red）与 T1–T20 修补 + 独立闭合检查（route-catalog-closure-check-bf48bd4f.md：READY_FOR_APPROVAL）。 |
+| APPROVED / Consumer Impact §10（统筹代行，非 Owner 签署） | APPROVED 2026-10-02（统筹代行；Owner 2026-10-02 自我迭代授权；绑定 a9b74594） |
+| Q1–Q5 / OD-1–OD-5 | 已采纳（统筹代行，Owner 可改）；缩窄 L2 / 受约束 optional routes / binding read model / P23→B / 验收代行，见 design Decisions adopted 2026-10-02；非 Owner 签署，Owner 可撤回 |
+| Approved spec SHA | `a9b74594`（完整 SHA `a9b745949b02e2b7c1bbd883c224c14b324d3dbc`） |
 | Independent RED author / suite SHA / adjudication SHA | — / — / — |
 | Implementation source SHA / test fixture hashes | — / — |
 | Codex IMPLEMENTATION_VERIFIED SHA / verdict / receipt | — / NOT ISSUED / — |
@@ -32,15 +33,27 @@ S01–S53 全部 **NOT RUN**。文档可解析不证明目录或 Runtime 行为�
 两技术 verdict 必须绑定同一准确 source SHA；后续代码变化使两者同时失效。
 测试作者、实施者、fresh reviewer 的责任不能由起草自查替代。
 
+### 统筹代行授权与登记事实（本次派单提供，非 Owner 签署）
+
+- Owner 2026-10-02 对本仓库启用「自我迭代」指示：只有红灯项（C7 Red 需 Owner 选项、P0/P1 无法在设计范围内关闭、路线图变化、超出 push 规矩的外部动作、用户可见产品取舍、安全事件、Codex↔Claude 不收敛）才回到 Owner；其余（含下一份路线图变更的起草/评审/APPROVED，预设须写明 Owner 可改）由统筹（Claude Fable 5.1）代行。
+- 统筹据此登记：**APPROVED 2026-10-02 — coordinator-acted under the Owner's 2026-10-02 self-iteration mandate; bound to a9b74594; Owner may revoke or amend any preset**。
+- 五项预设（OD-1–OD-5）全部按推荐默认采纳，Owner 可改：
+  1. OD-1 缩窄 L2：本切片只保证 main 侧「目录条目 + adapter 包 + 自有 chat router/transport 静态注册」与 renderer 只读投影；Phase 7「新 Runtime 不改 renderer switch」不由本切片验收；approval 分派（含 Claude 默认）、admit gates、P28 provider 三元、alias 表留具名残余给 Phase 4 / harness-conformance。
+  2. OD-2 允许受约束的可选 `runtimes[].routes`（experimental、开放描述串、routeId 非身份、消费者不得按 adapterSource/transport 分支）：C7 #2/#10 additive Yellow，S22 旧 reader 通过后关闭。
+  3. OD-3 renderer 数据路径 = main 在 chat/createSubChat 绑定读模型盖 transportId（C7 internal），不加 listRoutes。
+  4. OD-4 P23→B：pump 保留 job.kind→runner，目录只在 agent runner claim 后查询；不放宽 async guard。
+  5. OD-5 统筹代行 ACCEPTED（条件：同 SHA Codex IMPLEMENTATION_VERIFIED + Claude REVIEW_APPROVED、无开放 Red、残余逐项裁定）；push 仍按 2026-09-04 规矩由统筹派 Codex；Owner 可改为亲自验收。
+- 已向 Owner 发出通报（非阻塞）；Owner 未回复即视为维持预设。
+
 ## 2. 起草校验（不计实施验收）
 
 工具固定使用主检出的
 `/home/chen/projects/agent-code-for-me/node_modules/.bin/openspec`，cwd 为本 worktree。
-最终提交后再次核对这些结果。**Touch-up SHA** 为包含本 §2 的唯一有界修补提交，
-以 `git log -1 --format=%H -- openspec/changes/refactor-unified-runtime-route-catalog/verification.md`
-解析（parent=`283f29ca1401f5567df998b850bbc605a064ee5f`，subject=`docs(openspec): bounded touch-up of unified runtime route catalog per second review`）；
-准确 40 位 SHA 同时写入最终交付回报。为满足单一提交，不在 commit 内容内伪造其自身 hash
-或追加第二个“回填 SHA”提交。产品 source 仍与 6192b13f 相同，非实施 verdict。
+以下为第三版有界修补的历史校验记录；Touch-up parent 为
+`283f29ca1401f5567df998b850bbc605a064ee5f`，subject 为
+`docs(openspec): bounded touch-up of unified runtime route catalog per second review`，
+闭合检查输入 SHA 见 §1 历史行。本次 A/B 的审批绑定与校验另记如下，不使用最新文件提交推断历史 SHA。
+产品 source 仍与 6192b13f 相同，非实施 verdict。
 
 | Command / check | 起草结果 |
 | --- | --- |
@@ -50,6 +63,20 @@ S01–S53 全部 **NOT RUN**。文档可解析不证明目录或 Runtime 行为�
 | 文档一致性 | P01–P34 = 11 R + 7 C + 16 B；L1–L10、Consumer Impact 十节齐全；53 条 Scenario 各有 flat fixture/GIVEN/入口/断言，S33–S52 均单 WHEN，治理条款已标注不计测试；注册表和 tasks §7 同步；10 个改动文件均在授权范围 |
 | 补充静态核对 | PASS；53 个唯一 GIVEN keys = tasks §7 = 本文 §3，每条一个 WHEN；六个 MODIFIED requirements 的 living scenario 标题全保留；proposal JSON 示例可解析；按原 retired-runtime regex 扫描 12 份草案/STATUS 文件为 0 hits（非完整 guard 替代） |
 | `bun run check:full` | ATTEMPTED / ENVIRONMENT-BLOCKED，exit 1；lint PASS（无受支持的改动文件），architecture PASS（ledger/async 各17/17）；retired-runtime guard 在 spawnSync /bin/sh EPERM 停止，后续 type/tests/spec/build 未执行 |
+
+### 本次精度修补与审批登记校验（2026-10-02）
+
+| Evidence / check | 本次记录 |
+| --- | --- |
+| Owner-mandate / coordinator APPROVED | Owner 2026-10-02 自我迭代指示；Claude Fable 5.1 统筹代行记录，非 Owner 签署；APPROVED 绑定 A=`a9b74594`；Owner 可撤回/修改任一预设；闭合检查输入历史见 §1 |
+| N-01–N-05 precision-only commit A | `a9b74594`；S53 真实 procedure/直接 helper 分腿、reference lookup 与 factory invocation 分计、S29 正例、living AND 可见、8.7 自引用与 S01 discovery/run 失败区分；未改设计决定 |
+| `openspec validate refactor-unified-runtime-route-catalog --strict --no-interactive` | PASS，exit 0；`Change 'refactor-unified-runtime-route-catalog' is valid` |
+| `openspec validate --all --strict --no-interactive` | PASS，exit 0；`Totals: 54 passed, 0 failed (54 items)` |
+| Scenario structure | PASS；S01–S53 恰 53 条，各一个扁平 `tests/fixtures/runtime-route-catalog/<file>.json#Sxx` GIVEN、一个 WHEN；本 §3 全部保持 NOT RUN |
+| `git diff --check` / staged diff check | PASS，exit 0，无输出 |
+| 批准归属 grep（按派单原命令） | 仅 design D5 的通用批准→RED migration gate；本次 APPROVED 均明确为统筹代行，不是 Owner 亲签 |
+| `bun run check:full`（本次文档检查） | ATTEMPTED / ENVIRONMENT-BLOCKED，exit 1；lint PASS、architecture PASS（ledger/async 各17/17）；retired-runtime guard 的 spawnSync /bin/sh EPERM 停止，后续 type/tests/spec/build 未执行；非实施 verdict |
+| Git scope | 仅 worktree 内 OpenSpec 文档；本地 A/B 两提交，均附 Claude Fable 5.1 Co-Authored-By；不改 src/tests/docs，不 merge、不 push |
 
 第三版 check:full 实际关键输出（与第二版同一环境阻塞）：
 
@@ -72,7 +99,7 @@ src/tests/docs 或 guard。strict/diff 独立运行，不把 check:full 的环�
 ### 一审 §3 闭环登记（第三版自查更新，不是独立复核或实现完成）
 
 二审在 parent 283f29ca 将 6/7/9/10 判为 PARTIAL；本表反映 T1–T20 修补后起草者自查，
-闭合复核与 APPROVED 仍须绑定本次新 SHA，不沿用 parent verdict。
+闭合检查输入历史见 §1；本次 APPROVED 已绑定精度修补提交 A，不沿用 parent verdict 作为产品实施 verdict。
 
 | 项 | 状态 | 落点 / 闭环证据 |
 | --- | --- | --- |
@@ -219,8 +246,8 @@ Q2 若拒绝 binding read model 且没有可行替代，则 S18/S19/S53 与 desk
 
 ## 5. 停止与验收门
 
-- 无 Owner APPROVED、独立 RED 或公共决策不完整，产品实施不开始；新增必要 Red 回 Owner。
-- IMPLEMENTATION_VERIFIED 与 fresh Claude REVIEW_APPROVED 同 SHA 且所需验证完整后，方可交 Owner 验收。
-- OD-5 为统筹登记（非 Owner 签署；统筹记录，Owner 可撤回），Owner 可在 APPROVED 时改为亲自验收；Owner 2026-10-02 自我迭代指示覆盖统筹代行，统筹仅在同 SHA Codex IMPLEMENTATION_VERIFIED + Claude REVIEW_APPROVED、无开放 Red、全部残余逐项裁定后代行 ACCEPTED，填写授权出处/身份/日期/SHA；当前没有实施/验收 verdict。
+- 无有效 APPROVED（含本次统筹代行）、独立 RED 或公共决策不完整，产品实施不开始；新增必要 Red 回 Owner。
+- IMPLEMENTATION_VERIFIED 与 fresh Claude REVIEW_APPROVED 同 SHA 且所需验证完整后，方可交授权统筹按 OD-5 条件代行验收（Owner 可改为亲自验收）。
+- OD-5 已采纳，为统筹登记（非 Owner 签署；统筹记录，Owner 可撤回），Owner 可改为亲自验收；Owner 2026-10-02 自我迭代指示覆盖统筹代行，统筹仅在同 SHA Codex IMPLEMENTATION_VERIFIED + Claude REVIEW_APPROVED、无开放 Red、全部残余逐项裁定后代行 ACCEPTED，填写授权出处/身份/日期/SHA；当前没有实施/验收 verdict。
 - 本次派单不 merge/archive/push；以后 merge 派单需在 merge SHA 再验证。push 依 Owner 2026-09-04 规矩由统筹派 Codex，固定准确 SHA/target/门禁，不扩展到其他远程动作。
 - 不把起草校验、姊妹切片验收或某个平台的通过，充当本切片实施/平台/外部动作授权。

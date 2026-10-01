@@ -1,6 +1,6 @@
 # Change: Refactor Unified Runtime Route Catalog
 
-Status: **DRAFT v3 — APPROVED candidate; awaiting Owner APPROVED**
+Status: **APPROVED 2026-10-02 (coordinator-acted under Owner mandate, bound to a9b74594; Owner may revoke) — awaiting red suite (test-first)**
 
 ## Why
 
@@ -14,7 +14,7 @@ renderer transport 构造分支（其他 Engine 分支为具名残余）。增�
 `f7a3f7bd454b95deb7ae6f6596efebe0dd3d9cf3` 改写，依据 fresh synthesis §3 1–14 与本次
 OD-1–OD-5 统筹裁定。第三版从 `283f29ca1401f5567df998b850bbc605a064ee5f` 按
 `route-catalog-redraft-synthesis-283f29ca.md` §3 T1–T20 / §4 有界修补，保持纯文档 DRAFT。34 处 file:line、输入、输出、重复/分歧见
-[design §2](design.md#2-路由点清单事实底稿)。本任务只有文档，所有产品实现均待 Owner APPROVED。
+[design §2](design.md#2-路由点清单事实底稿)。本任务只有文档；统筹代行 APPROVED 已登记，产品实现仍须先冻结独立 RED suite。
 
 ## What Changes
 
@@ -31,12 +31,12 @@ OD-1–OD-5 统筹裁定。第三版从 `283f29ca1401f5567df998b850bbc605a064ee5
   不承诺第三 Runtime 对所有 renderer switch 零改动，完整残余见 design D6。
 - 引用现有 capability、readiness、projection truth；目录不是安装 registry，也不是队列。
 - OD-2 允许受约束 experimental discovery 的可选 `runtimes[].routes` 追加；既有 v1/async-submit/jobs-stdio/desktop
-  chat IPC 不变。该可选 public scope 仍待本提案第 10 节批准。
+  chat IPC 不变。该可选 public scope 已由本提案第 10 节统筹代行批准（Owner 可改）。
 - 新增单目录架构守卫、独立作者测试先行的 S01–S53 conformance 规格。
 
 ## Impact and four delivery anchors
 
-| 必写项 | 决定（拟议，未批准） |
+| 必写项 | 决定（已批准，待实施验证） |
 | --- | --- |
 | Canonical owner | NEW `src/main/lib/agent-runtime/runtime-route-catalog.ts`；只拥有路线声明/查询/投影/工厂选择。 |
 | 旧路径删除点 | design P01/P06–P12/P14/P15/P18：旧 selector、registry facade、desktop factory、runtime-specific selector wrappers、route 固定执行选择、renderer 两处分支、readiness runtime dispatch；P05 assertion 与 P23 pump kind→runner 保留 B，八份耦合 tests/exports/residue allowlist 的原子更新见 D5。 |
@@ -65,14 +65,14 @@ design §1/D4。本稿的“保持”是待验证要求，不是已完成兼容�
 ### 1. Gate 状态
 
 ```text
-Status: DRAFT — awaiting Owner APPROVED
+Status: APPROVED 2026-10-02（统筹代行；绑定 a9b74594；Owner 可改/可撤回）
 OpenSpec change: refactor-unified-runtime-route-catalog
 Author / date: Codex / 2026-10-02
-Decision owner: Repository Owner
-Implementation blocked until: Owner 对准确 draft SHA APPROVED，填第 10 节并确认 Q1–Q5 默认（OD-1–OD-5）；独立作者 RED suite 冻结先于产品实现。
+Decision owner: Repository Owner (mandate 2026-10-02) — recorded by coordinator Claude Fable 5.1, not Owner-signed
+Implementation blocked until: 独立作者 RED suite 冻结先于产品实现；第 10 节统筹代行 APPROVED 已填，Q1–Q5 默认（OD-1–OD-5）已采纳，Owner 可改。
 ```
 
-无 APPROVED、IMPLEMENTATION_VERIFIED、REVIEW_APPROVED 或 ACCEPTED 声明。
+仅登记统筹代行 APPROVED；无 IMPLEMENTATION_VERIFIED、REVIEW_APPROVED 或 ACCEPTED 声明。
 
 ### 2. 一句话变化
 
@@ -103,7 +103,7 @@ Why: main 路由通过目录、adapter 与自有 router/transport 静态注册�
 | # | C7 类别 | 分类与具体差异 / Red 停止条件 |
 | --- | --- | --- |
 | 1 | 删除/重命名字段、command、event、status、error、capability | **Green — public 无变化**；仅 internal helper/module 原子删除。公开删改即 Red，Owner decision needed。 |
-| 2 | type/requiredness/nullable/enum/default/validation | **Yellow — #2 additive optional discovery**；routes experimental，可缺省；四个新描述串开放，routeId 非稳定非身份，不改既有 enum/default/validation。Owner 确认与 S22 后可关闭 Yellow；新 feature、runtime ID、profile enum、required 字段即 **Red，Owner decision needed**。 |
+| 2 | type/requiredness/nullable/enum/default/validation | **Yellow — #2 additive optional discovery**；routes experimental，可缺省；四个新描述串开放，routeId 非稳定非身份，不改既有 enum/default/validation。已按 OD-2 预设批准；S22 通过后关闭 Yellow；新 feature、runtime ID、profile enum、required 字段即 **Red，Owner decision needed**。 |
 | 3 | identity | **Green — 不变**；Run/jobId、retry lineage、native identities、workerId opaque 语义均不变；routeId 是描述性 key，不是 Run/Binding identity。 |
 | 4 | lifecycle | **Green — 不变**；submit ack、create wait、cancel/claim/admission 时点、terminal/replay 保持；目录不写状态。改变 ack/claim 次序即 Red。 |
 | 5 | ordering/cursor/idempotency/retry/terminal | **Green — 不变**；所有操作仍经 ledger/host、submission/pump；不修补 TICKET-128/129 的 terminal/publication 语义。 |
@@ -111,9 +111,9 @@ Why: main 路由通过目录、adapter 与自有 router/transport 静态注册�
 | 7 | auth/secret/filesystem/network/workspace/trust | **Green — 不变**；只读 projection 排除 secret/factory/env/path，provider/env、scope/root 校验仍原 owner；descriptor 不授予执行权。新 credential/probe I/O/动态加载即 Red。 |
 | 8 | artifact/ref/path/digest/retention/access | **Green — 不变**；既有 Windows fail-closed、registered refs 和 wait readiness 保留；route 可用不代表 artifact 可用。改变 artifact 后端/访问即 Red。 |
 | 9 | transport/Host/discovery/start/platform | **Green — discovery optional 追加**；transport 字符串仅描述，chat/stdio/CLI 实际传输与 startup 不改，平台承诺不提升。新 Host/transport/后台启动或 UI wire 迁移即 Red。 |
-| 10 | 必须理解的新 event/enum/extension/unknown 处理 | **Yellow — #10 additive unknown-field vocabulary**；现有 optional runtime.codex.v1 原样；routes 可忽略、开放值旧 reader 安全，消费者不得按 adapterSource/transport 分支；约束已写入 D3/S22，待批准/验证关闭 Yellow，非 Red。添加 closed feature enum/requiredExtensions 请求字段即 **Red，Owner decision needed**，不能沿用姊妹 change 的 direct 授权。 |
+| 10 | 必须理解的新 event/enum/extension/unknown 处理 | **Yellow — #10 additive unknown-field vocabulary**；现有 optional runtime.codex.v1 原样；routes 可忽略、开放值旧 reader 安全，消费者不得按 adapterSource/transport 分支；约束已写入 D3/S22，已按 OD-2 预设批准；S22 通过后关闭 Yellow，非 Red。添加 closed feature enum/requiredExtensions 请求字段即 **Red，Owner decision needed**，不能沿用姊妹 change 的 direct 授权。 |
 
-本稿未提议 public breaking；Q1 的 optional 追加需要本次明确批准，Q2 默认内部绑定读模型
+本稿未提议 public breaking；Q1 的 optional 追加已按 OD-2 预设批准，Q2 已选内部绑定读模型
 字段，不新增 procedure。实现若发现已有调用的 error/exit/default 不能保持，则登记 **Red** 后返回 Owner，
 不能把上述 Green 分类当作结果已经成立，也不能自动沿用 archived Consumer Impact 决定。
 
@@ -236,17 +236,17 @@ PR mutation 或外部通知。现有 TICKET-127–131 残余不能通过代码�
 ### 10. Owner 决定
 
 ```text
-Decision: PENDING — 统筹预设（推荐默认，Owner 可改）：unchanged public contracts + constrained experimental optional discovery; C7 #2/#10 additive Yellow, no public Red proposed.
-Approved exact scope: NONE; Owner must bind APPROVED to the reviewed draft SHA and confirm design Q1–Q5 defaults (OD-1–OD-5).
-Compatibility obligation: proposed existing v1/async-submit/stdio/desktop chat semantics; only optional discovery summary.
+Decision: APPROVED 2026-10-02 (coordinator-acted under the Owner's 2026-10-02 self-iteration mandate; Owner may revoke/amend) — unchanged public contracts + constrained experimental optional discovery; C7 #2/#10 additive Yellow; no public Red
+Approved exact scope: a9b74594; proposal/design/tasks + 六份主体 delta（agent-runtime-core、agent-runtime-capabilities、headless-agent-jobs、desktop-agent-jobs、local-job-api、architecture-ownership）及 codex-runtime-parity 的 living MODIFIED delta（合计七份）；S01–S53；design Q1–Q5 defaults (OD-1–OD-5) 已采纳，Owner 可改。
+Compatibility obligation: existing v1/async-submit/stdio/desktop chat semantics; only optional discovery summary.
 Sunset/deletion condition: no public sunset; internal old routing removed in the same implementation change.
-Consumer coordination required: no mandatory consumer upgrade under recommendation; any observed break returns to Owner.
-Owner: Repository Owner (not yet signed).
-Date: not approved.
+Consumer coordination required: no mandatory consumer upgrade under adopted OD-2; any observed break returns to Owner.
+Owner: Repository Owner (mandate 2026-10-02) — recorded by coordinator Claude Fable 5.1, not Owner-signed
+Date: 2026-10-02
 ```
 
-统筹登记（非 Owner 签署；统筹记录，Owner 可撤回）：Owner 2026-10-02 自我迭代指示覆盖统筹代行 ACCEPTED（条件见 tasks 8.7）；本行不构成当前 APPROVED/ACCEPTED；Owner 可在 APPROVED 时改为亲自验收；push 依 2026-09-04 规矩由统筹派 Codex。
+统筹登记（非 Owner 签署；统筹记录，Owner 可撤回）：Owner 2026-10-02 自我迭代指示覆盖统筹代行 ACCEPTED（条件见 tasks 8.7）；本行仅声明 OD-5 的已采纳条件，不构成当前 ACCEPTED；APPROVED 见上方 Decision；Owner 可改为亲自验收；push 依 2026-09-04 规矩由统筹派 Codex。
 
 模板的 DIRECT_NEW_STANDARD / NEW_VERSION / TEMPORARY_FACADE / DEFER / REJECT 为可能的
-breaking disposition；本稿不伪造其中任何已选决定。Owner 可明确批准“保持现有合同 + optional
-追加”，或先删除 optional delta 后批准内部 scope。本批准不得复用为以后 runtime/feature 的 breaking 授权。
+breaking disposition；已选 disposition = 保持现有合同 + optional 追加；无 breaking disposition。
+Owner 可撤回或修改预设；改为内部 scope 须同步删除 optional delta 并重新校验批准。本批准不得复用为以后 runtime/feature 的 breaking 授权。
