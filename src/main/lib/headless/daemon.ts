@@ -502,6 +502,36 @@ function runPumpPass(
   return Promise.all(dispatches).then((runs) => ({ runs }))
 }
 
+/**
+ * Waits for `work` at most `ms` (the timer never outlives the wait).
+ * Resolves true when `work` settled in time, false otherwise; `work` itself
+ * keeps running and its rejection is absorbed here.
+ */
+export function settledWithin(
+  work: Promise<unknown>,
+  ms: number,
+): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | null = null
+  const settled = work.then(
+    () => true,
+    () => true,
+  )
+  const expired = new Promise<boolean>((resolve) => {
+    timer = setTimeout(() => resolve(false), Math.max(0, ms))
+  })
+  return Promise.race([settled, expired]).finally(() => {
+    if (timer) clearTimeout(timer)
+  })
+}
+
+/**
+ * Bound on one daemon tick's wait for its over-age settlement pass. A pass
+ * still pending after it keeps running in the background and no second pass
+ * starts until it settles, so the loop (heartbeat, cleanup, dispatch)
+ * never stalls behind one settlement.
+ */
+export const OVER_AGE_TICK_WAIT_MS = 5_000
+
 function delay(ms: number, signal: AbortSignal | undefined): Promise<void> {
   if (signal?.aborted) return Promise.resolve()
   return new Promise((resolve) => {
@@ -533,6 +563,7 @@ export async function runLocalAgentDaemon(
   // Over-age Runs this daemon could not settle (non-race error) are not
   // retried by later ticks, so they cannot starve younger over-age Runs.
   const overAgeFailedIds = new Set<string>()
+  let overAgePass: Promise<unknown> | null = null
   const result: RunLocalAgentDaemonResult = {
     scheduledJobs: 0,
     startedJobs: 0,
@@ -565,19 +596,38 @@ export async function runLocalAgentDaemon(
         now: options.now ?? new Date(),
       })
       // Over-age admitted queued API Runs settle on the tick (bounded per
-      // tick) without waiting for a claim (design D5).
-      await settleOverAgeQueuedLocalJobApiRuns(options.db, {
-        now: options.now,
-        maxQueuedApiAgeMs: options.maxQueuedApiAgeMs ?? MAX_QUEUED_API_AGE_MS,
-        excludeIds: overAgeFailedIds,
-        onSettlementError: (jobId, code) => {
-          overAgeFailedIds.add(jobId)
-          writeLine(
-            options.stderr,
-            `[Daemon] Over-age job ${jobId} was not settled (${code}); not retried by this daemon.`,
-          )
-        },
-      })
+      // tick) without waiting for a claim (design D5). The tick waits for
+      // the pass at most OVER_AGE_TICK_WAIT_MS and never starts a second
+      // pass while one is still pending.
+      if (!overAgePass) {
+        const pass: Promise<unknown> = settleOverAgeQueuedLocalJobApiRuns(
+          options.db,
+          {
+            now: options.now,
+            maxQueuedApiAgeMs:
+              options.maxQueuedApiAgeMs ?? MAX_QUEUED_API_AGE_MS,
+            excludeIds: overAgeFailedIds,
+            onSettlementError: (jobId, code) => {
+              overAgeFailedIds.add(jobId)
+              writeLine(
+                options.stderr,
+                `[Daemon] Over-age job ${jobId} was not settled (${code}); not retried by this daemon.`,
+              )
+            },
+          },
+        )
+          .catch(() => {
+            writeLine(
+              options.stderr,
+              "[Daemon] Over-age settlement pass failed; retried on a later tick.",
+            )
+          })
+          .finally(() => {
+            if (overAgePass === pass) overAgePass = null
+          })
+        overAgePass = pass
+      }
+      await settledWithin(overAgePass, OVER_AGE_TICK_WAIT_MS)
       const available = concurrency - active.size
       if (available > 0) {
         const scheduled = await evaluateDueAgentSchedules(options.db, {

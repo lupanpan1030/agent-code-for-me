@@ -807,7 +807,12 @@ export async function startAgentJob(
       occurredAt: input.now ?? new Date(),
     })
   } catch (error) {
-    const current = getAgentJob(db, input.jobId)
+    let current: AgentJob | null
+    try {
+      current = getAgentJob(db, input.jobId)
+    } catch {
+      current = null
+    }
     if (current && current.status !== "queued") {
       if (isTerminalAgentJobStatus(current.status as AgentJobStatus)) {
         throw claimLost(
@@ -820,6 +825,12 @@ export async function startAgentJob(
         ),
       )
     }
+    // The claim append failed without a competing claim: this host does not
+    // execute the Run, and the cached ledger may be halted on the unwritten
+    // job_started. Drop it so a later cancel, settlement or claim of this
+    // Run recomposes a ledger from the committed records instead of
+    // queueing behind the halted observation forever.
+    releaseRunEventLedger(db, input.jobId)
     throw error
   }
   return getAgentJob(db, input.jobId) ?? job

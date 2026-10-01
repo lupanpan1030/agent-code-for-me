@@ -42,6 +42,7 @@ import {
   type PumpQueuedRunResult,
   pumpQueuedRuns,
   runLocalAgentDaemon,
+  settledWithin,
 } from "./daemon"
 import { recoverStaleAgentJobs } from "./job-recovery"
 import { HEADLESS_EXIT_CODES, runPersistedAgentJob } from "./job-runner"
@@ -834,22 +835,24 @@ async function runLocalJobApiWrapper(
 
 /**
  * Closes the wrapper's own admitted Run that never started through the
- * existing queued cancel; a store that still fails leaves it to recovery.
+ * existing queued cancel, waiting at most the 5000 ms ack window so the
+ * baseline error is always reported; a store that still fails leaves the
+ * Run to recovery.
  */
 async function cancelOwnQueuedRun(
   jobId: string,
   options: RunHeadlessCliCommandOptions,
 ): Promise<void> {
-  try {
+  const cancel = (async () => {
     if (getAgentJob(options.db, jobId)?.status !== "queued") return
     await cancelAgentJob(options.db, jobId, {
       requestedBy: "api",
       queuedCancelFields: PRE_START_CANCEL_FIELDS,
       queuedTerminalProjection: queuedCancelTerminalProjection(options.db),
     })
-  } catch {
-    // Nothing more to do here; recovery owns a Run the store cannot close.
-  }
+  })()
+  // Nothing more to do on failure or expiry; recovery owns the Run.
+  await settledWithin(cancel, RELAY_CANCEL_ACK_MS)
 }
 
 async function apiRunsSubmitCommand(
