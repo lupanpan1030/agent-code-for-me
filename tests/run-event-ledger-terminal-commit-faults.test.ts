@@ -19,6 +19,7 @@ import {
 } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { eq } from "drizzle-orm"
 import {
   type RunArtifactRunDir,
   writeRunArtifactFile,
@@ -35,6 +36,7 @@ import {
   getOrCreateRunEventLedger,
   releaseRunEventLedger,
 } from "../src/main/lib/agent-runtime/run-event-ledger-host"
+import { agentJobs } from "../src/main/lib/db/schema"
 import {
   closeStableDirectory,
   openStableDirectory,
@@ -149,13 +151,20 @@ async function preparedApiRun() {
     prompt: "terminal artifacts",
     apiConsumerId: "terminal-faults",
     artifactBaseDir: runDirPath,
-    artifactManifestPath: join(runDirPath, "artifacts.json"),
   })
   await startAgentJob(db, {
     jobId: created.id,
     workerId: "worker-terminal-faults",
     workerPid: null,
   })
+  // The claim now requires a committed initial admission for a job with an
+  // artifact manifest path (add-local-job-api-async-submit D3). This
+  // ledger-only fixture keeps its event history free of an initial
+  // artifact_created, so the manifest path joins the row after the claim.
+  db.update(agentJobs)
+    .set({ artifactManifestPath: join(runDirPath, "artifacts.json") })
+    .where(eq(agentJobs.id, created.id))
+    .run()
   releaseRunEventLedger(db, created.id)
   return { db, runDir, runDirPath, jobId: created.id }
 }

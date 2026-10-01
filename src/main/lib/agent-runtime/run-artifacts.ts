@@ -29,6 +29,7 @@ import {
   closeStableDirectory,
   fsyncStableDirectory,
   openRegisteredStableDirectory,
+  openStableDirectory,
   openStableDirectoryChild,
   type StableDirectoryHandle,
   stableDirectoryChildPath,
@@ -264,6 +265,90 @@ export function readRunDirArtifactCandidate(
 }
 
 /**
+ * Opens a run directory for read-only verification (no symlinked or
+ * non-canonical directory); null when it cannot be anchored.
+ */
+export function openRunDirForVerification(
+  runDirPath: string,
+): StableDirectoryHandle | null {
+  try {
+    return openStableDirectory(runDirPath, "Artifact run")
+  } catch {
+    return null
+  }
+}
+
+/**
+ * A committed initial ref of an admitted run directory no longer matches
+ * its file (digest, size, link count or file type).
+ */
+export class RunArtifactAdmissionMismatchError extends Error {
+  readonly code = "artifact_admission_mismatch"
+
+  constructor(message: string) {
+    super(message)
+    this.name = "RunArtifactAdmissionMismatchError"
+  }
+}
+
+/**
+ * Reopens an admitted run directory in the executing process (design D5):
+ * the stored run directory is anchored as a stable, canonical, non-symlink
+ * directory, every committed initial ref is re-verified by role/path/digest/
+ * size through that handle (single-link regular files only), and only the
+ * verified files seed the receipts the terminal publisher replaces.
+ */
+export function reopenAdmittedRunDir(
+  job: { id: string; artifactBaseDir: string | null },
+  committedInitialRefs: readonly RunDirArtifact[],
+): RunArtifactRunDir {
+  if (!job.artifactBaseDir) {
+    throw new RunArtifactAdmissionMismatchError(
+      "Admitted run has no run directory",
+    )
+  }
+  let directory: StableDirectoryHandle
+  try {
+    directory = openStableDirectory(job.artifactBaseDir, "Artifact run")
+  } catch (error) {
+    throw new RunArtifactAdmissionMismatchError(
+      error instanceof Error ? error.message : "Artifact run cannot be opened",
+    )
+  }
+  try {
+    if (basename(directory.path) !== job.id) {
+      throw new RunArtifactAdmissionMismatchError(
+        "Artifact run directory does not belong to the Run",
+      )
+    }
+    const receipts = new Map<string, RunArtifactFileReceipt>()
+    for (const ref of committedInitialRefs) {
+      const name = relative(directory.path, ref.path)
+      if (basenameOnly(name) === null) {
+        throw new RunArtifactAdmissionMismatchError(
+          "Committed run-dir ref escapes the admitted run directory",
+        )
+      }
+      if (!verifyRunDirArtifactRef(directory, ref)) {
+        throw new RunArtifactAdmissionMismatchError(
+          "Committed run-dir ref no longer matches its file",
+        )
+      }
+      receipts.set(
+        name,
+        artifactFileReceipt(
+          lstatSync(stableDirectoryChildPath(directory, name)),
+        ),
+      )
+    }
+    return Object.assign(directory, { fileReceipts: receipts })
+  } catch (error) {
+    closeStableDirectory(directory)
+    throw error
+  }
+}
+
+/**
  * Re-verifies an admitted native artifact ref at terminal preparation: the
  * file is re-read through the run directory handle and must still match the
  * registered digest and size.
@@ -487,6 +572,11 @@ function basenameOnly(fileName: string): string | null {
     : null
 }
 
+/** Observation key of a Run's one initial run-dir admission batch. */
+export function runDirInitialArtifactsObservationKey(runId: string): string {
+  return `lifecycle:initial-artifacts:${runId}`
+}
+
 /**
  * Admits already prepared lifecycle run-dir files (API create/retry initial
  * request/events/manifest) as one `artifact_created` through the ledger's
@@ -522,14 +612,11 @@ export async function admitRunDirArtifacts(input: {
       throw new Error("Run-dir artifact changed before admission")
     }
   }
-  const identity = JSON.stringify(
-    input.artifacts.map((artifact) => [artifact.role, artifact.sha256]),
-  )
+  // One initial admission batch per Run (design D3): its first
+  // `artifact_created` commits as `lifecycle:initial-artifacts:<runId>:0`,
+  // which the queue listing and the claim require.
   await port.admit({
-    observationKey: `run-dir-artifacts-${createHash("sha256")
-      .update(`${input.runId}\u0000${identity}`)
-      .digest("hex")
-      .slice(0, 24)}`,
+    observationKey: runDirInitialArtifactsObservationKey(input.runId),
     artifacts: input.artifacts.map((artifact) => ({ ...artifact })),
     runDir: input.runDir.path,
   })
