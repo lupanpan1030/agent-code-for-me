@@ -344,3 +344,39 @@ test("an API agent row without its stored cwd identity fails closed with cwd_ide
     controlCalls: 1,
   })
 }, 20_000)
+
+// ---------------------------------------------------------------------------
+// Claim-gate exception: the documented internal fallback
+// ---------------------------------------------------------------------------
+
+test("an unexpected claim-gate exception settles the documented internal fallback (claim_gate_failed, internal_error, exit 8) without runner calls", async () => {
+  const p = profile()
+  const run = controlledRunner()
+  const jobId = await submitId(p, agentRequest(p))
+  const result = await runPersistedAgentJob({
+    db: p.db,
+    jobId,
+    runner: run.runner,
+    claimGate: () => {
+      throw new Error("unexpected gate failure")
+    },
+  })
+  const row = jobRowById(p, jobId)
+  expect({
+    exitCode: result.exitCode,
+    status: row?.status,
+    errorCode: row?.error_code,
+    rowExit: row?.exit_code,
+    reasons: completedReasons(p, jobId),
+    completed: countType(p, jobId, "completed"),
+    runnerCalls: run.calls.length,
+  }).toEqual({
+    exitCode: 8,
+    status: "failed",
+    errorCode: "internal_error",
+    rowExit: 8,
+    reasons: expect.arrayContaining(["claim_gate_failed"]),
+    completed: 1,
+    runnerCalls: 0,
+  })
+}, 20_000)
