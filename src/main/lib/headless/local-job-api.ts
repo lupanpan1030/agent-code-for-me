@@ -88,6 +88,7 @@ import {
   getAgentJob,
   listAgentJobEvents,
   lookupCommittedRunEventFact,
+  type QueuedCancelTerminalProjection,
   retryAgentJob,
   settleQueuedAgentJobFailed,
 } from "./job-store"
@@ -1678,6 +1679,95 @@ function revalidateClaimedLocalJobApiProject(
 }
 
 /**
+ * Reopens an admitted API Run's stored run directory through the run
+ * artifact owner after re-checking that the stored request still plans the
+ * same run directory inside its registered project (design D5). Throws on
+ * any mismatch.
+ */
+function reopenLocalJobApiAdmittedRunDir(
+  job: AgentJob,
+  request: Extract<NormalizedLocalJobApiCreateRequest, { kind: "agent" }>,
+  projectCwd: string,
+  committedInitialRefs: readonly RunDirArtifact[],
+): LocalJobApiArtifactRunDir {
+  validateLocalJobApiArtifactBaseDirForProject(
+    request.artifacts.baseDir,
+    projectCwd,
+  )
+  const planned = plannedRunDirPaths(request.artifacts.baseDir, job.id)
+  if (
+    !planned ||
+    planned.runDirPath !== job.artifactBaseDir ||
+    planned.manifestPath !== job.artifactManifestPath
+  ) {
+    throw new Error("Admitted run directory does not match the stored request")
+  }
+  return reopenAdmittedRunDir(job, committedInitialRefs, {
+    projectRoot: projectCwd,
+    artifactsBaseDir: dirname(planned.runDirPath),
+  })
+}
+
+/**
+ * Terminal projection a queued cancel registers for one API Run (design D5
+ * trigger table). A queued agent Run whose initial run-dir admission is
+ * complete gets the same terminal preparer the worker registers, composed
+ * from its persistent input and the reopened admitted run directory, so the
+ * canceled terminal publishes result.json, events.jsonl and artifacts.json
+ * exactly like a worker-settled Run. A Run without that admission, an
+ * artifact-free Run, or one whose project/cwd/run directory no longer
+ * verifies gets none (null): its cancel registers no terminal refs.
+ */
+export function openQueuedCancelLocalJobApiTerminal(
+  db: AgentJobDatabase,
+  job: AgentJob,
+  options: { onHostDiagnostic?: (message: string) => void } = {},
+): QueuedCancelTerminalProjection | null {
+  if (
+    job.source !== "api" ||
+    job.kind === "completion" ||
+    job.status !== "queued" ||
+    !job.artifactBaseDir ||
+    !job.artifactManifestPath
+  ) {
+    return null
+  }
+  const committedInitialRefs = committedInitialRunDirRefs(db, job.id)
+  if (committedInitialRefs.length === 0) return null
+  let runDir: LocalJobApiArtifactRunDir
+  try {
+    const request = getLocalJobApiStoredRequest(job)
+    if (request.kind !== "agent") return null
+    const project = revalidateClaimedLocalJobApiProject(db, job)
+    if (!project.ok) return null
+    runDir = reopenLocalJobApiAdmittedRunDir(
+      job,
+      request,
+      project.projectCwd,
+      committedInitialRefs,
+    )
+  } catch {
+    return null
+  }
+  const terminal = createLocalJobApiTerminalArtifacts({
+    db,
+    runDir,
+    jobId: job.id,
+    ...(options.onHostDiagnostic
+      ? { onHostDiagnostic: options.onHostDiagnostic }
+      : {}),
+  })
+  if (!terminal.preparer) {
+    closeLocalJobApiArtifactRunDir(runDir)
+    return null
+  }
+  return {
+    terminalArtifacts: terminal.preparer,
+    close: () => closeLocalJobApiArtifactRunDir(runDir),
+  }
+}
+
+/**
  * Claim-time host gate of a claimed API Run (design D5), run after the
  * conditional claim and before any provider call or spawn: the registered
  * project still exists, the stored canonical cwd identity is unchanged, the
@@ -1748,24 +1838,12 @@ export function openClaimedLocalJobApiExecution(
   }
   let runDir: LocalJobApiArtifactRunDir
   try {
-    validateLocalJobApiArtifactBaseDirForProject(
-      request.artifacts.baseDir,
+    runDir = reopenLocalJobApiAdmittedRunDir(
+      job,
+      request,
       projectCwd,
+      committedInitialRunDirRefs(db, job.id),
     )
-    const planned = plannedRunDirPaths(request.artifacts.baseDir, job.id)
-    if (
-      !planned ||
-      planned.runDirPath !== job.artifactBaseDir ||
-      planned.manifestPath !== job.artifactManifestPath
-    ) {
-      throw new Error(
-        "Admitted run directory does not match the stored request",
-      )
-    }
-    runDir = reopenAdmittedRunDir(job, committedInitialRunDirRefs(db, job.id), {
-      projectRoot: projectCwd,
-      artifactsBaseDir: dirname(planned.runDirPath),
-    })
   } catch (error) {
     return claimGateFail(
       "artifact_admission_mismatch",

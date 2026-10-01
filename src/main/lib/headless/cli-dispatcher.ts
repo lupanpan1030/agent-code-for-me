@@ -60,6 +60,7 @@ import {
   getLocalJobApiEvents,
   getLocalJobApiJobOrThrow,
   type LocalJobApiRuntimeManifestEnvelopeOptions,
+  openQueuedCancelLocalJobApiTerminal,
   parseLocalJobApiRetryRequestJson,
   parseLocalJobApiSubmitRequestJson,
   toLocalJobApiJobEnvelope,
@@ -417,6 +418,14 @@ const PRE_START_CANCEL_FIELDS = {
   errorMessage: "Job was canceled before it started.",
 }
 
+/**
+ * A queued cancel of an admitted API Run registers the same terminal
+ * preparer a worker would (design D5); other Runs register none.
+ */
+function queuedCancelTerminalProjection(db: AgentJobDatabase) {
+  return (job: AgentJob) => openQueuedCancelLocalJobApiTerminal(db, job)
+}
+
 async function cancelCommand(
   command: Extract<HeadlessCliCommand, { kind: "jobs-cancel" }>,
   options: RunHeadlessCliCommandOptions,
@@ -427,6 +436,7 @@ async function cancelCommand(
   const updated = await cancelAgentJob(options.db, command.jobId, {
     requestedBy: "cli",
     queuedCancelFields: PRE_START_CANCEL_FIELDS,
+    queuedTerminalProjection: queuedCancelTerminalProjection(options.db),
   })
   outputJob(options.stdout, command.output, updated)
   return 0
@@ -610,6 +620,7 @@ function armDaemonFirstRelay(
       await cancelAgentJob(options.db, jobId, {
         requestedBy: "api",
         queuedCancelFields: PRE_START_CANCEL_FIELDS,
+        queuedTerminalProjection: queuedCancelTerminalProjection(options.db),
       })
     } catch {
       return
@@ -776,6 +787,9 @@ async function runLocalJobApiWrapper(
           await cancelAgentJob(options.db, jobId, {
             requestedBy: "api",
             queuedCancelFields: PRE_START_CANCEL_FIELDS,
+            queuedTerminalProjection: queuedCancelTerminalProjection(
+              options.db,
+            ),
           }).catch(() => undefined)
         }
         return onError(failure?.error, options)
@@ -1222,6 +1236,7 @@ async function apiRunsCancelCommand(
     const updated = await cancelAgentJob(options.db, job.id, {
       requestedBy: "api",
       queuedCancelFields: PRE_START_CANCEL_FIELDS,
+      queuedTerminalProjection: queuedCancelTerminalProjection(options.db),
     })
     writeJson(options.stdout, toLocalJobApiJobEnvelope(updated))
     return HEADLESS_EXIT_CODES.success

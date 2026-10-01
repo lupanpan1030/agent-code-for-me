@@ -19,7 +19,10 @@ import {
   CONTRACT_RUNTIME_IDS,
 } from "../../../shared/agent-runtime-capabilities"
 import { redactExactSecretHints } from "../agent-runtime/redaction"
-import type { TerminalJobFields } from "../agent-runtime/run-event-ledger"
+import type {
+  SettleOptions,
+  TerminalJobFields,
+} from "../agent-runtime/run-event-ledger"
 import {
   getOrCreateRunEventLedger,
   recordVerifiedRunRetention,
@@ -108,6 +111,21 @@ export type CancelAgentJobInput = {
    * it started (the caller's existing exit metadata).
    */
   queuedCancelFields?: TerminalJobFields
+  /**
+   * Composes the terminal projection of a queued Run whose initial
+   * admission is complete (design D5 trigger table): the same terminal
+   * preparer the worker registers, from the Run's persistent input and its
+   * reopened run directory. `null` registers no terminal refs.
+   */
+  queuedTerminalProjection?: (
+    job: AgentJob,
+  ) => QueuedCancelTerminalProjection | null
+}
+
+/** A queued cancel's registered terminal preparer and its run-dir handle. */
+export type QueuedCancelTerminalProjection = {
+  terminalArtifacts: NonNullable<SettleOptions["terminalArtifacts"]>
+  close: () => void
 }
 
 export type ListAgentJobsInput = {
@@ -834,26 +852,39 @@ export async function cancelAgentJob(
   const job = getAgentJob(db, jobId)
   if (!job) throw new Error(`Unknown job: ${jobId}`)
   if (isTerminalAgentJobStatus(job.status as AgentJobStatus)) return job
-  const ledger = await getOrCreateRunEventLedger(db, job)
-  await ledger.settle(
-    {
-      trigger: {
-        kind: "cancel",
-        reason: "queued_cancel",
-        observationKey: `cancel:${createId()}`,
-        requestedBy: input.requestedBy,
+  // An admitted queued Run's cancel registers the worker's terminal preparer
+  // (design D5); a claim/cancel loser discards only its own staging.
+  const projection =
+    job.status === "queued"
+      ? (input.queuedTerminalProjection?.(job) ?? null)
+      : null
+  try {
+    const ledger = await getOrCreateRunEventLedger(db, job)
+    await ledger.settle(
+      {
+        trigger: {
+          kind: "cancel",
+          reason: "queued_cancel",
+          observationKey: `cancel:${createId()}`,
+          requestedBy: input.requestedBy,
+        },
+        ...CANCEL_EVIDENCE,
       },
-      ...CANCEL_EVIDENCE,
-    },
-    {
-      jobFields: () => input.queuedCancelFields ?? {},
-    },
-  )
+      {
+        jobFields: () => input.queuedCancelFields ?? {},
+        ...(projection
+          ? { terminalArtifacts: projection.terminalArtifacts }
+          : {}),
+      },
+    )
+  } finally {
+    projection?.close()
+  }
   const updated = getAgentJob(db, jobId) ?? job
   if (isTerminalAgentJobStatus(updated.status as AgentJobStatus)) {
     releaseRunEventLedger(db, jobId)
-    // A queued cancel registers no terminal refs: its retention starts at
-    // the settlement (design D4).
+    // Retention starts once the registered terminal refs are verified
+    // published (an empty set at the settlement) (design D4).
     recordVerifiedRunRetention(db, jobId)
   }
   return updated
