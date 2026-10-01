@@ -378,3 +378,23 @@ The suite is not satisfiable by trivial stubs. Checked specifically: a submit th
 - F4 (P3) reading confirmed: a queued protocol job canceled before its claim emits no `job/error` and no
   stderr line naming it (pump-only dispatch).
 - F5–F15 recorded; no edit. Verdict closes as **RED_SUITE_ACCEPTED** at the commit that carries this receipt.
+
+## Coordinator adjudications after Phase I (2026-10-02)
+
+Four reds the Phase I implementer reported as blocked were verified as suite defects (the two
+verification lenses confirmed S15 and S21 independently) and fixed without changing any
+assertion's intent:
+- S03 `recordPumpScopes`: bun returns the same mock for an already-spied export, so calls
+  accumulated across the eleven sequential create flows; the recorder now `mockClear()`s first.
+- S17 leak probe: the EPERM fixture pid is `1`, which every ISO timestamp contains; the pid
+  needle now matches a whole number (digit boundaries); other needles unchanged.
+- S21: the kit's placeholder regex excluded digits so `{{CORR_5}}`/`{{CORR_6}}` were never
+  rendered (`[A-Z_]+` → `[A-Z0-9_]+`); the golden's two literal digests for the initial
+  `events.jsonl`/`artifacts.json` (whose bytes embed the run-dir root, run-dependent by baseline
+  design) became `{{SHA_INITIAL_EVENTS}}`/`{{SHA_INITIAL_MANIFEST}}`, rendered from the committed
+  initial `artifact_created` event (new kit helper `initialArtifactVars`); every other byte of
+  the golden stays pinned.
+- S15 fixture: the `161-characters` key variant was 157 characters (valid under design D4);
+  padded to 161 so it exercises the length rule.
+After the fixes the submit-wait and idempotency files pass 46/46 at the Phase I candidate.
+The immutable-set baseline for review moves to the commit carrying this note.

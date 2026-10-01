@@ -87,7 +87,7 @@ export function renderGolden(
   template: string,
   vars: Record<string, string | number | null>,
 ): string {
-  return template.replace(/\{\{([A-Z_]+)\}\}/g, (_match, name: string) => {
+  return template.replace(/\{\{([A-Z0-9_]+)\}\}/g, (_match, name: string) => {
     if (!(name in vars)) throw new Error(`golden placeholder ${name} unbound`)
     const value = vars[name]
     return value === null ? "null" : String(value)
@@ -538,8 +538,33 @@ export function jobVars(
     WORKER_PID: row?.worker_pid ?? null,
     ...artifactVars(row?.artifact_base_dir ?? null),
     ...correlationVars(profile, jobId),
+    ...initialArtifactVars(profile, jobId),
     ...extra,
   }
+}
+
+/**
+ * SHA_INITIAL_<ROLE> = the digest the committed initial `artifact_created` event
+ * recorded for that role. The initial events/manifest files embed the run-dir root,
+ * so their digests are run-dependent by baseline design (coordinator adjudication
+ * 2026-10-02); the golden pins everything else byte for byte.
+ */
+export function initialArtifactVars(
+  profile: Profile,
+  jobId: string,
+): Record<string, string> {
+  const vars: Record<string, string> = {}
+  for (const row of eventRows(profile, jobId)) {
+    if (row.type !== "artifact_created") continue
+    const payload = JSON.parse(row.payload_json ?? "null")
+    for (const entry of payload?.artifacts ?? []) {
+      if (typeof entry?.role !== "string" || typeof entry?.sha256 !== "string") continue
+      const name = `SHA_INITIAL_${entry.role.toUpperCase()}`
+      if (!(name in vars)) vars[name] = entry.sha256
+    }
+    break
+  }
+  return vars
 }
 
 /** CORR_<sequence> = the ledger-minted correlation key of that committed event. */

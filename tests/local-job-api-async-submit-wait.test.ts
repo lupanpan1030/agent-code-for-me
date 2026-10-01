@@ -206,6 +206,9 @@ async function recordPumpScopes(): Promise<() => unknown> {
     return () => "pumpQueuedRuns is not exported by headless/daemon.ts"
   }
   const spy = spyOn(daemonModule, "pumpQueuedRuns")
+  // Coordinator adjudication 2026-10-02: bun returns the same mock for an already
+  // spied export, so each recorder starts from an empty call list.
+  spy.mockClear()
   cleanups.push(() => spy.mockRestore())
   return () => spy.mock.calls.map((args: any[]) => args[0]?.admittedIds ?? null)
 }
@@ -1807,8 +1810,13 @@ describe("Executor Availability Observation", () => {
         forbiddenKeys: fx.forbiddenExecutionKeys.filter((key: string) =>
           execution ? key in execution : false,
         ),
+        // Coordinator adjudication 2026-10-02: the pid probe matches a whole number
+        // (the EPERM fixture pid is 1, which any ISO timestamp also contains).
         leaks: [p.lockPath, pidText, "nonce-A", "nonce-legacy"].filter(
-          (needle) => executionText.includes(needle),
+          (needle) =>
+            needle === pidText
+              ? new RegExp(`(^|[^0-9])${needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([^0-9]|$)`).test(executionText)
+              : executionText.includes(needle),
         ),
         lockUnchanged: lockAfter === lockText,
       }
