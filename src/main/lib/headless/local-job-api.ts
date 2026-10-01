@@ -914,7 +914,9 @@ export async function createLocalJobApiJob(
       },
       { reservation: options.reservation },
     )
-    return { request, job: getAgentJob(db, job.id) ?? job, runDir: null }
+    // The committed creation row (no re-read: the Run may already be
+    // claimed by another process once its creation fact committed).
+    return { request, job, runDir: null }
   }
 
   validateLocalJobApiRequiredCapabilities(request)
@@ -970,11 +972,10 @@ export async function createLocalJobApiJob(
     },
     { reservation: options.reservation },
   )
-  const created = getAgentJob(db, job.id) ?? job
-  const runDir = await admittedRunDirOrSettleFailed(db, created, () =>
-    createAdmittedRunDir(request.artifacts.baseDir, created, project.cwd),
+  const runDir = await admittedRunDirOrSettleFailed(db, job, () =>
+    createAdmittedRunDir(request.artifacts.baseDir, job, project.cwd),
   )
-  return { request, job: created, runDir }
+  return { request, job, runDir }
 }
 
 /**

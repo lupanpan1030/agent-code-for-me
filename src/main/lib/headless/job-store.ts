@@ -373,16 +373,17 @@ export function insertQueuedAgentJobRecord(
  * Private insertion primitive of every queued job row: the row and its
  * optional idempotency reservation commit in one SQLite transaction, so a
  * reservation never names an uncommitted job and a lost unique race leaves
- * nothing behind.
+ * nothing behind. Returns the row as that transaction committed it (queued,
+ * no worker fields): the Run is not claimable before its creation fact.
  */
 function insertQueuedAgentJobRow(
   db: AgentJobDatabase,
   values: typeof agentJobs.$inferInsert & { id: string },
   reservation: AgentJobIdempotencyReservationInput | null | undefined,
   now: Date,
-): void {
+): AgentJob {
   try {
-    db.transaction((tx: AgentJobTransaction) => {
+    return db.transaction((tx: AgentJobTransaction) => {
       insertAgentJobRow(tx, values)
       if (reservation) {
         tx.insert(agentJobIdempotency)
@@ -398,6 +399,9 @@ function insertQueuedAgentJobRow(
           })
           .run()
       }
+      const inserted = getJobFromExecutor(tx, values.id)
+      if (!inserted) throw new Error(`Failed to create job ${values.id}`)
+      return inserted
     })
   } catch (error) {
     if (reservation && isReservationUniqueViolation(error)) {
@@ -412,6 +416,13 @@ function insertQueuedAgentJobRow(
  * idempotency reservation, in the same transaction), then records
  * `job_created` through the job's host ledger (pending provenance,
  * fact-keyed v1 record).
+ *
+ * Returns the queued row the creation transaction committed (design D2
+ * fixed queued snapshot). Neither `job_created` nor the initial run-dir
+ * `artifact_created` admission mutates a job column (both commit events
+ * only), so this is exactly the row a completed admission leaves. It is
+ * never re-read afterwards: once the admission commits, another process may
+ * already have claimed the Run.
  */
 export async function createAgentJob(
   db: AgentJobDatabase,
@@ -421,15 +432,12 @@ export async function createAgentJob(
   const id = input.id ?? createId()
   const kind = input.kind ?? "agent"
   const now = new Date()
-  insertQueuedAgentJobRow(
+  const job = insertQueuedAgentJobRow(
     db,
     queuedAgentJobValues(input, id, now),
     options.reservation,
     now,
   )
-
-  const job = getAgentJob(db, id)
-  if (!job) throw new Error(`Failed to create job ${id}`)
   await recordAgentJobCreatedOrDiscard(db, job, {
     kind,
     source: input.source,
@@ -437,7 +445,7 @@ export async function createAgentJob(
     mode: input.mode,
     cwd: input.cwd,
   })
-  return getAgentJob(db, id) ?? job
+  return job
 }
 
 /** True when the job store would alter this text before persisting it. */
@@ -1000,7 +1008,7 @@ export async function retryAgentJob(
   }
 
   const retryId = options.id ?? createId()
-  insertQueuedAgentJobRow(
+  const created = insertQueuedAgentJobRow(
     db,
     {
       id: retryId,
@@ -1033,16 +1041,13 @@ export async function retryAgentJob(
     options.reservation,
     now,
   )
-  const created = getAgentJob(db, retryId)
-  if (!created) throw new Error(`Failed to create retry job ${retryId}`)
   await recordAgentJobCreatedOrDiscard(db, created, {
     kind: job.kind,
     retryOfJobId: job.id,
     attempt: job.attempt + 1,
   })
-  const retry = getAgentJob(db, retryId)
-  if (!retry) throw new Error(`Failed to create retry job ${retryId}`)
-  return retry
+  // The committed creation row, not a re-read (see createAgentJob).
+  return created
 }
 
 // ---------------------------------------------------------------------------

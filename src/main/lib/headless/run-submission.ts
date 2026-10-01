@@ -285,10 +285,13 @@ export async function submitRun(
   } finally {
     closeLocalJobApiArtifactRunDir(prepared.runDir)
   }
-  return {
-    job: getAgentJob(db, prepared.job.id) ?? prepared.job,
-    replay: false,
-  }
+  // Design D2: the fresh ack is the fixed queued snapshot of the completed
+  // admission: the row the creation transaction committed (the creation
+  // fact and the initial admission commit events only and change no job
+  // column). It is never re-read here: another process may claim the Run
+  // before this ack reaches stdout. Only a replay (resolveReservation)
+  // reads the retained Run's current state.
+  return { job: prepared.job, replay: false }
 }
 
 /**
@@ -318,7 +321,7 @@ async function submitProtocolRun(
     },
     projectId: project.id,
   })
-  return { job: getAgentJob(db, job.id) ?? job, replay: false }
+  return { job, replay: false }
 }
 
 // ---------------------------------------------------------------------------
