@@ -171,7 +171,6 @@
     "src/main/lib/terminal/session.ts": 1,
     "src/main/lib/terminal/types.ts": 1,
     "src/main/lib/trpc/index.ts": 1,
-    "src/main/lib/trpc/routers/agent-jobs.ts": 1,
     "src/main/lib/trpc/routers/agent-schedules.ts": 2,
     "src/main/lib/trpc/routers/agent-utils.ts": 2,
     "src/main/lib/trpc/routers/app-agents.ts": 1,
