@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/lupanpan1030/agent-code-for-me/blob/main/docs/local-job-api-v1.schema.json",
   "title": "Locus Local Job API v1 schema bundle",
-  "description": "Machine-readable JSON Schema bundle for the local CLI + JSON contract exposed by `locus api ...`. Consumers may validate individual shapes with refs such as `#/$defs/createRequest`, `#/$defs/eventEnvelope`, and `#/$defs/resultEnvelope`.",
+  "description": "Machine-readable JSON Schema bundle for the local CLI + JSON contract exposed by `locus api ...`. Consumers may validate individual shapes with refs such as `#/$defs/createRequest`, `#/$defs/eventEnvelope`, and `#/$defs/resultEnvelope`. Feature async-submit adds `#/$defs/submitRequest`, `#/$defs/retryRequest`, `#/$defs/waitEnvelope` and `#/$defs/asyncErrorEnvelope`; `#/$defs/jobEnvelope` also covers submit and retry --async admissions, keyed replays and status with `execution`.",
   "oneOf": [
     {
       "$ref": "#/$defs/createRequest"
@@ -595,7 +595,7 @@
       }
     },
     "createRequest": {
-      "description": "Input accepted by `locus api runs create --request <path|-> --json`. Omitted `kind` is treated as `agent` for backward compatibility.",
+      "description": "Input accepted by `locus api runs create --request <path|-> --json`. Omitted `kind` is treated as `agent` for backward compatibility. On builds with feature async-submit, `idempotencyKey` is rejected with idempotency_key_not_supported (use `#/$defs/submitRequest`).",
       "oneOf": [
         {
           "$ref": "#/$defs/agentCreateRequest"
@@ -603,7 +603,11 @@
         {
           "$ref": "#/$defs/completionCreateRequest"
         }
-      ]
+      ],
+      "not": {
+        "type": "object",
+        "required": ["idempotencyKey"]
+      }
     },
     "normalizedAgentCreateRequest": {
       "type": "object",
@@ -1631,6 +1635,69 @@
           }
         }
       }
+    },
+    "agentSubmitRequest": {
+      "type": "object",
+      "description": "Feature async-submit: agent input of `locus api runs submit --request <path|-> --json`: an agent create request plus the optional idempotencyKey.",
+      "allOf": [
+        {
+          "$ref": "#/$defs/agentCreateRequest"
+        }
+      ],
+      "properties": {
+        "idempotencyKey": {
+          "$ref": "#/$defs/idempotencyKey"
+        }
+      }
+    },
+    "completionSubmitRequest": {
+      "type": "object",
+      "description": "Feature async-submit: completion input of `locus api runs submit --request <path|-> --json`: the completion create request members (same rules) plus the optional idempotencyKey.",
+      "required": ["apiVersion", "kind", "consumer", "provider", "messages"],
+      "additionalProperties": false,
+      "properties": {
+        "apiVersion": {
+          "$ref": "#/$defs/completionCreateRequest/properties/apiVersion"
+        },
+        "kind": {
+          "$ref": "#/$defs/completionCreateRequest/properties/kind"
+        },
+        "consumer": {
+          "$ref": "#/$defs/completionCreateRequest/properties/consumer"
+        },
+        "runtime": {
+          "$ref": "#/$defs/completionCreateRequest/properties/runtime"
+        },
+        "provider": {
+          "$ref": "#/$defs/completionCreateRequest/properties/provider"
+        },
+        "messages": {
+          "$ref": "#/$defs/completionCreateRequest/properties/messages"
+        },
+        "maxTokens": {
+          "$ref": "#/$defs/completionCreateRequest/properties/maxTokens"
+        },
+        "temperature": {
+          "$ref": "#/$defs/completionCreateRequest/properties/temperature"
+        },
+        "responseFormat": {
+          "$ref": "#/$defs/completionCreateRequest/properties/responseFormat"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/idempotencyKey"
+        }
+      }
+    },
+    "submitRequest": {
+      "description": "Feature async-submit: input accepted by `locus api runs submit --request <path|-> --json`. Omitted `kind` is treated as `agent`.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/agentSubmitRequest"
+        },
+        {
+          "$ref": "#/$defs/completionSubmitRequest"
+        }
+      ]
     },
     "createResponseEnvelope": {
       "type": "object",
