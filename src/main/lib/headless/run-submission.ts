@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto"
 import {
+  type AgentJobContractRuntime,
+  type AgentJobMode,
   type AgentJobStatus,
   isTerminalAgentJobStatus,
 } from "../../../shared/agent-jobs"
@@ -22,6 +24,7 @@ import {
   AgentJobIdempotencyReservationExistsError,
   type AgentJobIdempotencyReservationInput,
   cleanupExpiredAgentJobIdempotency,
+  createAgentJob,
   findAgentJobIdempotencyReservation,
   getAgentJob,
   isAgentJobStoreRedactionAltering,
@@ -40,6 +43,7 @@ import {
   settleLocalJobApiAdmissionFailure,
   toLocalJobApiTerminalEnvelope,
 } from "./local-job-api"
+import { findRegisteredProjectForCwdWithCanonicalPath } from "./schedules"
 
 /**
  * Submission orchestration owner (add-local-job-api-async-submit D1).
@@ -73,6 +77,15 @@ export type SubmitRunIntent =
       kind: "api-retry"
       source: AgentJob
       idempotencyKey: string | null
+    }
+  | {
+      /** jobs-stdio `job.run` (locus-jobs-stdio.v1): no key, no artifacts. */
+      kind: "protocol-run"
+      runtime: AgentJobContractRuntime
+      mode: AgentJobMode
+      cwd: string
+      prompt: string
+      protocol: string
     }
 
 export type SubmitRunDependencies = {
@@ -128,13 +141,17 @@ function requestHash(fingerprint: Record<string, unknown>): string {
     .digest("hex")
 }
 
-function intentConsumerId(intent: SubmitRunIntent): string | null {
+type ApiSubmitRunIntent = Exclude<SubmitRunIntent, { kind: "protocol-run" }>
+
+function intentConsumerId(intent: ApiSubmitRunIntent): string | null {
   return intent.kind === "api-submit"
     ? intent.request.consumer.id
     : intent.source.apiConsumerId
 }
 
-function intentFingerprint(intent: SubmitRunIntent): Record<string, unknown> {
+function intentFingerprint(
+  intent: ApiSubmitRunIntent,
+): Record<string, unknown> {
   return intent.kind === "api-submit"
     ? localJobApiSubmissionFingerprint(intent.request)
     : localJobApiRetryFingerprint(intent.source)
@@ -194,7 +211,7 @@ function assertRetrySourceStatus(source: AgentJob): void {
 
 async function createAdmission(
   db: AgentJobDatabase,
-  intent: SubmitRunIntent,
+  intent: ApiSubmitRunIntent,
   reservation: AgentJobIdempotencyReservationInput | null,
   dependencies: SubmitRunDependencies,
 ): Promise<LocalJobApiCreatePrepared> {
@@ -215,6 +232,7 @@ export async function submitRun(
   intent: SubmitRunIntent,
   dependencies: SubmitRunDependencies = {},
 ): Promise<SubmitRunResult> {
+  if (intent.kind === "protocol-run") return submitProtocolRun(db, intent)
   if (intent.kind === "api-retry") assertRetrySourceStatus(intent.source)
   const consumerId = intentConsumerId(intent)
   const key = intent.idempotencyKey
@@ -281,6 +299,36 @@ export async function submitRun(
     job: getAgentJob(db, prepared.job.id) ?? prepared.job,
     replay: false,
   }
+}
+
+/**
+ * Protocol admission (jobs-stdio `job.run`): the registered-project gate,
+ * then the queued Run and its committed creation fact. The session's scoped
+ * canonical pump executes it.
+ */
+async function submitProtocolRun(
+  db: AgentJobDatabase,
+  intent: Extract<SubmitRunIntent, { kind: "protocol-run" }>,
+): Promise<SubmitRunResult> {
+  const { project, cwd } = findRegisteredProjectForCwdWithCanonicalPath(
+    db,
+    intent.cwd,
+    null,
+    "Protocol job cwd",
+  )
+  const job = await createAgentJob(db, {
+    source: "protocol",
+    runtime: intent.runtime,
+    mode: intent.mode,
+    cwd,
+    prompt: intent.prompt,
+    input: {
+      prompt: intent.prompt,
+      protocol: intent.protocol,
+    },
+    projectId: project.id,
+  })
+  return { job: getAgentJob(db, job.id) ?? job, replay: false }
 }
 
 // ---------------------------------------------------------------------------

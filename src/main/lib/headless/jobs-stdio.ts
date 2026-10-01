@@ -7,14 +7,14 @@ import {
 import { CONTRACT_RUNTIME_IDS } from "../../../shared/agent-runtime-capabilities"
 import type { AgentTaskRunner } from "./agent-runtime-contract"
 import { serializeAgentJob, serializeAgentJobEvent } from "./cli-output"
-import { HEADLESS_EXIT_CODES, runPersistedAgentJob } from "./job-runner"
+import { pumpQueuedRuns } from "./daemon"
+import { HEADLESS_EXIT_CODES } from "./job-runner"
 import {
   type AgentJobDatabase,
   cancelAgentJob,
-  createAgentJob,
   listAgentJobEvents,
 } from "./job-store"
-import { findRegisteredProjectForCwdWithCanonicalPath } from "./schedules"
+import { submitRun } from "./run-submission"
 
 type Writer = {
   write(chunk: string): unknown
@@ -273,34 +273,33 @@ async function handleJobRun(
 ): Promise<void> {
   assertNoProtocolSecrets(request.params)
   const params = jobRunParamsSchema.parse(request.params ?? {})
-  const { project, cwd } = findRegisteredProjectForCwdWithCanonicalPath(
-    options.db,
-    params.cwd,
-    null,
-    "Protocol job cwd",
-  )
-  const job = await createAgentJob(options.db, {
-    source: "protocol",
+  // The shared submission core admits the Run (committed job_created) and
+  // the ack follows it; the session's scoped canonical pump executes it.
+  const admitted = await submitRun(options.db, {
+    kind: "protocol-run",
     runtime: params.runtime as AgentJobContractRuntime,
     mode: params.mode,
-    cwd,
+    cwd: params.cwd,
     prompt: params.prompt,
-    input: {
-      prompt: params.prompt,
-      protocol: JOBS_STDIO_PROTOCOL_VERSION,
-    },
-    projectId: project.id,
+    protocol: JOBS_STDIO_PROTOCOL_VERSION,
   })
+  const job = admitted.job
+  writeJsonLine(options.stdout, response(id, { job: serializeAgentJob(job) }))
   const abortController = new AbortController()
   const streamAbortController = new AbortController()
-  const runPromise = runPersistedAgentJob({
+  // Session-owned pump scope: only this session's admitted Run, aborted by
+  // this session's cancel/shutdown. A Run another claimant won or a queued
+  // cancel settled is not dispatched and surfaces no stream failure.
+  const runPromise = pumpQueuedRuns({
     db: options.db,
-    jobId: job.id,
     env: options.env,
     runner: options.runner,
-    workerId: `protocol:${process.pid}:${Date.now()}:${job.id}`,
-    workerPid: process.pid,
+    admittedIds: [job.id],
+    concurrency: 1,
     signal: abortController.signal,
+  }).then((result) => {
+    const run = result.runs.find((entry) => entry.jobId === job.id)
+    if (run?.error) throw run.error
   })
   const streamPromise = streamJobEvents(
     options,
@@ -316,7 +315,6 @@ async function handleJobRun(
     streamAbortController,
     streamPromise,
   })
-  writeJsonLine(options.stdout, response(id, { job: serializeAgentJob(job) }))
 }
 
 async function handleJobCancel(

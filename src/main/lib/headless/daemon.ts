@@ -419,7 +419,9 @@ async function dispatchQueuedRun(
       ? "daemon"
       : job.kind === "completion"
         ? "completion"
-        : "headless"
+        : job.source === "protocol"
+          ? "protocol"
+          : "headless"
   const worker = {
     workerId: `${prefix}:${process.pid}:${Date.now()}:${createId()}:${job.id}`,
     workerPid: process.pid,
