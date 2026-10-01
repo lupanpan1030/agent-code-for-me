@@ -1116,8 +1116,8 @@ daemon 认领了 run 时，等待中的命令退出后 daemon 仍会继续执行
 - 命令自己的 executor 认领后，适用上面的进程内行为：可捕获的信号以其默认处置结束
   命令，stdin EOF 被忽略。命令写出结果之前会先让已捕获的信号生效，因此即使 run 在
   命令处理该信号之前就已结束（或其认领未通过 claim-time 检查），信号也不会被吞掉：
-  命令以该信号结束、stdout 为空，run 保持它已到达的终态。在 POSIX 上这与没有转发
-  时的处置相同；在 Windows 上退出码不同（见下文）。
+  命令以该信号结束（Windows 上为下文的退出码）、stdout 为空，run 保持它已到达的
+  终态。
 - 同步的带 key `runs retry <job-id> --request <path>` 若 replay 了同 key 早先请求的
   run，它并不拥有该 run，因此不转发任何取消：可捕获的信号以默认处置结束等待中的
   命令，stdin EOF 被忽略，run 继续执行。需要时请按 ID 取消。

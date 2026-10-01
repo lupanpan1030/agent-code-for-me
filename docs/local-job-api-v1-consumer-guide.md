@@ -1221,9 +1221,8 @@ run:
   command lets any signal it already caught take effect, so a signal is not
   swallowed even if the run finished (or its claim failed a claim-time
   check) before the command handled it: the command ends by that signal
-  with nothing on stdout, and the run keeps the terminal status it reached.
-  On POSIX this is the same disposition as without a relay; on Windows the
-  exit code differs (see below).
+  (on Windows with the exit codes below) with nothing on stdout, and the run
+  keeps the terminal status it reached.
 - A synchronous keyed `runs retry <job-id> --request <path>` that replays the
   run of an earlier request with the same key does not own that run and
   relays nothing: a catchable signal ends the waiting command with its
