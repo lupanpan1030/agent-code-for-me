@@ -27,7 +27,10 @@ import {
   listQueuedAgentJobsForIds,
   listQueuedAgentJobsForSource,
 } from "./job-store"
-import { openClaimedLocalJobApiExecution } from "./local-job-api"
+import {
+  openClaimedLocalJobApiExecution,
+  settleOverAgeQueuedLocalJobApiRuns,
+} from "./local-job-api"
 import type { HeadlessProviderBindingDependencies } from "./provider-binding"
 import { evaluateDueAgentSchedules } from "./schedules"
 
@@ -557,6 +560,12 @@ export async function runLocalAgentDaemon(
       lock?.heartbeat()
       cleanupExpiredAgentJobIdempotency(options.db, {
         now: options.now ?? new Date(),
+      })
+      // Over-age admitted queued API Runs settle on the tick (bounded per
+      // tick) without waiting for a claim (design D5).
+      await settleOverAgeQueuedLocalJobApiRuns(options.db, {
+        now: options.now,
+        maxQueuedApiAgeMs: options.maxQueuedApiAgeMs ?? MAX_QUEUED_API_AGE_MS,
       })
       const available = concurrency - active.size
       if (available > 0) {

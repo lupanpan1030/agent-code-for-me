@@ -665,6 +665,35 @@ export function listQueuedAgentJobsForSource(
 }
 
 /**
+ * Admitted queued jobs of one source created at or before `createdAtOrBefore`
+ * (oldest first), with the same D3 predicate as listQueuedAgentJobsForSource:
+ * the over-age candidates a background tick settles without a claim.
+ */
+export function listQueuedAgentJobsCreatedAtOrBefore(
+  db: AgentJobDatabase,
+  source: AgentJobSource,
+  createdAtOrBefore: Date,
+  limit: number,
+): AgentJob[] {
+  const boundedLimit = Math.max(1, Math.min(limit, 200))
+  return db
+    .select()
+    .from(agentJobs)
+    .where(
+      and(
+        eq(agentJobs.source, source),
+        eq(agentJobs.status, "queued"),
+        eq(agentJobs.ledgerVersion, 1),
+        lte(agentJobs.createdAt, createdAtOrBefore),
+        admittedForClaimSql(),
+      ),
+    )
+    .orderBy(asc(agentJobs.createdAt))
+    .limit(boundedLimit)
+    .all()
+}
+
+/**
  * Claimable queued jobs among the given IDs (a scoped pump's own admitted
  * Runs), with the same D3 predicate as listQueuedAgentJobsForSource.
  */
@@ -905,7 +934,19 @@ const ADMISSION_FAILURE_EVIDENCE = {
 export async function settleQueuedAgentJobFailed(
   db: AgentJobDatabase,
   jobId: string,
-  fields: { errorCode: string; errorMessage: string },
+  fields: {
+    errorCode: string
+    errorMessage: string
+    /** Fixed host reasons recorded in the completed reasons. */
+    reasons?: string[]
+    /** Observation key of this settlement (default: admission failure). */
+    observationKey?: string
+    /**
+     * Commit only while the job row is still unclaimed and queued; a
+     * concurrent claim wins and nothing is written.
+     */
+    requireUnclaimed?: boolean
+  },
 ): Promise<AgentJob> {
   const job = getAgentJob(db, jobId)
   if (!job) throw new Error(`Unknown job: ${jobId}`)
@@ -917,7 +958,8 @@ export async function settleQueuedAgentJobFailed(
         trigger: {
           kind: "host_result",
           status: "failed",
-          observationKey: `admission-failed:${jobId}`,
+          observationKey: fields.observationKey ?? `admission-failed:${jobId}`,
+          ...(fields.reasons?.length ? { reasons: fields.reasons } : {}),
         },
         ...ADMISSION_FAILURE_EVIDENCE,
       },
@@ -927,6 +969,9 @@ export async function settleQueuedAgentJobFailed(
           errorCode: fields.errorCode,
           errorMessage: fields.errorMessage,
         }),
+        ...(fields.requireUnclaimed
+          ? { jobPrecondition: { status: "queued", workerId: null } }
+          : {}),
       },
     )
   } finally {

@@ -87,6 +87,7 @@ import {
   createAgentJob,
   getAgentJob,
   listAgentJobEvents,
+  listQueuedAgentJobsCreatedAtOrBefore,
   lookupCommittedRunEventFact,
   type QueuedCancelTerminalProjection,
   retryAgentJob,
@@ -1866,6 +1867,47 @@ export function openClaimedLocalJobApiExecution(
     terminalArtifacts: terminal.preparer,
     close: () => closeLocalJobApiArtifactRunDir(runDir),
   }
+}
+
+/** Over-age queued API Runs one background tick settles at most. */
+export const OVER_AGE_QUEUED_API_SETTLEMENT_LIMIT = 16
+
+/**
+ * Background-tick settlement of admitted queued API Runs at or beyond the
+ * maximum queued age (design D5): each is settled `failed` by the host
+ * without a claim, with reason and errorCode `queued_age_exceeded` (exit 1),
+ * no terminal refs, and retention starting at the settlement. At most
+ * OVER_AGE_QUEUED_API_SETTLEMENT_LIMIT Runs per tick (oldest first); a Run
+ * a concurrent executor claims first is left to that executor's claim gate.
+ */
+export async function settleOverAgeQueuedLocalJobApiRuns(
+  db: AgentJobDatabase,
+  options: { now?: Date; maxQueuedApiAgeMs: number; limit?: number },
+): Promise<AgentJob[]> {
+  const nowMs = (options.now ?? new Date()).getTime()
+  const candidates = listQueuedAgentJobsCreatedAtOrBefore(
+    db,
+    "api",
+    new Date(nowMs - options.maxQueuedApiAgeMs),
+    options.limit ?? OVER_AGE_QUEUED_API_SETTLEMENT_LIMIT,
+  )
+  const settled: AgentJob[] = []
+  for (const job of candidates) {
+    try {
+      const updated = await settleQueuedAgentJobFailed(db, job.id, {
+        errorCode: "queued_age_exceeded",
+        errorMessage:
+          "The Run stayed queued longer than the maximum queued age.",
+        reasons: ["queued_age_exceeded"],
+        observationKey: `queued-age-exceeded:${job.id}`,
+        requireUnclaimed: true,
+      })
+      if (updated.status === "failed") settled.push(updated)
+    } catch {
+      // A concurrent claim or settlement won; nothing was written.
+    }
+  }
+  return settled
 }
 
 /** Committed events up to a terminal's seal (the frozen terminal prefix). */
