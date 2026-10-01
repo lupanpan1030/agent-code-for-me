@@ -1,0 +1,236 @@
+{
+  "fixtureVersion": 1,
+  "evidenceClass": "synthetic",
+  "sourceRefs": [
+    "openspec/changes/add-local-job-api-async-submit/specs/local-job-api/spec.md:425-432",
+    "openspec/changes/add-local-job-api-async-submit/specs/local-job-api/spec.md:434",
+    "openspec/changes/add-local-job-api-async-submit/specs/local-job-api/spec.md:457",
+    "openspec/changes/add-local-job-api-async-submit/specs/local-job-api/spec.md:142",
+    "openspec/changes/add-local-job-api-async-submit/specs/local-job-api/spec.md:68-94",
+    "openspec/changes/add-local-job-api-async-submit/design.md:130-141",
+    "openspec/changes/add-local-job-api-async-submit/design.md:193",
+    "openspec/changes/add-local-job-api-async-submit/design.md:235",
+    "src/main/lib/headless/cli-dispatcher.ts:394-430",
+    "src/main/lib/headless/cli-dispatcher.ts:829-870",
+    "src/main/lib/headless/job-store.ts:564-592"
+  ],
+  "provenance": {
+    "capturedFrom": "product source 2c59664f1b80a5f782eb05f82d33f718d9bc7053 (worktree base 0447d02d carries no src/ diff from it)",
+    "author": "independent red author (submit-wait domain), 2026-10-02",
+    "secrets": "none",
+    "method": "S20 baselines captured from 2c59664f in-process ({{ID}} = the probed job id); S35 own-pump receipts captured from 2c59664f with tests/fixtures/local-job-api-async/submit-wait/process-child.ts on Linux (WSL2)"
+  },
+  "cases": {
+    "S18": {
+      "requests": {
+        "artifactBearing": {
+          "apiVersion": "locus.local-job.v1",
+          "consumer": {
+            "id": "fixture-a",
+            "runExternalId": "run-ext-001"
+          },
+          "project": {
+            "cwd": "{{PACKAGE_DIR}}"
+          },
+          "runtime": {
+            "id": "codex",
+            "requiredCapabilities": ["planMode"]
+          },
+          "mode": "plan",
+          "prompt": {
+            "text": "Review this local package."
+          },
+          "input": {
+            "contract": "example.local-package.v1"
+          },
+          "artifacts": {
+            "baseDir": "{{ARTIFACT_BASE}}",
+            "writePolicy": "metadata-only"
+          }
+        },
+        "artifactFree": {
+          "apiVersion": "locus.local-job.v1",
+          "consumer": {
+            "id": "fixture-a",
+            "runExternalId": "run-ext-001"
+          },
+          "project": {
+            "cwd": "{{PACKAGE_DIR}}"
+          },
+          "runtime": {
+            "id": "codex",
+            "requiredCapabilities": ["planMode"]
+          },
+          "mode": "plan",
+          "prompt": {
+            "text": "Review this local package."
+          },
+          "input": {
+            "contract": "example.local-package.v1"
+          }
+        }
+      },
+      "cancelFirst": {
+        "expectedStatus": "canceled",
+        "expectedWaitExit": 5,
+        "expectedRunnerCalls": 0,
+        "expectedCompleted": 1
+      },
+      "startFirst": {
+        "expectedCompleted": 1
+      },
+      "cancelCancel": {
+        "expectedCompleted": 1
+      },
+      "uncovered": [
+        "slow-cancel preparation racing a failing claimant and per-process+attempt staging names (need preparation/staging seams of tasks.md:15)"
+      ]
+    },
+    "S20": {
+      "sources": ["desktop", "cli", "protocol"],
+      "missingId": "missing-job-s20",
+      "waitExpected": {
+        "exit": 3,
+        "stdout": "",
+        "stderrTemplate": "Unknown job: {{ID}}\n"
+      },
+      "baselines": {
+        "desktop:cancel": {
+          "exit": 3,
+          "stdout": "",
+          "stderr": "Job {{ID}} is not an API job\n"
+        },
+        "desktop:events": {
+          "exit": 3,
+          "stdout": "",
+          "stderr": "Job {{ID}} is not an API job\n"
+        },
+        "desktop:retry": {
+          "exit": 3,
+          "stdout": "",
+          "stderr": "Job {{ID}} is not an API job\n"
+        },
+        "cli:cancel": {
+          "exit": 3,
+          "stdout": "",
+          "stderr": "Job {{ID}} is not an API job\n"
+        },
+        "cli:events": {
+          "exit": 3,
+          "stdout": "",
+          "stderr": "Job {{ID}} is not an API job\n"
+        },
+        "cli:retry": {
+          "exit": 3,
+          "stdout": "",
+          "stderr": "Job {{ID}} is not an API job\n"
+        },
+        "protocol:cancel": {
+          "exit": 3,
+          "stdout": "",
+          "stderr": "Job {{ID}} is not an API job\n"
+        },
+        "protocol:events": {
+          "exit": 3,
+          "stdout": "",
+          "stderr": "Job {{ID}} is not an API job\n"
+        },
+        "protocol:retry": {
+          "exit": 3,
+          "stdout": "",
+          "stderr": "Job {{ID}} is not an API job\n"
+        },
+        "missing:cancel": {
+          "exit": 3,
+          "stdout": "",
+          "stderr": "Unknown API job: {{ID}}\n"
+        },
+        "missing:events": {
+          "exit": 3,
+          "stdout": "",
+          "stderr": "Unknown API job: {{ID}}\n"
+        },
+        "missing:retry": {
+          "exit": 3,
+          "stdout": "",
+          "stderr": "Unknown API job: {{ID}}\n"
+        },
+        "succeededApi:retry": {
+          "exit": 3,
+          "stdout": "",
+          "stderr": "Job {{ID}} cannot be retried from status succeeded\n"
+        },
+        "queuedApi:retry": {
+          "exit": 3,
+          "stdout": "",
+          "stderr": "Job {{ID}} cannot be retried from status queued\n"
+        }
+      }
+    },
+    "S35": {
+      "platform": "posix",
+      "ackWaitMaxMs": 5000,
+      "careerKitKillGraceMs": 500,
+      "ownPumpBaseline": {
+        "SIGINT": {
+          "childSignal": "SIGINT",
+          "rowStatus": "running",
+          "cancelRequested": false,
+          "afterRecovery": "interrupted"
+        },
+        "SIGTERM": {
+          "childSignal": "SIGTERM",
+          "rowStatus": "running",
+          "cancelRequested": false,
+          "afterRecovery": "interrupted"
+        },
+        "SIGKILL": {
+          "childSignal": "SIGKILL",
+          "rowStatus": "running",
+          "cancelRequested": false,
+          "afterRecovery": "interrupted"
+        },
+        "stdinEOF": {
+          "childAliveAfterMs": 1500,
+          "rowStatus": "running",
+          "cancelRequested": false
+        }
+      },
+      "daemonFirst": {
+        "catchable": ["SIGINT", "SIGTERM"],
+        "expectedEofExit": 8,
+        "hardKill": "SIGKILL"
+      },
+      "windowsMatrix": {
+        "catchable": ["console Ctrl events", "armed stdin EOF"],
+        "cannotRelay": ["parent child.kill()", "TerminateProcess"],
+        "coverage": "not executable on this Linux host; requires a win32 harness"
+      },
+      "request": {
+        "apiVersion": "locus.local-job.v1",
+        "consumer": {
+          "id": "fixture-a",
+          "runExternalId": "run-ext-001"
+        },
+        "project": {
+          "cwd": "{{PACKAGE_DIR}}"
+        },
+        "runtime": {
+          "id": "codex",
+          "requiredCapabilities": ["planMode"]
+        },
+        "mode": "plan",
+        "prompt": {
+          "text": "Review this local package."
+        },
+        "input": {
+          "contract": "example.local-package.v1"
+        },
+        "artifacts": {
+          "baseDir": "{{ARTIFACT_BASE}}",
+          "writePolicy": "metadata-only"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,117 @@
+{
+  "fixtureVersion": 1,
+  "evidenceClass": "synthetic",
+  "sourceRefs": [
+    "openspec/changes/add-local-job-api-async-submit/specs/local-job-api/spec.md:164-176",
+    "openspec/changes/add-local-job-api-async-submit/specs/local-job-api/spec.md:221",
+    "openspec/changes/add-local-job-api-async-submit/specs/local-job-api/spec.md:250",
+    "openspec/changes/add-local-job-api-async-submit/design.md:110-112",
+    "openspec/changes/add-local-job-api-async-submit/design.md:195-204",
+    "openspec/changes/add-local-job-api-async-submit/design.md:231-233",
+    "src/main/lib/headless/local-job-api.ts:640-683",
+    "src/main/lib/headless/cli-dispatcher.ts:451-497"
+  ],
+  "provenance": {
+    "capturedFrom": "product source 2c59664f1b80a5f782eb05f82d33f718d9bc7053 (worktree base 0447d02d carries no src/ diff from it)",
+    "author": "independent red author (submit-wait domain), 2026-10-02",
+    "secrets": "none",
+    "method": "hand-authored; the 'completed before full publication' stage is produced by removing one published terminal file (design.md:233 SYN-18 makes a later wait non-ready again) and the release latch restores it from inside the wait's first sleep; the publish-throw variant plants a directory named result.json in the run dir while the runtime runs, so only the final rename throws (captured on 2c59664f: commit succeeded, create stdout artifacts [] and exit 0)"
+  },
+  "cases": {
+    "S05": {
+      "request": {
+        "apiVersion": "locus.local-job.v1",
+        "consumer": {
+          "id": "fixture-a",
+          "runExternalId": "run-ext-001"
+        },
+        "project": {
+          "cwd": "{{PACKAGE_DIR}}"
+        },
+        "runtime": {
+          "id": "codex",
+          "requiredCapabilities": ["planMode"]
+        },
+        "mode": "plan",
+        "prompt": {
+          "text": "Review this local package."
+        },
+        "input": {
+          "contract": "example.local-package.v1"
+        },
+        "artifacts": {
+          "baseDir": "{{ARTIFACT_BASE}}",
+          "writePolicy": "metadata-only"
+        }
+      },
+      "removedTerminalFile": "result.json",
+      "waitTimeoutArg": "1000",
+      "expectedPendingReason": "terminal_artifacts_pending",
+      "goldenRef": "terminal-bytes.json#S03.outcomes.succeeded",
+      "preparedTailRoles": ["request", "events", "result", "manifest"],
+      "runsResultDefaultRoles": ["request", "events", "result"],
+      "artifactFreeRequest": "terminal-bytes.json#requests.completion",
+      "publishThrow": {
+        "mechanism": "mkdir <runDir>/result.json while the runtime runs (final rename throws EISDIR-class error)",
+        "createBaselineArtifacts": [],
+        "createBaselineExit": 0,
+        "createBaselineStatus": "succeeded",
+        "waitTimeoutArg": "0",
+        "expectedWaitExit": 9,
+        "expectedReason": "terminal_artifacts_pending"
+      },
+      "uncovered": [],
+      "daemonFirstPublishFailure": {
+        "seam": "beforeOwnPumpClaim runs `daemon run --once` whose runtime plants the result.json obstacle",
+        "expected": {
+          "exit": 8,
+          "wait": {
+            "state": "error",
+            "reason": "terminal_artifacts_pending"
+          },
+          "boundAfterCompletedMs": 30000
+        }
+      }
+    },
+    "S07": {
+      "request": {
+        "apiVersion": "locus.local-job.v1",
+        "consumer": {
+          "id": "fixture-a",
+          "runExternalId": "run-ext-001"
+        },
+        "project": {
+          "cwd": "{{PACKAGE_DIR}}"
+        },
+        "runtime": {
+          "id": "codex",
+          "requiredCapabilities": ["planMode"]
+        },
+        "mode": "plan",
+        "prompt": {
+          "text": "Review this local package."
+        },
+        "input": {
+          "contract": "example.local-package.v1"
+        },
+        "artifacts": {
+          "baseDir": "{{ARTIFACT_BASE}}",
+          "writePolicy": "metadata-only"
+        }
+      },
+      "waiters": 2,
+      "lateWaiter": 1,
+      "waitTimeoutArg": "20000",
+      "lateDiagnostic": {
+        "observationKey": "fixture:late-diagnostic",
+        "type": "status",
+        "payload": {
+          "note": "late fixture diagnostic"
+        }
+      },
+      "uncovered": [
+        "exact interleaving of commit between initial read and wakeup registration (needs the S07 read/wakeup-registration latch of tasks.md:15)"
+      ]
+    }
+  }
+}

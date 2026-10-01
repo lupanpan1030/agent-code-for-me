@@ -1,0 +1,109 @@
+{
+  "fixtureVersion": 1,
+  "evidenceClass": "synthetic",
+  "sourceRefs": [
+    "openspec/changes/add-local-job-api-async-submit/specs/local-job-api/spec.md:466-485",
+    "openspec/changes/add-local-job-api-async-submit/design.md:59-62",
+    "src/shared/local-job-api.ts:153-166",
+    "src/main/lib/headless/local-job-api.ts:388-403",
+    "src/main/lib/headless/cli-dispatcher.ts:844-870"
+  ],
+  "provenance": {
+    "capturedFrom": "product source 2c59664f1b80a5f782eb05f82d33f718d9bc7053 (worktree base 0447d02d carries no src/ diff from it)",
+    "method": "in-process runHeadlessCliCommand with a controlled fake runner/fetch, migrated temp SQLite, bun:test setSystemTime(2026-10-02T00:00:00.000Z); per-run values replaced by {{PLACEHOLDERS}} bound at test time from the profile DB/disk, never from the stdout under test",
+    "author": "independent red author (submit-wait domain), 2026-10-02",
+    "secrets": "none; ghp_fixture... is an inert synthetic secret-pattern sentinel"
+  },
+  "cases": {
+    "S21": {
+      "runnerEvents": [
+        {
+          "type": "status",
+          "payload": {
+            "phase": "fixture-running"
+          }
+        },
+        {
+          "type": "assistant_delta",
+          "payload": {
+            "text": "fixture response"
+          }
+        },
+        {
+          "type": "reasoning_delta",
+          "payload": {
+            "text": "fixture reasoning"
+          }
+        },
+        {
+          "type": "tool_started",
+          "payload": {
+            "toolCallId": "tool-1",
+            "name": "read_file"
+          }
+        },
+        {
+          "type": "tool_delta",
+          "payload": {
+            "toolCallId": "tool-1",
+            "text": "partial"
+          }
+        },
+        {
+          "type": "tool_finished",
+          "payload": {
+            "toolCallId": "tool-1",
+            "ok": true
+          }
+        },
+        {
+          "type": "error",
+          "payload": {
+            "message": "fixture recoverable error",
+            "recoverable": true
+          }
+        }
+      ],
+      "agent": {
+        "exit": 0,
+        "createStdout": "{\"apiVersion\":\"locus.local-job.v1\",\"job\":{\"id\":\"{{JOB_ID}}\",\"retryOfJobId\":null,\"attempt\":1,\"kind\":\"agent\",\"source\":\"api\",\"runtime\":\"codex\",\"status\":\"succeeded\",\"mode\":\"plan\",\"cwd\":\"{{ROOT}}/local-package\",\"projectId\":\"project-1\",\"chatId\":null,\"subChatId\":null,\"promptPreview\":\"Review this local package.\",\"apiConsumerId\":\"fixture-a\",\"apiConsumerRunId\":\"run-ext-001\",\"artifactBaseDir\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}\",\"artifactManifestPath\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/artifacts.json\",\"providerProfileId\":null,\"modelOverride\":null,\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"startedAt\":\"2026-10-02T00:00:00.000Z\",\"finishedAt\":\"2026-10-02T00:00:00.000Z\",\"exitCode\":0,\"errorCode\":null,\"errorMessage\":null,\"result\":{\"finalMessage\":\"fixture done\",\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}},\"workerId\":\"{{WORKER_ID}}\",\"workerPid\":{{WORKER_PID}},\"heartbeatAt\":\"2026-10-02T00:00:00.000Z\",\"cancelRequestedAt\":null,\"cancelRequestedBy\":null},\"result\":{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{JOB_ID}}\",\"status\":\"succeeded\",\"runtime\":\"codex\",\"mode\":\"plan\",\"consumer\":{\"id\":\"fixture-a\",\"runExternalId\":\"run-ext-001\"},\"artifactManifestPath\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/artifacts.json\",\"artifacts\":[{\"role\":\"request\",\"path\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/request.json\",\"sha256\":\"{{SHA_REQUEST}}\",\"contentType\":\"application/json\",\"sizeBytes\":{{SIZE_REQUEST}}},{\"role\":\"events\",\"path\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/events.jsonl\",\"sha256\":\"{{SHA_EVENTS}}\",\"contentType\":\"application/json\",\"sizeBytes\":{{SIZE_EVENTS}}},{\"role\":\"result\",\"path\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/result.json\",\"sha256\":\"{{SHA_RESULT}}\",\"contentType\":\"application/json\",\"sizeBytes\":{{SIZE_RESULT}}},{\"role\":\"manifest\",\"path\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/artifacts.json\",\"sha256\":\"{{SHA_MANIFEST}}\",\"contentType\":\"application/json\",\"sizeBytes\":{{SIZE_MANIFEST}}}],\"diagnostics\":[],\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null},\"result\":{\"finalMessage\":\"fixture done\",\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}}}}\n",
+        "eventsAfter2": "{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{JOB_ID}}\",\"sequence\":3,\"type\":\"job_started\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"payload\":{\"workerId\":\"{{WORKER_ID}}\",\"workerPid\":{{WORKER_PID}}}}\n{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{JOB_ID}}\",\"sequence\":4,\"type\":\"status\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"payload\":{\"phase\":\"fixture-running\",\"subtype\":\"system_lifecycle\"}}\n{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{JOB_ID}}\",\"sequence\":5,\"type\":\"assistant_delta\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"payload\":{\"text\":\"fixture response\",\"item\":{\"correlationKey\":\"{{CORR_5}}\",\"channel\":\"assistant\",\"partIndex\":0}}}\n{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{JOB_ID}}\",\"sequence\":6,\"type\":\"reasoning_delta\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"payload\":{\"text\":\"fixture reasoning\",\"item\":{\"correlationKey\":\"{{CORR_6}}\",\"channel\":\"text\",\"partIndex\":0}}}\n{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{JOB_ID}}\",\"sequence\":7,\"type\":\"tool_started\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"payload\":{\"toolCallId\":\"tool-1\",\"name\":\"read_file\",\"status\":\"started\"}}\n{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{JOB_ID}}\",\"sequence\":8,\"type\":\"tool_delta\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"payload\":{\"toolCallId\":\"tool-1\",\"text\":\"partial\",\"status\":\"running\"}}\n{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{JOB_ID}}\",\"sequence\":9,\"type\":\"tool_finished\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"payload\":{\"toolCallId\":\"tool-1\",\"ok\":true,\"status\":\"completed\"}}\n{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{JOB_ID}}\",\"sequence\":10,\"type\":\"error\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"payload\":{\"message\":\"fixture recoverable error\",\"recoverable\":true,\"classification\":\"diagnostic\"}}\n{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{JOB_ID}}\",\"sequence\":11,\"type\":\"completed\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"payload\":{\"status\":\"succeeded\",\"evidenceKeys\":[\"policy:no-recorded-denial\",\"record:5\",\"runner-result:finalMessage\",\"postrun:security-cleanup-ok\"],\"exitCode\":0,\"errorCode\":null,\"errorMessage\":null,\"result\":{\"finalMessage\":\"fixture done\",\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}}}}\n",
+        "eventsFollow": "{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{JOB_ID}}\",\"sequence\":1,\"type\":\"job_created\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"payload\":{\"kind\":\"agent\",\"source\":\"api\",\"runtime\":\"codex\",\"mode\":\"plan\",\"cwd\":\"{{ROOT}}/local-package\"}}\n{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{JOB_ID}}\",\"sequence\":2,\"type\":\"artifact_created\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"payload\":{\"artifacts\":[{\"role\":\"request\",\"path\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/request.json\",\"sha256\":\"{{SHA_REQUEST}}\",\"contentType\":\"application/json\",\"sizeBytes\":{{SIZE_REQUEST}}},{\"role\":\"events\",\"path\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/events.jsonl\",\"sha256\":\"b669f079ec8e94fa1ebf1e80c6223bd5815c20eebf23559e3d29ac0843d3d450\",\"contentType\":\"application/json\",\"sizeBytes\":259},{\"role\":\"manifest\",\"path\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/artifacts.json\",\"sha256\":\"16b102c476d9d40f5038e54374f6aff48590fabd3a60da0c992a52c18afdace1\",\"contentType\":\"application/json\",\"sizeBytes\":801}]}}\n{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{JOB_ID}}\",\"sequence\":3,\"type\":\"job_started\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"payload\":{\"workerId\":\"{{WORKER_ID}}\",\"workerPid\":{{WORKER_PID}}}}\n{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{JOB_ID}}\",\"sequence\":4,\"type\":\"status\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"payload\":{\"phase\":\"fixture-running\",\"subtype\":\"system_lifecycle\"}}\n{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{JOB_ID}}\",\"sequence\":5,\"type\":\"assistant_delta\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"payload\":{\"text\":\"fixture response\",\"item\":{\"correlationKey\":\"{{CORR_5}}\",\"channel\":\"assistant\",\"partIndex\":0}}}\n{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{JOB_ID}}\",\"sequence\":6,\"type\":\"reasoning_delta\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"payload\":{\"text\":\"fixture reasoning\",\"item\":{\"correlationKey\":\"{{CORR_6}}\",\"channel\":\"text\",\"partIndex\":0}}}\n{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{JOB_ID}}\",\"sequence\":7,\"type\":\"tool_started\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"payload\":{\"toolCallId\":\"tool-1\",\"name\":\"read_file\",\"status\":\"started\"}}\n{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{JOB_ID}}\",\"sequence\":8,\"type\":\"tool_delta\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"payload\":{\"toolCallId\":\"tool-1\",\"text\":\"partial\",\"status\":\"running\"}}\n{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{JOB_ID}}\",\"sequence\":9,\"type\":\"tool_finished\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"payload\":{\"toolCallId\":\"tool-1\",\"ok\":true,\"status\":\"completed\"}}\n{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{JOB_ID}}\",\"sequence\":10,\"type\":\"error\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"payload\":{\"message\":\"fixture recoverable error\",\"recoverable\":true,\"classification\":\"diagnostic\"}}\n{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{JOB_ID}}\",\"sequence\":11,\"type\":\"completed\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"payload\":{\"status\":\"succeeded\",\"evidenceKeys\":[\"policy:no-recorded-denial\",\"record:5\",\"runner-result:finalMessage\",\"postrun:security-cleanup-ok\"],\"exitCode\":0,\"errorCode\":null,\"errorMessage\":null,\"result\":{\"finalMessage\":\"fixture done\",\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}}}}\n",
+        "result": "{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{JOB_ID}}\",\"status\":\"succeeded\",\"runtime\":\"codex\",\"mode\":\"plan\",\"consumer\":{\"id\":\"fixture-a\",\"runExternalId\":\"run-ext-001\"},\"artifactManifestPath\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/artifacts.json\",\"artifacts\":[{\"role\":\"request\",\"path\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/request.json\",\"sha256\":\"{{SHA_REQUEST}}\",\"contentType\":\"application/json\",\"sizeBytes\":{{SIZE_REQUEST}}},{\"role\":\"events\",\"path\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/events.jsonl\",\"sha256\":\"{{SHA_EVENTS}}\",\"contentType\":\"application/json\",\"sizeBytes\":{{SIZE_EVENTS}}},{\"role\":\"result\",\"path\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/result.json\",\"sha256\":\"{{SHA_RESULT}}\",\"contentType\":\"application/json\",\"sizeBytes\":{{SIZE_RESULT}}}],\"diagnostics\":[],\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null},\"result\":{\"finalMessage\":\"fixture done\",\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}}}\n"
+      },
+      "completion": {
+        "exit": 0,
+        "events": "{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{JOB_ID}}\",\"sequence\":1,\"type\":\"job_created\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"payload\":{\"kind\":\"completion\",\"source\":\"api\",\"runtime\":\"codex\",\"mode\":\"agent\",\"cwd\":\"/home/chen/projects/locus-add-local-job-api-async-submit-draft\"}}\n{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{JOB_ID}}\",\"sequence\":2,\"type\":\"job_started\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"payload\":{\"workerId\":\"{{WORKER_ID}}\",\"workerPid\":{{WORKER_PID}}}}\n{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{JOB_ID}}\",\"sequence\":3,\"type\":\"usage_update\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"payload\":{\"usage\":{\"inputTokens\":11,\"outputTokens\":5},\"resolvedProvider\":{\"source\":\"request-profile\",\"profileId\":\"completion-main\",\"model\":\"provider-model\"},\"kind\":\"snapshot\",\"total\":{\"inputTokens\":11,\"outputTokens\":5},\"last\":{\"inputTokens\":11,\"outputTokens\":5},\"delta\":{\"inputTokens\":11,\"outputTokens\":5},\"dedupeKey\":\"observation:168470ac67170ea905c30c49\",\"asOfSequence\":3}}\n{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{JOB_ID}}\",\"sequence\":4,\"type\":\"completed\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"payload\":{\"status\":\"succeeded\",\"evidenceKeys\":[\"policy:provider-only\",\"completion:content\",\"postrun:provider-only\"],\"exitCode\":0,\"errorCode\":null,\"errorMessage\":null,\"result\":{\"content\":{\"summary\":\"fixture\"},\"usage\":{\"inputTokens\":11,\"outputTokens\":5},\"resolvedProvider\":{\"source\":\"request-profile\",\"profileId\":\"completion-main\",\"model\":\"provider-model\"}}}}\n"
+      },
+      "eventEnvelopeKeys": [
+        "apiVersion",
+        "jobId",
+        "sequence",
+        "type",
+        "createdAt",
+        "payload"
+      ],
+      "publicEventTypes": [
+        "job_created",
+        "job_started",
+        "assistant_delta",
+        "reasoning_delta",
+        "tool_started",
+        "tool_delta",
+        "tool_finished",
+        "usage_update",
+        "artifact_created",
+        "status",
+        "error",
+        "completed"
+      ],
+      "lateDiagnostic": {
+        "observationKey": "fixture:late-diagnostic",
+        "type": "status",
+        "payload": {
+          "note": "late fixture diagnostic"
+        }
+      }
+    }
+  }
+}

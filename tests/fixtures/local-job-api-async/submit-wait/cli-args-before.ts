@@ -1,0 +1,819 @@
+// Vendored verbatim from `git show 2c59664f:src/main/lib/headless/cli-args.ts`
+// (sha256 154694691e75100a626008e32141cf41b80c1b4b98d0a295c19ba7b5427ab257);
+// only the three relative `../../../shared/` import specifiers are rewritten to
+// `../../../../src/shared/` so the baseline parser runs from this fixture
+// directory (S23 old-build shape evidence, tasks.md:107). Do not edit.
+// biome-ignore-all lint: vendored baseline source
+import { existsSync } from "node:fs"
+import { resolve } from "node:path"
+import {
+  AGENT_JOB_MODES,
+  AGENT_JOB_SOURCES,
+  type AgentJobMode,
+  type AgentJobSource,
+} from "../../../../src/shared/agent-jobs"
+import {
+  type AgentRuntimeContractId,
+  CONTRACT_RUNTIME_IDS,
+  toAgentRuntimeId,
+} from "../../../../src/shared/agent-runtime-capabilities"
+import {
+  AGENT_SCHEDULE_STATUSES,
+  type AgentScheduleStatus,
+  MAX_AGENT_SCHEDULE_INTERVAL_SECONDS,
+} from "../../../../src/shared/agent-schedules"
+
+export const HEADLESS_CLI_MARKER = "--locus-headless-cli"
+
+export const HEADLESS_OUTPUT_FORMATS = ["text", "json", "stream-json"] as const
+
+export const HEADLESS_API_GROUPS = ["runtimes", "runs", "projects"] as const
+
+const HEADLESS_API_RUNTIMES_SUBCOMMANDS = ["list"] as const
+const HEADLESS_API_RUNS_SUBCOMMANDS = [
+  "create",
+  "status",
+  "events",
+  "result",
+  "cancel",
+  "retry",
+] as const
+const HEADLESS_API_PROJECTS_SUBCOMMANDS = [
+  "register",
+  "status",
+  "unregister",
+] as const
+
+export type HeadlessOutputFormat = (typeof HEADLESS_OUTPUT_FORMATS)[number]
+
+export type HeadlessJobSourceFilter = AgentJobSource | "all"
+
+export type HeadlessCliCommand =
+  | {
+      kind: "run"
+      cwd: string
+      runtime: AgentRuntimeContractId
+      mode: AgentJobMode
+      prompt: string
+      stdin: boolean
+      daemon: boolean
+      follow: boolean
+      output: HeadlessOutputFormat
+      providerProfileId: string | null
+      model: string | null
+    }
+  | {
+      kind: "jobs-list"
+      source: HeadlessJobSourceFilter
+      output: HeadlessOutputFormat
+    }
+  | {
+      kind: "jobs-show"
+      jobId: string
+      output: HeadlessOutputFormat
+    }
+  | {
+      kind: "jobs-logs"
+      jobId: string
+      follow: boolean
+      output: HeadlessOutputFormat
+    }
+  | {
+      kind: "jobs-cancel"
+      jobId: string
+      output: HeadlessOutputFormat
+    }
+  | {
+      kind: "jobs-retry"
+      jobId: string
+      output: HeadlessOutputFormat
+    }
+  | {
+      kind: "api-runtimes-list"
+      noProbe: boolean
+    }
+  | {
+      kind: "api-projects-register"
+      cwd: string
+      name: string | null
+    }
+  | {
+      kind: "api-projects-status"
+      cwd: string
+    }
+  | {
+      kind: "api-projects-unregister"
+      cwd: string
+      force: boolean
+    }
+  | {
+      kind: "api-runs-create"
+      requestPath: string
+    }
+  | {
+      kind: "api-runs-status"
+      jobId: string
+    }
+  | {
+      kind: "api-runs-result"
+      jobId: string
+    }
+  | {
+      kind: "api-runs-cancel"
+      jobId: string
+    }
+  | {
+      kind: "api-runs-retry"
+      jobId: string
+    }
+  | {
+      kind: "api-runs-events"
+      jobId: string
+      afterSequence: number
+      follow: boolean
+    }
+  | {
+      kind: "daemon-run"
+      once: boolean
+      concurrency: number
+      pollIntervalMs: number
+      output: HeadlessOutputFormat
+    }
+  | {
+      kind: "schedules-list"
+      includeDisabled: boolean
+      status: AgentScheduleStatus | null
+      output: HeadlessOutputFormat
+    }
+  | {
+      kind: "schedules-create"
+      name: string
+      cwd: string
+      runtime: AgentRuntimeContractId
+      mode: AgentJobMode
+      prompt: string
+      intervalSeconds: number
+      output: HeadlessOutputFormat
+      providerProfileId: string | null
+      model: string | null
+    }
+  | {
+      kind:
+        | "schedules-pause"
+        | "schedules-resume"
+        | "schedules-delete"
+        | "schedules-run"
+      scheduleId: string
+      output: HeadlessOutputFormat
+    }
+  | {
+      kind: "jobs-stdio"
+    }
+  | {
+      kind: "version"
+    }
+  | {
+      kind: "help"
+      output: "text"
+    }
+
+export type ParsedHeadlessCli =
+  | { ok: true; command: HeadlessCliCommand }
+  | { ok: false; code: number; message: string }
+
+export function isHeadlessCliInvocation(argv = process.argv): boolean {
+  return argv.includes(HEADLESS_CLI_MARKER)
+}
+
+function argsAfterMarker(argv: string[]): string[] {
+  const markerIndex = argv.indexOf(HEADLESS_CLI_MARKER)
+  if (markerIndex >= 0) return argv.slice(markerIndex + 1)
+  return argv.slice(process.defaultApp ? 2 : 1)
+}
+
+function takeOption(args: string[], name: string): string | null {
+  const index = args.indexOf(name)
+  if (index < 0) return null
+  const value = args[index + 1]
+  if (!value || value.startsWith("--")) {
+    throw new Error(`${name} requires a value`)
+  }
+  args.splice(index, 2)
+  return value
+}
+
+function takeFlag(args: string[], name: string): boolean {
+  const index = args.indexOf(name)
+  if (index < 0) return false
+  args.splice(index, 1)
+  return true
+}
+
+function parseOutput(args: string[]): HeadlessOutputFormat {
+  const output = takeOption(args, "--output") ?? "text"
+  if (!(HEADLESS_OUTPUT_FORMATS as readonly string[]).includes(output)) {
+    throw new Error("Unsupported --output")
+  }
+  return output as HeadlessOutputFormat
+}
+
+function parseMode(
+  value: string | null,
+  fallback: AgentJobMode = "agent",
+): AgentJobMode {
+  const mode = value ?? fallback
+  if (!(AGENT_JOB_MODES as readonly string[]).includes(mode)) {
+    throw new Error("Unsupported --mode")
+  }
+  return mode as AgentJobMode
+}
+
+function parseRuntime(value: string | null): AgentRuntimeContractId {
+  const runtime = toAgentRuntimeId(value ?? "claude-code")
+  if (
+    !runtime ||
+    !(CONTRACT_RUNTIME_IDS as readonly string[]).includes(runtime)
+  ) {
+    throw new Error("Unsupported --runtime")
+  }
+  return runtime as AgentRuntimeContractId
+}
+
+function parseProviderProfileId(value: string | null): string | null {
+  if (!value) return null
+  const profileId = value.trim()
+  if (!/^[A-Za-z0-9._:-]{1,160}$/.test(profileId)) {
+    throw new Error(
+      "--provider-profile must be 1-160 chars: letters, numbers, '.', '_', ':', '-'",
+    )
+  }
+  return profileId
+}
+
+function hasControlCharacter(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index)
+    if (code <= 0x1f || code === 0x7f) return true
+  }
+  return false
+}
+
+function parseProviderModel(value: string | null): string | null {
+  if (!value) return null
+  const model = value.trim()
+  if (
+    model.length < 1 ||
+    model.length > 200 ||
+    hasControlCharacter(model) ||
+    !/^[A-Za-z0-9._:@/+,\-=]+$/.test(model)
+  ) {
+    throw new Error(
+      "--model must be 1-200 chars and contain only model-id safe characters",
+    )
+  }
+  return model
+}
+
+function parseJobSource(value: string | null): HeadlessJobSourceFilter {
+  const source = value ?? "all"
+  if (source === "all") return "all"
+  if (!(AGENT_JOB_SOURCES as readonly string[]).includes(source)) {
+    throw new Error("Unsupported --source")
+  }
+  return source as AgentJobSource
+}
+
+function parseScheduleStatus(value: string | null): AgentScheduleStatus | null {
+  if (!value) return null
+  if (!(AGENT_SCHEDULE_STATUSES as readonly string[]).includes(value)) {
+    throw new Error("Unsupported --status")
+  }
+  return value as AgentScheduleStatus
+}
+
+function parsePositiveInteger(
+  value: string | null,
+  fallback: number,
+  name: string,
+  max: number,
+): number {
+  const raw = value ?? String(fallback)
+  if (!/^\d+$/.test(raw)) throw new Error(`${name} must be a positive integer`)
+  const parsed = Number(raw)
+  if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > max) {
+    throw new Error(`${name} must be between 1 and ${max}`)
+  }
+  return parsed
+}
+
+function parseNonNegativeInteger(
+  value: string | null,
+  fallback: number,
+  name: string,
+): number {
+  const raw = value ?? String(fallback)
+  if (!/^\d+$/.test(raw))
+    throw new Error(`${name} must be a non-negative integer`)
+  const parsed = Number(raw)
+  if (!Number.isSafeInteger(parsed) || parsed < 0) {
+    throw new Error(`${name} must be a non-negative integer`)
+  }
+  return parsed
+}
+
+function parseCwd(value: string | null): string {
+  const cwd = resolve(value ?? process.cwd())
+  if (!existsSync(cwd)) {
+    throw new Error(`Invalid or inaccessible cwd: ${cwd}`)
+  }
+  return cwd
+}
+
+function rejectSecretFlags(args: string[]): void {
+  const forbidden = [
+    "--api-key",
+    "--token",
+    "--auth-token",
+    "--access-token",
+    "--refresh-token",
+  ]
+  const flag = args.find((arg) =>
+    forbidden.some(
+      (forbiddenFlag) =>
+        arg === forbiddenFlag || arg.startsWith(`${forbiddenFlag}=`),
+    ),
+  )
+  if (flag) {
+    const safeFlag = flag.split("=", 1)[0] || "--secret"
+    throw new Error(
+      `${safeFlag} is not accepted. Use stored provider credentials.`,
+    )
+  }
+}
+
+const SECRET_ARG_VALUE_PATTERNS = [
+  /-----BEGIN [A-Z0-9 ]+-----[\s\S]*?-----END [A-Z0-9 ]+-----/,
+  /(^|[^A-Za-z0-9_])sk-[A-Za-z0-9_-]{20,}/,
+  /github_pat_[A-Za-z0-9_]{20,}/,
+  /gh[pousr]_[A-Za-z0-9_]{20,}/,
+  /bearer\s+[A-Za-z0-9._-]+/i,
+  /authorization\s*:\s*basic\s+[A-Za-z0-9+/=_-]+/i,
+]
+
+function sanitizeCliArgForError(arg: string): string {
+  const equalsIndex = arg.indexOf("=")
+  if (equalsIndex > 0) {
+    const flag = arg.slice(0, equalsIndex)
+    if (
+      /--?(api[-_]?key|token|auth[-_]?token|access[-_]?token|refresh[-_]?token|authorization|password|secret)$/i.test(
+        flag,
+      )
+    ) {
+      return `${flag}=<redacted>`
+    }
+  }
+  if (SECRET_ARG_VALUE_PATTERNS.some((pattern) => pattern.test(arg))) {
+    return "[redacted-argument]"
+  }
+  if (arg.length > 200) return `${arg.slice(0, 197)}...`
+  return arg
+}
+
+function unexpectedArgumentsMessage(args: string[]): string {
+  return `Unexpected arguments: ${args.map(sanitizeCliArgForError).join(" ")}`
+}
+
+function includesCliValue<const T extends readonly string[]>(
+  values: T,
+  value: string | undefined,
+): value is T[number] {
+  return (
+    typeof value === "string" && (values as readonly string[]).includes(value)
+  )
+}
+
+function availableValues(values: readonly string[]): string {
+  return values.join(", ")
+}
+
+function unknownApiGroupMessage(group: string | undefined): string {
+  return `Unknown api command group: ${group ?? ""}. Available groups: ${availableValues(HEADLESS_API_GROUPS)}`
+}
+
+function unknownApiSubcommandMessage(
+  group: string,
+  subcommand: string | undefined,
+  values: readonly string[],
+): string {
+  return `Unknown api ${group} subcommand: ${subcommand ?? ""}. Available subcommands: ${availableValues(values)}`
+}
+
+function errorCodeForParseMessage(message: string): number {
+  if (message.startsWith("Invalid or inaccessible cwd:")) return 7
+  if (
+    message.startsWith("Unsupported --runtime") ||
+    message.startsWith("Unsupported --mode") ||
+    message.startsWith("Unsupported --source") ||
+    message.startsWith("Unsupported --status")
+  ) {
+    return 3
+  }
+  return 2
+}
+
+export function parseHeadlessCliArgv(argv = process.argv): ParsedHeadlessCli {
+  const args = argsAfterMarker(argv)
+  try {
+    rejectSecretFlags(args)
+    const command = args.shift()
+    if (
+      !command ||
+      command === "help" ||
+      command === "--help" ||
+      command === "-h"
+    ) {
+      return { ok: true, command: { kind: "help", output: "text" } }
+    }
+
+    if (command === "version" || command === "--version" || command === "-v") {
+      if (args.length > 0) {
+        throw new Error(unexpectedArgumentsMessage(args))
+      }
+      return { ok: true, command: { kind: "version" } }
+    }
+
+    if (command === "run") {
+      const stdin = takeFlag(args, "--stdin")
+      const daemon = takeFlag(args, "--daemon")
+      const follow = takeFlag(args, "--follow")
+      const output = parseOutput(args)
+      const cwd = parseCwd(takeOption(args, "--cwd"))
+      const runtime = parseRuntime(takeOption(args, "--runtime"))
+      const mode = parseMode(takeOption(args, "--mode"))
+      const providerProfileId = parseProviderProfileId(
+        takeOption(args, "--provider-profile"),
+      )
+      const model = parseProviderModel(takeOption(args, "--model"))
+      const prompt = takeOption(args, "--prompt") ?? ""
+      if (follow && !daemon) {
+        throw new Error("--follow can only be used with --daemon")
+      }
+      if (!stdin && !prompt.trim()) {
+        throw new Error("locus run requires --prompt or --stdin")
+      }
+      if (args.length > 0) {
+        throw new Error(unexpectedArgumentsMessage(args))
+      }
+      return {
+        ok: true,
+        command: {
+          kind: "run",
+          cwd,
+          runtime,
+          mode,
+          prompt,
+          stdin,
+          daemon,
+          follow,
+          output,
+          providerProfileId,
+          model,
+        },
+      }
+    }
+
+    if (command === "jobs") {
+      const subcommand = args.shift() ?? "list"
+      const follow = takeFlag(args, "--follow")
+      const output = parseOutput(args)
+      if (subcommand === "list") {
+        const source = parseJobSource(takeOption(args, "--source"))
+        if (args.length > 0) {
+          throw new Error(unexpectedArgumentsMessage(args))
+        }
+        return { ok: true, command: { kind: "jobs-list", source, output } }
+      }
+      const jobId = args.shift()
+      if (!jobId) throw new Error(`locus jobs ${subcommand} requires a job id`)
+      if (args.length > 0) {
+        throw new Error(unexpectedArgumentsMessage(args))
+      }
+      if (subcommand === "show") {
+        return { ok: true, command: { kind: "jobs-show", jobId, output } }
+      }
+      if (subcommand === "logs") {
+        return {
+          ok: true,
+          command: { kind: "jobs-logs", jobId, follow, output },
+        }
+      }
+      if (subcommand === "cancel") {
+        return { ok: true, command: { kind: "jobs-cancel", jobId, output } }
+      }
+      if (subcommand === "retry") {
+        return { ok: true, command: { kind: "jobs-retry", jobId, output } }
+      }
+      throw new Error(`Unknown jobs subcommand: ${subcommand}`)
+    }
+
+    if (command === "api") {
+      const group = args.shift()
+      if (!includesCliValue(HEADLESS_API_GROUPS, group)) {
+        throw new Error(unknownApiGroupMessage(group))
+      }
+
+      if (group === "runtimes") {
+        const subcommand = args.shift() ?? "list"
+        takeFlag(args, "--json")
+        const noProbe = takeFlag(args, "--no-probe")
+        if (!includesCliValue(HEADLESS_API_RUNTIMES_SUBCOMMANDS, subcommand)) {
+          throw new Error(
+            unknownApiSubcommandMessage(
+              "runtimes",
+              subcommand,
+              HEADLESS_API_RUNTIMES_SUBCOMMANDS,
+            ),
+          )
+        }
+        if (args.length > 0) {
+          throw new Error(unexpectedArgumentsMessage(args))
+        }
+        return { ok: true, command: { kind: "api-runtimes-list", noProbe } }
+      }
+
+      if (group === "projects") {
+        const subcommand = args.shift()
+        if (!includesCliValue(HEADLESS_API_PROJECTS_SUBCOMMANDS, subcommand)) {
+          throw new Error(
+            unknownApiSubcommandMessage(
+              "projects",
+              subcommand,
+              HEADLESS_API_PROJECTS_SUBCOMMANDS,
+            ),
+          )
+        }
+        takeFlag(args, "--json")
+        const cwdOption = takeOption(args, "--cwd")
+        if (!cwdOption) {
+          throw new Error(
+            `locus api projects ${subcommand ?? ""} requires --cwd <path>`,
+          )
+        }
+        const cwd = parseCwd(cwdOption)
+
+        if (subcommand === "register") {
+          const name = takeOption(args, "--name")
+          if (args.length > 0) {
+            throw new Error(unexpectedArgumentsMessage(args))
+          }
+          return {
+            ok: true,
+            command: { kind: "api-projects-register", cwd, name },
+          }
+        }
+
+        if (subcommand === "status") {
+          if (args.length > 0) {
+            throw new Error(unexpectedArgumentsMessage(args))
+          }
+          return { ok: true, command: { kind: "api-projects-status", cwd } }
+        }
+
+        if (subcommand === "unregister") {
+          const force = takeFlag(args, "--force")
+          if (args.length > 0) {
+            throw new Error(unexpectedArgumentsMessage(args))
+          }
+          return {
+            ok: true,
+            command: { kind: "api-projects-unregister", cwd, force },
+          }
+        }
+      }
+
+      if (group === "runs") {
+        const subcommand = args.shift()
+        if (!includesCliValue(HEADLESS_API_RUNS_SUBCOMMANDS, subcommand)) {
+          throw new Error(
+            unknownApiSubcommandMessage(
+              "runs",
+              subcommand,
+              HEADLESS_API_RUNS_SUBCOMMANDS,
+            ),
+          )
+        }
+        if (subcommand === "create") {
+          takeFlag(args, "--json")
+          const requestPath = takeOption(args, "--request")
+          if (!requestPath) {
+            throw new Error("locus api runs create requires --request <path|->")
+          }
+          if (args.length > 0) {
+            throw new Error(unexpectedArgumentsMessage(args))
+          }
+          return {
+            ok: true,
+            command: { kind: "api-runs-create", requestPath },
+          }
+        }
+
+        if (subcommand === "events") {
+          const follow = takeFlag(args, "--follow")
+          takeFlag(args, "--jsonl")
+          const afterSequence = parseNonNegativeInteger(
+            takeOption(args, "--after"),
+            0,
+            "--after",
+          )
+          const jobId = args.shift()
+          if (!jobId) throw new Error("locus api runs events requires a job id")
+          if (args.length > 0) {
+            throw new Error(unexpectedArgumentsMessage(args))
+          }
+          return {
+            ok: true,
+            command: {
+              kind: "api-runs-events",
+              jobId,
+              afterSequence,
+              follow,
+            },
+          }
+        }
+
+        takeFlag(args, "--json")
+        const jobId = args.shift()
+        if (!jobId) {
+          throw new Error(
+            `locus api runs ${subcommand ?? ""} requires a job id`,
+          )
+        }
+        if (args.length > 0) {
+          throw new Error(unexpectedArgumentsMessage(args))
+        }
+        if (
+          subcommand === "status" ||
+          subcommand === "result" ||
+          subcommand === "cancel" ||
+          subcommand === "retry"
+        ) {
+          return {
+            ok: true,
+            command: {
+              kind: `api-runs-${subcommand}` as
+                | "api-runs-status"
+                | "api-runs-result"
+                | "api-runs-cancel"
+                | "api-runs-retry",
+              jobId,
+            },
+          }
+        }
+      }
+    }
+
+    if (command === "daemon") {
+      const subcommand = args.shift() ?? "run"
+      if (subcommand !== "run") {
+        throw new Error(`Unknown daemon subcommand: ${subcommand}`)
+      }
+      const once = takeFlag(args, "--once")
+      const output = parseOutput(args)
+      const concurrency = parsePositiveInteger(
+        takeOption(args, "--concurrency"),
+        1,
+        "--concurrency",
+        16,
+      )
+      const pollIntervalMs = parsePositiveInteger(
+        takeOption(args, "--poll-interval-ms"),
+        1000,
+        "--poll-interval-ms",
+        60_000,
+      )
+      if (args.length > 0) {
+        throw new Error(unexpectedArgumentsMessage(args))
+      }
+      return {
+        ok: true,
+        command: {
+          kind: "daemon-run",
+          once,
+          concurrency,
+          pollIntervalMs,
+          output,
+        },
+      }
+    }
+
+    if (command === "schedules" || command === "schedule") {
+      const subcommand = args.shift() ?? "list"
+      const output = parseOutput(args)
+      if (subcommand === "list") {
+        const includeDisabled = takeFlag(args, "--include-disabled")
+        const status = parseScheduleStatus(takeOption(args, "--status"))
+        if (args.length > 0) {
+          throw new Error(unexpectedArgumentsMessage(args))
+        }
+        return {
+          ok: true,
+          command: {
+            kind: "schedules-list",
+            includeDisabled,
+            status,
+            output,
+          },
+        }
+      }
+      if (subcommand === "create") {
+        const cwd = parseCwd(takeOption(args, "--cwd"))
+        const runtime = parseRuntime(takeOption(args, "--runtime"))
+        const mode = parseMode(takeOption(args, "--mode"), "plan")
+        const providerProfileId = parseProviderProfileId(
+          takeOption(args, "--provider-profile"),
+        )
+        const model = parseProviderModel(takeOption(args, "--model"))
+        const name = takeOption(args, "--name") ?? ""
+        const prompt = takeOption(args, "--prompt") ?? ""
+        const intervalSeconds = parsePositiveInteger(
+          takeOption(args, "--interval-seconds"),
+          3600,
+          "--interval-seconds",
+          MAX_AGENT_SCHEDULE_INTERVAL_SECONDS,
+        )
+        if (!name.trim())
+          throw new Error("locus schedules create requires --name")
+        if (!prompt.trim()) {
+          throw new Error("locus schedules create requires --prompt")
+        }
+        if (args.length > 0) {
+          throw new Error(unexpectedArgumentsMessage(args))
+        }
+        return {
+          ok: true,
+          command: {
+            kind: "schedules-create",
+            name,
+            cwd,
+            runtime,
+            mode,
+            prompt,
+            intervalSeconds,
+            output,
+            providerProfileId,
+            model,
+          },
+        }
+      }
+      if (
+        subcommand === "pause" ||
+        subcommand === "resume" ||
+        subcommand === "delete" ||
+        subcommand === "run" ||
+        subcommand === "run-now"
+      ) {
+        const scheduleId = args.shift()
+        if (!scheduleId) {
+          throw new Error(
+            `locus schedules ${subcommand} requires a schedule id`,
+          )
+        }
+        if (args.length > 0) {
+          throw new Error(unexpectedArgumentsMessage(args))
+        }
+        return {
+          ok: true,
+          command: {
+            kind:
+              subcommand === "run-now"
+                ? "schedules-run"
+                : (`schedules-${subcommand}` as
+                    | "schedules-pause"
+                    | "schedules-resume"
+                    | "schedules-delete"
+                    | "schedules-run"),
+            scheduleId,
+            output,
+          },
+        }
+      }
+      throw new Error(`Unknown schedules subcommand: ${subcommand}`)
+    }
+
+    if (command === "jobs-stdio") {
+      if (args.length > 0) {
+        throw new Error(unexpectedArgumentsMessage(args))
+      }
+      return { ok: true, command: { kind: "jobs-stdio" } }
+    }
+
+    throw new Error(`Unknown command: ${command}`)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    return {
+      ok: false,
+      code: errorCodeForParseMessage(message),
+      message,
+    }
+  }
+}

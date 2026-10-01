@@ -1,0 +1,65 @@
+{
+  "fixtureVersion": 1,
+  "evidenceClass": "synthetic",
+  "sourceRefs": [
+    "openspec/changes/add-local-job-api-async-submit/specs/local-job-api/spec.md:425",
+    "openspec/changes/add-local-job-api-async-submit/specs/local-job-api/spec.md:446",
+    "openspec/changes/add-local-job-api-async-submit/specs/local-job-api/spec.md:209",
+    "openspec/changes/add-local-job-api-async-submit/specs/local-job-api/spec.md:213",
+    "openspec/changes/add-local-job-api-async-submit/design.md:106",
+    "openspec/changes/add-local-job-api-async-submit/design.md:173",
+    "openspec/changes/add-local-job-api-async-submit/tasks.md:79",
+    "openspec/changes/add-local-job-api-async-submit/tasks.md:97",
+    "src/main/lib/headless/cli-dispatcher.ts:865",
+    "src/main/lib/headless/cli-args.ts:638",
+    "src/main/lib/headless/local-job-api.ts:830"
+  ],
+  "provenance": {
+    "author": "independent red-test author (Claude Code), no implementation context",
+    "authoredAt": "2026-10-02",
+    "worktreeBaseSha": "0447d02d7682b16f9b042e5eda2701d68751a7ce",
+    "productBaselineSha": "2c59664f1b80a5f782eb05f82d33f718d9bc7053",
+    "method": "Hand-authored from Scenario S19 and design D2 (retry body {apiVersion,consumer:{id},idempotencyKey?}). The failed sources are produced through the existing unkeyed create with a scripted failing fake runner; no real runtime.",
+    "catalogNote": "tasks.md:97 names controls.json for S18/S19/S20/S35; only the S19 case is owned by this author and lives under idempotency/controls.json."
+  },
+  "cases": {
+    "S19": {
+      "scenario": "Retry key replays the child and preserves the parent",
+      "sourceRequest": {
+        "apiVersion": "locus.local-job.v1",
+        "consumer": { "id": "fixture-a", "runExternalId": "s19-parent" },
+        "project": { "cwd": "${PROJECT_ROOT}" },
+        "runtime": { "id": "claude" },
+        "mode": "plan",
+        "prompt": { "text": "S19 parent attempt that fails" },
+        "artifacts": { "baseDir": "${ARTIFACT_BASE}" }
+      },
+      "otherSourceRequest": {
+        "apiVersion": "locus.local-job.v1",
+        "consumer": { "id": "fixture-a", "runExternalId": "s19-other-parent" },
+        "project": { "cwd": "${PROJECT_ROOT}" },
+        "runtime": { "id": "claude" },
+        "mode": "plan",
+        "prompt": { "text": "S19 other parent that fails" }
+      },
+      "retryRequest": {
+        "apiVersion": "locus.local-job.v1",
+        "consumer": { "id": "fixture-a" },
+        "idempotencyKey": "retry-1"
+      },
+      "mismatchedConsumerRetryRequest": {
+        "apiVersion": "locus.local-job.v1",
+        "consumer": { "id": "fixture-b" },
+        "idempotencyKey": "retry-1"
+      },
+      "expected": {
+        "asyncEnvelopeKeysFresh": ["apiVersion", "job"],
+        "asyncEnvelopeKeysReplay": ["apiVersion", "idempotentReplay", "job"],
+        "syncExit": 0,
+        "childStatus": "succeeded",
+        "differentSource": { "exit": 2, "errorCode": "idempotency_conflict" },
+        "consumerMismatch": { "exit": 2, "errorCode": "consumer_mismatch" }
+      }
+    }
+  }
+}

@@ -1,0 +1,227 @@
+{
+  "fixtureVersion": 1,
+  "evidenceClass": "synthetic",
+  "sourceRefs": [
+    "openspec/changes/add-local-job-api-async-submit/specs/agent-protocol-interfaces/spec.md:3-13 (MODIFIED Minimal Jobs Stdio Boundary: job.run calls submitRun before ack and reuses pumpQueuedRuns scoped to session IDs; session IDs govern transport cancel/shutdown only; strict params gain no consumer/key fields)",
+    "openspec/changes/add-local-job-api-async-submit/specs/agent-protocol-interfaces/spec.md:15-55 (S47-S51 retained living scenarios)",
+    "openspec/changes/add-local-job-api-async-submit/specs/agent-protocol-interfaces/spec.md:57-79 (S29, S30)",
+    "openspec/changes/add-local-job-api-async-submit/design.md:88 (D1 jobs-stdio row) and :122 (Q2(a) pumpQueuedRuns({admittedIds}) via startAgentJob, same symbol as stdio) and :185 (D5 stdio scoped to session IDs)",
+    "openspec/changes/add-local-job-api-async-submit/design.md:97-108 (D2 commands; :108 submit envelope {apiVersion,job}, queued admission snapshot)",
+    "src/main/lib/headless/jobs-stdio.ts:41 (locus-jobs-stdio.v1), :54-61 (strict job.run params), :247-266 (initialize result), :322-346 (session-owned cancel, -32602), :400-403 (shutdown {ok:true}), :454-457 (drain 250 ms / cancel / drain 250 ms / stop streams)",
+    "openspec/specs/agent-protocol-interfaces/spec.md:35-69 (living Minimal Jobs Stdio Boundary scenarios)"
+  ],
+  "provenance": {
+    "author": "independent red-suite author (guards-protocol domain), add-local-job-api-async-submit",
+    "measured": false,
+    "baseSha": "0447d02d",
+    "note": "Synthetic inputs for the in-process jobs-stdio command (runHeadlessCliCommand + HEADLESS_CLI_MARKER) with a latched fake runner; <PROJECT_CWD> is replaced by a per-test registered temporary project. No real runtime, credential or network is used. Prompts carrying [hold-claim] are held at the startAgentJob claim latch until released."
+  },
+  "cases": {
+    "S29": {
+      "input": {
+        "initialize": {
+          "jsonrpc": "2.0",
+          "id": "init",
+          "method": "initialize",
+          "params": {}
+        },
+        "jobRunParams": {
+          "runtime": "codex",
+          "mode": "plan",
+          "cwd": "<PROJECT_CWD>",
+          "prompt": "Return OK"
+        },
+        "extraParams": {
+          "consumer": { "id": "guards-protocol-consumer" },
+          "idempotencyKey": "guards-protocol-key-0001"
+        },
+        "apiSubmitRequest": {
+          "apiVersion": "locus.local-job.v1",
+          "consumer": {
+            "id": "guards-protocol-consumer",
+            "runExternalId": "s29-api-submit"
+          },
+          "project": { "cwd": "<PROJECT_CWD>" },
+          "runtime": { "id": "codex" },
+          "mode": "plan",
+          "prompt": { "text": "Return OK" }
+        }
+      },
+      "expected": {
+        "protocolVersion": "locus-jobs-stdio.v1",
+        "capabilities": {
+          "jobRun": true,
+          "jobCancel": true,
+          "eventStream": true,
+          "shutdown": true
+        },
+        "jobRunAckStatus": "queued",
+        "apiSubmitExitCode": 0,
+        "apiSubmitEnvelopeKeys": ["apiVersion", "job"],
+        "invalidParamsCode": -32602,
+        "terminalStatus": "succeeded",
+        "shutdownResult": { "ok": true }
+      }
+    },
+    "S30": {
+      "input": {
+        "sessionA": {
+          "queued": {
+            "runtime": "codex",
+            "mode": "plan",
+            "cwd": "<PROJECT_CWD>",
+            "prompt": "[hold-claim] session A queued"
+          },
+          "running": {
+            "runtime": "codex",
+            "mode": "plan",
+            "cwd": "<PROJECT_CWD>",
+            "prompt": "session A running"
+          },
+          "stop": "shutdown"
+        },
+        "sessionB": {
+          "queued": {
+            "runtime": "codex",
+            "mode": "plan",
+            "cwd": "<PROJECT_CWD>",
+            "prompt": "[hold-claim] session B queued"
+          },
+          "running": {
+            "runtime": "codex",
+            "mode": "plan",
+            "cwd": "<PROJECT_CWD>",
+            "prompt": "session B running"
+          },
+          "stop": "stdin-eof"
+        },
+        "apiJob": {
+          "source": "api",
+          "runtime": "codex",
+          "mode": "plan",
+          "prompt": "unrelated API job",
+          "apiConsumerId": "guards-protocol-consumer",
+          "apiConsumerRunId": "s30-unrelated"
+        }
+      },
+      "expected": {
+        "otherSessionCancelCode": -32602,
+        "shutdownResult": { "ok": true },
+        "queuedStatus": "canceled",
+        "runningStatus": "canceled",
+        "completedPerCanceledRun": 1,
+        "completedWhileWorkerPaused": 0,
+        "unrelatedCompleted": 0,
+        "sessionExitCode": 0,
+        "stopBoundMs": 3000
+      }
+    },
+    "S47": {
+      "registeredExisting": [
+        "tests/headless-cli-dispatcher.test.ts > headless CLI dispatcher > runs jobs-stdio with JSON-only stdout and protocol jobs",
+        "tests/headless-cli-dispatcher.test.ts > headless CLI dispatcher > rejects jobs-stdio provider secrets and raw env without creating jobs",
+        "tests/headless-cli-args.test.ts > headless CLI args > parses jobs-stdio command and rejects the retired acp alias",
+        "tests/headless-cli-shims.test.ts > headless CLI shims > POSIX shim rejects retired acp before GUI dispatch",
+        "tests/headless-cli-shims.test.ts > headless CLI shims > generated Windows wrapper routes jobs-stdio and rejects retired acp"
+      ],
+      "limitations": "Packaged CLI capture is a manual/packaged smoke item (tasks.md 8.3); the source-level registrations above drive the in-process command and both shims."
+    },
+    "S48": {
+      "input": {
+        "jobRunParams": {
+          "runtime": "codex",
+          "mode": "plan",
+          "cwd": "<PROJECT_CWD>",
+          "prompt": "Return OK"
+        },
+        "cancelParams": {
+          "runtime": "codex",
+          "mode": "plan",
+          "cwd": "<PROJECT_CWD>",
+          "prompt": "cancel me"
+        }
+      },
+      "expected": {
+        "source": "protocol",
+        "terminalStatus": "succeeded",
+        "canceledStatus": "canceled"
+      },
+      "registeredExisting": [
+        "tests/headless-cli-dispatcher.test.ts > headless CLI dispatcher > runs jobs-stdio with JSON-only stdout and protocol jobs (living assertion: source=protocol job, normalized job/event stream)"
+      ]
+    },
+    "S49": {
+      "input": {
+        "initialize": {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "initialize",
+          "params": {}
+        }
+      },
+      "expected": {
+        "result": {
+          "protocolVersion": "locus-jobs-stdio.v1",
+          "serverInfo": { "name": "Locus" },
+          "capabilities": {
+            "jobRun": true,
+            "jobCancel": true,
+            "eventStream": true,
+            "shutdown": true
+          }
+        },
+        "forbiddenClaims": [
+          "acp",
+          "agent client protocol",
+          "mcp",
+          "resume",
+          "session",
+          "parity"
+        ]
+      }
+    },
+    "S50": {
+      "input": {
+        "terminal": {
+          "runtime": "codex",
+          "mode": "plan",
+          "cwd": "<PROJECT_CWD>",
+          "prompt": "finish before stop"
+        },
+        "running": {
+          "runtime": "codex",
+          "mode": "plan",
+          "cwd": "<PROJECT_CWD>",
+          "prompt": "running at stop"
+        },
+        "queued": {
+          "runtime": "codex",
+          "mode": "plan",
+          "cwd": "<PROJECT_CWD>",
+          "prompt": "[hold-claim] queued at stop"
+        },
+        "afterStop": {
+          "runtime": "codex",
+          "mode": "plan",
+          "cwd": "<PROJECT_CWD>",
+          "prompt": "must not be accepted"
+        },
+        "variants": ["shutdown", "stdin-eof"]
+      },
+      "expected": {
+        "exitCode": 0,
+        "terminalCompleted": 1,
+        "terminalStatus": "succeeded"
+      }
+    },
+    "S51": {
+      "seed": {
+        "jobId": "historical-acp-protocol-job",
+        "inputJson": "{\"prompt\":\"Historical protocol prompt\",\"protocol\":\"locus-acp-stdio.v1\"}",
+        "source": "protocol",
+        "status": "succeeded"
+      },
+      "expected": { "protocol": "locus-acp-stdio.v1" }
+    }
+  }
+}

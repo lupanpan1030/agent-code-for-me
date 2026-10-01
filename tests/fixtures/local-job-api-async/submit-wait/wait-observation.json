@@ -1,0 +1,264 @@
+{
+  "fixtureVersion": 1,
+  "evidenceClass": "synthetic",
+  "sourceRefs": [
+    "openspec/changes/add-local-job-api-async-submit/specs/local-job-api/spec.md:164-219",
+    "openspec/changes/add-local-job-api-async-submit/specs/local-job-api/spec.md:233",
+    "openspec/changes/add-local-job-api-async-submit/specs/local-job-api/spec.md:383-404",
+    "openspec/changes/add-local-job-api-async-submit/specs/local-job-api/spec.md:406",
+    "openspec/changes/add-local-job-api-async-submit/specs/local-job-api/spec.md:414",
+    "openspec/changes/add-local-job-api-async-submit/design.md:108-128",
+    "openspec/changes/add-local-job-api-async-submit/design.md:206-231",
+    "openspec/changes/add-local-job-api-async-submit/design.md:235",
+    "src/main/lib/headless/daemon.ts:88-129",
+    "src/main/lib/headless/job-recovery.ts:28"
+  ],
+  "provenance": {
+    "capturedFrom": "product source 2c59664f1b80a5f782eb05f82d33f718d9bc7053 (worktree base 0447d02d carries no src/ diff from it)",
+    "author": "independent red author (submit-wait domain), 2026-10-02",
+    "secrets": "none",
+    "method": "hand-authored from the delta tables; lock pid symbols: self=test process (alive), dead=reaped child (ESRCH), init=pid 1 (EPERM for a non-root user); heartbeatOffsetMs is relative to the frozen wall clock"
+  },
+  "lockFixtures": {
+    "alive_v2_fresh": {
+      "pid": "self",
+      "lockFormat": 2,
+      "apiCapable": true,
+      "heartbeatOffsetMs": 0,
+      "nonce": "nonce-A"
+    },
+    "absent": null,
+    "esrch_v2_fresh": {
+      "pid": "dead",
+      "lockFormat": 2,
+      "apiCapable": true,
+      "heartbeatOffsetMs": 0,
+      "nonce": "nonce-A"
+    },
+    "alive_v2_stale": {
+      "pid": "self",
+      "lockFormat": 2,
+      "apiCapable": true,
+      "heartbeatOffsetMs": -6000,
+      "nonce": "nonce-A"
+    },
+    "legacy": {
+      "pid": "self",
+      "nonce": "nonce-legacy"
+    },
+    "eperm_v2_fresh": {
+      "pid": "init",
+      "lockFormat": 2,
+      "apiCapable": true,
+      "heartbeatOffsetMs": 0,
+      "nonce": "nonce-A"
+    },
+    "future_heartbeat": {
+      "pid": "self",
+      "lockFormat": 2,
+      "apiCapable": true,
+      "heartbeatOffsetMs": 10000,
+      "nonce": "nonce-A"
+    }
+  },
+  "cases": {
+    "S06": {
+      "timeoutArgs": [
+        {
+          "arg": null,
+          "timeoutMs": 30000
+        },
+        {
+          "arg": "0",
+          "timeoutMs": 0
+        },
+        {
+          "arg": "25",
+          "timeoutMs": 25
+        }
+      ],
+      "pollIntervalMaxMs": 100,
+      "states": [
+        {
+          "id": "queued_available",
+          "setup": "seeded-queued-api",
+          "lock": "alive_v2_fresh",
+          "reason": "run_pending",
+          "status": "queued"
+        },
+        {
+          "id": "queued_no_lock",
+          "setup": "seeded-queued-api",
+          "lock": "absent",
+          "reason": "executor_unavailable",
+          "status": "queued"
+        },
+        {
+          "id": "queued_legacy_lock",
+          "setup": "seeded-queued-api",
+          "lock": "legacy",
+          "reason": "executor_unknown",
+          "status": "queued"
+        },
+        {
+          "id": "queued_missing_admission",
+          "setup": "seeded-queued-api-unadmitted-artifacts",
+          "lock": "alive_v2_fresh",
+          "reason": "admission_incomplete",
+          "status": "queued"
+        },
+        {
+          "id": "running_dead_lock",
+          "setup": "seeded-running-api-alive-worker",
+          "lock": "esrch_v2_fresh",
+          "reason": "run_pending",
+          "status": "running"
+        },
+        {
+          "id": "terminal_missing_file",
+          "setup": "created-artifacts-minus-result-json",
+          "lock": "absent",
+          "reason": "terminal_artifacts_pending",
+          "status": "succeeded"
+        }
+      ],
+      "invalidTimeouts": ["-1", "0.5", "NaN", "Infinity", "86400001"],
+      "invalidTimeoutStderr": "Invalid timeout: expected an integer from 0 to 86400000 milliseconds.\n",
+      "maxAcceptedTimeout": "86400000",
+      "readyAtDeadline": {
+        "timeoutArg": "25",
+        "restoreWhenClockReachesMs": 25,
+        "expectedExit": 0
+      },
+      "observationFault": {
+        "setup": "seeded-running-api-alive-worker",
+        "faultAfterFirstSleep": true,
+        "error": "SQLITE_BUSY",
+        "expected": {
+          "exit": 8,
+          "wait": {
+            "state": "error",
+            "reason": "observation_failed"
+          }
+        }
+      },
+      "preSnapshotFault": {
+        "setup": "seeded-queued-api",
+        "expected": {
+          "exit": 8,
+          "stdout": "",
+          "stderrTemplate": "Failed to observe job: {{JOB_ID}}\n"
+        }
+      }
+    },
+    "S16": {
+      "request": {
+        "apiVersion": "locus.local-job.v1",
+        "consumer": {
+          "id": "fixture-a",
+          "runExternalId": "run-ext-001"
+        },
+        "project": {
+          "cwd": "{{PACKAGE_DIR}}"
+        },
+        "runtime": {
+          "id": "codex",
+          "requiredCapabilities": ["planMode"]
+        },
+        "mode": "plan",
+        "prompt": {
+          "text": "Review this local package."
+        },
+        "input": {
+          "contract": "example.local-package.v1"
+        }
+      },
+      "lock": "absent",
+      "expectedExecution": {
+        "state": "unavailable",
+        "reason": "no_executor",
+        "hint": "locus daemon run"
+      },
+      "waitTimeoutArg": "25",
+      "expectedWait": {
+        "exit": 9,
+        "state": "timeout",
+        "timeoutMs": 25,
+        "reason": "executor_unavailable"
+      }
+    },
+    "S17": {
+      "rows": [
+        {
+          "lock": "alive_v2_fresh",
+          "state": "available",
+          "reason": "executor_observed",
+          "hint": null
+        },
+        {
+          "lock": "absent",
+          "state": "unavailable",
+          "reason": "no_executor",
+          "hint": "locus daemon run"
+        },
+        {
+          "lock": "esrch_v2_fresh",
+          "state": "unavailable",
+          "reason": "no_executor",
+          "hint": "locus daemon run"
+        },
+        {
+          "lock": "alive_v2_stale",
+          "state": "unknown",
+          "reason": "probe_unavailable",
+          "hint": null
+        },
+        {
+          "lock": "legacy",
+          "state": "unknown",
+          "reason": "probe_unavailable",
+          "hint": null
+        },
+        {
+          "lock": "eperm_v2_fresh",
+          "state": "unknown",
+          "reason": "probe_unavailable",
+          "hint": null
+        },
+        {
+          "lock": "no_lock_path",
+          "state": "unknown",
+          "reason": "probe_unavailable",
+          "hint": null
+        },
+        {
+          "lock": "future_heartbeat",
+          "state": "unknown",
+          "reason": "probe_unavailable",
+          "hint": null
+        }
+      ],
+      "nonceSwapBetweenReads": {
+        "from": "nonce-A",
+        "to": "nonce-B",
+        "state": "unknown",
+        "reason": "probe_unavailable",
+        "coverage": "reader-side swap needs a filesystem read seam the design does not name; covered only as the writer-side successor case"
+      },
+      "forbiddenExecutionKeys": [
+        "pid",
+        "workerPid",
+        "nonce",
+        "hostname",
+        "lockPath",
+        "path",
+        "token"
+      ],
+      "writer": {
+        "tickMaxIntervalMs": 1000,
+        "observeForMs": 2600,
+        "successorNonce": "nonce-successor-B"
+      }
+    }
+  }
+}

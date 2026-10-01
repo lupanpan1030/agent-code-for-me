@@ -1,0 +1,41 @@
+{
+  "fixtureVersion": 1,
+  "evidenceClass": "synthetic",
+  "sourceRefs": [
+    "openspec/changes/add-local-job-api-async-submit/specs/architecture-ownership/spec.md:39-53 (Schedule Uses Canonical Job Insertion; S31)",
+    "openspec/changes/add-local-job-api-async-submit/design.md:84 (D1 schedules row: same store insertion primitive replaces createScheduleJobRecord inside the fire/audit/nextRunAt transaction; job_created via recordAgentJobCreated afterwards)",
+    "openspec/changes/add-local-job-api-async-submit/design.md:165 (D3/TICKET-128: schedule orphan is not claimed or deleted by API key cleanup)",
+    "src/main/lib/headless/schedules.ts:313-345 (createScheduleJobRecord direct agent_jobs insert), :347-415 (fireAgentSchedule transaction + recordAgentJobCreated), :606-649 (evaluateDueAgentSchedules)",
+    "src/main/lib/headless/job-store.ts:364-382 (recordAgentJobCreated through the host ledger), :427-450 (listQueuedAgentJobsForSource), :464-500 (startAgentJob refuses MISSING_JOB_CREATED)"
+  ],
+  "provenance": {
+    "author": "independent red-suite author (guards-protocol domain), add-local-job-api-async-submit",
+    "measured": false,
+    "baseSha": "0447d02d",
+    "note": "Deterministic clock values only. The failed-append variant is injected with a temporary SQLite trigger that aborts the job_created insert; no product seam is assumed."
+  },
+  "cases": {
+    "S31": {
+      "schedule": {
+        "name": "S31 due schedule",
+        "runtime": "codex",
+        "mode": "agent",
+        "prompt": "Scheduled guards-protocol work",
+        "intervalSeconds": 60,
+        "createdAt": "2026-10-02T00:00:00.000Z",
+        "nextRunAt": "2026-10-02T01:00:00.000Z"
+      },
+      "evaluateAt": "2026-10-02T01:05:00.000Z",
+      "expected": {
+        "fires": 1,
+        "auditRuns": 1,
+        "scheduledFor": "2026-10-02T01:00:00.000Z",
+        "nextRunAt": "2026-10-02T01:06:00.000Z",
+        "jobCreatedFactKeyPrefix": "lifecycle:job-created:"
+      },
+      "failedAppend": {
+        "trigger": "CREATE TRIGGER s31_fail_job_created BEFORE INSERT ON agent_job_events WHEN NEW.type = 'job_created' BEGIN SELECT RAISE(ABORT, 'S31 injected creation append failure'); END;"
+      }
+    }
+  }
+}

@@ -1,0 +1,277 @@
+{
+  "fixtureVersion": 1,
+  "evidenceClass": "synthetic",
+  "sourceRefs": [
+    "openspec/changes/add-local-job-api-async-submit/specs/local-job-api/spec.md:96",
+    "openspec/changes/add-local-job-api-async-submit/specs/local-job-api/spec.md:110",
+    "openspec/changes/add-local-job-api-async-submit/specs/local-job-api/spec.md:119",
+    "openspec/changes/add-local-job-api-async-submit/specs/local-job-api/spec.md:130",
+    "openspec/changes/add-local-job-api-async-submit/design.md:110-114",
+    "openspec/changes/add-local-job-api-async-submit/design.md:116-128",
+    "openspec/changes/add-local-job-api-async-submit/tasks.md:14",
+    "src/main/lib/headless/cli-dispatcher.ts:451-500",
+    "src/main/lib/headless/job-runner.ts:132-165"
+  ],
+  "provenance": {
+    "capturedFrom": "product source 2c59664f1b80a5f782eb05f82d33f718d9bc7053 (worktree base 0447d02d carries no src/ diff from it)",
+    "method": "in-process runHeadlessCliCommand with a controlled fake runner/fetch, migrated temp SQLite, bun:test setSystemTime(2026-10-02T00:00:00.000Z); per-run values replaced by {{PLACEHOLDERS}} bound at test time from the profile DB/disk, never from the stdout under test",
+    "author": "independent red author (submit-wait domain), 2026-10-02",
+    "secrets": "none; ghp_fixture... is an inert synthetic secret-pattern sentinel"
+  },
+  "requests": {
+    "agentArtifacts": {
+      "apiVersion": "locus.local-job.v1",
+      "consumer": {
+        "id": "fixture-a",
+        "runExternalId": "run-ext-001"
+      },
+      "project": {
+        "cwd": "{{PACKAGE_DIR}}"
+      },
+      "runtime": {
+        "id": "codex",
+        "requiredCapabilities": ["planMode"]
+      },
+      "mode": "plan",
+      "prompt": {
+        "text": "Review this local package."
+      },
+      "input": {
+        "contract": "example.local-package.v1"
+      },
+      "artifacts": {
+        "baseDir": "{{ARTIFACT_BASE}}",
+        "writePolicy": "metadata-only"
+      }
+    },
+    "agentArtifactFree": {
+      "apiVersion": "locus.local-job.v1",
+      "consumer": {
+        "id": "fixture-a",
+        "runExternalId": "run-ext-001"
+      },
+      "project": {
+        "cwd": "{{PACKAGE_DIR}}"
+      },
+      "runtime": {
+        "id": "codex",
+        "requiredCapabilities": ["planMode"]
+      },
+      "mode": "plan",
+      "prompt": {
+        "text": "Review this local package."
+      },
+      "input": {
+        "contract": "example.local-package.v1"
+      }
+    },
+    "completion": {
+      "apiVersion": "locus.local-job.v1",
+      "kind": "completion",
+      "consumer": {
+        "id": "fixture-a",
+        "runExternalId": "completion-ext-001"
+      },
+      "runtime": {
+        "id": "codex"
+      },
+      "provider": {
+        "profileId": "completion-main",
+        "model": "provider-model"
+      },
+      "messages": [
+        {
+          "role": "user",
+          "content": "Return the fixture summary."
+        }
+      ],
+      "responseFormat": {
+        "type": "json_schema",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "summary": {
+              "type": "string"
+            }
+          },
+          "required": ["summary"],
+          "additionalProperties": false
+        }
+      }
+    }
+  },
+  "cases": {
+    "S03": {
+      "outcomes": {
+        "succeeded": {
+          "kind": "agent",
+          "runnerOutcome": {
+            "status": "succeeded",
+            "exitCode": 0,
+            "result": {
+              "finalMessage": "fixture done"
+            }
+          },
+          "exit": 0,
+          "stderr": "",
+          "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"job\":{\"id\":\"{{JOB_ID}}\",\"retryOfJobId\":null,\"attempt\":1,\"kind\":\"agent\",\"source\":\"api\",\"runtime\":\"codex\",\"status\":\"succeeded\",\"mode\":\"plan\",\"cwd\":\"{{ROOT}}/local-package\",\"projectId\":\"project-1\",\"chatId\":null,\"subChatId\":null,\"promptPreview\":\"Review this local package.\",\"apiConsumerId\":\"fixture-a\",\"apiConsumerRunId\":\"run-ext-001\",\"artifactBaseDir\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}\",\"artifactManifestPath\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/artifacts.json\",\"providerProfileId\":null,\"modelOverride\":null,\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"startedAt\":\"2026-10-02T00:00:00.000Z\",\"finishedAt\":\"2026-10-02T00:00:00.000Z\",\"exitCode\":0,\"errorCode\":null,\"errorMessage\":null,\"result\":{\"finalMessage\":\"fixture done\",\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}},\"workerId\":\"{{WORKER_ID}}\",\"workerPid\":{{WORKER_PID}},\"heartbeatAt\":\"2026-10-02T00:00:00.000Z\",\"cancelRequestedAt\":null,\"cancelRequestedBy\":null},\"result\":{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{JOB_ID}}\",\"status\":\"succeeded\",\"runtime\":\"codex\",\"mode\":\"plan\",\"consumer\":{\"id\":\"fixture-a\",\"runExternalId\":\"run-ext-001\"},\"artifactManifestPath\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/artifacts.json\",\"artifacts\":[{\"role\":\"request\",\"path\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/request.json\",\"sha256\":\"{{SHA_REQUEST}}\",\"contentType\":\"application/json\",\"sizeBytes\":{{SIZE_REQUEST}}},{\"role\":\"events\",\"path\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/events.jsonl\",\"sha256\":\"{{SHA_EVENTS}}\",\"contentType\":\"application/json\",\"sizeBytes\":{{SIZE_EVENTS}}},{\"role\":\"result\",\"path\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/result.json\",\"sha256\":\"{{SHA_RESULT}}\",\"contentType\":\"application/json\",\"sizeBytes\":{{SIZE_RESULT}}},{\"role\":\"manifest\",\"path\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/artifacts.json\",\"sha256\":\"{{SHA_MANIFEST}}\",\"contentType\":\"application/json\",\"sizeBytes\":{{SIZE_MANIFEST}}}],\"diagnostics\":[],\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null},\"result\":{\"finalMessage\":\"fixture done\",\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}}}}\n"
+        },
+        "failed": {
+          "kind": "agent",
+          "runnerOutcome": {
+            "status": "failed",
+            "exitCode": 1,
+            "errorCode": "runtime_failed",
+            "errorMessage": "fixture failure"
+          },
+          "exit": 1,
+          "stderr": "",
+          "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"job\":{\"id\":\"{{JOB_ID}}\",\"retryOfJobId\":null,\"attempt\":1,\"kind\":\"agent\",\"source\":\"api\",\"runtime\":\"codex\",\"status\":\"failed\",\"mode\":\"plan\",\"cwd\":\"{{ROOT}}/local-package\",\"projectId\":\"project-1\",\"chatId\":null,\"subChatId\":null,\"promptPreview\":\"Review this local package.\",\"apiConsumerId\":\"fixture-a\",\"apiConsumerRunId\":\"run-ext-001\",\"artifactBaseDir\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}\",\"artifactManifestPath\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/artifacts.json\",\"providerProfileId\":null,\"modelOverride\":null,\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"startedAt\":\"2026-10-02T00:00:00.000Z\",\"finishedAt\":\"2026-10-02T00:00:00.000Z\",\"exitCode\":1,\"errorCode\":\"runtime_failed\",\"errorMessage\":\"fixture failure\",\"result\":{\"value\":null,\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}},\"workerId\":\"{{WORKER_ID}}\",\"workerPid\":{{WORKER_PID}},\"heartbeatAt\":\"2026-10-02T00:00:00.000Z\",\"cancelRequestedAt\":null,\"cancelRequestedBy\":null},\"result\":{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{JOB_ID}}\",\"status\":\"failed\",\"runtime\":\"codex\",\"mode\":\"plan\",\"consumer\":{\"id\":\"fixture-a\",\"runExternalId\":\"run-ext-001\"},\"artifactManifestPath\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/artifacts.json\",\"artifacts\":[{\"role\":\"request\",\"path\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/request.json\",\"sha256\":\"{{SHA_REQUEST}}\",\"contentType\":\"application/json\",\"sizeBytes\":{{SIZE_REQUEST}}},{\"role\":\"events\",\"path\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/events.jsonl\",\"sha256\":\"{{SHA_EVENTS}}\",\"contentType\":\"application/json\",\"sizeBytes\":{{SIZE_EVENTS}}},{\"role\":\"result\",\"path\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/result.json\",\"sha256\":\"{{SHA_RESULT}}\",\"contentType\":\"application/json\",\"sizeBytes\":{{SIZE_RESULT}}},{\"role\":\"manifest\",\"path\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/artifacts.json\",\"sha256\":\"{{SHA_MANIFEST}}\",\"contentType\":\"application/json\",\"sizeBytes\":{{SIZE_MANIFEST}}}],\"diagnostics\":[{\"code\":\"runtime_failed\",\"message\":\"fixture failure\"}],\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null},\"result\":{\"value\":null,\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}}}}\n"
+        },
+        "invalid_provider_request": {
+          "kind": "agent",
+          "runnerOutcome": {
+            "status": "failed",
+            "errorCode": "provider_profile_not_found",
+            "errorMessage": "fixture provider missing"
+          },
+          "exit": 2,
+          "stderr": "",
+          "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"job\":{\"id\":\"{{JOB_ID}}\",\"retryOfJobId\":null,\"attempt\":1,\"kind\":\"agent\",\"source\":\"api\",\"runtime\":\"codex\",\"status\":\"failed\",\"mode\":\"plan\",\"cwd\":\"{{ROOT}}/local-package\",\"projectId\":\"project-1\",\"chatId\":null,\"subChatId\":null,\"promptPreview\":\"Review this local package.\",\"apiConsumerId\":\"fixture-a\",\"apiConsumerRunId\":\"run-ext-001\",\"artifactBaseDir\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}\",\"artifactManifestPath\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/artifacts.json\",\"providerProfileId\":null,\"modelOverride\":null,\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"startedAt\":\"2026-10-02T00:00:00.000Z\",\"finishedAt\":\"2026-10-02T00:00:00.000Z\",\"exitCode\":2,\"errorCode\":\"provider_profile_not_found\",\"errorMessage\":\"fixture provider missing\",\"result\":{\"value\":null,\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}},\"workerId\":\"{{WORKER_ID}}\",\"workerPid\":{{WORKER_PID}},\"heartbeatAt\":\"2026-10-02T00:00:00.000Z\",\"cancelRequestedAt\":null,\"cancelRequestedBy\":null},\"result\":{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{JOB_ID}}\",\"status\":\"failed\",\"runtime\":\"codex\",\"mode\":\"plan\",\"consumer\":{\"id\":\"fixture-a\",\"runExternalId\":\"run-ext-001\"},\"artifactManifestPath\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/artifacts.json\",\"artifacts\":[{\"role\":\"request\",\"path\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/request.json\",\"sha256\":\"{{SHA_REQUEST}}\",\"contentType\":\"application/json\",\"sizeBytes\":{{SIZE_REQUEST}}},{\"role\":\"events\",\"path\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/events.jsonl\",\"sha256\":\"{{SHA_EVENTS}}\",\"contentType\":\"application/json\",\"sizeBytes\":{{SIZE_EVENTS}}},{\"role\":\"result\",\"path\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/result.json\",\"sha256\":\"{{SHA_RESULT}}\",\"contentType\":\"application/json\",\"sizeBytes\":{{SIZE_RESULT}}},{\"role\":\"manifest\",\"path\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/artifacts.json\",\"sha256\":\"{{SHA_MANIFEST}}\",\"contentType\":\"application/json\",\"sizeBytes\":{{SIZE_MANIFEST}}}],\"diagnostics\":[{\"code\":\"provider_profile_not_found\",\"message\":\"fixture provider missing\"}],\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null},\"result\":{\"value\":null,\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}}}}\n"
+        },
+        "unsupported_capability": {
+          "kind": "agent",
+          "runnerOutcome": {
+            "status": "failed",
+            "errorCode": "unsupported_capability",
+            "errorMessage": "fixture unsupported"
+          },
+          "exit": 3,
+          "stderr": "",
+          "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"job\":{\"id\":\"{{JOB_ID}}\",\"retryOfJobId\":null,\"attempt\":1,\"kind\":\"agent\",\"source\":\"api\",\"runtime\":\"codex\",\"status\":\"failed\",\"mode\":\"plan\",\"cwd\":\"{{ROOT}}/local-package\",\"projectId\":\"project-1\",\"chatId\":null,\"subChatId\":null,\"promptPreview\":\"Review this local package.\",\"apiConsumerId\":\"fixture-a\",\"apiConsumerRunId\":\"run-ext-001\",\"artifactBaseDir\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}\",\"artifactManifestPath\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/artifacts.json\",\"providerProfileId\":null,\"modelOverride\":null,\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"startedAt\":\"2026-10-02T00:00:00.000Z\",\"finishedAt\":\"2026-10-02T00:00:00.000Z\",\"exitCode\":3,\"errorCode\":\"unsupported_capability\",\"errorMessage\":\"fixture unsupported\",\"result\":{\"value\":null,\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}},\"workerId\":\"{{WORKER_ID}}\",\"workerPid\":{{WORKER_PID}},\"heartbeatAt\":\"2026-10-02T00:00:00.000Z\",\"cancelRequestedAt\":null,\"cancelRequestedBy\":null},\"result\":{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{JOB_ID}}\",\"status\":\"failed\",\"runtime\":\"codex\",\"mode\":\"plan\",\"consumer\":{\"id\":\"fixture-a\",\"runExternalId\":\"run-ext-001\"},\"artifactManifestPath\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/artifacts.json\",\"artifacts\":[{\"role\":\"request\",\"path\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/request.json\",\"sha256\":\"{{SHA_REQUEST}}\",\"contentType\":\"application/json\",\"sizeBytes\":{{SIZE_REQUEST}}},{\"role\":\"events\",\"path\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/events.jsonl\",\"sha256\":\"{{SHA_EVENTS}}\",\"contentType\":\"application/json\",\"sizeBytes\":{{SIZE_EVENTS}}},{\"role\":\"result\",\"path\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/result.json\",\"sha256\":\"{{SHA_RESULT}}\",\"contentType\":\"application/json\",\"sizeBytes\":{{SIZE_RESULT}}},{\"role\":\"manifest\",\"path\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/artifacts.json\",\"sha256\":\"{{SHA_MANIFEST}}\",\"contentType\":\"application/json\",\"sizeBytes\":{{SIZE_MANIFEST}}}],\"diagnostics\":[{\"code\":\"unsupported_capability\",\"message\":\"fixture unsupported\"}],\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null},\"result\":{\"value\":null,\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}}}}\n"
+        },
+        "runtime_auth_required": {
+          "kind": "agent",
+          "runnerOutcome": {
+            "status": "failed",
+            "errorCode": "runtime_auth_required",
+            "errorMessage": "fixture auth"
+          },
+          "exit": 4,
+          "stderr": "",
+          "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"job\":{\"id\":\"{{JOB_ID}}\",\"retryOfJobId\":null,\"attempt\":1,\"kind\":\"agent\",\"source\":\"api\",\"runtime\":\"codex\",\"status\":\"failed\",\"mode\":\"plan\",\"cwd\":\"{{ROOT}}/local-package\",\"projectId\":\"project-1\",\"chatId\":null,\"subChatId\":null,\"promptPreview\":\"Review this local package.\",\"apiConsumerId\":\"fixture-a\",\"apiConsumerRunId\":\"run-ext-001\",\"artifactBaseDir\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}\",\"artifactManifestPath\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/artifacts.json\",\"providerProfileId\":null,\"modelOverride\":null,\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"startedAt\":\"2026-10-02T00:00:00.000Z\",\"finishedAt\":\"2026-10-02T00:00:00.000Z\",\"exitCode\":4,\"errorCode\":\"runtime_auth_required\",\"errorMessage\":\"fixture auth\",\"result\":{\"value\":null,\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}},\"workerId\":\"{{WORKER_ID}}\",\"workerPid\":{{WORKER_PID}},\"heartbeatAt\":\"2026-10-02T00:00:00.000Z\",\"cancelRequestedAt\":null,\"cancelRequestedBy\":null},\"result\":{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{JOB_ID}}\",\"status\":\"failed\",\"runtime\":\"codex\",\"mode\":\"plan\",\"consumer\":{\"id\":\"fixture-a\",\"runExternalId\":\"run-ext-001\"},\"artifactManifestPath\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/artifacts.json\",\"artifacts\":[{\"role\":\"request\",\"path\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/request.json\",\"sha256\":\"{{SHA_REQUEST}}\",\"contentType\":\"application/json\",\"sizeBytes\":{{SIZE_REQUEST}}},{\"role\":\"events\",\"path\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/events.jsonl\",\"sha256\":\"{{SHA_EVENTS}}\",\"contentType\":\"application/json\",\"sizeBytes\":{{SIZE_EVENTS}}},{\"role\":\"result\",\"path\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/result.json\",\"sha256\":\"{{SHA_RESULT}}\",\"contentType\":\"application/json\",\"sizeBytes\":{{SIZE_RESULT}}},{\"role\":\"manifest\",\"path\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/artifacts.json\",\"sha256\":\"{{SHA_MANIFEST}}\",\"contentType\":\"application/json\",\"sizeBytes\":{{SIZE_MANIFEST}}}],\"diagnostics\":[{\"code\":\"runtime_auth_required\",\"message\":\"fixture auth\"}],\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null},\"result\":{\"value\":null,\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}}}}\n"
+        },
+        "canceled": {
+          "kind": "agent",
+          "runnerOutcome": {
+            "status": "canceled",
+            "errorCode": "job_canceled",
+            "errorMessage": "fixture canceled"
+          },
+          "exit": 5,
+          "stderr": "",
+          "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"job\":{\"id\":\"{{JOB_ID}}\",\"retryOfJobId\":null,\"attempt\":1,\"kind\":\"agent\",\"source\":\"api\",\"runtime\":\"codex\",\"status\":\"canceled\",\"mode\":\"plan\",\"cwd\":\"{{ROOT}}/local-package\",\"projectId\":\"project-1\",\"chatId\":null,\"subChatId\":null,\"promptPreview\":\"Review this local package.\",\"apiConsumerId\":\"fixture-a\",\"apiConsumerRunId\":\"run-ext-001\",\"artifactBaseDir\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}\",\"artifactManifestPath\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/artifacts.json\",\"providerProfileId\":null,\"modelOverride\":null,\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"startedAt\":\"2026-10-02T00:00:00.000Z\",\"finishedAt\":\"2026-10-02T00:00:00.000Z\",\"exitCode\":5,\"errorCode\":\"job_canceled\",\"errorMessage\":\"Job was canceled.\",\"result\":{\"value\":null,\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}},\"workerId\":\"{{WORKER_ID}}\",\"workerPid\":{{WORKER_PID}},\"heartbeatAt\":\"2026-10-02T00:00:00.000Z\",\"cancelRequestedAt\":\"2026-10-02T00:00:00.000Z\",\"cancelRequestedBy\":null},\"result\":{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{JOB_ID}}\",\"status\":\"canceled\",\"runtime\":\"codex\",\"mode\":\"plan\",\"consumer\":{\"id\":\"fixture-a\",\"runExternalId\":\"run-ext-001\"},\"artifactManifestPath\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/artifacts.json\",\"artifacts\":[{\"role\":\"request\",\"path\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/request.json\",\"sha256\":\"{{SHA_REQUEST}}\",\"contentType\":\"application/json\",\"sizeBytes\":{{SIZE_REQUEST}}},{\"role\":\"events\",\"path\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/events.jsonl\",\"sha256\":\"{{SHA_EVENTS}}\",\"contentType\":\"application/json\",\"sizeBytes\":{{SIZE_EVENTS}}},{\"role\":\"result\",\"path\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/result.json\",\"sha256\":\"{{SHA_RESULT}}\",\"contentType\":\"application/json\",\"sizeBytes\":{{SIZE_RESULT}}},{\"role\":\"manifest\",\"path\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/artifacts.json\",\"sha256\":\"{{SHA_MANIFEST}}\",\"contentType\":\"application/json\",\"sizeBytes\":{{SIZE_MANIFEST}}}],\"diagnostics\":[{\"code\":\"job_canceled\",\"message\":\"Job was canceled.\"}],\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null},\"result\":{\"value\":null,\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}}}}\n"
+        },
+        "local_only": {
+          "kind": "agent",
+          "runnerOutcome": {
+            "status": "failed",
+            "errorCode": "local_only_guard_blocked",
+            "errorMessage": "fixture local only"
+          },
+          "exit": 6,
+          "stderr": "",
+          "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"job\":{\"id\":\"{{JOB_ID}}\",\"retryOfJobId\":null,\"attempt\":1,\"kind\":\"agent\",\"source\":\"api\",\"runtime\":\"codex\",\"status\":\"failed\",\"mode\":\"plan\",\"cwd\":\"{{ROOT}}/local-package\",\"projectId\":\"project-1\",\"chatId\":null,\"subChatId\":null,\"promptPreview\":\"Review this local package.\",\"apiConsumerId\":\"fixture-a\",\"apiConsumerRunId\":\"run-ext-001\",\"artifactBaseDir\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}\",\"artifactManifestPath\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/artifacts.json\",\"providerProfileId\":null,\"modelOverride\":null,\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"startedAt\":\"2026-10-02T00:00:00.000Z\",\"finishedAt\":\"2026-10-02T00:00:00.000Z\",\"exitCode\":6,\"errorCode\":\"local_only_guard_blocked\",\"errorMessage\":\"fixture local only\",\"result\":{\"value\":null,\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}},\"workerId\":\"{{WORKER_ID}}\",\"workerPid\":{{WORKER_PID}},\"heartbeatAt\":\"2026-10-02T00:00:00.000Z\",\"cancelRequestedAt\":null,\"cancelRequestedBy\":null},\"result\":{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{JOB_ID}}\",\"status\":\"failed\",\"runtime\":\"codex\",\"mode\":\"plan\",\"consumer\":{\"id\":\"fixture-a\",\"runExternalId\":\"run-ext-001\"},\"artifactManifestPath\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/artifacts.json\",\"artifacts\":[{\"role\":\"request\",\"path\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/request.json\",\"sha256\":\"{{SHA_REQUEST}}\",\"contentType\":\"application/json\",\"sizeBytes\":{{SIZE_REQUEST}}},{\"role\":\"events\",\"path\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/events.jsonl\",\"sha256\":\"{{SHA_EVENTS}}\",\"contentType\":\"application/json\",\"sizeBytes\":{{SIZE_EVENTS}}},{\"role\":\"result\",\"path\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/result.json\",\"sha256\":\"{{SHA_RESULT}}\",\"contentType\":\"application/json\",\"sizeBytes\":{{SIZE_RESULT}}},{\"role\":\"manifest\",\"path\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/artifacts.json\",\"sha256\":\"{{SHA_MANIFEST}}\",\"contentType\":\"application/json\",\"sizeBytes\":{{SIZE_MANIFEST}}}],\"diagnostics\":[{\"code\":\"local_only_guard_blocked\",\"message\":\"fixture local only\"}],\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null},\"result\":{\"value\":null,\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}}}}\n"
+        },
+        "invalid_cwd": {
+          "kind": "agent",
+          "runnerOutcome": {
+            "status": "failed",
+            "errorCode": "invalid_cwd",
+            "errorMessage": "fixture cwd"
+          },
+          "exit": 7,
+          "stderr": "",
+          "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"job\":{\"id\":\"{{JOB_ID}}\",\"retryOfJobId\":null,\"attempt\":1,\"kind\":\"agent\",\"source\":\"api\",\"runtime\":\"codex\",\"status\":\"failed\",\"mode\":\"plan\",\"cwd\":\"{{ROOT}}/local-package\",\"projectId\":\"project-1\",\"chatId\":null,\"subChatId\":null,\"promptPreview\":\"Review this local package.\",\"apiConsumerId\":\"fixture-a\",\"apiConsumerRunId\":\"run-ext-001\",\"artifactBaseDir\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}\",\"artifactManifestPath\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/artifacts.json\",\"providerProfileId\":null,\"modelOverride\":null,\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"startedAt\":\"2026-10-02T00:00:00.000Z\",\"finishedAt\":\"2026-10-02T00:00:00.000Z\",\"exitCode\":7,\"errorCode\":\"invalid_cwd\",\"errorMessage\":\"fixture cwd\",\"result\":{\"value\":null,\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}},\"workerId\":\"{{WORKER_ID}}\",\"workerPid\":{{WORKER_PID}},\"heartbeatAt\":\"2026-10-02T00:00:00.000Z\",\"cancelRequestedAt\":null,\"cancelRequestedBy\":null},\"result\":{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{JOB_ID}}\",\"status\":\"failed\",\"runtime\":\"codex\",\"mode\":\"plan\",\"consumer\":{\"id\":\"fixture-a\",\"runExternalId\":\"run-ext-001\"},\"artifactManifestPath\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/artifacts.json\",\"artifacts\":[{\"role\":\"request\",\"path\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/request.json\",\"sha256\":\"{{SHA_REQUEST}}\",\"contentType\":\"application/json\",\"sizeBytes\":{{SIZE_REQUEST}}},{\"role\":\"events\",\"path\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/events.jsonl\",\"sha256\":\"{{SHA_EVENTS}}\",\"contentType\":\"application/json\",\"sizeBytes\":{{SIZE_EVENTS}}},{\"role\":\"result\",\"path\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/result.json\",\"sha256\":\"{{SHA_RESULT}}\",\"contentType\":\"application/json\",\"sizeBytes\":{{SIZE_RESULT}}},{\"role\":\"manifest\",\"path\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/artifacts.json\",\"sha256\":\"{{SHA_MANIFEST}}\",\"contentType\":\"application/json\",\"sizeBytes\":{{SIZE_MANIFEST}}}],\"diagnostics\":[{\"code\":\"invalid_cwd\",\"message\":\"fixture cwd\"}],\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null},\"result\":{\"value\":null,\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}}}}\n"
+        },
+        "internal_error": {
+          "kind": "agent",
+          "runnerOutcome": {
+            "status": "failed",
+            "errorCode": "internal_error",
+            "errorMessage": "fixture internal"
+          },
+          "exit": 8,
+          "stderr": "",
+          "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"job\":{\"id\":\"{{JOB_ID}}\",\"retryOfJobId\":null,\"attempt\":1,\"kind\":\"agent\",\"source\":\"api\",\"runtime\":\"codex\",\"status\":\"failed\",\"mode\":\"plan\",\"cwd\":\"{{ROOT}}/local-package\",\"projectId\":\"project-1\",\"chatId\":null,\"subChatId\":null,\"promptPreview\":\"Review this local package.\",\"apiConsumerId\":\"fixture-a\",\"apiConsumerRunId\":\"run-ext-001\",\"artifactBaseDir\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}\",\"artifactManifestPath\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/artifacts.json\",\"providerProfileId\":null,\"modelOverride\":null,\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"startedAt\":\"2026-10-02T00:00:00.000Z\",\"finishedAt\":\"2026-10-02T00:00:00.000Z\",\"exitCode\":8,\"errorCode\":\"internal_error\",\"errorMessage\":\"fixture internal\",\"result\":{\"value\":null,\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}},\"workerId\":\"{{WORKER_ID}}\",\"workerPid\":{{WORKER_PID}},\"heartbeatAt\":\"2026-10-02T00:00:00.000Z\",\"cancelRequestedAt\":null,\"cancelRequestedBy\":null},\"result\":{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{JOB_ID}}\",\"status\":\"failed\",\"runtime\":\"codex\",\"mode\":\"plan\",\"consumer\":{\"id\":\"fixture-a\",\"runExternalId\":\"run-ext-001\"},\"artifactManifestPath\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/artifacts.json\",\"artifacts\":[{\"role\":\"request\",\"path\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/request.json\",\"sha256\":\"{{SHA_REQUEST}}\",\"contentType\":\"application/json\",\"sizeBytes\":{{SIZE_REQUEST}}},{\"role\":\"events\",\"path\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/events.jsonl\",\"sha256\":\"{{SHA_EVENTS}}\",\"contentType\":\"application/json\",\"sizeBytes\":{{SIZE_EVENTS}}},{\"role\":\"result\",\"path\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/result.json\",\"sha256\":\"{{SHA_RESULT}}\",\"contentType\":\"application/json\",\"sizeBytes\":{{SIZE_RESULT}}},{\"role\":\"manifest\",\"path\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/artifacts.json\",\"sha256\":\"{{SHA_MANIFEST}}\",\"contentType\":\"application/json\",\"sizeBytes\":{{SIZE_MANIFEST}}}],\"diagnostics\":[{\"code\":\"internal_error\",\"message\":\"fixture internal\"}],\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null},\"result\":{\"value\":null,\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}}}}\n"
+        },
+        "interrupted": {
+          "kind": "agent",
+          "runnerOutcome": {
+            "status": "interrupted",
+            "errorCode": "runtime_interrupted",
+            "errorMessage": "fixture interrupted"
+          },
+          "exit": 1,
+          "stderr": "",
+          "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"job\":{\"id\":\"{{JOB_ID}}\",\"retryOfJobId\":null,\"attempt\":1,\"kind\":\"agent\",\"source\":\"api\",\"runtime\":\"codex\",\"status\":\"interrupted\",\"mode\":\"plan\",\"cwd\":\"{{ROOT}}/local-package\",\"projectId\":\"project-1\",\"chatId\":null,\"subChatId\":null,\"promptPreview\":\"Review this local package.\",\"apiConsumerId\":\"fixture-a\",\"apiConsumerRunId\":\"run-ext-001\",\"artifactBaseDir\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}\",\"artifactManifestPath\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/artifacts.json\",\"providerProfileId\":null,\"modelOverride\":null,\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"startedAt\":\"2026-10-02T00:00:00.000Z\",\"finishedAt\":\"2026-10-02T00:00:00.000Z\",\"exitCode\":1,\"errorCode\":\"runtime_interrupted\",\"errorMessage\":\"fixture interrupted\",\"result\":{\"value\":null,\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}},\"workerId\":\"{{WORKER_ID}}\",\"workerPid\":{{WORKER_PID}},\"heartbeatAt\":\"2026-10-02T00:00:00.000Z\",\"cancelRequestedAt\":null,\"cancelRequestedBy\":null},\"result\":{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{JOB_ID}}\",\"status\":\"interrupted\",\"runtime\":\"codex\",\"mode\":\"plan\",\"consumer\":{\"id\":\"fixture-a\",\"runExternalId\":\"run-ext-001\"},\"artifactManifestPath\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/artifacts.json\",\"artifacts\":[{\"role\":\"request\",\"path\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/request.json\",\"sha256\":\"{{SHA_REQUEST}}\",\"contentType\":\"application/json\",\"sizeBytes\":{{SIZE_REQUEST}}},{\"role\":\"events\",\"path\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/events.jsonl\",\"sha256\":\"{{SHA_EVENTS}}\",\"contentType\":\"application/json\",\"sizeBytes\":{{SIZE_EVENTS}}},{\"role\":\"result\",\"path\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/result.json\",\"sha256\":\"{{SHA_RESULT}}\",\"contentType\":\"application/json\",\"sizeBytes\":{{SIZE_RESULT}}},{\"role\":\"manifest\",\"path\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/artifacts.json\",\"sha256\":\"{{SHA_MANIFEST}}\",\"contentType\":\"application/json\",\"sizeBytes\":{{SIZE_MANIFEST}}}],\"diagnostics\":[{\"code\":\"runtime_interrupted\",\"message\":\"fixture interrupted\"}],\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null},\"result\":{\"value\":null,\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}}}}\n"
+        },
+        "completion_succeeded": {
+          "kind": "completion",
+          "upstream": {
+            "content": "{\"summary\":\"fixture\"}",
+            "usage": {
+              "input_tokens": 11,
+              "output_tokens": 5
+            }
+          },
+          "exit": 0,
+          "stderr": "",
+          "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"job\":{\"id\":\"{{JOB_ID}}\",\"retryOfJobId\":null,\"attempt\":1,\"kind\":\"completion\",\"source\":\"api\",\"runtime\":\"codex\",\"status\":\"succeeded\",\"mode\":\"agent\",\"cwd\":\"/home/chen/projects/locus-add-local-job-api-async-submit-draft\",\"projectId\":null,\"chatId\":null,\"subChatId\":null,\"promptPreview\":\"Return the fixture summary.\",\"apiConsumerId\":\"fixture-a\",\"apiConsumerRunId\":\"completion-ext-001\",\"artifactBaseDir\":null,\"artifactManifestPath\":null,\"providerProfileId\":\"completion-main\",\"modelOverride\":\"provider-model\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"startedAt\":\"2026-10-02T00:00:00.000Z\",\"finishedAt\":\"2026-10-02T00:00:00.000Z\",\"exitCode\":0,\"errorCode\":null,\"errorMessage\":null,\"result\":{\"content\":{\"summary\":\"fixture\"},\"usage\":{\"inputTokens\":11,\"outputTokens\":5},\"resolvedProvider\":{\"source\":\"request-profile\",\"profileId\":\"completion-main\",\"model\":\"provider-model\"}},\"workerId\":\"{{WORKER_ID}}\",\"workerPid\":{{WORKER_PID}},\"heartbeatAt\":\"2026-10-02T00:00:00.000Z\",\"cancelRequestedAt\":null,\"cancelRequestedBy\":null},\"result\":{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{JOB_ID}}\",\"status\":\"succeeded\",\"runtime\":\"codex\",\"mode\":\"agent\",\"consumer\":{\"id\":\"fixture-a\",\"runExternalId\":\"completion-ext-001\"},\"artifactManifestPath\":null,\"artifacts\":[],\"diagnostics\":[],\"resolvedProvider\":{\"source\":\"request-profile\",\"profileId\":\"completion-main\",\"model\":\"provider-model\"},\"result\":{\"content\":{\"summary\":\"fixture\"},\"usage\":{\"inputTokens\":11,\"outputTokens\":5},\"resolvedProvider\":{\"source\":\"request-profile\",\"profileId\":\"completion-main\",\"model\":\"provider-model\"}}}}\n"
+        }
+      },
+      "placeholders": "JOB_ID/WORKER_ID/WORKER_PID from the job row; SHA_*/SIZE_* from the published run-dir files; ROOT from the temp profile"
+    },
+    "S04": {
+      "sourceOutcome": {
+        "status": "failed",
+        "exitCode": 1,
+        "errorCode": "runtime_failed",
+        "errorMessage": "fixture failure"
+      },
+      "retryOutcome": {
+        "status": "succeeded",
+        "exitCode": 0,
+        "result": {
+          "finalMessage": "fixture done"
+        }
+      },
+      "exit": 0,
+      "stderr": "",
+      "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"job\":{\"id\":\"{{JOB_ID}}\",\"retryOfJobId\":\"{{SOURCE_ID}}\",\"attempt\":2,\"kind\":\"agent\",\"source\":\"api\",\"runtime\":\"codex\",\"status\":\"succeeded\",\"mode\":\"plan\",\"cwd\":\"{{ROOT}}/local-package\",\"projectId\":\"project-1\",\"chatId\":null,\"subChatId\":null,\"promptPreview\":\"Review this local package.\",\"apiConsumerId\":\"fixture-a\",\"apiConsumerRunId\":\"run-ext-001\",\"artifactBaseDir\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}\",\"artifactManifestPath\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/artifacts.json\",\"providerProfileId\":null,\"modelOverride\":null,\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"startedAt\":\"2026-10-02T00:00:00.000Z\",\"finishedAt\":\"2026-10-02T00:00:00.000Z\",\"exitCode\":0,\"errorCode\":null,\"errorMessage\":null,\"result\":{\"finalMessage\":\"fixture done\",\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}},\"workerId\":\"{{WORKER_ID}}\",\"workerPid\":{{WORKER_PID}},\"heartbeatAt\":\"2026-10-02T00:00:00.000Z\",\"cancelRequestedAt\":null,\"cancelRequestedBy\":null},\"result\":{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{JOB_ID}}\",\"status\":\"succeeded\",\"runtime\":\"codex\",\"mode\":\"plan\",\"consumer\":{\"id\":\"fixture-a\",\"runExternalId\":\"run-ext-001\"},\"artifactManifestPath\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/artifacts.json\",\"artifacts\":[{\"role\":\"request\",\"path\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/request.json\",\"sha256\":\"{{SHA_REQUEST}}\",\"contentType\":\"application/json\",\"sizeBytes\":{{SIZE_REQUEST}}},{\"role\":\"events\",\"path\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/events.jsonl\",\"sha256\":\"{{SHA_EVENTS}}\",\"contentType\":\"application/json\",\"sizeBytes\":{{SIZE_EVENTS}}},{\"role\":\"result\",\"path\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/result.json\",\"sha256\":\"{{SHA_RESULT}}\",\"contentType\":\"application/json\",\"sizeBytes\":{{SIZE_RESULT}}},{\"role\":\"manifest\",\"path\":\"{{ROOT}}/local-package/.locus/runs/{{JOB_ID}}/artifacts.json\",\"sha256\":\"{{SHA_MANIFEST}}\",\"contentType\":\"application/json\",\"sizeBytes\":{{SIZE_MANIFEST}}}],\"diagnostics\":[],\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null},\"result\":{\"finalMessage\":\"fixture done\",\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}}}}\n"
+    },
+    "S25": {
+      "wrapperDeadlineMs": 30000,
+      "latchReleaseAtMs": 30001,
+      "completionUpstreamMs": 45000,
+      "agentGoldenRef": "S03.outcomes.succeeded",
+      "completionGoldenRef": "S03.outcomes.completion_succeeded"
+    },
+    "S34": {
+      "observerNoProgressWindowMs": 30000,
+      "recoveryHeartbeatWindowMs": 120000,
+      "completionUpstreamMs": 45000,
+      "unknownWorkerPid": 1,
+      "stalledExpected": {
+        "exit": 8,
+        "wait": {
+          "state": "error",
+          "reason": "executor_unknown"
+        }
+      },
+      "agentGoldenRef": "S03.outcomes.succeeded",
+      "completionGoldenRef": "S03.outcomes.completion_succeeded",
+      "retryGoldenRef": "S04"
+    }
+  }
+}

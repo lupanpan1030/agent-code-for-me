@@ -1,0 +1,368 @@
+{
+  "fixtureVersion": 1,
+  "evidenceClass": "synthetic",
+  "sourceRefs": [
+    "openspec/changes/add-local-job-api-async-submit/specs/local-job-api/spec.md:3-14",
+    "openspec/changes/add-local-job-api-async-submit/specs/local-job-api/spec.md:16",
+    "openspec/changes/add-local-job-api-async-submit/specs/local-job-api/spec.md:26",
+    "openspec/changes/add-local-job-api-async-submit/specs/local-job-api/spec.md:487",
+    "openspec/changes/add-local-job-api-async-submit/design.md:106-108",
+    "openspec/changes/add-local-job-api-async-submit/design.md:143-159",
+    "src/main/lib/headless/cli-dispatcher.ts:499-525",
+    "src/main/lib/headless/job-store.ts:248-310"
+  ],
+  "provenance": {
+    "capturedFrom": "product source 2c59664f1b80a5f782eb05f82d33f718d9bc7053 (worktree base 0447d02d carries no src/ diff from it)",
+    "method": "in-process runHeadlessCliCommand with a controlled fake runner/fetch, migrated temp SQLite, bun:test setSystemTime(2026-10-02T00:00:00.000Z); per-run values replaced by {{PLACEHOLDERS}} bound at test time from the profile DB/disk, never from the stdout under test",
+    "author": "independent red author (submit-wait domain), 2026-10-02",
+    "secrets": "none; ghp_fixture... is an inert synthetic secret-pattern sentinel"
+  },
+  "cases": {
+    "S01": {
+      "request": {
+        "apiVersion": "locus.local-job.v1",
+        "consumer": {
+          "id": "fixture-a",
+          "runExternalId": "run-ext-001"
+        },
+        "project": {
+          "cwd": "{{PACKAGE_DIR}}"
+        },
+        "runtime": {
+          "id": "codex",
+          "requiredCapabilities": ["planMode"]
+        },
+        "mode": "plan",
+        "prompt": {
+          "text": "Review this local package."
+        },
+        "input": {
+          "contract": "example.local-package.v1"
+        }
+      },
+      "claim": {
+        "workerId": "s01-claimant"
+      },
+      "expectedAck": {
+        "keys": ["apiVersion", "job"],
+        "status": "queued"
+      },
+      "expectedCreationFact": {
+        "sequence": 1,
+        "type": "job_created",
+        "factKeyTemplate": "lifecycle:job-created:{{JOB_ID}}:0"
+      },
+      "expectedStatusAfterClaim": "running"
+    },
+    "S02": {
+      "cases": {
+        "unregistered_cwd": {
+          "request": {
+            "apiVersion": "locus.local-job.v1",
+            "consumer": {
+              "id": "fixture-a",
+              "runExternalId": "run-ext-001"
+            },
+            "project": {
+              "cwd": "{{UNREGISTERED_DIR}}"
+            },
+            "runtime": {
+              "id": "codex",
+              "requiredCapabilities": ["planMode"]
+            },
+            "mode": "plan",
+            "prompt": {
+              "text": "Review this local package."
+            },
+            "input": {
+              "contract": "example.local-package.v1"
+            }
+          },
+          "baseline": {
+            "exit": 7,
+            "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"error\":{\"code\":\"project_not_registered\",\"message\":\"API run cwd must be inside a registered project\",\"cwd\":\"{{UNREGISTERED_DIR}}\",\"projectId\":null}}\n",
+            "stderr": ""
+          }
+        },
+        "unsupported_capability": {
+          "request": {
+            "apiVersion": "locus.local-job.v1",
+            "consumer": {
+              "id": "fixture-a",
+              "runExternalId": "run-ext-001"
+            },
+            "project": {
+              "cwd": "{{PACKAGE_DIR}}"
+            },
+            "runtime": {
+              "id": "codex",
+              "requiredCapabilities": ["rollback"]
+            },
+            "mode": "plan",
+            "prompt": {
+              "text": "Review this local package."
+            },
+            "input": {
+              "contract": "example.local-package.v1"
+            }
+          },
+          "baseline": {
+            "exit": 3,
+            "stdout": "",
+            "stderr": "Codex Rollback and fork is unsupported. Codex session IDs are persisted, but rollback and fork are not wired through durable shared session references.\n"
+          }
+        },
+        "invalid_execution_profile_grant": {
+          "request": {
+            "apiVersion": "locus.local-job.v1",
+            "consumer": {
+              "id": "fixture-a",
+              "runExternalId": "run-ext-001"
+            },
+            "project": {
+              "cwd": "{{PACKAGE_DIR}}"
+            },
+            "runtime": {
+              "id": "codex",
+              "executionProfile": "policy-grant"
+            },
+            "mode": "plan",
+            "prompt": {
+              "text": "Review this local package."
+            },
+            "input": {
+              "contract": "example.local-package.v1"
+            }
+          },
+          "baseline": {
+            "exit": 2,
+            "stdout": "",
+            "stderr": "runtime.policyGrant.scopes is required for policy-grant execution\n"
+          }
+        },
+        "unusable_explicit_provider_profile": {
+          "request": {
+            "apiVersion": "locus.local-job.v1",
+            "consumer": {
+              "id": "fixture-a",
+              "runExternalId": "run-ext-001"
+            },
+            "project": {
+              "cwd": "{{PACKAGE_DIR}}"
+            },
+            "runtime": {
+              "id": "codex",
+              "requiredCapabilities": ["planMode"]
+            },
+            "mode": "plan",
+            "prompt": {
+              "text": "Review this local package."
+            },
+            "input": {
+              "contract": "example.local-package.v1"
+            },
+            "provider": {
+              "profileId": "missing-profile"
+            }
+          },
+          "baseline": {
+            "exit": 2,
+            "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"error\":{\"code\":\"provider_profile_not_found\",\"message\":\"Provider profile missing-profile was not found.\",\"source\":\"request-profile\",\"profileId\":\"missing-profile\"}}\n",
+            "stderr": ""
+          }
+        },
+        "secret_bearing_input": {
+          "request": {
+            "apiVersion": "locus.local-job.v1",
+            "consumer": {
+              "id": "fixture-a",
+              "runExternalId": "run-ext-001"
+            },
+            "project": {
+              "cwd": "{{PACKAGE_DIR}}"
+            },
+            "runtime": {
+              "id": "codex",
+              "requiredCapabilities": ["planMode"]
+            },
+            "mode": "plan",
+            "prompt": {
+              "text": "Review this local package."
+            },
+            "input": {
+              "note": "ghp_fixtureFIXTUREfixtureFIXTURE12"
+            }
+          },
+          "baseline": {
+            "exit": 2,
+            "stdout": "",
+            "stderr": "input.note contains secret-like text\n"
+          }
+        },
+        "completion_with_agent_only_fields": {
+          "request": {
+            "apiVersion": "locus.local-job.v1",
+            "kind": "completion",
+            "consumer": {
+              "id": "fixture-a",
+              "runExternalId": "completion-ext-001"
+            },
+            "runtime": {
+              "id": "codex"
+            },
+            "provider": {
+              "profileId": "completion-main",
+              "model": "provider-model"
+            },
+            "messages": [
+              {
+                "role": "user",
+                "content": "Return the fixture summary."
+              }
+            ],
+            "responseFormat": {
+              "type": "json_schema",
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "summary": {
+                    "type": "string"
+                  }
+                },
+                "required": ["summary"],
+                "additionalProperties": false
+              }
+            },
+            "mode": "plan",
+            "prompt": {
+              "text": "agent-only field"
+            }
+          },
+          "baseline": {
+            "exit": 2,
+            "stdout": "",
+            "stderr": "mode is not accepted for completion jobs; prompt is not accepted for completion jobs\n"
+          }
+        }
+      },
+      "ordinary": {
+        "request": {
+          "apiVersion": "locus.local-job.v1",
+          "consumer": {
+            "id": "fixture-a",
+            "runExternalId": "run-ext-001"
+          },
+          "project": {
+            "cwd": "{{PACKAGE_DIR}}"
+          },
+          "runtime": {
+            "id": "codex",
+            "requiredCapabilities": ["planMode"]
+          },
+          "mode": "plan",
+          "prompt": {
+            "text": "Review this local package."
+          },
+          "input": {
+            "contract": "example.local-package.v1"
+          }
+        },
+        "expected": {
+          "status": "queued",
+          "runtime": "codex",
+          "providerProfileId": null,
+          "modelOverride": null,
+          "executionProfile": "batch"
+        }
+      }
+    },
+    "S24": {
+      "providerProfile": {
+        "id": "completion-main",
+        "targets": ["codex"]
+      },
+      "request": {
+        "apiVersion": "locus.local-job.v1",
+        "kind": "completion",
+        "consumer": {
+          "id": "fixture-a",
+          "runExternalId": "completion-ext-001"
+        },
+        "runtime": {
+          "id": "codex"
+        },
+        "provider": {
+          "profileId": "completion-main",
+          "model": "provider-model"
+        },
+        "messages": [
+          {
+            "role": "user",
+            "content": "Return the fixture summary."
+          }
+        ],
+        "responseFormat": {
+          "type": "json_schema",
+          "schema": {
+            "type": "object",
+            "properties": {
+              "summary": {
+                "type": "string"
+              }
+            },
+            "required": ["summary"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "expected": {
+        "fetchCallsAtAck": 0,
+        "fetchCallsAfterExecution": 1,
+        "runnerCalls": 0,
+        "artifactManifestPath": null
+      },
+      "goldenRef": "terminal-bytes.json#S03.outcomes.completion_succeeded",
+      "explicitProfileFailure": {
+        "request": {
+          "apiVersion": "locus.local-job.v1",
+          "kind": "completion",
+          "consumer": {
+            "id": "fixture-a",
+            "runExternalId": "completion-ext-001"
+          },
+          "runtime": {
+            "id": "codex"
+          },
+          "provider": {
+            "profileId": "missing-profile",
+            "model": "provider-model"
+          },
+          "messages": [
+            {
+              "role": "user",
+              "content": "Return the fixture summary."
+            }
+          ],
+          "responseFormat": {
+            "type": "json_schema",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "summary": {
+                  "type": "string"
+                }
+              },
+              "required": ["summary"],
+              "additionalProperties": false
+            }
+          }
+        },
+        "baseline": {
+          "exit": 2,
+          "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"error\":{\"code\":\"provider_profile_not_found\",\"message\":\"Provider profile missing-profile was not found.\",\"source\":\"request-profile\",\"profileId\":\"missing-profile\"}}\n",
+          "stderr": ""
+        }
+      }
+    }
+  }
+}
