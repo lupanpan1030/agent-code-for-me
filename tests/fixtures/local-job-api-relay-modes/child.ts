@@ -13,7 +13,8 @@
  *   signalOn    optional { eventType, signal }: the store hook sends `signal`
  *               to this process synchronously when the INSERT of the first
  *               `agent_job_events` row of that type runs (`SIGNALED <type>`)
- *   seam        optional `beforeOwnPumpClaim` behaviour: prints
+ *   seam        optional `beforeOwnPumpClaim` behaviour: removes
+ *               `removePath` first when given (`SEAM_REMOVED`), prints
  *               `SEAM <jobId>`, first claims the Run as a daemon worker of
  *               `claimAs.workerPid` when given, then holds up to `holdMs`
  *               (returning early once the Run is canceled or, when claimed
@@ -21,6 +22,7 @@
  *               canceled)
  */
 import { Database } from "bun:sqlite"
+import { rmSync } from "node:fs"
 import { drizzle } from "drizzle-orm/bun-sqlite"
 import {
   getOrCreateRunEventLedger,
@@ -40,7 +42,11 @@ const config = JSON.parse(process.env.RELAY_MODES_CHILD_CONFIG ?? "{}") as {
   lockPath: string | null
   runner: "succeed" | "block"
   signalOn?: { eventType: string; signal: NodeJS.Signals } | null
-  seam?: { holdMs: number; claimAs?: { workerPid: number } | null } | null
+  seam?: {
+    holdMs: number
+    removePath?: string | null
+    claimAs?: { workerPid: number } | null
+  } | null
 }
 
 const sqlite = new Database(config.dbFile)
@@ -147,6 +153,10 @@ const code = await runHeadlessCliCommand({
   ...(seam
     ? {
         beforeOwnPumpClaim: async (jobId: string) => {
+          if (seam.removePath) {
+            rmSync(seam.removePath, { recursive: true, force: true })
+            process.stderr.write("SEAM_REMOVED\n")
+          }
           if (claimAs) {
             await startAgentJob(db, {
               jobId,

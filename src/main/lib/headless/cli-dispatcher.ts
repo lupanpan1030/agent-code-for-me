@@ -694,6 +694,11 @@ type WrapperAbortRelay = {
   ownWorker(workerId: string): void
   /** The own pump claimed: the baseline default disposition, EOF ignored. */
   ownClaimed(): void
+  /**
+   * The wait ended and the command only reports from here: a later signal
+   * takes the default disposition; EOF is ignored.
+   */
+  ended(): void
   /** Removes every listener (the command's `finally`). */
   dispose(): void
 }
@@ -721,8 +726,10 @@ export function daemonFirstRelaySignals(
 }
 
 /**
- * R4 relay of a create/default-retry wrapper, armed before admission — so no
- * catchable abort is lost — and moved through these modes:
+ * R4 relay of a create/default-retry wrapper, armed before admission and
+ * disposed only after a final event-loop turn — so a catchable signal the
+ * runtime caught while the command runs is dispatched to a live handler —
+ * and moved through these modes:
  *
  * - pending (admission in progress, no ID yet): a catchable signal of
  *   daemonFirstRelaySignals or an armed stdin EOF is held. When admission
@@ -737,12 +744,16 @@ export function daemonFirstRelaySignals(
  *   executor claimed gets its cancel request) and waits at most 5000 ms for
  *   its terminal. The wrapper then re-raises the signal (or ends with exit
  *   8 on EOF).
- * - own-claimed (the own pump claimed the Run: local execution) and
- *   observe-only (a keyed replay waiter, or a failed admission): the
- *   handlers stay installed and re-raise the signal with the default
+ * - own-claimed (the own pump claimed the Run: local execution),
+ *   observe-only (a keyed replay waiter, or a failed admission) and ended (the wait ended; the command only reports):
+ *   the handlers stay installed and re-raise the signal with the default
  *   disposition, which is the 2c59664f behaviour of a local execution; stdin
  *   EOF is ignored. A signal caught between the own claim commit and the
- *   switch is recognised by the committed own worker identity.
+ *   switch is recognised by the committed own worker identity. On Windows
+ *   the re-raise ends the process with exit 1 (Node raises SIGINT/SIGTERM
+ *   as TerminateProcess) or exit 8 (SIGBREAK/SIGHUP cannot be raised),
+ *   whereas with no listener the console default ends it with
+ *   STATUS_CONTROL_C_EXIT (unverified on a Windows host).
  *
  * Uncatchable terminations relay nothing; the Run stays queryable by ID.
  */
@@ -884,6 +895,7 @@ async function armWrapperAbortRelay(
       ownWorkerId = workerId
     },
     ownClaimed: toPassthrough,
+    ended: toPassthrough,
     dispose() {
       if (mode === "disposed") return
       mode = "disposed"
@@ -894,10 +906,11 @@ async function armWrapperAbortRelay(
 }
 
 /**
- * Re-raises `signal` after this wrapper's listeners were removed, so the
- * runtime's default disposition ends the process as if none had been armed.
- * A signal the runtime cannot raise (Windows SIGBREAK/SIGHUP) ends the
- * process with exit 8 instead.
+ * Re-raises `signal` after this wrapper's listeners were removed. On POSIX
+ * the runtime's default disposition then ends the process as if none had
+ * been armed; on Windows Node raises SIGINT/SIGTERM as TerminateProcess
+ * (exit 1), and a signal it cannot raise (SIGBREAK/SIGHUP) ends the process
+ * with exit 8 instead.
  */
 function reraiseWithDefaultDisposition(signal: NodeJS.Signals): void {
   try {
@@ -944,8 +957,9 @@ async function finishRelayedAbort(
  * Admits the Run of a synchronous create/default retry under the R4 relay
  * and runs its wrapper. The relay is armed before `admit` runs (an abort
  * during admission is held) and its listeners are removed only when the
- * command ends. A keyed replay (`replay: true`) does not own the retained
- * Run, so its waiter only observes: no relayed cancel, default disposition.
+ * command ends, after a final event-loop turn. A keyed replay (`replay: true`) does not own the
+ * retained Run, so its waiter only observes: no relayed cancel, default
+ * disposition.
  */
 async function admitUnderWrapperRelay(
   options: RunHeadlessCliCommandOptions,
@@ -971,6 +985,11 @@ async function admitUnderWrapperRelay(
     else relay.admitted(admitted.job.id)
     return await runLocalJobApiWrapper(admitted.job.id, relay, options, onError)
   } finally {
+    // The command only reports from here (nothing above turns the event
+    // loop after the last abort check): a signal caught meanwhile is
+    // dispatched with the default disposition before the listeners go.
+    relay.ended()
+    await yieldPastPollPhase()
     relay.dispose()
   }
 }
@@ -1054,9 +1073,18 @@ async function runLocalJobApiWrapper(
         ownDispatch,
         abort,
       })
-  // A relayed abort wins over anything observed after it: no stale
-  // terminal or observer envelope is written once the abort arrived.
-  const relayed = relay.received()
+  // The claimed path or the wait may finish without an event-loop turn (a
+  // claim-time gate failure, a runner that completes in microtasks): an
+  // abort the runtime caught meanwhile is dispatched before anything is
+  // reported — it relays before the own claim and otherwise ends the
+  // command with the default disposition. A relayed abort wins over
+  // anything observed after it: no stale terminal or observer envelope is
+  // written once the abort arrived.
+  const dispatchedAbort = async () => {
+    await yieldPastPollPhase()
+    return relay.received()
+  }
+  const relayed = await dispatchedAbort()
   if (relayed) return await finishRelayedAbort(relayed, ownDispatch)
   switch (result?.kind) {
     case "ready":
@@ -1074,14 +1102,14 @@ async function runLocalJobApiWrapper(
     case "own_dispatch_failed": {
       // A non-outcome failure of the own pump: no terminal is fabricated.
       await cancelOwnQueuedRun(jobId, options)
-      const late = relay.received()
+      const late = await dispatchedAbort()
       if (late) return await finishRelayedAbort(late, ownDispatch)
       return onError(own.result?.error, options)
     }
     case "own_observation_failed": {
       // The own execution tree was stopped; the baseline error is kept.
       await cancelOwnQueuedRun(jobId, options)
-      const late = relay.received()
+      const late = await dispatchedAbort()
       if (late) return await finishRelayedAbort(late, ownDispatch)
       return onError(result.error, options)
     }

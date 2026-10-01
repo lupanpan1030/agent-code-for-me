@@ -8,7 +8,9 @@
  *   relay; an open pipe closed later still relays the own cancel.
  * - Own claim (design-probes F1): a catchable signal caught while the own
  *   pump claims the Run is never swallowed; it takes the 2c59664f default
- *   disposition of a local execution.
+ *   disposition of a local execution. T5 (bb194738 review P3-1): also when
+ *   the claimed path ends without an event-loop turn (a claim-time gate
+ *   failure, a runner that completes in microtasks), before any envelope.
  * - Admission (design-probes F2): a signal caught while the Run is being
  *   admitted is held and, once the ID is known, cancels the queued own Run;
  *   when admission throws, it is re-raised with the default disposition.
@@ -55,7 +57,11 @@ type ChildConfig = {
   argv: string[]
   runner: "succeed" | "block"
   signalOn?: { eventType: string; signal: NodeJS.Signals } | null
-  seam?: { holdMs: number; claimAs?: { workerPid: number } | null } | null
+  seam?: {
+    holdMs: number
+    removePath?: string | null
+    claimAs?: { workerPid: number } | null
+  } | null
 }
 
 function childEnv(p: Profile, config: ChildConfig) {
@@ -382,6 +388,94 @@ test.skipIf(!POSIX)(
           workerKind: "headless",
         },
         afterRecovery: baseline.afterRecovery,
+      })
+    } finally {
+      child.proc.kill("SIGKILL")
+      await child.exited
+    }
+  },
+  30_000,
+)
+
+test.skipIf(!POSIX)(
+  "a SIGTERM caught while the own claim fails its claim-time gate (project cwd removed) is dispatched before the outcome is reported: the wrapper ends by SIGTERM with no stdout",
+  async () => {
+    const p = profile()
+    const body = agentRequest(p) as { project: { cwd: string } }
+    const requestPath = writeRequest(p, body)
+    const child = spawnWrapper(
+      p,
+      {
+        argv: createArgv(requestPath),
+        runner: "succeed",
+        signalOn: { eventType: "job_started", signal: "SIGTERM" },
+        seam: { holdMs: 0, removePath: body.project.cwd },
+      },
+      "pipe",
+    )
+    try {
+      const exit = await child.exitWithin(9_000)
+      expect({
+        removed: /SEAM_REMOVED/.test(child.stderr()),
+        signaled: /SIGNALED job_started/.test(child.stderr()),
+        exitSignal: exit.signal,
+        stdout: child.stdout(),
+        runnerEntered: /RUNNER_ENTERED/.test(child.stderr()),
+        rows: apiJobRows(p).map((row) => ({
+          status: row.status,
+          errorCode: row.error_code,
+          cancelRequested: row.cancel_requested_at !== null,
+          started: countType(p, row.id, "job_started"),
+        })),
+      }).toEqual({
+        removed: true,
+        signaled: true,
+        exitSignal: "SIGTERM",
+        stdout: "",
+        runnerEntered: false,
+        rows: [
+          {
+            status: "failed",
+            errorCode: "cwd_identity_changed",
+            cancelRequested: false,
+            started: 1,
+          },
+        ],
+      })
+    } finally {
+      child.proc.kill("SIGKILL")
+      await child.exited
+    }
+  },
+  30_000,
+)
+
+test.skipIf(!POSIX)(
+  "a SIGTERM caught while the own claim starts a runner that completes without an event-loop turn ends the wrapper by SIGTERM before any envelope; the Run keeps its committed terminal",
+  async () => {
+    const p = profile()
+    const requestPath = writeRequest(p, agentRequest(p))
+    const child = spawnWrapper(
+      p,
+      {
+        argv: createArgv(requestPath),
+        runner: "succeed",
+        signalOn: { eventType: "job_started", signal: "SIGTERM" },
+      },
+      "pipe",
+    )
+    try {
+      const exit = await child.exitWithin(9_000)
+      expect({
+        signaled: /SIGNALED job_started/.test(child.stderr()),
+        exitSignal: exit.signal,
+        stdout: child.stdout(),
+        rows: rowSummary(p),
+      }).toEqual({
+        signaled: true,
+        exitSignal: "SIGTERM",
+        stdout: "",
+        rows: [{ status: "succeeded", cancelRequested: false, started: 1 }],
       })
     } finally {
       child.proc.kill("SIGKILL")
