@@ -16,6 +16,10 @@ import {
   type AgentScheduleStatus,
   MAX_AGENT_SCHEDULE_INTERVAL_SECONDS,
 } from "../../../shared/agent-schedules"
+import {
+  LOCAL_JOB_API_WAIT_DEFAULT_TIMEOUT_MS,
+  LOCAL_JOB_API_WAIT_MAX_TIMEOUT_MS,
+} from "../../../shared/local-job-api"
 
 export const HEADLESS_CLI_MARKER = "--locus-headless-cli"
 
@@ -25,7 +29,9 @@ export const HEADLESS_API_GROUPS = ["runtimes", "runs", "projects"] as const
 
 const HEADLESS_API_RUNTIMES_SUBCOMMANDS = ["list"] as const
 const HEADLESS_API_RUNS_SUBCOMMANDS = [
+  "submit",
   "create",
+  "wait",
   "status",
   "events",
   "result",
@@ -101,8 +107,17 @@ export type HeadlessCliCommand =
       force: boolean
     }
   | {
+      kind: "api-runs-submit"
+      requestPath: string
+    }
+  | {
       kind: "api-runs-create"
       requestPath: string
+    }
+  | {
+      kind: "api-runs-wait"
+      jobId: string
+      timeoutMs: number
     }
   | {
       kind: "api-runs-status"
@@ -119,6 +134,8 @@ export type HeadlessCliCommand =
   | {
       kind: "api-runs-retry"
       jobId: string
+      requestPath: string | null
+      async: boolean
     }
   | {
       kind: "api-runs-events"
@@ -311,6 +328,22 @@ function parseNonNegativeInteger(
   const parsed = Number(raw)
   if (!Number.isSafeInteger(parsed) || parsed < 0) {
     throw new Error(`${name} must be a non-negative integer`)
+  }
+  return parsed
+}
+
+const INVALID_WAIT_TIMEOUT_MESSAGE = `Invalid timeout: expected an integer from 0 to ${LOCAL_JOB_API_WAIT_MAX_TIMEOUT_MS} milliseconds.`
+
+/** `runs wait --timeout`: a safe integer of milliseconds, 0-86400000. */
+function parseWaitTimeout(value: string | null): number {
+  if (value === null) return LOCAL_JOB_API_WAIT_DEFAULT_TIMEOUT_MS
+  if (!/^\d+$/.test(value)) throw new Error(INVALID_WAIT_TIMEOUT_MESSAGE)
+  const parsed = Number(value)
+  if (
+    !Number.isSafeInteger(parsed) ||
+    parsed > LOCAL_JOB_API_WAIT_MAX_TIMEOUT_MS
+  ) {
+    throw new Error(INVALID_WAIT_TIMEOUT_MESSAGE)
   }
   return parsed
 }
@@ -596,18 +629,53 @@ export function parseHeadlessCliArgv(argv = process.argv): ParsedHeadlessCli {
             ),
           )
         }
-        if (subcommand === "create") {
+        if (subcommand === "create" || subcommand === "submit") {
           takeFlag(args, "--json")
           const requestPath = takeOption(args, "--request")
           if (!requestPath) {
-            throw new Error("locus api runs create requires --request <path|->")
+            throw new Error(
+              `locus api runs ${subcommand} requires --request <path|->`,
+            )
           }
           if (args.length > 0) {
             throw new Error(unexpectedArgumentsMessage(args))
           }
           return {
             ok: true,
-            command: { kind: "api-runs-create", requestPath },
+            command: {
+              kind:
+                subcommand === "create" ? "api-runs-create" : "api-runs-submit",
+              requestPath,
+            },
+          }
+        }
+
+        if (subcommand === "wait") {
+          takeFlag(args, "--json")
+          const timeoutMs = parseWaitTimeout(takeOption(args, "--timeout"))
+          const jobId = args.shift()
+          if (!jobId) throw new Error("locus api runs wait requires a job id")
+          if (args.length > 0) {
+            throw new Error(unexpectedArgumentsMessage(args))
+          }
+          return {
+            ok: true,
+            command: { kind: "api-runs-wait", jobId, timeoutMs },
+          }
+        }
+
+        if (subcommand === "retry") {
+          takeFlag(args, "--json")
+          const async = takeFlag(args, "--async")
+          const requestPath = takeOption(args, "--request")
+          const jobId = args.shift()
+          if (!jobId) throw new Error("locus api runs retry requires a job id")
+          if (args.length > 0) {
+            throw new Error(unexpectedArgumentsMessage(args))
+          }
+          return {
+            ok: true,
+            command: { kind: "api-runs-retry", jobId, requestPath, async },
           }
         }
 
@@ -648,8 +716,7 @@ export function parseHeadlessCliArgv(argv = process.argv): ParsedHeadlessCli {
         if (
           subcommand === "status" ||
           subcommand === "result" ||
-          subcommand === "cancel" ||
-          subcommand === "retry"
+          subcommand === "cancel"
         ) {
           return {
             ok: true,
@@ -657,8 +724,7 @@ export function parseHeadlessCliArgv(argv = process.argv): ParsedHeadlessCli {
               kind: `api-runs-${subcommand}` as
                 | "api-runs-status"
                 | "api-runs-result"
-                | "api-runs-cancel"
-                | "api-runs-retry",
+                | "api-runs-cancel",
               jobId,
             },
           }

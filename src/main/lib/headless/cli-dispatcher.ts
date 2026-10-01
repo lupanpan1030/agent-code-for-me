@@ -1,12 +1,17 @@
-import { readFileSync } from "node:fs"
+import { fstatSync, readFileSync } from "node:fs"
 import type { Readable } from "node:stream"
 import {
   type AgentJobStatus,
   isTerminalAgentJobStatus,
 } from "../../../shared/agent-jobs"
 import {
+  assertLocalJobApiIdempotencyKey,
+  isLocalJobApiRequestError,
   LOCAL_JOB_API_PROJECT_NOT_REGISTERED,
   LOCAL_JOB_API_VERSION,
+  LOCAL_JOB_API_WAIT_EXIT_CODE,
+  LocalJobApiRequestError,
+  toLocalJobApiErrorEnvelope,
 } from "../../../shared/local-job-api"
 import type { AgentJob, AgentJobEvent, Project } from "../db/schema"
 import {
@@ -32,17 +37,14 @@ import {
   serializeAgentJobEvent,
   serializeAgentSchedule,
 } from "./cli-output"
+import type { RunPersistedCompletionJobOptions } from "./completion-runner"
 import {
-  type RunPersistedCompletionJobOptions,
-  runPersistedCompletionJob,
-} from "./completion-runner"
-import { runLocalAgentDaemon } from "./daemon"
+  type PumpQueuedRunResult,
+  pumpQueuedRuns,
+  runLocalAgentDaemon,
+} from "./daemon"
 import { recoverStaleAgentJobs } from "./job-recovery"
-import {
-  HEADLESS_EXIT_CODES,
-  type RunPersistedAgentJobResult,
-  runPersistedAgentJob,
-} from "./job-runner"
+import { HEADLESS_EXIT_CODES, runPersistedAgentJob } from "./job-runner"
 import {
   type AgentJobDatabase,
   cancelAgentJob,
@@ -55,15 +57,11 @@ import {
 } from "./job-store"
 import { runJobsStdioServer } from "./jobs-stdio"
 import {
-  admitLocalJobApiInitialArtifacts,
-  closeLocalJobApiArtifactRunDir,
-  createLocalJobApiJob,
-  createLocalJobApiTerminalArtifacts,
   getLocalJobApiEvents,
   getLocalJobApiJobOrThrow,
   type LocalJobApiRuntimeManifestEnvelopeOptions,
-  parseLocalJobApiCreateRequestJson,
-  retryLocalJobApiJob,
+  parseLocalJobApiRetryRequestJson,
+  parseLocalJobApiSubmitRequestJson,
   toLocalJobApiJobEnvelope,
   toLocalJobApiResultEnvelope,
   toLocalJobApiRuntimeManifestEnvelope,
@@ -76,6 +74,16 @@ import {
   isLocalOnlyHeadlessProviderBindingCode,
   isUnavailableHeadlessProviderBindingCode,
 } from "./provider-binding"
+import {
+  DEFAULT_MONOTONIC_CLOCK,
+  type MonotonicClock,
+  type OwnDispatch,
+  observeRunExecution,
+  type SubmitRunResult,
+  submitRun,
+  waitForAdmittedRun,
+  waitForRun,
+} from "./run-submission"
 import {
   createAgentSchedule,
   deleteAgentSchedule,
@@ -104,6 +112,17 @@ export type RunHeadlessCliCommandOptions = {
   runtimeReadinessDependencies?: LocalJobApiRuntimeManifestEnvelopeOptions["readinessDependencies"]
   completionFetch?: RunPersistedCompletionJobOptions["fetchImpl"]
   providerBindingDependencies?: HeadlessProviderBindingDependencies
+  /**
+   * Monotonic clock of `runs wait` and the create/retry wrapper's internal
+   * wait (deadlines, 30000 ms observer windows); defaults to real time.
+   */
+  monotonicClock?: MonotonicClock
+  /**
+   * Called after the wrapper's own admission and before its scoped pump
+   * claims it; if the Run is no longer queued afterwards the wrapper only
+   * waits (claim-latch seam).
+   */
+  beforeOwnPumpClaim?: (jobId: string) => Promise<void>
 }
 
 export const HEADLESS_STDIN_MAX_BYTES = 1024 * 1024
@@ -441,58 +460,292 @@ async function retryCommand(
 }
 
 async function readApiRequestContent(
-  command: Extract<HeadlessCliCommand, { kind: "api-runs-create" }>,
+  requestPath: string,
   options: RunHeadlessCliCommandOptions,
 ): Promise<string> {
-  if (command.requestPath === "-") return readStdin(options.stdin)
-  return readRequestFile(command.requestPath)
+  if (requestPath === "-") return readStdin(options.stdin)
+  return readRequestFile(requestPath)
 }
 
-async function runPreparedLocalJobApiJob(
-  prepared: Awaited<ReturnType<typeof createLocalJobApiJob>>,
-  options: RunHeadlessCliCommandOptions,
-): Promise<RunPersistedAgentJobResult> {
-  try {
-    await admitLocalJobApiInitialArtifacts({ db: options.db, prepared })
-    const terminal = createLocalJobApiTerminalArtifacts({
-      db: options.db,
-      runDir: prepared.runDir,
-      jobId: prepared.job.id,
-    })
+/**
+ * Admission envelope of submit / retry --async: a fixed queued snapshot;
+ * only a keyed replay of a retained Run carries idempotentReplay.
+ */
+function admissionEnvelope(admitted: SubmitRunResult, keyed: boolean) {
+  return admitted.replay && keyed
+    ? {
+        apiVersion: LOCAL_JOB_API_VERSION,
+        idempotentReplay: true,
+        job: toLocalJobApiJobEnvelope(admitted.job).job,
+      }
+    : toLocalJobApiJobEnvelope(admitted.job)
+}
 
-    const result =
-      prepared.request.kind === "completion"
-        ? await runPersistedCompletionJob({
-            db: options.db,
-            jobId: prepared.job.id,
-            fetchImpl: options.completionFetch,
-            providerBindingDependencies: options.providerBindingDependencies,
-            locusBuild: options.appVersion ?? null,
-            ...(terminal.preparer
-              ? { terminalArtifacts: terminal.preparer }
-              : {}),
-          })
-        : await runPersistedAgentJob({
-            db: options.db,
-            jobId: prepared.job.id,
-            runner: options.runner,
-            env: options.env,
-            providerBindingDependencies: options.providerBindingDependencies,
-            ...(terminal.preparer
-              ? { terminalArtifacts: terminal.preparer }
-              : {}),
-            artifactRunDir: prepared.runDir,
-          })
-    const finalEvents = listAgentJobEvents(options.db, result.job.id)
-    const artifacts = terminal.artifacts()
-    writeJson(options.stdout, {
-      apiVersion: LOCAL_JOB_API_VERSION,
-      job: toLocalJobApiJobEnvelope(result.job).job,
-      result: toLocalJobApiResultEnvelope(result.job, artifacts, finalEvents),
+/**
+ * Errors of the submission core: async-submit request errors and the
+ * existing project/provider errors are stdout v1 envelopes; everything else
+ * keeps its plain-text stderr diagnostic and the caller's baseline exit.
+ */
+function apiSubmissionError(
+  error: unknown,
+  options: RunHeadlessCliCommandOptions,
+  fallbackCode: (error: unknown) => number,
+): number {
+  if (isLocalJobApiRequestError(error)) {
+    writeJson(options.stdout, toLocalJobApiErrorEnvelope(error))
+    return error.code === "submission_pending"
+      ? HEADLESS_EXIT_CODES.internalFailure
+      : HEADLESS_EXIT_CODES.invalidArguments
+  }
+  if (isLocalJobApiProjectNotRegisteredError(error)) {
+    writeJson(options.stdout, toLocalJobApiProjectErrorEnvelope(error))
+    return HEADLESS_EXIT_CODES.invalidCwd
+  }
+  if (error instanceof HeadlessProviderBindingError) {
+    writeJson(options.stdout, toLocalJobApiProviderErrorEnvelope(error))
+    return localJobApiCreateErrorCode(error)
+  }
+  const message = error instanceof Error ? error.message : String(error)
+  return commandError(options.stderr, message, fallbackCode(error))
+}
+
+function retryErrorCode(): number {
+  return HEADLESS_EXIT_CODES.unsupportedRuntimeOrMode
+}
+
+function waitEnvelope(
+  job: AgentJob,
+  wait:
+    | { state: "timeout"; timeoutMs: number; reason: string }
+    | { state: "error"; reason: string },
+) {
+  return {
+    apiVersion: LOCAL_JOB_API_VERSION,
+    job: toLocalJobApiJobEnvelope(job).job,
+    wait,
+  }
+}
+
+const RELAY_CANCEL_ACK_MS = 5_000
+
+/** True when `stream` is this process's stdin and it is an open pipe/socket. */
+function isOpenStdinPipe(stream: Readable | undefined): boolean {
+  if (!stream || stream !== process.stdin) return false
+  if (stream.readableEnded || stream.destroyed) return false
+  try {
+    const stat = fstatSync(0)
+    return stat.isFIFO() || stat.isSocket()
+  } catch {
+    return false
+  }
+}
+
+type DaemonFirstRelay = {
+  /** Resolves after an armed stdin EOF relayed the own cancel. */
+  eof: Promise<void>
+  disarm(): void
+}
+
+/**
+ * R4 relay of a daemon-first wrapper: a catchable SIGINT/SIGTERM or an armed
+ * stdin EOF forwards one cancel for the wrapper's own admitted Run through
+ * the existing cancel owner, waits at most 5000 ms for it, then re-raises
+ * the signal (or ends the wrapper with exit 8 on EOF). SIGKILL and other
+ * uncatchable terminations relay nothing; the Run stays queryable by ID.
+ */
+function armDaemonFirstRelay(
+  jobId: string,
+  options: RunHeadlessCliCommandOptions,
+  stdinArmed: boolean,
+): DaemonFirstRelay {
+  let disarmed = false
+  // Persists the own cancel request, then waits at most 5000 ms for the
+  // claimant to acknowledge it with a terminal (a hard kill may truncate
+  // the wait; the persisted request stays).
+  const relayCancel = async () => {
+    const deadline = Date.now() + RELAY_CANCEL_ACK_MS
+    try {
+      await cancelAgentJob(options.db, jobId, {
+        requestedBy: "api",
+        queuedCancelFields: PRE_START_CANCEL_FIELDS,
+      })
+    } catch {
+      return
+    }
+    while (Date.now() < deadline) {
+      const current = getAgentJob(options.db, jobId)
+      if (
+        !current ||
+        isTerminalAgentJobStatus(current.status as AgentJobStatus)
+      ) {
+        return
+      }
+      await new Promise((resolve) =>
+        setTimeout(resolve, Math.min(100, deadline - Date.now())),
+      )
+    }
+  }
+  const onSignal = (signal: NodeJS.Signals) => {
+    if (disarmed) return
+    disarm()
+    void relayCancel().finally(() => {
+      process.kill(process.pid, signal)
     })
-    return result
+  }
+  const onSigint = () => onSignal("SIGINT")
+  const onSigterm = () => onSignal("SIGTERM")
+  process.on("SIGINT", onSigint)
+  process.on("SIGTERM", onSigterm)
+  let resolveEof!: () => void
+  const eof = new Promise<void>((resolve) => {
+    resolveEof = resolve
+  })
+  const stdin = stdinArmed ? options.stdin : undefined
+  const noop = () => {}
+  const onEnd = () => {
+    if (disarmed) return
+    disarm()
+    void relayCancel().finally(resolveEof)
+  }
+  if (stdin) {
+    stdin.on("data", noop)
+    stdin.once("end", onEnd)
+    stdin.once("close", onEnd)
+  }
+  function disarm() {
+    if (disarmed) return
+    disarmed = true
+    process.removeListener("SIGINT", onSigint)
+    process.removeListener("SIGTERM", onSigterm)
+    if (stdin) {
+      stdin.removeListener("data", noop)
+      stdin.removeListener("end", onEnd)
+      stdin.removeListener("close", onEnd)
+      stdin.pause()
+    }
+  }
+  return { eof, disarm }
+}
+
+/**
+ * Q2(a) synchronous wrapper of create/default retry: its own admitted Run is
+ * claimed through the canonical scoped pump (unless another claimant won it
+ * first, then it only waits) and its committed, published terminal is
+ * printed with the 2c59664f bytes and outcome exit.
+ */
+async function runLocalJobApiWrapper(
+  jobId: string,
+  options: RunHeadlessCliCommandOptions,
+  stdinArmable: boolean,
+  fallbackCode: (error: unknown) => number,
+): Promise<number> {
+  await options.beforeOwnPumpClaim?.(jobId)
+  let ownDispatch: OwnDispatch | null = null
+  const own: { result: PumpQueuedRunResult | null } = { result: null }
+  const relayHolder: { relay: DaemonFirstRelay | null } = { relay: null }
+  let resolveAbort!: () => void
+  const abort = new Promise<void>((resolve) => {
+    resolveAbort = resolve
+  })
+  const becomeDaemonFirst = () => {
+    if (relayHolder.relay) return
+    const relay = armDaemonFirstRelay(jobId, options, stdinArmable)
+    relayHolder.relay = relay
+    void relay.eof.then(resolveAbort)
+  }
+  if (getAgentJob(options.db, jobId)?.status === "queued") {
+    let state: ReturnType<OwnDispatch["state"]> = "pending"
+    const promise = pumpQueuedRuns({
+      db: options.db,
+      env: options.env,
+      runner: options.runner,
+      completionFetch: options.completionFetch,
+      providerBindingDependencies: options.providerBindingDependencies,
+      appVersion: options.appVersion,
+      admittedIds: [jobId],
+      concurrency: 1,
+    }).then(
+      (result) => {
+        own.result = result.runs.find((run) => run.jobId === jobId) ?? null
+        state = own.result?.error
+          ? "failed"
+          : own.result?.claimed
+            ? "claimed"
+            : "lost"
+        if (state === "lost") becomeDaemonFirst()
+      },
+      (error) => {
+        own.result = { jobId, claimed: false, exitCode: null, error }
+        state = "failed"
+      },
+    )
+    ownDispatch = { promise, state: () => state }
+  } else {
+    becomeDaemonFirst()
+  }
+  try {
+    const result = await waitForAdmittedRun(options.db, jobId, {
+      clock: options.monotonicClock ?? DEFAULT_MONOTONIC_CLOCK,
+      lockPath: options.daemonLockPath,
+      ownDispatch,
+      abort,
+    })
+    switch (result.kind) {
+      case "ready":
+      case "unpublished":
+        writeJson(options.stdout, result.envelope)
+        return result.exitCode
+      case "error":
+        writeJson(
+          options.stdout,
+          waitEnvelope(result.job, { state: "error", reason: result.reason }),
+        )
+        return HEADLESS_EXIT_CODES.internalFailure
+      case "aborted":
+        return HEADLESS_EXIT_CODES.internalFailure
+      case "own_dispatch_failed": {
+        const failure = own.result
+        // A non-outcome failure of the own pump: no terminal is fabricated;
+        // an admitted Run that never started is closed by the existing
+        // queued cancel.
+        if (getAgentJob(options.db, jobId)?.status === "queued") {
+          await cancelAgentJob(options.db, jobId, {
+            requestedBy: "api",
+            queuedCancelFields: PRE_START_CANCEL_FIELDS,
+          }).catch(() => undefined)
+        }
+        return apiSubmissionError(failure?.error, options, fallbackCode)
+      }
+    }
+    return HEADLESS_EXIT_CODES.internalFailure
   } finally {
-    closeLocalJobApiArtifactRunDir(prepared.runDir)
+    relayHolder.relay?.disarm()
+  }
+}
+
+async function apiRunsSubmitCommand(
+  command: Extract<HeadlessCliCommand, { kind: "api-runs-submit" }>,
+  options: RunHeadlessCliCommandOptions,
+): Promise<number> {
+  try {
+    const parsed = parseLocalJobApiSubmitRequestJson(
+      await readApiRequestContent(command.requestPath, options),
+    )
+    const idempotencyKey = parsed.hasKey
+      ? assertLocalJobApiIdempotencyKey(parsed.idempotencyKey)
+      : null
+    const admitted = await submitRun(
+      options.db,
+      { kind: "api-submit", request: parsed.request, idempotencyKey },
+      { appVersion: options.appVersion },
+    )
+    writeJson(
+      options.stdout,
+      admissionEnvelope(admitted, idempotencyKey !== null),
+    )
+    return HEADLESS_EXIT_CODES.success
+  } catch (error) {
+    return apiSubmissionError(error, options, localJobApiCreateErrorCode)
   }
 }
 
@@ -500,32 +753,83 @@ async function apiRunsCreateCommand(
   command: Extract<HeadlessCliCommand, { kind: "api-runs-create" }>,
   options: RunHeadlessCliCommandOptions,
 ): Promise<number> {
+  let admitted: SubmitRunResult
   try {
-    const request = parseLocalJobApiCreateRequestJson(
-      await readApiRequestContent(command, options),
+    const parsed = parseLocalJobApiSubmitRequestJson(
+      await readApiRequestContent(command.requestPath, options),
     )
-    const prepared = await createLocalJobApiJob(
+    if (parsed.hasKey) {
+      throw new LocalJobApiRequestError(
+        "idempotency_key_not_supported",
+        "idempotencyKey is not accepted by runs create; use runs submit.",
+      )
+    }
+    admitted = await submitRun(
       options.db,
-      request,
-      options.appVersion,
+      { kind: "api-submit", request: parsed.request, idempotencyKey: null },
+      { appVersion: options.appVersion },
     )
-    const result = await runPreparedLocalJobApiJob(prepared, options)
-    return result.exitCode
   } catch (error) {
-    if (isLocalJobApiProjectNotRegisteredError(error)) {
-      writeJson(options.stdout, toLocalJobApiProjectErrorEnvelope(error))
-      return HEADLESS_EXIT_CODES.invalidCwd
-    }
-    if (error instanceof HeadlessProviderBindingError) {
-      writeJson(options.stdout, toLocalJobApiProviderErrorEnvelope(error))
-      return localJobApiCreateErrorCode(error)
-    }
-    const message = error instanceof Error ? error.message : String(error)
+    return apiSubmissionError(error, options, localJobApiCreateErrorCode)
+  }
+  return runLocalJobApiWrapper(
+    admitted.job.id,
+    options,
+    command.requestPath !== "-" && isOpenStdinPipe(options.stdin),
+    localJobApiCreateErrorCode,
+  )
+}
+
+async function apiRunsWaitCommand(
+  command: Extract<HeadlessCliCommand, { kind: "api-runs-wait" }>,
+  options: RunHeadlessCliCommandOptions,
+): Promise<number> {
+  let job: AgentJob | null
+  try {
+    job = getAgentJob(options.db, command.jobId)
+  } catch {
     return commandError(
       options.stderr,
-      message,
-      localJobApiCreateErrorCode(error),
+      `Failed to observe job: ${command.jobId}`,
+      HEADLESS_EXIT_CODES.internalFailure,
     )
+  }
+  if (job?.source !== "api") {
+    return commandError(options.stderr, `Unknown job: ${command.jobId}`, 3)
+  }
+  const result = await waitForRun(options.db, command.jobId, {
+    timeoutMs: command.timeoutMs,
+    clock: options.monotonicClock ?? DEFAULT_MONOTONIC_CLOCK,
+    lockPath: options.daemonLockPath,
+  })
+  switch (result.kind) {
+    case "ready":
+      writeJson(options.stdout, result.envelope)
+      return result.exitCode
+    case "timeout":
+      writeJson(
+        options.stdout,
+        waitEnvelope(result.job, {
+          state: "timeout",
+          timeoutMs: result.timeoutMs,
+          reason: result.reason,
+        }),
+      )
+      return LOCAL_JOB_API_WAIT_EXIT_CODE
+    case "error":
+      writeJson(
+        options.stdout,
+        waitEnvelope(result.job, { state: "error", reason: result.reason }),
+      )
+      return HEADLESS_EXIT_CODES.internalFailure
+    case "not_found":
+      return commandError(options.stderr, `Unknown job: ${command.jobId}`, 3)
+    case "observation_failed_before_snapshot":
+      return commandError(
+        options.stderr,
+        `Failed to observe job: ${command.jobId}`,
+        HEADLESS_EXIT_CODES.internalFailure,
+      )
   }
 }
 
@@ -770,11 +1074,15 @@ function apiRunsStatusCommand(
   options: RunHeadlessCliCommandOptions,
 ): number {
   try {
+    const job = getLocalJobApiJobOrThrow(options.db, command.jobId)
+    const execution = observeRunExecution(options.db, job, {
+      lockPath: options.daemonLockPath,
+    })
     writeJson(
       options.stdout,
-      toLocalJobApiJobEnvelope(
-        getLocalJobApiJobOrThrow(options.db, command.jobId),
-      ),
+      execution
+        ? { ...toLocalJobApiJobEnvelope(job), execution }
+        : toLocalJobApiJobEnvelope(job),
     )
     return HEADLESS_EXIT_CODES.success
   } catch (error) {
@@ -866,24 +1174,53 @@ async function apiRunsRetryCommand(
   command: Extract<HeadlessCliCommand, { kind: "api-runs-retry" }>,
   options: RunHeadlessCliCommandOptions,
 ): Promise<number> {
+  let admitted: SubmitRunResult
+  let idempotencyKey: string | null = null
   try {
-    const job = getLocalJobApiJobOrThrow(options.db, command.jobId)
-    const result = await runPreparedLocalJobApiJob(
-      await retryLocalJobApiJob(options.db, job),
-      options,
-    )
-    return result.exitCode
-  } catch (error) {
-    if (error instanceof HeadlessProviderBindingError) {
-      writeJson(options.stdout, toLocalJobApiProviderErrorEnvelope(error))
-      return localJobApiCreateErrorCode(error)
+    const source = getLocalJobApiJobOrThrow(options.db, command.jobId)
+    if (command.requestPath !== null) {
+      let retryRequest: ReturnType<typeof parseLocalJobApiRetryRequestJson>
+      try {
+        retryRequest = parseLocalJobApiRetryRequestJson(
+          await readApiRequestContent(command.requestPath, options),
+        )
+      } catch (error) {
+        if (isLocalJobApiRequestError(error)) throw error
+        return commandError(
+          options.stderr,
+          error instanceof Error ? error.message : String(error),
+          HEADLESS_EXIT_CODES.invalidArguments,
+        )
+      }
+      if (retryRequest.consumer.id !== source.apiConsumerId) {
+        throw new LocalJobApiRequestError(
+          "consumer_mismatch",
+          "consumer.id does not match the source job consumer.",
+        )
+      }
+      idempotencyKey = retryRequest.idempotencyKey
     }
-    return commandError(
-      options.stderr,
-      error instanceof Error ? error.message : String(error),
-      HEADLESS_EXIT_CODES.unsupportedRuntimeOrMode,
+    admitted = await submitRun(
+      options.db,
+      { kind: "api-retry", source, idempotencyKey },
+      { appVersion: options.appVersion },
     )
+  } catch (error) {
+    return apiSubmissionError(error, options, retryErrorCode)
   }
+  if (command.async) {
+    writeJson(
+      options.stdout,
+      admissionEnvelope(admitted, idempotencyKey !== null),
+    )
+    return HEADLESS_EXIT_CODES.success
+  }
+  return runLocalJobApiWrapper(
+    admitted.job.id,
+    options,
+    command.requestPath !== "-" && isOpenStdinPipe(options.stdin),
+    retryErrorCode,
+  )
 }
 
 function scheduleErrorCode(message: string): number {
@@ -1007,6 +1344,9 @@ async function daemonRunCommand(
       lockPath: options.daemonLockPath,
       signal: abortController.signal,
       now: options.now,
+      completionFetch: options.completionFetch,
+      providerBindingDependencies: options.providerBindingDependencies,
+      appVersion: options.appVersion,
     })
     if (shouldUseJson(command.output)) {
       writeJson(options.stdout, { daemon: result })
@@ -1063,8 +1403,11 @@ function helpCommand(options: RunHeadlessCliCommandOptions): number {
       "  locus api projects register --cwd <path> [--name <name>] --json",
       "  locus api projects status --cwd <path> --json",
       "  locus api projects unregister --cwd <path> [--force] --json",
+      "  locus api runs submit --request <path|-> --json",
       "  locus api runs create --request <path|-> --json",
-      "  locus api runs status|result|cancel|retry <id> --json",
+      "  locus api runs wait <id> [--timeout <milliseconds>] --json",
+      "  locus api runs retry <id> [--request <path|->] [--async] --json",
+      "  locus api runs status|result|cancel <id> --json",
       "  locus api runs events <id> [--after <sequence>] [--follow] --jsonl",
       "  locus jobs-stdio",
       "  locus --version",
@@ -1119,8 +1462,12 @@ export async function runHeadlessCliCommand(
       return apiProjectsStatusCommand(parsed.command, options)
     case "api-projects-unregister":
       return apiProjectsUnregisterCommand(parsed.command, options)
+    case "api-runs-submit":
+      return apiRunsSubmitCommand(parsed.command, options)
     case "api-runs-create":
       return apiRunsCreateCommand(parsed.command, options)
+    case "api-runs-wait":
+      return apiRunsWaitCommand(parsed.command, options)
     case "api-runs-status":
       return apiRunsStatusCommand(parsed.command, options)
     case "api-runs-events":
