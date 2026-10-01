@@ -1161,10 +1161,14 @@ Failure behavior that stays as before:
   files fails, the command still prints the terminal envelope with
   `result.artifacts: []` and the run's outcome exit. `runs wait` on the same
   run reports `terminal_artifacts_pending` and exits `9`.
-- A failure of the in-process executor that is not a run outcome stops its own
+- A failure of the in-process executor that is not a run outcome, or a store
+  read failure while the command waits on its own in-process run, stops its own
   execution tree and keeps the previous stderr text and exit (`create`: `2`,
-  or `3` for an "unsupported" message; `retry`: `3`). An admitted run that
-  never started is canceled. No terminal is invented.
+  or `3` for an "unsupported" message; `retry`: `3`) with nothing on stdout.
+  An admitted run that never started is canceled; a stopped run settles as
+  `canceled` when the store allows it. No terminal envelope is invented. The
+  `observation_failed` envelope above is only for a run another process
+  executes.
 
 #### Execution context
 

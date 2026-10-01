@@ -527,6 +527,8 @@ export type OwnDispatch = {
   promise: Promise<unknown>
   /** pending → claimed (own pump executed it) | lost (another claimant) | failed. */
   state: () => "pending" | "claimed" | "lost" | "failed"
+  /** Stops the own execution tree; resolves once the own pump settled. */
+  stop: () => Promise<void>
 }
 
 export type WrapperWaitResult =
@@ -547,6 +549,12 @@ export type WrapperWaitResult =
   | { kind: "aborted" }
   /** The own pump hit a non-outcome failure before a terminal was ready. */
   | { kind: "own_dispatch_failed" }
+  /**
+   * A non-outcome store read failed while the Run was the wrapper's own
+   * (pump pending or completed): the own execution tree was stopped; the
+   * caller keeps the baseline stderr text and exit of `error`.
+   */
+  | { kind: "own_observation_failed"; error: unknown }
 
 export type WrapperWaitOptions = {
   clock?: MonotonicClock
@@ -595,7 +603,15 @@ export async function waitForAdmittedRun(
     let observation: RunObservation | null
     try {
       observation = observeRun(db, jobId, options)
-    } catch {
+    } catch (error) {
+      if (ownState === "failed") return { kind: "own_dispatch_failed" }
+      if (options.ownDispatch && (ownPending || ownState === "claimed")) {
+        // An owned child: stop that execution tree and keep the baseline
+        // error (spec: non-outcome read failure with an owned child); only
+        // a remote claimant gets the identified observation_failed/8.
+        await options.ownDispatch.stop()
+        return { kind: "own_observation_failed", error }
+      }
       observation = null
     }
     if (!observation) {

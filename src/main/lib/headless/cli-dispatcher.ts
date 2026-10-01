@@ -757,6 +757,7 @@ async function runLocalJobApiWrapper(
   }
   if (getAgentJob(options.db, jobId)?.status === "queued") {
     let state: ReturnType<OwnDispatch["state"]> = "pending"
+    const ownAbort = new AbortController()
     const promise = pumpQueuedRuns({
       db: options.db,
       env: options.env,
@@ -766,6 +767,7 @@ async function runLocalJobApiWrapper(
       appVersion: options.appVersion,
       admittedIds: [jobId],
       concurrency: 1,
+      signal: ownAbort.signal,
     }).then(
       (result) => {
         own.result = result.runs.find((run) => run.jobId === jobId) ?? null
@@ -781,7 +783,14 @@ async function runLocalJobApiWrapper(
         state = "failed"
       },
     )
-    ownDispatch = { promise, state: () => state }
+    ownDispatch = {
+      promise,
+      state: () => state,
+      stop: async () => {
+        ownAbort.abort()
+        await promise
+      },
+    }
   } else {
     becomeDaemonFirst()
   }
@@ -808,26 +817,38 @@ async function runLocalJobApiWrapper(
         return HEADLESS_EXIT_CODES.internalFailure
       case "aborted":
         return HEADLESS_EXIT_CODES.internalFailure
-      case "own_dispatch_failed": {
-        const failure = own.result
-        // A non-outcome failure of the own pump: no terminal is fabricated;
-        // an admitted Run that never started is closed by the existing
-        // queued cancel.
-        if (getAgentJob(options.db, jobId)?.status === "queued") {
-          await cancelAgentJob(options.db, jobId, {
-            requestedBy: "api",
-            queuedCancelFields: PRE_START_CANCEL_FIELDS,
-            queuedTerminalProjection: queuedCancelTerminalProjection(
-              options.db,
-            ),
-          }).catch(() => undefined)
-        }
-        return onError(failure?.error, options)
-      }
+      case "own_dispatch_failed":
+        // A non-outcome failure of the own pump: no terminal is fabricated.
+        await cancelOwnQueuedRun(jobId, options)
+        return onError(own.result?.error, options)
+      case "own_observation_failed":
+        // The own execution tree was stopped; the baseline error is kept.
+        await cancelOwnQueuedRun(jobId, options)
+        return onError(result.error, options)
     }
     return HEADLESS_EXIT_CODES.internalFailure
   } finally {
     relayHolder.relay?.disarm()
+  }
+}
+
+/**
+ * Closes the wrapper's own admitted Run that never started through the
+ * existing queued cancel; a store that still fails leaves it to recovery.
+ */
+async function cancelOwnQueuedRun(
+  jobId: string,
+  options: RunHeadlessCliCommandOptions,
+): Promise<void> {
+  try {
+    if (getAgentJob(options.db, jobId)?.status !== "queued") return
+    await cancelAgentJob(options.db, jobId, {
+      requestedBy: "api",
+      queuedCancelFields: PRE_START_CANCEL_FIELDS,
+      queuedTerminalProjection: queuedCancelTerminalProjection(options.db),
+    })
+  } catch {
+    // Nothing more to do here; recovery owns a Run the store cannot close.
   }
 }
 

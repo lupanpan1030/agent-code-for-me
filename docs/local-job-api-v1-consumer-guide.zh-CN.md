@@ -1075,9 +1075,12 @@ outcome。请读取 `runs status` 或 `runs result`、调用 `runs wait`，或�
 - 进程内 executor 完成了 run、但终态文件发布失败时，命令仍输出终态 envelope，
   `result.artifacts: []`，exit 为 run 的 outcome exit。对同一 run 执行
   `runs wait` 会报告 `terminal_artifacts_pending` 并 exit `9`。
-- 进程内 executor 出现不属于 run outcome 的故障时，会停止它自己的执行树，并保留
-  原有的 stderr 文本与 exit（`create`：`2`，消息含 "unsupported" 时为 `3`；
-  `retry`：`3`）。已 admitted 但未开始的 run 会被取消。不会伪造终态。
+- 进程内 executor 出现不属于 run outcome 的故障，或命令等待自己的进程内 run 时
+  store 读取失败，会停止它自己的执行树，并保留原有的 stderr 文本与 exit
+  （`create`：`2`，消息含 "unsupported" 时为 `3`；`retry`：`3`），stdout 不输出
+  任何内容。已 admitted 但未开始的 run 会被取消；被停止的 run 在 store 允许时结算为
+  `canceled`。不会伪造终态 envelope。上面的 `observation_failed` envelope 仅用于由
+  其他进程执行的 run。
 
 #### Execution context
 
