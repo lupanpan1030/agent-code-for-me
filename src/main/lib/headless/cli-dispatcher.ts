@@ -955,6 +955,7 @@ async function apiRunsCreateCommand(
   try {
     const parsed = parseLocalJobApiSubmitRequestJson(
       await readApiRequestContent(command.requestPath, options),
+      "create",
     )
     if (parsed.hasKey) {
       throw new LocalJobApiRequestError(

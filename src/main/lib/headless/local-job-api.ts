@@ -134,10 +134,20 @@ export type LocalJobApiRuntimeManifestEnvelopeOptions = {
   readinessDependencies?: RuntimeReadinessResolverDependencies
 }
 
-function parseJson(value: string): unknown {
+/**
+ * Parses a request body. `baseline` keeps the 2c59664f create diagnostic,
+ * which embeds the parser message; `generic` (runs submit, runs retry
+ * --request: bodies that may carry an idempotency key) never echoes request
+ * text, since a parser message can quote part of the input.
+ */
+function parseJson(
+  value: string,
+  diagnostic: "baseline" | "generic" = "baseline",
+): unknown {
   try {
     return JSON.parse(value)
   } catch (error) {
+    if (diagnostic === "generic") throw new Error("Invalid JSON request")
     throw new Error(
       `Invalid JSON request: ${error instanceof Error ? error.message : String(error)}`,
     )
@@ -169,13 +179,20 @@ export function parseLocalJobApiCreateRequestJson(
  * Parses a create/submit body: the optional `idempotencyKey` member is split
  * off before the existing create normalizer runs, so it never reaches the
  * normalized, stored or written request. `hasKey` lets create refuse it.
+ * Malformed JSON keeps the create baseline diagnostic only for `create`;
+ * submit gets the generic one.
  */
-export function parseLocalJobApiSubmitRequestJson(value: string): {
+export function parseLocalJobApiSubmitRequestJson(
+  value: string,
+  command: "create" | "submit" = "submit",
+): {
   request: NormalizedLocalJobApiCreateRequest
   hasKey: boolean
   idempotencyKey: unknown
 } {
-  const { body, hasKey, key } = splitLocalJobApiIdempotencyKey(parseJson(value))
+  const { body, hasKey, key } = splitLocalJobApiIdempotencyKey(
+    parseJson(value, command === "create" ? "baseline" : "generic"),
+  )
   return {
     request: assertLocalJobApiCreateRequest(body),
     hasKey,
@@ -187,7 +204,7 @@ export function parseLocalJobApiSubmitRequestJson(value: string): {
 export function parseLocalJobApiRetryRequestJson(
   value: string,
 ): LocalJobApiRetryRequest {
-  return assertLocalJobApiRetryRequest(parseJson(value))
+  return assertLocalJobApiRetryRequest(parseJson(value, "generic"))
 }
 
 function isPathInside(parentPath: string, childPath: string): boolean {
