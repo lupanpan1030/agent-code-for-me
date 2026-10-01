@@ -11,6 +11,7 @@ import {
 } from "node:fs"
 import { dirname } from "node:path"
 import { recordVerifiedRunRetention } from "../agent-runtime/run-event-ledger-host"
+import type { RuntimeRouteCatalogState } from "../agent-runtime/runtime-route-catalog"
 import type { AgentJob } from "../db/schema"
 import { createId } from "../db/utils"
 import type { AgentTaskRunner } from "./agent-runtime-contract"
@@ -60,6 +61,8 @@ export type RunLocalAgentDaemonOptions = {
    * not a user setting). Defaults to MAX_QUEUED_API_AGE_MS.
    */
   maxQueuedApiAgeMs?: number
+  /** Test-only runtime route catalog state, forwarded to every pump pass. */
+  runtimeRouteCatalog?: RuntimeRouteCatalogState
 }
 
 /** Default maximum queued age of an API Run at claim (24 h; equal rejects). */
@@ -377,6 +380,12 @@ export type PumpQueuedRunsOptions = {
     attempting(job: AgentJob, workerId: string): void
     claimed(job: AgentJob): void
   }
+  /**
+   * Test-only runtime route catalog state, forwarded unchanged to the agent
+   * runner (never resolved here: the catalog is consulted only inside the
+   * agent runner after its claim and provider binding).
+   */
+  runtimeRouteCatalog?: RuntimeRouteCatalogState
 }
 
 export type PumpQueuedRunResult = {
@@ -475,6 +484,7 @@ async function dispatchQueuedRun(
             providerBindingDependencies: options.providerBindingDependencies,
             signal: options.signal,
             claimGate,
+            runtimeRouteCatalog: options.runtimeRouteCatalog,
             ...worker,
           })
     // Lifecycle host: retention starts once the terminal refs are verified
@@ -708,6 +718,7 @@ export async function runLocalAgentDaemon(
           completionFetch: options.completionFetch,
           providerBindingDependencies: options.providerBindingDependencies,
           appVersion: options.appVersion,
+          runtimeRouteCatalog: options.runtimeRouteCatalog,
           concurrency: available,
           excludeIds: backoff.waiting(performance.now(), (jobId) => {
             try {

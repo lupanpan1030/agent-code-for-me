@@ -25,6 +25,7 @@ import {
   type RunArtifactCandidateSink,
   releaseRunEventLedger,
 } from "../agent-runtime/run-event-ledger-host"
+import type { RuntimeRouteCatalogState } from "../agent-runtime/runtime-route-catalog"
 import type { AgentJob, AgentJobEvent } from "../db/schema"
 import type {
   AgentRuntimeObserver,
@@ -123,6 +124,11 @@ export type RunPersistedAgentJobOptions = {
   onHostDiagnostic?: (message: string) => void
   /** Claim-time host gate of a claimed Run (queue executors only). */
   claimGate?: RunClaimGate
+  /**
+   * Test-only runtime route catalog state forwarded unchanged to
+   * runAgentTask (design D1 host seam); production never sets it.
+   */
+  runtimeRouteCatalog?: RuntimeRouteCatalogState
 }
 
 export type RunPersistedAgentJobResult = {
@@ -351,10 +357,13 @@ function providerSecretHints(
 async function resolveRunner(
   runner: AgentTaskRunner | null | undefined,
   env: NodeJS.ProcessEnv | undefined,
+  runtimeRouteCatalog: RuntimeRouteCatalogState | undefined,
 ): Promise<AgentTaskRunner> {
   if (runner) return runner
   if (isFakeRunnerEnabled(env)) return fakeAgentTaskRunner
-  return (await import("./agent-runtime")).runAgentTask
+  const { runAgentTask } = await import("./agent-runtime")
+  return (request, observer) =>
+    runAgentTask(request, observer, { runtimeRouteCatalog })
 }
 
 function canceledRunResult(): AgentRuntimeRunResult {
@@ -661,7 +670,11 @@ export async function runPersistedAgentJob(
       },
     })
     const prompt = getAgentJobPrompt(options.db, job.id)
-    const runner = await resolveRunner(options.runner, options.env)
+    const runner = await resolveRunner(
+      options.runner,
+      options.env,
+      options.runtimeRouteCatalog,
+    )
     const abortController = new AbortController()
     const abortFromExternalSignal = () => abortController.abort()
     if (options.signal?.aborted) {
