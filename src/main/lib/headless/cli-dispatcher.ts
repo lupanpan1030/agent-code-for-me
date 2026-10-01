@@ -583,6 +583,96 @@ function isOpenStdinPipe(stream: Readable | undefined): boolean {
   }
 }
 
+/**
+ * Yields until the event loop completed at least one poll phase after the
+ * call: two check-phase turns (the first may run in the current iteration,
+ * after its poll already ran). Signals libuv caught and stdin reads become
+ * ready are dispatched in a poll phase, so their handlers have run when this
+ * resolves.
+ */
+async function yieldPastPollPhase(): Promise<void> {
+  for (let turn = 0; turn < 2; turn += 1) {
+    await new Promise((resolve) => setImmediate(resolve))
+  }
+}
+
+/** An armed stdin EOF watch of the R4 relay. */
+type StdinEofWatch = {
+  /** Calls `listener` once on EOF (at once when EOF was already seen). */
+  onEnd(listener: () => void): void
+  /** Stops reading stdin and removes the watch's listeners. */
+  stop(): void
+}
+
+/** Bound on the win32 stdin probe (libuv reads Windows pipes on a thread). */
+const WIN32_STDIN_PROBE_MS = 50
+
+/**
+ * Starts the R4 stdin EOF watch at arming. EOF is an abort signal only for a
+ * stdin that is still an open pipe or socket when the command arms and ends
+ * later. A pipe whose write end was already closed when the command started
+ * (`execFileSync`/`spawnSync` without `input`, `child.stdin.end()` right
+ * after spawn) is still a FIFO/socket and reports its pending EOF on the
+ * first read, so the watch starts reading and yields to the event loop until
+ * stdin was polled at least once: two check-phase turns on POSIX, so at least
+ * one full poll phase follows the read start; on win32, where libuv reads a
+ * pipe on a worker thread, additionally a 50 ms timer (unverified on a
+ * Windows host). An EOF seen inside that probe means the stdin was already
+ * closed: it does not arm, and the watch returns null. Data on this stdin is
+ * drained and ignored (the request came from a file).
+ */
+async function watchStdinEof(
+  stream: Readable | undefined,
+): Promise<StdinEofWatch | null> {
+  if (!stream || !isOpenStdinPipe(stream)) return null
+  let ended = false
+  let listener: (() => void) | null = null
+  const drain = () => {}
+  const onEnd = () => {
+    if (ended) return
+    ended = true
+    listener?.()
+  }
+  stream.on("data", drain)
+  stream.once("end", onEnd)
+  stream.once("close", onEnd)
+  stream.resume()
+  const stop = () => {
+    listener = null
+    stream.removeListener("data", drain)
+    stream.removeListener("end", onEnd)
+    stream.removeListener("close", onEnd)
+    stream.pause()
+  }
+  if (!ended) await yieldPastPollPhase()
+  if (!ended && process.platform === "win32") {
+    await new Promise((resolve) => setTimeout(resolve, WIN32_STDIN_PROBE_MS))
+  }
+  if (ended) {
+    stop()
+    return null
+  }
+  return {
+    onEnd(next) {
+      listener = next
+      if (ended) next()
+    },
+    stop,
+  }
+}
+
+/**
+ * True when this process's stdin is an open pipe/socket that did not report
+ * EOF inside the watchStdinEof probe: the EOF relay may arm on it.
+ */
+async function stdinOpenAtArming(
+  stream: Readable | undefined,
+): Promise<boolean> {
+  const watch = await watchStdinEof(stream)
+  watch?.stop()
+  return watch !== null
+}
+
 /** A relayed catchable abort of a create/default-retry wrapper. */
 type RelayedAbort = {
   /** The re-raised signal, or null for an armed stdin EOF (exit 8). */
@@ -711,6 +801,7 @@ function armWrapperAbortRelay(
     stdin.on("data", noop)
     stdin.once("end", onEnd)
     stdin.once("close", onEnd)
+    stdin.resume()
   }
   function disarm() {
     if (disarmed) return
@@ -974,7 +1065,7 @@ async function apiRunsCreateCommand(
   return runLocalJobApiWrapper(
     admitted.job.id,
     options,
-    command.requestPath !== "-" && isOpenStdinPipe(options.stdin),
+    command.requestPath !== "-" && (await stdinOpenAtArming(options.stdin)),
     apiCreateError,
   )
 }
@@ -1418,7 +1509,7 @@ async function apiRunsRetryCommand(
   return runLocalJobApiWrapper(
     admitted.job.id,
     options,
-    command.requestPath !== "-" && isOpenStdinPipe(options.stdin),
+    command.requestPath !== "-" && (await stdinOpenAtArming(options.stdin)),
     apiRetryError,
   )
 }
