@@ -253,7 +253,7 @@ for (const signal of ["SIGBREAK", "SIGHUP"] as const) {
   )
 }
 
-test("a re-raise the runtime cannot perform (Windows SIGBREAK/SIGHUP) ends the wrapper with exit 8 after the relayed cancel", async () => {
+test("simulated on this host (an injected throwing re-raise of SIGTERM, standing in for Windows SIGBREAK/SIGHUP, which Node cannot raise): the wrapper ends with exit 8 after the relayed cancel", async () => {
   const result = await relayInProcess("SIGTERM", { reraiseThrows: true })
   expect({
     reraised: result.reraised,
