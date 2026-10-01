@@ -1197,16 +1197,28 @@ does not cancel it.
 
 When a daemon claimed the run, the daemon keeps running it after the waiting
 command dies. To cover that, the command relays a cancel of its own run, and
-only its own run, on a catchable abort. The relay is armed from the moment
-the run is admitted until the command's own executor claims the run:
+only its own run, on a catchable abort. The relay is armed just before the
+run is admitted, so no catchable abort goes unhandled, and relays until the
+command's own executor claims the run:
 
+- An abort caught while the run is being admitted is held until the command
+  knows the run's ID and is then handled like the next bullet. If admission
+  fails, there is no run to cancel: a held signal ends the command with that
+  signal's default disposition, and a held stdin EOF is ignored.
 - Before any executor claimed the run, a catchable abort cancels the queued
   run (it settles `canceled` and never starts) and the command does not
   execute it.
 - When another executor (a daemon) claimed the run first, a catchable abort
   persists a cancel request for that run.
-- Once the command's own executor claimed the run, the relay is disarmed and
-  the in-process behavior above applies.
+- Once the command's own executor claimed the run, the in-process behavior
+  above applies: a catchable signal ends the command with its default
+  disposition, exactly as without a relay (it is never swallowed), and stdin
+  EOF is ignored.
+- A synchronous keyed `runs retry <job-id> --request <path>` that replays the
+  run of an earlier request with the same key does not own that run and
+  relays nothing: a catchable signal ends the waiting command with its
+  default disposition, stdin EOF is ignored, and the run keeps going. Cancel
+  it by ID if you need to.
 
 | Platform | Relayed (catchable) | Not relayed |
 | --- | --- | --- |
@@ -1227,10 +1239,13 @@ the run is admitted until the command's own executor claims the run:
   group. A process without a console receives no console events at all. When
   the console window closes, Windows ends the process after a short
   system-defined grace, which can cut the 5 s acknowledgement wait short.
-- stdin EOF is armed only if stdin was an open pipe when the run was admitted
-  and closes later. Ignored or already-closed stdin, and the EOF that ends a
-  `--request -` body, never cancel. A consumer that sends its request on stdin
-  can still cancel by signal or by ID.
+- stdin EOF is armed only if stdin is still an open pipe when the command
+  arms the relay and closes later. A stdin already closed when the command
+  starts does not arm the EOF relay: for example Node's `execFileSync` or
+  `spawnSync` without `input`, or a parent that ends the child's stdin right
+  after spawning it. Ignored stdin, and the EOF that ends a `--request -`
+  body, never cancel either. A consumer that sends its request on stdin can
+  still cancel by signal or by ID.
 - A kill that follows the signal quickly (for example a 500 ms grace before
   `SIGKILL`) can cut the 5 s acknowledgement wait short. The cancel request is
   normally persisted before that, but delivery is not guaranteed after a hard

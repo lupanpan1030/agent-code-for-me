@@ -1101,13 +1101,21 @@ runtime adapter 允许的 native-home 变量（例如 POSIX 上的 `HOME`、`COD
 runtime 子进程，stdin EOF 不会取消它。
 
 daemon 认领了 run 时，等待中的命令退出后 daemon 仍会继续执行。为此，命令会在
-可捕获的中止时转发对自己 run（且仅限自己的 run）的取消。转发从 run 被 admitted
-起就已 armed，直到命令自己的 executor 认领该 run：
+可捕获的中止时转发对自己 run（且仅限自己的 run）的取消。转发在 run admission
+之前就已 armed，因此不会漏掉任何可捕获的中止，并一直转发到命令自己的 executor
+认领该 run：
 
+- admission 进行中捕获的中止会被暂存，直到命令拿到 run 的 ID，然后按下一条处理。
+  admission 失败时没有可取消的 run：暂存的信号以该信号的默认处置结束命令，暂存的
+  stdin EOF 被忽略。
 - 尚无任何 executor 认领时，可捕获的中止会取消这个 queued run（结算为
   `canceled`，从不启动），命令也不会再执行它。
 - 另一执行者（daemon）先认领时，可捕获的中止会为该 run 持久化 cancel request。
-- 命令自己的 executor 认领后，转发即解除，适用上面的进程内行为。
+- 命令自己的 executor 认领后，适用上面的进程内行为：可捕获的信号以其默认处置结束
+  命令，与没有转发时完全相同（不会被吞掉），stdin EOF 被忽略。
+- 同步的带 key `runs retry <job-id> --request <path>` 若 replay 了同 key 早先请求的
+  run，它并不拥有该 run，因此不转发任何取消：可捕获的信号以默认处置结束等待中的
+  命令，stdin EOF 被忽略，run 继续执行。需要时请按 ID 取消。
 
 | 平台 | 转发（可捕获） | 不转发 |
 | --- | --- | --- |
@@ -1124,9 +1132,11 @@ daemon 认领了 run 时，等待中的命令退出后 daemon 仍会继续执行
   发送 Ctrl+Break（`GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, pid)`）；Windows 会在
   这种进程组中禁用 Ctrl+C。没有 console 的进程收不到任何 console 事件。console
   窗口关闭后，Windows 会在系统定义的短暂宽限后结束进程，可能截短 5 s 的确认等待。
-- 只有在 run admission 时 stdin 是打开的 pipe、之后才关闭，stdin EOF 才会 armed。
-  被忽略或已关闭的 stdin，以及结束 `--request -` 正文的 EOF，都不会触发取消。通过
-  stdin 发送 request 的 consumer 仍可用信号或按 ID 取消。
+- 只有在命令 arm 转发时 stdin 仍是打开的 pipe、之后才关闭，stdin EOF 才会 armed。
+  命令启动时已经关闭的 stdin 不会 arm EOF 转发，例如 Node 不带 `input` 的
+  `execFileSync` 或 `spawnSync`，或父进程在 spawn 后立即结束子进程的 stdin。被忽略
+  的 stdin，以及结束 `--request -` 正文的 EOF，同样不会触发取消。通过 stdin 发送
+  request 的 consumer 仍可用信号或按 ID 取消。
 - 信号之后很快跟上的 kill（例如在 `SIGKILL` 前只给 500 ms）会截短 5 s 的确认等待。
   cancel request 通常在此之前已经持久化，但 hard kill 之后不保证送达。
 - `SIGKILL`，以及 Windows 上的 `TerminateProcess`、Node 的 `child.kill()` 和
