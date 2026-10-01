@@ -22,10 +22,10 @@ SHALL NOT become an admission, publication, cancellation or event owner.
 - **AND** no environment snapshot is persisted or included in route metadata and no readiness query is represented as proof that the daemon can authenticate
 
 #### Scenario: S24 Refusals retain surface-specific errors and exit codes
-- **GIVEN** `tests/fixtures/runtime-route-catalog/errors.json#S24` with runtimeRouteCatalog recording ports (no fake/injected runner bypass), named claude-policy-grant/fail-closed/internal-interactive variants, frozen parser/provider/capability/profile/claim-gate failures, malformed jobs-stdio requests, desktop adapter failures and recording execution ports
+- **GIVEN** `tests/fixtures/runtime-route-catalog/errors.json#S24` with runtimeRouteCatalog recording ports (no fake/injected runner bypass), named claude-policy-grant/fail-closed/internal-interactive variants, frozen parser/provider/capability/profile/claim-gate failures, malformed jobs-stdio requests, desktop adapter failures, an initialization RuntimeRouteCatalogFailureState, a validated test catalog whose recording agent-factory reference port returns a valid typed delegate during validation then null at post-binding lookup (the resolved agent delegate is null; no frozen table mutation or leaf execution), and recording execution ports
 - **WHEN** each real surface handles its request through catalog wiring
 - **THEN** the baseline stdout/stderr/errorCode/exit or JSON-RPC/desktop error envelope is preserved, including adapter-local exit 1 versus normalized unsupported_capability exit 3 and wait-only timeout exit 9
-- **AND** selection/leaf refusals perform no native provider work; runner-level goldens preserve prior provider binding/recordResolvedProvider ordering. runtime_selected/runtime_selection_refused exact key sets match S21; no catalog reason appears in errorCode, events or stdout. A synthetic post-binding lookup fault maps through job-runner.ts:820–836 to runtime_error/1; API/schedule regex messages and stdio verbatim -32602 messages stay unchanged (cli-dispatcher.ts:1513/:1686; jobs-stdio.ts:407–411)
+- **AND** selection/leaf refusals perform no native provider work; runner-level goldens preserve prior provider binding/recordResolvedProvider ordering. runtime_selected/runtime_selection_refused exact key sets match S21; no catalog reason appears in errorCode, events or stdout. The injected null-returning agent-factory reference lookup causes the post-binding lookup fault, which maps through job-runner.ts:820–836 to runtime_error/1 with exact errorMessage "Runtime route catalog is unavailable."; injecting RuntimeRouteCatalogFailureState gives that same sanitized message/error/exit, and desktop catalog failure uses the existing error/finish envelope with the same message; API/schedule regex messages and stdio verbatim -32602 messages stay unchanged (cli-dispatcher.ts:1513/:1686; jobs-stdio.ts:407–411)
 
 #### Scenario: S25 Artifact and ledger residuals are not bypassed by route availability
 - **GIVEN** `tests/fixtures/runtime-route-catalog/artifacts.json#S25` with an available route, an injected win32 stable-directory refusal and a separately committed terminal with incomplete registered-file publication
@@ -39,8 +39,7 @@ The existing `locus api runtimes list --json` envelope MAY additionally expose
 `runtimes[].routes` as an optional read-only array derived from the canonical
 catalog. Each summary SHALL contain routeId, public entry surface, kind,
 executionProfile, adapterSource, descriptive transport and versioned extension
-schema references. It SHALL expose only currently accepted API/protocol
-combinations for surface=api; protocol routes SHALL be omitted because jobs-stdio
+schema references. It SHALL expose only currently accepted API-entry combinations (surface=api); protocol routes SHALL be omitted because jobs-stdio
 initialize owns that contract. It SHALL expose no executable function, local path, env, secret or internal
 transport endpoint. Existing apiVersion, features, manifests, readiness and
 their semantics SHALL remain unchanged. No new discovery feature or request
@@ -52,11 +51,19 @@ adapterSource or transport. Per-route extensions SHALL match actual producers;
 batch and completion routes expose none. The public summary schema SHALL use
 additionalProperties:false with exact keys routeId/surface/kind/executionProfile/
 adapterSource/transport/extensions; extension objects have exactly namespace/
-schemaVersion/maturity/schemaRef. Typed projections SHALL be separate per audience.
+schemaVersion/maturity/schemaRef. kind SHALL reuse the existing closed jobKind
+definition; agent executionProfile SHALL reuse the existing closed executionProfile
+definition (batch or policy-grant), and completion executionProfile SHALL be null.
+Typed projections SHALL be separate per audience. The published v1 unknown-field
+rule (docs/local-job-api-v1-consumer-guide.md:1729) SHALL remain the C7 §9.2 additive
+precondition. Experimental route-item key-set changes SHALL receive a new C7
+#2/#10 classification, and the guide SHALL state that pinned schema copies need
+refreshing because route items use additionalProperties:false (as with the existing
+discoveryFeature caveat at :232–238).
 
 #### Scenario: S22 Old discovery readers safely ignore optional summaries
-- **GIVEN** `tests/fixtures/runtime-route-catalog/discovery.json#S22` with the baseline 6192b13f schema and executable old-reader fixture, the proposed optional schema, catalog-derived summaries a pinned old response without routes, unknown open-string values and attempted transportId/factory/private-path field leaks
+- **GIVEN** `tests/fixtures/runtime-route-catalog/discovery.json#S22` with the baseline 6192b13f schema and executable old-reader fixture, the proposed optional schema, catalog-derived agent and completion summaries (completion executionProfile:null), a pinned old response without routes, unknown open-string values and attempted transportId/factory/private-path field leaks
 - **WHEN** actual runtimes-list output with routes is read by both readers and validated by both schemas, then the old response is read by the new reader
 - **THEN** both schemas accept the new output, the old reader preserves identical common-core decisions and the new reader tolerates absent routes without treating existing features as unsupported
-- **AND** the feature array remains exactly runtime-readiness/provider-binding/completion/canonical-run-ledger/async-submit, accepted public route summaries agree with actual catalog queries, schemaRef values resolve in the published schema, batch/completion extensions=[] and app-server policy-grant extension declarations agree with the real producer
+- **AND** the feature array remains exactly runtime-readiness/provider-binding/completion/canonical-run-ledger/async-submit, accepted public route summaries agree with actual catalog queries, schemaRef values resolve in the published schema, kind/agent executionProfile use the existing closed definitions, completion executionProfile=null, batch/completion extensions=[] and app-server policy-grant extension declarations agree with the real producer
 - **AND** unknown descriptive values do not change old-reader common-core decisions; exact public/extension key sets match the schema and additionalProperties:false rejects leaked internal fields even though the old schema tolerates optional additions

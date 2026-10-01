@@ -8,7 +8,7 @@ Updated: 2026-10-02 (Pacific/Auckland); previous: 2026-10-01 (Pacific/Auckland)
 
 | Active change | Status | Scope / next gate |
 | --- | --- | --- |
-| [refactor-unified-runtime-route-catalog](changes/refactor-unified-runtime-route-catalog/) | DRAFT v2 — awaiting Owner APPROVED | Phase 3 第三份：按 fresh synthesis §3 1–14 改写；OD-1–OD-5 统筹预设已登记（Owner 可改），L2 缩窄、C7 #2/#10 additive Yellow；纯文档，待准确 SHA/Consumer Impact APPROVED，未授权产品实现。 |
+| [refactor-unified-runtime-route-catalog](changes/refactor-unified-runtime-route-catalog/) | DRAFT v3 — APPROVED candidate | Phase 3 第三份：按二审合成 T1–T20 有界修补，5 P2 / 15 P3 文档闭环，53 scenarios；OD-1–OD-5 与 Must-stay 保留（统筹记录，Owner 可撤回）；纯文档，待新准确 SHA 闭合复核及 Consumer Impact APPROVED，未授权产品实现。 |
 
 Parked proposals are indexed in [`deferred/README.md`](deferred/README.md) and
 do not appear in the active list.

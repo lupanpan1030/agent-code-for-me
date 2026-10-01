@@ -17,6 +17,8 @@ and alias interpretation remain adjacent owners; these are not claims of complet
 third-Runtime integration. Direct fixed-runtime leaf execution SHALL NOT bypass
 the catalog: run/create exports from headless/adapters and the Codex/Claude
 adapter runners SHALL be value-importable only by the catalog and tests.
+The Claude lifecycle wrapper SHALL receive the catalog-selected typed delegate
+through agent-sdk-desktop-run-runtime and SHALL NOT value-import the leaf run export.
 The guard SHALL accept --runtime-route-catalog-fixtures=<path>, defaulting to
 tests/fixtures/runtime-route-catalog/architecture-fixtures.json, and compare exact
 {rule,file,symbol,owner,ownerSection} tuples. ownerSection SHALL be
@@ -25,7 +27,7 @@ tests/fixtures/runtime-route-catalog/architecture-fixtures.json, and compare exa
 Existing ledger and async guard self-test output/flags SHALL remain unchanged.
 
 #### Scenario: S26 Duplicate routing is detected through direct and aliased forms
-- **GIVEN** `tests/fixtures/runtime-route-catalog/architecture-fixtures.json#S26` with negative sources containing if/switch on runtimeId, a runtime-keyed factory map, aliased/namespace retired-selector calls and a one-hop wrapper outside the owner, and a fixed-runtime direct leaf run/create import and call
+- **GIVEN** `tests/fixtures/runtime-route-catalog/architecture-fixtures.json#S26` with negative sources containing if/switch on runtimeId, a runtime-keyed factory map, aliased/namespace retired-selector calls and a one-hop wrapper outside the owner, and a fixed-runtime direct leaf run/create import and call, including agent-sdk-runtime-lifecycle.ts directly value-importing runClaudeAgentSdkDesktopAdapterWithPreparedRuntimeQuery from agent-sdk-adapter-runner
 - **WHEN** the architecture scanner runs --runtime-route-catalog-fixtures=tests/fixtures/runtime-route-catalog/architecture-fixtures.json against S26 cases (including route-dispatch-outside-owner, retired-route-selector and leaf-adapter-import-outside-catalog)
 - **THEN** each variant reports its exact rule/file/symbol/owner/ownerSection tuple, and missing or unexpected findings fail the self-test
 - **AND** the guard does not claim coverage of arbitrary reflection or unbounded transitive calls
@@ -43,7 +45,7 @@ Existing ledger and async guard self-test output/flags SHALL remain unchanged.
 - **AND** the catalog cannot reverse-import a router to execute a Run or use renderer transport code in main
 
 #### Scenario: S29 Adjacent legitimate owners are not banned as routing duplicates
-- **GIVEN** `tests/fixtures/runtime-route-catalog/architecture-fixtures.json#S29` with positive fixtures for provider target/purpose mapping, policy mode checks, source-based job cancel, command/method parsing, native protocol decoding, selected-route assertions, transportId-only factory construction, chunk.type event state, codex-app-server.ts:49 runtime/profile/bounded-scope assertions, chat-session-binding admit gates and provider target, desktop allowlist, active-chat new-binding/token/MCP branches (:346/:2513/:5866) and approval dispatch (:2678), runtime-manifest aliases, job-runner resolveRunner ENV/injected runner seam and API-only source/profile gate, plus pump job.kind dispatch
+- **GIVEN** `tests/fixtures/runtime-route-catalog/architecture-fixtures.json#S29` with positive fixtures for provider target/purpose mapping, policy mode checks, source-based job cancel, command/method parsing, native protocol decoding, selected-route assertions, transportId-only factory construction, chunk.type event state, codex-app-server.ts:49 runtime/profile/bounded-scope assertions, chat-session-binding admit gates and provider target, desktop allowlist, active-chat new-binding/token/MCP branches (:346/:2513/:5866) and approval dispatch (:2678), runtime-manifest aliases, job-runner resolveRunner ENV/injected runner seam and API-only source/profile gate, plus pump job.kind dispatch and agent-sdk-runtime-lifecycle receiving the typed Claude delegate injected through agent-sdk-desktop-run-runtime rather than value-importing the leaf
 - **WHEN** the new guard and existing owner guards scan these fixtures
 - **THEN** each permitted fixture passes, but a paired mutation that uses runtimeId to choose a second adapter fails
 - **AND** the exceptions are structural and symbol-specific, never a whole-adapter-directory allowlist
@@ -65,21 +67,13 @@ headless adapters.
 #### Scenario: Adapter selection changes
 <!-- Scenario register: S48; retained living title for full MODIFIED replacement. -->
 - **GIVEN** `tests/fixtures/runtime-route-catalog/architecture-fixtures.json#S48` with positive catalog declarations and a negative route-local runtime dispatch
-- **WHEN** the route-dispatch-outside-owner scanner reports exact finding tuples
-- **WHEN** a change adds, removes, or selects between batch, SDK, app-server,
-  or future runtime adapter sources
-- **THEN** the change updates the canonical runtime route catalog in
-  `src/main/lib/agent-runtime/runtime-route-catalog.ts`
-- **AND** route, CLI, protocol, and Local Job API code do not derive a second
-  durable adapter-selection truth table
-- **AND** the positive declaration yields zero findings and the route-local mutation yields its exact route-dispatch-outside-owner tuple
+- **WHEN** an adapter-selection source fixture adds, removes or selects batch, SDK, app-server or a future source and the route-dispatch-outside-owner scanner checks its exact finding tuples
+- **THEN** a declaration in src/main/lib/agent-runtime/runtime-route-catalog.ts yields zero findings, and each route/CLI/protocol/Local Job API mutation that selects from a second adapter table yields its exact route-dispatch-outside-owner tuple
 
 #### Scenario: Runtime events cross surfaces
 <!-- Scenario register: S49; retained living title for full MODIFIED replacement. -->
-- **GIVEN** `tests/fixtures/runtime-route-catalog/routes.json#S49` with desktop/headless runtimeRouteCatalog recording ports and the real ledger/redaction serializer harness
-- **WHEN** the hosts execute a run and the harness compares committed/redacted records with projected envelopes
-- **WHEN** a desktop or headless runtime emits events that are persisted or
-  exposed to renderer, CLI, protocol, or Local Job API callers
+- **GIVEN** `tests/fixtures/runtime-route-catalog/routes.json#S49` with runtimeRouteCatalog recording ports on runClaudeAgentSdkDesktopRuntimeWithMcpReadiness options, runCodexDesktopChatRun(options: CodexDesktopChatRunOptions), and runAgentTask options and the real ledger/redaction serializer harness
+- **WHEN** desktop/headless runs executed by the named hosts emit events for persistence or renderer/CLI/protocol/API exposure and the real ledger/redaction harness compares committed records with projected envelopes
 - **THEN** the events pass through the canonical runtime event and redaction
   owners before persistence or external exposure
 - **AND** surface-specific envelopes may map those events without owning a
@@ -89,11 +83,6 @@ headless adapters.
 #### Scenario: Temporary dual execution path is required
 <!-- Scenario register: S50; retained living title for full MODIFIED replacement. -->
 - **GIVEN** `tests/fixtures/runtime-route-catalog/architecture-fixtures.json#S50` with restored-selector and dual-path flag source mutations
-- **WHEN** retired-route-selector and route-catalog-test-port-in-production scan the fixtures
-- **WHEN** a migration temporarily keeps old headless batch behavior and a new
-  shared runtime execution path
-- **THEN** the change declares the canonical owner, migration gate, deletion
-  condition or follow-up, and tests proving which path is active
-- **AND** callers cannot silently choose between old and new behavior without
-  that gate
-- **AND** the runtime route catalog cutover uses no temporary dual path; both source mutations are rejected by their exact expected findings
+- **WHEN** a source mutation attempts to keep an old selector or introduce a temporary dual execution path and retired-route-selector plus route-catalog-test-port-in-production scan the fixtures
+- **THEN** both source mutations are rejected by their exact expected findings and the production source scan reports neither an old selector nor a production path-selection flag
+<!-- governance-only clause; not test-registered: any separately approved temporary dual path must declare its canonical owner, explicit migration gate, deletion condition/follow-up and tests of the active path; callers cannot silently choose between paths without that gate. This catalog cutover permits no temporary dual path. -->

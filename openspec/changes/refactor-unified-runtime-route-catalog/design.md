@@ -1,6 +1,6 @@
 # Design: Unified Runtime Route Catalog
 
-Status: **DRAFT v2 — awaiting Owner APPROVED**
+Status: **DRAFT v3 — APPROVED candidate; awaiting Owner APPROVED**
 
 ## 1. Context and source basis
 
@@ -11,7 +11,9 @@ Status: **DRAFT v2 — awaiting Owner APPROVED**
 分支 `codex/refactor-unified-runtime-route-catalog-draft`。以上为第一版基线核对记录，不声称第二版重新联网核对。第二版在干净 HEAD
 `f7a3f7bd454b95deb7ae6f6596efebe0dd3d9cf3` 上按 fresh synthesis 改写；
 权威：`route-catalog-draft-synthesis-f7a3f7bd.md` §3 1–14 / Must-stay，
-以及 2026-10-02 本次统筹派单 OD-1–OD-5。以下当前事实的 `file:line`
+以及 2026-10-02 本次统筹派单 OD-1–OD-5。第三版从干净 HEAD `283f29ca1401f5567df998b850bbc605a064ee5f` 有界修补，
+权威为 `route-catalog-redraft-synthesis-283f29ca.md` §3 T1–T20 / §4；
+OD-1–OD-5 与 Must-stay 不变，本次不重新核对远端。以下当前事实的 `file:line`
 均绑定该基线，NEW 标记的是拟新增落点，不声称已存在。起草前 active changes 为空。
 
 | 输入 | 约束 / 本切片处理 |
@@ -38,7 +40,9 @@ Living specs 的约束审阅及 delta 选择：
 与“若发生 fallback 必须诊断”的通用条件，不强迫保留 dead preferredAdapterSource option；
 本切片该条件不产生新 fallback，S08/S45 固定 null。Agent Runtime Contract 的 registry 术语
 也完整 MODIFIED 为目录；所有 living 场景完整保留，原 preferred fallback 场景明确改成无隐式
-降级，新增 fixture/入口登记 S33–S52，不留下指向 retired registry/selector 的要求。
+降级，新增 fixture/入口登记 S33–S52，不留下指向 retired registry/selector 模块的要求。
+Living `local-job-api/spec.md:268/:290/:558` 的 “batch selector path” 是默认 batch leaf
+的行为措辞，仍然有效；选择 owner 现拟改为 catalog，不要求保留旧 selector 模块。
 
 | Living source | 本次处理 |
 | --- | --- |
@@ -54,8 +58,8 @@ Living specs 的约束审阅及 delta 选择：
 
 ## 2. 路由点清单（事实底稿）
 
-统计单位是一个可识别的选择/投影/边界职责，不是每个 `if`。共 **33 处**（P33 合列两个 job-runner seam）：
-**11 处替换选择逻辑（R）**、**6 处改接目录但保留原职责（C）**、**16 处保留的相邻 owner（B）**。
+统计单位是一个可识别的选择/投影/边界职责，不是每个 `if`。共 **34 处**（P33 合列两个 job-runner seam）：
+**11 处替换选择逻辑（R）**、**7 处改接目录但保留原职责（C）**、**16 处保留的相邻 owner（B）**。
 这里只读识别，并未修改代码。主要重复是 desktop/headless 两套 adapter 集合、两套
 desktop factory caller、两处 renderer transport 构造分支，以及 discovery/registry 的独立枚举。
 不同 native transport 是产品分面，不是需要删除的重复执行内核。
@@ -72,8 +76,8 @@ desktop factory caller、两处 renderer transport 构造分支，以及 discove
 | P08 R | `src/main/lib/codex/desktop-adapter-selection.ts:11` | env（现已不决定路径）→ sole app-server metadata | 删除 resolveCodexDesktopAdapterSelection 和重复 selection metadata，目录固定 desktop route；native experimental env 开关不属于 runtime 选择。 |
 | P09 R | `src/main/lib/codex/app-server-adapter-runner.ts:41`, `:79`, `:89`, `:124` | verified request + selection + secrets/ports → constructed adapter.run | 删除 resolveCodexAppServerDesktopAdapter 和 selection 依赖；目录是唯一 factory 选择方；该文件只构造单一 native adapter，保留插件配置、exact owner checks。 |
 | P10 R | `src/main/lib/claude/agent-sdk-adapter-runner.ts:110`, `:119`, `:137` | verified SDK context → factory.get → adapter with policy retry | 删除 resolveClaudeAgentSdkDesktopAdapter 及 factory lookup；policy retry/stream consumer 仍归 Claude，不复制进目录。 |
-| P11 R | `src/main/lib/trpc/routers/codex.ts:758`, `:779` | chat envelope/binding/preflight → Codex adapter runner | admitCodexChatSessionBindingRun 后以固定 codex 查询，断言 typed route 后才传 secret-bearing ports；保留原 tRPC procedure、envelope、既有有序 orchestration 与 run-stage owners。 |
-| P12 R | `src/main/lib/trpc/routers/claude.ts:407` | verified desktop request + SDK ports → Claude lifecycle | admitClaudeChatSessionBindingRun 后以固定 claude-code 查询，断言 typed route 后才传 SDK ports；Claude route 暂存业务不是全部抽取范围，不做整路由 service 重构。 |
+| P11 R | `src/main/lib/trpc/routers/codex.ts:758`, `:779` | chat envelope/binding/preflight → Codex adapter runner | admitCodexChatSessionBindingRun 后调用 NEW runCodexDesktopChatRun(options: CodexDesktopChatRunOptions)，由该最小 host 固定 codex 查询并断言 typed route 后才向 leaf 传 secret-bearing ports；原 tRPC procedure 保留 admission、envelope、既有有序 orchestration 与 run-stage owners，仅移动 post-admission run body。 |
+| P12 R | `src/main/lib/trpc/routers/claude.ts:407` | verified desktop request + SDK ports → Claude lifecycle | admitClaudeChatSessionBindingRun 后调用 runClaudeAgentSdkDesktopRuntimeWithMcpReadiness options host，由它固定 claude-code 查询、断言 typed route 后才传 SDK ports；typed delegate 沿 desktop-run-runtime → lifecycle 注入（P34）。仅移动 post-admission run body，Claude route 暂存业务不是全部抽取范围，不做整路由 service 重构。 |
 | P13 B | `src/main/lib/trpc/routers/agent-jobs.ts:89`, `:113`, `:118` | persisted job.source/status → desktop cancellation / store cancel / retry rejection | 无 runtimeId adapter 分派。source 的 cancel/retry ownership 保留，禁止把它误删为重复选择器；不改现有 API/desktop retry 提示。 |
 | P14 R | `src/renderer/features/agents/main/active-chat.tsx:6065` | canonical binding.runtime → Codex transport 或 IPC fallback | 删除 runtime if/else（未知 Engine 不能默认 Claude）；只消费 main 投影的 transport descriptor。 |
 | P15 R | `src/renderer/features/agents/main/active-chat.tsx:6355` | newly created binding.runtime → 同样两个 transport | 第二个重复分支同 change 删除，与 P14 使用同一 descriptor consumer。 |
@@ -86,8 +90,6 @@ desktop factory caller、两处 renderer transport 构造分支，以及 discove
 | P22 C | `src/main/lib/trpc/routers/agent-runtime.ts:5`; `src/main/lib/trpc/routers/claude-code.ts:4`; `src/main/lib/codex/runtime-status.ts:46` | manifest/status request → safe metadata | route discovery 改接目录；纯 manifest caller 直达 shared。status 用目录只读 metadata，不能从 catalog 再调用 runtime-status 形成递归 readiness。 |
 | P23 B | `src/main/lib/headless/daemon.ts:426`, `:459` | queued candidate job.kind → completion/agent runner | 保留 pump 自有 kind→runner 分派（claim 在 runner 内），包括 worker prefix 的 kind 分支 :432–438；目录只在 agent runner claim 后查询，不能 pre-claim 选 delegate。S16/S17 验证，async guard clean fixture 不放宽。 |
 | P24 C | `src/main/lib/headless/jobs-stdio.ts:268`, `:278`, `:293`; `src/main/lib/headless/cli-dispatcher.ts:1284`, `:1913` | API/stdio envelope → submit/pump 或 discovery | 协议本身无独立 runtime selector；沿 submit/pump 间接到目录。保留 command/method switch，它们是 envelope parsing。 |
-
-
 | P25 B | `src/renderer/features/agents/main/active-chat.tsx:2678` | approval provider → codex/claude.respondToolApproval | 保留本切片外的 Interaction dispatch（含 Claude default）；不是 transport 构造。OD-1 具名残余 → Phase 4 Interactive Runs / add-harness-runtime-conformance，S19 不覆盖 approval。 |
 | P26 B | `src/renderer/features/agents/main/active-chat.tsx:346`, `:2513`, `:5866` | new-binding defaults / token accounting / MCP config runtime → 对应 UI 行为 | 三处均保留原 owner，S29 逐一正例；不将全部 active-chat runtime 字面量判作重复路由。 |
 | P27 B | `src/main/lib/chat-session-binding.ts:231`, `:279` | durable binding + procedure-specific payload → admit/rejectStaleRunPayload | 保留两个 admit gate 与顺序；S07 从真实 claude.chat/Codex binding 错配验证，descriptor 不跨 IPC。 |
@@ -97,6 +99,7 @@ desktop factory caller、两处 renderer transport 构造分支，以及 discove
 | P31 B | `src/main/lib/agent-runtime/run-event-ledger.ts:1205` | runtimeId === codex + native metadata → runtime.codex.v1 | producer 目前 Codex-only，L7 声明不自动实现新 Runtime producer；batch routes extensions=[]，rich 声明与实际 producer 交叉测试。 |
 | P32 B | `src/renderer/features/agents/lib/runtime-manifest-store.ts:17` | legacy alias → canonical runtime ID | 现有 alias 表重复 shared aliases，留为具名残余；不是新 transport 映射，S29 保留，真实第三 Runtime conformance 再处理。 |
 | P33 B | `src/main/lib/headless/job-runner.ts:140`, `:351`, `:369` | options.runner / LOCUS_HEADLESS_FAKE_RUNNER → runner；job.source → API-only profile options | resolveRunner 注入优先、ENV fake 次之、runAgentTask 最后，生产构建也支持既有 ENV；保留为目录外测试端口，不是旧 selector migration flag。source→profile gate 保留。S14/S21/S24 禁用 fake runner，使用 recording catalog ports，S29 逐一正例。 |
+| P34 C | `src/main/lib/claude/agent-sdk-runtime-lifecycle.ts:4–7`（经 `agent-sdk-desktop-run-runtime.ts:7–11` ← `trpc/routers/claude.ts:407`） | prepared runtime query + SDK ports → runClaudeAgentSdkDesktopAdapterWithPreparedRuntimeQuery | lifecycle 不再 value-import leaf run export；P12 host 在 admit + typed route 断言后把目录返回的 typed Claude delegate 作为 dependency 传入 desktop-run-runtime → lifecycle（沿用既有 runLifecycle? 注入形状）；Claude 内部 prompt/diagnostics/finalization 组合保留，不做整路由 service 抽取。 |
 
 ## Decisions — 统筹预设 L1–L10（Owner 可改）
 
@@ -105,9 +108,9 @@ desktop factory caller、两处 renderer transport 构造分支，以及 discove
 | L1 | 单一 main owner `src/main/lib/agent-runtime/runtime-route-catalog.ts`，按 `(runtimeId, entry=desktop\|headless\|completion\|protocol\|api, kind, mode, executionProfile, capabilities)` 解析 adapter factory、transport、能力引用、就绪探针；所有 runtime 选择改查目录并删旧分派。executionSurface 是输出，不能由 caller 预选 leaf；L1 限定见 D2。 |
 | L2 | 声明式 TypeScript 常量、schema 校验/守卫、可枚举；discovery/renderer 只读。**OD-1 缩窄 L2：统筹预设（推荐默认，Owner 可改）**：本切片支持目录条目 + adapter 包 + 自有 main chat router/transport 通过静态编译映射注册；不修改 main 中央分派。renderer 只读投影，现有 transport 构造及事件状态机语义保持；新 wire family 仍需加 renderer transport 和修改 transportId→constructor 静态映射，不承诺所有 renderer switch 零改动。Phase 7 全验收留具名残余。 |
 | L3 | 引用现有 capability manifest 与 readiness probes，不复制；无条目 fail closed，内部结构化失败经既有错误信封投影。advisory readiness 不是启动授权。 |
-| L4 | Local Job API v1（含 async-submit）、jobs-stdio、desktop IPC 外形不改；仅 discovery optional 追加；C7 十类逐条分类，Red 交 Owner。 |
+| L4 | Local Job API v1（含 async-submit）、jobs-stdio 与 chat request/stream/cancel envelopes 不变；OD-3 增加内部 read-model transportId（C7 §9.1 internal）；discovery optional 追加；C7 十类逐条分类，Red 交 Owner。 |
 | L5 | ledger/host、run-submission/pumpQueuedRuns、run-artifacts 仅是既有目标/端口；目录没有 ID、queue、claim、event、artifact 或 terminal 状态。 |
-| L6 | 守卫新增单目录 owner 节，禁止 adapter/surface 自行 runtime 分派、重复目录；P01–P33 给出精确删除/保留边界。 |
+| L6 | 守卫新增单目录 owner 节，禁止 adapter/surface 自行 runtime 分派、重复目录；P01–P34 给出精确删除/保留边界。 |
 | L7 | runtime 特有 metadata 按 `runtime.<id>.v1` 声明 namespace、schema 来源、version、maturity、redaction；现有 `runtime.codex.v1` 只引用。 |
 | L8 | 第三 Runtime 接入、Runtime 版本交付、renderer UI 重构、Interaction/Session 均非目标；conformance/delivery 分属 `add-harness-runtime-conformance` / `add-managed-codex-runtime-delivery` 等切片。 |
 | L9 | 每个 Scenario 有 bun 测试入口、fixture、observable oracle；独立作者先 RED。fixture 根 `tests/fixtures/runtime-route-catalog/`，**扁平**约定固定于 tasks §7。退出码以代码为依据。 |
@@ -143,36 +146,60 @@ type RouteQuery = {
   executionProfile: null;
   permissionPolicy: null;
 });
-validateRuntimeRouteCatalog(declarations?, references?); // test-only export; omitted inputs validate real production table/ports
-createRuntimeRouteCatalogForTests(declarations, references); // same validator, no second algorithm
-resolveRuntimeRoute(query, catalog?: ValidatedRuntimeRouteCatalog); // default singleton, pure Result
-listRuntimeRoutes(filter, catalog?: ValidatedRuntimeRouteCatalog); // readonly stable routeId order
-projectRuntimeRoutes(audience, catalog?: ValidatedRuntimeRouteCatalog); // typed public | renderer overloads, exact allowlists
+type RuntimeRouteCatalogState = ValidatedRuntimeRouteCatalog | RuntimeRouteCatalogFailureState;
+// FailureState is the same non-executable {ok:false, reason:"catalog_invalid", offending:{…}}
+// that production initialization retains. Its offending fields freeze in tasks 2.2.
+validateRuntimeRouteCatalog(declarations?, references?);
+// returns {ok:true, catalog:ValidatedRuntimeRouteCatalog} | {ok:false, reason:"catalog_invalid", offending:{…}}
+// test-only export; omitted inputs validate real production table/ports
+createRuntimeRouteCatalogForTests(declarations, references): RuntimeRouteCatalogState; // same validator; invalid → failure state, no throw
+resolveRuntimeRoute(query, catalog?: RuntimeRouteCatalogState); // default singleton, pure Result
+listRuntimeRoutes(filter, catalog?: RuntimeRouteCatalogState); // readonly stable routeId order
+projectRuntimeRoutes(audience, catalog?: RuntimeRouteCatalogState); // typed public | renderer overloads, exact allowlists
 probeRuntimeRouteReadiness(resolvedRoute, context); // existing probe composition only
+withRuntimeRouteTransportId(binding, catalog?: RuntimeRouteCatalogState); // main read-model composition, NEW
+// NEW renderer helper; entry sites map loading/error/absent/loaded reads to this state:
+createRuntimeRouteTransport(input:
+  | {state:"loaded", transportId:string}
+  | {state:"not-loaded"}
+  | {state:"error"}
+): {ok:true, transport} | {ok:false, failure:"route_descriptor_unavailable"|"route_descriptor_error"|"unknown_transport"};
 ```
 
-resolver 只接收成功验证的 branded catalog，不接受 raw declarations。所有可选 catalog 参数与构造/validator export
+resolver 只对成功验证的 branded catalog 执行匹配；RuntimeRouteCatalogState 的 failure 分支
+直接返回 catalog_invalid，不接受 raw declarations。所有可选 catalog 参数与构造/validator export
 仅供 tests，guard 禁止 production caller 构造表/显式覆盖；同模块初始化可调用内部 validator。
 生产初始化失败保留不可执行的 failure state：所有 resolve 返回 `catalog_invalid`，list/projection
 不返回 partial catalog；host 用 D4 既有错误通道。Electron main 不在 module import 时 crash；
 桌面失败可见，daemon 仍按既有 claim/settle 处理，不能 pre-claim lookup 留 queued 行循环。
 
-host-level 注入口统一命名 `runtimeRouteCatalog?: ValidatedRuntimeRouteCatalog`：desktop execution
-hosts、`runAgentTask` 第三 options 参数、`pumpQueuedRuns` 及其转发的 persisted runner options；CLI/stdio/discovery 测试经
-RunHeadlessCliCommandOptions、RunJobsStdioServerOptions、LocalJobApiRuntimeManifestEnvelopeOptions
-的同名字段转发，生产调用不赋值。
+host-level 注入口统一命名 `runtimeRouteCatalog?: RuntimeRouteCatalogState`（有效表或同一个初始化失败态）：
+Claude 的 `runClaudeAgentSdkDesktopRuntimeWithMcpReadiness` options
+（`agent-sdk-desktop-run-runtime.ts:52` / `RunClaudeAgentSdkDesktopRuntimeWithMcpReadinessInput`）；
+Codex 的 NEW `runCodexDesktopChatRun(options: CodexDesktopChatRunOptions)`，位于
+NEW `src/main/lib/codex/desktop-chat-run.ts`。两个 router 是模块单例，不添加 setter；
+procedure 保留 admission、envelope 和有序 orchestration，只将 post-admission run body 置于
+这两个具名 host；host 固定 runtime 查询并断言 typed route，之后向 leaf 传已构建 request/ports。
+Claude typed delegate 经 `agent-sdk-desktop-run-runtime.ts` 的 runLifecycle 链进入
+`agent-sdk-runtime-lifecycle.ts`；允许这一最小接缝，不扩大为整路由 service 重构。
+另有 `runAgentTask` 第三 options 参数、`pumpQueuedRuns` 及其转发的 persisted runner options；
+CLI/stdio/discovery 测试经 RunHeadlessCliCommandOptions、RunJobsStdioServerOptions、
+LocalJobApiRuntimeManifestEnvelopeOptions 的同名字段转发，生产调用不赋值。
+S01 通过上述 CLI/discovery、两个 desktop hosts 与 runAgentTask 注入 invalid declarations
+生成的 failure state，避免依赖不能在 bun 到达的 Electron main 入口；S53 将同一 state 传入
+withRuntimeRouteTransportId，失败只省略 transportId。
 pump 仅原样转发到 runner，绝不解析它。类型与显式 forwarding 边界由 guard allowlist 锁定；
 只有 tests 可赋非 undefined，不能来自 tRPC/CLI request、ENV、文件或生产 config。
-S03/S14/S15/S16/S21/S24/S31 由该 seam 注入 recording leaf ports，不能用 `options.runner`
+S03/S14/S15/S16/S21/S24/S31/S49 由该 seam 注入 recording leaf ports，不能用 `options.runner`
 或 `LOCUS_HEADLESS_FAKE_RUNNER=1` 绕过目录；P33 的原端口仍作为邻接 owner 保留。
 6192b13f 的 baseline 尚无 catalog seam：独立作者只在 leaf 的 process/native/fetch I/O 端
 使用 recording stub，仍实际经过旧 selector/runAgentTask，并记录 selected/refused payload；
 不能用 runner fake 生成 baseline。实施后同一输入/oracle 改经具名 catalog ports，禁止重录 oracle。
 
-成功 Result 固定含 routeId（进程内描述 key，非稳定 public identity）、runtimeId、entry、
+Result 以 `ok: true | false` 判别；成功 `ok:true` 固定含 routeId（进程内描述 key，非稳定 public identity）、runtimeId、entry、
 executionSurface（desktop-sdk/desktop-app-server/headless-exec/headless-app-server/completion）、
 adapterSource、adapterLabel、typed main-only delegate（agent 必需；completion 为 null，只描述既有 runner，不注册 runner factory）、transport、manifestRef、readinessProbe、
-enforcementEvidence、extensions 与 diagnostic（fallbackReason 恒 null）。失败含内部 reason、
+enforcementEvidence、extensions 与 diagnostic（fallbackReason 恒 null）。失败 `ok:false` 含内部 reason、
 query 的 runtime/entry/kind/profile、candidateAdapterSource/candidateAdapterLabel（无候选时 null）、
 既有 diagnostic/result（errorCode/errorMessage/adapter-local exitCode）。不得含 prompt/env/secrets。
 内部 reason 为 `policy_refused`、`capability_refused`、`route_not_found`、`catalog_invalid`、
@@ -194,8 +221,8 @@ pre-execution requirement → interactive profile → unsupported profile → ca
 entry 是请求入口，executionSurface 仅为输出：CLI/daemon/schedule 使用 headless，API 使用 api，
 stdio 使用 protocol。entry 映射不预选 exec/app-server，source 保持原 job provenance；P33 的
 API-only profile gate 不扩大到其他 source。API/protocol 引用同一个 leaf，不建第二份运行时表。
-桌面每个 procedure 在 admit gate 之后以自己的固定 runtimeId 查询，并在 secret-bearing
-inputs 之前断言 typed route；descriptor 不在请求里，不赋予身份、lease 或执行授权。
+桌面每个 procedure 在 admit gate 之后调用其具名 host；host 以自己的固定 runtimeId 查询，
+并在把 secret-bearing inputs 交给 leaf 之前断言 typed route；descriptor 不在请求里，不赋予身份、lease 或执行授权。
 
 | runtime / kind | 入口与 profile | selected execution / transport | 必须保持的行为 |
 | --- | --- | --- | --- |
@@ -224,12 +251,14 @@ provider read、DB 或 spawn。main-only factory 用 lazy reference/injected dep
 | NEW `src/shared/runtime-route-descriptor.ts` | 只承载可序列化 DTO/schema；无 runtime→adapter 表、无 main import。现有 `agent-runtime-capabilities.ts` 保持清单 owner。 |
 | `src/main/lib/agent-runtime/desktop-runner.ts` | 仅 adapter types、匹配断言及 ledger status helper；删除 mutable factory。 |
 | `src/main/lib/codex/app-server-adapter-runner.ts`、`src/main/lib/claude/agent-sdk-adapter-runner.ts` | 提供单 Runtime 构造/调用 ports 给目录；不再反向选择目录、不再引用旧 registry/factory，避免 catalog→factory→catalog 环。 |
+| `src/main/lib/claude/agent-sdk-desktop-run-runtime.ts`、`src/main/lib/claude/agent-sdk-runtime-lifecycle.ts`；NEW `src/main/lib/codex/desktop-chat-run.ts` | 两个具名 desktop host 承载 D1 options/query/assertion；Claude lifecycle 只接收注入 typed delegate，删除 leaf run export 的 value import，保留 prompt/diagnostics/finalization 与 runLifecycle 组合。Codex host 通过目录 delegate 调 leaf，不直接 value-import leaf run export。 |
+| NEW `src/main/lib/agent-runtime/runtime-route-read-model.ts` | withRuntimeRouteTransportId(binding, catalog?) 将 renderer projection 的 transportId 盖到返回副本；chats-sub-chats.ts 查询/createSubChat 组合调用；无 DB 新列、不写 durable binding。 |
 | `src/main/lib/headless/runtime-readiness.ts` | 现有 readiness default-provider/native 函数、缓存与错误降级；导出 leaf probes 供目录引用，删除 runtime dispatch facade；不反向 import catalog。 |
 | `src/main/lib/codex/runtime-status.ts` | 区分 low-level native status probe 与 route metadata composition；native probe 不调用目录 readiness，metadata 查询不会触发 native probe，防止循环。 |
 | `src/main/lib/headless/provider-binding.ts`、desktop provider owners | 保留 request/default/native precedence、target/purpose/gateway mapping、tokens 和 cleanup；目录仅引用 safe provider metadata/已验证 ports。 |
 | `src/main/lib/runtime-capability-projection/` | 唯一 concrete-capability availability；目录引用已有结果，不从目录条目推导安装/可用状态。 |
 | `src/main/lib/headless/daemon.ts`、`job-runner.ts`、`completion-runner.ts` | pump 保留自己的 kind→runner，目录不得 import job/completion runner。agent runner 在 claim/gate/provider binding 后查目录；completion runner 保留既有 provider-only 执行（目录只描述其 metadata，不反向调用 runner）。heartbeat/retention 不迁入目录。 |
-| `src/main/lib/trpc/routers/{codex,claude,agent-runtime}.ts` | chat admission 后固定 runtime 查询，使用 per-route typed delegates（Claude SDK ports 与 Codex app-server ports 不混用，不能以 adapterSource switch 分支收窄秘密输入）；discovery 只投影；原 procedure 与 stream envelope 不改。不新增 catalog→tRPC 反向 import。 |
+| `src/main/lib/trpc/routers/{codex,claude,agent-runtime}.ts` | chat admission 后调用 D1 的 runClaudeAgentSdkDesktopRuntimeWithMcpReadiness / runCodexDesktopChatRun，由具名 host 固定 runtime 查询、使用 per-route typed delegates（Claude SDK ports 与 Codex app-server ports 不混用，不能以 adapterSource switch 分支收窄秘密输入）；discovery 只投影；原 procedure 与 stream envelope 不改。不新增 catalog→tRPC 反向 import。 |
 | NEW `src/renderer/features/agents/lib/runtime-route-transport.ts` | 按 main 返回 transportId 找已编译的 transport factory；未知 ID 返回具名 UI failure，不默认 Claude。只映射 transportId→构造函数，不维护 runtimeId→transportId，两个旧 transport 仍为 wire adapters。 |
 | `src/renderer/features/agents/main/active-chat.tsx` | P14/P15 替换成同一只读 descriptor consumer；不改 UI 布局、Chat lifecycle、binding owner。 |
 | `src/renderer/features/agents/lib/runtime-event-state.ts` | 维持 chunk.type 状态处理，测试第三 stub runtime 不需修改此文件。 |
@@ -244,18 +273,29 @@ job-source cancellation 以及 chunk.type 状态机保留原 owner。禁止用 b
 
 **OD-3：统筹预设（推荐默认，Owner 可改）采用 binding read model。** main 在 chat 查询与
 createSubChat 已返回的绑定读模型上盖 `transportId`（内部 additive read-model 字段，不持久化）。
-read model composition 可调用目录，durable binding owner 不接管选路；不新增 agentRuntime.listRoutes。
-renderer 同步 getOrCreateChat 消费已载入 binding.transportId；无字段/尚未载入时显示
+NEW `src/main/lib/agent-runtime/runtime-route-read-model.ts` 的
+`withRuntimeRouteTransportId(binding, catalog?: RuntimeRouteCatalogState)` 为具名 read-model helper：
+由 `chats-sub-chats.ts:107` 的 chat 查询和 `:116` createSubChat 组合调用，取
+`projectRuntimeRoutes("renderer")` 对应 runtime 的 transportId 并返回 binding 副本。
+失败态/缺投影省略 transportId；不写 subChatBindings、不加列。S53 在真实两处 composition
+与临时 DB 验证 stamping；main 除 catalog 外不得定义 runtimeId→transportId literal mapping。
+durable binding owner 不接管选路；不新增 agentRuntime.listRoutes。
+renderer 同步 getOrCreateChat 把 chat-query/createSubChat 读状态映射为 D1 helper input：
+loaded 且字段存在 → {state:"loaded",transportId}；loading/字段缺失 → {state:"not-loaded"}；
+query/read error → {state:"error"}。无字段/尚未载入时显示
 `route_descriptor_unavailable`，读取失败显示 `route_descriptor_error`，未知 transportId 显示
 `unknown_transport`（均为内部 UI failure 状态，无新公共错误码），不订阅、不缓存失败 Chat，
 刷新成功后正常重试；不添加异步 Chat lifecycle 或 renderer runtimeId→descriptor lookup。
 transportId 是机械 key，不是文件路径/endpoint/module。两个创建点统一调用 NEW
 `createRuntimeRouteTransport`，由静态编译 transportId→constructor 映射构造原 wire adapters：
 `claude-chat-ipc` → IPCChatTransport，`codex-chat-ipc` → CodexAppServerChatTransport
-（字符串是内部机械 key，不是 runtime identity）。helper 返回成功 transport 或具名 UI failure
-的 Result；entry site 负责显示失败、不缓存失败 Chat。
+（字符串是内部机械 key，不是 runtime identity）。helper 返回 D1 的 ok 判别 Result；
+entry site 仅在 ok:true 时构建/缓存 Chat，ok:false 显示失败。S18 用 guard 断言两个 React
+站点的状态映射与不缓存失败路径，用 bun helper test 断言 constructor/订阅零调用与重试。
 
-OD-1 的缩窄 L2 只保证新增 route 不修改 main 中央分派、renderer 只读投影；新 Runtime 的
+OD-1 的缩窄 L2 只保证新增 route 不修改 main 中央分派
+（central main dispatch = catalog-owned runtime→adapter-factory/transport/readiness selection，即 R 点）、
+renderer 只读投影；新 Runtime 的
 自有 main chat router/transport 要在编译映射中注册，新 wire family 仍要新增 renderer transport
 并编辑 `runtime-route-transport.ts`。本切片保持现有 transport 构造和 event-state 语义；不承诺
 第三 Runtime 对所有 renderer switch 零改动。S19 的 fixture 复用现有 wire family，仅证明
@@ -283,6 +323,8 @@ unknown optional extension 被只读消费者忽略；internal required extensio
 routes block maturity 为 experimental；每项 exact keys 为
 `{routeId,surface,kind,executionProfile,adapterSource,transport,extensions}`，新 schema definition
 设 additionalProperties:false；投影必须逐字段构建而不是 spread 内部 descriptor。
+`kind` 复用既有 closed `jobKind` definition；agent `executionProfile` 复用既有 closed
+`executionProfile` definition（batch|policy-grant），completion rows 的 executionProfile 为 null。
 `routeId/surface/adapterSource/transport` 是开放描述串，不是 closed enums；文档 known values
 列示 api、claude-code-batch/codex-batch/codex-app-server/locus-completion、process-stdio/
 json-rpc-stdio/provider-http，不穷举未来值。routeId 非身份、不承诺跨版本稳定，不可持久化作为
@@ -299,10 +341,15 @@ JSON Pointer。per-route extensions 等于 producer 现实：batch=[]，Codex ap
 获得 producer。S13/S22 同时查询目录与对照实际 ledger producer，不复制 raw vendor union。
 
 既有 manifest/readiness/features/request enums 不变，不新增 discovery feature 或 requiredExtensions。
-旧 runtimeManifest schema 接受 optional 字段（schema :1001/:1318），S22 还必须证明 old-reader
-面对未知开放值继续保持 common-core 决策；仅 JSON parse 成功不够。Q1 若改 internal-only，
+C7 §9.2 additive 前置为已发布指南 `docs/local-job-api-v1-consumer-guide.md:1729` 的
+“Use the documented v1 fields and ignore unknown JSON fields”。旧 runtimeManifest schema
+接受 optional 字段（schema :1001/:1318），S22 还必须证明 old-reader
+面对未知开放值继续保持 common-core 决策；仅 JSON parse 成功不够。
+routes items 是 experimental 且 additionalProperties:false：固定 schema 副本须刷新，
+与指南 :232–238 discoveryFeature 的 caveat 相同；experimental block 任何 key-set 变化
+都须重新做 C7 #2/#10 分类，不能把开放描述值规则用于新增 keys。Q1 若改 internal-only，
 批准前删除 optional public delta/S22 并重校验；若去掉 adapterSource/transport，同步改 exact keys。
-Q2 若拒绝 binding read-model 且未选可行替代，S18/S19 与 desktop delta 回审批，不能先实施或
+Q2 若拒绝 binding read-model 且未选可行替代，S18/S19/S53 与 desktop delta 回审批，不能先实施或
 留下“可跳过”的场景；不通过 feature flag 保留第二 catalog。
 
 ## D4. 错误与退出码（代码基线，不从指南推断）
@@ -321,8 +368,8 @@ API admission/claim capability gate 保留原位置和限定能力，不提前�
 | schedule：原 schedule parsing/admission 位置，执行期通过 agent runner | `src/main/lib/headless/cli-dispatcher.ts:1682–1688` | message 原样；/cwd\|project path\|registered project/i→7，大小写敏感 /Unsupported/→3，否则2；不向 mapper 传新内部 reason。 |
 | API claim gate：conditional claim 后、provider 前，仅原 stored-request/capability revalidation | `src/main/lib/headless/local-job-api.ts:1798–1822`; `job-runner.ts:91–99`, `:191–201` | 原 project/cwd→7；stored request/capability invalid 为 execution_profile_invalid→3；claimGateFailure 的意外 throw 才是 internal_error→8，不用此 seam 捕获 route execution 故障。 |
 | jobs-stdio：原 request parser/handler；执行经 scoped pump，目录在 runner 内 | `src/main/lib/headless/jobs-stdio.ts:404–411`, `:428` | unknown method -32601，parse -32700；catch 将**原 thrown message 原样**作为 -32602，同时 stderr Request failed；Run 故障沿原 job events。禁止目录新 message 进入这个 request catch。 |
-| desktop：admit gate/preflight 后查固定 runtime、secret ports 前断言 typed route | `src/main/lib/chat-session-binding.ts:201–209`, `:231`, `:279`; `trpc/routers/codex.ts:797`; `trpc/routers/claude.ts:407` | 错配保持 rejectStaleRunPayload 原 message/hint；adapter fault 使用原 stream error/finish，不引入 CLI exit。internal catalog fault 用原通道的脱敏 generic failure，不发送内部 reason。 |
-| discovery：初始化 / list / projection，不执行部分表 | `src/main/lib/headless/cli-dispatcher.ts:1284–1301`; `src/main/index.ts:421–445`; `src/main/lib/trpc/routers/agent-runtime.ts:5`; `runtime-readiness.ts:323–326` | 初始化无效返回内部 catalog_invalid；manifest list handler reject，不输出 partial/ready 数据。CLI 沿现有 main catch `[Headless] Failed:` stderr、exit1、无 stdout success；私有 tRPC query 走既有 error envelope。host 对 synthetic fault 仅用脱敏 `Runtime route catalog is unavailable.`，不造 public code；readiness 单项缺 route/probe 为 unknown。 |
+| desktop：admit gate/preflight 后查固定 runtime、secret ports 前断言 typed route | `src/main/lib/chat-session-binding.ts:201–209`, `:231`, `:279`; `trpc/routers/codex.ts:797`; `trpc/routers/claude.ts:407` | 错配保持 rejectStaleRunPayload 原 message/hint；adapter fault 使用原 stream error/finish，不引入 CLI exit。internal catalog fault 用原 stream error/finish 通道发送脱敏 `Runtime route catalog is unavailable.`，不发送内部 reason。 |
+| discovery：初始化 / list / projection，不执行部分表 | `src/main/lib/headless/cli-dispatcher.ts:1284–1301`; `src/main/index.ts:421–445`; `src/main/lib/trpc/routers/agent-runtime.ts:5`; `runtime-readiness.ts:323–326` | 初始化无效返回内部 catalog_invalid；manifest list handler reject，不输出 partial/ready 数据。bun oracle 为 runHeadlessCliCommand rejects with `Runtime route catalog is unavailable.` 且 stdout 为空；生产映射才是 index.ts:435–437 现有 main catch `[Headless] Failed:` stderr、exit1、无 stdout success（不是 bun 入口）；私有 tRPC query 走既有 error envelope。host 对 synthetic fault 仅用脱敏 `Runtime route catalog is unavailable.`，不造 public code；readiness 单项缺 route/probe 为 unknown。 |
 | provider / wait 邻接映射（无选路） | `src/main/lib/headless/provider-binding.ts:33`, `:44`, `:54`, `:60`; `job-runner.ts:182`; `src/shared/local-job-api.ts:1046`; `cli-dispatcher.ts:1266` | provider profile missing/mismatch/unavailable/local-only 沿原 code 及 2/4/6；wait timeout 独占9。既有 HEADLESS_EXIT_CODES 0–8 原样，无重新编号。 |
 
 内部 reason 与公共结果的映射（不是新增 public codes）：
@@ -332,8 +379,8 @@ API admission/claim capability gate 保留原位置和限定能力，不提前�
 | policy_refused / fail-closed | permission_policy_fail_closed；reason=原 failClosedReasons[0]，message=原 diagnostics[0]；`adapter-selector.ts:209–232`。 |
 | policy_refused / grant gate、pre-execution、interactive、profile | 分别 policy_grant_adapter_unavailable / guarded_scope_requires_pre_execution_hook / interactive_channel_required / unsupported_execution_profile，候选 label/source 与原模板消息；`adapter-selector.ts:234–263`, `:314–333`。 |
 | capability_refused | unsupported_capability 与 gate.diagnostic.message；`adapter-selector.ts:154–188`。API admission 只消费同一 capability diagnostic，不能搬入新 route-policy 拒绝。 |
-| route_not_found / parser 已接受的请求 | 先用诊断候选完成上述原拒绝链；不得把 Claude grant 变为 missing route。通过全部 gate 后因实现缺陷缺 leaf 才由运行中的 host 抛脱敏 fault→runtime_error/1，绝不 internal_error/8；正常生产表 S01 必须覆盖全部既有 accepted matrix。 |
-| catalog_invalid | 初始化 failure state 不执行；各 host 以上述既有通道处理。synthetic init fault 的脱敏 message 仅进入 host fault channel，不能借道 API/schedule regex 或 stdio request catch。 |
+| route_not_found / parser 已接受的请求 | 先用诊断候选完成上述原拒绝链；不得把 Claude grant 变为 missing route。通过全部 gate 后因实现缺陷缺 leaf 才由运行中的 host 抛 `Runtime route catalog is unavailable.` → runtime_error/1；S24 用 validated test catalog 的 recording agent-factory reference port 注入：校验时返回合法 typed delegate，随后在 post-binding lookup 返回 null（解析出的 agent delegate 为 null，不执行 leaf、不修改 frozen table；不是把缺 factory 的非法声明冒充有效表），绝不 internal_error/8；正常生产表 S01 必须覆盖全部既有 accepted matrix。 |
+| catalog_invalid | 初始化 failure state 不执行；各 host 以上述既有通道处理，message 固定 `Runtime route catalog is unavailable.`；runAgentTask 经 headless runner settle 为 runtime_error/1，read-model helper 省略 transportId（renderer not-loaded）。synthetic init fault 的脱敏 message 仅进入 host fault channel，不能借道 API/schedule regex 或 stdio request catch。 |
 | unsupported_required_extension | 仅 internal query Result；v1 无 requiredExtensions 请求字段，不可从合法 public input 达到，零执行；将来 public negotiation 另案 C7。 |
 
 `runtime_selected` payload exact keys（`agent-runtime.ts:33–42`）：
@@ -345,7 +392,7 @@ S21/S24 在 claude-policy-grant、fail-closed、interactive 内部拒绝夹具�
 
 ## D5. 删除、守卫与 migration gate
 
-同一实施 change 原子替换 P01/P06–P12/P14/P15/P18 的选择职责；P02/P16/P19/P22/P24/P30
+同一实施 change 原子替换 P01/P06–P12/P14/P15/P18 的选择职责；P02/P16/P19/P22/P24/P30/P34
 改 wiring。P05/P23 保留 B，不能删除其 assertion/kind dispatch。retired 清单：
 `headless/adapter-selector.ts`（含 getAgentRuntimeAdapter/selectAgentRuntimeAdapter/SelectAgentRuntimeAdapterOptions/preferredAdapterSource）、
 `agent-runtime/runtime-registry.ts`、`DesktopRuntimeAdapterFactory`、`resolveCodexDesktopAdapterSelection`、
@@ -357,7 +404,7 @@ S21/S24 在 claude-policy-grant、fail-closed、interactive 内部拒绝夹具�
 | 文件 / 基线引用 | 实施处置与验证 |
 | --- | --- |
 | `tests/headless-adapter-selector.test.ts` | 重写到 catalog query/refusal S04/S05/S08；删除 preferredAdapterSource 死 seam 测试，保留 fallbackReason:null oracle。 |
-| `tests/agent-runtime-registry.test.ts` | 删除 registry 耦合测试；retired-runtime negative assertions 迁至 S06，合法 manifest assertions 迁 S10。 |
+| `tests/agent-runtime-registry.test.ts` | 重命名为 `tests/agent-runtime-router-surface.test.ts`，逐字保留 :72–143 两条源码扫描 ratchet：router 无 chat: publicProcedure/respondToolApproval/其他 removed members 或原 :101–103 的两类 retired symbols，active-chat 无 retired provider 分支，renderer 经 manifest store 读取。只迁 facade tests :12–70 到 S06（unknown/retired IDs）与 S10（manifest truth）；保留所需 imports。该 router-surface ratchet 保证 OD-1 默认不被暗改为 neutral chat/approval。 |
 | `tests/desktop-runtime-adapter-factory.test.ts` | 改为 typed catalog factory S03，不保留 mutable factory 测试。 |
 | `tests/codex-desktop-adapter-selection.test.ts` | 改 S03/S31/P30 status projection，保留 adapters.selection/hint bytes。 |
 | `tests/claude-agent-sdk-adapter-runner.test.ts` | 改用 S03 typed delegate/test catalog ports；保留 native policy retry。 |
@@ -365,7 +412,7 @@ S21/S24 在 claude-policy-grant、fail-closed、interactive 内部拒绝夹具�
 | `tests/agent-runtime-preflight.test.ts` | 删除 registry import，manifest 用 shared owner，保留 preflight ordering，S03 交叉验证。 |
 | `tests/run-event-ledger-desktop-request.test.ts` | 用 catalog typed delegate 替 factory 构造，ledger request/terminal oracle 原样。 |
 | `src/main/lib/headless/agent-runtime.ts:6–9` | 删除 getAgentRuntimeAdapter re-export；adapter 类型按新 canonical contract 同时更新全部 imports，不留 alias。 |
-| `scripts/check-retired-runtime-residue.mjs:81–83`, `:209–235` | 与旧 registry test 删除一起移除 stale allowlist；若 S06 承载 retired ID literals，仅为该测试/fixture 加准确路径+原因，不能宽放整个 fixture 目录。 |
+| `scripts/check-retired-runtime-residue.mjs:81–83`, `:209–235` | RED-suite commit 即新增 `tests/fixtures/runtime-route-catalog/refusals.json` 的 ALLOWED entry，reason=S06/S46 retired-ID refusal fixtures；实施重命名时才原子把旧 registry-test entry 换为 `tests/agent-runtime-router-surface.test.ts` 并保留原 reason，不能宽放整个 fixture 目录。 |
 | `scripts/check-architecture-guards.mjs:751` | Runtime Core Import Boundary clean fixture 的 ./adapter-selector 改为 ./runtime-route-catalog；其余 ledger/async fixtures 与 ratchet 不放宽。 |
 | `docs/OWNERSHIP_MAP.md:319–330` | 完整替换 Headless Runtime Adapter Selection 节为 Runtime Route Catalog Single Owner；同时修 Desktop factory/Codex selection 引用，保留邻接 owners。 |
 
@@ -382,11 +429,11 @@ ownerSection=`Runtime Route Catalog Single Owner`。相邻 owner 违规的 owner
 | route-dispatch-outside-owner | runtimeId/binding.runtime 条件驱动 adapter/transport 选择或 runtime-keyed map（含 alias/namespace/一跳 wrapper）。 |
 | duplicate-route-catalog | production 第二份声明表或 constructor/validator import。 |
 | retired-route-selector | retired module/export/import/call（包括 forwarding alias）；S27 明列符号。 |
-| leaf-adapter-import-outside-catalog | 对 headless/adapters/* 与 app-server-adapter-runner / agent-sdk-adapter-runner 的 run/create exports 的 value import/call 只允许 catalog 与 tests；fixed-runtime 直接 call 也报。leaf 内部 native helper 不是这些跨边界 exports，type-only contract imports 可保留；需要组合的 leaf wrapper 通过目录注入 typed dependency，不为整个目录开白名单。 |
-| route-catalog-test-port-in-production | production 显式赋值 runtimeRouteCatalog、传 query/list/projection 的可选 catalog 参数或配置 test constructor；D1 具名 host 仅可原样 forwarding，非覆盖。 |
+| leaf-adapter-import-outside-catalog | 对 headless/adapters/* 与 app-server-adapter-runner / agent-sdk-adapter-runner 的 run/create exports 的 value import/call 只允许 catalog 与 tests；fixed-runtime 直接 call 也报。leaf 内部 native helper 不是这些跨边界 exports，type-only contract imports 可保留；需要组合的 leaf wrapper（P34 agent-sdk-runtime-lifecycle.ts，经 agent-sdk-desktop-run-runtime.ts）通过目录注入 typed dependency，不为整个目录开白名单。 |
+| route-catalog-test-port-in-production | production 显式赋值 runtimeRouteCatalog、传 query/list/projection 的可选 catalog 参数或配置 test constructor；D1 具名 hosts 与 withRuntimeRouteTransportId helper 仅可原样 forwarding，非覆盖。 |
 | route-catalog-forbidden-dependency | main catalog→Electron/tRPC/renderer/preload、router wrapper 或 readiness→catalog 循环。 |
 | route-catalog-owner-bypass | catalog 写 queue/claim/events/sequence/terminal/artifacts/secret storage，或读取 process.env/fs/config。 |
-| renderer-route-projection-bypass | P14/P15 不调用 createRuntimeRouteTransport(binding.transportId) 或在该构造路径比较 binding.runtime；helper 出现 runtime-ID literal/branch；不误报 P25/P26/P32。 |
+| renderer-route-projection-bypass | P14/P15 不按 D1 read state 调 createRuntimeRouteTransport、没有把 loading/absent/error 映射到相应 state、在 ok:false 缓存 Chat 或在该构造路径比较 binding.runtime 均报；helper 出现 runtime-ID literal/branch、main 除 catalog 外出现 runtimeId→transportId literal mapping 均报；不误报 P25/P26/P32。 |
 
 成功 summary 精确为 `Runtime route catalog guard self-test: <matched>/<cases> fixture cases matched; repository ownership enforced.`
 不匹配为 `Runtime route catalog guard self-test case <caseId> missed <keys-or-nothing> and produced unexpected <keys-or-nothing>. See Runtime Route Catalog Single Owner.` 并 exit1；空 cases/非法 fixture exit1。
@@ -410,7 +457,7 @@ migration gate 是 source 原子 cutover：Owner APPROVED → 独立 RED suite �
 
 | 残余出处（基线 file:line） | 与路由的关系 / 本稿处置 |
 | --- | --- |
-| OD-1 / Phase 7 row 7 残余：P25/P27/P29/P32、P11/P12/P16，`active-chat.tsx`、`chat-input-area.tsx`、`agent-model-selector.tsx` | approval-dispatch（含 Claude default）与 runtime-neutral chat/approval IPC → Phase 4 Interactive Runs / add-harness-runtime-conformance；真实第三 Runtime 自有 chat routers/transports、main allowlists、alias 表与 UI selectors 仍需改动。后两 UI 文件是非目标残余，不计 §2 路由点。S19 不代表这些已解决。 |
+| OD-1 / Phase 7 row 7 残余：P21/P25/P26/P27/P28/P29/P32、P11/P12/P16，`active-chat.tsx`、`chat-input-area.tsx`、`agent-model-selector.tsx` | approval-dispatch（含 Claude default）与 runtime-neutral chat/approval IPC → Phase 4 Interactive Runs / add-harness-runtime-conformance；真实第三 Runtime 自有 chat routers/transports、P27 admit gates、P29 assertDesktopRuntime、P28 provider ternary（含 Claude default）、P21 provider target/purpose/protocol、P26 UI defaults/token/MCP、alias 表与 UI selectors 仍需改动。这些是保留的 main/UI runtime-keyed edits，不属于上文 central main dispatch 的 R 点。后两 UI 文件是非目标残余，不计 §2 路由点。S19 不代表这些已解决。 |
 | P31 / extension producer | Codex-only runtime.codex.v1 producer 保留；新增 Runtime producer/conformance 属 add-harness-runtime-conformance，L7 声明本身不交付。 |
 | `docs/tickets/TICKET-127-run-dir-artifacts-windows-stable-directory.md:11`, `:27` | Windows artifact-bearing admission fail closed；路由不能绕过 stable-directory 或把“有 route”报告成 artifacts available。保留负例；平台修复另案。 |
 | `docs/tickets/TICKET-128-run-ledger-creation-atomicity-and-terminal-publish.md:11`, `:32` | 两阶段创建、partial publish/crash repair 属 ledger/store/artifact；不迁入目录。async 已对齐 admission predicate 的部分以当前代码为准，不照抄旧 ticket 行号为现状。 |
@@ -441,8 +488,8 @@ Red 只停受影响部分；若它是完成 L1/L2 的必要前置，则本切片
 对五项裁定无异议；APPROVED 仍需绑定准确草案 SHA，Consumer Impact §10 不代签。
 
 1. **Q1 / OD-2 — discovery**：默认受约束 experimental optional routes（D3）；备选去掉 adapterSource/transport 则同步缩小 schema/fixtures，或 internal-only 则批准前删除 public delta/S22；无约束 closed/stable vocabulary 会使后续 runtime/adapter 演进触发 C7 #2/#10，不选。
-2. **Q2 / OD-3 — renderer 数据**：默认 main 在既有 chat/createSubChat binding read model 盖 transportId，不新增 listRoutes；备选 listRoutes 需要 renderer lookup 或 async Chat lifecycle（均扩大当前边界），拒绝读模型且无替代则必须重写 S18/S19/desktop delta 并重新审批，不能留下不可实现承诺。
-3. **Q3 / OD-5 — 验收代行**：Owner 2026-10-02 自我迭代指示已覆盖统筹代行 ACCEPTED，条件是同 SHA Codex IMPLEMENTATION_VERIFIED + Claude REVIEW_APPROVED、无开放 Red、残余逐项裁定；Owner 可改为亲自验收。push 依 2026-09-04 规矩由统筹派 Codex，需准确 SHA/target/门禁，本次派单明确不 push，不推导其他远程授权。
+2. **Q2 / OD-3 — renderer 数据**：默认 main 在既有 chat/createSubChat binding read model 盖 transportId，不新增 listRoutes；备选 listRoutes 需要 renderer lookup 或 async Chat lifecycle（均扩大当前边界），拒绝读模型且无替代则必须重写 S18/S19/S53/desktop delta 并重新审批，不能留下不可实现承诺。
+3. **Q3 / OD-5 — 验收代行**：统筹登记（非 Owner 签署；统筹记录，Owner 可撤回）：Owner 2026-10-02 自我迭代指示覆盖统筹代行 ACCEPTED（条件见 tasks 8.7）；本行不构成当前 APPROVED/ACCEPTED；Owner 可在 APPROVED 时改为亲自验收；push 依 2026-09-04 规矩由统筹派 Codex。备选亲自验收仅改变验收人，不免除同 SHA 双 verdict、无开放 Red 与残余裁定；本次不推导任何远程授权。
 4. **Q4 / OD-1 — L2/L4**：默认缩窄 L2 到 D3 的静态 main 注册 + renderer 只读投影，Phase 4/conformance 承接 neutral chat/approval IPC；备选本次批准 runtime-neutral agentRuntime.chat/respondToolApproval（C7 internal，但偏离 L4、进入 C5 并重开 Claude 全路由抽取边界）；两项都不选则原 Phase 7 SHALL NOT 无法兑现，阻断实施。
 5. **Q5 / OD-4 — pump**：默认 P23→B，保留 job.kind→runner，目录在 agent runner claim 后查询；备选 catalog dispatch 必须重新裁定 L5、循环依赖、pre-claim failure 与 async guard ratchet 放宽，不能当 Green 实施。
 

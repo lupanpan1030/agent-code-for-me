@@ -1,6 +1,6 @@
 # Change: Refactor Unified Runtime Route Catalog
 
-Status: **DRAFT v2 — awaiting Owner APPROVED**
+Status: **DRAFT v3 — APPROVED candidate; awaiting Owner APPROVED**
 
 ## Why
 
@@ -12,24 +12,27 @@ renderer transport 构造分支（其他 Engine 分支为具名残余）。增�
 产品基线 `6192b13f74603fbcc57c8ba858cb6b0f0d0ac776`（第一版的远端核对记录）；已包含
 `add-local-job-api-async-submit` 归档。第二版从指定干净 HEAD
 `f7a3f7bd454b95deb7ae6f6596efebe0dd3d9cf3` 改写，依据 fresh synthesis §3 1–14 与本次
-OD-1–OD-5 统筹裁定，保持纯文档 DRAFT。33 处 file:line、输入、输出、重复/分歧见
+OD-1–OD-5 统筹裁定。第三版从 `283f29ca1401f5567df998b850bbc605a064ee5f` 按
+`route-catalog-redraft-synthesis-283f29ca.md` §3 T1–T20 / §4 有界修补，保持纯文档 DRAFT。34 处 file:line、输入、输出、重复/分歧见
 [design §2](design.md#2-路由点清单事实底稿)。本任务只有文档，所有产品实现均待 Owner APPROVED。
 
 ## What Changes
 
 - 拟以 `src/main/lib/agent-runtime/runtime-route-catalog.ts` 为 runtime 路由唯一 owner：
   声明条目、校验、确定性查询、factory/transport/capability/readiness 引用和 safe projection。
-- 按 runtime/entry/kind/mode/profile/capabilities（executionSurface 仅输出）解析；未知、歧义、所需能力/扩展不满足
-  都 fail closed，错误通过既有 surface envelope，不新增公共 error/exit。
-- 原子替换 11 处选择职责，另 6 C / 16 B，删除旧 selector/registry/factory/两处 renderer transport runtime 分支；
+- 按 runtime/entry/kind/mode/profile/capabilities（executionSurface 仅输出）解析；未知 route、所需能力/扩展不满足 fail closed；声明相交在校验期即 catalog_invalid，错误通过既有 surface envelope，不新增公共 error/exit。
+- 原子替换 11 处选择职责，另 7 C / 16 B，删除旧 selector/registry/factory/两处 renderer transport runtime 分支；
   source cancellation、provider policy、native protocol 和 event-type switch 保留其 owner。
 - renderer 只读消费 main 盖在 binding read model 的 transportId。**OD-1 缩窄 L2**：目录条目
-  + adapter 包 + 自有 main chat router/transport 静态注册，不改 main 中央分派；现有 renderer
-  transport 构造和 event-state 语义不变，不承诺第三 Runtime 对所有 renderer switch 零改动。
+  + adapter 包 + 自有 main chat router/transport 静态注册，不改 main 中央分派
+  （central main dispatch = catalog-owned runtime→adapter-factory/transport/readiness selection，即 R 点）；
+  真实第三 Runtime 仍需改 admit gates、assertDesktopRuntime 与 P28 provider ternary（含 Claude default）
+  等 main-side runtime-keyed 边界。现有 renderer transport 构造和 event-state 语义不变，
+  不承诺第三 Runtime 对所有 renderer switch 零改动，完整残余见 design D6。
 - 引用现有 capability、readiness、projection truth；目录不是安装 registry，也不是队列。
 - OD-2 允许受约束 experimental discovery 的可选 `runtimes[].routes` 追加；既有 v1/async-submit/jobs-stdio/desktop
   chat IPC 不变。该可选 public scope 仍待本提案第 10 节批准。
-- 新增单目录架构守卫、独立作者测试先行的 S01–S52 conformance 规格。
+- 新增单目录架构守卫、独立作者测试先行的 S01–S53 conformance 规格。
 
 ## Impact and four delivery anchors
 
@@ -84,12 +87,16 @@ Why: main 路由通过目录、adapter 与自有 router/transport 静态注册�
 | Contract / version | Surface | 当前 → proposed | Breaking? / 分类 | 证据 |
 | --- | --- | --- | --- | --- |
 | `locus.local-job.v1` | runs create/submit/wait/retry/status/events/result/cancel | 相同请求/字段/命令/等待/幂等语义，内部 adapter 查目录 | 拟不变；需完整 golden，不以 parse 成功作证明 | `src/shared/local-job-api.ts:16`; `openspec/specs/local-job-api/spec.md:528`, `:561` |
-| same | runtimes list --json / --no-probe | manifest/readiness/features 保持；可选追加 runtimes[].routes | C7 #2/#10 additive **Yellow，非 Red**，Q1 受约束默认；旧 schema 和忽略字段 reader 必须通过 | schema `:1001`, `:1318`; local-job-api.ts `:481` |
+| same | runtimes list --json / --no-probe | manifest/readiness/features 保持；可选追加 runtimes[].routes | C7 #2/#10 additive **Yellow，非 Red**，Q1 受约束默认；旧 schema 和忽略字段 reader 必须通过 | schema `:1001`, `:1318`; local-job-api.ts `:481`；C7 §9.2 前置：已发布 `docs/local-job-api-v1-consumer-guide.md:1729` unknown-field 规则 |
 | same | error/exit/diagnostic | 保留 parser、provider、selector、claim-time、wait 各自映射 | 不变；目录新内部 reason 不直接外泄成 public code | design D4 源码表 |
 | same | events/native metadata/artifact refs | 12 types、六字段、dense sequence、cursor、runtime.codex.v1、run-dir refs 原样 | 不变；目录不是 event/artifact producer | local-job-api.ts `:455`, `:755`; shared/local-job-api.ts `:26` |
 | `locus-jobs-stdio.v1` | initialize/job.run/job.cancel/shutdown | 原 JSON-RPC 信封和 session-scoped submit/pump，间接查目录 | 不变；不增加 completion/profile 方法能力 | jobs-stdio.ts `:247`, `:268`, `:293`, `:407` |
 | Desktop private IPC（C7 internal，另受 L4） | claude.chat/codex.chat、agentJobs、listManifests | chat wire 和 cancel closure 不变；chat/createSubChat 绑定读模型增加 transportId，无 listRoutes | chat request/stream/cancel envelope 无改动，绑定读模型内部追加；Q2 默认 binding read model；chat 请求不接收 descriptor | codex.ts `:779`; claude.ts `:407`; agent-runtime.ts `:5` |
 | independently versioned app↔Runtime | native SDK/app-server/exec | 无新增协议/version/binary/activation | 无变化 | C8 `:1071`, `:1112`, `:1160` |
+
+初始化 `catalog_invalid` 是构建缺陷，在通过 S01 production-table CI 的构建中不可达；
+若发生，discovery 经既有 main catch exit 1 且无 stdout（design D4），分类为
+**Green/build-defect，不是合同变化**。probe failure 仍遵循原 advisory discovery exit 0，不能混同。
 
 上表短源码路径由 design 路由点清单给出完整路径。C7 §9.2 的 **十条** 分类如下：
 
@@ -136,13 +143,18 @@ Discovery current（节选）：
 {"apiVersion":"locus.local-job.v1","features":["runtime-readiness","provider-binding","completion","canonical-run-ledger","async-submit"],"runtimes":[{"runtimeId":"codex","readiness":{"state":"unknown"}}]}
 ```
 
-Discovery proposed（节选，保留全部原字段，仅展示一个摘要项）：
+Discovery proposed（节选，保留全部原字段，展示 agent 与 completion 摘要）：
 
 ```json
-{"apiVersion":"locus.local-job.v1","features":["runtime-readiness","provider-binding","completion","canonical-run-ledger","async-submit"],"runtimes":[{"runtimeId":"codex","readiness":{"state":"unknown"},"routes":[{"routeId":"codex.api.agent.batch","surface":"api","kind":"agent","executionProfile":"batch","adapterSource":"codex-batch","transport":"process-stdio","extensions":[]}]}]}
+{"apiVersion":"locus.local-job.v1","features":["runtime-readiness","provider-binding","completion","canonical-run-ledger","async-submit"],"runtimes":[{"runtimeId":"codex","readiness":{"state":"unknown"},"routes":[{"routeId":"codex.api.agent.batch","surface":"api","kind":"agent","executionProfile":"batch","adapterSource":"codex-batch","transport":"process-stdio","extensions":[]},{"routeId":"codex.api.completion","surface":"api","kind":"completion","executionProfile":null,"adapterSource":"locus-completion","transport":"provider-http","extensions":[]}]}]}
 ```
 
-routes block 为 **experimental**；routeId/surface/adapterSource/transport 是开放描述串，
+C7 §9.2 additive 前置来自已发布 `docs/local-job-api-v1-consumer-guide.md:1729`：
+“Use the documented v1 fields and ignore unknown JSON fields”。
+routes block 为 **experimental**；items 为 additionalProperties:false，固定 schema 副本须刷新
+（同 guide :232–238 discoveryFeature caveat）；任何 experimental block key-set 变化须重新做
+C7 #2/#10 分类。kind 复用 closed jobKind；agent executionProfile 复用 closed executionProfile，
+completion executionProfile=null。routeId/surface/adapterSource/transport 是开放描述串，
 routeId 非身份且不保证跨版本稳定。消费者不得按 adapterSource/transport 分支；公开仅
 api summary，省略 protocol。batch/completion extensions=[]，仅真实 app-server producer
 支持的 policy-grant route 声明 runtime.codex.v1，S13/S22 交叉核对。
@@ -159,7 +171,7 @@ S16 的 claim race 和 S20 的 exact-owner cancel 测试约束。
 | --- | --- | --- | --- | --- |
 | Career Kit | `docs/ideas/locus-product-direction-harness-strategy.zh-CN.md:89` 的 pinned adapter/contract/historical smoke references | v1 create/status/result，structured proposal | 按推荐方案无强制修改，optional routes 可忽略；仍由自身 review/apply gate 写业务数据 | 本切片未运行，unknown；不把历史 smoke 当本 SHA receipt |
 | Amadeus | 同文 `:108` 的 Owner 提供事实及 pinned README relationship | 已接 Local Job API，具体部署调用面 unknown | 无强制修改；若选择读取路线摘要由 consumer 自行更新 adapter | unknown；是事实上的 integrating consumer，不据此重排 roadmap |
-| Locus Desktop/Workbench | design P11–P17/P22 | private chat/discovery/cancel/logs | 两个 transport 构造点改为 binding.transportId 消费；wire 与 UI lifecycle 保持 | Locus-owned S18–S20 |
+| Locus Desktop/Workbench | design P11–P17/P22 | private chat/discovery/cancel/logs | 两个 transport 构造点改为 binding.transportId 消费；wire 与 UI lifecycle 保持 | Locus-owned S18–S20/S53 |
 | 其他 v1 / jobs-stdio client | 已发布 schema/CLI，实际消费者集合 unknown | runtimes list、run/observe/cancel | 忽略可选摘要即可；不解析 adapter-specific raw events | neutral fixtures 为 producer gate，真实 E2E unknown |
 
 不读取外部 consumer 私有库，不建立 consumer-specific core、依赖矩阵或额外批准 veto。
@@ -209,7 +221,7 @@ PR mutation 或外部通知。现有 TICKET-127–131 残余不能通过代码�
 
 ### 9. 验证证据
 
-以下为实施验收，全部未执行；[verification](verification.md) 登记 S01–S52，不以起草校验代替：
+以下为实施验收，全部未执行；[verification](verification.md) 登记 S01–S53，不以起草校验代替：
 
 - [ ] Optional discovery machine-readable schema/types、指南与示例同 change 更新；原 schema snapshot 仍接受追加字段。
 - [ ] Common-core、既有请求完整 stdout/stderr/exit、默认 adapter、policy/provider、async lifecycle conformance。
@@ -231,8 +243,9 @@ Sunset/deletion condition: no public sunset; internal old routing removed in the
 Consumer coordination required: no mandatory consumer upgrade under recommendation; any observed break returns to Owner.
 Owner: Repository Owner (not yet signed).
 Date: not approved.
-Acceptance delegation: OD-5 已授权；Owner 2026-10-02 自我迭代指示覆盖统筹代行，须同 SHA 双技术 verdict、无开放 Red、残余已裁定。此项不代签本提案 APPROVED/ACCEPTED；push 仍由统筹依 2026-09-04 规矩派 Codex，本派单不 push。
 ```
+
+统筹登记（非 Owner 签署；统筹记录，Owner 可撤回）：Owner 2026-10-02 自我迭代指示覆盖统筹代行 ACCEPTED（条件见 tasks 8.7）；本行不构成当前 APPROVED/ACCEPTED；Owner 可在 APPROVED 时改为亲自验收；push 依 2026-09-04 规矩由统筹派 Codex。
 
 模板的 DIRECT_NEW_STANDARD / NEW_VERSION / TEMPORARY_FACADE / DEFER / REJECT 为可能的
 breaking disposition；本稿不伪造其中任何已选决定。Owner 可明确批准“保持现有合同 + optional
