@@ -232,7 +232,7 @@ readRunPublicationReadiness：一致读 seal/completed + prepared tail → safe 
 
 TICKET-128 的 partial rename、stage crash residue、publish→expiresAt crash gap 仍存在。消费者删除/修改已发布文件会使后续 wait 重新 non-ready，无法区分从未发布和发布后删除（SYN-18）；durable publish marker 不在本切片。普通 result/events-follow 合同不变，完整文件 barrier 仅 wait；指南必须披露上述残余。
 
-**Closure-check residuals（统筹记录，2026-10-02）**：(1) daemon 认领的 completion Run 超过 30 s 无进展窗口会被判 error/8，因为 completion-runner 目前不写 heartbeat——实施任务 2.5 要求 completion 在 daemon 认领下按既有 heartbeat 节奏写 heartbeatAt，在此之前停滞规则对 completion kind 只在 own-pump 豁免；(2) `--request -`（请求体占用 stdin）的调用者无法触发 stdin-EOF 取消转发，只有信号或 cancel-by-id；(3) Windows 上转发取消后的信号重抛语义未定义：wrapper 以映射后的 outcome exit 退出，不重抛；(4) `runs wait` 的未知/非 API id 字面量固定为 `Unknown job: <id>`（与 `jobs` 命令一致），`api runs status` 今日对非 API id 抛 `Unknown API job: <id>`，两者不互相承诺一致。
+**Closure-check residuals（统筹记录，2026-10-02）**：(1) claim 时已写 heartbeatAt（run-event-ledger host），但 completion-runner 在长时间上游调用期间不续写 heartbeat，daemon 认领的 completion 一旦上游调用超过既有 120 s stale 阈值会被判 error/8——实施任务 2.5 要求 completion 在 daemon 认领下按既有节奏续写 heartbeatAt；(2) `--request -`（请求体占用 stdin）的调用者无法触发 stdin-EOF 取消转发，只有信号或 cancel-by-id；(3) 取消转发后的信号重抛按本 delta :89–91 与 S35 在所有平台执行，Windows 控制台信号到重抛的具体映射是实施披露项；(4) `runs wait` 的未知/非 API id 字面量固定为 `Unknown job: <id>`（与 `jobs` 命令一致）；`api runs status` 今日对未知 id 抛 `Unknown API job: <id>`、对非 API id 抛 `Job <id> is not an API job`，本 delta 不承诺两者一致。
 
 ## D6. Public boundary and security
 

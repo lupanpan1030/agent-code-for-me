@@ -204,8 +204,8 @@ New errors SHALL use these exact stream/exit/code rules. Stdout error envelopes 
 be one `{apiVersion,error:{code,message}}` JSON line with a sanitized message and no
 raw input/key. Stderr errors SHALL be one sanitized plain-text diagnostic line followed
 by a newline, never a v1 JSON error envelope; the table's stderr labels identify the
-condition, not an emitted error.code. Unknown/non-API IDs SHALL use `Unknown job: <id>`
-exactly as runs status does for an unknown ID. Invalid timeout SHALL use the plain-text
+condition, not an emitted error.code. Unknown/non-API IDs SHALL use `Unknown job: <id>`.
+Invalid timeout SHALL use the plain-text
 argument diagnostic `Invalid timeout: expected an integer from 0 to 86400000 milliseconds.`;
 pre-snapshot observation failure SHALL use `Failed to observe job: <id>`, with no raw
 exception/input. Key validation SHALL check existing secret patterns before charset/
