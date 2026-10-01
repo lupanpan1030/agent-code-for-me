@@ -3,7 +3,7 @@
 Status: **IMPLEMENTATION CANDIDATE — frozen 2026-10-02 (Phase III); awaiting same-SHA Codex IMPLEMENTATION_VERIFIED + Claude REVIEW_APPROVED**
 
 执行顺序为 1 → 7 的独立 red fixtures（`20e7bfcf`，seam 批准 `8974c9ed`）→ 2–6（Phase I `89b68393`..`0ae41f47`，红套件裁定 `d59b1142`/`770c78ad`，Phase II `2385df4e`..`84c622ce`，T1 `74e30df9`..`e0a9a967`）→ 7 green（四个红文件 79/79）→ 8。
-Phase III（文档、登记、smoke、冻结候选）只改 docs/openspec，无 src/tests 变更。每项勾选后附提交证据；未勾选项写明缺什么，不以环境失败或部分覆盖冒充完成。
+Phase III（文档、登记、smoke、冻结候选）只改 docs/openspec，无 src/tests 变更；T2（Phase III 检查 `887df155` 的修复）再改 src/tests/docs，产生新的冻结候选。每项勾选后附提交证据；未勾选项写明缺什么，不以环境失败或部分覆盖冒充完成。证据中仍有开放子项的条目不勾选，标 PARTIAL 并列出开放子项（8.1 以这些子项为准）。
 
 ## 1. 治理与基线
 
@@ -19,6 +19,7 @@ Phase III（文档、登记、smoke、冻结候选）只改 docs/openspec，无 
   证据：独立红套件 `20e7bfcf`（S01–S54 夹具与 seam），seam 名批准 `8974c9ed`；实施暴露 `submitRun`/`waitForRun`/`readRunPublicationReadiness`/`cleanupExpiredAgentJobIdempotency`/`reopenAdmittedRunDir`/`monotonicClock`/`beforeOwnPumpClaim`（`0bbaa549`、`72e0f55e`、`4f0541bc`）。
 - [ ] 1.6 Owner 决定 R1–R4、Q1–Q6 后，将 deltas 改为仅保留选定分支的无条件 SHALL；备选仅保留在 design.md Owner decisions（history，已否决，不实现）。删除 specs 内全部“统筹预设/pending/conditional”决策措辞（尤其 headless 的 R3、local-job-api 的 Q2/R4/Discovery R2），S34/S35 裁剪到选定分支；即使全部接受默认也必须执行。重跑 strict validate，取得一次简短 closure re-check，记录选定分支裁剪与 closure re-check 后的 resulting SHA，并保留 Owner 原批准绑定 0f998436；不得将待决或互斥分支带入 red tests、实施或 living archive。本次已完成文字 prune；独立 closure re-check/精确 SHA receipt 尚待完成，故本项保持未勾。
   未完成：选定分支文字 prune 已在 `0447d02d` 落地，红套件审计（red-receipt）在其上进行；但 tasks 要求的独立 closure re-check 记录与 resulting SHA receipt 未找到，仍待取得。
+  T2 核对：统筹的 closure check `25575cc3`（NOT_READY）与其 addendum `abec16a5`（READY_FOR_OWNER）发生在 Owner 决定与 `0447d02d` prune 之前，审的是含预设/条件措辞的草案，因此不能充当本项要求的 prune 后 closure re-check。实质上，Phase III 检查（`887df155`）对 `specs/*/spec.md` 的 grep 未发现残留 pending/conditional/preset/否决分支/v1.1 措辞（唯一命中为 unknown-version 负例）。本项保持开放：由统筹决定以该 grep 作为 closure re-check 记录 SHA receipt，或记录豁免。
 
 ## 2. Submit 核心与 wrapper
 
@@ -29,9 +30,9 @@ Phase III（文档、登记、smoke、冻结候选）只改 docs/openspec，无 
 - [x] 2.3 creation fact 和必要初始 artifact admission 完成后才 fresh/replay ack；快 worker 下的 queued admission snapshot 不伪装成最新状态；所有资源 handle 在提交进程关闭。
   证据：`72e0f55e`（creation commit → winner-only mkdir → 初始 admission → ack，`finally` 关闭 run-dir handle）；S01/S11/S12/S38 绿。
 - [x] 2.4 删除 cli-dispatcher 的 runPreparedLocalJobApiJob 及 API create/retry runner 直调；迁移其 agent/completion dispatch、terminal artifact composition 到既有 executor，保留序列化字节/换行和 exit mapping；Q2(a) wrapper 与 stdio 同调 pumpQueuedRuns({admittedIds})，不直接 runner；按 1.6 收敛后的 R4 实现平台 catchable abort/armed EOF own cancel（仅 admission 时 open pipe 随后关闭，不重放正文 EOF），signal cleanup re-raise 原 signal，披露 POSIX SIGKILL/Windows TerminateProcess 残余。
-  证据：`4f0541bc`（删除 `runPreparedLocalJobApiJob`；create/retry 为 submit + `pumpQueuedRuns({admittedIds})` + wait；R4 relay），`ac1e2f74`（retry 基线错误流/exit/gate 顺序），`84c622ce`（relay 先停自身 wait）；S03/S04/S25/S34/S35 绿；Windows 控制台信号映射未在本机验证（verification smoke 矩阵）。
+  证据：`4f0541bc`（删除 `runPreparedLocalJobApiJob`；create/retry 为 submit + `pumpQueuedRuns({admittedIds})` + wait；R4 relay），`ac1e2f74`（retry 基线错误流/exit/gate 顺序），`84c622ce`（relay 先停自身 wait），`0e70e7d7`（T2：relay 另监听 POSIX `SIGHUP` 与 win32 `SIGBREAK`/`SIGHUP`，Windows 无法 re-raise 时 exit 8），`674ab421`（T2：own pump 运行时的 store 读失败停止自身执行树并保留基线 stderr/exit）；S03/S04/S25/S34/S35 绿；Windows 控制台信号行为未在 Windows 主机验证（verification smoke 矩阵）。
 - [x] 2.5 既有 daemon queue 增加 api source 和 completion kind；claim/并发/lock nonce 复用原 owner，普通 daemon 仍不认领 desktop/default cli/protocol；API executor 调 run-artifacts.reopenAdmittedRunDir 校验 committed refs、single-link receipts、root/base containment；加入 RunLocalAgentDaemonOptions 的 providerBindingDependencies / completionFetch / appVersion / env / clock / ID / maxQueuedApiAgeMs 注入 seams；age 是 internal daemon/pump option、常量 MAX_QUEUED_API_AGE_MS 默认 86400000 ms，不是 runtime 用户配置；API claim 前复核 project/cwd/profile/grant/age（24 h 默认），失败经 host settle，completed.payload.reasons / job.errorCode / failed / outcome exit 按 headless projection table（7/7/binding 4,2,6 else 3/1/1）测试。 completion-runner 在 daemon 认领下于长时间上游调用期间按既有节奏续写 heartbeatAt，避免 120 s stale 误判（闭合检查残余 (1)）。
-  证据：`72e0f55e`（daemon api 槽位、completion kind、注入 seams、completion 15 s 心跳），`765b8ea6`（认领后 claim gate 与 reopen、`MAX_QUEUED_API_AGE_MS`），`74e30df9`（缺 identity fail closed），`27cbcdad`（gate handle 关闭），`dcad0c0e`（daemon tick 结算超龄），`ad6225cb`/`22d4336b`（`claim_gate_failed` 记录与测试）；S28/S37/S39/S42 绿。
+  证据：`72e0f55e`（daemon api 槽位、completion kind、注入 seams、completion 15 s 心跳），`765b8ea6`（认领后 claim gate 与 reopen、`MAX_QUEUED_API_AGE_MS`），`74e30df9`（缺 identity fail closed），`27cbcdad`（gate handle 关闭），`dcad0c0e`（daemon tick 结算超龄），`ad6225cb`/`22d4336b`（`claim_gate_failed` 记录与测试），`0d6b03da`（T2：超龄 tick 仅对竞争静默，其余错误写净化 `[Daemon]` 诊断并在后续 tick 排除）；S28/S37/S39/S42 绿。
 - [x] 2.6 jobs-stdio job.run 删除独立 create+runner 编排，使用同 submit 与既有 pump 的 session-scoped mode；initialize/job/event/job.cancel/shutdown/EOF 外形、取消范围及 drain 行为不变；不需要外部 daemon。
   证据：`ad16cb0c`（job.run → submitRun + session 作用域 pump；cancel/shutdown/EOF 不变）；S29/S30/S48–S51 绿。
 - [x] 2.7 queued API cancel 从持久输入组合同一 terminal projection 后交既有 cancelAgentJob/host settle；不能依赖 worker 先注册 preparer；missing-admission cancel 与 recovery 不登记 terminal refs、ready 空集；recovery 保留原 prologue；process+attempt 唯一 staging，cancel/cancel 与 slow-cancel/failing-claim 输家只丢自己的 staging，不造第二 completed。
@@ -93,7 +94,7 @@ Phase III（文档、登记、smoke、冻结候选）只改 docs/openspec，无 
 - [x] 6.2 根据 Owner 已选 R2 direct 同改 shared features 和 schema discoveryFeature；保留 pinned-old-schema rejection fixture，不把 unknown-field 忽略等同于 enum 容忍。
   证据：`72e0f55e`（shared features 与 schema `discoveryFeature` 同改）；S22（新 schema 通过、`schema-before.json` 在 enum 处失败）绿。
 - [x] 6.3 实施时才修改 docs/local-job-api-v1.schema.json 与英文/中文 consumer guide：命令、requests/envelopes、wait-timeout9、幂等作用域/规范化/TTL、executor 前提、R3 native-home/env 与 caller readiness 边界、R4 平台 abort/EOF/SIGKILL/TerminateProcess 与 500 ms kill、fail-closed code/exit 映射、worker identity、recovery 空 terminal refs、publish baseline/异常、pending/new-key 风险、文件删除后再 pending、升级/失败示例、未知字段规则。
-  证据：`d37fa4e5`（中英文指南全部条目），`d813b060`（schema：`submitRequest`、createRequest 拒绝 key；`72e0f55e` 已有 wait/execution/error/retry 定义经实际输出校验）。
+  证据：`d37fa4e5`（中英文指南全部条目），`d813b060`（schema：`submitRequest`、createRequest 拒绝 key；`72e0f55e` 已有 wait/execution/error/retry 定义经实际输出校验），`9f73d96e`（T2：`completionSubmitRequest` 经 `completionRequestMembers` 派生，提交 Ajv 2020 输出/请求一致性测试 `tests/local-job-api-async-schema-envelopes.test.ts`），`39e3446d`/`674ab421`/`43354f87`（T2：R4 信号集合、own-pump 读失败、tick/claim 优先级的指南文字）。
 - [x] 6.4 consumer preflight 缺 async-submit 时不 dispatch；默认新 key command shapes 在旧 parser exit2，保留 keyed create silent-drop 反例；按已选 submit/retry-only 收窄 guide:210 并披露 #10；另披露已确认 create reject 的 #2 / idempotency_key_not_supported；引用指南 :209-216 预声明 refresh 与 canonical-run-ledger 先例；no-key v1 流程不增必填字段。
   证据：`d37fa4e5`（guide:210 规则收窄为 submit/retry key 需 `async-submit` preflight，#10；keyed create 旧 build silent-drop 反例；create 拒绝 #2 / `idempotency_key_not_supported`；enum 刷新规则）；S23/S53 绿。
 - [x] 6.5 保留 12 types、六字段、dense sequences、after/follow、result/artifact names/refs/digests/retention、profile/provider/completion defaults；新增操作不开放 native union 或 Interaction。
@@ -110,24 +111,24 @@ Phase III（文档、登记、smoke、冻结候选）只改 docs/openspec，无 
 
 - [x] 7.1 S01/S02/S24：submit 在 runtime latch 未释放前完整返回、账本 creation 已提交、agent/completion admission gate 与一次 upstream call。
   证据：S01/S02/S24 绿（verification 登记表）。
-- [x] 7.2 S03/S04/S25：旧 create/default retry = 同核 submit+wait 的完整 byte golden、所有终态/0–8、内部 wait 超时不泄漏为 create 响应；只按 1.6 prune + closure re-check 后的 approved exact SHA 编写 S34/S35 选定分支、publish 故障和 R4 平台 abort/EOF/kill oracle，不为未选分支生成实施验收；own-pump/daemon-first 45 s completion、D5 存活证据及基线非 outcome stderr/exits 均覆盖。
-  证据：S03（含真实进程）/S04/S25/S34/S35 绿；Windows 平台 abort 矩阵未在本机执行（verification 未覆盖子项）。
-- [x] 7.3 S05/S06/S07：commit 前、publish 中、完成时、deadline/0/default/非法 timeout、多个 waiter/失去通知、late diagnostics。
-  证据：S05/S06/S07 绿；S07 的 read/wakeup-registration latch 子项为未覆盖子项。
-- [x] 7.4 S08/S09/S10/S11：规范化 replay、语义 conflict、consumer 隔离、跨进程唯一 reservation 和零重复执行。
-  证据：S08–S11 绿；S11 的「creation committed、admission pending」并发交错为未覆盖子项。
+- [ ] 7.2 S03/S04/S25：旧 create/default retry = 同核 submit+wait 的完整 byte golden、所有终态/0–8、内部 wait 超时不泄漏为 create 响应；只按 1.6 prune + closure re-check 后的 approved exact SHA 编写 S34/S35 选定分支、publish 故障和 R4 平台 abort/EOF/kill oracle，不为未选分支生成实施验收；own-pump/daemon-first 45 s completion、D5 存活证据及基线非 outcome stderr/exits 均覆盖。
+  PARTIAL（T2 起按 tasks:6 规则取消勾选）：S03（含真实进程）/S04/S25/S34/S35 绿；T2 增加 POSIX `SIGHUP` 中继（进程内 + 真实进程）、win32 `SIGBREAK`/`SIGHUP` 平台门控测试（`tests/local-job-api-wrapper-relay-signals.test.ts`）与 own-pump 读失败基线（`tests/local-job-api-wrapper-observation-fault.test.ts`）。开放子项：S35 Windows abort 矩阵（Ctrl+C/Ctrl+Break/console 关闭/`child.kill()`/`TerminateProcess` 真实回执，无 Windows 主机，win32 测试在本机跳过）；S35 POSIX 带真实孙进程的进程组 kill。
+- [ ] 7.3 S05/S06/S07：commit 前、publish 中、完成时、deadline/0/default/非法 timeout、多个 waiter/失去通知、late diagnostics。
+  PARTIAL：S05/S06/S07 绿。开放子项：S07 waiter 初次读与 wakeup 注册之间提交落地的 read/wakeup-registration latch（无该 latch seam）。
+- [ ] 7.4 S08/S09/S10/S11：规范化 replay、语义 conflict、consumer 隔离、跨进程唯一 reservation 和零重复执行。
+  PARTIAL：S08–S11 绿。开放子项：S11「creation committed、initial admission pending」的真实并发交错（该状态本身由 S14/S38 覆盖）。
 - [x] 7.5 S12/S13/S14/S15：事务 rollback 与补偿释放、kill/补偿失败/pending creator、保留期与清理、raw-key 禁落盘/泄漏。
   证据：S12–S15 绿。
-- [x] 7.6 S16/S17：无 executor structured status、stale/dead/legacy/EPERM/nonce-swap、auth readiness 不被混淆，Workbench 读同一 queued job。
-  证据：S16/S17 绿；S17 reader 侧 nonce A→B 为未覆盖子项。
-- [x] 7.7 S18/S19/S20：queued cancel、claim race、running cancel、retry 幂等/new identity、parent 不变、non-API 与不可 retry 状态拒绝。
-  证据：S18/S19/S20 绿，另 `tests/local-job-api-queued-cancel-terminal.test.ts` 覆盖 cancel/cancel 竞争；slow-cancel 对 failing claimant 子项为未覆盖子项。
+- [ ] 7.6 S16/S17：无 executor structured status、stale/dead/legacy/EPERM/nonce-swap、auth readiness 不被混淆，Workbench 读同一 queued job。
+  PARTIAL：S16/S17 绿。开放子项：S17 reader 侧两次读之间 nonce A→B（writer 侧 successor 已覆盖）。
+- [ ] 7.7 S18/S19/S20：queued cancel、claim race、running cancel、retry 幂等/new identity、parent 不变、non-API 与不可 retry 状态拒绝。
+  PARTIAL：S18/S19/S20 绿，另 `tests/local-job-api-queued-cancel-terminal.test.ts` 覆盖 cancel/cancel 竞争。开放子项：S18 slow-cancel 准备与立即失败的 claimant 竞争。
 - [x] 7.8 S21/S22/S23：既有 v1 请求字段保留、显式 keyed-create 拒绝披露、12-type/六字段/after/follow/artifacts、闭 enum 前后 schema、missing feature/version fail closed。
   证据：S21/S22/S23 绿；S22 的迁移失败/隔离 profile/旧 binary 负例子项属 4.9，未完成。
-- [x] 7.9 S26/S27/S31：统一 creation predicate、初始 artifact gate；S36 recovery 空 refs、S37 真跨进程重开发布、S38 admission 边界崩溃取消；每个 staged/commit/rename 边界故障重开、目录替换、schedule 不多 fire。
-  证据：S26/S27/S31/S36/S37/S38 绿；S27 逐 staged 文件故障点、S37 wrapper-paused 变体为未覆盖子项。
-- [x] 7.10 S28/S29/S30：daemon source eligibility/claim/concurrency/lock、stdio 同核 response/event、session cancel/shutdown/EOF、无外部 daemon；S39 claim revalidation/age、S40 env provenance。
-  证据：S28/S29/S30/S39/S40 绿；S39 wrapper-paused 变体、S40 probing readiness 与 win32 allowlist 为未覆盖子项。
+- [ ] 7.9 S26/S27/S31：统一 creation predicate、初始 artifact gate；S36 recovery 空 refs、S37 真跨进程重开发布、S38 admission 边界崩溃取消；每个 staged/commit/rename 边界故障重开、目录替换、schedule 不多 fire。
+  PARTIAL：S26/S27/S31/S36/S37/S38 绿。开放子项：S27 每个 staged 写入之后（不止最后一个）的故障点；S37 create/default-retry wrapper 在 admission 后暂停（`beforeOwnPumpClaim`）的变体。
+- [ ] 7.10 S28/S29/S30：daemon source eligibility/claim/concurrency/lock、stdio 同核 response/event、session cancel/shutdown/EOF、无外部 daemon；S39 claim revalidation/age、S40 env provenance。
+  PARTIAL：S28/S29/S30/S39/S40 绿；T2 增加超龄 tick 非竞争错误诊断与排除（`tests/local-job-api-over-age-tick-diagnostics.test.ts`）。开放子项：S39 wrapper-paused 变体；S40 跨进程 probing readiness 与 win32 allowlist（无 Windows 主机）。
 - [x] 7.11 S32/S33：clean/负例结构守卫与 self-test，旧内联 runner、重复 owner/row insert、host 外 appendExact 必须被拒绝。
   证据：S32/S33 绿（守卫自测 17/17，变异夹具按 case id 失败）。
 - [x] 7.12 S41–S54 保留每条 living assertion；S42/S46/S48/S51 是 modified-inherited，增加与 MODIFIED requirement 一致的 assertions（S48 将 shared runner core 表述细化为同核 submit/pump）；S53 恢复原 consumer rule 并增加 helper documentation example 行；标题不变。

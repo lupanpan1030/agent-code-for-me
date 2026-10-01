@@ -49,12 +49,12 @@ tests/architecture guards；**本次起草只写本 change 文档与 STATUS 一�
 ### 1. Gate 状态
 
 ```text
-Status: APPROVED 2026-10-02 (Owner, bound to 0f998436) / AWAITING_RED_SUITE_TEST_FIRST
+Status: APPROVED 2026-10-02 (Owner, bound to 0f998436) / IMPLEMENTATION CANDIDATE (T2 re-freeze; awaiting same-SHA dual verdicts, see verification.md)
 OpenSpec change: add-local-job-api-async-submit
 Author / date: Codex / 2026-10-01
 Decision owner: Repository Owner
 Owner approval: 2026-10-02 @ 0f998436；第 10 节六项决定全部按推荐默认
-Implementation blocked until: 1.6 prune closure re-check + 独立作者 red suite（先于实现）
+Implementation blocked until: 1.6 prune closure re-check + 独立作者 red suite（先于实现）——历史门槛：独立 red suite `20e7bfcf` 已先于实现；1.6 receipt 仍开放，由统筹记录或豁免（tasks 1.6）
 ```
 
 ### 2. 一句话变化
