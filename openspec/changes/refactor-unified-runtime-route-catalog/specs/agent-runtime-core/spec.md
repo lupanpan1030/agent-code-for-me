@@ -21,7 +21,7 @@ wire/admission owners remain outside this catalog selection boundary.
 - **GIVEN** `tests/fixtures/runtime-route-catalog/catalog.json#S01` with valid production declarations/real reference ports and isolated duplicate-runtime, duplicate-route, overlap, agent missing factory / missing manifest/schema, malformed namespace, enforcement-evidence mismatch, agent-missing-probe and completion-null-probe variants
 - **WHEN** validateRuntimeRouteCatalog validates each table (including the real production table/ports) and createRuntimeRouteCatalogForTests constructs each RuntimeRouteCatalogState for injection into the named hosts
 - **THEN** the validator returns {ok:true,catalog:ValidatedRuntimeRouteCatalog} for production/valid/completion-null-probe tables and {ok:false,reason:"catalog_invalid",offending:{…}} for every invalid table; the test constructor returns the same non-executable RuntimeRouteCatalogFailureState production initialization retains, without throwing or returning a branded catalog; no factory/probe/provider/spawn is called
-- **AND** injecting that failure state via runtimeRouteCatalog in RunHeadlessCliCommandOptions / LocalJobApiRuntimeManifestEnvelopeOptions / runClaudeAgentSdkDesktopRuntimeWithMcpReadiness options / runCodexDesktopChatRun options / runAgentTask options makes resolveRuntimeRoute return {ok:false,reason:"catalog_invalid"}, list/projection reject with no partial output, and runHeadlessCliCommand reject with exactly "Runtime route catalog is unavailable." with empty stdout. Desktop uses its existing stream error/finish envelope with that same message; the headless runner settles runtime_error/1 with that message (S24); withRuntimeRouteTransportId omits transportId (S53, renderer not-loaded). The production CLI mapping is the existing [Headless] Failed: stderr and exit 1 at src/main/index.ts:435–437, not the bun test entry; no catalog reason is public
+- **AND** injecting that failure state via runtimeRouteCatalog in RunHeadlessCliCommandOptions / LocalJobApiRuntimeManifestEnvelopeOptions / runClaudeAgentSdkDesktopRuntimeWithMcpReadiness options / runCodexDesktopChatRun options / runAgentTask options makes resolveRuntimeRoute return {ok:false,reason:"catalog_invalid"}, list/projection reject with no partial output, and runHeadlessCliCommand discovery commands (api runtimes list --json / --no-probe) reject with exactly "Runtime route catalog is unavailable." with empty stdout; run commands encountering that failure state settle runtime_error/exit 1 rather than reject. Desktop uses its existing stream error/finish envelope with that same message; the headless runner settles runtime_error/1 with that message (S24); withRuntimeRouteTransportId omits transportId (S53, renderer not-loaded). The production CLI mapping is the existing [Headless] Failed: stderr and exit 1 at src/main/index.ts:435–437, not the bun test entry; no catalog reason is public
 
 #### Scenario: S02 Query and enumeration are deterministic and side-effect free
 - **GIVEN** `tests/fixtures/runtime-route-catalog/catalog.json#S02` with declarations in two orders, permuted duplicate capability requests, and recording factory/probe/DB ports
@@ -139,7 +139,8 @@ The system SHALL define an explicit `AgentRuntime` contract implemented by every
 - **WHEN** a runtime declares a capability as supported and the corresponding catalog-selected adapter capability test exercises its recording leaf ports
 - **THEN** recording ports observe the declared operation and its fixture result or enforcement decision from the actual adapter/shared layer
 - **AND** a supported declaration with an uncalled enforcing port or mismatched result fails the conformance assertion
-<!-- governance-only clause; not test-registered: tests must cover every declared supported behavior before its implementation checklist can pass. -->
+- **AND** tests must cover every declared supported behavior before its implementation checklist can pass.
+<!-- governance-only clause; not test-registered. -->
 
 ### Requirement: Capability Honesty
 The runtime core SHALL distinguish supported behavior from degraded or
@@ -170,7 +171,8 @@ unsupported behavior.
 - **THEN** the Codex capability manifest marks that capability as `degraded` or
   `unsupported`
 - **AND** renderer-facing capability states/reasons and CLI diagnostics equal the fixture expectations, and a query requiring the missing capability returns capability_refused without calling its delegate
-<!-- governance-only clause; not test-registered: runtime execution boundary changes may still complete when callers correctly gate the missing capability. -->
+- **AND** runtime execution boundary changes may still complete when callers correctly gate the missing capability.
+<!-- governance-only clause; not test-registered. -->
 
 #### Scenario: Policy grant requires adapter enforcement
 <!-- Scenario register: S40; retained living title for full MODIFIED replacement. -->

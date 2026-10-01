@@ -9,7 +9,8 @@ The system SHALL upgrade Codex parity on top of the shared `AgentRuntime` contra
 - **WHEN** headless jobs resolve Codex through resolveRuntimeRoute and projectRuntimeRoutes while desktop/CLI capability gates check the same canonical states
 - **THEN** the projected states equal the canonical supported/degraded/unsupported fixture states
 - **AND** caller gates return the fixture availability/diagnostics and call no unsupported capability port
-<!-- governance-only clause; not test-registered: the parity change owns the work to turn parity-owned Codex capabilities into supported behavior. -->
+- **AND** the parity change owns the work to turn parity-owned Codex capabilities into supported behavior.
+<!-- governance-only clause; not test-registered. -->
 
 #### Scenario: Parity claim is attempted without implementation
 <!-- Scenario register: S52; retained living title for full MODIFIED replacement. -->

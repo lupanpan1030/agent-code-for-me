@@ -48,6 +48,7 @@ Existing ledger and async guard self-test output/flags SHALL remain unchanged.
 - **GIVEN** `tests/fixtures/runtime-route-catalog/architecture-fixtures.json#S29` with positive fixtures for provider target/purpose mapping, policy mode checks, source-based job cancel, command/method parsing, native protocol decoding, selected-route assertions, transportId-only factory construction, chunk.type event state, codex-app-server.ts:49 runtime/profile/bounded-scope assertions, chat-session-binding admit gates and provider target, desktop allowlist, active-chat new-binding/token/MCP branches (:346/:2513/:5866) and approval dispatch (:2678), runtime-manifest aliases, job-runner resolveRunner ENV/injected runner seam and API-only source/profile gate, plus pump job.kind dispatch and agent-sdk-runtime-lifecycle receiving the typed Claude delegate injected through agent-sdk-desktop-run-runtime rather than value-importing the leaf
 - **WHEN** the new guard and existing owner guards scan these fixtures
 - **THEN** each permitted fixture passes, but a paired mutation that uses runtimeId to choose a second adapter fails
+- **AND** withRuntimeRouteTransportId looks up transportId through the catalog projection without a literal map and is not flagged by route-dispatch-outside-owner
 - **AND** the exceptions are structural and symbol-specific, never a whole-adapter-directory allowlist
 
 #### Scenario: S30 Catalog composition cannot create another business core
@@ -85,4 +86,5 @@ headless adapters.
 - **GIVEN** `tests/fixtures/runtime-route-catalog/architecture-fixtures.json#S50` with restored-selector and dual-path flag source mutations
 - **WHEN** a source mutation attempts to keep an old selector or introduce a temporary dual execution path and retired-route-selector plus route-catalog-test-port-in-production scan the fixtures
 - **THEN** both source mutations are rejected by their exact expected findings and the production source scan reports neither an old selector nor a production path-selection flag
-<!-- governance-only clause; not test-registered: any separately approved temporary dual path must declare its canonical owner, explicit migration gate, deletion condition/follow-up and tests of the active path; callers cannot silently choose between paths without that gate. This catalog cutover permits no temporary dual path. -->
+- **AND** any separately approved temporary dual path must declare its canonical owner, explicit migration gate, deletion condition/follow-up and tests of the active path; callers cannot silently choose between paths without that gate. This catalog cutover permits no temporary dual path.
+<!-- governance-only clause; not test-registered. -->
