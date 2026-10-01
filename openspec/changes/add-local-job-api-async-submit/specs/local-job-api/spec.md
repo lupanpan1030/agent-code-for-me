@@ -76,15 +76,17 @@ on catchable abort, including armed stdin EOF. The platform contract SHALL be:
 
 | Platform | Catchable abort | Cannot relay cancellation |
 | --- | --- | --- |
-| POSIX | SIGINT/SIGTERM and armed stdin EOF | SIGKILL |
-| Windows | console Ctrl events and armed stdin EOF | parent child.kill()/TerminateProcess |
+| POSIX | SIGINT, SIGTERM, SIGHUP and armed stdin EOF | SIGKILL |
+| Windows | Ctrl+C (SIGINT), Ctrl+Break (SIGBREAK), console close (SIGHUP) and armed stdin EOF | parent child.kill()/TerminateProcess; logoff/shutdown console events |
 
 Cancel-by-ID SHALL be documented as the only reliable cancellation mechanism across
 all platforms; stdin-EOF relay SHALL be the portable mechanism for piped consumers.
-Cleanup SHALL wait at most 5000 ms for acknowledgement. Preserving signal exit SHALL
-mean re-raising the caught signal after cleanup so the parent observes signal termination,
-not substituting an ordinary numeric 128+n exit; EOF cleanup SHALL exit 8 without a
-terminal envelope. EOF-cancel SHALL be armed only if stdin is an open pipe at admission
+Cleanup SHALL wait at most 5000 ms for acknowledgement; on Windows, console close ends
+the process after a system-defined grace that can truncate that wait. Preserving signal
+exit SHALL mean re-raising the caught signal after cleanup so a POSIX parent observes signal
+termination, not substituting an ordinary numeric 128+n exit; Windows has no signal exit
+status, so a re-raise the runtime cannot perform (SIGBREAK/SIGHUP) SHALL end with exit 8.
+EOF cleanup SHALL exit 8 without a terminal envelope. EOF-cancel SHALL be armed only if stdin is an open pipe at admission
 and closes later. Ignored/already-closed stdin and the pre-admission EOF delimiting a
 --request - body SHALL NOT arm cancellation.
 Local own-pump process-tree abort behavior SHALL remain as today. Independent
@@ -144,8 +146,9 @@ request is persisted before the later kill, but hard-kill delivery is not guaran
   file-based requests with an open
   stdin pipe at admission, with separate ignored/already-closed stdin variants and a
   relay-ack latch held beyond 500 ms for the forced-kill timing case
-- **WHEN** POSIX harnesses send SIGINT/SIGTERM or SIGKILL, Windows harnesses deliver console
-  Ctrl or parent child.kill()/TerminateProcess, and both platforms close an armed stdin pipe;
+- **WHEN** POSIX harnesses send SIGINT/SIGTERM/SIGHUP or SIGKILL, Windows harnesses deliver
+  Ctrl+C, Ctrl+Break, console close or parent child.kill()/TerminateProcess, and both
+  platforms close an armed stdin pipe;
   include Career Kit's POSIX SIGTERM→500 ms→SIGKILL sequence, a separate POSIX wrapper
   process-group kill for baseline own-tree receipts, and win32 non-detached kill
 - **THEN** the own-pump tree matches baseline child-alive/dead, row-status and recovery

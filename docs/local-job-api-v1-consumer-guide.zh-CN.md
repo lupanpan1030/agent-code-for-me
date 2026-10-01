@@ -1100,19 +1100,26 @@ daemon 认领了 run 时，等待中的命令退出后 daemon 仍会继续执行
 
 | 平台 | 转发（可捕获） | 不转发 |
 | --- | --- | --- |
-| POSIX | `SIGINT`、`SIGTERM`、已 armed 的 stdin EOF | `SIGKILL` |
-| Windows | console Ctrl 事件、已 armed 的 stdin EOF | 父进程 `child.kill()` / `TerminateProcess` |
+| POSIX | `SIGINT`、`SIGTERM`、`SIGHUP`、已 armed 的 stdin EOF | `SIGKILL` |
+| Windows | Ctrl+C（`SIGINT`）、Ctrl+Break（`SIGBREAK`）、console 窗口关闭（`SIGHUP`）、已 armed 的 stdin EOF | 父进程 `child.kill()` / `TerminateProcess`；logoff 与 shutdown console 事件 |
 
 - 转发中止时，命令先持久化 cancel request，最多等待 5 s 让 run 进入终态，不向
-  stdout 写任何内容，然后重新抛出原信号（让父进程看到该信号），stdin EOF 时则
-  exit `8`。
+  stdout 写任何内容，然后重新抛出原信号（让 POSIX 父进程看到该信号），stdin EOF
+  时则 exit `8`。
+- Windows 没有 signal exit status。转发 Ctrl+C 后命令以 exit `1` 结束（由 Node
+  终止进程）；转发 Ctrl+Break 或 console 关闭后 exit `8`。这些 Windows 退出码尚未在
+  Windows 主机上验证。
+- Windows 父进程如需 graceful stop，可对以 `CREATE_NEW_PROCESS_GROUP` 启动的命令
+  发送 Ctrl+Break（`GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, pid)`）；Windows 会在
+  这种进程组中禁用 Ctrl+C。没有 console 的进程收不到任何 console 事件。console
+  窗口关闭后，Windows 会在系统定义的短暂宽限后结束进程，可能截短 5 s 的确认等待。
 - 只有在 run admission 时 stdin 是打开的 pipe、之后才关闭，stdin EOF 才会 armed。
   被忽略或已关闭的 stdin，以及结束 `--request -` 正文的 EOF，都不会触发取消。通过
   stdin 发送 request 的 consumer 仍可用信号或按 ID 取消。
 - 信号之后很快跟上的 kill（例如在 `SIGKILL` 前只给 500 ms）会截短 5 s 的确认等待。
   cancel request 通常在此之前已经持久化，但 hard kill 之后不保证送达。
-- `SIGKILL`，以及 Windows 上的 `TerminateProcess` 或 Node 的 `child.kill()`，都
-  无法转发：daemon 中的 run 会继续执行，且仍可查询。
+- `SIGKILL`，以及 Windows 上的 `TerminateProcess`、Node 的 `child.kill()` 和
+  logoff/shutdown console 事件，都无法转发：daemon 中的 run 会继续执行，且仍可查询。
 
 `runs cancel <job-id>` 是唯一在所有平台都可靠的取消方式。请保存 job ID：需要可靠
 取消时（尤其在 Windows 上），使用 `runs submit`，它会在 run 执行前输出 ID。

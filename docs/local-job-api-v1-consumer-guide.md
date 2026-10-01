@@ -1193,13 +1193,23 @@ only its own run, on a catchable abort:
 
 | Platform | Relayed (catchable) | Not relayed |
 | --- | --- | --- |
-| POSIX | `SIGINT`, `SIGTERM`, armed stdin EOF | `SIGKILL` |
-| Windows | console Ctrl events, armed stdin EOF | parent `child.kill()` / `TerminateProcess` |
+| POSIX | `SIGINT`, `SIGTERM`, `SIGHUP`, armed stdin EOF | `SIGKILL` |
+| Windows | Ctrl+C (`SIGINT`), Ctrl+Break (`SIGBREAK`), console window closed (`SIGHUP`), armed stdin EOF | parent `child.kill()` / `TerminateProcess`; logoff and shutdown console events |
 
 - On a relayed abort the command persists the cancel request, waits at most
   5 s for the run to reach a terminal status, writes nothing to stdout, and
-  then re-raises the original signal so the parent sees that signal, or exits
-  `8` for stdin EOF.
+  then re-raises the original signal so a POSIX parent sees that signal, or
+  exits `8` for stdin EOF.
+- Windows has no signal exit status. After a relayed Ctrl+C the command ends
+  with exit `1` (Node terminates the process); after a relayed Ctrl+Break or
+  console close it exits `8`. These Windows exits have not been verified on a
+  Windows host.
+- A Windows parent that wants a graceful stop can send Ctrl+Break
+  (`GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, pid)`) to a command it started
+  with `CREATE_NEW_PROCESS_GROUP`; Windows disables Ctrl+C in such a process
+  group. A process without a console receives no console events at all. When
+  the console window closes, Windows ends the process after a short
+  system-defined grace, which can cut the 5 s acknowledgement wait short.
 - stdin EOF is armed only if stdin was an open pipe when the run was admitted
   and closes later. Ignored or already-closed stdin, and the EOF that ends a
   `--request -` body, never cancel. A consumer that sends its request on stdin
@@ -1208,8 +1218,9 @@ only its own run, on a catchable abort:
   `SIGKILL`) can cut the 5 s acknowledgement wait short. The cancel request is
   normally persisted before that, but delivery is not guaranteed after a hard
   kill.
-- `SIGKILL`, and on Windows `TerminateProcess` or Node's `child.kill()`,
-  cannot be relayed: the daemon's run keeps going and stays queryable.
+- `SIGKILL`, and on Windows `TerminateProcess`, Node's `child.kill()` and
+  the logoff/shutdown console events, cannot be relayed: the daemon's run
+  keeps going and stays queryable.
 
 `runs cancel <job-id>` is the only cancellation that works on every platform.
 Keep the job ID: when you need to cancel reliably, especially on Windows, use

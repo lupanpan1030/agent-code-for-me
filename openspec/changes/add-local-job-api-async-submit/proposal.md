@@ -96,7 +96,7 @@ Why: 公共 batch 与异步消费共用可观察、可取消、可去重的同�
 | 6 | Runtime/provider/model/policy | 显式选择与 selector 不变；**Red R3** claimant env/native config home 会改变原生凭据来源与可用性；CLI readiness 不等于 daemon readiness。claim 前复核 project/cwd/profile/grant，失败关闭，不自动换 provider。 |
 | 7 | auth/trust/secret/FS/network | **Red R3** 各 adapter 按平台 allowlist 的 native-home variables（POSIX HOME/CODEX_HOME/CLAUDE_CONFIG_DIR；Windows USERPROFILE/APPDATA/LOCALAPPDATA）与 PATH-family 来源迁移，proxy 仅在 adapter 转发时；daemon-claimed Run 绕过 consumer 自己的 env minimisation；双方都 strip secrets；不得持久化 env。raw key never stored，consumer 是 attribution 非 auth；不扩 root/network 权限。 |
 | 8 | artifacts/retention | 正常路径/roles/digest/retention 不变；key TTL 非文件 TTL；异常 publish 的 wrapper baseline 与 Q2 例外、recovery 空 terminal refs 必须披露。跨进程验证/receipts 不暴露 dev/ino。 |
-| 9 | transport/Host/start/platform | **R1** 已选 own-Run scoped pump；**R3** environment 来源；**R4** shutdown/cancel：POSIX SIGINT/SIGTERM/armed EOF 可捕获、SIGKILL 不可；Windows console Ctrl/armed EOF 可捕获、parent child.kill()/TerminateProcess 不可；只有 cancel-by-id 跨平台可靠，piped consumer 可用 EOF relay；Career Kit 500 ms kill 会截短 5 s ack wait；(c) detached launcher 新启动 surface 已否决，不实现。无 HTTP/socket/新平台承诺。 |
+| 9 | transport/Host/start/platform | **R1** 已选 own-Run scoped pump；**R3** environment 来源；**R4** shutdown/cancel：POSIX SIGINT/SIGTERM/SIGHUP/armed EOF 可捕获、SIGKILL 不可；Windows Ctrl+C（SIGINT）/Ctrl+Break（SIGBREAK）/console 关闭（SIGHUP）/armed EOF 可捕获、parent child.kill()/TerminateProcess 不可；只有 cancel-by-id 跨平台可靠，piped consumer 可用 EOF relay；Career Kit 500 ms kill 会截短 5 s ack wait；(c) detached launcher 新启动 surface 已否决，不实现。无 HTTP/socket/新平台承诺。 |
 | 10 | unknown/new enum/extension | **R2** pinned enum 更新；Q1 已选 submit/retry-only key SHALL 收窄 guide:210 并要求 async-submit preflight，不能认为旧 build 尊重 silently dropped key。已确认 create 拒绝的新 idempotency_key_not_supported，以及上表五个 fail-closed code/exit 映射均披露。无新 event/native extension。 |
 
 C7 §9.1：reservation、pump、seams 属 internal；CLI/stdio/schema/errors/feature 属 public 或独立版本；Runtime-native raw union 不公开。R1–R4 均已由 Owner 2026-10-02 决定（(a)/direct/accept/relay）；仍披露实际合同影响，不将 JSON 可解析当作兼容结论。
@@ -159,7 +159,7 @@ Claim-time fail-closed 的五种投影均为 `status:"failed"`：`completed.payl
 
 submission_pending 可能是仍在提交也可能是永久 orphan；重试同 key 不生成第二 attempt。未解决时可改新 key，但活跃原 creator 仍可能完成，必须明确承担重复风险；orphan 不自动过期，修复归 TICKET-128。
 
-环境例：submitter 用 CODEX_HOME=A，daemon 用 CODEX_HOME=B；daemon claim 的 child 用 B，即使 CLI runtimes list 在 A 显示 ready。两条路径都剥离 secret env，不传 env 快照。abort 例：今日杀 create 进程树停止 child；daemon-first 杀 waiter 不会杀 daemon，Owner 已确认可捕获 abort/armed EOF SHALL 转发 own cancel；POSIX SIGKILL 和 Windows parent child.kill()/TerminateProcess 做不到，console Ctrl/armed EOF 是 Windows 可捕获入口。今日 publish 抛错时 create 仍返回 artifacts:[] 和 outcome exit；Q2(a) 本地保留，独立 wait 则 pending/9，daemon-first 的 bounded error 为已接受且需披露的 R1 残余；(b)/(c) 备选不实现。
+环境例：submitter 用 CODEX_HOME=A，daemon 用 CODEX_HOME=B；daemon claim 的 child 用 B，即使 CLI runtimes list 在 A 显示 ready。两条路径都剥离 secret env，不传 env 快照。abort 例：今日杀 create 进程树停止 child；daemon-first 杀 waiter 不会杀 daemon，Owner 已确认可捕获 abort/armed EOF SHALL 转发 own cancel；POSIX SIGKILL 和 Windows parent child.kill()/TerminateProcess 做不到，Ctrl+C/Ctrl+Break/console 关闭/armed EOF 是 Windows 可捕获入口。今日 publish 抛错时 create 仍返回 artifacts:[] 和 outcome exit；Q2(a) 本地保留，独立 wait 则 pending/9，daemon-first 的 bounded error 为已接受且需披露的 R1 残余；(b)/(c) 备选不实现。
 
 纯 schema diff 无法表达：ack 已持久化但未必执行；queued snapshot 可随即变 running；Run terminal 不等于
 文件已 publish；wait timeout 不是 Run failure；executor 前提改变旧 create 的启动体验；相同 key 的
