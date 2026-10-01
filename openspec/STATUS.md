@@ -8,10 +8,56 @@ Updated: 2026-10-02 (Pacific/Auckland); previous: 2026-10-01 (Pacific/Auckland)
 
 | Active change | Status | Scope / next gate |
 | --- | --- | --- |
-| [add-local-job-api-async-submit](changes/add-local-job-api-async-submit/proposal.md) | ACCEPTED 2026-10-02 (coordinator, Owner self-iteration mandate) @ 432cc160 — 合入中 | Same-SHA Codex IMPLEMENTATION_VERIFIED + Claude REVIEW_APPROVED; no open Red; accepted disclosures and unchecked task deferrals in verification.md; TICKET-127/128/130/131 open; runtime/packaged smoke host-blocked, macOS/Windows not claimed, consumer E2E unknown; dispatched main-only merge/gates/archive/push under 2026-09-04 policy |
+| None | — | — |
 
 Parked proposals are indexed in [`deferred/README.md`](deferred/README.md) and
 do not appear in the active list.
+
+## Locally archived 2026-10-02
+
+`add-local-job-api-async-submit` was coordinator **ACCEPTED 2026-10-02**
+under the Owner's self-iteration mandate at source `432cc160`, with same-SHA
+Codex IMPLEMENTATION_VERIFIED and fresh-context Claude REVIEW_APPROVED and no
+open Red. The coordinator completed the local no-ff merge into `main` as
+`3c1f73526fc574a0a073adcfd97084eff0775476` from branch head `49c5245f`
+(candidate `432cc160`, acceptance record `e3f3a4ae`, fixture-path adjudication
+`49c5245f`).
+
+The coordinator independently verified exact merge SHA `3c1f7352`:
+`bun run check:full` exit **0** (2907 pass / 2 skip, win32-gated / 0 fail;
+architecture guard passed, strict 54/54, build OK) and PR-base lint exit **0**.
+Coordinator logs: `handoff/reviews/main-checkfull-3c1f7352.log` and
+`handoff/reviews/main-lint-prbase-3c1f7352.log`. This closeout did not rerun
+`check:full`; the sandbox-only PID 1 EPERM and shell-snapshot EROFS failures
+were not reproduced on the coordinator host.
+
+Archive:
+[`2026-10-02-add-local-job-api-async-submit`](changes/archive/2026-10-02-add-local-job-api-async-submit/).
+The standard archiver applied five living-spec deltas (10 added / 3 modified
+requirements), preserving 46/60 checked tasks and the accepted unchecked
+deferrals in the [verification receipt](changes/archive/2026-10-02-add-local-job-api-async-submit/verification.md).
+TICKET-127/128/130/131 remain open; runtime/packaged smoke is host-blocked,
+macOS/Windows evidence is not claimed, and consumer E2E remains unknown.
+Post-archive `openspec validate --all --strict --no-interactive` passed
+**53/53**, exit **0**; `git diff --check` passed.
+
+### Async submit slice push receipt
+
+Archive commit: `9121d522b4a64bbebbae780bc4a892fc19f93cef`.
+
+slice: add-local-job-api-async-submit (source 432cc160; red suite 20e7bfcf + adjudications d59b1142/770c78ad/49c5245f; coordinator ACCEPTED 2026-10-02 under the Owner's self-iteration mandate; merge 3c1f7352) pushed 2026-10-02 (coordination-dispatched under the 2026-09-04 push policy)
+
+This receipt precedes the coordination-authorized single `git push origin main`.
+The handoff records the pre-push and post-push
+`git ls-remote origin refs/heads/main` values and latest CI run URL.
+The required pre-push remote main is `2c59664f`; only `origin/main` is authorized.
+
+Whole-group rollback: `git revert -m 1 3c1f7352` (the single no-ff merge commit).
+Migration `0025` adds the idempotency reservation table; stop writers and drain
+before rollback, and use the old build with an isolated profile before rolling
+back. Do not mix old and new writers or separately revert individual commits
+from the accepted branch. Reconcile the later archive and push-receipt
+documentation if rollback is dispatched.
 
 ## Locally archived 2026-10-01
 
