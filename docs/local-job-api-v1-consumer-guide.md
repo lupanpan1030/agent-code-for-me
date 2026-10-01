@@ -1197,10 +1197,15 @@ does not cancel it.
 
 When a daemon claimed the run, the daemon keeps running it after the waiting
 command dies. To cover that, the command relays a cancel of its own run, and
-only its own run, on a catchable abort. The relay is armed just before the
-run is admitted, so no catchable abort goes unhandled, and relays until the
-command's own executor claims the run:
+only its own run, on a catchable abort. The relay is armed before the run is
+admitted and stays armed until the command has reported its result, so a
+catchable abort in that span is either relayed or ends the command with its
+default disposition. It relays until the command's own executor claims the
+run:
 
+- An abort that arrives while the command is still arming the relay, before
+  admission starts, admits no run: a signal ends the command with its
+  default disposition.
 - An abort caught while the run is being admitted is held until the command
   knows the run's ID and is then handled like the next bullet. If admission
   fails, there is no run to cancel: a held signal ends the command with that
@@ -1212,8 +1217,13 @@ command's own executor claims the run:
   persists a cancel request for that run.
 - Once the command's own executor claimed the run, the in-process behavior
   above applies: a catchable signal ends the command with its default
-  disposition, exactly as without a relay (it is never swallowed), and stdin
-  EOF is ignored.
+  disposition, and stdin EOF is ignored. Before writing its result the
+  command lets any signal it already caught take effect, so a signal is not
+  swallowed even if the run finished (or its claim failed a claim-time
+  check) before the command handled it: the command ends by that signal
+  with nothing on stdout, and the run keeps the terminal status it reached.
+  On POSIX this is the same disposition as without a relay; on Windows the
+  exit code differs (see below).
 - A synchronous keyed `runs retry <job-id> --request <path>` that replays the
   run of an earlier request with the same key does not own that run and
   relays nothing: a catchable signal ends the waiting command with its
@@ -1231,7 +1241,12 @@ command's own executor claims the run:
   exits `8` for stdin EOF.
 - Windows has no signal exit status. After a relayed Ctrl+C the command ends
   with exit `1` (Node terminates the process); after a relayed Ctrl+Break or
-  console close it exits `8`. These Windows exits have not been verified on a
+  console close it exits `8`. The same exits apply whenever the armed relay
+  ends the command with a signal's default disposition: after the command's
+  own executor claimed the run, in a keyed replay waiter, after a failed
+  admission and before admission. A process without the relay would instead
+  end with `STATUS_CONTROL_C_EXIT` (`0xC000013A`). These Windows exits are
+  inferred from Node and libuv behavior and have not been verified on a
   Windows host.
 - A Windows parent that wants a graceful stop can send Ctrl+Break
   (`GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, pid)`) to a command it started

@@ -1102,9 +1102,11 @@ runtime 子进程，stdin EOF 不会取消它。
 
 daemon 认领了 run 时，等待中的命令退出后 daemon 仍会继续执行。为此，命令会在
 可捕获的中止时转发对自己 run（且仅限自己的 run）的取消。转发在 run admission
-之前就已 armed，因此不会漏掉任何可捕获的中止，并一直转发到命令自己的 executor
-认领该 run：
+之前就已 armed，并保持到命令报告结果为止，因此这段时间内的可捕获中止要么被转发，
+要么以默认处置结束命令。转发一直持续到命令自己的 executor 认领该 run：
 
+- 命令仍在 arm 转发、admission 尚未开始时到达的中止不会 admit 任何 run：信号以
+  其默认处置结束命令。
 - admission 进行中捕获的中止会被暂存，直到命令拿到 run 的 ID，然后按下一条处理。
   admission 失败时没有可取消的 run：暂存的信号以该信号的默认处置结束命令，暂存的
   stdin EOF 被忽略。
@@ -1112,7 +1114,10 @@ daemon 认领了 run 时，等待中的命令退出后 daemon 仍会继续执行
   `canceled`，从不启动），命令也不会再执行它。
 - 另一执行者（daemon）先认领时，可捕获的中止会为该 run 持久化 cancel request。
 - 命令自己的 executor 认领后，适用上面的进程内行为：可捕获的信号以其默认处置结束
-  命令，与没有转发时完全相同（不会被吞掉），stdin EOF 被忽略。
+  命令，stdin EOF 被忽略。命令写出结果之前会先让已捕获的信号生效，因此即使 run 在
+  命令处理该信号之前就已结束（或其认领未通过 claim-time 检查），信号也不会被吞掉：
+  命令以该信号结束、stdout 为空，run 保持它已到达的终态。在 POSIX 上这与没有转发
+  时的处置相同；在 Windows 上退出码不同（见下文）。
 - 同步的带 key `runs retry <job-id> --request <path>` 若 replay 了同 key 早先请求的
   run，它并不拥有该 run，因此不转发任何取消：可捕获的信号以默认处置结束等待中的
   命令，stdin EOF 被忽略，run 继续执行。需要时请按 ID 取消。
@@ -1126,8 +1131,11 @@ daemon 认领了 run 时，等待中的命令退出后 daemon 仍会继续执行
   stdout 写任何内容，然后重新抛出原信号（让 POSIX 父进程看到该信号），stdin EOF
   时则 exit `8`。
 - Windows 没有 signal exit status。转发 Ctrl+C 后命令以 exit `1` 结束（由 Node
-  终止进程）；转发 Ctrl+Break 或 console 关闭后 exit `8`。这些 Windows 退出码尚未在
-  Windows 主机上验证。
+  终止进程）；转发 Ctrl+Break 或 console 关闭后 exit `8`。只要已 armed 的转发以
+  信号的默认处置结束命令，退出码也是这样：命令自己的 executor 认领之后、带 key 的
+  replay waiter、admission 失败之后以及 admission 之前。没有转发的进程则会以
+  `STATUS_CONTROL_C_EXIT`（`0xC000013A`）结束。这些 Windows 退出码是根据 Node 与
+  libuv 的行为推断的，尚未在 Windows 主机上验证。
 - Windows 父进程如需 graceful stop，可对以 `CREATE_NEW_PROCESS_GROUP` 启动的命令
   发送 Ctrl+Break（`GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, pid)`）；Windows 会在
   这种进程组中禁用 Ctrl+C。没有 console 的进程收不到任何 console 事件。console
