@@ -1,12 +1,4 @@
-import {
-  and,
-  asc,
-  desc,
-  eq,
-  inArray,
-  isNotNull,
-  sql,
-} from "drizzle-orm"
+import { and, asc, desc, eq, inArray, isNotNull, lte, sql } from "drizzle-orm"
 import type { drizzle } from "drizzle-orm/better-sqlite3"
 import {
   AGENT_JOB_EVENT_TYPES,
@@ -27,9 +19,13 @@ import {
   CONTRACT_RUNTIME_IDS,
 } from "../../../shared/agent-runtime-capabilities"
 import { redactExactSecretHints } from "../agent-runtime/redaction"
-import type { TerminalJobFields } from "../agent-runtime/run-event-ledger"
+import type {
+  SettleOptions,
+  TerminalJobFields,
+} from "../agent-runtime/run-event-ledger"
 import {
   getOrCreateRunEventLedger,
+  recordVerifiedRunRetention,
   releaseRunEventLedger,
 } from "../agent-runtime/run-event-ledger-host"
 import type {
@@ -41,7 +37,9 @@ import type * as schema from "../db/schema"
 import {
   type AgentJob,
   type AgentJobEvent,
+  type AgentJobIdempotencyReservation,
   agentJobEvents,
+  agentJobIdempotency,
   agentJobProjectionCursors,
   agentJobs,
 } from "../db/schema"
@@ -70,6 +68,35 @@ export type CreateAgentJobInput = {
   createdByVersion?: string | null
 }
 
+/**
+ * Idempotency reservation inserted in the same SQLite transaction as the job
+ * row (add-local-job-api-async-submit D4). Only the domain-separated key hash
+ * is stored; the raw key never reaches this store.
+ */
+export type AgentJobIdempotencyReservationInput = {
+  consumerId: string
+  keyHash: string
+  requestHash: string
+  normalizationVersion: number
+}
+
+export type AgentJobInsertOptions = {
+  reservation?: AgentJobIdempotencyReservationInput | null
+}
+
+/**
+ * The (consumer, key hash) reservation already exists: a concurrent or prior
+ * submission won the unique constraint. Nothing of this attempt committed.
+ */
+export class AgentJobIdempotencyReservationExistsError extends Error {
+  readonly code = "IDEMPOTENCY_RESERVATION_EXISTS"
+
+  constructor() {
+    super("IDEMPOTENCY_RESERVATION_EXISTS: the idempotency key is reserved")
+    this.name = "AgentJobIdempotencyReservationExistsError"
+  }
+}
+
 export type StartAgentJobInput = {
   jobId: string
   workerId: string
@@ -84,6 +111,21 @@ export type CancelAgentJobInput = {
    * it started (the caller's existing exit metadata).
    */
   queuedCancelFields?: TerminalJobFields
+  /**
+   * Composes the terminal projection of a queued Run whose initial
+   * admission is complete (design D5 trigger table): the same terminal
+   * preparer the worker registers, from the Run's persistent input and its
+   * reopened run directory. `null` registers no terminal refs.
+   */
+  queuedTerminalProjection?: (
+    job: AgentJob,
+  ) => QueuedCancelTerminalProjection | null
+}
+
+/** A queued cancel's registered terminal preparer and its run-dir handle. */
+export type QueuedCancelTerminalProjection = {
+  terminalArtifacts: NonNullable<SettleOptions["terminalArtifacts"]>
+  close: () => void
 }
 
 export type ListAgentJobsInput = {
@@ -98,13 +140,16 @@ export type RetryAgentJobOptions =
   | {
       now?: Date
       id?: string
+      /** Replacement stored input of the new attempt (default: the source's). */
+      input?: unknown
       artifactBaseDir?: string | null
       artifactManifestPath?: string | null
+      reservation?: AgentJobIdempotencyReservationInput | null
     }
 
 const MAX_PROMPT_PREVIEW_LENGTH = 240
 
-type AgentJobStoreExecutor = Pick<
+export type AgentJobStoreExecutor = Pick<
   AgentJobDatabase,
   "select" | "insert" | "update"
 >
@@ -222,12 +267,6 @@ function promptPreview(prompt: string): string {
     : compact
 }
 
-function assertNonTerminal(job: AgentJob): void {
-  if (isTerminalAgentJobStatus(job.status as AgentJobStatus)) {
-    throw new Error(`Job ${job.id} is already terminal: ${job.status}`)
-  }
-}
-
 function getJobFromExecutor(
   executor: AgentJobStoreExecutor,
   jobId: string,
@@ -241,64 +280,164 @@ function getJobFromExecutor(
   )
 }
 
+function isReservationUniqueViolation(error: unknown): boolean {
+  const text = String(
+    error instanceof Error
+      ? `${error.message} ${String(error.cause ?? "")}`
+      : error,
+  )
+  return /UNIQUE constraint failed: agent_job_idempotency/i.test(text)
+}
+
 /**
- * Lifecycle service: inserts the queued job row, then records `job_created`
- * through the job's host ledger (pending provenance, fact-keyed v1 record).
+ * Row construction of a new queued job from a creation input (the one place
+ * that turns create input into `agent_jobs` values).
  */
-export async function createAgentJob(
-  db: AgentJobDatabase,
+function queuedAgentJobValues(
   input: CreateAgentJobInput,
-): Promise<AgentJob> {
+  id: string,
+  now: Date,
+): typeof agentJobs.$inferInsert & { id: string } {
   assertOneOf(AGENT_JOB_SOURCES, input.source, "job source")
   assertOneOf(AGENT_JOB_KINDS, input.kind ?? "agent", "job kind")
   assertCreateAgentJobRuntime(input)
   assertOneOf(AGENT_JOB_MODES, input.mode, "job mode")
+  return {
+    id,
+    kind: input.kind ?? "agent",
+    source: input.source,
+    runtime: input.runtime,
+    status: "queued",
+    mode: input.mode,
+    cwd: input.cwd,
+    promptPreview: promptPreview(input.prompt),
+    inputJson:
+      input.input === undefined
+        ? toJson({ prompt: input.prompt })
+        : toJson(input.input),
+    projectId: input.projectId ?? null,
+    chatId: input.chatId ?? null,
+    subChatId: input.subChatId ?? null,
+    apiConsumerId: input.apiConsumerId
+      ? redactSecretText(input.apiConsumerId)
+      : null,
+    apiConsumerRunId: input.apiConsumerRunId
+      ? redactSecretText(input.apiConsumerRunId)
+      : null,
+    artifactBaseDir: input.artifactBaseDir
+      ? redactSecretText(input.artifactBaseDir)
+      : null,
+    artifactManifestPath: input.artifactManifestPath
+      ? redactSecretText(input.artifactManifestPath)
+      : null,
+    providerProfileId: input.providerProfileId
+      ? redactSecretText(input.providerProfileId)
+      : null,
+    modelOverride: input.modelOverride
+      ? redactSecretText(input.modelOverride)
+      : null,
+    createdByVersion: input.createdByVersion ?? null,
+    createdAt: now,
+  }
+}
 
+/** The only `agent_jobs` row insert (add-local-job-api-async-submit D1). */
+function insertAgentJobRow(
+  executor: AgentJobStoreExecutor,
+  values: typeof agentJobs.$inferInsert & { id: string },
+): void {
+  ;(executor as AgentJobDatabase).insert(agentJobs).values(values).run()
+}
+
+/**
+ * Shared insertion primitive for a caller that owns its own transaction
+ * (schedule fire/audit/nextRunAt): inserts the queued job row inside the
+ * caller's executor and returns it. The caller records `job_created`
+ * through `recordAgentJobCreated` after its transaction commits.
+ */
+export function insertQueuedAgentJobRecord(
+  executor: AgentJobStoreExecutor,
+  input: CreateAgentJobInput & { createdAt?: Date },
+): AgentJob {
+  const id = input.id ?? createId()
+  insertAgentJobRow(
+    executor,
+    queuedAgentJobValues(input, id, input.createdAt ?? new Date()),
+  )
+  const job = getJobFromExecutor(executor, id)
+  if (!job) throw new Error(`Failed to create job ${id}`)
+  return job
+}
+
+/**
+ * Private insertion primitive of every queued job row: the row and its
+ * optional idempotency reservation commit in one SQLite transaction, so a
+ * reservation never names an uncommitted job and a lost unique race leaves
+ * nothing behind. Returns the row as that transaction committed it (queued,
+ * no worker fields): the Run is not claimable before its creation fact.
+ */
+function insertQueuedAgentJobRow(
+  db: AgentJobDatabase,
+  values: typeof agentJobs.$inferInsert & { id: string },
+  reservation: AgentJobIdempotencyReservationInput | null | undefined,
+  now: Date,
+): AgentJob {
+  try {
+    return db.transaction((tx: AgentJobTransaction) => {
+      insertAgentJobRow(tx, values)
+      if (reservation) {
+        tx.insert(agentJobIdempotency)
+          .values({
+            id: createId(),
+            consumerId: reservation.consumerId,
+            keyHash: reservation.keyHash,
+            jobId: values.id,
+            requestHash: reservation.requestHash,
+            normalizationVersion: reservation.normalizationVersion,
+            createdAt: now,
+            expiresAt: null,
+          })
+          .run()
+      }
+      const inserted = getJobFromExecutor(tx, values.id)
+      if (!inserted) throw new Error(`Failed to create job ${values.id}`)
+      return inserted
+    })
+  } catch (error) {
+    if (reservation && isReservationUniqueViolation(error)) {
+      throw new AgentJobIdempotencyReservationExistsError()
+    }
+    throw error
+  }
+}
+
+/**
+ * Lifecycle service: inserts the queued job row (and its optional
+ * idempotency reservation, in the same transaction), then records
+ * `job_created` through the job's host ledger (pending provenance,
+ * fact-keyed v1 record).
+ *
+ * Returns the queued row the creation transaction committed (design D2
+ * fixed queued snapshot). Neither `job_created` nor the initial run-dir
+ * `artifact_created` admission mutates a job column (both commit events
+ * only), so this is exactly the row a completed admission leaves. It is
+ * never re-read afterwards: once the admission commits, another process may
+ * already have claimed the Run.
+ */
+export async function createAgentJob(
+  db: AgentJobDatabase,
+  input: CreateAgentJobInput,
+  options: AgentJobInsertOptions = {},
+): Promise<AgentJob> {
   const id = input.id ?? createId()
   const kind = input.kind ?? "agent"
   const now = new Date()
-  db.insert(agentJobs)
-    .values({
-      id,
-      kind,
-      source: input.source,
-      runtime: input.runtime,
-      status: "queued",
-      mode: input.mode,
-      cwd: input.cwd,
-      promptPreview: promptPreview(input.prompt),
-      inputJson:
-        input.input === undefined
-          ? toJson({ prompt: input.prompt })
-          : toJson(input.input),
-      projectId: input.projectId ?? null,
-      chatId: input.chatId ?? null,
-      subChatId: input.subChatId ?? null,
-      apiConsumerId: input.apiConsumerId
-        ? redactSecretText(input.apiConsumerId)
-        : null,
-      apiConsumerRunId: input.apiConsumerRunId
-        ? redactSecretText(input.apiConsumerRunId)
-        : null,
-      artifactBaseDir: input.artifactBaseDir
-        ? redactSecretText(input.artifactBaseDir)
-        : null,
-      artifactManifestPath: input.artifactManifestPath
-        ? redactSecretText(input.artifactManifestPath)
-        : null,
-      providerProfileId: input.providerProfileId
-        ? redactSecretText(input.providerProfileId)
-        : null,
-      modelOverride: input.modelOverride
-        ? redactSecretText(input.modelOverride)
-        : null,
-      createdByVersion: input.createdByVersion ?? null,
-      createdAt: now,
-    })
-    .run()
-
-  const job = getAgentJob(db, id)
-  if (!job) throw new Error(`Failed to create job ${id}`)
+  const job = insertQueuedAgentJobRow(
+    db,
+    queuedAgentJobValues(input, id, now),
+    options.reservation,
+    now,
+  )
   await recordAgentJobCreatedOrDiscard(db, job, {
     kind,
     source: input.source,
@@ -306,7 +445,12 @@ export async function createAgentJob(
     mode: input.mode,
     cwd: input.cwd,
   })
-  return getAgentJob(db, id) ?? job
+  return job
+}
+
+/** True when the job store would alter this text before persisting it. */
+export function isAgentJobStoreRedactionAltering(value: string): boolean {
+  return redactSecretText(value) !== value
 }
 
 function jobCreatedObservationKey(jobId: string): string {
@@ -337,6 +481,12 @@ async function recordAgentJobCreatedOrDiscard(
           .limit(1)
           .all()
         if (recorded.length > 0) return
+        // The same compensation releases the idempotency reservation (the
+        // FK cascade covers it too); nothing else deletes reservations of a
+        // job that never committed its creation fact.
+        tx.delete(agentJobIdempotency)
+          .where(eq(agentJobIdempotency.jobId, job.id))
+          .run()
         tx.delete(agentJobs)
           .where(and(eq(agentJobs.id, job.id), eq(agentJobs.status, "queued")))
           .run()
@@ -348,12 +498,84 @@ async function recordAgentJobCreatedOrDiscard(
   }
 }
 
-/** True once the job's `job_created` fact is committed. */
-function hasCommittedJobCreated(db: AgentJobDatabase, jobId: string): boolean {
+/** Exact fact key of a job's one committed creation fact (design D3). */
+function jobCreatedFactKey(jobId: string): string {
+  return `${jobCreatedObservationKey(jobId)}:0`
+}
+
+/**
+ * Fact key of the first `artifact_created` of the one initial run-dir
+ * admission batch (run-artifacts admits it under
+ * `lifecycle:initial-artifacts:<jobId>`; design D3).
+ */
+function initialArtifactsFactKey(jobId: string): string {
+  return `lifecycle:initial-artifacts:${jobId}:0`
+}
+
+/**
+ * The D3 creation predicate shared by queue listing and claim: the exact
+ * committed `job_created` fact and, for a job with an artifact manifest
+ * path, the exact committed initial `artifact_created` admission.
+ */
+function admittedForClaimSql() {
+  return sql`exists (select 1 from ${agentJobEvents} where ${agentJobEvents.jobId} = ${agentJobs.id} and ${agentJobEvents.type} = 'job_created' and ${agentJobEvents.factKey} = 'lifecycle:job-created:' || ${agentJobs.id} || ':0') and (${agentJobs.artifactManifestPath} is null or exists (select 1 from ${agentJobEvents} where ${agentJobEvents.jobId} = ${agentJobs.id} and ${agentJobEvents.type} = 'artifact_created' and ${agentJobEvents.factKey} = 'lifecycle:initial-artifacts:' || ${agentJobs.id} || ':0'))`
+}
+
+function hasCommittedFact(
+  db: AgentJobDatabase,
+  jobId: string,
+  type: AgentJobEventType,
+  factKey: string,
+): boolean {
   return (
-    lookupCommittedRunEventFact(db, jobId, jobCreatedObservationKey(jobId))
-      .length > 0
+    db
+      .select({ id: agentJobEvents.id })
+      .from(agentJobEvents)
+      .where(
+        and(
+          eq(agentJobEvents.jobId, jobId),
+          eq(agentJobEvents.type, type),
+          eq(agentJobEvents.factKey, factKey),
+        ),
+      )
+      .limit(1)
+      .all().length > 0
   )
+}
+
+/** True once the job's exact `job_created` fact is committed. */
+function hasCommittedJobCreated(db: AgentJobDatabase, jobId: string): boolean {
+  return hasCommittedFact(db, jobId, "job_created", jobCreatedFactKey(jobId))
+}
+
+/**
+ * Admission state of a ledger job (design D3): `creation_missing` (the row
+ * committed without its creation fact: an orphan that is never claimed),
+ * `admission_missing` (an artifact-bearing job whose initial admission did
+ * not commit) or `admitted`.
+ */
+export type AgentJobAdmissionState =
+  | "creation_missing"
+  | "admission_missing"
+  | "admitted"
+
+export function readAgentJobAdmissionState(
+  db: AgentJobDatabase,
+  job: Pick<AgentJob, "id" | "artifactManifestPath">,
+): AgentJobAdmissionState {
+  if (!hasCommittedJobCreated(db, job.id)) return "creation_missing"
+  if (
+    job.artifactManifestPath !== null &&
+    !hasCommittedFact(
+      db,
+      job.id,
+      "artifact_created",
+      initialArtifactsFactKey(job.id),
+    )
+  ) {
+    return "admission_missing"
+  }
+  return "admitted"
 }
 
 /**
@@ -431,8 +653,9 @@ export function listQueuedAgentJobsForSource(
 ): AgentJob[] {
   const boundedLimit = Math.max(1, Math.min(limit, 200))
   // Pre-ledger (ledger_version=0) rows drain with the old build; the ledger
-  // never starts or extends them. A queued row whose job_created fact never
-  // committed is not work either (startAgentJob refuses it).
+  // never starts or extends them. A queued row whose exact creation fact (or
+  // required initial admission) never committed is not work either:
+  // startAgentJob applies the same predicate.
   return db
     .select()
     .from(agentJobs)
@@ -441,7 +664,63 @@ export function listQueuedAgentJobsForSource(
         eq(agentJobs.source, source),
         eq(agentJobs.status, "queued"),
         eq(agentJobs.ledgerVersion, 1),
-        sql`exists (select 1 from ${agentJobEvents} where ${agentJobEvents.jobId} = ${agentJobs.id} and ${agentJobEvents.type} = 'job_created')`,
+        admittedForClaimSql(),
+      ),
+    )
+    .orderBy(asc(agentJobs.createdAt))
+    .limit(boundedLimit)
+    .all()
+}
+
+/**
+ * Admitted queued jobs of one source created at or before `createdAtOrBefore`
+ * (oldest first), with the same D3 predicate as listQueuedAgentJobsForSource:
+ * the over-age candidates a background tick settles without a claim.
+ */
+export function listQueuedAgentJobsCreatedAtOrBefore(
+  db: AgentJobDatabase,
+  source: AgentJobSource,
+  createdAtOrBefore: Date,
+  limit: number,
+): AgentJob[] {
+  const boundedLimit = Math.max(1, Math.min(limit, 200))
+  return db
+    .select()
+    .from(agentJobs)
+    .where(
+      and(
+        eq(agentJobs.source, source),
+        eq(agentJobs.status, "queued"),
+        eq(agentJobs.ledgerVersion, 1),
+        lte(agentJobs.createdAt, createdAtOrBefore),
+        admittedForClaimSql(),
+      ),
+    )
+    .orderBy(asc(agentJobs.createdAt))
+    .limit(boundedLimit)
+    .all()
+}
+
+/**
+ * Claimable queued jobs among the given IDs (a scoped pump's own admitted
+ * Runs), with the same D3 predicate as listQueuedAgentJobsForSource.
+ */
+export function listQueuedAgentJobsForIds(
+  db: AgentJobDatabase,
+  ids: readonly string[],
+  limit: number,
+): AgentJob[] {
+  if (ids.length === 0) return []
+  const boundedLimit = Math.max(1, Math.min(limit, 200))
+  return db
+    .select()
+    .from(agentJobs)
+    .where(
+      and(
+        inArray(agentJobs.id, [...ids]),
+        eq(agentJobs.status, "queued"),
+        eq(agentJobs.ledgerVersion, 1),
+        admittedForClaimSql(),
       ),
     )
     .orderBy(asc(agentJobs.createdAt))
@@ -457,6 +736,24 @@ export function getAgentJobPrompt(db: AgentJobDatabase, jobId: string): string {
 }
 
 /**
+ * A claim that lost to another claimant or a settlement (the job is no
+ * longer queued): the caller never owned the Run.
+ */
+export const AGENT_JOB_CLAIM_LOST = "CLAIM_LOST"
+
+function claimLost(error: Error): Error {
+  return Object.assign(error, { code: AGENT_JOB_CLAIM_LOST })
+}
+
+export function isAgentJobClaimLostError(error: unknown): boolean {
+  return (
+    !!error &&
+    typeof error === "object" &&
+    (error as { code?: unknown }).code === AGENT_JOB_CLAIM_LOST
+  )
+}
+
+/**
  * Worker claim: records `job_started` through the job's host ledger, which
  * commits the running job-row fields in the same transaction and rejects a
  * claim that is no longer queued (e.g. canceled first by another process).
@@ -467,19 +764,36 @@ export async function startAgentJob(
 ): Promise<AgentJob> {
   const job = getAgentJob(db, input.jobId)
   if (!job) throw new Error(`Unknown job: ${input.jobId}`)
-  assertNonTerminal(job)
-  if (job.status !== "queued") {
-    throw new Error(`Job ${job.id} cannot start from status ${job.status}`)
-  }
-  if (job.ledgerVersion === 1 && !hasCommittedJobCreated(db, job.id)) {
-    // An orphan row whose creation fact never committed is never executed:
-    // job_started would otherwise open its Run at sequence 1.
-    throw Object.assign(
-      new Error(
-        `MISSING_JOB_CREATED: job ${job.id} has no committed job_created fact and cannot start`,
-      ),
-      { code: "MISSING_JOB_CREATED" },
+  if (isTerminalAgentJobStatus(job.status as AgentJobStatus)) {
+    throw claimLost(
+      new Error(`Job ${job.id} is already terminal: ${job.status}`),
     )
+  }
+  if (job.status !== "queued") {
+    throw claimLost(
+      new Error(`Job ${job.id} cannot start from status ${job.status}`),
+    )
+  }
+  if (job.ledgerVersion === 1) {
+    const admission = readAgentJobAdmissionState(db, job)
+    if (admission === "creation_missing") {
+      // An orphan row whose creation fact never committed is never executed:
+      // job_started would otherwise open its Run at sequence 1.
+      throw Object.assign(
+        new Error(
+          `MISSING_JOB_CREATED: job ${job.id} has no committed job_created fact and cannot start`,
+        ),
+        { code: "MISSING_JOB_CREATED" },
+      )
+    }
+    if (admission === "admission_missing") {
+      throw Object.assign(
+        new Error(
+          `MISSING_INITIAL_ADMISSION: job ${job.id} has no committed initial artifact admission and cannot start`,
+        ),
+        { code: "MISSING_INITIAL_ADMISSION" },
+      )
+    }
   }
   const ledger = await getOrCreateRunEventLedger(db, job)
   try {
@@ -493,13 +807,30 @@ export async function startAgentJob(
       occurredAt: input.now ?? new Date(),
     })
   } catch (error) {
-    const current = getAgentJob(db, input.jobId)
+    let current: AgentJob | null
+    try {
+      current = getAgentJob(db, input.jobId)
+    } catch {
+      current = null
+    }
     if (current && current.status !== "queued") {
-      assertNonTerminal(current)
-      throw new Error(
-        `Job ${current.id} cannot start from status ${current.status}`,
+      if (isTerminalAgentJobStatus(current.status as AgentJobStatus)) {
+        throw claimLost(
+          new Error(`Job ${current.id} is already terminal: ${current.status}`),
+        )
+      }
+      throw claimLost(
+        new Error(
+          `Job ${current.id} cannot start from status ${current.status}`,
+        ),
       )
     }
+    // The claim append failed without a competing claim: this host does not
+    // execute the Run, and the cached ledger may be halted on the unwritten
+    // job_started. Drop it so a later cancel, settlement or claim of this
+    // Run recomposes a ledger from the committed records instead of
+    // queueing behind the halted observation forever.
+    releaseRunEventLedger(db, input.jobId)
     throw error
   }
   return getAgentJob(db, input.jobId) ?? job
@@ -569,26 +900,104 @@ export async function cancelAgentJob(
   const job = getAgentJob(db, jobId)
   if (!job) throw new Error(`Unknown job: ${jobId}`)
   if (isTerminalAgentJobStatus(job.status as AgentJobStatus)) return job
-  const ledger = await getOrCreateRunEventLedger(db, job)
-  await ledger.settle(
-    {
-      trigger: {
-        kind: "cancel",
-        reason: "queued_cancel",
-        observationKey: `cancel:${createId()}`,
-        requestedBy: input.requestedBy,
+  // An admitted queued Run's cancel registers the worker's terminal preparer
+  // (design D5); a claim/cancel loser discards only its own staging.
+  const projection =
+    job.status === "queued"
+      ? (input.queuedTerminalProjection?.(job) ?? null)
+      : null
+  try {
+    const ledger = await getOrCreateRunEventLedger(db, job)
+    await ledger.settle(
+      {
+        trigger: {
+          kind: "cancel",
+          reason: "queued_cancel",
+          observationKey: `cancel:${createId()}`,
+          requestedBy: input.requestedBy,
+        },
+        ...CANCEL_EVIDENCE,
       },
-      ...CANCEL_EVIDENCE,
-    },
-    {
-      jobFields: () => input.queuedCancelFields ?? {},
-    },
-  )
+      {
+        jobFields: () => input.queuedCancelFields ?? {},
+        ...(projection
+          ? { terminalArtifacts: projection.terminalArtifacts }
+          : {}),
+      },
+    )
+  } finally {
+    projection?.close()
+  }
   const updated = getAgentJob(db, jobId) ?? job
   if (isTerminalAgentJobStatus(updated.status as AgentJobStatus)) {
     releaseRunEventLedger(db, jobId)
+    // Retention starts once the registered terminal refs are verified
+    // published (an empty set at the settlement) (design D4).
+    recordVerifiedRunRetention(db, jobId)
   }
   return updated
+}
+
+const ADMISSION_FAILURE_EVIDENCE = {
+  policy: { denied: false, evidenceKeys: [] },
+  output: { valid: false, empty: true, allowEmpty: false, evidenceKeys: [] },
+  postRun: { credentialsSafe: true, evidenceKeys: [] },
+}
+
+/**
+ * Host settlement of a queued job whose creation fact committed but whose
+ * admission could not complete (e.g. its run directory): the ledger settles
+ * it `failed` without terminal refs; the attempt, its facts and its
+ * reservation are kept.
+ */
+export async function settleQueuedAgentJobFailed(
+  db: AgentJobDatabase,
+  jobId: string,
+  fields: {
+    errorCode: string
+    errorMessage: string
+    /** Fixed host reasons recorded in the completed reasons. */
+    reasons?: string[]
+    /** Observation key of this settlement (default: admission failure). */
+    observationKey?: string
+    /**
+     * Commit only while the job row is still unclaimed and queued; a
+     * concurrent claim wins and nothing is written.
+     */
+    requireUnclaimed?: boolean
+  },
+): Promise<AgentJob> {
+  const job = getAgentJob(db, jobId)
+  if (!job) throw new Error(`Unknown job: ${jobId}`)
+  if (isTerminalAgentJobStatus(job.status as AgentJobStatus)) return job
+  const ledger = await getOrCreateRunEventLedger(db, job)
+  try {
+    await ledger.settle(
+      {
+        trigger: {
+          kind: "host_result",
+          status: "failed",
+          observationKey: fields.observationKey ?? `admission-failed:${jobId}`,
+          ...(fields.reasons?.length ? { reasons: fields.reasons } : {}),
+        },
+        ...ADMISSION_FAILURE_EVIDENCE,
+      },
+      {
+        jobFields: () => ({
+          exitCode: 1,
+          errorCode: fields.errorCode,
+          errorMessage: fields.errorMessage,
+        }),
+        ...(fields.requireUnclaimed
+          ? { jobPrecondition: { status: "queued", workerId: null } }
+          : {}),
+      },
+    )
+  } finally {
+    releaseRunEventLedger(db, jobId)
+  }
+  recordVerifiedRunRetention(db, jobId)
+  return getAgentJob(db, jobId) ?? job
 }
 
 export async function retryAgentJob(
@@ -610,8 +1019,9 @@ export async function retryAgentJob(
   }
 
   const retryId = options.id ?? createId()
-  db.insert(agentJobs)
-    .values({
+  const created = insertQueuedAgentJobRow(
+    db,
+    {
       id: retryId,
       retryOfJobId: job.id,
       attempt: job.attempt + 1,
@@ -625,7 +1035,8 @@ export async function retryAgentJob(
       chatId: job.chatId,
       subChatId: job.subChatId,
       promptPreview: job.promptPreview,
-      inputJson: job.inputJson,
+      inputJson:
+        options.input === undefined ? job.inputJson : toJson(options.input),
       apiConsumerId: job.apiConsumerId,
       apiConsumerRunId: job.apiConsumerRunId,
       artifactBaseDir:
@@ -637,18 +1048,114 @@ export async function retryAgentJob(
       modelOverride: job.modelOverride,
       createdAt: now,
       createdByVersion: job.createdByVersion,
-    })
-    .run()
-  const created = getAgentJob(db, retryId)
-  if (!created) throw new Error(`Failed to create retry job ${retryId}`)
+    },
+    options.reservation,
+    now,
+  )
   await recordAgentJobCreatedOrDiscard(db, created, {
     kind: job.kind,
     retryOfJobId: job.id,
     attempt: job.attempt + 1,
   })
-  const retry = getAgentJob(db, retryId)
-  if (!retry) throw new Error(`Failed to create retry job ${retryId}`)
-  return retry
+  // The committed creation row, not a re-read (see createAgentJob).
+  return created
+}
+
+// ---------------------------------------------------------------------------
+// Idempotency reservations (add-local-job-api-async-submit D4). The job row
+// and its reservation are inserted together by insertQueuedAgentJobRow; the
+// creation compensation deletes both. This store also owns the one-time
+// retention setter and the only cleanup of expired reservations.
+// ---------------------------------------------------------------------------
+
+/** Minimum retention of a reservation after verified terminal publication. */
+export const AGENT_JOB_IDEMPOTENCY_RETENTION_MS = 30 * 24 * 60 * 60 * 1000
+
+export function findAgentJobIdempotencyReservation(
+  db: AgentJobDatabase,
+  input: { consumerId: string; keyHash: string },
+): AgentJobIdempotencyReservation | null {
+  return (
+    db
+      .select()
+      .from(agentJobIdempotency)
+      .where(
+        and(
+          eq(agentJobIdempotency.consumerId, input.consumerId),
+          eq(agentJobIdempotency.keyHash, input.keyHash),
+        ),
+      )
+      .get() ?? null
+  )
+}
+
+/** True while the job has a reservation whose expiry is not set yet. */
+export function hasUnsetAgentJobIdempotencyExpiry(
+  db: AgentJobDatabase,
+  jobId: string,
+): boolean {
+  return (
+    db
+      .select({ id: agentJobIdempotency.id })
+      .from(agentJobIdempotency)
+      .where(
+        and(
+          eq(agentJobIdempotency.jobId, jobId),
+          sql`${agentJobIdempotency.expiresAt} is null`,
+        ),
+      )
+      .limit(1)
+      .all().length > 0
+  )
+}
+
+/**
+ * Sets a terminal job's reservation expiry once (never extends it): called
+ * by the lifecycle host after verified terminal publication, or at an
+ * empty-ref settlement. A job without a reservation is a no-op.
+ */
+export function setAgentJobIdempotencyExpiry(
+  db: AgentJobDatabase,
+  jobId: string,
+  expiresAt: Date,
+): void {
+  if (!hasUnsetAgentJobIdempotencyExpiry(db, jobId)) return
+  db.update(agentJobIdempotency)
+    .set({ expiresAt })
+    .where(
+      and(
+        eq(agentJobIdempotency.jobId, jobId),
+        sql`${agentJobIdempotency.expiresAt} is null`,
+      ),
+    )
+    .run()
+}
+
+/**
+ * Named cleanup of expired reservations: deletes only reservations whose
+ * expiry is set and reached and whose job is terminal. Jobs, events and
+ * run-dir files stay; NULL-expiry (nonterminal, unpublished, orphan)
+ * reservations never expire automatically.
+ */
+export function cleanupExpiredAgentJobIdempotency(
+  db: AgentJobDatabase,
+  input: { now: Date; consumerId?: string | null },
+): number {
+  const terminal = sql`exists (select 1 from ${agentJobs} where ${agentJobs.id} = ${agentJobIdempotency.jobId} and ${agentJobs.status} in ('succeeded', 'failed', 'canceled', 'interrupted'))`
+  const result = db
+    .delete(agentJobIdempotency)
+    .where(
+      and(
+        isNotNull(agentJobIdempotency.expiresAt),
+        lte(agentJobIdempotency.expiresAt, input.now),
+        terminal,
+        input.consumerId
+          ? eq(agentJobIdempotency.consumerId, input.consumerId)
+          : undefined,
+      ),
+    )
+    .run() as { changes?: number }
+  return result.changes ?? 0
 }
 
 // ---------------------------------------------------------------------------

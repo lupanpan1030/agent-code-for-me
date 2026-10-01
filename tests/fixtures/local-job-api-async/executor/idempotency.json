@@ -1,0 +1,48 @@
+{
+  "fixtureVersion": 1,
+  "evidenceClass": "synthetic",
+  "sourceRefs": [
+    "openspec/changes/add-local-job-api-async-submit/specs/agent-runtime-core/spec.md:19-27",
+    "openspec/changes/add-local-job-api-async-submit/specs/agent-runtime-core/spec.md:90-99",
+    "openspec/changes/add-local-job-api-async-submit/design.md:161-163",
+    "openspec/changes/add-local-job-api-async-submit/design.md:177-179",
+    "openspec/changes/add-local-job-api-async-submit/design.md:219-223",
+    "openspec/changes/add-local-job-api-async-submit/specs/local-job-api/spec.md:205-216",
+    "openspec/changes/add-local-job-api-async-submit/specs/local-job-api/spec.md:383-389",
+    "openspec/changes/add-local-job-api-async-submit/tasks.md:454"
+  ],
+  "provenance": {
+    "author": "independent red-test author (executor domain), no implementation context",
+    "baseSha": "0447d02d",
+    "productBaseSha": "2c59664f1b80a5f782eb05f82d33f718d9bc7053",
+    "createdAt": "2026-10-02",
+    "notes": "S38 only (the other idempotency.json cases belong to the idempotency author). The crash is a SIGKILL of the submitter child process issued from Drizzle's logQuery hook immediately before the first artifact_created insert."
+  },
+  "cases": {
+    "S38": {
+      "consumerId": "s38-fixture",
+      "idempotencyKey": "s38-boundary-key-0001",
+      "crashAt": "before-initial-admission",
+      "expect": {
+        "submitPending": {
+          "exit": 8,
+          "code": "submission_pending",
+          "message": "Submission is not yet admitted; retry the same key.",
+          "retryable": true
+        },
+        "status": {
+          "status": "queued",
+          "execution": { "state": "unknown", "reason": "admission_incomplete" }
+        },
+        "wait": {
+          "exit": 9,
+          "state": "timeout",
+          "timeoutMs": 0,
+          "reason": "admission_incomplete"
+        },
+        "cancelWait": { "exit": 5, "status": "canceled", "artifacts": [] },
+        "retentionMs": 2592000000
+      }
+    }
+  }
+}

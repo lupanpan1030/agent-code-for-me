@@ -455,6 +455,38 @@ export const agentJobProjectionCursors = sqliteTable(
   ],
 )
 
+// Consumer-scoped idempotency reservations of Local Job API submissions
+// (add-local-job-api-async-submit D4). A reservation is not a queue or Run
+// table: it binds one normalized consumer + domain-separated key hash to the
+// job inserted in the same SQLite transaction. The raw key is never stored.
+export const agentJobIdempotency = sqliteTable(
+  "agent_job_idempotency",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    consumerId: text("consumer_id").notNull(),
+    keyHash: text("key_hash").notNull(),
+    jobId: text("job_id")
+      .notNull()
+      .references(() => agentJobs.id, { onDelete: "cascade" }),
+    requestHash: text("request_hash").notNull(),
+    normalizationVersion: integer("normalization_version").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+    // Set once after verified terminal publication (or an empty-ref settle);
+    // NULL is conservatively retained.
+    expiresAt: integer("expires_at", { mode: "timestamp_ms" }),
+  },
+  (table) => [
+    uniqueIndex("agent_job_idempotency_consumer_key_idx").on(
+      table.consumerId,
+      table.keyHash,
+    ),
+    index("agent_job_idempotency_job_id_idx").on(table.jobId),
+    index("agent_job_idempotency_expires_at_idx").on(table.expiresAt),
+  ],
+)
+
 export const agentSchedules = sqliteTable(
   "agent_schedules",
   {
@@ -617,6 +649,10 @@ export type AgentJobProjectionCursor =
 export type NewAgentJob = typeof agentJobs.$inferInsert
 export type AgentJobEvent = typeof agentJobEvents.$inferSelect
 export type NewAgentJobEvent = typeof agentJobEvents.$inferInsert
+export type AgentJobIdempotencyReservation =
+  typeof agentJobIdempotency.$inferSelect
+export type NewAgentJobIdempotencyReservation =
+  typeof agentJobIdempotency.$inferInsert
 export type AgentSchedule = typeof agentSchedules.$inferSelect
 export type NewAgentSchedule = typeof agentSchedules.$inferInsert
 export type AgentScheduleRun = typeof agentScheduleRuns.$inferSelect

@@ -1,0 +1,112 @@
+{
+  "fixtureVersion": 1,
+  "evidenceClass": "synthetic",
+  "sourceRefs": [
+    "openspec/changes/add-local-job-api-async-submit/specs/local-job-api/spec.md:498-509",
+    "openspec/changes/add-local-job-api-async-submit/specs/local-job-api/spec.md:535",
+    "openspec/changes/add-local-job-api-async-submit/specs/local-job-api/spec.md:549",
+    "openspec/changes/add-local-job-api-async-submit/design.md:239-241",
+    "openspec/changes/add-local-job-api-async-submit/tasks.md:107",
+    "docs/local-job-api-v1.schema.json:106-113",
+    "docs/local-job-api-v1-consumer-guide.md:209-216",
+    "src/shared/local-job-api.ts:18-23"
+  ],
+  "provenance": {
+    "capturedFrom": "product source 2c59664f1b80a5f782eb05f82d33f718d9bc7053 (worktree base 0447d02d carries no src/ diff from it)",
+    "method": "in-process runHeadlessCliCommand with a controlled fake runner/fetch, migrated temp SQLite, bun:test setSystemTime(2026-10-02T00:00:00.000Z); per-run values replaced by {{PLACEHOLDERS}} bound at test time from the profile DB/disk, never from the stdout under test",
+    "author": "independent red author (submit-wait domain), 2026-10-02",
+    "secrets": "none; ghp_fixture... is an inert synthetic secret-pattern sentinel",
+    "schemaBefore": "schema-before.json = git show 2c59664f:docs/local-job-api-v1.schema.json (sha256 a352d60239223aaaa6ffd0f11a4be9fab2175a171eb5a4516395daa54cb8b024)",
+    "cliArgsBefore": "cli-args-before.ts = git show 2c59664f:src/main/lib/headless/cli-args.ts (sha256 154694691e75100a626008e32141cf41b80c1b4b98d0a295c19ba7b5427ab257), import specifiers rewritten only"
+  },
+  "cases": {
+    "S22": {
+      "oldDiscovery": {
+        "exit": 0,
+        "apiVersion": "locus.local-job.v1",
+        "features": [
+          "runtime-readiness",
+          "provider-binding",
+          "completion",
+          "canonical-run-ledger"
+        ]
+      },
+      "newFeature": "async-submit",
+      "schemaRef": "#/$defs/runtimeManifestEnvelope",
+      "enumPath": "/features/"
+    },
+    "S23": {
+      "noFeatureDiscovery": {
+        "apiVersion": "locus.local-job.v1",
+        "features": [
+          "runtime-readiness",
+          "provider-binding",
+          "completion",
+          "canonical-run-ledger"
+        ],
+        "runtimes": []
+      },
+      "wrongVersions": [
+        "locus.local-job.v1.1",
+        "locus.local-job.v9",
+        "unknown"
+      ],
+      "expectedVersionError": {
+        "stderr": "apiVersion must be locus.local-job.v1\n",
+        "exit": 2,
+        "stdout": ""
+      },
+      "oldParserShapes": [
+        {
+          "argv": ["api", "runs", "submit", "--request", "-", "--json"],
+          "expected": {
+            "ok": false,
+            "code": 2,
+            "message": "Unknown api runs subcommand: submit. Available subcommands: create, status, events, result, cancel, retry"
+          }
+        },
+        {
+          "argv": ["api", "runs", "retry", "job-1", "--request", "-", "--json"],
+          "expected": {
+            "ok": false,
+            "code": 2,
+            "message": "Unexpected arguments: --request -"
+          }
+        },
+        {
+          "argv": ["api", "runs", "wait", "job-1", "--timeout", "25", "--json"],
+          "expected": {
+            "ok": false,
+            "code": 2,
+            "message": "Unknown api runs subcommand: wait. Available subcommands: create, status, events, result, cancel, retry"
+          }
+        }
+      ],
+      "keyedCreateSilentDropCounterevidence": {
+        "request": {
+          "apiVersion": "locus.local-job.v1",
+          "consumer": {
+            "id": "fixture-a",
+            "runExternalId": "run-ext-001"
+          },
+          "project": {
+            "cwd": "{{PACKAGE_DIR}}"
+          },
+          "runtime": {
+            "id": "codex",
+            "requiredCapabilities": ["planMode"]
+          },
+          "mode": "plan",
+          "prompt": {
+            "text": "Review this local package."
+          },
+          "input": {
+            "contract": "example.local-package.v1"
+          },
+          "idempotencyKey": "fixture-key-1"
+        },
+        "baselineBehavior": "2c59664f create ignores idempotencyKey and executes an unkeyed job (exit 0); this is why the approved key surface excludes create (design.md:106, :239)"
+      }
+    }
+  }
+}

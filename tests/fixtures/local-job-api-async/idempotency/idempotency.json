@@ -1,0 +1,477 @@
+{
+  "fixtureVersion": 1,
+  "evidenceClass": "synthetic",
+  "sourceRefs": [
+    "openspec/changes/add-local-job-api-async-submit/specs/local-job-api/spec.md:3",
+    "openspec/changes/add-local-job-api-async-submit/specs/local-job-api/spec.md:205",
+    "openspec/changes/add-local-job-api-async-submit/specs/local-job-api/spec.md:258",
+    "openspec/changes/add-local-job-api-async-submit/specs/local-job-api/spec.md:303",
+    "openspec/changes/add-local-job-api-async-submit/specs/local-job-api/spec.md:314",
+    "openspec/changes/add-local-job-api-async-submit/specs/local-job-api/spec.md:322",
+    "openspec/changes/add-local-job-api-async-submit/specs/local-job-api/spec.md:330",
+    "openspec/changes/add-local-job-api-async-submit/specs/local-job-api/spec.md:341",
+    "openspec/changes/add-local-job-api-async-submit/specs/local-job-api/spec.md:350",
+    "openspec/changes/add-local-job-api-async-submit/specs/local-job-api/spec.md:360",
+    "openspec/changes/add-local-job-api-async-submit/specs/local-job-api/spec.md:371",
+    "openspec/changes/add-local-job-api-async-submit/design.md:106",
+    "openspec/changes/add-local-job-api-async-submit/design.md:108",
+    "openspec/changes/add-local-job-api-async-submit/design.md:145",
+    "openspec/changes/add-local-job-api-async-submit/design.md:161",
+    "openspec/changes/add-local-job-api-async-submit/design.md:163",
+    "openspec/changes/add-local-job-api-async-submit/design.md:169",
+    "openspec/changes/add-local-job-api-async-submit/design.md:171",
+    "openspec/changes/add-local-job-api-async-submit/design.md:173",
+    "openspec/changes/add-local-job-api-async-submit/design.md:175",
+    "openspec/changes/add-local-job-api-async-submit/design.md:177",
+    "openspec/changes/add-local-job-api-async-submit/design.md:179",
+    "openspec/changes/add-local-job-api-async-submit/design.md:239",
+    "openspec/changes/add-local-job-api-async-submit/proposal.md:127",
+    "openspec/changes/add-local-job-api-async-submit/proposal.md:155",
+    "openspec/changes/add-local-job-api-async-submit/tasks.md:76",
+    "openspec/changes/add-local-job-api-async-submit/tasks.md:77",
+    "openspec/changes/add-local-job-api-async-submit/tasks.md:96",
+    "src/main/lib/headless/cli-dispatcher.ts:499",
+    "src/main/lib/headless/cli-dispatcher.ts:748",
+    "src/main/lib/headless/local-job-api.ts:734",
+    "src/main/lib/headless/local-job-api.ts:788",
+    "src/main/lib/headless/job-store.ts:131",
+    "src/main/lib/headless/job-store.ts:248",
+    "src/main/lib/headless/job-store.ts:323",
+    "src/main/lib/headless/job-store.ts:364",
+    "src/shared/local-job-api.ts:363",
+    "src/shared/local-job-api.ts:475"
+  ],
+  "provenance": {
+    "author": "independent red-test author (Claude Code), no implementation context",
+    "authoredAt": "2026-10-02",
+    "worktreeBaseSha": "0447d02d7682b16f9b042e5eda2701d68751a7ce",
+    "productBaselineSha": "2c59664f1b80a5f782eb05f82d33f718d9bc7053",
+    "method": "Hand-authored from the approved spec Scenarios S08-S15 (WHEN/THEN text is the oracle) and design D2/D3/D4; no implementation exists and none was consulted. Requests are templates; the harness substitutes the placeholders with per-test temporary paths.",
+    "placeholders": {
+      "${PROJECT_ROOT}": "realpath of a per-test temporary directory registered as a project",
+      "${ARTIFACT_BASE}": "${PROJECT_ROOT}/.locus/runs",
+      "${OTHER_ARTIFACT_BASE}": "${PROJECT_ROOT}/.locus/other-runs"
+    },
+    "catalogNote": "tasks.md:96 names tests/fixtures/local-job-api-async/idempotency.json; the coordinator assigned this author the idempotency/ subdirectory, so the same case keys live in idempotency/idempotency.json.",
+    "clock": "Retention cases freeze Date with bun:test setSystemTime at T0; expiry endpoints are T0 + 2592000000 ms (design.md:177)."
+  },
+  "cases": {
+    "S08": {
+      "scenario": "Normalized replay stays on supported key surfaces",
+      "key": "req-1",
+      "retryKey": "retry-s08",
+      "submit": {
+        "apiVersion": "locus.local-job.v1",
+        "consumer": { "id": "fixture-a" },
+        "project": { "cwd": "${PROJECT_ROOT}" },
+        "runtime": { "id": "claude" },
+        "mode": "plan",
+        "prompt": { "text": "S08 normalized replay prompt" },
+        "artifacts": { "baseDir": "${ARTIFACT_BASE}" }
+      },
+      "equivalentVariants": {
+        "canonicalRuntimeId": {
+          "apiVersion": "locus.local-job.v1",
+          "consumer": { "id": "fixture-a" },
+          "project": { "cwd": "${PROJECT_ROOT}" },
+          "runtime": { "id": "claude-code" },
+          "mode": "plan",
+          "prompt": { "text": "S08 normalized replay prompt" },
+          "artifacts": { "baseDir": "${ARTIFACT_BASE}" }
+        },
+        "explicitDefaults": {
+          "apiVersion": "locus.local-job.v1",
+          "kind": "agent",
+          "consumer": { "id": "fixture-a", "runExternalId": null },
+          "project": { "cwd": "${PROJECT_ROOT}", "projectId": null },
+          "runtime": {
+            "id": "claude",
+            "requiredCapabilities": [],
+            "executionProfile": "batch"
+          },
+          "mode": "plan",
+          "prompt": { "text": "S08 normalized replay prompt" },
+          "input": {},
+          "artifacts": {
+            "baseDir": "${ARTIFACT_BASE}",
+            "writePolicy": "metadata-only"
+          }
+        },
+        "reorderedKeys": {
+          "artifacts": { "baseDir": "${ARTIFACT_BASE}" },
+          "prompt": { "text": "S08 normalized replay prompt" },
+          "mode": "plan",
+          "runtime": { "id": "claude" },
+          "project": { "cwd": "${PROJECT_ROOT}" },
+          "consumer": { "id": "fixture-a" },
+          "apiVersion": "locus.local-job.v1"
+        },
+        "untrimmedConsumerId": {
+          "apiVersion": "locus.local-job.v1",
+          "consumer": { "id": "  fixture-a  " },
+          "project": { "cwd": "${PROJECT_ROOT}" },
+          "runtime": { "id": "claude" },
+          "mode": "plan",
+          "prompt": { "text": "S08 normalized replay prompt" },
+          "artifacts": { "baseDir": "${ARTIFACT_BASE}" }
+        }
+      },
+      "retrySource": {
+        "apiVersion": "locus.local-job.v1",
+        "consumer": { "id": "fixture-a", "runExternalId": "s08-retry-source" },
+        "project": { "cwd": "${PROJECT_ROOT}" },
+        "runtime": { "id": "claude" },
+        "mode": "plan",
+        "prompt": { "text": "S08 retry source that fails" }
+      },
+      "retryRequest": {
+        "apiVersion": "locus.local-job.v1",
+        "consumer": { "id": "fixture-a" },
+        "idempotencyKey": "retry-s08"
+      },
+      "providerConfigChange": {
+        "id": "s08-late-profile",
+        "targets": ["claude-code", "codex"]
+      },
+      "expected": {
+        "freshSubmitEnvelopeKeys": ["apiVersion", "job"],
+        "replayEnvelopeKeys": ["apiVersion", "idempotentReplay", "job"],
+        "keyedCreate": {
+          "exit": 2,
+          "stream": "stdout",
+          "errorCode": "idempotency_key_not_supported"
+        },
+        "unkeyedCreateEnvelopeKeys": ["apiVersion", "job", "result"]
+      }
+    },
+    "S09": {
+      "scenario": "Changed request conflicts without exposing the key",
+      "agentKey": "conf-SENTINEL-agent-91",
+      "completionKey": "conf-SENTINEL-completion-92",
+      "agentBinding": {
+        "apiVersion": "locus.local-job.v1",
+        "consumer": { "id": "fixture-a", "runExternalId": "ext-original" },
+        "project": { "cwd": "${PROJECT_ROOT}" },
+        "runtime": { "id": "claude" },
+        "mode": "plan",
+        "prompt": {
+          "text": "S09 original stored prompt STORED-PROMPT-SENTINEL"
+        },
+        "artifacts": { "baseDir": "${ARTIFACT_BASE}" }
+      },
+      "agentVariants": {
+        "prompt": { "prompt": { "text": "S09 changed prompt" } },
+        "mode": { "mode": "agent" },
+        "providerIntent": { "provider": { "model": "claude-sonnet-4-5" } },
+        "artifactBase": {
+          "artifacts": { "baseDir": "${OTHER_ARTIFACT_BASE}" }
+        },
+        "consumerExternalId": {
+          "consumer": { "id": "fixture-a", "runExternalId": "ext-changed" }
+        }
+      },
+      "completionProviderProfile": {
+        "id": "completion-main",
+        "targets": ["codex"]
+      },
+      "completionBinding": {
+        "apiVersion": "locus.local-job.v1",
+        "kind": "completion",
+        "consumer": { "id": "fixture-a" },
+        "runtime": { "id": "codex" },
+        "provider": { "profileId": "completion-main" },
+        "messages": [
+          {
+            "role": "user",
+            "content": "S09 stored completion message STORED-MESSAGE-SENTINEL"
+          }
+        ],
+        "responseFormat": {
+          "type": "json_schema",
+          "schema": {
+            "type": "object",
+            "required": ["decision"],
+            "properties": { "decision": { "enum": ["accept", "revise"] } }
+          }
+        }
+      },
+      "completionVariants": {
+        "messages": {
+          "messages": [
+            { "role": "user", "content": "S09 changed completion message" }
+          ]
+        },
+        "schema": {
+          "responseFormat": {
+            "type": "json_schema",
+            "schema": {
+              "type": "object",
+              "required": ["verdict"],
+              "properties": { "verdict": { "type": "string" } }
+            }
+          }
+        }
+      },
+      "storedContentSentinels": [
+        "STORED-PROMPT-SENTINEL",
+        "STORED-MESSAGE-SENTINEL",
+        "ext-original"
+      ],
+      "expected": { "exit": 2, "errorCode": "idempotency_conflict" }
+    },
+    "S10": {
+      "scenario": "Same key cannot replay across consumers",
+      "key": "req-1",
+      "requestA": {
+        "apiVersion": "locus.local-job.v1",
+        "consumer": { "id": "fixture-a" },
+        "project": { "cwd": "${PROJECT_ROOT}" },
+        "runtime": { "id": "claude" },
+        "mode": "plan",
+        "prompt": { "text": "S10 identical request" }
+      },
+      "requestB": {
+        "apiVersion": "locus.local-job.v1",
+        "consumer": { "id": "fixture-b" },
+        "project": { "cwd": "${PROJECT_ROOT}" },
+        "runtime": { "id": "claude" },
+        "mode": "plan",
+        "prompt": { "text": "S10 identical request" }
+      }
+    },
+    "S11": {
+      "scenario": "Concurrent requests reserve one attempt",
+      "raceKey": "race-1",
+      "matching": {
+        "apiVersion": "locus.local-job.v1",
+        "consumer": { "id": "fixture-a" },
+        "project": { "cwd": "${PROJECT_ROOT}" },
+        "runtime": { "id": "claude" },
+        "mode": "plan",
+        "prompt": { "text": "S11 matching contender" },
+        "artifacts": { "baseDir": "${ARTIFACT_BASE}" }
+      },
+      "different": {
+        "apiVersion": "locus.local-job.v1",
+        "consumer": { "id": "fixture-a" },
+        "project": { "cwd": "${PROJECT_ROOT}" },
+        "runtime": { "id": "claude" },
+        "mode": "plan",
+        "prompt": { "text": "S11 different-input contender" },
+        "artifacts": { "baseDir": "${ARTIFACT_BASE}" }
+      },
+      "latchKey": "race-latch-2",
+      "latchMatching": {
+        "apiVersion": "locus.local-job.v1",
+        "consumer": { "id": "fixture-a" },
+        "project": { "cwd": "${PROJECT_ROOT}" },
+        "runtime": { "id": "claude" },
+        "mode": "plan",
+        "prompt": { "text": "S11 latch contender" }
+      },
+      "latchDifferent": {
+        "apiVersion": "locus.local-job.v1",
+        "consumer": { "id": "fixture-a" },
+        "project": { "cwd": "${PROJECT_ROOT}" },
+        "runtime": { "id": "claude" },
+        "mode": "plan",
+        "prompt": { "text": "S11 latch changed contender" }
+      },
+      "latchEmulation": "The creation-append latch is emulated with SQLite triggers: job_created inserts abort and api job deletes abort, so the creator stops after its job+reservation commit and before its creation commit; releasing the latch is the creator's next lifecycle step, recordAgentJobCreated (job-store.ts:364)."
+    },
+    "S12": {
+      "scenario": "Rollback and creation compensation release the key",
+      "key": "s12-key",
+      "request": {
+        "apiVersion": "locus.local-job.v1",
+        "consumer": { "id": "fixture-a" },
+        "project": { "cwd": "${PROJECT_ROOT}" },
+        "runtime": { "id": "claude" },
+        "mode": "plan",
+        "prompt": { "text": "S12 rollback request" },
+        "artifacts": { "baseDir": "${ARTIFACT_BASE}" }
+      },
+      "faults": [
+        {
+          "id": "reservation-insert-before-commit",
+          "trigger": "AFTER INSERT ON <reservation table> -> RAISE(ABORT)"
+        },
+        {
+          "id": "job-insert-before-commit",
+          "trigger": "AFTER INSERT ON agent_jobs WHEN NEW.source = 'api' -> RAISE(ABORT)"
+        },
+        {
+          "id": "creation-append-after-commit",
+          "trigger": "BEFORE INSERT ON agent_job_events WHEN NEW.type = 'job_created' -> RAISE(ABORT)"
+        }
+      ]
+    },
+    "S13": {
+      "scenario": "Crashed creation never becomes a successful replay",
+      "consumer": "fixture-a",
+      "cases": {
+        "killed": {
+          "key": "s13-killed",
+          "newKey": "s13-killed-new-key",
+          "prompt": "S13 killed creator",
+          "boundary": "child process SIGKILLs itself when preparing its first INSERT INTO agent_job_events (the job_created append after the job+reservation commit)"
+        },
+        "failedCompensation": {
+          "key": "s13-failed-compensation",
+          "prompt": "S13 failed compensation",
+          "boundary": "job_created insert aborts and the queued/no-facts compensation delete aborts"
+        },
+        "liveCreator": {
+          "key": "s13-live-creator",
+          "prompt": "S13 live creator",
+          "boundary": "same latch as failedCompensation; release = recordAgentJobCreated"
+        }
+      },
+      "cleanupTriggerKey": "s13-cleanup-trigger",
+      "advanceMs": 2678400000,
+      "requestTemplate": {
+        "apiVersion": "locus.local-job.v1",
+        "consumer": { "id": "fixture-a" },
+        "project": { "cwd": "${PROJECT_ROOT}" },
+        "runtime": { "id": "claude" },
+        "mode": "plan",
+        "prompt": { "text": "${PROMPT}" }
+      },
+      "expected": {
+        "pending": {
+          "exit": 8,
+          "errorCode": "submission_pending",
+          "retryable": true
+        }
+      }
+    },
+    "S14": {
+      "scenario": "Retention has a declared endpoint",
+      "t0": "2026-10-02T00:00:00.000Z",
+      "retentionMs": 2592000000,
+      "staleHeartbeatLeadMs": 121000,
+      "requestTemplate": {
+        "apiVersion": "locus.local-job.v1",
+        "consumer": { "id": "${CONSUMER}" },
+        "project": { "cwd": "${PROJECT_ROOT}" },
+        "runtime": { "id": "claude" },
+        "mode": "plan",
+        "prompt": { "text": "${PROMPT}" }
+      },
+      "cases": {
+        "workerPublished": {
+          "consumer": "fixture-a",
+          "key": "s14-worker",
+          "artifacts": true,
+          "expiry": "T0+retention"
+        },
+        "artifactFree": {
+          "consumer": "fixture-a",
+          "key": "s14-free",
+          "artifacts": false,
+          "expiry": "T0+retention"
+        },
+        "recovery": {
+          "consumer": "fixture-a",
+          "key": "s14-recovery",
+          "artifacts": false,
+          "expiry": "T0+retention"
+        },
+        "admittedCancel": {
+          "consumer": "fixture-a",
+          "key": "s14-admitted-cancel",
+          "artifacts": true,
+          "expiry": "T0+retention"
+        },
+        "missingAdmissionCancel": {
+          "consumer": "fixture-a",
+          "key": "s14-missing-admission",
+          "artifacts": true,
+          "expiry": "T0+retention"
+        },
+        "otherConsumerFree": {
+          "consumer": "fixture-b",
+          "key": "s14-b-free",
+          "artifacts": false,
+          "expiry": "T0+retention"
+        },
+        "running": {
+          "consumer": "fixture-a",
+          "key": "s14-running",
+          "artifacts": false,
+          "expiry": null
+        },
+        "publishFault": {
+          "consumer": "fixture-a",
+          "key": "s14-publish-fault",
+          "artifacts": true,
+          "expiry": null
+        },
+        "crashBeforeSetter": {
+          "consumer": "fixture-a",
+          "key": "s14-crash-before-setter",
+          "artifacts": true,
+          "expiry": null
+        },
+        "orphan": {
+          "consumer": "fixture-a",
+          "key": "s14-orphan",
+          "artifacts": false,
+          "expiry": null
+        }
+      },
+      "cleanupTriggerKey": "s14-cleanup-trigger"
+    },
+    "S15": {
+      "scenario": "Idempotency key stays out of durable and diagnostic output",
+      "sentinelKey": "s15-SENTINEL_q7.z:42",
+      "request": {
+        "apiVersion": "locus.local-job.v1",
+        "consumer": { "id": "fixture-a" },
+        "project": { "cwd": "${PROJECT_ROOT}" },
+        "runtime": { "id": "claude" },
+        "mode": "plan",
+        "prompt": { "text": "S15 admitted artifact request" },
+        "artifacts": { "baseDir": "${ARTIFACT_BASE}" }
+      },
+      "conflictPrompt": "S15 conflicting prompt",
+      "keyVariants": [
+        {
+          "id": "empty",
+          "key": "",
+          "errorCode": "invalid_idempotency_key",
+          "echoProbe": null
+        },
+        {
+          "id": "whitespace",
+          "key": " \t ",
+          "errorCode": "invalid_idempotency_key",
+          "echoProbe": null
+        },
+        {
+          "id": "161-characters",
+          "key": "L161-qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqABCD",
+          "errorCode": "invalid_idempotency_key",
+          "echoProbe": "L161-qqqq"
+        },
+        {
+          "id": "sk-plus-24-letters",
+          "key": "sk-ABCDEFGHIJKLMNOPQRSTUVWX",
+          "errorCode": "secret_in_request",
+          "echoProbe": "ABCDEFGHIJKLMNOPQRSTUVWX"
+        },
+        {
+          "id": "bearer-secret-and-charset-invalid",
+          "key": "Bearer abcdef",
+          "errorCode": "secret_in_request",
+          "echoProbe": "Bearer abcdef"
+        }
+      ],
+      "redactorAlteredConsumer": {
+        "id": "eyJhbGciOi.eyJzdWIiOi.c2lnbmF0dXJl",
+        "key": "s15-consumer-key",
+        "note": "Valid consumer.id charset and not matched by SECRET_VALUE_PATTERNS (src/shared/local-job-api.ts:363), but job-store redactSecretText (src/main/lib/headless/job-store.ts:131) rewrites it to [redacted-jwt]."
+      }
+    }
+  }
+}

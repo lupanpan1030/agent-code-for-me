@@ -1,0 +1,195 @@
+{
+  "fixtureVersion": 1,
+  "evidenceClass": "synthetic",
+  "sourceRefs": [
+    "openspec/changes/add-local-job-api-async-submit/specs/headless-agent-jobs/spec.md:3-10",
+    "openspec/changes/add-local-job-api-async-submit/specs/headless-agent-jobs/spec.md:66-127",
+    "openspec/changes/add-local-job-api-async-submit/design.md:85",
+    "openspec/changes/add-local-job-api-async-submit/design.md:185",
+    "openspec/changes/add-local-job-api-async-submit/verification.md:314",
+    "openspec/changes/add-local-job-api-async-submit/verification.md:327-332",
+    "openspec/changes/add-local-job-api-async-submit/tasks.md:459",
+    "src/main/lib/headless/daemon.ts:88-128",
+    "src/main/lib/headless/daemon.ts:142-152",
+    "src/main/index.ts:421-465",
+    "src/main/lib/headless/cli-args.ts:326-345"
+  ],
+  "provenance": {
+    "author": "independent red-test author (executor domain), no implementation context",
+    "baseSha": "0447d02d",
+    "productBaseSha": "2c59664f1b80a5f782eb05f82d33f718d9bc7053",
+    "createdAt": "2026-10-02",
+    "notes": "createdAtOffsetMs makes the API rows the OLDEST so that a createdAt-ordered selector would dispatch them first; only the daemon->schedule->api slot order yields the expected sequence."
+  },
+  "cases": {
+    "S28": {
+      "rows": [
+        {
+          "name": "api-agent",
+          "source": "api",
+          "kind": "agent",
+          "artifacts": true,
+          "createdAtOffsetMs": -30000,
+          "eligible": true
+        },
+        {
+          "name": "api-completion",
+          "source": "api",
+          "kind": "completion",
+          "createdAtOffsetMs": -29000,
+          "eligible": true
+        },
+        {
+          "name": "schedule",
+          "source": "schedule",
+          "createdAtOffsetMs": -20000,
+          "eligible": true
+        },
+        {
+          "name": "daemon",
+          "source": "daemon",
+          "createdAtOffsetMs": -10000,
+          "eligible": true
+        },
+        {
+          "name": "desktop",
+          "source": "desktop",
+          "runtime": "claude-code",
+          "createdAtOffsetMs": -40000,
+          "eligible": false
+        },
+        {
+          "name": "cli",
+          "source": "cli",
+          "createdAtOffsetMs": -40000,
+          "eligible": false
+        },
+        {
+          "name": "protocol",
+          "source": "protocol",
+          "createdAtOffsetMs": -40000,
+          "eligible": false
+        }
+      ],
+      "expectedSlotOrder": ["daemon", "schedule", "api"],
+      "pumpConcurrency": 1,
+      "expectedPrepareTailRoles": ["request", "events", "result", "manifest"]
+    },
+    "S41": {
+      "headlessBranchMustNotContain": [
+        "requestSingleInstanceLock",
+        "createMainWindow(",
+        "Menu.setApplicationMenu",
+        "startAutomaticAppUpdateChecks(",
+        "startAuthCallbackServer(",
+        "MCP warmup"
+      ],
+      "guiBranchMustContain": [
+        "requestSingleInstanceLock",
+        "createMainWindow(",
+        "Menu.setApplicationMenu",
+        "startAutomaticAppUpdateChecks(",
+        "startAuthCallbackServer(",
+        "MCP warmup"
+      ]
+    },
+    "S42": {
+      "rows": [
+        { "name": "daemon", "source": "daemon", "eligible": true },
+        { "name": "api-admitted", "source": "api", "eligible": true },
+        { "name": "api-unadmitted-orphan", "source": "api", "eligible": false },
+        { "name": "protocol", "source": "protocol", "eligible": false }
+      ]
+    },
+    "S44": {
+      "entryPoints": ["jobs-logs-follow", "run-daemon-follow"],
+      "followPollBoundMs": 6000
+    },
+    "S46": {
+      "forbiddenInputs": [
+        {
+          "name": "run-daemon-api-key",
+          "argv": [
+            "run",
+            "--daemon",
+            "--runtime",
+            "codex",
+            "--prompt",
+            "x",
+            "--api-key",
+            "sk-locusS46Sentinelaaaaaaaaaaaaaaaaaaaa"
+          ],
+          "expectExit": 2
+        },
+        {
+          "name": "run-daemon-token-equals",
+          "argv": [
+            "run",
+            "--daemon",
+            "--runtime",
+            "codex",
+            "--prompt",
+            "x",
+            "--token=locus-s46-sentinel-token"
+          ],
+          "expectExit": 2
+        },
+        {
+          "name": "run-daemon-access-token",
+          "argv": [
+            "run",
+            "--daemon",
+            "--runtime",
+            "codex",
+            "--prompt",
+            "x",
+            "--access-token",
+            "locus-s46-sentinel-access"
+          ],
+          "expectExit": 2
+        },
+        {
+          "name": "jobs-stdio-raw-env",
+          "stdio": {
+            "jsonrpc": "2.0",
+            "id": "run",
+            "method": "job.run",
+            "params": {
+              "runtime": "codex",
+              "prompt": "x",
+              "env": {
+                "OPENAI_API_KEY": "sk-locusS46Sentinelbbbbbbbbbbbbbbbbbbbb"
+              }
+            }
+          }
+        }
+      ],
+      "secretSentinels": [
+        "sk-locusS46Sentinelaaaaaaaaaaaaaaaaaaaa",
+        "locus-s46-sentinel-token",
+        "locus-s46-sentinel-access",
+        "sk-locusS46Sentinelbbbbbbbbbbbbbbbbbbbb"
+      ]
+    },
+    "registeredExisting": {
+      "S42": [
+        "tests/headless-daemon.test.ts :: fires due schedules and claims schedule jobs without claiming protocol jobs",
+        "tests/headless-daemon.test.ts :: daemon respects the configured concurrency limit",
+        "tests/headless-cli-dispatcher.test.ts :: runs daemon once and claims only daemon queued jobs"
+      ],
+      "S43": [
+        "tests/headless-daemon.test.ts :: daemon worker observes persisted cancel requests"
+      ],
+      "S45": [
+        "tests/headless-daemon.test.ts :: runs queued daemon jobs and marks stale running jobs interrupted on startup",
+        "tests/headless-cli-dispatcher.test.ts :: daemon command reports stale running jobs it interrupts",
+        "tests/run-event-ledger-recovery-variants.test.ts :: an unknown or unsupported host probe leaves the row running with a heartbeat_only diagnostic and appends nothing",
+        "tests/headless-cli-dispatcher.test.ts :: cancels queued jobs and retries terminal jobs"
+      ],
+      "S46": [
+        "tests/headless-cli-dispatcher.test.ts :: rejects jobs-stdio provider secrets and raw env without creating jobs",
+        "tests/headless-cli-args.test.ts :: rejects provider secrets on the command line"
+      ]
+    }
+  }
+}

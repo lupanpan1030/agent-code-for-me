@@ -1,0 +1,143 @@
+{
+  "fixtureVersion": 1,
+  "evidenceClass": "synthetic",
+  "sourceRefs": [
+    "openspec/changes/add-local-job-api-async-submit/specs/agent-runtime-core/spec.md:29-51",
+    "openspec/changes/add-local-job-api-async-submit/specs/agent-runtime-core/spec.md:63-88",
+    "openspec/changes/add-local-job-api-async-submit/specs/headless-agent-jobs/spec.md:46-56",
+    "openspec/changes/add-local-job-api-async-submit/specs/headless-agent-jobs/spec.md:129-142",
+    "openspec/changes/add-local-job-api-async-submit/specs/local-job-api/spec.md:164-187",
+    "openspec/changes/add-local-job-api-async-submit/design.md:189-204",
+    "openspec/changes/add-local-job-api-async-submit/design.md:221-233",
+    "openspec/changes/add-local-job-api-async-submit/design.md:177",
+    "openspec/changes/add-local-job-api-async-submit/tasks.md:452",
+    "src/main/lib/agent-runtime/run-artifacts.ts:684-853",
+    "src/main/lib/headless/local-job-api.ts:1000-1128",
+    "src/main/lib/headless/job-recovery.ts:110-183",
+    "docs/local-job-api-v1-consumer-guide.md:817"
+  ],
+  "provenance": {
+    "author": "independent red-test author (executor domain), no implementation context",
+    "baseSha": "0447d02d",
+    "productBaseSha": "2c59664f1b80a5f782eb05f82d33f718d9bc7053",
+    "createdAt": "2026-10-02",
+    "notes": "Fault points are injected only inside the worker child process: before-terminal-commit freezes in Drizzle's logQuery hook right before the completed insert (all terminal files staged, SQL not committed); before-publish-N wraps fs.renameSync before the product graph loads and freezes before the N-th rename onto a final run-dir file name (after the SQL commit). The worker stays alive at the point, so recovery never triggers independently."
+  },
+  "cases": {
+    "S27": {
+      "faultPoints": [
+        {
+          "freezeAt": "before-terminal-commit",
+          "expect": {
+            "status": "running",
+            "completed": 0,
+            "waitExit": 9,
+            "waitReason": "run_pending",
+            "ready": false
+          }
+        },
+        {
+          "freezeAt": "before-publish-1",
+          "expect": {
+            "status": "succeeded",
+            "completed": 1,
+            "waitExit": 9,
+            "waitReason": "terminal_artifacts_pending",
+            "ready": false
+          }
+        },
+        {
+          "freezeAt": "before-publish-2",
+          "expect": {
+            "status": "succeeded",
+            "completed": 1,
+            "waitExit": 9,
+            "waitReason": "terminal_artifacts_pending",
+            "ready": false
+          }
+        },
+        {
+          "freezeAt": "before-publish-3",
+          "expect": {
+            "status": "succeeded",
+            "completed": 1,
+            "waitExit": 9,
+            "waitReason": "terminal_artifacts_pending",
+            "ready": false
+          }
+        },
+        {
+          "freezeAt": null,
+          "expect": {
+            "status": "succeeded",
+            "completed": 1,
+            "waitExit": 0,
+            "waitReason": null,
+            "ready": true
+          }
+        }
+      ],
+      "tamper": [
+        {
+          "name": "result-digest-changed",
+          "file": "result.json",
+          "action": "append-byte"
+        },
+        {
+          "name": "run-dir-swapped-for-symlink",
+          "action": "replace-run-dir-with-symlink-to-identical-copy"
+        }
+      ]
+    },
+    "S36": {
+      "idempotencyKey": "s36-recovery-key-0001",
+      "staleBeyondMs": 121000,
+      "expect": {
+        "status": "interrupted",
+        "completedReason": "worker_stopped",
+        "errorCode": "worker_interrupted",
+        "waitExit": 1,
+        "resultArtifacts": [],
+        "retentionMs": 2592000000
+      },
+      "liveVariants": [
+        { "name": "stale-but-alive-worker", "workerPid": "live-child" },
+        { "name": "stale-but-eperm-worker", "workerPid": 1 }
+      ]
+    },
+    "S37": {
+      "goldenPreparedTailRoles": ["request", "events", "result", "manifest"],
+      "goldenPreparedTailFiles": [
+        "request.json",
+        "events.jsonl",
+        "result.json",
+        "artifacts.json"
+      ],
+      "processEnvSentinel": "locus-s37-process-env-sentinel",
+      "mismatches": [
+        {
+          "name": "request-digest-changed",
+          "file": "request.json",
+          "action": "rewrite-different-bytes"
+        },
+        {
+          "name": "events-replaced-by-symlink",
+          "file": "events.jsonl",
+          "action": "symlink-to-outside-copy"
+        },
+        {
+          "name": "manifest-replaced-by-hardlink",
+          "file": "artifacts.json",
+          "action": "hardlink-to-outside-copy"
+        }
+      ],
+      "mismatchExpect": {
+        "status": "failed",
+        "errorCode": "artifact_admission_mismatch",
+        "reason": "artifact_admission_mismatch",
+        "waitExit": 1,
+        "providerCalls": 0
+      }
+    }
+  }
+}

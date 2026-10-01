@@ -37,11 +37,14 @@ Local Job API v1 允许下游 consumer：
 - 列出 runtime capability manifests
 - 发起一次 agent run
 - 发起一次 single-shot completion
+- 提交 agent run 或 completion，在其执行前拿到 job ID，再以有界超时等待它
+  （feature `async-submit`）
 - 读取 run status
 - 读取标准化 event envelopes
 - 读取最终 result envelope
 - 取消 queued 或 running 的 API job
-- 重试 failed、canceled、interrupted 的 API job
+- 重试 failed、canceled、interrupted 的 API job，可选异步并带 idempotency key
+  （feature `async-submit`）
 - 收集 Locus run-owned metadata artifacts
 - 注册、查看、非破坏性地注销本地 project workspace
 
@@ -87,12 +90,14 @@ smoke。
 
 ```bash
 locus api runtimes list --json
+locus api runs submit --request <path|-> --json
 locus api runs create --request <path|-> --json
+locus api runs wait <job-id> [--timeout <milliseconds>] --json
 locus api runs status <job-id> --json
 locus api runs events <job-id> [--after <sequence>] [--follow] --jsonl
 locus api runs result <job-id> --json
 locus api runs cancel <job-id> --json
-locus api runs retry <job-id> --json
+locus api runs retry <job-id> [--request <path|->] [--async] --json
 locus api projects register --cwd <path> [--name <name>] --json
 locus api projects status --cwd <path> --json
 locus api projects unregister --cwd <path> [--force] --json
@@ -103,9 +108,15 @@ locus api projects unregister --cwd <path> [--force] --json
 - JSON 命令在 stdout 输出可解析 JSON。
 - event stream 每行一个 JSON object。
 - diagnostics 和 validation errors 写到 stderr。
-- `--request -` 表示从 stdin 读取 create request。
+- `--request -` 表示从 stdin 读取 create、submit 或 retry request。
 - `--after <sequence>` 返回 sequence 大于该值的 events。
-- `create` 和 `retry` 是同步执行：命令会在 run 进入 terminal status 后返回。
+- `create` 和（不带 `--async` 的）`retry` 是同步执行：命令会在 run 进入 terminal
+  status 后返回。在带 `async-submit` 的 build 上，它们是同一进程内的一次 submit 加
+  一次 wait，输出不变；见
+  [Synchronous create and default retry](#synchronous-create-and-default-retry)。
+- `submit`、`wait`、`retry --async` 与 `retry --request` 需要 `async-submit`
+  feature。`submit` 在 run 被记录后立即返回，`wait` 是有界、只读的等待；见
+  [Asynchronous Submission](#asynchronous-submission-async-submit)。
 - `projects unregister` 是非破坏性操作：它只把 project 从 active registration
   移除，不删除 chats、sub-chats、worktrees、job history 或 repository files。
   永久删除 project history 只在桌面 UI 里提供。
@@ -116,8 +127,10 @@ locus api projects unregister --cwd <path> [--force] --json
 2. 确保 `project.cwd` 指向 Locus 已注册的本地 project，或该 project 内的子目录。
 3. 把 `artifacts.baseDir` 放在 `project.cwd` 下面。
 4. 列出 runtime capabilities。
-5. 用 `locus api runs create` 创建 run。
-6. 用 job ID 读取 `status`、`events` 和 `result`。
+5. 用 `locus api runs create` 创建 run；或在带 `async-submit` 的 build 上用
+   `locus api runs submit` 提交并保存返回的 job ID。
+6. 用 job ID 读取 `status`、`events` 和 `result`（submit 之后，用
+   `locus api runs wait` 等待已发布的结果）。
 7. 下游应用只在自己的用户审核通过后，才提升或复制最终业务 artifacts。
 
 ## Project Registration Commands
@@ -195,19 +208,30 @@ Discovery features：
 | `provider-binding` | create request 会遵循 `provider` 引用块。 |
 | `completion` | 支持 `kind: "completion"` request。 |
 | `canonical-run-ledger` | events 与 result 来自同一个已提交的 Run ledger：逐记录的稠密 event 投影、修正后的终态真相、可选 native 元数据。见 [Canonical Run Ledger](#canonical-run-ledger)。 |
+| `async-submit` | 提供 `runs submit`、`runs wait`、`runs retry --async` / `--request`、可选的 `idempotencyKey` 以及 `runs status` 的 `execution` 成员，且 `create`/`retry` 以 submit 加 wait 执行。见 [Asynchronous Submission](#asynchronous-submission-async-submit)。 |
 
 依赖某个 feature 的 consumer 应在派发前检查 `features`，缺少该标识即视为不支持。
-v1 没有要求 feature 或 extension 的 request 字段，Locus 也不做 extension 协商；
-这项检查是 consumer 自己的 preflight。
+既有的 create request 字段不要求任何 feature。`idempotencyKey`（只被 `runs submit`
+与 `runs retry --request` 接受）以及 `submit`、`wait`、`retry --async`、
+`retry --request` 命令形状需要先做 `async-submit` preflight：旧 build 会以 stderr
+诊断和 exit `2` 拒绝这些命令形状，但旧 build 会静默忽略发给 `runs create` 的
+`idempotencyKey`，并以无幂等方式执行 job。不要假设被静默丢弃的字段已经生效。
+Locus 不做 extension 协商；这项检查是 consumer 自己的 preflight。
 [local-job-api-v1.schema.json](local-job-api-v1.schema.json) 中的
 `discoveryFeature` enum 是封闭的：用旧版 schema 副本校验 discovery 输出的
-consumer 必须刷新该副本，因为“忽略未知字段”不覆盖新的 enum 值。
+consumer 必须刷新该副本，因为“忽略未知字段”不覆盖新的 enum 值。`async-submit`
+扩展了该 enum，因此在该 feature 之前固定的副本会在 `async-submit` 处拒绝当前的
+discovery 输出，直到刷新为止。
 
 `readiness.state` 是 advisory，可取 `ready`、`needs-auth`、`unavailable`
 或 `unknown`。readiness probe 失败时 discovery 仍然 exit 0 并返回完整
 manifest list；该 runtime 报 `unknown`，诊断写 stderr。用
 `locus api runtimes list --json --no-probe` 可以跳过 subprocess status
 probe；被跳过的 probe 状态报 `unknown`，不会误报 `ready`。
+
+`readiness` 描述的是执行 `runtimes list` 的进程的环境。在带 `async-submit` 的
+build 上，由 `locus daemon run` 认领的 run 在 daemon 的环境中执行（见
+[Execution context](#execution-context)），所以这里的 `ready` 不能证明 daemon 已就绪。
 
 对省略 provider 的 agent run，readiness 遵循真实执行顺序：先检查该 runtime 的
 headless 默认 profile；只有完全没有配置 default 时，才检查 native credentials。可严格
@@ -546,6 +570,10 @@ batch 模式的 Codex 与 Claude run、completion run，以及没有 `artifacts.
 实际 `job` object 可能包含更多 renderer-safe 字段。consumer 只应该依赖本手册列出的
 字段，并忽略未知字段。
 
+在带 `async-submit` 的 build 上，`create` 是同一进程内的一次 `runs submit` 加一次
+`runs wait`，正常终态输出与这个 envelope 逐字节相同。`create` 拒绝
+`idempotencyKey`；见 [Idempotency](#idempotency)。
+
 ## Status
 
 ```bash
@@ -566,6 +594,10 @@ locus api runs status <job-id> --json
 ```
 
 只有 `source=api` 的 job 能通过 `locus api runs ...` 读取。
+
+在带 `async-submit` 的 build 上，`queued` 或 `running` 的 API job 的 status 还带一个
+建议性的 `execution` 对象；终态 job 不带。见
+[Executor availability](#executor-availability)。
 
 ## Events
 
@@ -887,6 +919,435 @@ job。升级前请用旧 build 排空它们：让它们完成、取消它们，�
 5. 用 `--after` 分页读取 events；忽略未知 `status` subtype 和未知 extension 命名空间。
 6. 把 `<redacted>` 和 `<mask>` 当作不透明文本。
 
+## Asynchronous Submission (`async-submit`)
+
+`features` 含 `async-submit` 的 build 可以不等 run 执行就接收它、立即返回 job ID，
+并让 consumer 按该 ID 等待、观察、取消或重试。wire version 仍是
+`locus.local-job.v1`。12 种 event type、六字段 event envelope、`runs result`、
+artifact 文件、`--after`/`--follow` 以及 exit `0`–`8` 的含义都不变。唯一新增的
+exit code 是 `9`，且只有 `runs wait` 会返回它。
+
+### Submit
+
+```bash
+locus api runs submit --request <path|-> --json
+```
+
+request 就是 agent 或 completion 的 create request（见
+[Agent Create Request](#agent-create-request) 与
+[Completion Create Request](#completion-create-request)），另可带一个可选的顶层
+`idempotencyKey`（见 [Idempotency](#idempotency)）。所有 create 校验以及
+project、capability、profile、provider、secret 检查都先执行，失败时的 error、
+输出流和 exit 与 `create` 相同。被拒绝的 request 不会启动任何 provider work。
+
+新提交成功时输出一行，exit `0`：
+
+```json
+{"apiVersion":"locus.local-job.v1","job":{"id":"job-A","status":"queued"}}
+```
+
+（`job` 是完整的 serialized job，此处有删节。）
+
+- 这个确认表示 run 已持久记录且可被认领：它的 `job_created` event 已提交；带
+  `artifacts.baseDir` 的 run，其 run directory 与初始文件也已完成 admission。
+  它不表示 run 已经开始。
+- `job.status` 是 admission 时的快照。另一个进程可能在你读到 stdout 之前就认领了
+  该 run，此时 `runs status` 会报告 `running`。
+- 确认不需要 executor。提交后的 run 在被 executor 认领时执行：正在运行的
+  `locus daemon run`（前台运行，由用户或 consumer 启动），或 `runs create` /
+  `runs retry` 命令为自己的 run 启动的进程内 executor。没有 executor 时它保持
+  `queued`，`runs status` 和 `runs wait` 会如实报告。
+- 提交进程退出不会取消该 run。请按 ID 取消。
+- 响应不含 `result`。
+
+### Wait
+
+```bash
+locus api runs wait <job-id> [--timeout <milliseconds>] --json
+```
+
+`runs wait` 只读取一个 API job，从不改变它：不结算、不取消、不重试、不延长任何
+期限。与所有 `locus api` 命令一样，它会先执行 Locus 既有的 stale worker
+recovery，该步骤可能结算一个已被 Locus 确认停止的 worker 所属的 run。
+
+- `--timeout` 默认 `30000` ms，接受 `0` 到 `86400000`（24 h）的整数。`0` 只做
+  一次观察。
+- run 在其 `completed` event 已提交、且该提交登记的每个终态文件都已发布并通过校验
+  （digest 与 size）时就绪。没有终态文件的 run 在 `completed` 提交后即就绪。
+- 就绪时的输出与 `create` 的 envelope `{apiVersion, job, result}` 完全相同，
+  exit code 是 run 的 outcome exit（`0`–`8`）。`result.artifacts` 按顺序列出该
+  提交的终态文件。
+- 截止时 run 仍未就绪，`wait` 输出一个 timeout envelope 并 exit `9`。截止时刻
+  最后一次读取若已就绪，则以就绪结果为准。
+
+```json
+{"apiVersion":"locus.local-job.v1","job":{"id":"job-A","status":"queued"},"wait":{"state":"timeout","timeoutMs":30000,"reason":"executor_unavailable"}}
+```
+
+exit `9` 不是 run outcome：没有 `result`，run 也没有变化。可以再次 `wait`，或读取
+`status`。
+
+| `job.status` | 观察 | `wait.reason` |
+| --- | --- | --- |
+| `queued` | 初始 admission 未提交（最先检查） | `admission_incomplete` |
+| `queued` | 有可用 executor | `run_pending` |
+| `queued` | 没有 executor | `executor_unavailable` |
+| `queued` | executor 状态未知 | `executor_unknown` |
+| `running` | 任意 | `run_pending` |
+| terminal | 某个已登记的终态文件缺失或不匹配 | `terminal_artifacts_pending` |
+
+`terminal_artifacts_pending` 会保留真实的终态 `job.status`。它覆盖发布尚未完成或
+发布失败的情况，也覆盖已发布文件之后被删除或修改的情况：`wait` 无法区分这些情况，
+会再次报告未就绪。`runs result` 和 `runs events --follow` 不变，不是发布屏障；只有
+`wait` 检查文件。
+
+| 情况 | 输出 | Exit |
+| --- | --- | --- |
+| 未知 ID，或不是 API job 的 ID | stderr `Unknown job: <id>` | `3` |
+| `--timeout` 无效 | stderr `Invalid timeout: expected an integer from 0 to 86400000 milliseconds.` | `2` |
+| 已读到 job 之后 store 读取失败 | stdout `{"apiVersion":"locus.local-job.v1","job":{…},"wait":{"state":"error","reason":"observation_failed"}}` | `8` |
+| 读到 job 之前 store 读取失败 | stderr `Failed to observe job: <id>` | `8` |
+
+stderr 行是纯文本加换行，不是 JSON。`runs status` 对未知 ID 与非 API ID 保留原有
+错误（`Unknown API job: <id>` 与 `Job <id> is not an API job`，exit `3`）；两个
+命令的消息不承诺一致。
+
+### Executor availability
+
+对 `queued` 或 `running` 的 API job，`runs status` 会附加一个 `execution` 对象。
+终态 job 以及其他所有 envelope 都不带它。
+
+```json
+{"apiVersion":"locus.local-job.v1","job":{"id":"job-A","status":"queued"},"execution":{"state":"unavailable","reason":"no_executor","observedAt":"2026-10-01T00:00:00.000Z","hint":"locus daemon run"}}
+```
+
+| `state` | `reason` | 何时 |
+| --- | --- | --- |
+| `unknown` | `admission_incomplete` | queued run 的初始 admission 未提交。不带 hint。 |
+| `available` | `executor_observed` | queued run，且同一 profile 的 `locus daemon run` 存活并有新鲜心跳；running run 自己记录的 worker 在 120 s recovery 心跳窗口内被确认存活。 |
+| `unavailable` | `no_executor` | 没有 daemon lock，或其进程已不存在；running run 的 worker 进程已不存在。带 `hint: "locus daemon run"`。 |
+| `unknown` | `probe_unavailable` | lock 过期、为旧格式或无法读取，进程无法探测，或心跳不可信。 |
+
+- `execution` 只是建议性信息。它不是 runtime readiness（`runtimes list`），不会
+  启动 daemon，读取它也不会改变任何东西。
+- 它从不包含 PID、nonce、hostname、lock 路径或 secret。既有的 `job.workerId` 与
+  `job.workerPid` 指向实际认领该 run 的进程：daemon 认领时是 daemon，`create` /
+  `retry` 命令自己执行时是调用方进程。不要向 `workerPid` 发信号，请用
+  `runs cancel`。`workerId` 是不透明字符串，其格式在本版本中有变化：现在带有
+  每次认领唯一的一段（`<kind>:<pid>:<ms>:<unique>:<jobId>`，以前是
+  `<kind>:<pid>:<ms>:<jobId>`）。不要解析它。
+- daemon 按 daemon job、schedule job、API run 的顺序填充 slot。持续的 daemon 或
+  schedule 工作会推迟 API run；没有优先级调度器。
+
+### Synchronous create and default retry
+
+在带 `async-submit` 的 build 上，`runs create` 和不带 `--async` 的
+`runs retry <job-id>` 是同一进程内的一次 submit 加一次 wait：
+
+1. request 与 `runs submit` 完全相同地完成 admission（不带 key）。
+2. 命令在进程内执行自己 admitted 的 run，使用与 `locus daemon run` 相同的
+   executor，并限定只处理这一个 run。不需要 daemon，也不会触碰其他排队的 run。
+3. 等待终态并输出。
+
+正常 run 的 stdout（含末尾换行）和 exit code 与 `async-submit` 之前逐字节相同。
+内部等待没有会泄漏出来的截止时间：`create` 与 `retry` 从不 exit `9`，也从不输出
+timeout envelope。
+
+**daemon 先认领的 run。** 如果同一 profile 的 `locus daemon run` 先于命令认领了
+run，命令不会再执行一次，只等待 daemon 的结果。此时：
+
+- run 在 daemon 的环境而非调用方环境中执行（见
+  [Execution context](#execution-context)），`job.workerId` / `job.workerPid`
+  指向 daemon。
+- run 在排队中、或其 worker 存活未被确认时连续 30 s 没有进展，命令输出
+  `{"apiVersion":"locus.local-job.v1","job":{…},"wait":{"state":"error","reason":"executor_unavailable"}}`
+  并 exit `8`。没有观察到 executor 时 reason 为 `executor_unavailable`，否则为
+  `executor_unknown`。已提交的 event、心跳变化，或 worker 在 120 s recovery
+  心跳窗口内被确认存活，都算作进展，因此长时间运行（包括 45 s 的 completion
+  调用）不会被截断。
+- daemon 已提交终态、但 30 s 后文件仍未发布时，命令输出同样的 envelope，
+  `"reason":"terminal_artifacts_pending"`，并 exit `8`。
+- store 读取失败时输出同样的 envelope，`"reason":"observation_failed"`，并 exit `8`。
+
+这个 `wait.state: "error"` envelope 带 job ID、不带 `result`；它不是 run 的
+outcome。请读取 `runs status` 或 `runs result`、调用 `runs wait`，或按 ID 取消。
+
+保持原样的失败行为：
+
+- 进程内 executor 完成了 run、但终态文件发布失败时，命令仍输出终态 envelope，
+  `result.artifacts: []`，exit 为 run 的 outcome exit。对同一 run 执行
+  `runs wait` 会报告 `terminal_artifacts_pending` 并 exit `9`。
+- 进程内 executor 出现不属于 run outcome 的故障，或命令等待自己的进程内 run 时
+  store 读取失败，会停止它自己的执行树，并保留原有的 stderr 文本与 exit
+  （`create`：`2`，消息含 "unsupported" 时为 `3`；`retry`：`3`），stdout 不输出
+  任何内容。已 admitted 但未开始的 run 会被取消；被停止的 run 在 store 允许时结算为
+  `canceled`。不会伪造终态 envelope。上面的 `observation_failed` envelope 仅用于由
+  其他进程执行的 run。
+
+#### Execution context
+
+run 在认领它的进程的环境中执行。命令自己的 executor 认领时，那就是调用方环境，
+与以前相同。`locus daemon run` 认领时，runtime 子进程使用 daemon 的环境：各
+runtime adapter 允许的 native-home 变量（例如 POSIX 上的 `HOME`、`CODEX_HOME`、
+`CLAUDE_CONFIG_DIR`；Windows 上的 `USERPROFILE`、`APPDATA`、`LOCALAPPDATA`）以及
+`PATH` 系列变量来自 daemon，proxy 变量只在该 adapter 转发时才随之迁移。因此原生
+凭据及其可用性跟随 daemon。两条路径的 secret 剥离不变，调用方环境的快照不会被
+存储或传递。对传给 `locus` 的环境做最小化处理的 consumer 并不能控制 daemon 的
+环境。`runtimes list` 的 readiness 反映的是 CLI 进程的环境，不能证明 daemon 已就绪。
+
+#### Aborting a waiting command
+
+命令在进程内执行自己的 run 时，Bun 测试证明杀掉命令的进程树会停止 runtime
+子进程，stdin EOF 不会取消它。Windows 信号退出码为推断；Electron packaged
+own-pump 信号基线尚未验证（见下方平台限制）。
+
+daemon 认领了 run 时，等待中的命令退出后 daemon 仍会继续执行。为此，命令会在
+可捕获的中止时转发对自己 run（且仅限自己的 run）的取消。转发在 run admission
+之前就已 armed，并保持到命令报告结果为止，因此这段时间内的可捕获中止要么被转发，
+要么以默认处置结束命令。转发一直持续到命令自己的 executor 认领该 run：
+
+- 命令仍在 arm 转发、admission 尚未开始时到达的中止不会 admit 任何 run：信号以
+  其默认处置结束命令。
+- admission 进行中捕获的中止会被暂存，直到命令拿到 run 的 ID，然后按下一条处理。
+  admission 失败时没有可取消的 run：暂存的信号以该信号的默认处置结束命令，暂存的
+  stdin EOF 被忽略。
+- 尚无任何 executor 认领时，可捕获的中止会取消这个 queued run（结算为
+  `canceled`，从不启动），命令也不会再执行它。
+- 另一执行者（daemon）先认领时，可捕获的中止会为该 run 持久化 cancel request。
+- 命令自己的 executor 认领后，适用上面的进程内行为：可捕获的信号以其默认处置结束
+  命令，stdin EOF 被忽略。命令写出结果之前会先让已捕获的信号生效，因此即使 run 在
+  命令处理该信号之前就已结束（或其认领未通过 claim-time 检查），信号也不会被吞掉：
+  命令以该信号结束（Windows 上为下文的退出码）、stdout 为空，run 保持它已到达的
+  终态。
+- 同步的带 key `runs retry <job-id> --request <path>` 若 replay 了同 key 早先请求的
+  run，它并不拥有该 run，因此不转发任何取消：可捕获的信号以默认处置结束等待中的
+  命令，stdin EOF 被忽略，run 继续执行。需要时请按 ID 取消。
+
+| 平台 | 转发（可捕获） | 不转发 |
+| --- | --- | --- |
+| POSIX | `SIGINT`、`SIGTERM`、`SIGHUP`、已 armed 的 stdin EOF | `SIGKILL` |
+| Windows | Ctrl+C（`SIGINT`）、Ctrl+Break（`SIGBREAK`）、console 窗口关闭（`SIGHUP`）、已 armed 的 stdin EOF | 父进程 `child.kill()` / `TerminateProcess`；logoff 与 shutdown console 事件 |
+
+- 转发中止时，命令先持久化 cancel request，最多等待 5 s 让 run 进入终态，不向
+  stdout 写任何内容，然后重新抛出原信号（让 POSIX 父进程看到该信号），stdin EOF
+  时则 exit `8`。
+- Windows 没有 signal exit status。转发 Ctrl+C 后命令以 exit `1` 结束（由 Node
+  终止进程）；转发 Ctrl+Break 或 console 关闭后 exit `8`。只要已 armed 的转发以
+  信号的默认处置结束命令，退出码也是这样：命令自己的 executor 认领之后、带 key 的
+  replay waiter、admission 失败之后以及 admission 之前。没有转发的进程则会以
+  `STATUS_CONTROL_C_EXIT`（`0xC000013A`）结束。这些 Windows 退出码是根据 Node 与
+  libuv 的行为推断的，尚未在 Windows 主机上验证。
+- Windows 父进程如需 graceful stop，可对以 `CREATE_NEW_PROCESS_GROUP` 启动的命令
+  发送 Ctrl+Break（`GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, pid)`）；Windows 会在
+  这种进程组中禁用 Ctrl+C。没有 console 的进程收不到任何 console 事件。console
+  窗口关闭后，Windows 会在系统定义的短暂宽限后结束进程，可能截短 5 s 的确认等待。
+- 只有在命令 arm 转发时 stdin 仍是打开的 pipe、之后才关闭，stdin EOF 才会 armed。
+  命令启动时已经关闭的 stdin 不会 arm EOF 转发，例如 Node 不带 `input` 的
+  `execFileSync` 或 `spawnSync`，或父进程在 spawn 后立即结束子进程的 stdin。被忽略
+  的 stdin，以及结束 `--request -` 正文的 EOF，同样不会触发取消。通过 stdin 发送
+  request 的 consumer 仍可用信号或按 ID 取消。
+- 信号之后很快跟上的 kill（例如在 `SIGKILL` 前只给 500 ms）会截短 5 s 的确认等待。
+  cancel request 通常在此之前已经持久化，但 hard kill 之后不保证送达。
+- `SIGKILL`，以及 Windows 上的 `TerminateProcess`、Node 的 `child.kill()` 和
+  logoff/shutdown console 事件，都无法捕获，因此无法转发：daemon 中的 run 会继续
+  执行，且仍可查询；尚无 executor 认领的 run 保持 queued，直到 daemon 认领或按 ID
+  取消。
+
+`runs cancel <job-id>` 是唯一在所有平台都可靠的取消方式。请保存 job ID：需要可靠
+取消时（尤其在 Windows 上），使用 `runs submit`，它会在 run 执行前输出 ID。
+
+### Idempotency
+
+`runs submit` 和 `runs retry <job-id> --request <path|->` 接受可选的
+`idempotencyKey`，其他命令都不接受。`runs create` 带 `idempotencyKey` 时输出
+
+```json
+{"apiVersion":"locus.local-job.v1","error":{"code":"idempotency_key_not_supported","message":"idempotencyKey is not accepted by runs create; use runs submit."}}
+```
+
+exit `2`，不执行任何东西。`async-submit` 之前的 build 会在 `create` 上静默忽略
+该字段，并以无幂等的方式执行 job，所以请先检查 feature，且只把 key 发给 `submit`
+和 `retry --request`。
+
+key 规则：
+
+- 1–160 个 `[A-Za-z0-9._:-]` ASCII 字符，大小写敏感，从不 trim。
+- 作用域是规范化后的 `consumer.id`：同一个 key 在两个 consumer 下指向两个不同的
+  run。`consumer.id` 是归属标识，不是认证。
+- 看起来像 secret 的 key 以 `secret_in_request` 拒绝，即使它同时违反字符规则。
+  带 key 的 request 若其 `consumer.id` 会被 Locus 的 secret redaction 改写，也以
+  同样方式拒绝。两种错误都不回显 key。
+- Locus 只存储 key 的 domain-separated hash。原始 key 从不出现在 store、
+  `request.json`、events、result、diagnostics 或日志中。hash 不是加密：不要把
+  secret 放进 key。
+
+**同一 key、同一 request。** request 在规范化默认值、runtime 别名、canonical
+路径与对象 key 顺序之后比较；key 本身、wait/async 选择以及生成的 ID 不参与比较。
+Locus 返回保留的 run，而不是再创建一个，也不会产生新的 provider work：
+
+```json
+{"apiVersion":"locus.local-job.v1","idempotentReplay":true,"job":{"id":"job-A","status":"running"}}
+```
+
+重放的 `job` 是其当前状态（`queued`、`running` 或终态）。不带 `--async` 的带 key
+`runs retry --request` 则输出所保留子 run 的终态 envelope。只有带 key 的重放才带
+`idempotentReplay`。
+
+**同一 key、不同 request。** stdout `idempotency_conflict`，exit `2`，不创建任何
+东西。submit 与 retry 之间、针对不同源 job 的 retry 之间，都不会互相重放。
+
+**Retry 正文。** `runs retry <job-id> --request <path|->` 读取：
+
+```json
+{"apiVersion":"locus.local-job.v1","consumer":{"id":"docs-workbench"},"idempotencyKey":"retry-1"}
+```
+
+它只接受 `apiVersion`、`consumer.id` 和 `idempotencyKey`；其他成员是 stderr
+校验错误，exit `2`。`consumer.id` 必须与源 job 的 consumer 一致，否则在查 key
+之前就返回 stdout `consumer_mismatch`，exit `2`。不带 `--request` 的
+`runs retry <job-id>` 仍使用源 job 保存的 consumer 与输入。
+
+**待定提交。** 带 key 的提交已记录、但其 creation 或初始 admission 从未提交（崩溃，
+或另一个进程仍在提交中）时，同一 key 返回
+
+```json
+{"apiVersion":"locus.local-job.v1","error":{"code":"submission_pending","message":"Submission is not yet admitted; retry the same key.","retryable":true}}
+```
+
+并 exit `8`。用同一 key 重试是安全的，永远不会创建第二个 run，但 `retryable`
+不承诺该状态一定会解除。崩溃的提交者留下的 attempt 会一直待定，直到后续 Locus
+修复（TICKET-128）；Locus 也无法把它与仍在工作的提交者区分开。换新 key 是明确的
+补救手段；如果原提交者其实仍然存活，可能产生重复工作。如果你已经拿到 job ID，
+`runs cancel <job-id>` 可以结算它。
+
+**保留期。** key 与其 run 的绑定至少保留到 run 的终态文件发布并校验通过后 30 天；
+run 没有登记终态文件时（无 artifact 的 run、recovery、admission 前取消、claim-time
+检查失败）则从终态结算起算。过期的 key 会在同一 consumer 每次 `submit`、`create`
+或 `retry` 之前，以及 daemon 每次循环时被清理；此后同一 key 会创建新的 run。run
+从未到达已校验终态（仍在运行、发布失败或待定提交）的 key 不会自动过期。读取或重放
+从不延长保留期。保留期只针对 key 绑定；job、events 与文件都会保留。
+
+新增的 request 错误：
+
+| 情况 | 输出流 | Exit | `error.code` |
+| --- | --- | --- | --- |
+| `runs create` 带 `idempotencyKey` | stdout | `2` | `idempotency_key_not_supported` |
+| key 已绑定到不同的 request | stdout | `2` | `idempotency_conflict` |
+| retry 的 `consumer.id` 与源 job 不一致 | stdout | `2` | `consumer_mismatch` |
+| key 格式错误 | stdout | `2` | `invalid_idempotency_key` |
+| 像 secret 的 key，或会被 redaction 改写的带 key `consumer.id` | stdout | `2` | `secret_in_request` |
+| 带 key 的提交已记录但未完成 admission | stdout | `8` | `submission_pending`（带 `"retryable":true`） |
+
+每个错误都是一行 stdout：`{"apiVersion":"locus.local-job.v1","error":{"code":…,"message":…}}`，
+属于 request 错误，不是 run status。其他错误保持原有的结构、输出流与 exit。
+
+`runs submit` 或 `runs retry <job-id> --request` 的正文不是合法 JSON 时，stderr
+输出 `Invalid JSON request` 一行，exit `2`。该行从不引用 request 内容，所以格式错误
+正文里的 key 不会被回显。`runs create` 保持以前的诊断，其中包含 JSON parser 的消息。
+
+### Claim-time checks
+
+提交后的 run 可能在队列中等待。在任何 provider 调用或子进程启动之前，认领 API run
+的 executor 会重新检查其 admission。检查失败时 run 结算为 `failed`，不会执行：
+
+| `completed.payload.reasons` 条目 | `job.errorCode` | Exit（`create`、默认 `retry`、`wait`） |
+| --- | --- | --- |
+| `project_unregistered` | `project_unregistered` | `7` |
+| `cwd_identity_changed`：cwd 被替换、移动，或不再与记录的身份一致 | `cwd_identity_changed` | `7` |
+| `execution_profile_invalid`：保存的 capability、profile 或 policy grant，或显式 provider profile 不再有效 | 有 provider-binding code 时用该 code，否则 `execution_profile_invalid` | binding 不可用 `4`、request 无效 `2`、local-only 阻止 `6`；否则 `3` |
+| `queued_age_exceeded`：排队已达 24 h 或更久 | `queued_age_exceeded` | `1` |
+| `artifact_admission_mismatch`：已 admitted 的 run directory 或其初始文件被改动 | `artifact_admission_mismatch` | `1` |
+| `claim_gate_failed`：检查本身意外失败时的内部兜底 | `internal_error` | `8` |
+
+- 最大排队时长为从 `createdAt` 起 24 h，不可配置。运行中的 daemon 也会在不认领的
+  情况下结算已达该时长的 admitted API run，按最旧优先、每次循环数量有上限。没有
+  daemon 时，超龄 run 在 executor 尝试认领它时结算。
+- 多项检查同时失败时，报告的 code 取决于由哪一步结算该 run。daemon 的超龄结算
+  只检查时长，而认领时先检查 project、cwd 与 profile，再检查时长。因此项目已撤销
+  登记的超龄 run 由 daemon 的超龄结算处理时为 `queued_age_exceeded` / `1`，由认领
+  先处理时为 `project_unregistered` / `7`。daemon 在每次循环中先执行超龄结算、再认领
+  queued run，所以在一次循环开始时已经超龄的 run 会从该 daemon 得到
+  `queued_age_exceeded`，除非该 run 超出本轮 16 条结算上限，或 daemon 已报告无法
+  结算并排除之。
+- 这些结算不登记终态文件：`result.artifacts` 为 `[]`，`wait` 立即就绪。
+- 公开承诺是 `job.errorCode` 与 exit code。`completed.payload.reasons` 的取值
+  仍是信息性的，与以前相同。没有新增 exit code，`0`–`8` 含义不变。
+- completion run 没有 project、cwd 或 run directory，因此只适用 profile、时长与
+  内部检查。
+- 新 run 的 run directory 或初始 admission 在其 creation 已提交之后失败时，命令仍
+  像以前一样报告错误，而该 attempt 会作为 `failed` job 保留，`job.errorCode` 为
+  `artifact_admission_failed`。用于它的 key 仍绑定在该 job 上。
+
+#### Admission failure after creation
+
+这同样适用于旧的 request 形态。run directory 现在在 job 的 creation 提交之后创建
+（这样只有已提交的 run 才会得到确认），而不是之前：
+
+- 带 artifacts 的 `runs create` 与 `runs retry <job-id>`：run directory 或初始
+  artifact admission 失败时，stderr 与 exit 与以前相同，但现在会留下一个
+  `job.errorCode` 为 `artifact_admission_failed` 的 `failed` job（经 `runs wait`
+  为 exit `1`）。旧版在 mkdir 失败时不留下 job；该比较不涵盖 mkdir 后的 initial admission 失败。`runs list`、`runs status` 与 Workbench 都会显示它。
+- 带 key 的 `runs submit`：该 key 在保留期内绑定到这个失败的 attempt；重新提交会以
+  `idempotentReplay: true` 重放该失败 job。新的尝试请用新 key。
+- `runs retry <job-id>` 先检查源 run 的状态，再创建 run directory；旧版先创建目录。
+- 在 Windows 上，run directory 后端落地前（TICKET-127），每个带 `artifacts.baseDir`
+  的 run 都会这样失败，因此每次尝试都会留下这样的 job。
+
+### Cancel, recovery and terminal files
+
+- 取消一个初始 admission 已提交的 queued run，会像正常结束的 run 一样发布其终态
+  文件（`result.json`、刷新后的 `events.jsonl` 与 `artifacts.json`），
+  `result.artifacts` 会列出它们。
+- 取消一个没有 run directory、或初始 admission 从未提交的 queued run，不登记终态
+  文件：`result.artifacts` 为 `[]`。已知 ID、卡在 `admission_incomplete` 的 run
+  可以这样补救。
+- worker 停止后被 Locus 恢复为 `interrupted` 的 run 同样不登记新的终态文件：
+  `result.artifacts` 为 `[]`，初始文件作为历史保留。
+
+### 已知限制
+
+- creation 与终态发布尚未完全原子化（TICKET-128）。崩溃可能留下待定提交、staged
+  文件或部分发布的终态；`wait` 会把这类 run 报告为未就绪，而不是虚构结果。
+- 在 Windows 上，带 `artifacts.baseDir` 的 run 会 fail closed，直到 run directory
+  后端落地（TICKET-127），且每次这样的尝试都会留下 `job.errorCode` 为
+  `artifact_admission_failed` 的 `failed` job。
+- 没有 HTTP 或 socket server，没有优先级调度，也没有后台 daemon 启动器：
+  `locus daemon run` 由用户或 consumer 启动。
+- 让旧版 Locus build（CLI 或 daemon）与 `async-submit` build 共用同一 profile 不受
+  支持：旧 build 不理解 key reservation 与待定提交，技术上也没有任何东西阻止它。
+  升级前先停止旧进程；回滚时使用单独的 profile。
+
+### 异步流程示例
+
+```bash
+OUT="$(locus api runs submit --request "$PACKAGE_DIR/request.json" --json)" || exit $?
+JOB="$(printf '%s' "$OUT" | node -e 'let s="";process.stdin.on("data",(d)=>{s+=d}).on("end",()=>{console.log(JSON.parse(s).job.id)})')"
+locus api runs wait "$JOB" --timeout 600000 --json
+case $? in
+  9) echo "not ready yet; wait again or read status" ;;
+esac
+```
+
+### 升级检查清单（`async-submit`）
+
+1. 使用 `submit`、`wait`、`retry --async`、`retry --request` 或 `idempotencyKey`
+   之前，先检查 `features` 是否含 `async-submit`。旧 build 会以 exit `2` 拒绝新
+   命令形状，但会忽略发给 `create` 的 key。
+2. 刷新本地固定的 `local-job-api-v1.schema.json` 副本：`discoveryFeature` 现在包含
+   `async-submit`。使用 JSON Schema 2020-12 校验器；completion 请求成员现位于
+   `completionRequestMembers`，`completionCreateRequest` / `completionSubmitRequest`
+   经 `allOf` + `unevaluatedProperties: false` 从该定义派生。
+3. 不要把 `idempotencyKey` 发给 `runs create`。
+4. 把 `runs wait` 的 exit `9` 当作“尚未就绪”，而不是 run 失败。
+5. 处理 `submission_pending`（exit `8`，`"retryable":true`）：用同一 key 重试，或
+   接受换新 key 的重复风险。
+6. 把 `create`、`retry` 或 `wait` 输出的 `wait.state: "error"` envelope（exit `8`）
+   当作观察问题；run 的 ID 在 `job.id` 中。
+7. 预期由 `locus daemon run` 认领的 run 使用 daemon 的环境与凭据。
+8. 保存 job ID 并按 ID 取消；中止转发不覆盖 hard kill。
+9. 把 claim-time 的 `job.errorCode` 映射到你现有的 exit code 处理上；它们使用既有的
+   exit code。
+
 ## Cancel
 
 ```bash
@@ -895,6 +1356,10 @@ locus api runs cancel <job-id> --json
 
 Cancel 只作用于 API jobs。queued API job 会立即完成为 `canceled`。running job 会收到
 持久化 cancel request，由 runtime runner 观察并处理。
+
+在带 `async-submit` 的 build 上，取消一个初始 admission 已提交的 queued run 会发布其
+终态文件；见 [Cancel, recovery and terminal files](#cancel-recovery-and-terminal-files)。
+对 daemon 认领的 run，`runs cancel` 是唯一在所有平台都可靠的取消方式。
 
 ## Retry
 
@@ -911,6 +1376,19 @@ locus api runs retry <job-id> --json
 `retry` 会创建新的 API job，通过 `retryOfJobId` 指向原 job，准备新的 artifact run
 directory，同步执行，并返回和 `create` 相同的 envelope 结构。
 
+在带 `async-submit` 的 build 上：
+
+```bash
+locus api runs retry <job-id> [--request <path|->] [--async] --json
+```
+
+- `--async` 像 `runs submit` 一样返回新 job 的 admission envelope，不等待。用新的
+  job ID 调用 `runs wait`。
+- `--request` 传入 retry 正文 `{apiVersion, consumer:{id}, idempotencyKey?}`，其
+  `consumer.id` 必须与源 job 一致；见 [Idempotency](#idempotency)。
+- 不带 `--async` 时，retry 与 `create` 一样是 submit 加 wait；见
+  [Synchronous create and default retry](#synchronous-create-and-default-retry)。
+
 不要对 API job 使用 `locus jobs retry`。那个命令保留给非 API 的人工 job flow。
 
 ## Exit Codes
@@ -926,11 +1404,18 @@ directory，同步执行，并返回和 `create` 相同的 envelope 结构。
 | `6` | local-only guard 阻止执行。 |
 | `7` | `project.cwd` 无效或未注册。 |
 | `8` | 内部错误。 |
+| `9` | 仅 `runs wait`（feature `async-submit`）：有界等待结束时 run 尚未就绪。不是 run outcome。 |
 
 在带 `canonical-run-ledger` 的 build 上，create/retry 的 exit code 跟随 ledger
 outcome。runtime 报告成功、但 ledger 结算为 `failed` 的 run（记录的拒绝、无效或空
 输出、缺少输出证据、运行后凭据检查失败）exit `1`。见
 [Canonical Run Ledger](#canonical-run-ledger) 的“Outcome 与 exit 示例”。
+
+`0`–`8` 的含义不变。在带 `async-submit` 的 build 上，`create` 与 `retry` 从不
+exit `9`；claim-time 检查与 `submission_pending` 使用既有 code（见
+[Claim-time checks](#claim-time-checks) 与 [Idempotency](#idempotency)）。exit `8`
+也可能伴随一个带 job ID 和 `"wait":{"state":"error",…}` 的 stdout envelope；它报告
+的是观察问题，不是 run 的 outcome。
 
 consumer 应该先看 exit code 和 stderr，再解析 stdout。Diagnostics 写到 stderr。
 
@@ -1035,6 +1520,13 @@ locus api runs create --request "$PACKAGE_DIR/request.json" --json
 | `completed.payload.exitCode` 或 `result` 为 `null` | 该结算没有此值（例如排队中取消或 worker 恢复）。这些成员可选且可为 `null`。 | 读取 `runs result`（`status`、`diagnostics`、`result`）和命令 exit code。 |
 | runtime 报告成功，但 run 为 `failed`，原因是 `policy_denied`、`output_empty`、`output_invalid` 或 `output_evidence_missing` | 修正后的终态真相：拒绝、无效输出和空输出会使 run 失败。 | 查看 `diagnostics` 以及该 run 的 `status`/`error` events。 |
 | schema 校验拒绝 `features` 中的 `canonical-run-ledger` | 本地固定的旧版 schema 的 `discoveryFeature` enum 是封闭的。 | 刷新 `local-job-api-v1.schema.json` 副本。 |
+| schema 校验拒绝 `features` 中的 `async-submit` | 同一个封闭 enum；`async-submit` 比你的副本新。 | 刷新 `local-job-api-v1.schema.json` 副本。 |
+| `runs wait` exit `9` | 截止时 run 尚未就绪（原因见 `wait.reason`）。这不是失败。 | 再次 wait，或读取 `runs status`。`executor_unavailable` 时启动 `locus daemon run`。 |
+| `runs submit` 成功但 run 一直 `queued` | 没有运行中的 executor（`execution.reason: "no_executor"`）。 | 启动 `locus daemon run`，或用 `runs create` 在进程内执行。 |
+| `idempotency_conflict` | 该 key 已为此 consumer 绑定到不同的 request。 | 不同的 request 使用新 key。 |
+| `submission_pending`（exit `8`） | 带 key 的提交已记录但从未完成 admission。 | 用同一 key 重试；一直不解除时按 ID 取消，或换新 key 并接受重复风险。 |
+| `idempotency_key_not_supported` | `runs create` 不接受 key。 | 使用 `runs submit`（以及 `runs wait`）。 |
+| run 以 `queued_age_exceeded`、`cwd_identity_changed` 或 `project_unregistered` 失败 | run 在队列中等待后，claim-time 检查失败。 | 修正 project 或 profile 后重新提交；见 [Claim-time checks](#claim-time-checks)。 |
 
 ## 稳定性合同
 
@@ -1045,7 +1537,11 @@ v1 稳定：
 - 本手册列出的 request fields
 - 本手册列出的 response envelopes
 - event envelope 字段
-- discovery feature 标识，包括 `canonical-run-ledger`
+- discovery feature 标识，包括 `canonical-run-ledger` 和 `async-submit`
+- 带 `async-submit` 时：`runs submit`、`runs wait`、`runs retry --async` /
+  `--request` 的命令形状；`wait` envelope 的成员与 `wait.reason` 取值；仅
+  `runs wait` 使用的 exit `9`；`execution` 的成员与取值；`idempotentReplay`；
+  新增的 `error.code` 取值；以及每个 claim-time 检查的 `job.errorCode` 与 exit
 - 带 `canonical-run-ledger` 时：每个 run 稠密的 `sequence`、每个 run 恰好一个
   `completed`，以及 `completed.payload.status`
 - run metadata artifact 文件名
@@ -1058,6 +1554,8 @@ v1 不稳定：
 - 内部 SQLite schema
 - v1 envelope 之外的内部 event payload 细节，包括 `status` subtype 及其成员，
   以及 `completed.payload.reasons` 与 `evidenceKeys` 的取值
+- error `message` 文本、`job.workerId` 的格式，以及 executor 的时序细节（心跳
+  节奏、每次循环的结算上限）
 - `payload.extensions["runtime.codex.v1"]`（`maturity: "experimental"`）
 - Workbench 渲染细节
 - `locus run` 和 `locus jobs` 的人工 CLI 格式

@@ -176,6 +176,13 @@
       "when": 1790771416390,
       "tag": "0024_canonical_run_event_ledger",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "6",
+      "when": 1790857328694,
+      "tag": "0025_agent_job_idempotency",
+      "breakpoints": true
     }
   ]
 }

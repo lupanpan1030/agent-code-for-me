@@ -1,0 +1,238 @@
+{
+  "fixtureVersion": 1,
+  "evidenceClass": "synthetic",
+  "sourceRefs": [
+    "openspec/changes/add-local-job-api-async-submit/specs/agent-runtime-core/spec.md:3-27",
+    "openspec/changes/add-local-job-api-async-submit/specs/agent-runtime-core/spec.md:53-61",
+    "openspec/changes/add-local-job-api-async-submit/design.md:145-159",
+    "openspec/changes/add-local-job-api-async-submit/specs/headless-agent-jobs/spec.md:12-44",
+    "openspec/changes/add-local-job-api-async-submit/specs/headless-agent-jobs/spec.md:144-160",
+    "openspec/changes/add-local-job-api-async-submit/design.md:185-187",
+    "openspec/changes/add-local-job-api-async-submit/tasks.md:458",
+    "src/main/lib/headless/job-store.ts:427-450",
+    "src/main/lib/headless/job-store.ts:464-483",
+    "src/main/lib/agent-runtime/run-artifacts.ts:497-534",
+    "src/main/lib/headless/provider-binding.ts:41-64",
+    "src/main/lib/headless/job-runner.ts:59-68"
+  ],
+  "provenance": {
+    "author": "independent red-test author (executor domain), no implementation context",
+    "baseSha": "0447d02d",
+    "productBaseSha": "2c59664f1b80a5f782eb05f82d33f718d9bc7053",
+    "createdAt": "2026-10-02",
+    "notes": "Rows are synthesized per test in a temporary migrated SQLite profile; IDs are fixed per case. The content-hash admission key format is copied from today's run-artifacts admission (run-artifacts.ts:529) to model a pre-change admission fact."
+  },
+  "cases": {
+    "S26": {
+      "creationObservationKey": "lifecycle:job-created:<id>",
+      "initialAdmissionObservationKey": "lifecycle:initial-artifacts:<id>",
+      "rows": [
+        {
+          "name": "valid-artifact-free",
+          "id": "s26validartifactfree",
+          "kind": "store-create",
+          "runDir": false,
+          "eligible": true
+        },
+        {
+          "name": "wrong-creation-fact-key",
+          "id": "s26wrongcreationkey",
+          "kind": "raw",
+          "ledgerVersion": 1,
+          "events": [
+            { "type": "job_created", "factKey": "lifecycle:job-created:<id>:1" }
+          ],
+          "eligible": false
+        },
+        {
+          "name": "orphan-no-events",
+          "id": "s26orphannoevents",
+          "kind": "raw",
+          "ledgerVersion": 1,
+          "events": [],
+          "eligible": false
+        },
+        {
+          "name": "legacy-v0",
+          "id": "s26legacyvzero",
+          "kind": "raw",
+          "ledgerVersion": 0,
+          "events": [{ "type": "job_created", "factKey": null }],
+          "eligible": false
+        },
+        {
+          "name": "run-dir-missing-admission",
+          "id": "s26rundirnoadmission",
+          "kind": "store-create",
+          "runDir": true,
+          "extraEvents": [],
+          "eligible": false
+        },
+        {
+          "name": "run-dir-content-hash-admission-key",
+          "id": "s26rundirhashkey",
+          "kind": "store-create",
+          "runDir": true,
+          "extraEvents": [
+            {
+              "type": "artifact_created",
+              "factKey": "run-dir-artifacts-0123456789abcdef01234567:0"
+            }
+          ],
+          "eligible": false
+        },
+        {
+          "name": "run-dir-wrong-admission-ordinal",
+          "id": "s26rundirordinal",
+          "kind": "store-create",
+          "runDir": true,
+          "extraEvents": [
+            {
+              "type": "artifact_created",
+              "factKey": "lifecycle:initial-artifacts:<id>:1"
+            }
+          ],
+          "eligible": false
+        },
+        {
+          "name": "run-dir-admission-key-on-wrong-type",
+          "id": "s26rundirwrongtype",
+          "kind": "store-create",
+          "runDir": true,
+          "extraEvents": [
+            {
+              "type": "status",
+              "factKey": "lifecycle:initial-artifacts:<id>:0"
+            }
+          ],
+          "eligible": false
+        }
+      ],
+      "genuineAdmission": {
+        "id": "s26genuineadmission",
+        "files": [
+          {
+            "role": "request",
+            "name": "request.json",
+            "content": "{\"apiVersion\":\"locus.local-job.v1\",\"fixture\":\"S26\"}\n"
+          },
+          { "role": "events", "name": "events.jsonl", "content": "" },
+          {
+            "role": "manifest",
+            "name": "artifacts.json",
+            "content": "{\"apiVersion\":\"locus.local-job.v1\",\"artifacts\":[]}\n"
+          }
+        ],
+        "expectedFirstFactKey": "lifecycle:initial-artifacts:<id>:0"
+      }
+    },
+    "S39": {
+      "maxQueuedApiAgeMsDefault": 86400000,
+      "officialCloudBaseUrl": "https://api.1code.dev/v1",
+      "variants": [
+        {
+          "name": "control",
+          "mutation": "none",
+          "expect": {
+            "status": "succeeded",
+            "errorCode": null,
+            "reason": null,
+            "exit": 0,
+            "providerCalls": 1
+          }
+        },
+        {
+          "name": "project-unregistered",
+          "mutation": "unregister-project",
+          "expect": {
+            "status": "failed",
+            "errorCode": "project_unregistered",
+            "reason": "project_unregistered",
+            "exit": 7,
+            "providerCalls": 0
+          }
+        },
+        {
+          "name": "cwd-identity-changed",
+          "mutation": "replace-cwd-directory",
+          "expect": {
+            "status": "failed",
+            "errorCode": "cwd_identity_changed",
+            "reason": "cwd_identity_changed",
+            "exit": 7,
+            "providerCalls": 0
+          }
+        },
+        {
+          "name": "grant-invalid-no-binding-code",
+          "mutation": "remove-stored-policy-grant",
+          "runtime": {
+            "id": "codex",
+            "executionProfile": "policy-grant",
+            "policyGrant": { "scopes": ["workspace:file-write"] }
+          },
+          "mode": "agent",
+          "expect": {
+            "status": "failed",
+            "errorCode": "execution_profile_invalid",
+            "reason": "execution_profile_invalid",
+            "exit": 3,
+            "providerCalls": 0
+          }
+        },
+        {
+          "name": "binding-unavailable",
+          "mutation": "binding-owner-throws",
+          "profileId": "s39-binding-unavailable",
+          "expect": {
+            "status": "failed",
+            "errorCode": "provider_profile_unavailable",
+            "reason": "execution_profile_invalid",
+            "exit": 4,
+            "providerCalls": 0
+          }
+        },
+        {
+          "name": "binding-invalid-request",
+          "mutation": "binding-owner-not-found",
+          "profileId": "s39-binding-not-found",
+          "expect": {
+            "status": "failed",
+            "errorCode": "provider_profile_not_found",
+            "reason": "execution_profile_invalid",
+            "exit": 2,
+            "providerCalls": 0
+          }
+        },
+        {
+          "name": "binding-local-only",
+          "mutation": "binding-owner-official-cloud",
+          "profileId": "s39-binding-local-only",
+          "expect": {
+            "status": "failed",
+            "errorCode": "local_only_guard_blocked",
+            "reason": "execution_profile_invalid",
+            "exit": 6,
+            "providerCalls": 0
+          }
+        },
+        {
+          "name": "queued-age-exactly-default",
+          "mutation": "created-at-now-minus-86400000",
+          "expect": {
+            "status": "failed",
+            "errorCode": "queued_age_exceeded",
+            "reason": "queued_age_exceeded",
+            "exit": 1,
+            "providerCalls": 0
+          }
+        }
+      ],
+      "thresholdInjection": {
+        "raisedMaxQueuedApiAgeMs": 172800000,
+        "loweredMaxQueuedApiAgeMs": 1000,
+        "loweredAgeMs": 1000
+      }
+    }
+  }
+}

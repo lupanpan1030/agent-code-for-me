@@ -4552,6 +4552,416 @@ function assertRunEventLedgerGuards() {
   )
 }
 
+// ---------------------------------------------------------------------------
+// Local job API async submission (add-local-job-api-async-submit)
+//
+// The fixture-driven rules pin the async submission end state of
+// docs/OWNERSHIP_MAP.md "Headless Agent Runtime": run-submission.ts owns
+// submitRun/waitForRun, daemon.ts owns the canonical pump pumpQueuedRuns, the
+// API/stdio adapters and the submit core never call a runner or the claim
+// primitives themselves (only the human `locus run` keeps its in-process
+// runner), only job-store.ts inserts agent_jobs rows, only the run event
+// ledger host imports appendExactRunEventBatch, and no retired symbol (the old
+// inline API core or the retired ledger transition gate) can come back
+// through a migration toggle. Its self-test consumes
+// LOCAL_JOB_API_ASYNC_ARCHITECTURE_FIXTURE_PATH and the repository is always
+// enforced in that end state.
+// Runner/claim calls are matched by callee name: direct, named-import alias,
+// namespace or element access, and a local re-binding by a variable
+// declaration (`const r = runner`, `const { startAgentJob: claim } = store`).
+// Every src/main/lib/headless file except the execution owners
+// (LOCAL_JOB_API_ASYNC_EXECUTION_OWNERS) is scanned besides the fixture's
+// nonExecutingFiles, and a permitted caller counts only as the outermost
+// top-level function of its file (a nested helper or a class method of the
+// same name is not permitted). Job-row inserts match `insert(agentJobs)`
+// through an import alias, a namespace member or an element access
+// (`schema["agentJobs"]`).
+// Detection limits (disclosed): re-binding by later assignment
+// (`let r; r = runner`), indirect `.call`/`.apply`/`Reflect.apply`, a
+// computed element key that is not a string literal, a re-binding through
+// another module, and raw SQL `INSERT INTO agent_jobs` text are not caught.
+// ---------------------------------------------------------------------------
+
+const LOCAL_JOB_API_ASYNC_ARCHITECTURE_FIXTURE_PATH =
+  "tests/fixtures/local-job-api-async/guards-protocol/architecture-fixtures.json"
+const LOCAL_JOB_API_ASYNC_FIXTURE_FLAG = "--local-job-api-async-fixtures="
+const LOCAL_JOB_API_ASYNC_GUARD_LABEL =
+  "Local job API async submission guard self-test"
+const HEADLESS_AGENT_RUNTIME_OWNERSHIP_SECTION =
+  'docs/OWNERSHIP_MAP.md "Headless Agent Runtime"'
+/** Headless files that own execution: they define or call runner/claim. */
+const LOCAL_JOB_API_ASYNC_EXECUTION_OWNERS = new Set([
+  "src/main/lib/headless/daemon.ts",
+  "src/main/lib/headless/job-runner.ts",
+  "src/main/lib/headless/completion-runner.ts",
+  "src/main/lib/headless/job-store.ts",
+])
+const LOCAL_JOB_API_ASYNC_SCANNED_PREFIX = "src/main/lib/headless/"
+const LOCAL_JOB_API_ASYNC_OWNERSHIP_PINS = [
+  "`src/main/lib/headless/run-submission.ts#submitRun`",
+  "`src/main/lib/headless/run-submission.ts#waitForRun`",
+  "`src/main/lib/headless/daemon.ts#pumpQueuedRuns`",
+  "`src/main/lib/headless/job-store.ts#insertQueuedAgentJobRecord`",
+  "`src/main/lib/agent-runtime/run-artifacts.ts#reopenAdmittedRunDir`",
+]
+
+function loadLocalJobApiAsyncArchitectureFixture() {
+  const fixturePath =
+    runEventLedgerOption(LOCAL_JOB_API_ASYNC_FIXTURE_FLAG) ??
+    LOCAL_JOB_API_ASYNC_ARCHITECTURE_FIXTURE_PATH
+  const absolutePath = path.isAbsolute(fixturePath)
+    ? fixturePath
+    : path.join(repoRoot, fixturePath)
+  if (!existsSync(absolutePath)) {
+    fail(`${fixturePath} is missing.`)
+    return null
+  }
+  try {
+    return JSON.parse(readFileSync(absolutePath, "utf8"))
+  } catch (error) {
+    fail(`${fixturePath} is not valid JSON: ${String(error)}`)
+    return null
+  }
+}
+
+/**
+ * Name of the outermost function-like ancestor of a node when it is a
+ * top-level function of its file (a function declaration, or a function
+ * expression / arrow bound by a top-level variable declaration); null for
+ * a call outside any function, inside a class method, or inside a function
+ * nested in another construct.
+ */
+function topLevelEnclosingFunctionName(node) {
+  let outermost = null
+  let current = node.parent
+  while (current) {
+    if (ts.isFunctionLike(current)) outermost = current
+    current = current.parent
+  }
+  if (!outermost) return null
+  if (
+    ts.isFunctionDeclaration(outermost) &&
+    outermost.name &&
+    ts.isSourceFile(outermost.parent)
+  ) {
+    return outermost.name.text
+  }
+  if (
+    (ts.isFunctionExpression(outermost) || ts.isArrowFunction(outermost)) &&
+    outermost.parent &&
+    ts.isVariableDeclaration(outermost.parent) &&
+    ts.isIdentifier(outermost.parent.name) &&
+    ts.isVariableDeclarationList(outermost.parent.parent) &&
+    ts.isVariableStatement(outermost.parent.parent.parent) &&
+    ts.isSourceFile(outermost.parent.parent.parent.parent)
+  ) {
+    return outermost.parent.name.text
+  }
+  return null
+}
+
+/** Name of a referenced member: identifier, property or literal element. */
+function referencedMemberName(node) {
+  if (ts.isIdentifier(node)) return node.text
+  if (ts.isPropertyAccessExpression(node)) return node.name.text
+  if (ts.isElementAccessExpression(node)) {
+    return stringLiteralValue(node.argumentExpression)
+  }
+  return null
+}
+
+function collectLocalJobApiAsyncSourceFacts(filePath, content, fixture) {
+  const sourceFile = ts.createSourceFile(
+    filePath,
+    content,
+    ts.ScriptTarget.Latest,
+    true,
+  )
+  const tracked = new Set([
+    ...(fixture.runnerSymbols ?? []),
+    ...(fixture.claimSymbols ?? []),
+  ])
+  // Local binding -> imported name of tracked call symbols and agentJobs.
+  const callAliases = new Map()
+  const jobTableAliases = new Set(["agentJobs"])
+  for (const statement of sourceFile.statements) {
+    if (
+      ts.isImportDeclaration(statement) &&
+      statement.importClause?.namedBindings &&
+      ts.isNamedImports(statement.importClause.namedBindings)
+    ) {
+      for (const element of statement.importClause.namedBindings.elements) {
+        const imported = (element.propertyName ?? element.name).text
+        if (tracked.has(imported)) callAliases.set(element.name.text, imported)
+        if (imported === "agentJobs") jobTableAliases.add(element.name.text)
+      }
+    }
+  }
+  for (const symbol of tracked) {
+    if (!callAliases.has(symbol)) callAliases.set(symbol, symbol)
+  }
+  // Local re-bindings by declaration: `const r = runner`,
+  // `const r = store.startAgentJob` and destructuring
+  // `const { startAgentJob: claim } = store`.
+  function collectRebindings(node) {
+    if (ts.isVariableDeclaration(node) && node.initializer) {
+      if (ts.isIdentifier(node.name)) {
+        const source = referencedMemberName(node.initializer)
+        if (source && callAliases.has(source)) {
+          callAliases.set(node.name.text, callAliases.get(source))
+        }
+        if (source && jobTableAliases.has(source)) {
+          jobTableAliases.add(node.name.text)
+        }
+      } else if (ts.isObjectBindingPattern(node.name)) {
+        for (const element of node.name.elements) {
+          if (!ts.isIdentifier(element.name)) continue
+          const property = element.propertyName
+            ? ts.isIdentifier(element.propertyName) ||
+              ts.isStringLiteral(element.propertyName)
+              ? element.propertyName.text
+              : null
+            : element.name.text
+          if (property && tracked.has(property)) {
+            callAliases.set(element.name.text, property)
+          }
+          if (property === "agentJobs") jobTableAliases.add(element.name.text)
+        }
+      }
+    }
+    ts.forEachChild(node, collectRebindings)
+  }
+  collectRebindings(sourceFile)
+  const calls = []
+  let jobInsertCount = 0
+  function visit(node) {
+    if (ts.isCallExpression(node)) {
+      const calleeName = referencedMemberName(node.expression)
+      if (calleeName && callAliases.has(calleeName)) {
+        calls.push({
+          symbol: callAliases.get(calleeName),
+          topLevelFunction: topLevelEnclosingFunctionName(node),
+        })
+      }
+      if (calleeName === "insert" && node.arguments.length > 0) {
+        const targetName = referencedMemberName(node.arguments[0])
+        if (targetName && jobTableAliases.has(targetName)) jobInsertCount += 1
+      }
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(sourceFile)
+  return {
+    ...collectRunEventLedgerSourceFacts(filePath, content),
+    calls,
+    jobInsertCount,
+  }
+}
+
+function collectLocalJobApiAsyncFindings(files, fixture) {
+  const ownerSection = fixture.ownerSection
+  const pins = fixture.pinnedOwners ?? {}
+  const retired = fixture.retiredSymbols ?? {}
+  const nonExecuting = new Set(fixture.nonExecutingFiles ?? [])
+  const runnerSymbols = new Set(fixture.runnerSymbols ?? [])
+  const claimSymbols = new Set(fixture.claimSymbols ?? [])
+  const permitted = fixture.permittedRunnerCallers ?? []
+  const findings = []
+  for (const { filePath, content } of files) {
+    const facts = collectLocalJobApiAsyncSourceFacts(filePath, content, fixture)
+    for (const [symbol, owner] of Object.entries(pins)) {
+      if (filePath === owner) continue
+      if (facts.definitions.has(symbol)) {
+        findings.push({
+          rule: "duplicate-definition",
+          file: filePath,
+          symbol,
+          owner,
+          ownerSection,
+        })
+      }
+      if (facts.reexports.has(symbol)) {
+        findings.push({
+          rule: "duplicate-reexport",
+          file: filePath,
+          symbol,
+          owner,
+          ownerSection,
+        })
+      }
+    }
+    for (const [symbol, owner] of Object.entries(retired)) {
+      if (
+        facts.definitions.has(symbol) ||
+        facts.reexports.has(symbol) ||
+        facts.identifiers.has(symbol)
+      ) {
+        findings.push({
+          rule: "retired-symbol",
+          file: filePath,
+          symbol,
+          owner,
+          ownerSection,
+        })
+      }
+    }
+    if (
+      nonExecuting.has(filePath) ||
+      (filePath.startsWith(LOCAL_JOB_API_ASYNC_SCANNED_PREFIX) &&
+        !LOCAL_JOB_API_ASYNC_EXECUTION_OWNERS.has(filePath))
+    ) {
+      const reported = new Set()
+      for (const call of facts.calls) {
+        const allowed = permitted.some(
+          (entry) =>
+            entry.file === filePath && call.topLevelFunction === entry.function,
+        )
+        if (allowed) continue
+        const rule = runnerSymbols.has(call.symbol)
+          ? "inline-runner-call"
+          : claimSymbols.has(call.symbol)
+            ? "independent-dispatch"
+            : null
+        if (!rule || reported.has(`${rule}|${call.symbol}`)) continue
+        reported.add(`${rule}|${call.symbol}`)
+        findings.push({
+          rule,
+          file: filePath,
+          symbol: call.symbol,
+          owner: fixture.queueOwner,
+          ownerSection,
+        })
+      }
+    }
+    if (filePath !== fixture.jobRowInsertOwner && facts.jobInsertCount > 0) {
+      findings.push({
+        rule: "direct-job-insert",
+        file: filePath,
+        symbol: "agentJobs",
+        owner: fixture.jobRowInsertOwner,
+        ownerSection,
+      })
+    }
+    if (
+      filePath !== fixture.storeAppendOwner &&
+      filePath !== fixture.storeAppendImporter &&
+      importsNamedSymbolFrom(
+        filePath,
+        content,
+        fixture.storeAppendOwner,
+        RUN_EVENT_LEDGER_STORE_APPEND,
+      )
+    ) {
+      findings.push({
+        rule: "forbidden-store-import",
+        file: filePath,
+        symbol: RUN_EVENT_LEDGER_STORE_APPEND,
+        owner: fixture.storeAppendImporter,
+        ownerSection,
+      })
+    }
+  }
+  return findings
+}
+
+/**
+ * Fixture-driven self-test: every case's files are scanned as if they were
+ * the repository files at their paths; the produced finding set must equal
+ * expectedFindings exactly (a missing or an unexpected finding fails).
+ */
+function assertLocalJobApiAsyncGuardSelfTest(fixture) {
+  const summary = { cases: 0, matched: 0 }
+  for (const entry of fixture?.cases ?? []) {
+    summary.cases += 1
+    const produced = collectLocalJobApiAsyncFindings(entry.files ?? [], fixture)
+      .map(runEventLedgerFindingKey)
+      .sort(compareCodePoints)
+    const expected = (entry.expectedFindings ?? [])
+      .map(runEventLedgerFindingKey)
+      .sort(compareCodePoints)
+    const missing = expected.filter((key) => !produced.includes(key))
+    const unexpected = produced.filter((key) => !expected.includes(key))
+    if (missing.length === 0 && unexpected.length === 0) {
+      summary.matched += 1
+      continue
+    }
+    fail(
+      `${LOCAL_JOB_API_ASYNC_GUARD_LABEL} case ${entry.caseId} (${entry.category}) missed ${missing.join(", ") || "nothing"} and produced unexpected ${unexpected.join(", ") || "nothing"}. See ${HEADLESS_AGENT_RUNTIME_OWNERSHIP_SECTION}.`,
+    )
+  }
+  if (summary.cases === 0) {
+    fail(
+      `${LOCAL_JOB_API_ASYNC_ARCHITECTURE_FIXTURE_PATH} must provide async submission guard self-test cases.`,
+    )
+  }
+  return summary
+}
+
+function assertLocalJobApiAsyncOwnership(fixture) {
+  const files = walkFiles("src", RUNTIME_CORE_SOURCE_EXTENSIONS).map(
+    (absolutePath) => ({
+      filePath: relative(absolutePath),
+      content: readFileSync(absolutePath, "utf8"),
+    }),
+  )
+  for (const [symbol, owner] of Object.entries(fixture.pinnedOwners ?? {})) {
+    const ownerFile = files.find((file) => file.filePath === owner)
+    const facts = ownerFile
+      ? collectRunEventLedgerSourceFacts(owner, ownerFile.content)
+      : null
+    if (!facts?.definitions.has(symbol) || !facts.exportedNames.has(symbol)) {
+      fail(
+        `${symbol} must be defined and exported by ${owner}. See ${HEADLESS_AGENT_RUNTIME_OWNERSHIP_SECTION}.`,
+      )
+    }
+  }
+  for (const finding of collectLocalJobApiAsyncFindings(files, fixture)) {
+    fail(
+      `Local job API async submission ${finding.rule}: ${finding.file} ${finding.symbol}${finding.owner ? ` (owner ${finding.owner})` : ""}. See ${HEADLESS_AGENT_RUNTIME_OWNERSHIP_SECTION}.`,
+    )
+  }
+  const ownershipMap = readText(OWNERSHIP_MAP_PATH)
+  const sectionStart = ownershipMap.indexOf("## Headless Agent Runtime")
+  const sectionEnd =
+    sectionStart < 0 ? -1 : ownershipMap.indexOf("\n## ", sectionStart + 1)
+  const section =
+    sectionStart < 0
+      ? ""
+      : ownershipMap.slice(
+          sectionStart,
+          sectionEnd < 0 ? undefined : sectionEnd,
+        )
+  for (const pin of LOCAL_JOB_API_ASYNC_OWNERSHIP_PINS) {
+    if (!section.includes(pin)) {
+      fail(
+        `${HEADLESS_AGENT_RUNTIME_OWNERSHIP_SECTION} must pin ${pin} as the async submission owner.`,
+      )
+    }
+    // Every pin names a symbol its file defines and exports, so a rename or
+    // a move cannot leave the ownership map stale.
+    const [owner, symbol] = pin.replaceAll("`", "").split("#")
+    const ownerFile = files.find((file) => file.filePath === owner)
+    const facts = ownerFile
+      ? collectRunEventLedgerSourceFacts(owner, ownerFile.content)
+      : null
+    if (!facts?.definitions.has(symbol) || !facts.exportedNames.has(symbol)) {
+      fail(
+        `${symbol} must be defined and exported by ${owner} (pinned in ${HEADLESS_AGENT_RUNTIME_OWNERSHIP_SECTION}).`,
+      )
+    }
+  }
+}
+
+function assertLocalJobApiAsyncGuards() {
+  const fixture = loadLocalJobApiAsyncArchitectureFixture()
+  if (!fixture) return
+  const summary = assertLocalJobApiAsyncGuardSelfTest(fixture)
+  assertLocalJobApiAsyncOwnership(fixture)
+  console.log(
+    `${LOCAL_JOB_API_ASYNC_GUARD_LABEL}: ${summary.matched}/${summary.cases} fixture cases matched; repository ownership enforced.`,
+  )
+}
+
 if (updateArchitectureBaselines) {
   updateArchitectureBaselineRegistry()
 } else {
@@ -4584,6 +4994,7 @@ if (updateArchitectureBaselines) {
   assertGuardDecisionSingleOwner()
   assertRuntimeEventSinglePath()
   assertRunEventLedgerGuards()
+  assertLocalJobApiAsyncGuards()
   assertRuntimeEventStateOwner()
   assertChatMessageModelOwner()
   assertChatSessionBindingSingleOwner()

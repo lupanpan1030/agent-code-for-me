@@ -40,11 +40,14 @@ Local Job API v1 lets a consumer:
 - list runtime capability manifests
 - create an agent run
 - create a single-shot completion
+- submit an agent run or completion and receive its job ID before it runs,
+  then wait for it with a bounded timeout (feature `async-submit`)
 - read run status
 - read normalized event envelopes
 - read the final result envelope
 - cancel a queued or running API job
-- retry a failed, canceled, or interrupted API job
+- retry a failed, canceled, or interrupted API job, optionally
+  asynchronously and with an idempotency key (feature `async-submit`)
 - collect run-owned metadata artifacts
 - register, inspect, and non-destructively unregister local project workspaces
 
@@ -92,12 +95,14 @@ local QA and packaging smoke.
 
 ```bash
 locus api runtimes list --json
+locus api runs submit --request <path|-> --json
 locus api runs create --request <path|-> --json
+locus api runs wait <job-id> [--timeout <milliseconds>] --json
 locus api runs status <job-id> --json
 locus api runs events <job-id> [--after <sequence>] [--follow] --jsonl
 locus api runs result <job-id> --json
 locus api runs cancel <job-id> --json
-locus api runs retry <job-id> --json
+locus api runs retry <job-id> [--request <path|->] [--async] --json
 locus api projects register --cwd <path> [--name <name>] --json
 locus api projects status --cwd <path> --json
 locus api projects unregister --cwd <path> [--force] --json
@@ -108,10 +113,16 @@ Rules:
 - JSON commands write parseable JSON to stdout.
 - Event streams write one JSON object per line.
 - Diagnostics and validation errors go to stderr.
-- `--request -` reads the create request from stdin.
+- `--request -` reads the create, submit or retry request from stdin.
 - `--after <sequence>` returns events with `sequence` greater than that value.
-- `create` and `retry` run synchronously and return after the run reaches a
-  terminal status.
+- `create` and `retry` (without `--async`) run synchronously and return after
+  the run reaches a terminal status. On builds with `async-submit` they are a
+  submit followed by a wait in the same process, with the same output; see
+  [Synchronous create and default retry](#synchronous-create-and-default-retry).
+- `submit`, `wait`, `retry --async` and `retry --request` need the
+  `async-submit` feature. `submit` returns as soon as the run is recorded and
+  `wait` is a bounded, read-only wait; see
+  [Asynchronous Submission](#asynchronous-submission-async-submit).
 - `projects unregister` is non-destructive: it removes the project from active
   registration but does not delete chats, sub-chats, worktrees, job history, or
   repository files. Permanent project-history deletion is desktop UI only.
@@ -123,8 +134,10 @@ Rules:
    subdirectory inside one.
 3. Put `artifacts.baseDir` inside `project.cwd`.
 4. List runtime capabilities.
-5. Create a run with `locus api runs create`.
-6. Read `status`, `events`, and `result` by job ID.
+5. Create a run with `locus api runs create`, or, with `async-submit`,
+   submit it with `locus api runs submit` and keep the returned job ID.
+6. Read `status`, `events`, and `result` by job ID (after a submit, use
+   `locus api runs wait` to wait for the published result).
 7. Let the downstream app promote or copy final business artifacts only after
    its own user review.
 
@@ -205,21 +218,36 @@ Discovery features:
 | `provider-binding` | Create requests honor the `provider` reference block. |
 | `completion` | `kind: "completion"` requests are supported. |
 | `canonical-run-ledger` | Events and results come from one committed Run ledger: dense per-record event projection, corrected terminal truth and optional native metadata. See [Canonical Run Ledger](#canonical-run-ledger). |
+| `async-submit` | `runs submit`, `runs wait`, `runs retry --async` / `--request`, the optional `idempotencyKey` and the `execution` member of `runs status` are available, and `create`/`retry` run as submit plus wait. See [Asynchronous Submission](#asynchronous-submission-async-submit). |
 
 A consumer that depends on a feature checks `features` before dispatch and
-treats a missing identifier as unsupported. v1 has no request field that
-requires a feature or an extension, and Locus does not negotiate extensions;
-the check is the consumer's own preflight. The `discoveryFeature` enum in
+treats a missing identifier as unsupported. Existing create request fields do
+not require a feature. `idempotencyKey` (accepted only by `runs submit` and
+`runs retry --request`) and the `submit`, `wait`, `retry --async` and
+`retry --request` command shapes require an `async-submit` preflight: an older
+build rejects those command shapes with a stderr diagnostic and exit `2`, but
+an older build silently ignores an `idempotencyKey` sent to `runs create` and
+runs the job without idempotency. Never assume a silently dropped field was
+honored. Locus does not negotiate extensions; the check is the consumer's own
+preflight. The `discoveryFeature` enum in
 [local-job-api-v1.schema.json](local-job-api-v1.schema.json) is closed: a
 consumer that validates discovery output against a pinned older copy of the
 schema must refresh that copy, because ignoring unknown fields does not cover
-new enum values.
+new enum values. `async-submit` extends that enum, so a copy pinned before
+this feature rejects current discovery output at `async-submit` until it is
+refreshed.
 
 `readiness.state` is advisory and can be `ready`, `needs-auth`, `unavailable`,
 or `unknown`. Discovery still exits 0 and returns the full manifest list when a
 readiness probe fails; that runtime reports `unknown` and diagnostics go to
 stderr. Use `locus api runtimes list --json --no-probe` to skip subprocess
 status probes; skipped probed states report `unknown` rather than `ready`.
+
+`readiness` describes the environment of the process that runs
+`runtimes list`. On builds with `async-submit`, a run claimed by
+`locus daemon run` executes in the daemon's environment (see
+[Execution context](#execution-context)), so `ready` here does not prove that
+the daemon is ready.
 
 For a provider-omitted agent run, readiness follows the real execution order:
 the runtime's headless default profile first, then native credentials only when
@@ -572,6 +600,11 @@ additive.
 The exact `job` object may include additional renderer-safe fields. Consumers
 should require only fields documented in this guide.
 
+On builds with `async-submit`, `create` is a `runs submit` plus a `runs wait`
+in the same process, and its normal terminal output is this same envelope,
+byte for byte. `create` rejects `idempotencyKey`; see
+[Idempotency](#idempotency).
+
 ## Status
 
 ```bash
@@ -592,6 +625,10 @@ Response:
 ```
 
 Only `source=api` jobs can be read through `locus api runs ...`.
+
+On builds with `async-submit`, the status of a `queued` or `running` API job
+also carries an advisory `execution` object; terminal jobs omit it. See
+[Executor availability](#executor-availability).
 
 ## Events
 
@@ -950,6 +987,521 @@ creates a new run on the ledger.
    extension namespaces.
 6. Treat `<redacted>` and `<mask>` as opaque text.
 
+## Asynchronous Submission (`async-submit`)
+
+Builds that list `async-submit` in `features` accept a run without waiting for
+it, return its job ID at once, and let the consumer wait for, observe, cancel
+or retry it by that ID. The wire version stays `locus.local-job.v1`. The twelve
+event types, the six-field event envelope, `runs result`, the artifact files,
+`--after`/`--follow` and the meanings of exits `0`–`8` are unchanged. The only
+new exit code is `9`, and only `runs wait` returns it.
+
+### Submit
+
+```bash
+locus api runs submit --request <path|-> --json
+```
+
+The request is an agent or completion create request (see
+[Agent Create Request](#agent-create-request) and
+[Completion Create Request](#completion-create-request)) plus an optional
+top-level `idempotencyKey` (see [Idempotency](#idempotency)). Every create
+validation and every project, capability, profile, provider and secret check
+runs first and fails with the same error, stream and exit as `create`. A
+rejected request starts no provider work.
+
+A fresh submission prints one line and exits `0`:
+
+```json
+{"apiVersion":"locus.local-job.v1","job":{"id":"job-A","status":"queued"}}
+```
+
+(`job` is the full serialized job; it is abridged here.)
+
+- The acknowledgement means the run is durably recorded and can be claimed:
+  its `job_created` event is committed and, for a run with
+  `artifacts.baseDir`, its run directory and initial files are admitted. It
+  does not mean the run has started.
+- `job.status` is a snapshot taken at admission. Another process can claim the
+  run before you read stdout; `runs status` then reports `running`.
+- No executor is needed for the acknowledgement. A submitted run executes when
+  an executor claims it: a running `locus daemon run` (foreground, started by
+  the user or the consumer), or the in-process executor of a `runs create` /
+  `runs retry` command for its own run. Without one it stays `queued`, and
+  `runs status` and `runs wait` say so.
+- Exiting the submitting process never cancels the run. Cancel by ID.
+- The response has no `result`.
+
+### Wait
+
+```bash
+locus api runs wait <job-id> [--timeout <milliseconds>] --json
+```
+
+`runs wait` reads one API job and never changes it: it does not settle,
+cancel, retry or extend anything. Like every `locus api` command, it first runs
+Locus's existing stale-worker recovery, which can settle a run whose worker
+Locus confirms has stopped.
+
+- `--timeout` defaults to `30000` ms and accepts integers from `0` to
+  `86400000` (24 h). `0` performs exactly one observation.
+- The run is ready when its `completed` event is committed and every terminal
+  file registered by that commit is published and verified (digest and size).
+  A run with no terminal files is ready as soon as `completed` is committed.
+- Ready output is exactly the `create` envelope `{apiVersion, job, result}`,
+  and the exit code is the run's outcome exit (`0`–`8`). `result.artifacts`
+  lists the terminal files of that commit in order.
+- If the run is not ready by the deadline, `wait` prints one timeout envelope
+  and exits `9`. A ready final read at the deadline wins over the timeout.
+
+```json
+{"apiVersion":"locus.local-job.v1","job":{"id":"job-A","status":"queued"},"wait":{"state":"timeout","timeoutMs":30000,"reason":"executor_unavailable"}}
+```
+
+Exit `9` is not a run outcome: there is no `result`, and the run is
+unchanged. Call `wait` again or read `status`.
+
+| `job.status` | Observation | `wait.reason` |
+| --- | --- | --- |
+| `queued` | initial admission not committed (checked first) | `admission_incomplete` |
+| `queued` | an executor is available | `run_pending` |
+| `queued` | no executor | `executor_unavailable` |
+| `queued` | executor state unknown | `executor_unknown` |
+| `running` | any | `run_pending` |
+| terminal | a registered terminal file is missing or does not match | `terminal_artifacts_pending` |
+
+`terminal_artifacts_pending` keeps the real terminal `job.status`. It covers a
+publication that has not finished or that failed, and also a published file
+that was later deleted or modified: `wait` cannot tell these apart and reports
+the run as not ready again. `runs result` and `runs events --follow` are
+unchanged and are not a publication barrier; only `wait` checks the files.
+
+| Condition | Output | Exit |
+| --- | --- | --- |
+| unknown ID, or an ID that is not an API job | stderr `Unknown job: <id>` | `3` |
+| invalid `--timeout` | stderr `Invalid timeout: expected an integer from 0 to 86400000 milliseconds.` | `2` |
+| store read failure after the job was read | stdout `{"apiVersion":"locus.local-job.v1","job":{…},"wait":{"state":"error","reason":"observation_failed"}}` | `8` |
+| store read failure before the job was read | stderr `Failed to observe job: <id>` | `8` |
+
+The stderr lines are plain text followed by a newline, not JSON. `runs status`
+keeps its existing errors for unknown and non-API IDs (`Unknown API job: <id>`
+and `Job <id> is not an API job`, exit `3`); the two commands' messages are
+not promised to match.
+
+### Executor availability
+
+`runs status` on a `queued` or `running` API job adds an `execution` object.
+Terminal jobs and every other envelope omit it.
+
+```json
+{"apiVersion":"locus.local-job.v1","job":{"id":"job-A","status":"queued"},"execution":{"state":"unavailable","reason":"no_executor","observedAt":"2026-10-01T00:00:00.000Z","hint":"locus daemon run"}}
+```
+
+| `state` | `reason` | When |
+| --- | --- | --- |
+| `unknown` | `admission_incomplete` | A queued run whose initial admission did not commit. No hint. |
+| `available` | `executor_observed` | A queued run, and a `locus daemon run` of the same profile is alive with a fresh heartbeat. A running run whose own recorded worker is confirmed alive within the 120 s recovery heartbeat window. |
+| `unavailable` | `no_executor` | No daemon lock, or its process is gone; for a running run, its worker process is gone. Carries `hint: "locus daemon run"`. |
+| `unknown` | `probe_unavailable` | A stale, legacy or unreadable lock, a process Locus cannot probe, or a heartbeat it cannot trust. |
+
+- `execution` is advisory. It is not runtime readiness (`runtimes list`), it
+  never starts a daemon, and reading it changes nothing.
+- It never contains a PID, nonce, hostname, lock path or secret. The existing
+  `job.workerId` and `job.workerPid` identify the process that actually claimed
+  the run: the daemon when the daemon claimed it, the caller's process when a
+  `create`/`retry` command ran it. Do not signal `workerPid`; use
+  `runs cancel`. `workerId` is an opaque string, and its format changed in
+  this release: it now carries a unique per-claim segment
+  (`<kind>:<pid>:<ms>:<unique>:<jobId>` instead of `<kind>:<pid>:<ms>:<jobId>`).
+  Do not parse it.
+- A daemon fills its slots with daemon jobs first, then schedule jobs, then
+  API runs. Sustained daemon or schedule work can delay API runs; there is no
+  priority scheduler.
+
+### Synchronous create and default retry
+
+On builds with `async-submit`, `runs create` and `runs retry <job-id>` without
+`--async` are a submit plus a wait in the same process:
+
+1. The request is admitted exactly like `runs submit`, without a key.
+2. The command runs its own admitted run in-process, through the same
+   executor that `locus daemon run` uses, restricted to that one run. No daemon
+   is needed, and no other queued run is touched.
+3. It waits for the terminal and prints it.
+
+For a normal run, stdout (including the trailing newline) and the exit code
+are byte for byte what the command printed before `async-submit`. The internal
+wait has no deadline that leaks out: `create` and `retry` never exit `9` and
+never print a timeout envelope.
+
+**Daemon-first runs.** If a `locus daemon run` of the same profile claims the
+run before the command does, the command does not run it a second time; it
+waits for the daemon's result. In that case:
+
+- The run executes in the daemon's environment, not the caller's (see
+  [Execution context](#execution-context)), and `job.workerId` /
+  `job.workerPid` identify the daemon.
+- If the run makes no progress for 30 s while it is queued or while its
+  worker's liveness is not confirmed, the command prints
+  `{"apiVersion":"locus.local-job.v1","job":{…},"wait":{"state":"error","reason":"executor_unavailable"}}`
+  and exits `8`. The reason is `executor_unavailable` when no executor is
+  observed and `executor_unknown` otherwise. A committed event, a heartbeat change, or a worker confirmed alive within the
+  120 s recovery heartbeat window counts as progress, so long runs, including a
+  45 s completion call, are not cut off.
+- If the daemon committed the terminal but its files are still not published
+  30 s later, the command prints the same envelope with
+  `"reason":"terminal_artifacts_pending"` and exits `8`.
+- A store read failure prints the same envelope with
+  `"reason":"observation_failed"` and exits `8`.
+
+That `wait.state: "error"` envelope carries the job ID and no `result`; it is
+not the run's outcome. Read `runs status` or `runs result`, call `runs wait`,
+or cancel by ID.
+
+Failure behavior that stays as before:
+
+- If the in-process executor completes the run but publishing its terminal
+  files fails, the command still prints the terminal envelope with
+  `result.artifacts: []` and the run's outcome exit. `runs wait` on the same
+  run reports `terminal_artifacts_pending` and exits `9`.
+- A failure of the in-process executor that is not a run outcome, or a store
+  read failure while the command waits on its own in-process run, stops its own
+  execution tree and keeps the previous stderr text and exit (`create`: `2`,
+  or `3` for an "unsupported" message; `retry`: `3`) with nothing on stdout.
+  An admitted run that never started is canceled; a stopped run settles as
+  `canceled` when the store allows it. No terminal envelope is invented. The
+  `observation_failed` envelope above is only for a run another process
+  executes.
+
+#### Execution context
+
+A run executes in the environment of the process that claims it. When the
+command's own executor claims it, that is the caller's environment, as before.
+When `locus daemon run` claims it, the runtime child gets the daemon's
+environment: each runtime adapter's allowed native-home variables (for example
+`HOME`, `CODEX_HOME` and `CLAUDE_CONFIG_DIR` on POSIX; `USERPROFILE`,
+`APPDATA` and `LOCALAPPDATA` on Windows) and `PATH`-family variables come from
+the daemon, and proxy variables move only where that adapter forwards them.
+Native credentials and their availability therefore follow the daemon.
+Secret stripping is unchanged on both paths, and no snapshot of the caller's
+environment is stored or transferred. A consumer that minimizes the
+environment it passes to `locus` does not control the daemon's environment.
+`runtimes list` readiness reports the CLI process's environment and does not
+prove that the daemon is ready.
+
+#### Aborting a waiting command
+
+When the command runs its own run in-process, Bun tests show that killing
+the command's process tree stops the runtime child, and stdin EOF does not
+cancel it. Windows signal exit codes are inferred, and the Electron packaged
+own-pump signal baseline has not been verified (see the platform limits below).
+
+When a daemon claimed the run, the daemon keeps running it after the waiting
+command dies. To cover that, the command relays a cancel of its own run, and
+only its own run, on a catchable abort. The relay is armed before the run is
+admitted and stays armed until the command has reported its result, so a
+catchable abort in that span is either relayed or ends the command with its
+default disposition. It relays until the command's own executor claims the
+run:
+
+- An abort that arrives while the command is still arming the relay, before
+  admission starts, admits no run: a signal ends the command with its
+  default disposition.
+- An abort caught while the run is being admitted is held until the command
+  knows the run's ID and is then handled like the next bullet. If admission
+  fails, there is no run to cancel: a held signal ends the command with that
+  signal's default disposition, and a held stdin EOF is ignored.
+- Before any executor claimed the run, a catchable abort cancels the queued
+  run (it settles `canceled` and never starts) and the command does not
+  execute it.
+- When another executor (a daemon) claimed the run first, a catchable abort
+  persists a cancel request for that run.
+- Once the command's own executor claimed the run, the in-process behavior
+  above applies: a catchable signal ends the command with its default
+  disposition, and stdin EOF is ignored. Before writing its result the
+  command lets any signal it already caught take effect, so a signal is not
+  swallowed even if the run finished (or its claim failed a claim-time
+  check) before the command handled it: the command ends by that signal
+  (on Windows with the exit codes below) with nothing on stdout, and the run
+  keeps the terminal status it reached.
+- A synchronous keyed `runs retry <job-id> --request <path>` that replays the
+  run of an earlier request with the same key does not own that run and
+  relays nothing: a catchable signal ends the waiting command with its
+  default disposition, stdin EOF is ignored, and the run keeps going. Cancel
+  it by ID if you need to.
+
+| Platform | Relayed (catchable) | Not relayed |
+| --- | --- | --- |
+| POSIX | `SIGINT`, `SIGTERM`, `SIGHUP`, armed stdin EOF | `SIGKILL` |
+| Windows | Ctrl+C (`SIGINT`), Ctrl+Break (`SIGBREAK`), console window closed (`SIGHUP`), armed stdin EOF | parent `child.kill()` / `TerminateProcess`; logoff and shutdown console events |
+
+- On a relayed abort the command persists the cancel request, waits at most
+  5 s for the run to reach a terminal status, writes nothing to stdout, and
+  then re-raises the original signal so a POSIX parent sees that signal, or
+  exits `8` for stdin EOF.
+- Windows has no signal exit status. After a relayed Ctrl+C the command ends
+  with exit `1` (Node terminates the process); after a relayed Ctrl+Break or
+  console close it exits `8`. The same exits apply whenever the armed relay
+  ends the command with a signal's default disposition: after the command's
+  own executor claimed the run, in a keyed replay waiter, after a failed
+  admission and before admission. A process without the relay would instead
+  end with `STATUS_CONTROL_C_EXIT` (`0xC000013A`). These Windows exits are
+  inferred from Node and libuv behavior and have not been verified on a
+  Windows host.
+- A Windows parent that wants a graceful stop can send Ctrl+Break
+  (`GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, pid)`) to a command it started
+  with `CREATE_NEW_PROCESS_GROUP`; Windows disables Ctrl+C in such a process
+  group. A process without a console receives no console events at all. When
+  the console window closes, Windows ends the process after a short
+  system-defined grace, which can cut the 5 s acknowledgement wait short.
+- stdin EOF is armed only if stdin is still an open pipe when the command
+  arms the relay and closes later. A stdin already closed when the command
+  starts does not arm the EOF relay: for example Node's `execFileSync` or
+  `spawnSync` without `input`, or a parent that ends the child's stdin right
+  after spawning it. Ignored stdin, and the EOF that ends a `--request -`
+  body, never cancel either. A consumer that sends its request on stdin can
+  still cancel by signal or by ID.
+- A kill that follows the signal quickly (for example a 500 ms grace before
+  `SIGKILL`) can cut the 5 s acknowledgement wait short. The cancel request is
+  normally persisted before that, but delivery is not guaranteed after a hard
+  kill.
+- `SIGKILL`, and on Windows `TerminateProcess`, Node's `child.kill()` and
+  the logoff/shutdown console events, cannot be caught and so cannot be
+  relayed: a daemon's run keeps going and stays queryable, and a run no
+  executor claimed yet stays queued until a daemon claims it or it is
+  canceled by ID.
+
+`runs cancel <job-id>` is the only cancellation that works on every platform.
+Keep the job ID: when you need to cancel reliably, especially on Windows, use
+`runs submit`, which prints the ID before the run executes.
+
+### Idempotency
+
+`runs submit` and `runs retry <job-id> --request <path|->` accept an optional
+`idempotencyKey`. No other command accepts it. `runs create` with an
+`idempotencyKey` prints
+
+```json
+{"apiVersion":"locus.local-job.v1","error":{"code":"idempotency_key_not_supported","message":"idempotencyKey is not accepted by runs create; use runs submit."}}
+```
+
+exits `2` and runs nothing. Builds before `async-submit` silently ignore the
+field on `create` and run the job without idempotency, so check the feature
+first and send keys only to `submit` and `retry --request`.
+
+Key rules:
+
+- 1–160 ASCII characters from `[A-Za-z0-9._:-]`, case-sensitive and never
+  trimmed.
+- Scoped by the normalized `consumer.id`: the same key under two consumers
+  names two different runs. `consumer.id` is attribution, not authentication.
+- A key that looks like a secret is rejected as `secret_in_request`, even when
+  it also breaks the character rule. A keyed request whose `consumer.id` Locus
+  would alter by secret redaction is rejected the same way. Neither error
+  echoes the key.
+- Locus stores only a domain-separated hash of the key. The raw key never
+  appears in the store, `request.json`, events, results, diagnostics or logs.
+  The hash is not encryption: do not put secrets in keys.
+
+**Same key, same request.** Requests are compared after normalizing defaults,
+runtime aliases, canonical paths and object key order; the key, wait/async
+choices and generated IDs are not part of the comparison. Locus returns the
+retained run instead of creating another one, with no new provider work:
+
+```json
+{"apiVersion":"locus.local-job.v1","idempotentReplay":true,"job":{"id":"job-A","status":"running"}}
+```
+
+The replayed `job` is its current state (`queued`, `running` or terminal). A
+keyed `runs retry --request` without `--async` prints the retained child's
+terminal envelope instead. Only keyed replays carry `idempotentReplay`.
+
+**Same key, different request.** stdout `idempotency_conflict`, exit `2`,
+nothing created. A submit and a retry, or retries of different source jobs,
+never replay each other.
+
+**Retry body.** `runs retry <job-id> --request <path|->` reads:
+
+```json
+{"apiVersion":"locus.local-job.v1","consumer":{"id":"docs-workbench"},"idempotencyKey":"retry-1"}
+```
+
+It accepts only `apiVersion`, `consumer.id` and `idempotencyKey`; other
+members are a stderr validation error with exit `2`. `consumer.id` must match
+the source job's consumer, else stdout `consumer_mismatch` and exit `2`, before
+any key lookup. `runs retry <job-id>` without `--request` keeps using the
+source job's stored consumer and input.
+
+**Pending submissions.** If a keyed submission was recorded but its creation or
+initial admission never committed (a crash, or another process that is still
+submitting), the same key returns
+
+```json
+{"apiVersion":"locus.local-job.v1","error":{"code":"submission_pending","message":"Submission is not yet admitted; retry the same key.","retryable":true}}
+```
+
+with exit `8`. Retrying the same key is safe and never creates a second run,
+but `retryable` does not promise that the state will clear. An attempt left by
+a crashed submitter stays pending until a later Locus repair (TICKET-128), and
+Locus cannot tell it apart from a submitter that is still working. A new key is
+the explicit remedy; it can duplicate work if the original submitter was in
+fact still alive. If you already have the job ID, `runs cancel <job-id>`
+settles it.
+
+**Retention.** Locus keeps a key bound to its run for at least 30 days after
+the run's terminal files were published and verified, or after its terminal
+settlement when the run registers no terminal files (artifact-free runs,
+recovery, cancel before admission, fail-closed claim checks). Expired keys are
+removed before each `submit`, `create` or `retry` of the same consumer and on
+every daemon loop iteration; after that, the same key creates a new run. A key
+whose run never reached a verified terminal (still running, publication
+failed, or a pending submission) never expires on its own. Reading or replaying
+never extends retention. Retention applies only to the key binding; jobs,
+events and files stay.
+
+New request errors:
+
+| Condition | Stream | Exit | `error.code` |
+| --- | --- | --- | --- |
+| `idempotencyKey` on `runs create` | stdout | `2` | `idempotency_key_not_supported` |
+| key already bound to a different request | stdout | `2` | `idempotency_conflict` |
+| retry `consumer.id` differs from the source job | stdout | `2` | `consumer_mismatch` |
+| malformed key | stdout | `2` | `invalid_idempotency_key` |
+| secret-like key, or a keyed `consumer.id` that redaction would change | stdout | `2` | `secret_in_request` |
+| keyed submission recorded but not admitted | stdout | `8` | `submission_pending` (with `"retryable":true`) |
+
+Each is one stdout line, `{"apiVersion":"locus.local-job.v1","error":{"code":…,"message":…}}`,
+and is a request error, not a run status. Other errors keep their existing
+shapes, streams and exits.
+
+A body of `runs submit` or `runs retry <job-id> --request` that is not valid
+JSON gets the stderr line `Invalid JSON request` and exit `2`. The line never
+quotes the request, so a key in a malformed body is not echoed. `runs create`
+keeps its previous diagnostic, which includes the JSON parser's message.
+
+### Claim-time checks
+
+A submitted run can wait in the queue. Before any provider call or child
+process, the executor that claims an API run checks its admission again. A
+failing check settles the run `failed` without running it:
+
+| `completed.payload.reasons` entry | `job.errorCode` | Exit (`create`, default `retry`, `wait`) |
+| --- | --- | --- |
+| `project_unregistered` | `project_unregistered` | `7` |
+| `cwd_identity_changed`: the cwd was replaced, moved, or no longer matches its recorded identity | `cwd_identity_changed` | `7` |
+| `execution_profile_invalid`: the stored capability, profile or policy grant, or the explicit provider profile, is no longer valid | the provider-binding code when there is one, else `execution_profile_invalid` | binding unavailable `4`, invalid request `2`, local-only blocked `6`; otherwise `3` |
+| `queued_age_exceeded`: queued for 24 h or longer | `queued_age_exceeded` | `1` |
+| `artifact_admission_mismatch`: the admitted run directory or its initial files changed | `artifact_admission_mismatch` | `1` |
+| `claim_gate_failed`: internal fallback when the check itself fails unexpectedly | `internal_error` | `8` |
+
+- The maximum queued age is 24 h from `createdAt` and is not configurable. A
+  running daemon also settles admitted API runs that reached that age without
+  claiming them, oldest first and a bounded number per loop iteration. Without
+  a daemon, an over-age run is settled when an executor tries to claim it.
+- When several checks fail, the reported code depends on which step settles
+  the run. The daemon's over-age settlement checks age only, while a claim
+  checks the project, cwd and profile before the age. An over-age run in an
+  unregistered project therefore settles `queued_age_exceeded` / `1` when the
+  daemon's over-age settlement reaches it, but `project_unregistered` / `7`
+  when a claim reaches it first. A daemon runs its over-age settlement before
+  it claims queued runs in each loop iteration, so a run that was already over
+  age when an iteration started gets `queued_age_exceeded` from that daemon,
+  unless the run is beyond that iteration's 16-run settlement limit, or the
+  daemon has reported that it could not settle the run and excluded it.
+- These settlements register no terminal files: `result.artifacts` is `[]` and
+  `wait` is ready at once.
+- The public commitments are `job.errorCode` and the exit code.
+  `completed.payload.reasons` values stay informational, as before. No exit
+  code is added and `0`–`8` keep their meanings.
+- Completion runs have no project, cwd or run directory, so only the profile,
+  age and internal checks apply to them.
+- If the run directory or initial admission of a new run fails after its
+  creation was committed, the command reports the error as before, and the
+  attempt stays as a `failed` job with `job.errorCode` `artifact_admission_failed`.
+  A key used for it stays bound to that job.
+
+#### Admission failure after creation
+
+This also applies to the older request shapes. The run directory is now
+created after the job's creation is committed (so a submission is
+acknowledged only for a committed run), not before:
+
+- `runs create` and `runs retry <job-id>` with artifacts: when the run
+  directory or the initial artifact admission fails, stderr and the exit are
+  as before, but a `failed` job with `job.errorCode`
+  `artifact_admission_failed` (exit `1` through `runs wait`) now remains. Older
+  builds left no job when mkdir failed; that comparison does not cover initial
+  admission failures after mkdir. `runs list`, `runs status` and the Workbench show it.
+- `runs submit` with a key: the key stays bound to that failed attempt for
+  the retention period; resubmitting it replays the failed job with
+  `idempotentReplay: true`. Use a new key for a new attempt.
+- `runs retry <job-id>` checks the source run's status before it creates the
+  run directory; older builds created the directory first.
+- On Windows every run with `artifacts.baseDir` fails this way until the run
+  directory backend lands (TICKET-127), so each attempt leaves such a job.
+
+### Cancel, recovery and terminal files
+
+- Canceling a queued run whose initial admission committed publishes its
+  terminal files (`result.json`, refreshed `events.jsonl` and `artifacts.json`)
+  like a run that finished, and `result.artifacts` lists them.
+- Canceling a queued run that has no run directory, or whose initial admission
+  never committed, registers no terminal files: `result.artifacts` is `[]`.
+  This is the remedy for a run stuck at `admission_incomplete` whose ID you
+  know.
+- A run that Locus recovers as `interrupted` after its worker stopped
+  registers no new terminal files either: `result.artifacts` is `[]`, and its
+  initial files stay as history.
+
+### Known limits
+
+- Creation and terminal publication are not yet fully atomic (TICKET-128). A
+  crash can leave a pending submission, staged files or a partially published
+  terminal; `wait` reports such runs as not ready rather than inventing a
+  result.
+- On Windows, runs with `artifacts.baseDir` fail closed until the run
+  directory backend lands (TICKET-127), and each such attempt leaves a
+  `failed` job with `job.errorCode` `artifact_admission_failed`.
+- There is no HTTP or socket server, no priority scheduling and no background
+  daemon launcher: `locus daemon run` is started by the user or the consumer.
+- Running an older Locus build (CLI or daemon) against the same profile as an
+  `async-submit` build is unsupported: the older build does not understand key
+  reservations or pending submissions, and nothing stops it technically. Stop
+  the older processes before upgrading, and roll back with a separate profile.
+
+### Asynchronous flow example
+
+```bash
+OUT="$(locus api runs submit --request "$PACKAGE_DIR/request.json" --json)" || exit $?
+JOB="$(printf '%s' "$OUT" | node -e 'let s="";process.stdin.on("data",(d)=>{s+=d}).on("end",()=>{console.log(JSON.parse(s).job.id)})')"
+locus api runs wait "$JOB" --timeout 600000 --json
+case $? in
+  9) echo "not ready yet; wait again or read status" ;;
+esac
+```
+
+### Upgrade checklist (`async-submit`)
+
+1. Check `features` for `async-submit` before using `submit`, `wait`,
+   `retry --async`, `retry --request` or `idempotencyKey`. Older builds reject
+   the new command shapes with exit `2`, but ignore a key sent to `create`.
+2. Refresh pinned copies of `local-job-api-v1.schema.json`: `discoveryFeature`
+   now includes `async-submit`. Use a JSON Schema 2020-12 validator; completion
+   request members now live in `completionRequestMembers`, from which
+   `completionCreateRequest` and `completionSubmitRequest` derive via `allOf`
+   with `unevaluatedProperties: false`.
+3. Do not send `idempotencyKey` to `runs create`.
+4. Treat exit `9` from `runs wait` as "not ready yet", not as a run failure.
+5. Handle `submission_pending` (exit `8`, `"retryable":true`): retry the same
+   key, or accept the duplicate risk of a new key.
+6. Treat a `wait.state: "error"` envelope (exit `8`) from `create`, `retry` or
+   `wait` as an observation problem; the run's ID is in `job.id`.
+7. Expect runs claimed by `locus daemon run` to use the daemon's environment
+   and credentials.
+8. Keep job IDs and cancel by ID; the abort relay does not cover hard kills.
+9. Map the claim-time `job.errorCode` values onto your existing exit-code
+   handling; they use existing exit codes.
+
 ## Cancel
 
 ```bash
@@ -959,6 +1511,12 @@ locus api runs cancel <job-id> --json
 Cancel is scoped to API jobs. A queued API job is completed as `canceled`
 immediately. A running job receives a persisted cancel request that the runtime
 runner observes.
+
+On builds with `async-submit`, canceling a queued run whose initial admission
+committed publishes its terminal files; see
+[Cancel, recovery and terminal files](#cancel-recovery-and-terminal-files).
+`runs cancel` is the only cancellation that works on every platform for a run
+that a daemon claimed.
 
 ## Retry
 
@@ -976,6 +1534,20 @@ Retry is allowed only for API jobs in terminal retryable states:
 artifact run directory, runs synchronously, and returns the same envelope shape
 as `create`.
 
+On builds with `async-submit`:
+
+```bash
+locus api runs retry <job-id> [--request <path|->] [--async] --json
+```
+
+- `--async` returns the new job's admission envelope, like `runs submit`, and
+  does not wait. Use `runs wait` with the new job ID.
+- `--request` passes a retry body `{apiVersion, consumer:{id}, idempotencyKey?}`
+  whose `consumer.id` must match the source job; see
+  [Idempotency](#idempotency).
+- Without `--async`, retry is a submit plus a wait like `create`; see
+  [Synchronous create and default retry](#synchronous-create-and-default-retry).
+
 Do not use `locus jobs retry` for API jobs. That command is reserved for
 non-API human-oriented job flows.
 
@@ -992,12 +1564,20 @@ non-API human-oriented job flows.
 | `6` | Local-only guard blocked the run. |
 | `7` | Invalid or unregistered `project.cwd`. |
 | `8` | Internal failure. |
+| `9` | `runs wait` only (feature `async-submit`): the bounded wait ended before the run was ready. Not a run outcome. |
 
 On builds with `canonical-run-ledger`, create/retry exit codes follow the
 ledger outcome. A runtime-reported success that the ledger settles as `failed`
 (recorded denial, invalid or empty output, missing output evidence, failed
 post-run credential check) exits `1`. See
 [Outcome and exit examples](#outcome-and-exit-examples).
+
+Codes `0`–`8` keep their meanings. On builds with `async-submit`, `create`
+and `retry` never exit `9`; the claim-time checks and `submission_pending` use
+existing codes (see [Claim-time checks](#claim-time-checks) and
+[Idempotency](#idempotency)). Exit `8` can also come with a stdout envelope
+that carries the job ID and `"wait":{"state":"error",…}`; it reports an
+observation problem, not the run's outcome.
 
 Consumers should parse stdout only when the exit code and command contract
 allow it. Diagnostics are on stderr.
@@ -1103,6 +1683,13 @@ locus api runs create --request "$PACKAGE_DIR/request.json" --json
 | `completed.payload.exitCode` or `result` is `null` | The settlement had no such value (for example a queued cancel or a worker recovery). The members are optional and nullable. | Read `runs result` (`status`, `diagnostics`, `result`) and the command exit code. |
 | The runtime reported success but the run is `failed` with `policy_denied`, `output_empty`, `output_invalid` or `output_evidence_missing` | Corrected terminal truth: denial, invalid output and empty output fail the run. | Inspect `diagnostics` and the run's `status`/`error` events. |
 | Schema validation rejects `canonical-run-ledger` in `features` | A pinned older copy of the schema has a closed `discoveryFeature` enum. | Refresh your copy of `local-job-api-v1.schema.json`. |
+| Schema validation rejects `async-submit` in `features` | Same closed enum; `async-submit` is newer than your copy. | Refresh your copy of `local-job-api-v1.schema.json`. |
+| `runs wait` exits `9` | The run was not ready by the deadline (`wait.reason` says why). It is not a failure. | Wait again, or read `runs status`. For `executor_unavailable`, start `locus daemon run`. |
+| `runs submit` succeeded but the run stays `queued` | No executor is running (`execution.reason: "no_executor"`). | Start `locus daemon run`, or use `runs create` to run it in-process. |
+| `idempotency_conflict` | The key is already bound to a different request for this consumer. | Use a new key for a different request. |
+| `submission_pending` (exit `8`) | A keyed submission was recorded but never admitted. | Retry the same key; if it never clears, cancel by ID or use a new key and accept the duplicate risk. |
+| `idempotency_key_not_supported` | `runs create` does not accept keys. | Use `runs submit` (and `runs wait`). |
+| A run failed with `queued_age_exceeded`, `cwd_identity_changed` or `project_unregistered` | A claim-time check failed after the run waited in the queue. | Fix the project or profile and submit again; see [Claim-time checks](#claim-time-checks). |
 
 ## Stability Contract
 
@@ -1113,7 +1700,13 @@ Stable in v1:
 - documented request fields
 - documented response envelopes
 - documented event envelope fields
-- discovery feature identifiers, including `canonical-run-ledger`
+- discovery feature identifiers, including `canonical-run-ledger` and
+  `async-submit`
+- with `async-submit`: the `runs submit`, `runs wait` and `runs retry --async`
+  / `--request` command shapes; the `wait` envelope members and `wait.reason`
+  values; exit `9` for `runs wait` only; the `execution` members and values;
+  `idempotentReplay`; the new `error.code` values; and the `job.errorCode` and
+  exit of each claim-time check
 - with `canonical-run-ledger`: a dense per-run `sequence`, exactly one
   `completed` per run and `completed.payload.status`
 - run metadata artifact file names
@@ -1127,6 +1720,8 @@ Not stable in v1:
 - internal event payload details beyond the v1 envelope, including `status`
   subtypes and their members and the values of `completed.payload.reasons` and
   `evidenceKeys`
+- error `message` text, the format of `job.workerId`, and executor timing
+  details (heartbeat cadence, per-iteration settlement bounds)
 - `payload.extensions["runtime.codex.v1"]` (`maturity: "experimental"`)
 - Workbench rendering details
 - human CLI formatting under `locus run` and `locus jobs`

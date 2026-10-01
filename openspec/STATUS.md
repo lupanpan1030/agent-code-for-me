@@ -4,9 +4,11 @@ This ledger records execution state only. Current product truth remains in
 `openspec/specs/` plus the checked-out code; future direction remains in the
 ratified strategy and interoperability contract.
 
-Updated: 2026-10-01 (Pacific/Auckland); previous: 2026-09-30 (Pacific/Auckland)
+Updated: 2026-10-02 (Pacific/Auckland); previous: 2026-10-01 (Pacific/Auckland)
 
-No active changes.
+| Active change | Status | Scope / next gate |
+| --- | --- | --- |
+| [add-local-job-api-async-submit](changes/add-local-job-api-async-submit/proposal.md) | ACCEPTED 2026-10-02 (coordinator, Owner self-iteration mandate) @ 432cc160 — 合入中 | Same-SHA Codex IMPLEMENTATION_VERIFIED + Claude REVIEW_APPROVED; no open Red; accepted disclosures and unchecked task deferrals in verification.md; TICKET-127/128/130/131 open; runtime/packaged smoke host-blocked, macOS/Windows not claimed, consumer E2E unknown; dispatched main-only merge/gates/archive/push under 2026-09-04 policy |
 
 Parked proposals are indexed in [`deferred/README.md`](deferred/README.md) and
 do not appear in the active list.

@@ -1,6 +1,12 @@
 import { isAbsolute, resolve } from "node:path"
-import type { AgentJob } from "../db/schema"
 import {
+  type AgentJobStatus,
+  isTerminalAgentJobStatus,
+} from "../../../shared/agent-jobs"
+import type { AgentJob } from "../db/schema"
+import { closeStableDirectory } from "../filesystem/stable-directory"
+import {
+  AGENT_JOB_IDEMPOTENCY_RETENTION_MS,
   type AgentJobDatabase,
   acknowledgeRunEventProjection,
   appendExactRunEventBatch,
@@ -8,10 +14,12 @@ import {
   type ExactRunEventJobPrecondition,
   type ExactRunEventRecord,
   getAgentJob,
+  hasUnsetAgentJobIdempotencyExpiry,
   lookupCommittedRunEventFact,
   readCommittedRunEvents,
   readRunEventLedgerHeader,
   readRunEventProjectionCursor,
+  setAgentJobIdempotencyExpiry,
 } from "../headless/job-store"
 import {
   decodeCoarseRuntimeObservation,
@@ -21,8 +29,10 @@ import { redactRuntimePayload } from "./redaction"
 import {
   admitRunArtifactCandidate,
   admitRunArtifactContent,
+  openRunDirForVerification,
   type RunArtifactRunDir,
   runArtifactMediaType,
+  verifyRunDirArtifactRef,
 } from "./run-artifacts"
 import {
   type CanonicalRunEventLedger,
@@ -515,4 +525,120 @@ export function createDesktopRendererChannel(input: {
       return chain
     },
   }
+}
+
+// ---------------------------------------------------------------------------
+// Terminal publication observation (add-local-job-api-async-submit D5): the
+// one read port that decides whether a committed terminal's registered
+// terminal refs are all published. It reads the committed seal and prepared
+// tail, verifies every ref's bytes through a stable run-directory handle and
+// re-reads the seal; it never writes, settles or extends anything.
+// ---------------------------------------------------------------------------
+
+type ReadinessJob = NonNullable<ReturnType<typeof getAgentJob>>
+
+export type RunPublicationReadiness = {
+  /** The committed terminal job row, when the Run is terminal. */
+  job: ReadinessJob | null
+  terminal: boolean
+  ready: boolean
+  /**
+   * Terminal refs registered by the terminal commit's preparer, in prepared
+   * order without the ledger's state-ref `sequence` (design D2).
+   */
+  preparedTail: Record<string, unknown>[]
+}
+
+function storedArtifactRefs(job: ReadinessJob): unknown[] {
+  if (!job.resultJson) return []
+  try {
+    const parsed = JSON.parse(job.resultJson) as unknown
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return []
+    }
+    const refs = (parsed as Record<string, unknown>).artifactRefs
+    return Array.isArray(refs) ? refs : []
+  } catch {
+    return []
+  }
+}
+
+/** Prepared tail of a committed terminal: refs without a state `sequence`. */
+export function runPreparedTerminalRefs(
+  job: ReadinessJob,
+): Record<string, unknown>[] {
+  return storedArtifactRefs(job).filter(
+    (ref): ref is Record<string, unknown> =>
+      !!ref &&
+      typeof ref === "object" &&
+      !Array.isArray(ref) &&
+      !Object.hasOwn(ref, "sequence"),
+  )
+}
+
+function verifyPreparedTail(
+  job: ReadinessJob,
+  refs: readonly Record<string, unknown>[],
+): boolean {
+  if (refs.length === 0) return true
+  if (!job.artifactBaseDir) return false
+  const runDir = openRunDirForVerification(job.artifactBaseDir)
+  if (!runDir) return false
+  try {
+    return refs.every(
+      (ref) =>
+        typeof ref.path === "string" &&
+        typeof ref.sha256 === "string" &&
+        typeof ref.sizeBytes === "number" &&
+        verifyRunDirArtifactRef(runDir, {
+          path: ref.path,
+          sha256: ref.sha256,
+          sizeBytes: ref.sizeBytes,
+        }),
+    )
+  } finally {
+    closeStableDirectory(runDir)
+  }
+}
+
+export function readRunPublicationReadiness(
+  db: AgentJobDatabase,
+  jobId: string,
+): RunPublicationReadiness {
+  const job = getAgentJob(db, jobId)
+  if (!job || !isTerminalAgentJobStatus(job.status as AgentJobStatus)) {
+    return { job: null, terminal: false, ready: false, preparedTail: [] }
+  }
+  const preparedTail = runPreparedTerminalRefs(job)
+  if (!verifyPreparedTail(job, preparedTail)) {
+    return { job, terminal: true, ready: false, preparedTail }
+  }
+  const reread = getAgentJob(db, jobId)
+  const unchanged =
+    !!reread &&
+    reread.ledgerSealedSequence === job.ledgerSealedSequence &&
+    reread.resultJson === job.resultJson &&
+    reread.status === job.status
+  return { job, terminal: true, ready: unchanged, preparedTail }
+}
+
+/**
+ * Lifecycle-host retention setter (design D4): once a terminal's registered
+ * terminal refs are verified published (an empty set at its settlement), the
+ * job's idempotency reservation expires 30 days later. Unpublished terminals
+ * keep a NULL expiry. Readers never call it.
+ */
+export function recordVerifiedRunRetention(
+  db: AgentJobDatabase,
+  jobId: string,
+): boolean {
+  if (!hasUnsetAgentJobIdempotencyExpiry(db, jobId)) return false
+  const readiness = readRunPublicationReadiness(db, jobId)
+  if (!readiness.ready) return false
+  setAgentJobIdempotencyExpiry(
+    db,
+    jobId,
+    new Date(Date.now() + AGENT_JOB_IDEMPOTENCY_RETENTION_MS),
+  )
+  return true
 }

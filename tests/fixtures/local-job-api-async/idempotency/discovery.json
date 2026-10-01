@@ -1,0 +1,48 @@
+{
+  "fixtureVersion": 1,
+  "evidenceClass": "synthetic",
+  "sourceRefs": [
+    "openspec/changes/add-local-job-api-async-submit/specs/local-job-api/spec.md:498",
+    "openspec/changes/add-local-job-api-async-submit/specs/local-job-api/spec.md:518",
+    "openspec/changes/add-local-job-api-async-submit/design.md:239",
+    "openspec/changes/add-local-job-api-async-submit/tasks.md:88",
+    "openspec/changes/add-local-job-api-async-submit/tasks.md:99",
+    "openspec/specs/local-job-api/spec.md:476",
+    "docs/local-job-api-v1-consumer-guide.md:209",
+    "src/shared/local-job-api.ts:18"
+  ],
+  "provenance": {
+    "author": "independent red-test author (Claude Code), no implementation context",
+    "authoredAt": "2026-10-02",
+    "worktreeBaseSha": "0447d02d7682b16f9b042e5eda2701d68751a7ce",
+    "productBaselineSha": "2c59664f1b80a5f782eb05f82d33f718d9bc7053",
+    "method": "The no-feature envelope copies the baseline feature list of src/shared/local-job-api.ts:18 at 2c59664f (which predates async-submit) with an empty runtimes array; it is an older-build discovery document, not live output, so it does not change once the new build advertises async-submit.",
+    "catalogNote": "tasks.md:99 names discovery.json for S22/S23/S52-S54; S52 and S54 are registered against existing tests and only the S53 documentation-example case lives here (idempotency/discovery.json)."
+  },
+  "cases": {
+    "S53": {
+      "scenario": "Older build lacks the feature",
+      "olderBuildEnvelope": {
+        "apiVersion": "locus.local-job.v1",
+        "features": [
+          "runtime-readiness",
+          "provider-binding",
+          "completion",
+          "canonical-run-ledger"
+        ],
+        "runtimes": []
+      },
+      "requiredFeature": "async-submit",
+      "keyedSubmitRequest": {
+        "apiVersion": "locus.local-job.v1",
+        "consumer": { "id": "fixture-a" },
+        "project": { "cwd": "/workspace/demo" },
+        "runtime": { "id": "codex" },
+        "mode": "plan",
+        "prompt": { "text": "Return OK" },
+        "idempotencyKey": "req-001"
+      },
+      "expected": { "supported": false, "dispatchCount": 0 }
+    }
+  }
+}

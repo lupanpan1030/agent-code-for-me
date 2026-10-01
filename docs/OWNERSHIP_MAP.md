@@ -560,6 +560,72 @@ or UI helper.
   artifact candidate sink (composed only for API runs with an admitted run
   directory) to the adapter. The runner facades return the committed outcome
   (`readOutcome()`: final status and completed sequence).
+- Async submission and wait (add-local-job-api-async-submit):
+  `src/main/lib/headless/run-submission.ts#submitRun` is the one submission
+  core of API create/submit/retry and jobs-stdio `job.run` (validate,
+  idempotency reservation, committed `job_created`, winner-only initial
+  admission, ack); `src/main/lib/headless/run-submission.ts#waitForRun` is
+  its read-only bounded wait. `src/main/lib/headless/daemon.ts#pumpQueuedRuns`
+  is the only dispatch of queued headless, API and protocol Runs (daemon
+  slots daemon → schedule → api; the create/retry wrapper and a protocol
+  session pass their own admitted IDs); its runners run the claim-time API
+  gate after the conditional claim. Desktop Runs keep their own
+  desktop-source claim and dispatch in `src/main/lib/desktop-agent-jobs.ts`,
+  which is a separate owner, not a duplicate of the pump.
+  `src/main/lib/headless/job-store.ts#insertQueuedAgentJobRecord` (with the
+  private reservation-aware insert behind `createAgentJob`/`retryAgentJob`)
+  is the only `agent_jobs` row insertion; schedules call it inside their
+  fire/audit transaction. `src/main/lib/agent-runtime/run-artifacts.ts#reopenAdmittedRunDir`
+  owns the cross-process reopen of an admitted run directory, by the
+  claimant and by the queued-cancel host that composes the same terminal
+  preparer.
+  The CLI and jobs-stdio adapters only parse and translate envelopes; they
+  never call a runner or the claim primitives (the human `locus run` keeps
+  its in-process runner). `scripts/check-architecture-guards.mjs` enforces
+  this end state with the fixture
+  `tests/fixtures/local-job-api-async/guards-protocol/architecture-fixtures.json`.
+- Async submission owners behind that core (add-local-job-api-async-submit):
+  - Idempotency reservations: `src/main/lib/headless/job-store.ts` owns the
+    `agent_job_idempotency` table (migration `0025_agent_job_idempotency`),
+    its insert inside the job-row transaction, the lookup
+    (`findAgentJobIdempotencyReservation`), the one-time expiry setter
+    (`setAgentJobIdempotencyExpiry`) and the only cleanup
+    (`cleanupExpiredAgentJobIdempotency`, run by `submitRun` for the
+    submitting consumer and by the daemon tick for all consumers). Key and
+    request hashing live in `run-submission.ts`; no other module reads or
+    writes the table.
+  - Admission predicate: `job-store.ts#readAgentJobAdmissionState` and the
+    shared queued-list/claim SQL are the one committed-creation plus
+    initial-admission predicate (`lifecycle:job-created:<id>:0`,
+    `lifecycle:initial-artifacts:<id>:0`); `startAgentJob` enforces it.
+  - Publication readiness and retention:
+    `src/main/lib/agent-runtime/run-event-ledger-host.ts#readRunPublicationReadiness`
+    is the only terminal-publication read; its callers are
+    `run-submission.ts#observeRun` (`runs wait` and the create/default-retry
+    wrapper wait) and `#recordVerifiedRunRetention`, which is the
+    lifecycle-host retention start
+    (after verified publication, or at settlement for an empty terminal
+    set).
+  - Claim gate: `src/main/lib/headless/job-runner.ts#RunClaimGate` is the
+    runner seam after the conditional claim; the API gate is
+    `src/main/lib/headless/local-job-api.ts#openClaimedLocalJobApiExecution`
+    (project, cwd identity, profile/grant, provider, queued age, run-dir
+    reopen; failures settle through the host). The daemon tick's
+    over-age settlement is `local-job-api.ts#settleOverAgeQueuedLocalJobApiRuns`
+    through `job-store.ts#settleQueuedAgentJobFailed`.
+  - Queued-cancel terminal projection:
+    `local-job-api.ts#openQueuedCancelLocalJobApiTerminal` composes the
+    terminal preparer for an admitted queued API cancel, shares the private
+    run-dir reopen helper with the claim gate, and is passed to
+    `job-store.ts#cancelAgentJob` (`queuedTerminalProjection`) by every API
+    cancel host (CLI `runs cancel`/`jobs cancel`, the wrapper relay and
+    own-dispatch cleanup, tRPC `agentJobs.cancel`).
+  - Executor observation: `src/main/lib/headless/daemon.ts` owns lock v2
+    (`acquireDaemonLock`, heartbeat refresh) and its read-only observers
+    (`observeDaemonExecutor`, `observeRunWorker`);
+    `run-submission.ts#observeRunExecution` projects them into the status
+    `execution` object, and `run-submission.ts#waitForAdmittedRun` is the
+    create/retry wrapper's bounded wait.
 
 ## Runtime MCP Configuration
 

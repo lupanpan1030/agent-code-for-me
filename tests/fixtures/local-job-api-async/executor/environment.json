@@ -1,0 +1,61 @@
+{
+  "fixtureVersion": 1,
+  "evidenceClass": "synthetic",
+  "sourceRefs": [
+    "openspec/changes/add-local-job-api-async-submit/specs/headless-agent-jobs/spec.md:58-64",
+    "openspec/changes/add-local-job-api-async-submit/specs/headless-agent-jobs/spec.md:162-172",
+    "openspec/changes/add-local-job-api-async-submit/design.md:130-132",
+    "openspec/changes/add-local-job-api-async-submit/tasks.md:463",
+    "src/main/lib/headless/adapters/codex.ts:77-91",
+    "src/main/lib/codex/provider-runtime-binding.ts:12-65",
+    "src/main/lib/headless/process-runner.ts:229-234"
+  ],
+  "provenance": {
+    "author": "independent red-test author (executor domain), no implementation context",
+    "baseSha": "0447d02d",
+    "productBaseSha": "2c59664f1b80a5f782eb05f82d33f718d9bc7053",
+    "createdAt": "2026-10-02",
+    "notes": "Only artificial non-secret sentinels; the secret-shaped values are fabricated and never valid credentials. The env capture uses the real Codex env builder (buildCodexEnv over the claimant's process.env) with an injected runProcess seam instead of a real child."
+  },
+  "cases": {
+    "S40": {
+      "posix": {
+        "nativeHomeVariables": ["HOME", "CODEX_HOME"],
+        "pathVariables": ["PATH"],
+        "forwardedProxyVariables": ["HTTPS_PROXY"]
+      },
+      "win32": {
+        "nativeHomeVariables": [
+          "USERPROFILE",
+          "APPDATA",
+          "LOCALAPPDATA",
+          "CODEX_HOME"
+        ],
+        "pathVariables": ["PATH"],
+        "forwardedProxyVariables": ["HTTPS_PROXY"]
+      },
+      "claimants": {
+        "A": {
+          "homeToken": "s40-home-sentinel-A",
+          "codexHomeToken": "s40-codex-sentinel-A",
+          "pathToken": "s40-path-sentinel-A",
+          "proxy": "http://proxy-s40-a.invalid:8080",
+          "secrets": {
+            "OPENAI_API_KEY": "sk-locusS40SentinelAaaaaaaaaaaaaaaaaaaa",
+            "GITHUB_TOKEN": "ghp_locusS40SentinelAaaaaaaaaaaaaaaaaaaa"
+          }
+        },
+        "B": {
+          "homeToken": "s40-home-sentinel-B",
+          "codexHomeToken": "s40-codex-sentinel-B",
+          "pathToken": "s40-path-sentinel-B",
+          "proxy": "http://proxy-s40-b.invalid:8080",
+          "secrets": {
+            "OPENAI_API_KEY": "sk-locusS40SentinelBbbbbbbbbbbbbbbbbbbb",
+            "GITHUB_TOKEN": "ghp_locusS40SentinelBbbbbbbbbbbbbbbbbbbb"
+          }
+        }
+      }
+    }
+  }
+}

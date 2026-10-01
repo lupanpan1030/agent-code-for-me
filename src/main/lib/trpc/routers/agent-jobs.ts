@@ -19,6 +19,7 @@ import {
   retryAgentJob,
   runEventHistoryQuality,
 } from "../../headless/job-store"
+import { openQueuedCancelLocalJobApiTerminal } from "../../headless/local-job-api"
 import { publicProcedure, router } from "../index"
 
 const sourceSchema = z.enum(AGENT_JOB_SOURCES)
@@ -27,12 +28,14 @@ const statusSchema = z.enum(AGENT_JOB_STATUSES)
 export const agentJobsRouter = router({
   list: publicProcedure
     .input(
-      z.object({
-        source: sourceSchema.default("cli"),
-        status: statusSchema.optional(),
-        limit: z.number().int().min(1).max(100).default(20),
-        includeFolderless: z.boolean().default(false),
-      }).optional(),
+      z
+        .object({
+          source: sourceSchema.default("cli"),
+          status: statusSchema.optional(),
+          limit: z.number().int().min(1).max(100).default(20),
+          includeFolderless: z.boolean().default(false),
+        })
+        .optional(),
     )
     .query(({ input }) => {
       const db = getDatabase()
@@ -93,6 +96,10 @@ export const agentJobsRouter = router({
                 errorCode: "job_canceled",
                 errorMessage: "Job was canceled before it started.",
               },
+              // An admitted queued API Run publishes its terminal files
+              // like a worker-settled Run (design D5).
+              queuedTerminalProjection: (queued) =>
+                openQueuedCancelLocalJobApiTerminal(db, queued),
             })
       return { job: serializeAgentJob(updated) }
     }),

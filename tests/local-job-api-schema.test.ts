@@ -142,6 +142,7 @@ describe("Local Job API v1 JSON Schema", () => {
     const createRequest = def(schema, "createRequest")
     const agentCreateRequest = def(schema, "agentCreateRequest")
     const completionCreateRequest = def(schema, "completionCreateRequest")
+    const completionMembers = def(schema, "completionRequestMembers")
     const properties = agentCreateRequest.properties as Record<
       string,
       SchemaObject
@@ -156,7 +157,7 @@ describe("Local Job API v1 JSON Schema", () => {
       string,
       SchemaObject
     >
-    const completionProperties = completionCreateRequest.properties as Record<
+    const completionProperties = completionMembers.properties as Record<
       string,
       SchemaObject
     >
@@ -192,14 +193,18 @@ describe("Local Job API v1 JSON Schema", () => {
     expect((properties.input as SchemaObject).description).toContain(
       "Provider credentials",
     )
-    expect(completionCreateRequest.required).toEqual([
+    expect(completionMembers.required).toEqual([
       "apiVersion",
       "kind",
       "consumer",
       "provider",
       "messages",
     ])
-    expect(completionCreateRequest.additionalProperties).toBe(false)
+    // The create request closes the shared member set it references.
+    expect(completionCreateRequest.allOf).toEqual([
+      { $ref: "#/$defs/completionRequestMembers" },
+    ])
+    expect(completionCreateRequest.unevaluatedProperties).toBe(false)
     expect(completionProperties).not.toHaveProperty("project")
     expect(completionProperties).not.toHaveProperty("prompt")
     expect(completionProperties).not.toHaveProperty("artifacts")
@@ -221,9 +226,10 @@ describe("Local Job API v1 JSON Schema", () => {
       prompt: { text: "Keep provider routing explicit." },
     }
 
-    expect(validate(baseRequest), JSON.stringify(validate.errors, null, 2)).toBe(
-      true,
-    )
+    expect(
+      validate(baseRequest),
+      JSON.stringify(validate.errors, null, 2),
+    ).toBe(true)
     for (const provider of [
       {},
       { profileId: null },

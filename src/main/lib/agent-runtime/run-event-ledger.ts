@@ -112,6 +112,11 @@ export type OutcomeEvidence = {
         kind: "host_result"
         status: "succeeded" | "failed"
         observationKey: string
+        /**
+         * Fixed host failure reasons (e.g. a claim-time gate) recorded in the
+         * completed reasons of a failed host result.
+         */
+        reasons?: string[]
       }
   policy: { denied: boolean; evidenceKeys: string[] }
   output: {
@@ -3838,6 +3843,13 @@ class RunEventLedgerImpl {
     if (trigger.kind === "native_terminal" && trigger.status === "failed") {
       failures.push("native_failed")
     } else if (trigger.kind === "host_result" && trigger.status === "failed") {
+      const hostReasons = Array.isArray(trigger.reasons)
+        ? trigger.reasons.filter(
+            (reason): reason is string =>
+              typeof reason === "string" && reason.length > 0,
+          )
+        : []
+      failures.unshift(...hostReasons)
       failures.push("host_failed")
     } else if (!successTrigger) {
       failures.push("success_evidence_missing")

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/lupanpan1030/agent-code-for-me/blob/main/docs/local-job-api-v1.schema.json",
   "title": "Locus Local Job API v1 schema bundle",
-  "description": "Machine-readable JSON Schema bundle for the local CLI + JSON contract exposed by `locus api ...`. Consumers may validate individual shapes with refs such as `#/$defs/createRequest`, `#/$defs/eventEnvelope`, and `#/$defs/resultEnvelope`.",
+  "description": "Machine-readable JSON Schema bundle for the local CLI + JSON contract exposed by `locus api ...`. Consumers may validate individual shapes with refs such as `#/$defs/createRequest`, `#/$defs/eventEnvelope`, and `#/$defs/resultEnvelope`. Feature async-submit adds `#/$defs/submitRequest`, `#/$defs/retryRequest`, `#/$defs/waitEnvelope` and `#/$defs/asyncErrorEnvelope`; `#/$defs/jobEnvelope` also covers submit and retry --async admissions, keyed replays and status with `execution`.",
   "oneOf": [
     {
       "$ref": "#/$defs/createRequest"
@@ -108,7 +108,8 @@
         "runtime-readiness",
         "provider-binding",
         "completion",
-        "canonical-run-ledger"
+        "canonical-run-ledger",
+        "async-submit"
       ]
     },
     "jobKind": {
@@ -512,11 +513,10 @@
         }
       }
     },
-    "completionCreateRequest": {
+    "completionRequestMembers": {
       "type": "object",
-      "description": "Consumer-neutral completion input accepted by `locus api runs create --request <path|-> --json`. `responseFormat.schema` is caller-owned and opaque to Locus except for JSON Schema validation of the returned content.",
+      "description": "Members shared by `completionCreateRequest` and `completionSubmitRequest`. Open on its own; each request closes it with `unevaluatedProperties: false`, so the two member sets cannot drift.",
       "required": ["apiVersion", "kind", "consumer", "provider", "messages"],
-      "additionalProperties": false,
       "properties": {
         "apiVersion": {
           "$ref": "#/$defs/apiVersion"
@@ -593,8 +593,18 @@
         }
       }
     },
+    "completionCreateRequest": {
+      "type": "object",
+      "description": "Consumer-neutral completion input accepted by `locus api runs create --request <path|-> --json`. `responseFormat.schema` is caller-owned and opaque to Locus except for JSON Schema validation of the returned content.",
+      "allOf": [
+        {
+          "$ref": "#/$defs/completionRequestMembers"
+        }
+      ],
+      "unevaluatedProperties": false
+    },
     "createRequest": {
-      "description": "Input accepted by `locus api runs create --request <path|-> --json`. Omitted `kind` is treated as `agent` for backward compatibility.",
+      "description": "Input accepted by `locus api runs create --request <path|-> --json`. Omitted `kind` is treated as `agent` for backward compatibility. On builds with feature async-submit, `idempotencyKey` is rejected with idempotency_key_not_supported (use `#/$defs/submitRequest`).",
       "oneOf": [
         {
           "$ref": "#/$defs/agentCreateRequest"
@@ -602,7 +612,11 @@
         {
           "$ref": "#/$defs/completionCreateRequest"
         }
-      ]
+      ],
+      "not": {
+        "type": "object",
+        "required": ["idempotencyKey"]
+      }
     },
     "normalizedAgentCreateRequest": {
       "type": "object",
@@ -1291,6 +1305,13 @@
         },
         "job": {
           "$ref": "#/$defs/serializedAgentJob"
+        },
+        "idempotentReplay": {
+          "const": true,
+          "description": "Feature async-submit: present only on a keyed submit or retry --request replay of a retained Run."
+        },
+        "execution": {
+          "$ref": "#/$defs/executionObservation"
         }
       }
     },
@@ -1474,6 +1495,195 @@
         },
         "result": true
       }
+    },
+    "idempotencyKey": {
+      "description": "Feature async-submit: optional key accepted only by `runs submit` and `runs retry --request`; scoped by normalized consumer.id, case-sensitive and never trimmed. `runs create` rejects it with idempotency_key_not_supported.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^[A-Za-z0-9._:-]+$"
+    },
+    "retryRequest": {
+      "description": "Feature async-submit: body of `runs retry <id> --request <path|->`.",
+      "type": "object",
+      "required": ["apiVersion", "consumer"],
+      "additionalProperties": false,
+      "properties": {
+        "apiVersion": {
+          "$ref": "#/$defs/apiVersion"
+        },
+        "consumer": {
+          "type": "object",
+          "required": ["id"],
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/boundedId80"
+            }
+          }
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/idempotencyKey"
+        }
+      }
+    },
+    "executionObservation": {
+      "description": "Feature async-submit: advisory executor observation on `runs status` for queued/running jobs only; omitted for terminal jobs.",
+      "type": "object",
+      "required": ["state", "reason", "observedAt"],
+      "additionalProperties": false,
+      "properties": {
+        "state": {
+          "enum": ["available", "unavailable", "unknown"]
+        },
+        "reason": {
+          "enum": [
+            "executor_observed",
+            "no_executor",
+            "probe_unavailable",
+            "admission_incomplete"
+          ]
+        },
+        "observedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "hint": {
+          "const": "locus daemon run"
+        }
+      }
+    },
+    "waitReason": {
+      "enum": [
+        "admission_incomplete",
+        "run_pending",
+        "executor_unavailable",
+        "executor_unknown",
+        "terminal_artifacts_pending",
+        "observation_failed"
+      ]
+    },
+    "waitEnvelope": {
+      "description": "Feature async-submit: non-ready `runs wait` (timeout, exit 9) or observer error (exit 8). It carries no result and is not a Run outcome.",
+      "type": "object",
+      "required": ["apiVersion", "job", "wait"],
+      "properties": {
+        "apiVersion": {
+          "$ref": "#/$defs/apiVersion"
+        },
+        "job": {
+          "$ref": "#/$defs/serializedAgentJob"
+        },
+        "wait": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": ["state", "timeoutMs", "reason"],
+              "additionalProperties": false,
+              "properties": {
+                "state": {
+                  "const": "timeout"
+                },
+                "timeoutMs": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 86400000
+                },
+                "reason": {
+                  "$ref": "#/$defs/waitReason"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": ["state", "reason"],
+              "additionalProperties": false,
+              "properties": {
+                "state": {
+                  "const": "error"
+                },
+                "reason": {
+                  "$ref": "#/$defs/waitReason"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "asyncErrorEnvelope": {
+      "description": "Feature async-submit: stdout v1 error of submit/create/retry --request. It never echoes the key or stored request content.",
+      "type": "object",
+      "required": ["apiVersion", "error"],
+      "additionalProperties": false,
+      "properties": {
+        "apiVersion": {
+          "$ref": "#/$defs/apiVersion"
+        },
+        "error": {
+          "type": "object",
+          "required": ["code", "message"],
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "enum": [
+                "idempotency_key_not_supported",
+                "idempotency_conflict",
+                "consumer_mismatch",
+                "invalid_idempotency_key",
+                "secret_in_request",
+                "submission_pending"
+              ]
+            },
+            "message": {
+              "type": "string"
+            },
+            "retryable": {
+              "const": true
+            }
+          }
+        }
+      }
+    },
+    "agentSubmitRequest": {
+      "type": "object",
+      "description": "Feature async-submit: agent input of `locus api runs submit --request <path|-> --json`: an agent create request plus the optional idempotencyKey.",
+      "allOf": [
+        {
+          "$ref": "#/$defs/agentCreateRequest"
+        }
+      ],
+      "properties": {
+        "idempotencyKey": {
+          "$ref": "#/$defs/idempotencyKey"
+        }
+      }
+    },
+    "completionSubmitRequest": {
+      "type": "object",
+      "description": "Feature async-submit: completion input of `locus api runs submit --request <path|-> --json`: the completion create request members (`completionRequestMembers`, same rules) plus the optional idempotencyKey.",
+      "allOf": [
+        {
+          "$ref": "#/$defs/completionRequestMembers"
+        }
+      ],
+      "properties": {
+        "idempotencyKey": {
+          "$ref": "#/$defs/idempotencyKey"
+        }
+      },
+      "unevaluatedProperties": false
+    },
+    "submitRequest": {
+      "description": "Feature async-submit: input accepted by `locus api runs submit --request <path|-> --json`. Omitted `kind` is treated as `agent`.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/agentSubmitRequest"
+        },
+        {
+          "$ref": "#/$defs/completionSubmitRequest"
+        }
+      ]
     },
     "createResponseEnvelope": {
       "type": "object",

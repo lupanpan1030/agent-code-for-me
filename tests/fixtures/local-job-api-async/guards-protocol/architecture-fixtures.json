@@ -1,0 +1,434 @@
+{
+  "fixtureVersion": 1,
+  "evidenceClass": "synthetic",
+  "sourceRefs": [
+    "openspec/changes/add-local-job-api-async-submit/specs/architecture-ownership/spec.md:3-37 (Requirement Single Async Submission And Wait Ownership :3; S32 :19; S33 :29)",
+    "openspec/changes/add-local-job-api-async-submit/design.md:72-95 (D1 owner map; :84 schedules shared insertion primitive, :85 daemon.ts pumpQueuedRuns, :87 cli-dispatcher runPreparedLocalJobApiJob deletion with human locus run kept, :88 jobs-stdio job.run -> submitRun + scoped pump)",
+    "openspec/changes/add-local-job-api-async-submit/design.md:122 (Q2(a): wrapper pumpQueuedRuns({admittedIds:[ownId]}) via startAgentJob, same symbol as stdio)",
+    "openspec/changes/add-local-job-api-async-submit/design.md:185 (D5: pumpQueuedRuns is the only dispatch implementation; stdio scoped to session IDs)",
+    "openspec/changes/add-local-job-api-async-submit/tasks.md:28 (2.8 S32/S33 structural guard + self-test) and :83 (7.11)",
+    "openspec/changes/archive/2026-10-01-refactor-canonical-run-event-ledger/proposal.md:66 (retired canonicalRunEventLedgerV1 build-time gate)",
+    "src/main/lib/headless/cli-dispatcher.ts:240-334 (human locus run runCommand calls runPersistedAgentJob; permitted) and :451-497 (runPreparedLocalJobApiJob to be deleted)",
+    "src/main/lib/headless/jobs-stdio.ts:268-320 (job.run creates and runs inline today)",
+    "src/main/lib/headless/schedules.ts:313-345 (createScheduleJobRecord duplicate agent_jobs row construction)",
+    "scripts/check-architecture-guards.mjs:4218-4520 (fixture-driven run event ledger self-test precedent: finding key, mismatch message, summary line)"
+  ],
+  "provenance": {
+    "author": "independent red-suite author (guards-protocol domain), add-local-job-api-async-submit",
+    "measured": false,
+    "baseSha": "0447d02d",
+    "note": "Static source strings only. Each case's files are scanned as if they were the repository files at filePath; expectedFindings is the exact, complete, order-insensitive finding set the guard self-test must produce (a missing or unexpected finding fails the guard). Finding fields: rule, file, symbol, owner, ownerSection (echoed from this fixture). The configuration fields below describe the rules; the guard may read them like the run-event-ledger guard reads its pins. The name insertQueuedAgentJobRow in the clean schedule source is a placeholder for the job-store insertion primitive, not a required name. These cases assert source structure only; runtime semantics are verified by behavior tests."
+  },
+  "ownerSection": "Headless Agent Runtime",
+  "pinnedOwners": {
+    "submitRun": "src/main/lib/headless/run-submission.ts",
+    "waitForRun": "src/main/lib/headless/run-submission.ts",
+    "pumpQueuedRuns": "src/main/lib/headless/daemon.ts"
+  },
+  "retiredSymbols": {
+    "runPreparedLocalJobApiJob": "src/main/lib/headless/run-submission.ts",
+    "canonicalRunEventLedgerV1": "src/main/lib/agent-runtime/run-event-ledger-host.ts"
+  },
+  "nonExecutingFiles": [
+    "src/main/lib/headless/cli-dispatcher.ts",
+    "src/main/lib/headless/jobs-stdio.ts",
+    "src/main/lib/headless/local-job-api.ts",
+    "src/main/lib/headless/run-submission.ts"
+  ],
+  "runnerSymbols": ["runPersistedAgentJob", "runPersistedCompletionJob"],
+  "claimSymbols": ["startAgentJob", "listQueuedAgentJobsForSource"],
+  "queueOwner": "src/main/lib/headless/daemon.ts",
+  "permittedRunnerCallers": [
+    {
+      "file": "src/main/lib/headless/cli-dispatcher.ts",
+      "function": "runCommand"
+    }
+  ],
+  "jobRowInsertOwner": "src/main/lib/headless/job-store.ts",
+  "storeAppendOwner": "src/main/lib/headless/job-store.ts",
+  "storeAppendImporter": "src/main/lib/agent-runtime/run-event-ledger-host.ts",
+  "rules": {
+    "duplicate-definition": "a pinnedOwners symbol is defined (function/class/variable) outside its owner; owner = pinned owner",
+    "duplicate-reexport": "a pinnedOwners symbol is re-exported (export { x } from) outside its owner; owner = pinned owner",
+    "retired-symbol": "a retiredSymbols identifier appears in any file (definition, import, call or reference); owner = the canonical replacement owner",
+    "inline-runner-call": "a call to a runnerSymbols function inside a nonExecutingFiles file, outside a permittedRunnerCallers function; owner = queueOwner; one finding per file+symbol",
+    "independent-dispatch": "a call to a claimSymbols function inside a nonExecutingFiles file, outside a permittedRunnerCallers function; owner = queueOwner; one finding per file+symbol",
+    "direct-job-insert": "an insert(agentJobs) call (import aliases included) in any file other than jobRowInsertOwner; symbol = agentJobs; owner = jobRowInsertOwner; one finding per file",
+    "forbidden-store-import": "a named import of appendExactRunEventBatch from storeAppendOwner in a file other than storeAppendOwner or storeAppendImporter; owner = storeAppendImporter"
+  },
+  "cases": [
+    {
+      "caseId": "s32-clean-envelope-adapters",
+      "scenario": "S32",
+      "category": "clean",
+      "files": [
+        {
+          "filePath": "src/main/lib/headless/run-submission.ts",
+          "content": "import { type AgentJobDatabase, createAgentJob } from \"./job-store\"\n\nexport async function submitRun(db: AgentJobDatabase, intent: { prompt: string }) {\n  const job = await createAgentJob(db, intent as never)\n  return { job, replay: false }\n}\n\nexport async function waitForRun(db: AgentJobDatabase, jobId: string, options: { timeoutMs: number }) {\n  return { db, jobId, timeoutMs: options.timeoutMs }\n}\n"
+        },
+        {
+          "filePath": "src/main/lib/headless/daemon.ts",
+          "content": "import { runPersistedCompletionJob } from \"./completion-runner\"\nimport { runPersistedAgentJob } from \"./job-runner\"\nimport { type AgentJobDatabase, listQueuedAgentJobsForSource } from \"./job-store\"\n\nexport async function pumpQueuedRuns(input: { db: AgentJobDatabase; admittedIds?: readonly string[] }) {\n  for (const job of listQueuedAgentJobsForSource(input.db, \"api\", 10)) {\n    if (input.admittedIds && !input.admittedIds.includes(job.id)) continue\n    if (job.kind === \"completion\") await runPersistedCompletionJob({ db: input.db, jobId: job.id })\n    else await runPersistedAgentJob({ db: input.db, jobId: job.id })\n  }\n}\n\nexport async function runLocalAgentDaemon(options: { db: AgentJobDatabase }) {\n  await pumpQueuedRuns({ db: options.db })\n}\n"
+        },
+        {
+          "filePath": "src/main/lib/headless/cli-dispatcher.ts",
+          "content": "import { pumpQueuedRuns } from \"./daemon\"\nimport { runPersistedAgentJob } from \"./job-runner\"\nimport type { AgentJobDatabase } from \"./job-store\"\nimport { submitRun, waitForRun } from \"./run-submission\"\n\ntype Options = { db: AgentJobDatabase }\n\n// Human one-shot `locus run` keeps its in-process runner (permitted).\nasync function runCommand(options: Options, jobId: string) {\n  const result = await runPersistedAgentJob({ db: options.db, jobId })\n  return result.exitCode\n}\n\nasync function apiRunsSubmitCommand(options: Options, request: { prompt: string }) {\n  const admission = await submitRun(options.db, request)\n  return admission.job.id\n}\n\nasync function apiRunsWaitCommand(options: Options, jobId: string) {\n  return waitForRun(options.db, jobId, { timeoutMs: 30_000 })\n}\n\nasync function apiRunsCreateCommand(options: Options, request: { prompt: string }) {\n  const admission = await submitRun(options.db, request)\n  await pumpQueuedRuns({ db: options.db, admittedIds: [admission.job.id] })\n  return waitForRun(options.db, admission.job.id, { timeoutMs: 30_000 })\n}\n\nasync function apiRunsRetryCommand(options: Options, request: { prompt: string }) {\n  const admission = await submitRun(options.db, request)\n  await pumpQueuedRuns({ db: options.db, admittedIds: [admission.job.id] })\n  return waitForRun(options.db, admission.job.id, { timeoutMs: 30_000 })\n}\n\nexport const commands = { runCommand, apiRunsSubmitCommand, apiRunsWaitCommand, apiRunsCreateCommand, apiRunsRetryCommand }\n"
+        },
+        {
+          "filePath": "src/main/lib/headless/jobs-stdio.ts",
+          "content": "import { pumpQueuedRuns } from \"./daemon\"\nimport { type AgentJobDatabase, cancelAgentJob } from \"./job-store\"\nimport { submitRun } from \"./run-submission\"\n\ntype Session = { db: AgentJobDatabase; admittedIds: Set<string> }\n\nexport async function handleJobRun(session: Session, params: { prompt: string }) {\n  const admission = await submitRun(session.db, params)\n  session.admittedIds.add(admission.job.id)\n  void pumpQueuedRuns({ db: session.db, admittedIds: [...session.admittedIds] })\n  return { job: admission.job }\n}\n\nexport async function handleJobCancel(session: Session, jobId: string) {\n  if (!session.admittedIds.has(jobId)) return { error: -32602 }\n  return { job: await cancelAgentJob(session.db, jobId, { requestedBy: \"protocol\" }) }\n}\n"
+        }
+      ],
+      "expectedFindings": []
+    },
+    {
+      "caseId": "s32-restored-prepared-runner",
+      "scenario": "S32",
+      "category": "retired-inline-runner",
+      "files": [
+        {
+          "filePath": "src/main/lib/headless/cli-dispatcher.ts",
+          "content": "import { runPersistedCompletionJob } from \"./completion-runner\"\nimport { pumpQueuedRuns } from \"./daemon\"\nimport { runPersistedAgentJob } from \"./job-runner\"\nimport type { AgentJobDatabase } from \"./job-store\"\nimport { submitRun, waitForRun } from \"./run-submission\"\n\ntype Options = { db: AgentJobDatabase }\n\n// Human one-shot `locus run` keeps its in-process runner (permitted).\nasync function runCommand(options: Options, jobId: string) {\n  const result = await runPersistedAgentJob({ db: options.db, jobId })\n  return result.exitCode\n}\n\nasync function apiRunsSubmitCommand(options: Options, request: { prompt: string }) {\n  const admission = await submitRun(options.db, request)\n  return admission.job.id\n}\n\nasync function apiRunsWaitCommand(options: Options, jobId: string) {\n  return waitForRun(options.db, jobId, { timeoutMs: 30_000 })\n}\n\nasync function runPreparedLocalJobApiJob(options: Options, prepared: { kind: string; jobId: string }) {\n  return prepared.kind === \"completion\"\n    ? runPersistedCompletionJob({ db: options.db, jobId: prepared.jobId })\n    : runPersistedAgentJob({ db: options.db, jobId: prepared.jobId })\n}\n\nasync function apiRunsCreateCommand(options: Options, request: { prompt: string }) {\n  const admission = await submitRun(options.db, request)\n  return runPreparedLocalJobApiJob(options, { kind: \"agent\", jobId: admission.job.id })\n}\n\nasync function apiRunsRetryCommand(options: Options, request: { prompt: string }) {\n  const admission = await submitRun(options.db, request)\n  await pumpQueuedRuns({ db: options.db, admittedIds: [admission.job.id] })\n  return waitForRun(options.db, admission.job.id, { timeoutMs: 30_000 })\n}\n\nexport const commands = { runCommand, apiRunsSubmitCommand, apiRunsWaitCommand, apiRunsCreateCommand, apiRunsRetryCommand }\n"
+        }
+      ],
+      "expectedFindings": [
+        {
+          "rule": "retired-symbol",
+          "file": "src/main/lib/headless/cli-dispatcher.ts",
+          "symbol": "runPreparedLocalJobApiJob",
+          "owner": "src/main/lib/headless/run-submission.ts",
+          "ownerSection": "Headless Agent Runtime"
+        },
+        {
+          "rule": "inline-runner-call",
+          "file": "src/main/lib/headless/cli-dispatcher.ts",
+          "symbol": "runPersistedAgentJob",
+          "owner": "src/main/lib/headless/daemon.ts",
+          "ownerSection": "Headless Agent Runtime"
+        },
+        {
+          "rule": "inline-runner-call",
+          "file": "src/main/lib/headless/cli-dispatcher.ts",
+          "symbol": "runPersistedCompletionJob",
+          "owner": "src/main/lib/headless/daemon.ts",
+          "ownerSection": "Headless Agent Runtime"
+        }
+      ]
+    },
+    {
+      "caseId": "s32-create-inline-agent-runner",
+      "scenario": "S32",
+      "category": "inline-runner",
+      "files": [
+        {
+          "filePath": "src/main/lib/headless/cli-dispatcher.ts",
+          "content": "import { pumpQueuedRuns } from \"./daemon\"\nimport { runPersistedAgentJob } from \"./job-runner\"\nimport type { AgentJobDatabase } from \"./job-store\"\nimport { submitRun, waitForRun } from \"./run-submission\"\n\ntype Options = { db: AgentJobDatabase }\n\n// Human one-shot `locus run` keeps its in-process runner (permitted).\nasync function runCommand(options: Options, jobId: string) {\n  const result = await runPersistedAgentJob({ db: options.db, jobId })\n  return result.exitCode\n}\n\nasync function apiRunsSubmitCommand(options: Options, request: { prompt: string }) {\n  const admission = await submitRun(options.db, request)\n  return admission.job.id\n}\n\nasync function apiRunsWaitCommand(options: Options, jobId: string) {\n  return waitForRun(options.db, jobId, { timeoutMs: 30_000 })\n}\n\nasync function apiRunsCreateCommand(options: Options, request: { prompt: string }) {\n  const admission = await submitRun(options.db, request)\n  const result = await runPersistedAgentJob({ db: options.db, jobId: admission.job.id })\n  return result.exitCode\n}\n\nasync function apiRunsRetryCommand(options: Options, request: { prompt: string }) {\n  const admission = await submitRun(options.db, request)\n  await pumpQueuedRuns({ db: options.db, admittedIds: [admission.job.id] })\n  return waitForRun(options.db, admission.job.id, { timeoutMs: 30_000 })\n}\n\nexport const commands = { runCommand, apiRunsSubmitCommand, apiRunsWaitCommand, apiRunsCreateCommand, apiRunsRetryCommand }\n"
+        }
+      ],
+      "expectedFindings": [
+        {
+          "rule": "inline-runner-call",
+          "file": "src/main/lib/headless/cli-dispatcher.ts",
+          "symbol": "runPersistedAgentJob",
+          "owner": "src/main/lib/headless/daemon.ts",
+          "ownerSection": "Headless Agent Runtime"
+        }
+      ]
+    },
+    {
+      "caseId": "s32-retry-inline-completion-runner",
+      "scenario": "S32",
+      "category": "inline-runner",
+      "files": [
+        {
+          "filePath": "src/main/lib/headless/cli-dispatcher.ts",
+          "content": "import { runPersistedCompletionJob } from \"./completion-runner\"\nimport { pumpQueuedRuns } from \"./daemon\"\nimport { runPersistedAgentJob } from \"./job-runner\"\nimport type { AgentJobDatabase } from \"./job-store\"\nimport { submitRun, waitForRun } from \"./run-submission\"\n\ntype Options = { db: AgentJobDatabase }\n\n// Human one-shot `locus run` keeps its in-process runner (permitted).\nasync function runCommand(options: Options, jobId: string) {\n  const result = await runPersistedAgentJob({ db: options.db, jobId })\n  return result.exitCode\n}\n\nasync function apiRunsSubmitCommand(options: Options, request: { prompt: string }) {\n  const admission = await submitRun(options.db, request)\n  return admission.job.id\n}\n\nasync function apiRunsWaitCommand(options: Options, jobId: string) {\n  return waitForRun(options.db, jobId, { timeoutMs: 30_000 })\n}\n\nasync function apiRunsCreateCommand(options: Options, request: { prompt: string }) {\n  const admission = await submitRun(options.db, request)\n  await pumpQueuedRuns({ db: options.db, admittedIds: [admission.job.id] })\n  return waitForRun(options.db, admission.job.id, { timeoutMs: 30_000 })\n}\n\nasync function apiRunsRetryCommand(options: Options, request: { prompt: string }) {\n  const admission = await submitRun(options.db, request)\n  const result = await runPersistedCompletionJob({ db: options.db, jobId: admission.job.id })\n  return result.exitCode\n}\n\nexport const commands = { runCommand, apiRunsSubmitCommand, apiRunsWaitCommand, apiRunsCreateCommand, apiRunsRetryCommand }\n"
+        }
+      ],
+      "expectedFindings": [
+        {
+          "rule": "inline-runner-call",
+          "file": "src/main/lib/headless/cli-dispatcher.ts",
+          "symbol": "runPersistedCompletionJob",
+          "owner": "src/main/lib/headless/daemon.ts",
+          "ownerSection": "Headless Agent Runtime"
+        }
+      ]
+    },
+    {
+      "caseId": "s32-submit-core-runs-inline",
+      "scenario": "S32",
+      "category": "inline-runner",
+      "files": [
+        {
+          "filePath": "src/main/lib/headless/run-submission.ts",
+          "content": "import { type AgentJobDatabase, createAgentJob } from \"./job-store\"\nimport { runPersistedAgentJob } from \"./job-runner\"\n\nexport async function submitRun(db: AgentJobDatabase, intent: { prompt: string }) {\n  const job = await createAgentJob(db, intent as never)\n  // inline API execution fallback inside the submit owner\n  await runPersistedAgentJob({ db, jobId: job.id })\n  return { job, replay: false }\n}\n\nexport async function waitForRun(db: AgentJobDatabase, jobId: string, options: { timeoutMs: number }) {\n  return { db, jobId, timeoutMs: options.timeoutMs }\n}\n"
+        }
+      ],
+      "expectedFindings": [
+        {
+          "rule": "inline-runner-call",
+          "file": "src/main/lib/headless/run-submission.ts",
+          "symbol": "runPersistedAgentJob",
+          "owner": "src/main/lib/headless/daemon.ts",
+          "ownerSection": "Headless Agent Runtime"
+        }
+      ]
+    },
+    {
+      "caseId": "s32-stdio-inline-agent-runner",
+      "scenario": "S32",
+      "category": "inline-runner",
+      "files": [
+        {
+          "filePath": "src/main/lib/headless/jobs-stdio.ts",
+          "content": "import { runPersistedAgentJob } from \"./job-runner\"\nimport { type AgentJobDatabase, cancelAgentJob } from \"./job-store\"\nimport { submitRun } from \"./run-submission\"\n\ntype Session = { db: AgentJobDatabase; admittedIds: Set<string> }\n\nexport async function handleJobRun(session: Session, params: { prompt: string }) {\n  const admission = await submitRun(session.db, params)\n  session.admittedIds.add(admission.job.id)\n  // pre-change shape: the protocol session starts its own runner\n  void runPersistedAgentJob({ db: session.db, jobId: admission.job.id })\n  return { job: admission.job }\n}\n\nexport async function handleJobCancel(session: Session, jobId: string) {\n  if (!session.admittedIds.has(jobId)) return { error: -32602 }\n  return { job: await cancelAgentJob(session.db, jobId, { requestedBy: \"protocol\" }) }\n}\n"
+        }
+      ],
+      "expectedFindings": [
+        {
+          "rule": "inline-runner-call",
+          "file": "src/main/lib/headless/jobs-stdio.ts",
+          "symbol": "runPersistedAgentJob",
+          "owner": "src/main/lib/headless/daemon.ts",
+          "ownerSection": "Headless Agent Runtime"
+        }
+      ]
+    },
+    {
+      "caseId": "s32-stdio-independent-dispatch-loop",
+      "scenario": "S32",
+      "category": "independent-dispatch",
+      "files": [
+        {
+          "filePath": "src/main/lib/headless/jobs-stdio.ts",
+          "content": "import { type AgentJobDatabase, cancelAgentJob, listQueuedAgentJobsForSource, startAgentJob } from \"./job-store\"\nimport { submitRun } from \"./run-submission\"\n\ntype Session = { db: AgentJobDatabase; admittedIds: Set<string>; runner: (jobId: string) => Promise<void> }\n\n// an independently dispatching session loop instead of the canonical pump\nasync function dispatchSessionQueue(session: Session) {\n  for (const job of listQueuedAgentJobsForSource(session.db, \"protocol\", 10)) {\n    if (!session.admittedIds.has(job.id)) continue\n    await startAgentJob(session.db, { jobId: job.id, workerId: \"protocol-session-loop\" })\n    await session.runner(job.id)\n  }\n}\n\nexport async function handleJobRun(session: Session, params: { prompt: string }) {\n  const admission = await submitRun(session.db, params)\n  session.admittedIds.add(admission.job.id)\n  void dispatchSessionQueue(session)\n  return { job: admission.job }\n}\n\nexport async function handleJobCancel(session: Session, jobId: string) {\n  if (!session.admittedIds.has(jobId)) return { error: -32602 }\n  return { job: await cancelAgentJob(session.db, jobId, { requestedBy: \"protocol\" }) }\n}\n"
+        }
+      ],
+      "expectedFindings": [
+        {
+          "rule": "independent-dispatch",
+          "file": "src/main/lib/headless/jobs-stdio.ts",
+          "symbol": "listQueuedAgentJobsForSource",
+          "owner": "src/main/lib/headless/daemon.ts",
+          "ownerSection": "Headless Agent Runtime"
+        },
+        {
+          "rule": "independent-dispatch",
+          "file": "src/main/lib/headless/jobs-stdio.ts",
+          "symbol": "startAgentJob",
+          "owner": "src/main/lib/headless/daemon.ts",
+          "ownerSection": "Headless Agent Runtime"
+        }
+      ]
+    },
+    {
+      "caseId": "s33-clean-schedule-shared-insertion",
+      "scenario": "S33",
+      "category": "clean",
+      "files": [
+        {
+          "filePath": "src/main/lib/headless/schedules.ts",
+          "content": "import { agentScheduleRuns, agentSchedules } from \"../db/schema\"\nimport { type AgentJobDatabase, insertQueuedAgentJobRow, recordAgentJobCreated } from \"./job-store\"\n\nexport async function fireAgentSchedule(db: AgentJobDatabase, schedule: { id: string; cwd: string }, now: Date) {\n  const fired = db.transaction((tx: AgentJobDatabase) => {\n    // the shared job-store insertion primitive inside the fire/audit/nextRunAt transaction\n    const job = insertQueuedAgentJobRow(tx, { source: \"schedule\", runtime: \"codex\", mode: \"agent\", cwd: schedule.cwd, prompt: \"scheduled\" })\n    tx.insert(agentScheduleRuns).values({ id: `run-${job.id}`, scheduleId: schedule.id, jobId: job.id }).run()\n    tx.update(agentSchedules).set({ lastJobId: job.id, updatedAt: now }).run()\n    return job\n  })\n  await recordAgentJobCreated(db, fired, { source: \"schedule\" })\n  return fired\n}\n"
+        },
+        {
+          "filePath": "src/main/lib/headless/job-store.ts",
+          "content": "import { agentJobs } from \"../db/schema\"\n\nexport type AgentJobDatabase = { insert: (table: unknown) => any; transaction: <T>(fn: (tx: AgentJobDatabase) => T) => T }\n\nexport function insertQueuedAgentJobRow(tx: AgentJobDatabase, input: Record<string, unknown>) {\n  tx.insert(agentJobs).values({ ...input, status: \"queued\" }).run()\n  return { id: String(input.id ?? \"job\") }\n}\n\nexport async function createAgentJob(db: AgentJobDatabase, input: Record<string, unknown>) {\n  return db.transaction((tx) => insertQueuedAgentJobRow(tx, input))\n}\n\nexport function appendExactRunEventBatch(db: AgentJobDatabase, input: unknown) {\n  return { db, input }\n}\n"
+        },
+        {
+          "filePath": "src/main/lib/agent-runtime/run-event-ledger-host.ts",
+          "content": "import { appendExactRunEventBatch } from \"../headless/job-store\"\n\nexport function getOrCreateRunEventLedger(job: { id: string }) {\n  return { job, append: appendExactRunEventBatch }\n}\n"
+        },
+        {
+          "filePath": "src/main/lib/headless/run-submission.ts",
+          "content": "import { type AgentJobDatabase, createAgentJob } from \"./job-store\"\n\nexport async function submitRun(db: AgentJobDatabase, intent: { prompt: string }) {\n  const job = await createAgentJob(db, intent as never)\n  return { job, replay: false }\n}\n\nexport async function waitForRun(db: AgentJobDatabase, jobId: string, options: { timeoutMs: number }) {\n  return { db, jobId, timeoutMs: options.timeoutMs }\n}\n"
+        },
+        {
+          "filePath": "src/main/lib/headless/daemon.ts",
+          "content": "import { runPersistedCompletionJob } from \"./completion-runner\"\nimport { runPersistedAgentJob } from \"./job-runner\"\nimport { type AgentJobDatabase, listQueuedAgentJobsForSource } from \"./job-store\"\n\nexport async function pumpQueuedRuns(input: { db: AgentJobDatabase; admittedIds?: readonly string[] }) {\n  for (const job of listQueuedAgentJobsForSource(input.db, \"api\", 10)) {\n    if (input.admittedIds && !input.admittedIds.includes(job.id)) continue\n    if (job.kind === \"completion\") await runPersistedCompletionJob({ db: input.db, jobId: job.id })\n    else await runPersistedAgentJob({ db: input.db, jobId: job.id })\n  }\n}\n\nexport async function runLocalAgentDaemon(options: { db: AgentJobDatabase }) {\n  await pumpQueuedRuns({ db: options.db })\n}\n"
+        }
+      ],
+      "expectedFindings": []
+    },
+    {
+      "caseId": "s33-duplicate-submit-core",
+      "scenario": "S33",
+      "category": "duplicate-owner",
+      "files": [
+        {
+          "filePath": "src/main/lib/headless/local-job-api.ts",
+          "content": "import { type AgentJobDatabase, createAgentJob } from \"./job-store\"\n\n// a second submission core outside run-submission.ts\nexport async function submitRun(db: AgentJobDatabase, intent: { prompt: string }) {\n  return { job: await createAgentJob(db, intent as never), replay: false }\n}\n\nexport async function createLocalJobApiJob(db: AgentJobDatabase, request: { prompt: string }) {\n  return submitRun(db, request)\n}\n"
+        }
+      ],
+      "expectedFindings": [
+        {
+          "rule": "duplicate-definition",
+          "file": "src/main/lib/headless/local-job-api.ts",
+          "symbol": "submitRun",
+          "owner": "src/main/lib/headless/run-submission.ts",
+          "ownerSection": "Headless Agent Runtime"
+        }
+      ]
+    },
+    {
+      "caseId": "s33-duplicate-wait-reexport",
+      "scenario": "S33",
+      "category": "duplicate-owner",
+      "files": [
+        {
+          "filePath": "src/main/lib/headless/cli-dispatcher.ts",
+          "content": "import { pumpQueuedRuns } from \"./daemon\"\nimport { runPersistedAgentJob } from \"./job-runner\"\nimport type { AgentJobDatabase } from \"./job-store\"\nimport { submitRun, waitForRun } from \"./run-submission\"\n\ntype Options = { db: AgentJobDatabase }\n\n// Human one-shot `locus run` keeps its in-process runner (permitted).\nasync function runCommand(options: Options, jobId: string) {\n  const result = await runPersistedAgentJob({ db: options.db, jobId })\n  return result.exitCode\n}\n\nasync function apiRunsSubmitCommand(options: Options, request: { prompt: string }) {\n  const admission = await submitRun(options.db, request)\n  return admission.job.id\n}\n\nasync function apiRunsWaitCommand(options: Options, jobId: string) {\n  return waitForRun(options.db, jobId, { timeoutMs: 30_000 })\n}\n\nasync function apiRunsCreateCommand(options: Options, request: { prompt: string }) {\n  const admission = await submitRun(options.db, request)\n  await pumpQueuedRuns({ db: options.db, admittedIds: [admission.job.id] })\n  return waitForRun(options.db, admission.job.id, { timeoutMs: 30_000 })\n}\n\nasync function apiRunsRetryCommand(options: Options, request: { prompt: string }) {\n  const admission = await submitRun(options.db, request)\n  await pumpQueuedRuns({ db: options.db, admittedIds: [admission.job.id] })\n  return waitForRun(options.db, admission.job.id, { timeoutMs: 30_000 })\n}\n\nexport const commands = { runCommand, apiRunsSubmitCommand, apiRunsWaitCommand, apiRunsCreateCommand, apiRunsRetryCommand }\nexport { waitForRun } from \"./run-submission\"\n"
+        }
+      ],
+      "expectedFindings": [
+        {
+          "rule": "duplicate-reexport",
+          "file": "src/main/lib/headless/cli-dispatcher.ts",
+          "symbol": "waitForRun",
+          "owner": "src/main/lib/headless/run-submission.ts",
+          "ownerSection": "Headless Agent Runtime"
+        }
+      ]
+    },
+    {
+      "caseId": "s33-duplicate-pump",
+      "scenario": "S33",
+      "category": "duplicate-owner",
+      "files": [
+        {
+          "filePath": "src/main/lib/headless/jobs-stdio.ts",
+          "content": "import { type AgentJobDatabase, cancelAgentJob } from \"./job-store\"\nimport { submitRun } from \"./run-submission\"\n\ntype Session = { db: AgentJobDatabase; admittedIds: Set<string> }\n\n// a second queue owner defined next to the protocol adapter\nfunction pumpQueuedRuns(input: { admittedIds: readonly string[] }) {\n  return input.admittedIds.length\n}\n\nexport async function handleJobRun(session: Session, params: { prompt: string }) {\n  const admission = await submitRun(session.db, params)\n  session.admittedIds.add(admission.job.id)\n  pumpQueuedRuns({ admittedIds: [...session.admittedIds] })\n  return { job: admission.job }\n}\n\nexport async function handleJobCancel(session: Session, jobId: string) {\n  if (!session.admittedIds.has(jobId)) return { error: -32602 }\n  return { job: await cancelAgentJob(session.db, jobId, { requestedBy: \"protocol\" }) }\n}\n"
+        }
+      ],
+      "expectedFindings": [
+        {
+          "rule": "duplicate-definition",
+          "file": "src/main/lib/headless/jobs-stdio.ts",
+          "symbol": "pumpQueuedRuns",
+          "owner": "src/main/lib/headless/daemon.ts",
+          "ownerSection": "Headless Agent Runtime"
+        }
+      ]
+    },
+    {
+      "caseId": "s33-api-adapter-direct-job-insert",
+      "scenario": "S33",
+      "category": "direct-job-insert",
+      "files": [
+        {
+          "filePath": "src/main/lib/headless/local-job-api.ts",
+          "content": "import { agentJobs } from \"../db/schema\"\nimport type { AgentJobDatabase } from \"./job-store\"\n\nexport function createLocalJobApiJob(db: AgentJobDatabase, request: { id: string; prompt: string }) {\n  db.insert(agentJobs)\n    .values({ id: request.id, source: \"api\", runtime: \"codex\", status: \"queued\", mode: \"plan\", cwd: \"/fixture\", promptPreview: request.prompt })\n    .run()\n  return request.id\n}\n"
+        }
+      ],
+      "expectedFindings": [
+        {
+          "rule": "direct-job-insert",
+          "file": "src/main/lib/headless/local-job-api.ts",
+          "symbol": "agentJobs",
+          "owner": "src/main/lib/headless/job-store.ts",
+          "ownerSection": "Headless Agent Runtime"
+        }
+      ]
+    },
+    {
+      "caseId": "s33-stdio-aliased-direct-job-insert",
+      "scenario": "S33",
+      "category": "direct-job-insert",
+      "files": [
+        {
+          "filePath": "src/main/lib/headless/jobs-stdio.ts",
+          "content": "import { agentJobs as protocolJobRows } from \"../db/schema\"\nimport type { AgentJobDatabase } from \"./job-store\"\n\ntype Session = { db: AgentJobDatabase; admittedIds: Set<string> }\n\nexport function handleJobRun(session: Session, params: { id: string; prompt: string }) {\n  session.db\n    .insert(protocolJobRows)\n    .values({ id: params.id, source: \"protocol\", runtime: \"codex\", status: \"queued\", mode: \"plan\", cwd: \"/fixture\", promptPreview: params.prompt })\n    .run()\n  session.admittedIds.add(params.id)\n  return { jobId: params.id }\n}\n"
+        }
+      ],
+      "expectedFindings": [
+        {
+          "rule": "direct-job-insert",
+          "file": "src/main/lib/headless/jobs-stdio.ts",
+          "symbol": "agentJobs",
+          "owner": "src/main/lib/headless/job-store.ts",
+          "ownerSection": "Headless Agent Runtime"
+        }
+      ]
+    },
+    {
+      "caseId": "s33-schedule-direct-job-insert",
+      "scenario": "S33",
+      "category": "direct-job-insert",
+      "files": [
+        {
+          "filePath": "src/main/lib/headless/schedules.ts",
+          "content": "import { agentJobs, agentScheduleRuns } from \"../db/schema\"\nimport { type AgentJobDatabase, recordAgentJobCreated } from \"./job-store\"\n\nfunction createScheduleJobRecord(tx: AgentJobDatabase, schedule: { id: string; cwd: string }, jobId: string) {\n  tx.insert(agentJobs)\n    .values({ id: jobId, source: \"schedule\", runtime: \"codex\", status: \"queued\", mode: \"agent\", cwd: schedule.cwd, promptPreview: \"scheduled\" })\n    .run()\n  return jobId\n}\n\nexport async function fireAgentSchedule(db: AgentJobDatabase, schedule: { id: string; cwd: string }, jobId: string) {\n  const fired = db.transaction((tx: AgentJobDatabase) => {\n    const job = createScheduleJobRecord(tx, schedule, jobId)\n    tx.insert(agentScheduleRuns).values({ id: `run-${jobId}`, scheduleId: schedule.id, jobId: job }).run()\n    return job\n  })\n  await recordAgentJobCreated(db, { id: fired } as never, { source: \"schedule\" })\n  return fired\n}\n"
+        }
+      ],
+      "expectedFindings": [
+        {
+          "rule": "direct-job-insert",
+          "file": "src/main/lib/headless/schedules.ts",
+          "symbol": "agentJobs",
+          "owner": "src/main/lib/headless/job-store.ts",
+          "ownerSection": "Headless Agent Runtime"
+        }
+      ]
+    },
+    {
+      "caseId": "s33-adapter-imports-store-append",
+      "scenario": "S33",
+      "category": "store-append-import",
+      "files": [
+        {
+          "filePath": "src/main/lib/headless/local-job-api.ts",
+          "content": "import { type AgentJobDatabase, appendExactRunEventBatch } from \"./job-store\"\n\nexport function recordApiCreation(db: AgentJobDatabase, jobId: string) {\n  return appendExactRunEventBatch(db, { jobId, records: [] } as never)\n}\n"
+        }
+      ],
+      "expectedFindings": [
+        {
+          "rule": "forbidden-store-import",
+          "file": "src/main/lib/headless/local-job-api.ts",
+          "symbol": "appendExactRunEventBatch",
+          "owner": "src/main/lib/agent-runtime/run-event-ledger-host.ts",
+          "ownerSection": "Headless Agent Runtime"
+        }
+      ]
+    },
+    {
+      "caseId": "s33-migration-toggle-old-core",
+      "scenario": "S33",
+      "category": "migration-toggle",
+      "files": [
+        {
+          "filePath": "src/main/lib/headless/cli-dispatcher.ts",
+          "content": "import { runPreparedLocalJobApiJob } from \"./legacy-local-job-api-runner\"\nimport { pumpQueuedRuns } from \"./daemon\"\nimport { runPersistedAgentJob } from \"./job-runner\"\nimport type { AgentJobDatabase } from \"./job-store\"\nimport { submitRun, waitForRun } from \"./run-submission\"\n\ntype Options = { db: AgentJobDatabase }\n\n// Human one-shot `locus run` keeps its in-process runner (permitted).\nasync function runCommand(options: Options, jobId: string) {\n  const result = await runPersistedAgentJob({ db: options.db, jobId })\n  return result.exitCode\n}\n\nasync function apiRunsSubmitCommand(options: Options, request: { prompt: string }) {\n  const admission = await submitRun(options.db, request)\n  return admission.job.id\n}\n\nasync function apiRunsWaitCommand(options: Options, jobId: string) {\n  return waitForRun(options.db, jobId, { timeoutMs: 30_000 })\n}\n\nasync function apiRunsCreateCommand(options: Options & { env: Record<string, string | undefined> }, request: { prompt: string }) {\n  const admission = await submitRun(options.db, request)\n  if (options.env.LOCUS_LEGACY_INLINE_API_RUNNER === \"1\") {\n    // optional migration setting re-enabling the old inline core\n    return runPreparedLocalJobApiJob(options, admission)\n  }\n  await pumpQueuedRuns({ db: options.db, admittedIds: [admission.job.id] })\n  return waitForRun(options.db, admission.job.id, { timeoutMs: 30_000 })\n}\n\nasync function apiRunsRetryCommand(options: Options, request: { prompt: string }) {\n  const admission = await submitRun(options.db, request)\n  await pumpQueuedRuns({ db: options.db, admittedIds: [admission.job.id] })\n  return waitForRun(options.db, admission.job.id, { timeoutMs: 30_000 })\n}\n\nexport const commands = { runCommand, apiRunsSubmitCommand, apiRunsWaitCommand, apiRunsCreateCommand, apiRunsRetryCommand }\n"
+        }
+      ],
+      "expectedFindings": [
+        {
+          "rule": "retired-symbol",
+          "file": "src/main/lib/headless/cli-dispatcher.ts",
+          "symbol": "runPreparedLocalJobApiJob",
+          "owner": "src/main/lib/headless/run-submission.ts",
+          "ownerSection": "Headless Agent Runtime"
+        }
+      ]
+    },
+    {
+      "caseId": "s33-migration-toggle-ledger-gate",
+      "scenario": "S33",
+      "category": "migration-toggle",
+      "files": [
+        {
+          "filePath": "src/main/lib/agent-runtime/run-event-ledger-host.ts",
+          "content": "import { appendExactRunEventBatch } from \"../headless/job-store\"\n\n// optional migration setting restoring the retired transition gate\nconst canonicalRunEventLedgerV1 = process.env.LOCUS_CANONICAL_RUN_EVENT_LEDGER_V1 !== \"0\"\n\nexport function getOrCreateRunEventLedger(job: { id: string }) {\n  return canonicalRunEventLedgerV1 ? { job, append: appendExactRunEventBatch } : null\n}\n"
+        }
+      ],
+      "expectedFindings": [
+        {
+          "rule": "retired-symbol",
+          "file": "src/main/lib/agent-runtime/run-event-ledger-host.ts",
+          "symbol": "canonicalRunEventLedgerV1",
+          "owner": "src/main/lib/agent-runtime/run-event-ledger-host.ts",
+          "ownerSection": "Headless Agent Runtime"
+        }
+      ]
+    }
+  ]
+}
