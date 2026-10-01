@@ -11,6 +11,7 @@ import {
   LOCAL_JOB_API_VERSION,
   LOCAL_JOB_API_WAIT_EXIT_CODE,
   LocalJobApiRequestError,
+  type NormalizedLocalJobApiCreateRequest,
   toLocalJobApiErrorEnvelope,
 } from "../../../shared/local-job-api"
 import type { AgentJob, AgentJobEvent, Project } from "../db/schema"
@@ -661,18 +662,6 @@ async function watchStdinEof(
   }
 }
 
-/**
- * True when this process's stdin is an open pipe/socket that did not report
- * EOF inside the watchStdinEof probe: the EOF relay may arm on it.
- */
-async function stdinOpenAtArming(
-  stream: Readable | undefined,
-): Promise<boolean> {
-  const watch = await watchStdinEof(stream)
-  watch?.stop()
-  return watch !== null
-}
-
 /** A relayed catchable abort of a create/default-retry wrapper. */
 type RelayedAbort = {
   /** The re-raised signal, or null for an armed stdin EOF (exit 8). */
@@ -681,10 +670,32 @@ type RelayedAbort = {
   relayed: Promise<void>
 }
 
+/**
+ * The R4 relay of a create/default-retry wrapper. Its listeners are installed
+ * once, before admission, and removed only by `dispose()` when the command
+ * ends; every later change of disposition is a mode switch, so a signal the
+ * runtime already caught is always dispatched to a live handler.
+ */
 type WrapperAbortRelay = {
   /** Resolves as soon as a relayed catchable signal or armed EOF arrives. */
   aborted: Promise<RelayedAbort>
-  disarm(): void
+  /** The relayed abort once one arrived, else null. */
+  received(): RelayedAbort | null
+  /** Admission returned the own Run: an abort held during admission relays now. */
+  admitted(jobId: string): void
+  /**
+   * The wrapper does not own a Run to cancel (admission failed, or a keyed
+   * replay waiter observes a retained Run another request admitted): a held
+   * signal is re-raised at once and later signals take the default
+   * disposition; EOF is ignored.
+   */
+  observeOnly(): void
+  /** The worker identity the own pump attempts its claim with. */
+  ownWorker(workerId: string): void
+  /** The own pump claimed: the baseline default disposition, EOF ignored. */
+  ownClaimed(): void
+  /** Removes every listener (the command's `finally`). */
+  dispose(): void
 }
 
 /**
@@ -710,40 +721,49 @@ export function daemonFirstRelaySignals(
 }
 
 /**
- * R4 relay of a create/default-retry wrapper, armed at admission — before
- * the own pump attempts its claim — so no catchable abort is lost:
+ * R4 relay of a create/default-retry wrapper, armed before admission — so no
+ * catchable abort is lost — and moved through these modes:
  *
- * - Until the own pump claims the Run (it is still queued, or another
- *   executor claimed it first: daemon-first), a catchable signal of
- *   daemonFirstRelaySignals or an armed stdin EOF stops the wrapper's own
- *   pump attempt and wait (no envelope is written after the abort),
+ * - pending (admission in progress, no ID yet): a catchable signal of
+ *   daemonFirstRelaySignals or an armed stdin EOF is held. When admission
+ *   returns the own ID the held abort takes the owner path below; when
+ *   admission throws a held signal is re-raised with the default
+ *   disposition (a held EOF is dropped: there is no Run).
+ * - owner (until the own pump claims the Run: it is still queued, or another
+ *   executor claimed it first — daemon-first): the abort stops the wrapper's
+ *   own pump attempt and wait (no envelope is written after the abort),
  *   forwards one cancel for the wrapper's own admitted Run through the
  *   existing cancel owner (a queued Run settles canceled; a Run another
- *   executor claimed gets its cancel request) and waits at most 5000 ms
- *   for its terminal. The wrapper then re-raises the signal (or ends with
- *   exit 8 on EOF).
- * - Once the own pump claimed the Run, the wrapper disarms: the local
- *   execution keeps the 2c59664f disposition (default signal termination,
- *   stdin EOF ignored). A signal caught between the claim commit and that
- *   disarm is re-raised at once with the default disposition.
+ *   executor claimed gets its cancel request) and waits at most 5000 ms for
+ *   its terminal. The wrapper then re-raises the signal (or ends with exit
+ *   8 on EOF).
+ * - own-claimed (the own pump claimed the Run: local execution) and
+ *   observe-only (a keyed replay waiter, or a failed admission): the
+ *   handlers stay installed and re-raise the signal with the default
+ *   disposition, which is the 2c59664f behaviour of a local execution; stdin
+ *   EOF is ignored. A signal caught between the own claim commit and the
+ *   switch is recognised by the committed own worker identity.
  *
  * Uncatchable terminations relay nothing; the Run stays queryable by ID.
  */
-function armWrapperAbortRelay(
-  jobId: string,
+async function armWrapperAbortRelay(
   options: RunHeadlessCliCommandOptions,
-  stdinArmed: boolean,
-  ownWorkerId: () => string | null,
-): WrapperAbortRelay {
-  let disarmed = false
+  stdinArmable: boolean,
+): Promise<WrapperAbortRelay> {
+  type Mode = "pending" | "owner" | "passthrough" | "relayed" | "disposed"
+  let mode: Mode = "pending"
+  let jobId: string | null = null
+  let ownWorkerId: string | null = null
+  let held: { signal: NodeJS.Signals | null } | null = null
+  let receivedAbort: RelayedAbort | null = null
   // Persists the own cancel request, then waits for the claimant (or the
   // queued cancel itself) to settle a terminal; at most 5000 ms in total,
   // and a hard kill may truncate it (the persisted request stays).
-  const relayCancel = async () => {
+  const relayCancel = async (id: string) => {
     const deadline = Date.now() + RELAY_CANCEL_ACK_MS
     let persisted = false
     await settledWithin(
-      cancelAgentJob(options.db, jobId, {
+      cancelAgentJob(options.db, id, {
         requestedBy: "api",
         queuedCancelFields: PRE_START_CANCEL_FIELDS,
         queuedTerminalProjection: queuedCancelTerminalProjection(options.db),
@@ -754,7 +774,7 @@ function armWrapperAbortRelay(
     )
     if (!persisted) return
     while (Date.now() < deadline) {
-      const current = getAgentJob(options.db, jobId)
+      const current = getAgentJob(options.db, id)
       if (
         !current ||
         isTerminalAgentJobStatus(current.status as AgentJobStatus)
@@ -771,52 +791,106 @@ function armWrapperAbortRelay(
     resolveAborted = resolve
   })
   /** True when the own pump already holds the claim (local execution). */
-  const ownClaimed = () => {
-    const own = ownWorkerId()
-    if (own === null) return false
+  const ownClaimCommitted = () => {
+    if (jobId === null || ownWorkerId === null) return false
     try {
-      return getAgentJob(options.db, jobId)?.workerId === own
+      return getAgentJob(options.db, jobId)?.workerId === ownWorkerId
     } catch {
       return false
     }
   }
-  const relay = (signal: NodeJS.Signals | null) => {
-    if (disarmed) return
-    disarm()
-    if (ownClaimed()) {
-      // Local execution: the baseline default disposition, EOF ignored.
-      if (signal) reraiseWithDefaultDisposition(signal)
-      return
-    }
-    resolveAborted({ signal, relayed: relayCancel().catch(() => undefined) })
-  }
+  let stdin: StdinEofWatch | null = null
   const signalHandlers = daemonFirstRelaySignals(process.platform).map(
-    (signal) => [signal, () => relay(signal)] as const,
+    (signal) => [signal, () => onAbort(signal)] as const,
   )
-  for (const [signal, handler] of signalHandlers) process.on(signal, handler)
-  const stdin = stdinArmed ? options.stdin : undefined
-  const noop = () => {}
-  const onEnd = () => relay(null)
-  if (stdin) {
-    stdin.on("data", noop)
-    stdin.once("end", onEnd)
-    stdin.once("close", onEnd)
-    stdin.resume()
-  }
-  function disarm() {
-    if (disarmed) return
-    disarmed = true
+  const removeSignalListeners = () => {
     for (const [signal, handler] of signalHandlers) {
       process.removeListener(signal, handler)
     }
-    if (stdin) {
-      stdin.removeListener("data", noop)
-      stdin.removeListener("end", onEnd)
-      stdin.removeListener("close", onEnd)
-      stdin.pause()
+  }
+  /** Default disposition: no listener of this relay, then the signal again. */
+  const passThrough = (signal: NodeJS.Signals) => {
+    removeSignalListeners()
+    stdin?.stop()
+    reraiseWithDefaultDisposition(signal)
+  }
+  const relayOwn = (signal: NodeJS.Signals | null) => {
+    if (ownClaimCommitted()) {
+      // Local execution: the baseline default disposition, EOF ignored.
+      mode = "passthrough"
+      stdin?.stop()
+      if (signal) passThrough(signal)
+      return
+    }
+    mode = "relayed"
+    removeSignalListeners()
+    stdin?.stop()
+    receivedAbort = {
+      signal,
+      relayed: relayCancel(String(jobId)).catch(() => undefined),
+    }
+    resolveAborted(receivedAbort)
+  }
+  function onAbort(signal: NodeJS.Signals | null) {
+    switch (mode) {
+      case "pending":
+        // A signal outranks a held EOF; the first of each kind is kept.
+        if (!held || (held.signal === null && signal !== null)) {
+          held = { signal }
+        }
+        return
+      case "owner":
+        relayOwn(signal)
+        return
+      case "passthrough":
+        if (signal) passThrough(signal)
+        return
+      default:
+        return
     }
   }
-  return { aborted, disarm }
+  // Signals first, so none is missed while the stdin probe yields.
+  for (const [signal, handler] of signalHandlers) process.on(signal, handler)
+  if (stdinArmable) {
+    try {
+      stdin = await watchStdinEof(options.stdin)
+    } catch (error) {
+      removeSignalListeners()
+      throw error
+    }
+    stdin?.onEnd(() => onAbort(null))
+  }
+  const toPassthrough = () => {
+    if (mode !== "pending" && mode !== "owner") return
+    mode = "passthrough"
+    stdin?.stop()
+    const signal = held?.signal ?? null
+    held = null
+    if (signal) passThrough(signal)
+  }
+  return {
+    aborted,
+    received: () => receivedAbort,
+    admitted(id) {
+      if (mode !== "pending") return
+      jobId = id
+      mode = "owner"
+      const pendingAbort = held
+      held = null
+      if (pendingAbort) relayOwn(pendingAbort.signal)
+    },
+    observeOnly: toPassthrough,
+    ownWorker(workerId) {
+      ownWorkerId = workerId
+    },
+    ownClaimed: toPassthrough,
+    dispose() {
+      if (mode === "disposed") return
+      mode = "disposed"
+      removeSignalListeners()
+      stdin?.stop()
+    },
+  }
 }
 
 /**
@@ -867,127 +941,152 @@ async function finishRelayedAbort(
 }
 
 /**
+ * Admits the Run of a synchronous create/default retry under the R4 relay
+ * and runs its wrapper. The relay is armed before `admit` runs (an abort
+ * during admission is held) and its listeners are removed only when the
+ * command ends. A keyed replay (`replay: true`) does not own the retained
+ * Run, so its waiter only observes: no relayed cancel, default disposition.
+ */
+async function admitUnderWrapperRelay(
+  options: RunHeadlessCliCommandOptions,
+  stdinArmable: boolean,
+  admit: () => Promise<SubmitRunResult>,
+  onError: ApiCommandErrorMapper,
+): Promise<number> {
+  const relay = await armWrapperAbortRelay(options, stdinArmable)
+  try {
+    let admitted: SubmitRunResult
+    try {
+      admitted = await admit()
+    } catch (error) {
+      // A signal caught during admission is dispatched (held) first.
+      await yieldPastPollPhase()
+      relay.observeOnly()
+      return onError(error, options)
+    }
+    // Admission may finish without an event-loop turn: dispatch (and hold)
+    // any abort caught during it before the own pump can claim the Run.
+    await yieldPastPollPhase()
+    if (admitted.replay) relay.observeOnly()
+    else relay.admitted(admitted.job.id)
+    return await runLocalJobApiWrapper(admitted.job.id, relay, options, onError)
+  } finally {
+    relay.dispose()
+  }
+}
+
+/**
  * Q2(a) synchronous wrapper of create/default retry: its own admitted Run is
  * claimed through the canonical scoped pump (unless another claimant won it
  * first, then it only waits) and its committed, published terminal is
- * printed with the 2c59664f bytes and outcome exit. The R4 relay is armed
- * from admission until the own pump claims the Run.
+ * printed with the 2c59664f bytes and outcome exit. `relay` was armed before
+ * admission (admitUnderWrapperRelay) and switches to the default disposition
+ * when the own pump claims the Run.
  */
 async function runLocalJobApiWrapper(
   jobId: string,
+  relay: WrapperAbortRelay,
   options: RunHeadlessCliCommandOptions,
-  stdinArmable: boolean,
   onError: ApiCommandErrorMapper,
 ): Promise<number> {
   const ownAbort = new AbortController()
-  const ownClaim: { workerId: string | null } = { workerId: null }
-  const relay = armWrapperAbortRelay(
-    jobId,
-    options,
-    stdinArmable,
-    () => ownClaim.workerId,
-  )
-  const relayed: { abort: RelayedAbort | null } = { abort: null }
-  const abort = relay.aborted.then((received) => {
-    relayed.abort = received
+  const abort = relay.aborted.then(() => {
     // Stops an own pump attempt that has not claimed (or races the cancel).
     ownAbort.abort()
   })
   let ownDispatch: OwnDispatch | null = null
-  try {
+  const own: { result: PumpQueuedRunResult | null } = { result: null }
+  if (!relay.received()) {
     try {
       await options.beforeOwnPumpClaim?.(jobId)
     } catch (error) {
-      if (!relayed.abort) throw error
+      if (!relay.received()) throw error
     }
-    const own: { result: PumpQueuedRunResult | null } = { result: null }
-    if (!relayed.abort && getAgentJob(options.db, jobId)?.status === "queued") {
-      let state: ReturnType<OwnDispatch["state"]> = "pending"
-      const promise = pumpQueuedRuns({
-        db: options.db,
-        env: options.env,
-        runner: options.runner,
-        completionFetch: options.completionFetch,
-        providerBindingDependencies: options.providerBindingDependencies,
-        appVersion: options.appVersion,
-        admittedIds: [jobId],
-        concurrency: 1,
-        signal: ownAbort.signal,
-        claimObserver: {
-          attempting: (_job, workerId) => {
-            ownClaim.workerId = workerId
-          },
-          // Local execution keeps the baseline abort/EOF disposition.
-          claimed: () => relay.disarm(),
-        },
-      }).then(
-        (result) => {
-          own.result = result.runs.find((run) => run.jobId === jobId) ?? null
-          state = own.result?.error
-            ? "failed"
-            : own.result?.claimed
-              ? "claimed"
-              : "lost"
-        },
-        (error) => {
-          own.result = { jobId, claimed: false, exitCode: null, error }
-          state = "failed"
-        },
-      )
-      ownDispatch = {
-        promise,
-        state: () => state,
-        stop: async () => {
-          ownAbort.abort()
-          await promise
-        },
-      }
-    }
-    const result = relayed.abort
-      ? null
-      : await waitForAdmittedRun(options.db, jobId, {
-          clock: options.monotonicClock ?? DEFAULT_MONOTONIC_CLOCK,
-          lockPath: options.daemonLockPath,
-          ownDispatch,
-          abort,
-        })
-    // A relayed abort wins over anything observed after it: no stale
-    // terminal or observer envelope is written once the abort arrived.
-    if (relayed.abort) {
-      return await finishRelayedAbort(relayed.abort, ownDispatch)
-    }
-    switch (result?.kind) {
-      case "ready":
-      case "unpublished":
-        writeJson(options.stdout, result.envelope)
-        return result.exitCode
-      case "error":
-        writeJson(
-          options.stdout,
-          waitEnvelope(result.job, { state: "error", reason: result.reason }),
-        )
-        return HEADLESS_EXIT_CODES.internalFailure
-      case "aborted":
-        return HEADLESS_EXIT_CODES.internalFailure
-      case "own_dispatch_failed":
-        // A non-outcome failure of the own pump: no terminal is fabricated.
-        await cancelOwnQueuedRun(jobId, options)
-        if (relayed.abort) {
-          return await finishRelayedAbort(relayed.abort, ownDispatch)
-        }
-        return onError(own.result?.error, options)
-      case "own_observation_failed":
-        // The own execution tree was stopped; the baseline error is kept.
-        await cancelOwnQueuedRun(jobId, options)
-        if (relayed.abort) {
-          return await finishRelayedAbort(relayed.abort, ownDispatch)
-        }
-        return onError(result.error, options)
-    }
-    return HEADLESS_EXIT_CODES.internalFailure
-  } finally {
-    relay.disarm()
   }
+  if (
+    !relay.received() &&
+    getAgentJob(options.db, jobId)?.status === "queued"
+  ) {
+    let state: ReturnType<OwnDispatch["state"]> = "pending"
+    const promise = pumpQueuedRuns({
+      db: options.db,
+      env: options.env,
+      runner: options.runner,
+      completionFetch: options.completionFetch,
+      providerBindingDependencies: options.providerBindingDependencies,
+      appVersion: options.appVersion,
+      admittedIds: [jobId],
+      concurrency: 1,
+      signal: ownAbort.signal,
+      claimObserver: {
+        attempting: (_job, workerId) => relay.ownWorker(workerId),
+        // Local execution keeps the baseline abort/EOF disposition.
+        claimed: () => relay.ownClaimed(),
+      },
+    }).then(
+      (result) => {
+        own.result = result.runs.find((run) => run.jobId === jobId) ?? null
+        state = own.result?.error
+          ? "failed"
+          : own.result?.claimed
+            ? "claimed"
+            : "lost"
+      },
+      (error) => {
+        own.result = { jobId, claimed: false, exitCode: null, error }
+        state = "failed"
+      },
+    )
+    ownDispatch = {
+      promise,
+      state: () => state,
+      stop: async () => {
+        ownAbort.abort()
+        await promise
+      },
+    }
+  }
+  const result = relay.received()
+    ? null
+    : await waitForAdmittedRun(options.db, jobId, {
+        clock: options.monotonicClock ?? DEFAULT_MONOTONIC_CLOCK,
+        lockPath: options.daemonLockPath,
+        ownDispatch,
+        abort,
+      })
+  // A relayed abort wins over anything observed after it: no stale
+  // terminal or observer envelope is written once the abort arrived.
+  const relayed = relay.received()
+  if (relayed) return await finishRelayedAbort(relayed, ownDispatch)
+  switch (result?.kind) {
+    case "ready":
+    case "unpublished":
+      writeJson(options.stdout, result.envelope)
+      return result.exitCode
+    case "error":
+      writeJson(
+        options.stdout,
+        waitEnvelope(result.job, { state: "error", reason: result.reason }),
+      )
+      return HEADLESS_EXIT_CODES.internalFailure
+    case "aborted":
+      return HEADLESS_EXIT_CODES.internalFailure
+    case "own_dispatch_failed": {
+      // A non-outcome failure of the own pump: no terminal is fabricated.
+      await cancelOwnQueuedRun(jobId, options)
+      const late = relay.received()
+      if (late) return await finishRelayedAbort(late, ownDispatch)
+      return onError(own.result?.error, options)
+    }
+    case "own_observation_failed": {
+      // The own execution tree was stopped; the baseline error is kept.
+      await cancelOwnQueuedRun(jobId, options)
+      const late = relay.received()
+      if (late) return await finishRelayedAbort(late, ownDispatch)
+      return onError(result.error, options)
+    }
+  }
+  return HEADLESS_EXIT_CODES.internalFailure
 }
 
 /**
@@ -1042,7 +1141,7 @@ async function apiRunsCreateCommand(
   command: Extract<HeadlessCliCommand, { kind: "api-runs-create" }>,
   options: RunHeadlessCliCommandOptions,
 ): Promise<number> {
-  let admitted: SubmitRunResult
+  let request: NormalizedLocalJobApiCreateRequest
   try {
     const parsed = parseLocalJobApiSubmitRequestJson(
       await readApiRequestContent(command.requestPath, options),
@@ -1054,18 +1153,19 @@ async function apiRunsCreateCommand(
         "idempotencyKey is not accepted by runs create; use runs submit.",
       )
     }
-    admitted = await submitRun(
-      options.db,
-      { kind: "api-submit", request: parsed.request, idempotencyKey: null },
-      { appVersion: options.appVersion },
-    )
+    request = parsed.request
   } catch (error) {
     return apiCreateError(error, options)
   }
-  return runLocalJobApiWrapper(
-    admitted.job.id,
+  return admitUnderWrapperRelay(
     options,
-    command.requestPath !== "-" && (await stdinOpenAtArming(options.stdin)),
+    command.requestPath !== "-",
+    () =>
+      submitRun(
+        options.db,
+        { kind: "api-submit", request, idempotencyKey: null },
+        { appVersion: options.appVersion },
+      ),
     apiCreateError,
   )
 }
@@ -1465,10 +1565,10 @@ async function apiRunsRetryCommand(
   command: Extract<HeadlessCliCommand, { kind: "api-runs-retry" }>,
   options: RunHeadlessCliCommandOptions,
 ): Promise<number> {
-  let admitted: SubmitRunResult
+  let source: AgentJob
   let idempotencyKey: string | null = null
   try {
-    const source = getLocalJobApiJobOrThrow(options.db, command.jobId)
+    source = getLocalJobApiJobOrThrow(options.db, command.jobId)
     if (command.requestPath !== null) {
       let retryRequest: ReturnType<typeof parseLocalJobApiRetryRequestJson>
       try {
@@ -1491,27 +1591,34 @@ async function apiRunsRetryCommand(
       }
       idempotencyKey = retryRequest.idempotencyKey
     }
-    admitted = await submitRun(
+  } catch (error) {
+    return apiRetryError(error, options)
+  }
+  const admit = () =>
+    submitRun(
       options.db,
       { kind: "api-retry", source, idempotencyKey },
       { appVersion: options.appVersion },
     )
+  if (!command.async) {
+    return admitUnderWrapperRelay(
+      options,
+      command.requestPath !== "-",
+      admit,
+      apiRetryError,
+    )
+  }
+  let admitted: SubmitRunResult
+  try {
+    admitted = await admit()
   } catch (error) {
     return apiRetryError(error, options)
   }
-  if (command.async) {
-    writeJson(
-      options.stdout,
-      admissionEnvelope(admitted, idempotencyKey !== null),
-    )
-    return HEADLESS_EXIT_CODES.success
-  }
-  return runLocalJobApiWrapper(
-    admitted.job.id,
-    options,
-    command.requestPath !== "-" && (await stdinOpenAtArming(options.stdin)),
-    apiRetryError,
+  writeJson(
+    options.stdout,
+    admissionEnvelope(admitted, idempotencyKey !== null),
   )
+  return HEADLESS_EXIT_CODES.success
 }
 
 function scheduleErrorCode(message: string): number {
