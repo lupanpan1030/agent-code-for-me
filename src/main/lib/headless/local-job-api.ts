@@ -1656,21 +1656,23 @@ function revalidateClaimedLocalJobApiProject(
   }
   if (!registration.registered) return unregistered(null)
   if (registration.cwd !== job.cwd) return identityChanged(null)
+  // Every admitted API agent row carries its stored identity; a row without
+  // one (or with a malformed one) cannot prove its cwd is unchanged, so it
+  // fails closed rather than falling back to path equality.
   const stored = storedProjectIdentity(job)
-  if (stored) {
-    let current: LocalJobApiProjectIdentity
-    try {
-      current = localJobApiProjectIdentity(job.cwd)
-    } catch (error) {
-      return identityChanged(error)
-    }
-    if (
-      current.canonicalPath !== stored.canonicalPath ||
-      current.dev !== stored.dev ||
-      current.ino !== stored.ino
-    ) {
-      return identityChanged(null)
-    }
+  if (!stored) return identityChanged(null)
+  let current: LocalJobApiProjectIdentity
+  try {
+    current = localJobApiProjectIdentity(job.cwd)
+  } catch (error) {
+    return identityChanged(error)
+  }
+  if (
+    current.canonicalPath !== stored.canonicalPath ||
+    current.dev !== stored.dev ||
+    current.ino !== stored.ino
+  ) {
+    return identityChanged(null)
   }
   return { ok: true, projectCwd: registration.cwd }
 }
