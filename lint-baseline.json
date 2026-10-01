@@ -43,7 +43,6 @@
     "src/main/lib/agent-guard/contract.ts": 1,
     "src/main/lib/agent-guard/decision.ts": 1,
     "src/main/lib/agent-runtime/chat-maintenance-fence.ts": 1,
-    "src/main/lib/agent-runtime/run-contract.ts": 1,
     "src/main/lib/agent-workbench/status.ts": 4,
     "src/main/lib/analytics.ts": 3,
     "src/main/lib/app-agents/prompt.ts": 3,

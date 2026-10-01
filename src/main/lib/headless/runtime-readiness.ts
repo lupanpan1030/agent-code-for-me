@@ -326,6 +326,14 @@ export async function resolveLocalJobApiRuntimeReadiness(
   }
 }
 
+/**
+ * The readiness observed for a route without a probe (a missing route, a
+ * completion route or a refused resolution): unknown, never ready.
+ */
+export function unknownRuntimeReadiness(): LocalJobApiRuntimeReadiness {
+  return readiness(unknownReadiness())
+}
+
 export function clearRuntimeReadinessCacheForTest(): void {
   readinessCache.clear()
 }
