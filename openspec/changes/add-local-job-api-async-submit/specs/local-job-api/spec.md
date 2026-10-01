@@ -7,9 +7,10 @@ using the existing agent/completion request plus optional idempotencyKey. Fresh
 submission SHALL return `{apiVersion:"locus.local-job.v1",job}` with a queued admission
 snapshot and exit 0 after committed creation and required initial artifact admission,
 without waiting for execution. Replay SHALL return the retained job's current state.
-The create request SHALL remain field-for-field unchanged; keys SHALL be accepted only
-on submit and retry --request. Validation, source=api and existing admission boundaries
-SHALL remain in their canonical owners. A claim following admission SHALL be visible
+The create request SHALL accept no new fields; idempotencyKey SHALL be explicitly
+rejected on create with stdout v1 error idempotency_key_not_supported/exit 2. Keys
+SHALL be accepted only on submit and retry --request. Validation, source=api and existing
+admission boundaries SHALL remain in their canonical owners. A claim following admission SHALL be visible
 through status, independently of the already emitted queued snapshot.
 
 #### Scenario: S01 Submit returns before execution is released
@@ -47,9 +48,15 @@ the same terminal artifacts and waits; a daemon claim winner makes it only wait.
 (b) SHALL require an explicit daemon; (c) SHALL launch a new detached daemon, a new
 C7 #9 surface. Under (b)/(c), no executor/start failure after 30000 ms SHALL produce
 stdout `{apiVersion,job,wait:{state:"error",reason}}`, exit 8 and no result (L2 exception).
-With neither committed high-water nor heartbeat progress for 30000 ms, all branches
-SHALL use a bounded observer error even if a PID is alive; this SHALL NOT declare the
-Run dead. Healthy long work with heartbeat progress SHALL retain existing runtime
+A Run executing in the wrapper's own in-process pump SHALL be exempt from the 30000 ms
+no-progress window: its pending dispatch promise SHALL be liveness evidence, with
+existing runtime timeouts/cancel unchanged. For another process's claimant, progress
+SHALL mean committed high-water change, job.heartbeatAt change, or confirmed-alive
+evidence for that Run's committed worker identity within D5's existing 120 s recovery
+heartbeat window. A 30000 ms no-progress observer error SHALL fire only while queued
+or when that worker evidence is unknown/absent, never while that evidence is available.
+A bare PID without committed worker identity SHALL NOT count as progress. The observer
+error SHALL NOT declare the Run dead. Healthy long work SHALL retain existing runtime
 timeouts and S25 behavior. Existing recovery SHALL alone decide
 whether a stopped worker is interrupted, never an unknown liveness probe.
 
@@ -62,19 +69,34 @@ SHALL keep its stricter publication barrier in every case. These R1 exceptions S
 be explicitly accepted at APPROVED, never hidden in the normal-byte oracle.
 
 Non-outcome read failure under (a) with an owned child SHALL stop that execution tree
-and preserve baseline stderr/8 without a false terminal; an admitted but not yet
-started own Run SHALL use existing queued cancel cleanup. Under (b)/(c) or a remote
+and preserve the baseline stderr text and baseline exit (create: localJobApiCreateErrorCode
+returns 2, or 3 for messages matching /unsupported/i; retry: 3) without a false terminal;
+an admitted but not yet started own Run SHALL use existing queued cancel cleanup. Under (b)/(c) or a remote
 claimant it SHALL return stdout `{apiVersion,job,wait:{state:"error",reason:"observation_failed"}}`
 with the admitted job ID, exit 8 and no result, so the consumer can cancel.
-R4 SHALL remain an Owner choice for (b)/(c): the recommended choice cancels only the
-wrapper's Run on SIGINT/SIGTERM/stdin EOF; the alternative leaves it running and requires
-consumer cancel by ID. Signal cleanup SHALL wait at most 5000 ms before signal exit;
-EOF cleanup SHALL exit 8 without a terminal envelope. EOF SHALL mean a lifecycle
-closure received after admission, not replay of the pre-admission EOF that delimits
-a --request - JSON body. SIGKILL cannot be caught.
-Under (a) local process-tree abort behavior SHALL remain as today; catchable abort
-SHALL relay own cancel if the daemon claimed first. Independent submit exit SHALL
-not cancel admitted work. The daemon-first SIGKILL limitation SHALL be disclosed.
+R4's **统筹预设（推荐，Owner 可改）** for (b)/(c) and the daemon-first branch of (a)
+SHALL relay cancel only for the wrapper's admitted Run on catchable abort, including
+armed stdin EOF; the alternative is no relay (today's local-tree behavior only),
+requiring consumer cancel by ID. The platform contract SHALL be:
+
+| Platform | Catchable abort | Cannot relay cancellation |
+| --- | --- | --- |
+| POSIX | SIGINT/SIGTERM and armed stdin EOF | SIGKILL |
+| Windows | console Ctrl events and armed stdin EOF | parent child.kill()/TerminateProcess |
+
+Cancel-by-ID SHALL be documented as the only reliable cancellation mechanism across
+all platforms; stdin-EOF relay SHALL be the portable mechanism for piped consumers.
+Cleanup SHALL wait at most 5000 ms for acknowledgement. Preserving signal exit SHALL
+mean re-raising the caught signal after cleanup so the parent observes signal termination,
+not substituting an ordinary numeric 128+n exit; EOF cleanup SHALL exit 8 without a
+terminal envelope. EOF-cancel SHALL be armed only if stdin is an open pipe at admission
+and closes later. Ignored/already-closed stdin and the pre-admission EOF delimiting a
+--request - body SHALL NOT arm cancellation.
+Under (a), local own-pump process-tree abort behavior SHALL remain as today. Independent
+submit exit SHALL NOT cancel admitted work. SIGKILL/TerminateProcess of a daemon-backed
+waiter SHALL NOT be claimed to stop or cancel its Run. Career Kit's 500 ms kill grace
+can truncate the 5 s acknowledgement wait; in the normal catchable relay case the cancel
+request is persisted before the later kill, but hard-kill delivery is not guaranteed.
 
 #### Scenario: S03 Old create matches submit plus wait byte for byte
 - **GIVEN** `tests/fixtures/local-job-api-async/terminal-bytes.json#S03`, with independent profiles with injected job ID, createdAt/startedAt/completedAt,
@@ -100,13 +122,15 @@ not cancel admitted work. The daemon-first SIGKILL limitation SHALL be disclosed
   attempt=source.attempt+1, without changing the source job/events/artifact bytes
 
 #### Scenario: S25 Internal wait timeout does not become a create result
-- **GIVEN** `tests/fixtures/local-job-api-async/terminal-bytes.json#S25`, with a valid create request, an available executor whose runtime latch remains
-  held for the first 30000 ms, and a fake monotonic clock
+- **GIVEN** `tests/fixtures/local-job-api-async/terminal-bytes.json#S25`, with a valid create request executed by the wrapper's own in-process pump, whose runtime
+  latch remains held for the first 30000 ms, and a fake monotonic clock
 - **WHEN** the internal wait deadline expires and then the executor is released to
   commit and publish a successful terminal in the next bounded observation interval
 - **THEN** create emits no timeout envelope or interim stdout, does not exit 9, and
   eventually returns the baseline complete terminal envelope with exit 0
 - **AND** store reads show one attempt, no timeout error/completed and no repeated execution
+- **AND** a kind:"completion" variant whose single upstream call takes 45000 ms with no
+  heartbeat/high-water change returns baseline stdout/exit under the own-pump exemption
 
 #### Scenario: S34 Create and retry run without an external executor
 - **GIVEN** `tests/fixtures/local-job-api-async/terminal-bytes.json#S34`, with isolated profiles with no daemon lock, valid agent/completion create requests,
@@ -119,20 +143,32 @@ not cancel admitted work. The daemon-first SIGKILL limitation SHALL be disclosed
   identified error/8; neither gives timeout/9 or claims a false Run outcome
 - **AND** a daemon-first variant never double-dispatches; a stalled unknown worker with
   no heartbeat/high-water progress yields identified executor_unknown/8 within 30000 ms
+- **AND** a daemon-first kind:"completion" variant with a 45000 ms upstream call, committed
+  worker identity within D5's 120 s window and confirmed-alive daemon emits no error/8
+  at 30000 ms and returns that claimant's terminal envelope/outcome once completed
 
 #### Scenario: S35 Aborting a wrapper applies the chosen cancel policy
 - **GIVEN** `tests/fixtures/local-job-api-async/controls.json#S35`, with a running wrapper-owned child, a daemon-first Run, two unrelated Runs and
-  (b)/(c) signal/EOF cases with cancel-on-signal and explicit consumer-cancel alternatives
-- **WHEN** the test harness sends SIGINT/SIGTERM, closes stdin or kills the wrapper group;
-  a separate case sends SIGKILL only to the waiter process; file-based requests keep stdin open past admission
-- **THEN** (a)'s owned-tree case matches baseline abort/EOF receipts, and catchable
-  daemon-first abort requests cancellation only for its admitted ID
-- **AND** recommended (b)/(c) sends that cancel on each signal/EOF, waits at most 5000 ms
-  for acknowledgement and preserves signal exit (EOF exit 8); the alternative does not
-  cancel and the harness must issue runs cancel by the saved ID; unrelated Runs continue
-- **AND** SIGKILL of a daemon-backed waiter cannot issue cancel, the Run remains queryable
-  until explicit cancel/recovery, and no test calls this preserved local-tree behavior; ordinary --request - EOF
-  consumed before admission does not immediately cancel the submitted Run
+  (b)/(c) cases for both relay and no-relay policies; file-based requests have an open
+  stdin pipe at admission, with separate ignored/already-closed stdin variants and a
+  relay-ack latch held beyond 500 ms for the forced-kill timing case
+- **WHEN** POSIX harnesses send SIGINT/SIGTERM or SIGKILL, Windows harnesses deliver console
+  Ctrl or parent child.kill()/TerminateProcess, and both platforms close an armed stdin pipe;
+  include Career Kit's POSIX SIGTERM→500 ms→SIGKILL sequence, a separate POSIX wrapper
+  process-group kill for baseline own-tree receipts, and win32 non-detached kill
+- **THEN** (a)'s own-pump tree matches baseline child-alive/dead, row-status and recovery
+  receipts; recommended daemon-first and (b)/(c) catchable abort relays cancel only for
+  the admitted ID, persists the request before the normal later kill, and awaits ack at most 5000 ms
+- **AND** signal cleanup re-raises the caught signal and the parent records that signal,
+  while EOF cleanup exits 8 without a terminal envelope; a 500 ms hard kill truncates
+  the acknowledgement wait without undoing an already persisted cancel request
+- **AND** remote-claimant no-relay variants record zero cancel requests until explicit runs cancel by ID;
+  unrelated Runs continue in both policies
+- **AND** SIGKILL/TerminateProcess of only a daemon-backed waiter records zero relayed
+  cancel requests, leaves its daemon/Run running and queryable until explicit cancel or
+  independently eligible recovery, and does not produce the own-pump tree-stop outcome
+- **AND** ignored/already-closed stdin and --request - EOF consumed before admission
+  produce zero EOF-triggered cancel requests and the submitted Run continues
 
 ### Requirement: Bounded Wait For Published Terminal Result
 
@@ -164,21 +200,29 @@ itself SHALL NOT settle, cancel, retry, expire or change a Run; the pre-existing
 recovery prologue SHALL remain unchanged and MAY settle confirmed-stopped workers
 before observation. Events-follow completion SHALL NOT serve as a publication barrier.
 
-New errors SHALL use these exact stream/exit/code rules (structured errors are one
-`{apiVersion,error:{code,message}}`, sanitized message, no raw input/key):
+New errors SHALL use these exact stream/exit/code rules. Stdout error envelopes SHALL
+be one `{apiVersion,error:{code,message}}` JSON line with a sanitized message and no
+raw input/key. Stderr errors SHALL be one sanitized plain-text diagnostic line followed
+by a newline, never a v1 JSON error envelope; the table's stderr labels identify the
+condition, not an emitted error.code. Unknown/non-API IDs SHALL use `Unknown job: <id>`
+exactly as runs status does for an unknown ID. Invalid timeout SHALL use the plain-text
+argument diagnostic `Invalid timeout: expected an integer from 0 to 86400000 milliseconds.`;
+pre-snapshot observation failure SHALL use `Failed to observe job: <id>`, with no raw
+exception/input. Key validation SHALL check existing secret patterns before charset/
+length validation, so a key failing both SHALL yield secret_in_request without echo.
 
 | Condition | Stream | Exit | error.code / wait reason |
 | --- | --- | --- | --- |
-| wait unknown or non-API ID | stderr, empty stdout | 3 | job_not_found (same for both) |
-| invalid timeout | stderr, empty stdout | 2 | invalid_timeout |
+| wait unknown or non-API ID | plain-text stderr `Unknown job: <id>`, empty stdout | 3 | job_not_found (same for both) |
+| invalid timeout | plain-text argument diagnostic on stderr, empty stdout | 2 | invalid_timeout |
 | retry --request consumer mismatch | stdout, no job id | 2 | consumer_mismatch |
-| malformed key | stdout | 2 | invalid_idempotency_key |
+| malformed key after secret check | stdout | 2 | invalid_idempotency_key |
 | secret-like key (existing assertNoSecretText/SECRET_VALUE_PATTERNS) | stdout | 2 | secret_in_request |
-| keyed create | stdout | 2 | idempotency_key_not_supported |
+| keyed create (Q1 disclosed #2 tightening) | stdout v1 error envelope, matching existing create project/provider error envelopes | 2 | idempotency_key_not_supported |
 | different normalized request at same scoped key | stdout | 2 | idempotency_conflict |
 | missing committed creation/admission | stdout | 8 | submission_pending, additionally error.retryable=true |
 | wait read fault after a valid job snapshot | stdout `{apiVersion,job,wait:{state:"error",reason:"observation_failed"}}`, no result | 8 | wait reason observation_failed |
-| wait read fault before any job snapshot | stderr, empty stdout | 8 | observation_failed |
+| wait read fault before any job snapshot | plain-text stderr `Failed to observe job: <id>`, empty stdout | 8 | observation_failed |
 
 These are non-outcome errors, not Run statuses. Existing command errors not listed
 here SHALL retain their baseline shapes/streams/exits.
@@ -203,11 +247,14 @@ here SHALL retain their baseline shapes/streams/exits.
 - **WHEN** each calls wait with omitted timeout, 0 and 25
 - **THEN** one timeout envelope appears at 30000 ms, one observation and 25 ms respectively,
   exit 9, no result, exact fixture reason and unmodified status
-- **AND** -1, 0.5, NaN, Infinity and 86400001 yield stderr invalid_timeout/2 and empty stdout;
+- **AND** -1, 0.5, NaN, Infinity and 86400001 yield exactly the plain-text invalid-timeout
+  diagnostic above plus newline on stderr, exit 2 and empty stdout;
   86400000 is accepted; ready exactly at deadline yields outcome, not timeout
 - **AND** the admitted running fixture with an injected second-read SQLITE_BUSY returns
   stdout wait.state=error/reason=observation_failed with job ID, exit 8, no result;
   the worker continues once and no observer creates a completed or another attempt
+- **AND** a fault before the first valid snapshot emits only `Failed to observe job: <id>`
+  plus newline on stderr, empty stdout and exit 8, without a JSON error envelope
 
 #### Scenario: S07 Multiple waiters and late facts cannot change the result
 - **GIVEN** `tests/fixtures/local-job-api-async/publication.json#S07`, with two wait processes on one API job, with commit occurring between their
@@ -226,7 +273,8 @@ before insert, and stored apiConsumerId/retry match SHALL use that same normaliz
 Same normalized intent SHALL replay the retained Run with idempotentReplay=true;
 different intent SHALL return stdout idempotency_conflict/2. The error table above
 SHALL govern all new failures. Secret-like keys SHALL reuse assertNoSecretText's
-SECRET_VALUE_PATTERNS; no second detector SHALL be invented.
+SECRET_VALUE_PATTERNS before charset/length checks; a key failing both SHALL yield
+secret_in_request. Neither failure SHALL echo the key; no second detector SHALL be invented.
 
 Fingerprint SHALL normalize current defaults/runtime aliases, canonical cwd/project/
 artifact-base identity, sorted object keys/capability sets and ordered other arrays;
@@ -331,13 +379,15 @@ logs; hashes SHALL not be represented as encryption or consumer authentication.
 
 #### Scenario: S15 Idempotency key stays out of durable and diagnostic output
 - **GIVEN** `tests/fixtures/local-job-api-async/idempotency.json#S15`, with a unique non-secret key, admitted artifact request and key variants empty,
-  whitespace, 161 characters and sk- followed by 24 ASCII letters (secret-like fixture)
+  whitespace, 161 characters, sk- followed by 24 ASCII letters, and Bearer abcdef
+  (the last is both secret-like and charset-invalid)
 - **WHEN** submit/replay/conflict run and DB, request.json/events.jsonl/result.json,
   manifests, stdout and stderr are inspected
 - **THEN** raw sentinel never appears; only domain-separated key hash is stored
-- **AND** malformed keys emit stdout invalid_idempotency_key/2, the secret-like variant
-  emits stdout secret_in_request/2, without echo/spawn/runnable row; a consumer ID that
-  redactSecretText would alter is rejected before reservation, not silently redacted
+- **AND** non-secret malformed keys emit stdout invalid_idempotency_key/2; both secret-like
+  variants, including Bearer abcdef, emit stdout secret_in_request/2, without echo/spawn/
+  runnable row; a consumer ID that redactSecretText would alter is rejected before
+  reservation, not silently redacted
 
 ### Requirement: Executor Availability Observation
 
@@ -417,8 +467,8 @@ body SHALL be required for existing retry/cancel calls.
 - **GIVEN** `tests/fixtures/local-job-api-async/controls.json#S20`, with desktop/cli/protocol/missing IDs plus succeeded/queued API jobs and frozen
   baseline cancel/events/retry error stream/exit fixtures
 - **WHEN** wait/retry and existing cancel/events operations receive those IDs
-- **THEN** wait for missing or non-API IDs emits only stderr v1 error code=job_not_found,
-  exits 3 and reveals no job; no result or provider credentials are required
+- **THEN** wait for missing or non-API IDs emits exactly `Unknown job: <id>` plus newline
+  on stderr, stdout empty, exits 3 and reveals no job; no result or provider credentials are required
 - **AND** cancel/events/retry retain their recorded baseline error stream/exits for
   unsupported sources/states, retry rejects succeeded/queued, and zero new jobs/spawns occur
 
@@ -479,8 +529,9 @@ failure evidence retained.
 <!-- Scenario register: S53 (retained living scenario; title unchanged for MODIFIED archive) -->
 - **GIVEN** `tests/fixtures/local-job-api-async/discovery.json#S53`, with the executable neutral preflight helper, no-feature discovery JSON and a recording dispatch port
 - **WHEN** a consumer reads the discovery envelope from a build without a given feature identifier
-- **THEN** the preflight helper returns unsupported and its dispatch spy stays zero,
-  instead of assuming silently-dropped request fields were honored
+- **THEN** the consumer treats the corresponding contract addition as unsupported instead of assuming silently-dropped request fields were honored
+- **AND** as a documentation example, the preflight helper returns unsupported and its
+  dispatch spy stays zero; this helper assertion is not evidence about the Locus parser
 
 #### Scenario: Consumer detects canonical ledger support
 <!-- Scenario register: S54 (retained living scenario; title unchanged for MODIFIED archive) -->
@@ -493,7 +544,7 @@ failure evidence retained.
 
 #### Scenario: S22 Discovery advertises the extension with explicit schema evolution
 - **GIVEN** `tests/fixtures/local-job-api-async/discovery.json#S22`, with a new executable with migrated isolated profile and async activation enabled,
-  pinned schema from b26c0651, updated schema, and a separately pinned old discovery output
+  pinned schema from product source 2c59664f, updated schema, and a separately pinned old discovery output
 - **WHEN** runtimes list --json is validated with each schema and baseline output is read
 - **THEN** new output retains v1/existing features, adds async-submit, passes new schema
   and fails old discoveryFeature enum specifically at async-submit
@@ -508,10 +559,13 @@ failure evidence retained.
 #### Scenario: S23 Unsupported version and absent feature fail closed
 - **GIVEN** `tests/fixtures/local-job-api-async/discovery.json#S23`, with the executable neutral consumer-preflight fixture with a dispatch spy,
   no-feature discovery JSON and requests using locus.local-job.v1.1 or unknown version;
-  the baseline b26c0651 CLI parser is pinned separately for old-build shape tests
+  the baseline 2c59664f CLI parser is vendored as cli-args-before.ts using
+  `git show 2c59664f:src/main/lib/headless/cli-args.ts` and directly invoked by the test
+  harness for old-build shape tests, independently of the documentation helper
 - **WHEN** the neutral helper reads discovery, the current CLI parses wrong-version
   submit requests, and the old parser receives submit or retry --request
-- **THEN** the helper returns unsupported and dispatch count zero; version failures use
+- **THEN** the documentation-example helper returns unsupported and dispatch count zero;
+  independently tested Locus version failures use
   existing stderr "apiVersion must be locus.local-job.v1"/2 with no job; old shapes
   are rejected stderr/2 (unknown command / unexpected argument), never unkeyed execution
 - **AND** the fixture includes old keyed-create silent-drop counterevidence to document

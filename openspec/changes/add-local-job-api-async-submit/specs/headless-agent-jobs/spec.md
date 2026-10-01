@@ -14,27 +14,54 @@ canonical cwd identity, execution profile/capability/grant and provider referenc
 their existing owners. A stored internal cwd identity SHALL be captured at admission in job inputJson
 submissionContext.projectIdentity (canonical path/dev/ino); public serializers and
 request artifacts SHALL exclude that internal metadata. No extra table is introduced. Maximum queued API age SHALL default to
-86400000 ms from createdAt, configurable by Owner via maxQueuedApiAgeMs (no new CLI
-flag); at or beyond that age the claim/tick SHALL fail closed. Failed checks SHALL
+86400000 ms from createdAt, supplied by the internal RunLocalAgentDaemonOptions /
+pump option maxQueuedApiAgeMs with a named constant default MAX_QUEUED_API_AGE_MS.
+Tests MAY inject that option; it SHALL NOT be user-settable at runtime and SHALL add
+no CLI flag. Any later runtime configuration surface requires C7 #2 classification.
+At or beyond that age the claim/tick SHALL fail closed. Failed checks SHALL
 settle through the host with project_unregistered, cwd_identity_changed,
 execution_profile_invalid or queued_age_exceeded; provider errors retain existing
 codes. Unadmitted jobs SHALL remain unclaimable and use the missing-admission cancel
 remedy, not speculative execution.
+
+Every fail-closed settlement below SHALL be committed through the host with status
+failed, the listed completed.payload.reasons entry, job.errorCode and create/default
+retry/runs wait outcome exit (once publication is ready). The profile row SHALL retain
+an existing provider-binding error code when supplied by its owner, using that code's
+existing exit mapping; without one it SHALL use execution_profile_invalid/3.
+
+| completed.payload.reasons entry | job.errorCode | Status | create/default retry/wait exit |
+| --- | --- | --- | --- |
+| project_unregistered | project_unregistered | failed | 7 |
+| cwd_identity_changed | cwd_identity_changed | failed | 7 |
+| execution_profile_invalid | owner-supplied provider-binding code, else execution_profile_invalid | failed | binding unavailable→6, invalid request→2, local-only blocked→4; else 3 |
+| queued_age_exceeded | queued_age_exceeded | failed | 1 |
+| artifact_admission_mismatch | artifact_admission_mismatch | failed | 1 |
+
+The exit and job.errorCode projections SHALL be public commitments. As already stated
+in the v1 guide:1130, completed.payload.reasons values are not v1-stable; the fixed
+reason names above define this slice's settlement/test oracle without changing that rule.
+No new exit number or change to the meanings of 0–8 SHALL be introduced.
 
 For artifact Runs, run-artifacts SHALL own reopenAdmittedRunDir(job,committedInitialRefs):
 open stored artifactBaseDir/<jobId> with a stable-directory handle, recheck registered
 root/artifacts-base containment, verify every initial committed artifact_created ref's
 role/path/sha256/size via verifyRunDirArtifactRef, and seed receipts only for verified
 single-link regular files. Mismatch SHALL settle failed/artifact_admission_mismatch
-without new terminal refs, never hang or write outside admitted bounds. No fd SHALL
+with completed.payload.reasons containing artifact_admission_mismatch and
+job.errorCode=artifact_admission_mismatch, create/default retry/wait exit 1, without
+new terminal refs; it SHALL never hang or write outside admitted bounds. No fd SHALL
 cross processes and no dev/ino SHALL enter public envelopes. Terminal staging names
 SHALL be exclusive and unique per process plus preparation attempt; losers SHALL
 discard only their own files. Reopening a terminal Run SHALL never republish it.
 
-Daemon-claimed children SHALL use the daemon's environment/native-credential home
-(HOME/CODEX_HOME/CLAUDE_CONFIG_DIR, proxy and relevant PATH), with existing secret
-stripping unchanged; no client env snapshot SHALL be persisted. CLI runtimes list
-SHALL continue probing the CLI environment and SHALL not claim daemon readiness.
+Daemon-claimed children SHALL use each runtime adapter's allowlisted native-home
+variables from the daemon, per platform (e.g. HOME/CODEX_HOME/CLAUDE_CONFIG_DIR on POSIX;
+USERPROFILE/APPDATA/LOCALAPPDATA on Windows), plus PATH-family variables; proxy variables
+SHALL move only where that adapter forwards them. Existing secret stripping SHALL
+remain unchanged; no client env snapshot SHALL be persisted. A daemon-claimed Run
+bypasses the consumer's own env minimisation; that provenance change SHALL be disclosed.
+CLI runtimes list SHALL continue probing the CLI environment and SHALL not claim daemon readiness.
 This R3 decision remains **统筹预设（推荐，Owner 可改）**, pending Owner approval.
 
 #### Scenario: Daemon starts without a renderer window
@@ -103,31 +130,44 @@ This R3 decision remains **统筹预设（推荐，Owner 可改）**, pending Ow
 #### Scenario: S37 Submit in one process and publish in another
 - **GIVEN** `tests/fixtures/local-job-api-async/publication.json#S37`, with a registered project with artifact base, process A using an isolated DB and
   process B with no shared memory/receipts, plus digest/symlink/hardlink mismatch variants
+  and equivalent create/default retry variants paused after their own admission for B to claim
 - **WHEN** A submits and exits, B's daemon claims/reopens/executes/publishes, then process C
-  invokes runs wait; repeat with each initial-file mismatch before B starts
+  invokes runs wait; repeat with each initial-file mismatch before B starts; repeat
+  mismatch checks while create/default retry waits on its own admitted ID
 - **THEN** the valid Run becomes ready/exit 0 with golden prepared-tail refs, existing
   initial events.jsonl/artifacts.json targets replaced only after verified receipt seeding
-- **AND** mismatch cases call no provider, settle failed with artifact_admission_mismatch,
-  no new terminal refs, wait returns failed/exit 1, and outside files remain unchanged
+- **AND** mismatch cases call no provider and settle once with status=failed,
+  completed.payload.reasons containing artifact_admission_mismatch and
+  job.errorCode=artifact_admission_mismatch, no new terminal refs; wait and an observing
+  create/default retry wrapper return that failed outcome/exit 1, and outside files remain unchanged
 - **AND** processes share only persistent DB/files; stdout contains no dev/ino/raw env
 
 #### Scenario: S39 Claim revalidates project identity profile and age
 - **GIVEN** `tests/fixtures/local-job-api-async/admission.json#S39`, with admitted queued API fixtures, mutated after ack by unregistering the project,
   replacing cwd directory identity, invalidating the execution profile/grant, or advancing
   the fake clock to exactly createdAt+86400000; include an unchanged younger control
+  and profile-owner errors with unavailable/invalid-request/local-only binding codes
+  plus a profile error without a binding code; equivalent create/default retry variants
+  pause after admission for the same mutation, claim and outcome checks
 - **WHEN** daemon pump attempts claim and the daemon expiry tick runs
-- **THEN** changed fixtures settle through the host once with reasons respectively
-  project_unregistered, cwd_identity_changed, execution_profile_invalid, queued_age_exceeded,
-  zero provider calls/child spawns and no unsafe artifact writes
-- **AND** the unchanged fixture executes exactly once; changing Owner maxQueuedApiAgeMs
+- **THEN** changed fixtures settle through the host once with status=failed and
+  completed.payload.reasons entries respectively project_unregistered, cwd_identity_changed,
+  execution_profile_invalid and queued_age_exceeded, zero provider calls/child spawns
+  and no unsafe artifact writes
+- **AND** job.errorCode equals each matching reason except that the profile variants
+  preserve their owner-supplied binding code; create/default retry and wait return exits
+  7/7/(6,2,4 for those binding codes or 3 without one)/1 respectively, as the table specifies
+- **AND** the unchanged fixture executes exactly once; injecting internal maxQueuedApiAgeMs
   moves only the age threshold, never bypasses the identity/profile gates
 
 #### Scenario: S40 Runtime environment belongs to the actual claimant
-- **GIVEN** `tests/fixtures/local-job-api-async/environment.json#S40`, with submitter sentinel homes/proxy/PATH A and daemon homes/proxy/PATH B, injected
+- **GIVEN** `tests/fixtures/local-job-api-async/environment.json#S40`, with per-platform adapter-allowlisted native-home/PATH sentinels A and B for submitter
+  and daemon, proxy sentinels only for adapters that forward them, injected
   runtime child env capture, fake native credential readiness and secret env sentinels
 - **WHEN** A submits and B claims, then a separate no-daemon Q2(a) create runs locally;
   runtimes list is invoked from A
 - **THEN** daemon-claimed child uses B and local wrapper child uses A for allowed native
-  homes/proxy/relevant PATH; both apply unchanged secret stripping, never forward raw tokens
+  homes/PATH and only adapter-forwarded proxy variables; both apply unchanged secret
+  stripping, never forward raw tokens; daemon execution bypasses the caller env allowlist
 - **AND** CLI readiness reports A only, while no DB/request/event/log stores A or B env
   snapshots or secret values; the fixture proves native-home provenance, not API-key billing

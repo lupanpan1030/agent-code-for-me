@@ -9,12 +9,12 @@ Status: **DRAFT — awaiting Owner APPROVED**
 - Worktree: `/home/chen/projects/locus-add-local-job-api-async-submit-draft`。
 - Branch: `codex/add-local-job-api-async-submit-draft`。
 - Author / date: Codex / 2026-10-01 (Pacific/Auckland)。
-- Revision parent: `b26c06518446292a8875ed59ef62aa30f14c3f70`；fresh synthesis 的 27 findings / 13 rewrite items 为本版裁定输入。
-- Draft receipt commit：本文件所在的单一本地 `docs(openspec): rewrite local job api async submit per review synthesis` 提交；用 `git log -1 --format=%H -- openspec/changes/add-local-job-api-async-submit` 解析，避免自引用 SHA。
+- Revision parent: `79c4e7b0767b2e6c5ed4706abd41bc573924e349`；第三版输入为二审 `async-submit-redraft-synthesis-79c4e7b0.md` §3 的 12 项有界编辑、§2 的 0 P1 / 8 P2 / 13 P3；§4 六项 Owner 决策原文搬入 design Open questions，推荐默认不变。
+- Draft receipt commit：本文件所在的单一本地 `docs(openspec): bounded text touch-up of local job api async submit per second review` 提交；用 `git log -1 --format=%H -- openspec/changes/add-local-job-api-async-submit` 解析，避免自引用 SHA。
 - Product source edits/tests authored: **none**。本记录不声称实现、conformance 或 packaged smoke 已通过。
 - Owner APPROVED / C7 R1–R4,Q1–Q6: **pending**。
 - Implementation source SHA / Codex IMPLEMENTATION_VERIFIED: **not applicable to draft / not issued**。
-- Fresh Claude Code REVIEW_APPROVED / reviewed source SHA: **not issued for this revision**；b26c0651 的 fresh synthesis 为 CHANGES_REQUESTED，本版等待新的 fresh review。
+- Fresh Claude Code REVIEW_APPROVED / reviewed source SHA: **not issued for this revision**；79c4e7b0 的二审 synthesis 为 CHANGES_REQUESTED，本版等待对本提交 exact SHA 的单次 closure check（不是新三视角轮次）。
 - Local merge SHA / Owner ACCEPTED: **none / pending**。
 - Remote push/PR/merge/release/rules: **not authorized / not performed**；本次也不本地 merge。
 
@@ -26,33 +26,43 @@ Status: **DRAFT — awaiting Owner APPROVED**
 | --- | --- |
 | `/home/chen/projects/agent-code-for-me/node_modules/.bin/openspec validate add-local-job-api-async-submit --strict --no-interactive` | Exit 0：`Change 'add-local-job-api-async-submit' is valid`。仅格式/规格校验。 |
 | 同 binary `validate --all --strict --no-interactive` | Exit 0：`Totals: 54 passed, 0 failed (54 items)`；53 living specs + 本 draft。 |
-| Scenario 登记一致性 | 54 个 Scenario，S01–S54 连续且唯一（S01–S33 保留；S34–S40 新行为；S41–S54 完整 MODIFIED 继承场景，标题保持原样，ID 以注释登记），每个有 GIVEN/WHEN/THEN；登记与下表一一对应。 |
-| `git diff --check` / staged diff check | Exit 0：working/staged diff 均无 whitespace 错误，十个允许范围内文档；提交后再核对完整提交 diff。 |
+| Scenario 登记一致性 | 54 个 Scenario，S01–S54 连续且唯一、S01–S40 IDs 不变，每个有 GIVEN/WHEN/THEN；S41–S54 保留每条 living assertion 与标题，S42/S46/S48/S51 明列 modified-inherited 的一致性补充（S48 为同核表述细化），S53 恢复原 consumer rule 并附 helper documentation example；登记与下表一一对应。 |
+| `git diff --check` / staged diff check | Exit 0：working/staged diff 均无 whitespace 错误，八个允许范围内文档；提交后再核对完整提交 diff。 |
 | `bun run check:full` | **Exit 1 / environment prerequisite blocked**：该 worktree 未安装 node_modules，lint 首步找不到 `node_modules/.bin/biome`；后续 architecture/typecheck/tests/spec/build 未执行。没有当作通过，也没有为纯文档草案安装依赖或修改产品文件。 |
 
-完整本地命令日志 `/tmp/async-submit-redraft-validate-all.log`、
-`/tmp/async-submit-redraft-check-full.log` 是临时执行记录，不是 durable 产品证据。
+完整本地命令日志 `/tmp/async-submit-v3-validate-all.log`、
+`/tmp/async-submit-v3-check-full.log` 是临时执行记录，不是 durable 产品证据。
 
-## Fresh synthesis §3 rewrite disposition（author self-check；非独立批准）
+## Second-round synthesis §3 touch-up disposition（author self-check；非独立批准）
 
 | §3 item | Status | 文件与具体关闭内容 |
 | --- | --- | --- |
-| 1 | CLOSED | proposal §3/4/6/10 + design D2/Open questions：R3/R4、Q2 三真实选项、推荐 (a)、S32 scoped pump、S34/S35/S40；daemon-first SIGKILL 异议保留给 Owner。 |
-| 2 | CLOSED | local-job-api wrapper Requirement/S03/S05/S25 + D2：条件化 absent/stalled/publish 行为、今日 publish failure baseline、prepared tail 无 sequence。 |
-| 3 | CLOSED | runtime-core/D5：worker/cancel/recovery trigger ownership；recovery 空 terminal refs、readiness 空集、prologue 披露；S36。 |
-| 4 | CLOSED | D1/D5、tasks 2.5/2.7、headless S28/S37、local S18：安全 reopen/验证/seed receipts、mismatch settlement、process+attempt staging 与两种 cancel race。 |
-| 5 | CLOSED | D4、local idempotency/S13/S14、tasks 4.5/4.7、proposal §3/4：逐路径 expiry setter、命名 cleanup/触发、删除虚构 job-delete、orphan remedy、pending/8+retryable。 |
-| 6 | CLOSED | D3、runtime-core/S26/S38、local S11：固定 initial admission key 与 SQL、creation→admission crash、cancel/expiry remedy。 |
-| 7 | CLOSED | D5/local observation/S17：lock v2、heartbeat 更新/freshness、状态表、nonce swap 定义、required lockPath。 |
-| 8 | CLOSED | local wait/status/error 表、S01/S06/S11/S15/S19/S20/S30：明确 reason/presence、exact counts、stream/exit/code、non-outcome 带 id error。 |
-| 9 | CLOSED | daemon/discovery 完整 MODIFIED；stdio 移入 agent-protocol-interfaces；schedule/S31 移 architecture；S41–S54 登记继承场景，保留原标题。 |
-| 10 | CLOSED | proposal §3/#10/§6 + D6/Q1/Q3：key surface、guide:210 条件变更、预声明 refresh/preflight、ledger 先例、v1 默认与 R2 Owner gate。 |
-| 11 | CLOSED | proposal §5：Career Kit@6d6a333 verified v1/calls/timeout/kill/env/cancel/validator，标 evidence-only；Amadeus 原行不变。 |
-| 12 | CLOSED | headless MODIFIED/D5/D6/S39：project/cwd/profile/grant 复核、24 h 可改 queued age、host fail closed。 |
-| 13 | CLOSED | worker provenance、artifact-ref redirect、mkdir 次序、slot order、daemon seams、consumer ID 形态、raw key never stored、具名 fixtures、S07 seam；SYN-18/25/26 在 Q4/tasks 3.3/4.9 披露。 |
+| 1 / F-A | CLOSED | local-job-api wrapper/S25/S34、design D2、proposal §3/8：own-pump pending dispatch promise 豁免 30 s no-progress；remote claimant 用 D5 committed worker identity/120 s/confirmed alive；45 s completion 两分支 oracle；publication bound/recovery owner 保留。 |
+| 2 / F-B | CLOSED | proposal §3 #2/#10、§4，design D2/Open Q4，local request/error/S08：create 无新字段且显式 reject key；今日 silent acceptance→新 stdout v1 idempotency_key_not_supported/2 属 Q1 tightening；reject/ignore 和旧 build duplicate 风险披露。 |
+| 3 / F-C | CLOSED | local wrapper、design D2、tasks 1.4：baseline stderr text；create 2 或 unsupported message→3、retry 3；stop owned execution tree、queued cleanup、无 false terminal 保留。 |
+| 4 / F-D/F-T | CLOSED | local S53 THEN 逐字恢复 living consumer rule，helper/spy 另列 documentation example；tasks 7.12/fixture contract 和本登记准确披露 S42/S46/S48/S51 modified-inherited 与 S53 example。 |
+| 5 / F-E | CLOSED | headless projection table/S37/S39、design D5、proposal §3 #5/#10 与 §4：五 reason 的 completed.payload.reasons、job.errorCode、failed、exit（7/7/binding 6,2,4 else 3/1/1）；reasons 非 v1-stable，0–8 含义不变。 |
+| 6 / F-F | CLOSED | tasks 1.1/新增 1.6/7.2：Owner 决策后、red tests 前强制 prune 为仅选定分支的可归档 SHALL，删除 specs 的 pending/conditional/预设决策措辞，备选归 design history，裁剪 S34/S35，strict validate + 单次 closure re-check + approved exact SHA；默认全选也执行。 |
+| 7 / F-G | CLOSED | local stderr table/S06/S20、design D2：plain text + newline，unknown ID 与 status 同形 Unknown job: <id>/3，invalid-timeout argument diagnostic/2，pre-snapshot observation diagnostic/8；stdout envelopes 保留。 |
+| 8 / F-H/F-O | CLOSED | design R4、local R4/S35、proposal §3/§5、tasks 1.4：POSIX/Windows matrix、cancel-by-id/EOF 边界、Career Kit no win32 detach/500 ms grace、signal re-raise、hard-kill negative assertion、ignored stdin 不 armed。 |
+| 9 / F-I/F-J | CLOSED | design R4/Open questions、local R4：daemon-first relay 标为推荐默认，no-relay 备选；Q2(a′) held Run daemon-ineligible/dead-holder cancel/recovery、holder-liveness/scenario 成本与不推荐原因；(a) 默认不变。 |
+| 10 / F-K/F-L/F-M/F-N | CLOSED | proposal §3/§5/§6/§7、design R3/D6、headless R3/S40：两种 key surface 均列 guide:210 #10、ledger enum Non-breaking refresh disclosure 先例、平台 adapter allowlist/proxy 条件与 consumer env minimisation bypass、完整 C7 §9.5 清单。 |
+| 11 / F-P/F-Q/F-R/F-S | CLOSED | headless/D5/tasks 的 internal maxQueuedApiAgeMs constant/test seam；2c59664f 产品基线、S23/tasks 明确 git-show vendored old parser 直接执行；helper 仅 example；local S15 secret-first/Bearer fixture；runtime-core S36 keyed fixture。 |
+| 12 | CLOSED | 本 change strict / all strict 54/54、diff check；Revision parent 与自查更新，STATUS 仅对应行改 DRAFT v3；单一本地指定提交，无 push。 |
 
-“CLOSED”仅表示本次草案的文字改写落实；不是实现完成、Owner APPROVED 或 fresh reviewer 的 verdict。
-不变清单已核对：D1 单核/owner，D3 ack/committed fact/TICKET-128，D4 reservation 同事务/unique/compensation/raw-key 禁落盘，D2 commands 与 wait 30 s/0–86400000/exit9-only，v1，R2 Owner decision，S01–S33 编号，tasks 执行顺序和 8.7/8.8 原文，DRAFT 与未来证据表。
+| §2 P2 | Status | 对应 §3 编辑 |
+| --- | --- | --- |
+| F-A | CLOSED | 1 |
+| F-B | CLOSED | 2 |
+| F-C | CLOSED | 3 |
+| F-D | CLOSED | 4 |
+| F-E | CLOSED | 5 |
+| F-F | CLOSED | 6 |
+| F-G | CLOSED | 7 |
+| F-H | CLOSED | 8 |
+
+“CLOSED”只表示二审有界文字修补落实，不是实现、Owner APPROVED 或独立 reviewer verdict。F-F 按权威 §3.6 关闭为决策后强制 prune gate；当前 DRAFT 未擅替 Owner 选分支，待决分支不获归档授权。无未按清单落实的编辑；F-U 是 REC、原位保留，无新动作。
+不变项自查：D1 单核/owner、D3 ack/committed fact/TICKET-128、D4 reservation 同事务/unique/compensation/raw key never stored、D2 command shapes 与 wait 30 s/0–86400000/exit9-only、v1、R2 Owner decision、S01–S40 IDs、六项推荐默认；L1–L11、tasks 顺序和 8.7/8.8、DRAFT 状态、未来证据表均保留。Owner §4 六项按原文搬入并逐字比对。
 
 ## Future evidence required
 
@@ -81,7 +91,7 @@ TICKET-128 已披露孤儿与 partial publish 仍在；本切片只证明“不�
 
 ## Scenario register
 
-每一行的完整入口、输入夹具和可观察断言均在对应 spec delta 的 Scenario。S41–S54 保留 living 标题以满足 MODIFIED 完整替换检查，编号位于标题下的 register 注释与夹具 case key；不改 S01–S33 编号。
+每一行的完整入口、输入夹具和可观察断言均在对应 spec delta 的 Scenario。S41–S54 保留 living 标题以满足 MODIFIED 完整替换检查，编号位于标题下的 register 注释与夹具 case key；不改 S01–S40 编号。S41–S54 保留每条 living assertion；S42/S46/S48/S51 为 modified-inherited 一致性补充（S48 细化同核表述），S53 增加 documentation helper example，原 consumer obligation 逐字保留。
 实施阶段为每行补：test file/name、fixture revision、red SHA/receipt、green SHA/receipt、platform/limitations。
 当前全为 **not authored / not run**，不是通过标记。
 
@@ -154,7 +164,7 @@ TICKET-128 已披露孤儿与 partial publish 仍在；本切片只证明“不�
 ## Stop gates and known limitations
 
 - 文档 strict pass 不等于 Owner APPROVED、产品 VERIFIED、独立 REVIEW_APPROVED 或 ACCEPTED。
-- L2 的正常终态 bytes 目标明确；Q2(a) own-Run pump 为统筹预设；daemon-first/异常分支仍属 R1 待决，R3 env/R4 abort 与 SIGKILL 残余在 Open questions 明列，未将推荐当批准。
+- L2 的正常终态 bytes 目标明确；Q2(a) own-Run pump 为统筹预设；daemon-first/异常分支仍属 R1 待决，R3 env/R4 abort 与 SIGKILL/TerminateProcess、500 ms kill 残余在 Open questions / D2 明列，未将推荐当批准。
 - feature enum 扩展是 Red R2，旧 pinned schema 失败是要披露的合同影响，不能删除失败 fixture。
 - full check 本次因缺少 worktree 依赖未完成；实施 gate 必须在完整依赖环境重跑。
 - Q4 需要 Owner 选择接受最小 read/ack barrier 残差或将 TICKET-128 完整修复前置。

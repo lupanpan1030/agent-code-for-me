@@ -75,8 +75,9 @@ indistinguishable from never published; a durable publish marker is TICKET-128 s
   overwrites outcome; no process-local publish flag is required
 
 #### Scenario: S36 Daemon death recovers to a readable interrupted result
-- **GIVEN** `tests/fixtures/local-job-api-async/publication.json#S36`, with a daemon-claimed artifact API Run with committed initial refs, running status,
-  a blocked runtime, no terminal commit and heartbeat advanced beyond the existing 120 s
+- **GIVEN** `tests/fixtures/local-job-api-async/publication.json#S36`, with a keyed daemon-claimed artifact API Run and its retained reservation, committed
+  initial refs, running status, a blocked runtime, no terminal commit and heartbeat
+  advanced beyond the existing 120 s
   stale threshold; the real daemon/worker is killed and the liveness port confirms stopped
 - **WHEN** a restarted daemon or runs wait CLI prologue invokes recoverStaleAgentJobs,
   then `runs wait <id> --timeout 0 --json` reads from a new connection
