@@ -15,7 +15,10 @@ import {
   resolve,
 } from "node:path"
 import { eq } from "drizzle-orm"
-import type { AgentRuntimeContractId } from "../../../shared/agent-runtime-capabilities"
+import {
+  type AgentRuntimeContractId,
+  checkAgentRuntimeCapability,
+} from "../../../shared/agent-runtime-capabilities"
 import {
   assertLocalJobApiCreateRequest,
   assertLocalJobApiRetryRequest,
@@ -36,6 +39,7 @@ import {
   type NormalizedLocalJobApiCreateRequest,
   splitLocalJobApiIdempotencyKey,
 } from "../../../shared/local-job-api"
+import { resolveNonDesktopPermissionPolicy } from "../agent-runtime/permission-policy"
 import {
   admitRunDirArtifacts,
   assertRunArtifactRunDir,
@@ -57,9 +61,12 @@ import type { LedgerRecord } from "../agent-runtime/run-event-ledger"
 import { getOrCreateRunEventLedger } from "../agent-runtime/run-event-ledger-host"
 import type { JsonValue } from "../agent-runtime/runtime-events"
 import {
-  checkRegisteredAgentRuntimeCapability,
-  listRegisteredAgentRuntimeManifests,
-} from "../agent-runtime/runtime-registry"
+  listRuntimeRouteManifests,
+  probeRuntimeRouteReadiness,
+  projectRuntimeRoutes,
+  type RuntimeRouteCatalogState,
+  resolveRuntimeRoute,
+} from "../agent-runtime/runtime-route-catalog"
 import { type AgentJob, type AgentJobEvent, projects } from "../db/schema"
 import { createId } from "../db/utils"
 import {
@@ -100,10 +107,7 @@ import {
   inspectHeadlessDefaultProviderBinding,
   resolveExplicitHeadlessProviderProfile,
 } from "./provider-binding"
-import {
-  type RuntimeReadinessResolverDependencies,
-  resolveLocalJobApiRuntimeReadiness,
-} from "./runtime-readiness"
+import type { RuntimeReadinessResolverDependencies } from "./runtime-readiness"
 import { findRegisteredProjectForCwdWithCanonicalPath } from "./schedules"
 
 export type LocalJobApiCreatePrepared = {
@@ -132,6 +136,11 @@ export type LocalJobApiRuntimeManifestEnvelopeOptions = {
   probe?: boolean
   providerBindingDependencies?: HeadlessProviderBindingDependencies
   readinessDependencies?: RuntimeReadinessResolverDependencies
+  /**
+   * Test-only runtime route catalog state (design D1 host seam): drives the
+   * listed manifests, the readiness probes and the route summaries.
+   */
+  runtimeRouteCatalog?: RuntimeRouteCatalogState
 }
 
 /**
@@ -492,23 +501,54 @@ export async function toLocalJobApiRuntimeManifestEnvelope(
         dependencies: options.providerBindingDependencies,
       })
   }
+  // Discovery enumerates the catalog's runtimes: each manifest comes through
+  // the catalog's manifest reference (the shared capability owner), its
+  // advisory readiness through the probe the runtime's API batch route
+  // references, and its optional experimental summaries from the catalog's
+  // public projection. A catalog failure rejects with the sanitized message.
+  const catalog = options.runtimeRouteCatalog
+  const manifests = listRuntimeRouteManifests(catalog)
+  const routes = new Map(
+    projectRuntimeRoutes("public", catalog).map((runtime) => [
+      runtime.runtimeId,
+      runtime.routes,
+    ]),
+  )
   const runtimes = await Promise.all(
-    listRegisteredAgentRuntimeManifests({ scope: "contract" }).map(
-      async (runtime) => {
-        const runtimeId = runtime.runtimeId as AgentRuntimeContractId
-        const readiness = await resolveLocalJobApiRuntimeReadiness({
+    manifests.map(async (runtime) => {
+      const readiness = await probeRuntimeRouteReadiness(
+        resolveRuntimeRoute(
+          {
+            runtimeId: runtime.runtimeId,
+            entry: "api",
+            kind: "agent",
+            mode: "agent",
+            executionProfile: "batch",
+            permissionPolicy: resolveNonDesktopPermissionPolicy({
+              source: "api",
+              mode: "agent",
+            }),
+            requiredCapabilities: [],
+            requiredExtensions: [],
+          },
+          catalog,
+        ),
+        {
           dependencies: readinessDependencies,
           onDiagnostic: options.onDiagnostic,
           probe: options.probe,
-          runtimeId,
-        })
-        assertLocalJobApiRuntimeReadiness(readiness)
-        return {
-          ...runtime,
-          readiness,
-        }
-      },
-    ),
+        },
+      )
+      assertLocalJobApiRuntimeReadiness(readiness)
+      return {
+        ...runtime,
+        readiness,
+        routes: (routes.get(runtime.runtimeId) ?? []).map((route) => ({
+          ...route,
+          extensions: route.extensions.map((extension) => ({ ...extension })),
+        })),
+      }
+    }),
   )
   return {
     apiVersion: LOCAL_JOB_API_VERSION,
@@ -788,7 +828,7 @@ export function validateLocalJobApiRequiredCapabilities(
 ): void {
   if (request.kind !== "agent") return
   for (const capabilityId of request.runtime.requiredCapabilities) {
-    const gate = checkRegisteredAgentRuntimeCapability({
+    const gate = checkAgentRuntimeCapability({
       runtime: request.runtime.id,
       capabilityId,
     })

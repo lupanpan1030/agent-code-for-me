@@ -1302,6 +1302,7 @@ async function apiRuntimesListCommand(
       probe: !command.noProbe,
       providerBindingDependencies: options.providerBindingDependencies,
       readinessDependencies: options.runtimeReadinessDependencies,
+      runtimeRouteCatalog: options.runtimeRouteCatalog,
     }),
   )
   return HEADLESS_EXIT_CODES.success
