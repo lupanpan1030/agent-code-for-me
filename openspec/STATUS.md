@@ -8,7 +8,7 @@ Updated: 2026-10-02 (Pacific/Auckland); previous: 2026-10-01 (Pacific/Auckland)
 
 | Active change | Status | Scope / next gate |
 | --- | --- | --- |
-| None | — | — |
+| [refactor-unified-runtime-route-catalog](changes/refactor-unified-runtime-route-catalog/) | DRAFT — awaiting Owner APPROVED | Phase 3 第三份：单一 runtime 路由目录；纯文档，待 Owner 裁定 Consumer Impact 与 Q1–Q3；未授权产品实现。 |
 
 Parked proposals are indexed in [`deferred/README.md`](deferred/README.md) and
 do not appear in the active list.
