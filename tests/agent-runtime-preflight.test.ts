@@ -298,9 +298,7 @@ describe("desktop runtime preflight", () => {
     const runRequestIndex = codex.indexOf(
       "const desktopRunRequest = createCodexDesktopRunRequest({",
     )
-    const adapterIndex = codex.indexOf(
-      "runCodexAppServerDesktopAdapter({",
-    )
+    const adapterIndex = codex.indexOf("runCodexDesktopChatRun({")
     const adapterConstructionIndex = codexAdapterRunner.indexOf(
       "const adapter = dependencies.createAdapter({",
     )
@@ -333,7 +331,8 @@ describe("desktop runtime preflight", () => {
     expect(adapterFactoryIndex).toBeGreaterThan(adapterConstructionIndex)
     expect(adapterRunIndex).toBeGreaterThan(adapterFactoryIndex)
     expect(codex).toContain("cwd: runtimeCwd")
-    expect(codex).toContain("runCodexAppServerDesktopAdapter({")
+    expect(codex).toContain("runCodexDesktopChatRun({")
+    expect(codex).not.toContain("runCodexAppServerDesktopAdapter")
     expect(codexPreflight).toContain('id: "local-only"')
     expect(codex).not.toContain("cwd: input.cwd,\n              mcpServers")
   })

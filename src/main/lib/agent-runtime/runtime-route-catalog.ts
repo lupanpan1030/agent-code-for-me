@@ -33,7 +33,7 @@ import {
   type LocalJobApiRuntimeRouteSummary,
 } from "../../../shared/local-job-api"
 import type { RunClaudeAgentSdkDesktopAdapterWithPreparedRuntimeQueryInput } from "../claude/agent-sdk-adapter-runner"
-import type { runCodexAppServerDesktopAdapter } from "../codex/app-server-adapter-runner"
+import type { CodexAppServerDesktopAdapterInput } from "../codex/app-server-adapter-runner"
 import {
   CLAUDE_CODE_BATCH_ENFORCEMENT_EVIDENCE,
   CODEX_APP_SERVER_HEADLESS_ENFORCEMENT_EVIDENCE,
@@ -154,7 +154,7 @@ export type ClaudeDesktopRuntimeRouteDelegate = (
 
 /** Codex desktop leaf delegate (app-server adapter runner input). */
 export type CodexDesktopRuntimeRouteDelegate = (
-  input: Parameters<typeof runCodexAppServerDesktopAdapter>[0],
+  input: CodexAppServerDesktopAdapterInput,
 ) => Promise<DesktopRunResult>
 
 export type RuntimeRouteDelegate =

@@ -53,12 +53,12 @@ import {
   subscribeCodexApiKeyModelIds,
   validateCodexApiKey,
 } from "../../codex/api-key-validation"
-import { runCodexAppServerDesktopAdapter } from "../../codex/app-server-adapter-runner"
 import { createCodexDesktopRouteRenderer } from "../../codex/app-server-finish-gate"
 import { getLastCodexSessionId } from "../../codex/chat-history"
 import { codexChatInputSchema } from "../../codex/chat-input-schema"
 import { resolveBundledCodexCliPath } from "../../codex/cli-path"
 import { runCodexCli } from "../../codex/cli-runner"
+import { runCodexDesktopChatRun } from "../../codex/desktop-chat-run"
 import {
   cleanupCodexDesktopRunSubscription,
   createAndRegisterCodexDesktopRunJob,
@@ -559,11 +559,10 @@ export const codexRouter = router({
               })
               return
             }
-            const runClaim =
-              claimDesktopRunAdmissionWithMaintenanceFence(
-                runAdmission,
-                input.runId,
-              )
+            const runClaim = claimDesktopRunAdmissionWithMaintenanceFence(
+              runAdmission,
+              input.runId,
+            )
             if (!runClaim.ok) {
               if (runClaim.reason === "maintenance") {
                 safeEmit({
@@ -626,10 +625,9 @@ export const codexRouter = router({
                 bindingAdmission.providerProfileId ?? undefined,
               codexAuthMethod: bindingAdmission.codexAuthMethod ?? undefined,
               requestedModel: bindingAdmission.requestedModel ?? undefined,
-              providerProfileBoundModelId:
-                bindingAdmission.providerProfileId
-                  ? (bindingAdmission.binding.modelId ?? undefined)
-                  : undefined,
+              providerProfileBoundModelId: bindingAdmission.providerProfileId
+                ? (bindingAdmission.binding.modelId ?? undefined)
+                : undefined,
               signal: abortController.signal,
               emit: safeEmit,
               complete: safeComplete,
@@ -776,7 +774,7 @@ export const codexRouter = router({
 
             await appServerFinishGate.runWithDeferredFinish(
               () =>
-                runCodexAppServerDesktopAdapter({
+                runCodexDesktopChatRun({
                   request: desktopRunRequest,
                   providerGatewayToken: codexProviderProfile?.token ?? null,
                   appManagedApiKey: appManagedCodexApiKey,

@@ -49,7 +49,8 @@ export function resolveCodexAppServerDesktopAdapter(input: {
   })
 }
 
-export async function runCodexAppServerDesktopAdapter(input: {
+/** Input of the Codex desktop leaf (the catalog's typed delegate input). */
+export type CodexAppServerDesktopAdapterInput = {
   request: DesktopRunRequest
   providerGatewayToken: string | null
   appManagedApiKey: string | null
@@ -66,7 +67,11 @@ export async function runCodexAppServerDesktopAdapter(input: {
   >
   env?: NodeJS.ProcessEnv
   dependencies?: Partial<CodexAppServerDesktopAdapterRunnerDependencies>
-}): Promise<DesktopRunResult> {
+}
+
+export async function runCodexAppServerDesktopAdapter(
+  input: CodexAppServerDesktopAdapterInput,
+): Promise<DesktopRunResult> {
   const dependencies = withDefaultDependencies(input.dependencies)
   const runOwnerIsCurrent = (): boolean => {
     try {

@@ -175,13 +175,15 @@ describe("desktop runtime adapter factory", () => {
     ].join("_ACP_")
     const removedSpawnProbe = ["probeCodex", "Spawn"].join("Acp")
 
-    expect(codexRouter).toContain("../../codex/app-server-adapter-runner")
+    expect(codexRouter).toContain("../../codex/desktop-chat-run")
+    expect(codexRouter).not.toContain("../../codex/app-server-adapter-runner")
     expect(codexRouter).not.toContain('from "../../codex/app-server-adapter"')
     expect(codexRouter).toContain("../../codex/desktop-run-request")
     expect(codexRouter).toContain("../../codex/chat-history")
     expect(codexRouter).toContain("../../codex/cli-runner")
     expect(codexRouter).toContain("../../codex/runtime-status")
-    expect(codexRouter).toContain("runCodexAppServerDesktopAdapter")
+    expect(codexRouter).toContain("runCodexDesktopChatRun({")
+    expect(codexRouter).not.toContain("runCodexAppServerDesktopAdapter")
     expect(codexRouter).not.toContain("createCodexAppServerAdapter")
     expect(codexRouter).toContain('codexAdapterSource: "codex-app-server"')
     // The route's finish gate is composed through the committed-projection
