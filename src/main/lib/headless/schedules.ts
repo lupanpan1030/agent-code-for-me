@@ -1,5 +1,9 @@
 import { and, asc, desc, eq, lte, ne } from "drizzle-orm"
-import { AGENT_JOB_MODES, type AgentJobMode } from "../../../shared/agent-jobs"
+import {
+  AGENT_JOB_MODES,
+  type AgentJobMode,
+  type AgentJobRuntime,
+} from "../../../shared/agent-jobs"
 import {
   type AgentRuntimeContractId,
   CONTRACT_RUNTIME_IDS,
@@ -24,7 +28,11 @@ import {
 } from "../db/schema"
 import { createId } from "../db/utils"
 import { getRegisteredProjectForCwdOrThrow } from "../projects/registry"
-import { type AgentJobDatabase, recordAgentJobCreated } from "./job-store"
+import {
+  type AgentJobDatabase,
+  insertQueuedAgentJobRecord,
+  recordAgentJobCreated,
+} from "./job-store"
 import { assertHeadlessProviderSelectionUsableAtCreate } from "./provider-binding"
 
 export type CreateAgentScheduleInput = {
@@ -318,33 +326,25 @@ function createScheduleJobRecord(
   prompt: string,
   now: Date,
 ): AgentJob {
-  const db = executor as AgentJobDatabase
-  const jobId = createId()
-  db.insert(agentJobs)
-    .values({
-      id: jobId,
-      source: "schedule",
-      runtime: schedule.runtime,
-      status: "queued",
-      mode: schedule.mode,
-      cwd: schedule.cwd,
-      promptPreview: promptPreview(prompt),
-      inputJson: toJson({
-        prompt,
-        scheduleId: schedule.id,
-        trigger,
-        scheduledFor: scheduledFor.toISOString(),
-      }),
-      projectId: schedule.projectId,
-      providerProfileId: schedule.providerProfileId,
-      modelOverride: schedule.modelOverride,
-      createdAt: now,
-    })
-    .run()
-
-  const job = getJobFromExecutor(db, jobId)
-  if (!job) throw new Error(`Failed to create schedule job ${jobId}`)
-  return job
+  // The job-store insertion primitive constructs the row inside this
+  // schedule's fire/audit/nextRunAt transaction.
+  return insertQueuedAgentJobRecord(executor, {
+    source: "schedule",
+    runtime: schedule.runtime as AgentJobRuntime,
+    mode: schedule.mode as AgentJobMode,
+    cwd: schedule.cwd,
+    prompt,
+    input: {
+      prompt,
+      scheduleId: schedule.id,
+      trigger,
+      scheduledFor: scheduledFor.toISOString(),
+    },
+    projectId: schedule.projectId,
+    providerProfileId: schedule.providerProfileId,
+    modelOverride: schedule.modelOverride,
+    createdAt: now,
+  })
 }
 
 async function fireAgentSchedule(

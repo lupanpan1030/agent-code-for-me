@@ -129,7 +129,7 @@ export type RetryAgentJobOptions =
 
 const MAX_PROMPT_PREVIEW_LENGTH = 240
 
-type AgentJobStoreExecutor = Pick<
+export type AgentJobStoreExecutor = Pick<
   AgentJobDatabase,
   "select" | "insert" | "update"
 >
@@ -270,6 +270,86 @@ function isReservationUniqueViolation(error: unknown): boolean {
 }
 
 /**
+ * Row construction of a new queued job from a creation input (the one place
+ * that turns create input into `agent_jobs` values).
+ */
+function queuedAgentJobValues(
+  input: CreateAgentJobInput,
+  id: string,
+  now: Date,
+): typeof agentJobs.$inferInsert & { id: string } {
+  assertOneOf(AGENT_JOB_SOURCES, input.source, "job source")
+  assertOneOf(AGENT_JOB_KINDS, input.kind ?? "agent", "job kind")
+  assertCreateAgentJobRuntime(input)
+  assertOneOf(AGENT_JOB_MODES, input.mode, "job mode")
+  return {
+    id,
+    kind: input.kind ?? "agent",
+    source: input.source,
+    runtime: input.runtime,
+    status: "queued",
+    mode: input.mode,
+    cwd: input.cwd,
+    promptPreview: promptPreview(input.prompt),
+    inputJson:
+      input.input === undefined
+        ? toJson({ prompt: input.prompt })
+        : toJson(input.input),
+    projectId: input.projectId ?? null,
+    chatId: input.chatId ?? null,
+    subChatId: input.subChatId ?? null,
+    apiConsumerId: input.apiConsumerId
+      ? redactSecretText(input.apiConsumerId)
+      : null,
+    apiConsumerRunId: input.apiConsumerRunId
+      ? redactSecretText(input.apiConsumerRunId)
+      : null,
+    artifactBaseDir: input.artifactBaseDir
+      ? redactSecretText(input.artifactBaseDir)
+      : null,
+    artifactManifestPath: input.artifactManifestPath
+      ? redactSecretText(input.artifactManifestPath)
+      : null,
+    providerProfileId: input.providerProfileId
+      ? redactSecretText(input.providerProfileId)
+      : null,
+    modelOverride: input.modelOverride
+      ? redactSecretText(input.modelOverride)
+      : null,
+    createdByVersion: input.createdByVersion ?? null,
+    createdAt: now,
+  }
+}
+
+/** The only `agent_jobs` row insert (add-local-job-api-async-submit D1). */
+function insertAgentJobRow(
+  executor: AgentJobStoreExecutor,
+  values: typeof agentJobs.$inferInsert & { id: string },
+): void {
+  ;(executor as AgentJobDatabase).insert(agentJobs).values(values).run()
+}
+
+/**
+ * Shared insertion primitive for a caller that owns its own transaction
+ * (schedule fire/audit/nextRunAt): inserts the queued job row inside the
+ * caller's executor and returns it. The caller records `job_created`
+ * through `recordAgentJobCreated` after its transaction commits.
+ */
+export function insertQueuedAgentJobRecord(
+  executor: AgentJobStoreExecutor,
+  input: CreateAgentJobInput & { createdAt?: Date },
+): AgentJob {
+  const id = input.id ?? createId()
+  insertAgentJobRow(
+    executor,
+    queuedAgentJobValues(input, id, input.createdAt ?? new Date()),
+  )
+  const job = getJobFromExecutor(executor, id)
+  if (!job) throw new Error(`Failed to create job ${id}`)
+  return job
+}
+
+/**
  * Private insertion primitive of every queued job row: the row and its
  * optional idempotency reservation commit in one SQLite transaction, so a
  * reservation never names an uncommitted job and a lost unique race leaves
@@ -283,7 +363,7 @@ function insertQueuedAgentJobRow(
 ): void {
   try {
     db.transaction((tx: AgentJobTransaction) => {
-      tx.insert(agentJobs).values(values).run()
+      insertAgentJobRow(tx, values)
       if (reservation) {
         tx.insert(agentJobIdempotency)
           .values({
@@ -318,53 +398,12 @@ export async function createAgentJob(
   input: CreateAgentJobInput,
   options: AgentJobInsertOptions = {},
 ): Promise<AgentJob> {
-  assertOneOf(AGENT_JOB_SOURCES, input.source, "job source")
-  assertOneOf(AGENT_JOB_KINDS, input.kind ?? "agent", "job kind")
-  assertCreateAgentJobRuntime(input)
-  assertOneOf(AGENT_JOB_MODES, input.mode, "job mode")
-
   const id = input.id ?? createId()
   const kind = input.kind ?? "agent"
   const now = new Date()
   insertQueuedAgentJobRow(
     db,
-    {
-      id,
-      kind,
-      source: input.source,
-      runtime: input.runtime,
-      status: "queued",
-      mode: input.mode,
-      cwd: input.cwd,
-      promptPreview: promptPreview(input.prompt),
-      inputJson:
-        input.input === undefined
-          ? toJson({ prompt: input.prompt })
-          : toJson(input.input),
-      projectId: input.projectId ?? null,
-      chatId: input.chatId ?? null,
-      subChatId: input.subChatId ?? null,
-      apiConsumerId: input.apiConsumerId
-        ? redactSecretText(input.apiConsumerId)
-        : null,
-      apiConsumerRunId: input.apiConsumerRunId
-        ? redactSecretText(input.apiConsumerRunId)
-        : null,
-      artifactBaseDir: input.artifactBaseDir
-        ? redactSecretText(input.artifactBaseDir)
-        : null,
-      artifactManifestPath: input.artifactManifestPath
-        ? redactSecretText(input.artifactManifestPath)
-        : null,
-      providerProfileId: input.providerProfileId
-        ? redactSecretText(input.providerProfileId)
-        : null,
-      modelOverride: input.modelOverride
-        ? redactSecretText(input.modelOverride)
-        : null,
-      createdByVersion: input.createdByVersion ?? null,
-      createdAt: now,
-    },
+    queuedAgentJobValues(input, id, now),
     options.reservation,
     now,
   )
