@@ -558,7 +558,8 @@ export function initialArtifactVars(
     if (row.type !== "artifact_created") continue
     const payload = JSON.parse(row.payload_json ?? "null")
     for (const entry of payload?.artifacts ?? []) {
-      if (typeof entry?.role !== "string" || typeof entry?.sha256 !== "string") continue
+      if (typeof entry?.role !== "string" || typeof entry?.sha256 !== "string")
+        continue
       const name = `SHA_INITIAL_${entry.role.toUpperCase()}`
       if (!(name in vars)) vars[name] = entry.sha256
     }

@@ -1815,7 +1815,9 @@ describe("Executor Availability Observation", () => {
         leaks: [p.lockPath, pidText, "nonce-A", "nonce-legacy"].filter(
           (needle) =>
             needle === pidText
-              ? new RegExp(`(^|[^0-9])${needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([^0-9]|$)`).test(executionText)
+              ? new RegExp(
+                  `(^|[^0-9])${needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([^0-9]|$)`,
+                ).test(executionText)
               : executionText.includes(needle),
         ),
         lockUnchanged: lockAfter === lockText,
