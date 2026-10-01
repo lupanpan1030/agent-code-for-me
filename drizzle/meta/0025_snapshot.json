@@ -68,33 +68,22 @@
       "indexes": {
         "agent_job_events_job_sequence_idx": {
           "name": "agent_job_events_job_sequence_idx",
-          "columns": [
-            "job_id",
-            "sequence"
-          ],
+          "columns": ["job_id", "sequence"],
           "isUnique": true
         },
         "agent_job_events_job_created_at_idx": {
           "name": "agent_job_events_job_created_at_idx",
-          "columns": [
-            "job_id",
-            "created_at"
-          ],
+          "columns": ["job_id", "created_at"],
           "isUnique": false
         },
         "agent_job_events_job_fact_key_idx": {
           "name": "agent_job_events_job_fact_key_idx",
-          "columns": [
-            "job_id",
-            "fact_key"
-          ],
+          "columns": ["job_id", "fact_key"],
           "isUnique": true
         },
         "agent_job_events_v1_completed_idx": {
           "name": "agent_job_events_v1_completed_idx",
-          "columns": [
-            "job_id"
-          ],
+          "columns": ["job_id"],
           "isUnique": true,
           "where": "\"agent_job_events\".\"type\" = 'completed' AND \"agent_job_events\".\"fact_key\" IS NOT NULL"
         }
@@ -104,12 +93,8 @@
           "name": "agent_job_events_job_id_agent_jobs_id_fk",
           "tableFrom": "agent_job_events",
           "tableTo": "agent_jobs",
-          "columnsFrom": [
-            "job_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["job_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -181,24 +166,17 @@
       "indexes": {
         "agent_job_idempotency_consumer_key_idx": {
           "name": "agent_job_idempotency_consumer_key_idx",
-          "columns": [
-            "consumer_id",
-            "key_hash"
-          ],
+          "columns": ["consumer_id", "key_hash"],
           "isUnique": true
         },
         "agent_job_idempotency_job_id_idx": {
           "name": "agent_job_idempotency_job_id_idx",
-          "columns": [
-            "job_id"
-          ],
+          "columns": ["job_id"],
           "isUnique": false
         },
         "agent_job_idempotency_expires_at_idx": {
           "name": "agent_job_idempotency_expires_at_idx",
-          "columns": [
-            "expires_at"
-          ],
+          "columns": ["expires_at"],
           "isUnique": false
         }
       },
@@ -207,12 +185,8 @@
           "name": "agent_job_idempotency_job_id_agent_jobs_id_fk",
           "tableFrom": "agent_job_idempotency",
           "tableTo": "agent_jobs",
-          "columnsFrom": [
-            "job_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["job_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -253,22 +227,15 @@
           "name": "agent_job_projection_cursors_job_id_agent_jobs_id_fk",
           "tableFrom": "agent_job_projection_cursors",
           "tableTo": "agent_jobs",
-          "columnsFrom": [
-            "job_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["job_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {
         "agent_job_projection_cursors_job_id_projection_name_pk": {
-          "columns": [
-            "job_id",
-            "projection_name"
-          ],
+          "columns": ["job_id", "projection_name"],
           "name": "agent_job_projection_cursors_job_id_projection_name_pk"
         }
       },
@@ -551,58 +518,42 @@
       "indexes": {
         "agent_jobs_status_idx": {
           "name": "agent_jobs_status_idx",
-          "columns": [
-            "status"
-          ],
+          "columns": ["status"],
           "isUnique": false
         },
         "agent_jobs_source_idx": {
           "name": "agent_jobs_source_idx",
-          "columns": [
-            "source"
-          ],
+          "columns": ["source"],
           "isUnique": false
         },
         "agent_jobs_runtime_idx": {
           "name": "agent_jobs_runtime_idx",
-          "columns": [
-            "runtime"
-          ],
+          "columns": ["runtime"],
           "isUnique": false
         },
         "agent_jobs_cwd_idx": {
           "name": "agent_jobs_cwd_idx",
-          "columns": [
-            "cwd"
-          ],
+          "columns": ["cwd"],
           "isUnique": false
         },
         "agent_jobs_created_at_idx": {
           "name": "agent_jobs_created_at_idx",
-          "columns": [
-            "created_at"
-          ],
+          "columns": ["created_at"],
           "isUnique": false
         },
         "agent_jobs_heartbeat_at_idx": {
           "name": "agent_jobs_heartbeat_at_idx",
-          "columns": [
-            "heartbeat_at"
-          ],
+          "columns": ["heartbeat_at"],
           "isUnique": false
         },
         "agent_jobs_api_consumer_id_idx": {
           "name": "agent_jobs_api_consumer_id_idx",
-          "columns": [
-            "api_consumer_id"
-          ],
+          "columns": ["api_consumer_id"],
           "isUnique": false
         },
         "agent_jobs_api_consumer_run_id_idx": {
           "name": "agent_jobs_api_consumer_run_id_idx",
-          "columns": [
-            "api_consumer_run_id"
-          ],
+          "columns": ["api_consumer_run_id"],
           "isUnique": false
         }
       },
@@ -611,12 +562,8 @@
           "name": "agent_jobs_project_id_projects_id_fk",
           "tableFrom": "agent_jobs",
           "tableTo": "projects",
-          "columnsFrom": [
-            "project_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["project_id"],
+          "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         },
@@ -624,12 +571,8 @@
           "name": "agent_jobs_chat_id_chats_id_fk",
           "tableFrom": "agent_jobs",
           "tableTo": "chats",
-          "columnsFrom": [
-            "chat_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["chat_id"],
+          "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         },
@@ -637,12 +580,8 @@
           "name": "agent_jobs_sub_chat_id_sub_chats_id_fk",
           "tableFrom": "agent_jobs",
           "tableTo": "sub_chats",
-          "columnsFrom": [
-            "sub_chat_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["sub_chat_id"],
+          "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         }
@@ -689,12 +628,8 @@
           "name": "agent_provider_defaults_profile_id_agent_provider_profiles_id_fk",
           "tableFrom": "agent_provider_defaults",
           "tableTo": "agent_provider_profiles",
-          "columnsFrom": [
-            "profile_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["profile_id"],
+          "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         }
@@ -864,23 +799,17 @@
       "indexes": {
         "agent_schedule_runs_schedule_id_idx": {
           "name": "agent_schedule_runs_schedule_id_idx",
-          "columns": [
-            "schedule_id"
-          ],
+          "columns": ["schedule_id"],
           "isUnique": false
         },
         "agent_schedule_runs_job_id_idx": {
           "name": "agent_schedule_runs_job_id_idx",
-          "columns": [
-            "job_id"
-          ],
+          "columns": ["job_id"],
           "isUnique": false
         },
         "agent_schedule_runs_created_at_idx": {
           "name": "agent_schedule_runs_created_at_idx",
-          "columns": [
-            "created_at"
-          ],
+          "columns": ["created_at"],
           "isUnique": false
         }
       },
@@ -889,12 +818,8 @@
           "name": "agent_schedule_runs_schedule_id_agent_schedules_id_fk",
           "tableFrom": "agent_schedule_runs",
           "tableTo": "agent_schedules",
-          "columnsFrom": [
-            "schedule_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["schedule_id"],
+          "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         },
@@ -902,12 +827,8 @@
           "name": "agent_schedule_runs_job_id_agent_jobs_id_fk",
           "tableFrom": "agent_schedule_runs",
           "tableTo": "agent_jobs",
-          "columnsFrom": [
-            "job_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["job_id"],
+          "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         }
@@ -1060,30 +981,22 @@
       "indexes": {
         "agent_schedules_status_idx": {
           "name": "agent_schedules_status_idx",
-          "columns": [
-            "status"
-          ],
+          "columns": ["status"],
           "isUnique": false
         },
         "agent_schedules_next_run_at_idx": {
           "name": "agent_schedules_next_run_at_idx",
-          "columns": [
-            "next_run_at"
-          ],
+          "columns": ["next_run_at"],
           "isUnique": false
         },
         "agent_schedules_project_id_idx": {
           "name": "agent_schedules_project_id_idx",
-          "columns": [
-            "project_id"
-          ],
+          "columns": ["project_id"],
           "isUnique": false
         },
         "agent_schedules_last_job_id_idx": {
           "name": "agent_schedules_last_job_id_idx",
-          "columns": [
-            "last_job_id"
-          ],
+          "columns": ["last_job_id"],
           "isUnique": false
         }
       },
@@ -1092,12 +1005,8 @@
           "name": "agent_schedules_project_id_projects_id_fk",
           "tableFrom": "agent_schedules",
           "tableTo": "projects",
-          "columnsFrom": [
-            "project_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["project_id"],
+          "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         },
@@ -1105,12 +1014,8 @@
           "name": "agent_schedules_last_job_id_agent_jobs_id_fk",
           "tableFrom": "agent_schedules",
           "tableTo": "agent_jobs",
-          "columnsFrom": [
-            "last_job_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["last_job_id"],
+          "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         }
@@ -1273,9 +1178,7 @@
       "indexes": {
         "app_agents_name_unique": {
           "name": "app_agents_name_unique",
-          "columns": [
-            "name"
-          ],
+          "columns": ["name"],
           "isUnique": true
         }
       },
@@ -1375,9 +1278,7 @@
       "indexes": {
         "chats_worktree_path_idx": {
           "name": "chats_worktree_path_idx",
-          "columns": [
-            "worktree_path"
-          ],
+          "columns": ["worktree_path"],
           "isUnique": false
         }
       },
@@ -1386,12 +1287,8 @@
           "name": "chats_project_id_projects_id_fk",
           "tableFrom": "chats",
           "tableTo": "projects",
-          "columnsFrom": [
-            "project_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["project_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1616,17 +1513,12 @@
       "indexes": {
         "mcp_command_trust_hash_idx": {
           "name": "mcp_command_trust_hash_idx",
-          "columns": [
-            "command_hash"
-          ],
+          "columns": ["command_hash"],
           "isUnique": true
         },
         "mcp_command_trust_runtime_server_idx": {
           "name": "mcp_command_trust_runtime_server_idx",
-          "columns": [
-            "runtime",
-            "server_name"
-          ],
+          "columns": ["runtime", "server_name"],
           "isUnique": false
         }
       },
@@ -1719,9 +1611,7 @@
       "indexes": {
         "projects_path_unique": {
           "name": "projects_path_unique",
-          "columns": [
-            "path"
-          ],
+          "columns": ["path"],
           "isUnique": true
         }
       },
@@ -1800,9 +1690,7 @@
       "indexes": {
         "sub_chat_bindings_sub_chat_idx": {
           "name": "sub_chat_bindings_sub_chat_idx",
-          "columns": [
-            "sub_chat_id"
-          ],
+          "columns": ["sub_chat_id"],
           "isUnique": true
         }
       },
@@ -1811,12 +1699,8 @@
           "name": "sub_chat_bindings_sub_chat_id_sub_chats_id_fk",
           "tableFrom": "sub_chat_bindings",
           "tableTo": "sub_chats",
-          "columnsFrom": [
-            "sub_chat_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["sub_chat_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1900,12 +1784,8 @@
           "name": "sub_chats_chat_id_chats_id_fk",
           "tableFrom": "sub_chats",
           "tableTo": "chats",
-          "columnsFrom": [
-            "chat_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["chat_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1978,17 +1858,12 @@
       "indexes": {
         "worktree_setup_trust_project_hash_idx": {
           "name": "worktree_setup_trust_project_hash_idx",
-          "columns": [
-            "project_id",
-            "command_hash"
-          ],
+          "columns": ["project_id", "command_hash"],
           "isUnique": true
         },
         "worktree_setup_trust_project_idx": {
           "name": "worktree_setup_trust_project_idx",
-          "columns": [
-            "project_id"
-          ],
+          "columns": ["project_id"],
           "isUnique": false
         }
       },
@@ -1997,12 +1872,8 @@
           "name": "worktree_setup_trust_decisions_project_id_projects_id_fk",
           "tableFrom": "worktree_setup_trust_decisions",
           "tableTo": "projects",
-          "columnsFrom": [
-            "project_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["project_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
