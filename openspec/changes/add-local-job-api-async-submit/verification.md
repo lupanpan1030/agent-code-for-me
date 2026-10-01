@@ -5,11 +5,11 @@ Status: **IMPLEMENTATION CANDIDATE — re-frozen 2026-10-02 (T2, after the Phase
 ## Candidate
 
 - Change: `add-local-job-api-async-submit` (Phase 3, second proposal).
-- Candidate source SHA: the commit that adds this T2 record, subject
-  `docs(openspec): re-freeze the async submit candidate after T2`. A commit
-  cannot name its own SHA; the exact value is recorded in the T2 handoff
-  report (`impl-async-submit-t2.report.md`) and resolves with
-  `git log -1 --format=%H --grep='re-freeze the async submit candidate after T2'`.
+- Candidate source SHA: the last T2 commit, which is the last commit that
+  touches this file. A commit cannot name its own SHA; the exact value is
+  recorded in the T2 handoff report (`impl-async-submit-t2.report.md`) and
+  resolves with
+  `git log -1 --format=%H -- openspec/changes/add-local-job-api-async-submit/verification.md`.
   The Phase III candidate `887df155` is superseded: T2 changed product code,
   so no verdict bound to `887df155` or `e0a9a967` carries over.
 - Worktree / branch: `/home/chen/projects/locus-add-local-job-api-async-submit-draft`,
@@ -43,7 +43,7 @@ Status: **IMPLEMENTATION CANDIDATE — re-frozen 2026-10-02 (T2, after the Phase
 | Phase II | `2385df4e`, `765b8ea6`, `ad16cb0c`, `a44e87fd`, `ac1e2f74`, `84c622ce` | `async-submit-phase2-review-*-84c622ce.md`: design CHANGES_REQUESTED (1 P2, 3 P3); tests/security CHANGES_REQUESTED (1 P2 lint on immutable files, 4 P3) |
 | T1 touch-up | `74e30df9`, `27cbcdad`, `5615e1f2`, `dcad0c0e`, `ad6225cb`, `22d4336b`, `0537da25`, `2dc0b5e6`, `e0a9a967` | `async-submit-t1-review-e0a9a967….md`: REVIEW_APPROVED (0 P0/P1/P2, 3 P3) |
 | Phase III | `d37fa4e5` (guides), `d813b060` (schema), `4748aa73` (owner rows), `53bbc270` (proposal P3-1), `bbcc0995` (tasks), `887df155` (freeze) | `async-submit-phase3-check-887df155….md`: CHANGES_REQUESTED (1 P2 Windows relay overclaim, 6 P3) |
-| T2 | `0e70e7d7` (relay SIGHUP/SIGBREAK), `39e3446d` (R4 docs), `674ab421` (own-pump read failure), `0d6b03da` (over-age tick diagnostics), `9f73d96e` (schema test, derived completion submit), `43354f87` (precedence, owner map, proposal text), `b63f9965` (tasks), re-freeze commit (this record, STATUS) | pending: same-SHA dual verdicts |
+| T2 | `0e70e7d7` (relay SIGHUP/SIGBREAK), `39e3446d` (R4 docs), `674ab421` (own-pump read failure), `0d6b03da` (over-age tick diagnostics), `9f73d96e` (schema test, derived completion submit), `43354f87` (precedence, owner map, proposal text), `b63f9965` (tasks), `cfe73cf5` (re-freeze record, STATUS), `abb96416` (S35 timing disclosure), candidate-pointer commit (this line) | pending: same-SHA dual verdicts |
 
 Every P2 above is closed at `e0a9a967`: Phase I design P2-1 (retry error
 baseline, `ac1e2f74`) and P2-2 (R4 relay race, `84c622ce`); Phase I security
