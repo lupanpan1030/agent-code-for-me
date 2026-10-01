@@ -8,7 +8,7 @@ Updated: 2026-10-01 (Pacific/Auckland); previous: 2026-09-30 (Pacific/Auckland)
 
 | Active change | Status | Scope / next gate |
 | --- | --- | --- |
-| [add-local-job-api-async-submit](changes/add-local-job-api-async-submit/proposal.md) | DRAFT — awaiting Owner APPROVED | Phase 3 async submit DRAFT v3 bounded text touch-up per second-round synthesis 79c4e7b0; docs only; single closure check next; six Owner decision groups (R1–R4 / Q1–Q6) pending before implementation |
+| [add-local-job-api-async-submit](changes/add-local-job-api-async-submit/proposal.md) | APPROVED 2026-10-02 (Owner, bound to 0f998436) — next gate: red test authoring | Six decision groups accepted as recommended; docs-only decision record and selected-branch prune; independent red suite before implementation; ACCEPTED delegated to coordination on same-SHA Codex IMPLEMENTATION_VERIFIED + Claude REVIEW_APPROVED and no open Red |
 
 Parked proposals are indexed in [`deferred/README.md`](deferred/README.md) and
 do not appear in the active list.

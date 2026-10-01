@@ -62,7 +62,6 @@ SHALL move only where that adapter forwards them. Existing secret stripping SHAL
 remain unchanged; no client env snapshot SHALL be persisted. A daemon-claimed Run
 bypasses the consumer's own env minimisation; that provenance change SHALL be disclosed.
 CLI runtimes list SHALL continue probing the CLI environment and SHALL not claim daemon readiness.
-This R3 decision remains **统筹预设（推荐，Owner 可改）**, pending Owner approval.
 
 #### Scenario: Daemon starts without a renderer window
 <!-- Scenario register: S41 (retained living scenario; title unchanged for MODIFIED archive) -->

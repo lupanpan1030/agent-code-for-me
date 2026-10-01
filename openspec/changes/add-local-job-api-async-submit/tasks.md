@@ -1,20 +1,20 @@
 # Implementation tasks
 
-Status: **DRAFT — awaiting Owner APPROVED**
+Status: **APPROVED 2026-10-02 (Owner, bound to 0f998436) — awaiting red suite (test-first)**
 
-本清单全部是未来实施任务；本次纯文档起草不勾选。虽然 conformance 列在第 7 节，
+治理 1.1 已记录 Owner 批准；其余实施及测试先行门槛仍未完成，本次不勾选。虽然 conformance 列在第 7 节，
 **执行顺序必须是 1 → 7 的独立 red fixtures → 2–6 → 7 green → 8**。
-未获 Owner APPROVED 不写 src/tests/docs/schema/migration；R1–R4 和 Q1–Q6 不得由实施者自行裁定。
+Owner APPROVED 2026-10-02 @ 0f998436，R1–R4 / Q1–Q6 全部推荐默认已选；产品实现仍须先完成 1.6 closure re-check 与独立 red fixtures。本次只改 OpenSpec 文档，不写 src/tests/docs/schema/migration。
 
 ## 1. 治理与基线
 
-- [ ] 1.1 核对 proposal/design/deltas 的精确 SHA，收齐 Owner APPROVED、十节 Consumer Impact 第 10 节的 R1–R4 选择和 Q1–Q6 答案；无论是否接受全部默认，均执行 1.6 prune，记录其 closure re-check 后的 SHA 为 approved exact scope，再开始 red tests。
+- [x] 1.1 Record Owner APPROVED：核对 proposal/design/deltas 的批准基线 `0f9984367a9fbc8c5030f9aecc85ac9628a71cde`；已收齐 Owner 2026-10-02 APPROVED、十节 Consumer Impact 第 10 节的 R1–R4 选择和 Q1–Q6 答案，六项全部按推荐默认。1.6 prune + closure re-check 与独立 red suite 仍是后续门槛。
 - [ ] 1.2 记录独立 implementation worktree/base SHA、当前 product data lifecycle stage、active overlap 和各 owner；重新核对刚归档 ledger 与 TICKET-128 状态，不把本 draft 作为实现批准。
-- [ ] 1.3 明确本切片只补 ack/claim/publication-read 安全，或按 Q4 等待 TICKET-128 独立前置修复；禁止未评审地把全量创建/发布状态机塞入本 change。
+- [ ] 1.3 按 Owner 已选 Q4 仅补 ack/claim/publication-read 安全并披露 TICKET-128 残余；禁止未评审地把全量创建/发布状态机塞入本 change。
 - [ ] 1.4 基线采集旧 v1 create/retry 的完整 stdout/exit golden（agent、completion、所有终态与 0–8 特殊错误），固定 ID/时钟/worker identity/路径；记录 stderr-only 错误与现有结构错误的真实区别；增加本地 non-outcome failure goldens：create 的 localJobApiCreateErrorCode 默认 2、message 匹配 /unsupported/i 时 3，retry 3，保留原 stderr text、stop execution tree、不伪造 terminal、admitted-not-started queued-cancel cleanup。另采集 POSIX SIGINT/SIGTERM/SIGKILL、Windows console Ctrl/parent child.kill()/TerminateProcess、open-pipe EOF/ignored stdin 的 abort receipts（child alive/dead、row status、recovery outcome），包含 Career Kit 500 ms kill grace 截短 ack wait。
 - [ ] 1.5 为独立测试作者提供下列纯合同 seams：submitRun、waitForRun、readRunPublicationReadiness、clock/ID/真实 worker identity、reopenAdmittedRunDir/receipt verification、cleanupExpiredAgentJobIdempotency、claim latch、SQL commit/compensation fault、creation→initial-admission crash、read/wakeup-registration latch（S07）、artifact write/rename fault、executor liveness/lock v2 ports、multi-process spawn/kill ports；仅接口和 fixtures，不先写生产实现。
 
-- [ ] 1.6 Owner 决定 R1–R4、Q1–Q6 后，将 deltas 改为仅保留选定分支的无条件 SHALL；备选移到 design.md Open questions（history）。删除 specs 内全部“统筹预设/pending/conditional”决策措辞（尤其 headless 的 R3、local-job-api 的 Q2/R4/Discovery R2），S34/S35 裁剪到选定分支；即使全部接受默认也必须执行。重跑 strict validate，取得一次简短 closure re-check，在 1.1 记录 resulting SHA 为 approved exact scope；不得将待决或互斥分支带入 red tests、实施或 living archive。
+- [ ] 1.6 Owner 决定 R1–R4、Q1–Q6 后，将 deltas 改为仅保留选定分支的无条件 SHALL；备选仅保留在 design.md Owner decisions（history，已否决，不实现）。删除 specs 内全部“统筹预设/pending/conditional”决策措辞（尤其 headless 的 R3、local-job-api 的 Q2/R4/Discovery R2），S34/S35 裁剪到选定分支；即使全部接受默认也必须执行。重跑 strict validate，取得一次简短 closure re-check，记录选定分支裁剪与 closure re-check 后的 resulting SHA，并保留 Owner 原批准绑定 0f998436；不得将待决或互斥分支带入 red tests、实施或 living archive。本次已完成文字 prune；独立 closure re-check/精确 SHA receipt 尚待完成，故本项保持未勾。
 
 ## 2. Submit 核心与 wrapper
 
@@ -33,7 +33,7 @@ Status: **DRAFT — awaiting Owner APPROVED**
 - [ ] 3.2 host 组合同一 run-artifacts publication-read port：read seal+prepared tail → safe handle 验该 terminal commit refs → recheck same seal；序列化 prepared tail 无 sequence、与 terminal.artifacts() 等价；no-artifact/recovery/无 admission cancel 空集 ready，初始 refs 不冒充终态。
 - [ ] 3.3 read/subscribe/re-read 加跨进程有界重读，防丢唤醒；SYN-25：每轮 stat，仅相同 seal/ref/identity/size/mtime/ctime 缓存 hash，变化重验；禁止用 job.status、follow 退出、一个文件存在或内存 flag 推断就绪。
 - [ ] 3.4 实现新 wait timeout JSON、五种 reason（含 admission_incomplete）及 status presence/precedence 表、专用 exit 9；缺文件但 job 已 terminal 时保留真实 status。旧命令 0–8 不重新编号或套用 timeout9。
-- [ ] 3.5 按 Owner Q2 决定实现同步 wrapper 的等待/无执行者/发布失败策略；正常无-key终态必须完整 byte equality，不能通过去掉可见字段让测试过；Q2(a) 本地 publish 失败保留 artifacts:[]+outcome exit，daemon-first/(b)/(c) bounded error/8 携带 id；区别非 outcome 故障；own-pump pending dispatch promise 豁免 no-progress 窗口，远端 claimant 用 D5 worker evidence；S25/S34 覆盖 45 s completion，terminal-not-published 30 s bound 保留。
+- [ ] 3.5 按 Owner 已选 Q2(a) 实现同步 wrapper 的等待/无执行者/发布失败策略；正常无-key终态必须完整 byte equality，不能通过去掉可见字段让测试过；Q2(a) 本地 publish 失败保留 artifacts:[]+outcome exit，daemon-first bounded error/8 携带 id；区别非 outcome 故障；own-pump pending dispatch promise 豁免 no-progress 窗口，远端 claimant 用 D5 worker evidence；S25/S34 覆盖 45 s completion，terminal-not-published 30 s bound 保留。
 - [ ] 3.6 fault/restart 证明 TICKET-128 残差返回 pending/timeout、不伪造已发布结果；如要主动恢复须先批准 scope，不在 waiter 写第二 publication lifecycle。
 
 ## 4. 幂等键存储与事务
@@ -57,10 +57,10 @@ Status: **DRAFT — awaiting Owner APPROVED**
 
 ## 6. 公共边界（schema / 指南 / discovery，按 C7）
 
-- [ ] 6.1 根据 Owner Q1 固定 wire version；推荐保持 locus.local-job.v1，未批准前不得接受 v1.1 或 silent downgrade；更新 unsupported-version 精确测试。
-- [ ] 6.2 根据 Owner R2 同改 shared features 和 schema discoveryFeature；保留 pinned-old-schema rejection fixture，不把 unknown-field 忽略等同于 enum 容忍。
+- [ ] 6.1 根据 Owner 已选 Q1 固定 locus.local-job.v1 + async-submit；v1.1 已否决，不实现，不 silent downgrade；更新 unsupported-version 精确测试。
+- [ ] 6.2 根据 Owner 已选 R2 direct 同改 shared features 和 schema discoveryFeature；保留 pinned-old-schema rejection fixture，不把 unknown-field 忽略等同于 enum 容忍。
 - [ ] 6.3 实施时才修改 docs/local-job-api-v1.schema.json 与英文/中文 consumer guide：命令、requests/envelopes、wait-timeout9、幂等作用域/规范化/TTL、executor 前提、R3 native-home/env 与 caller readiness 边界、R4 平台 abort/EOF/SIGKILL/TerminateProcess 与 500 ms kill、fail-closed code/exit 映射、worker identity、recovery 空 terminal refs、publish baseline/异常、pending/new-key 风险、文件删除后再 pending、升级/失败示例、未知字段规则。
-- [ ] 6.4 consumer preflight 缺 async-submit 时不 dispatch；默认新 key command shapes 在旧 parser exit2，保留 keyed create silent-drop 反例；无论推荐 submit/retry-only 还是备选 keyed create 均收窄 guide:210 并披露 #10；另披露推荐 create reject 的 #2 / idempotency_key_not_supported；引用指南 :209-216 预声明 refresh 与 canonical-run-ledger 先例；no-key v1 流程不增必填字段。
+- [ ] 6.4 consumer preflight 缺 async-submit 时不 dispatch；默认新 key command shapes 在旧 parser exit2，保留 keyed create silent-drop 反例；按已选 submit/retry-only 收窄 guide:210 并披露 #10；另披露已确认 create reject 的 #2 / idempotency_key_not_supported；引用指南 :209-216 预声明 refresh 与 canonical-run-ledger 先例；no-key v1 流程不增必填字段。
 - [ ] 6.5 保留 12 types、六字段、dense sequences、after/follow、result/artifact names/refs/digests/retention、profile/provider/completion defaults；新增操作不开放 native union 或 Interaction。
 - [ ] 6.6 核对 `docs/tickets/TICKET-127-run-dir-artifacts-windows-stable-directory.md`；说明 Windows artifacts 现有 fail-closed，禁止 path-only workaround；如本切片需它已修复则记录前置，不顺手改 backend。
 - [ ] 6.7 记录 Career Kit batch/structured-output、Amadeus Windows 接入事实；Career Kit@6d6a333 的 v1/调用/timeout/kill/env/validator 事实按 proposal §5 保留，当前切片 E2E unknown 如实记录，不做专属协商或 roadmap reordering。
@@ -113,6 +113,6 @@ Status: **DRAFT — awaiting Owner APPROVED**
 - [ ] 8.3 disposable-profile 手工及 packaged smoke：submit 后 submitter 退出仍可被 daemon 执行；agent/completion wait/result；queued cancel/cancel；retry key；daemon death→recovery→wait；真实 cross-process publish；env sentinel；stdio session shutdown；Workbench 可见。macOS/Windows 分别记录，WSL 不代替 packaged 证据。
 - [ ] 8.4 Windows 有/无 artifacts 分开验收；TICKET-127 未修复时 artifact fixture 预期 fail closed，不宣称已交付 Windows artifact refs。TICKET-128 部分发布预期 non-ready，不算恢复成功。
 - [ ] 8.5 Codex `IMPLEMENTATION_VERIFIED` 与 fresh-context Claude Code `REVIEW_APPROVED` 必须绑定同一精确 source SHA；代码再改则两者失效；独立 security review 覆盖 key scope、reopen/receipts/staging、claim revalidation、R3 env/R4 abort、lock 观察与回滚。
-- [ ] 8.6 汇总 consumer-neutral fixtures 与已知 consumer receipts/unknown，记录未覆盖平台、TICKET-128 residual、R1–R4 升级影响，提交 Owner 产品验收。
-- [ ] 8.7 **Owner ACCEPTED 停止门**：未有明确 ACCEPTED 不宣称产品接受，不归档；本次派单不授权 merge。将来的本地集成须另获授权并验证 merge SHA。
+- [ ] 8.6 汇总 consumer-neutral fixtures 与已知 consumer receipts/unknown，记录未覆盖平台、TICKET-128 residual、R1–R4 升级影响，提交统筹代行产品验收；开放 Red 回 Owner。
+- [ ] 8.7 **ACCEPTED 停止门（Owner 2026-10-02 授权自我迭代）**：Codex IMPLEMENTATION_VERIFIED + fresh-context Claude REVIEW_APPROVED 同 source SHA、无开放 Red 时，由统筹代行 ACCEPTED；只有红灯项回 Owner。未记录 ACCEPTED 不宣称产品接受，不归档；本次派单不授权 merge。将来的本地集成须另获授权并验证 merge SHA。
 - [ ] 8.8 **Push 未授权**：push、远程 PR 创建/修改、remote merge、release、规则更改一律 not authorized / not performed；本地提交不隐含远程权限。

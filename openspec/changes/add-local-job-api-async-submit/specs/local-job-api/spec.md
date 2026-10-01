@@ -41,13 +41,10 @@ newline and 0–8 outcome exits SHALL match baseline. Retry --async SHALL return
 admission; keyed retry replay MAY add idempotentReplay. Exit 9 SHALL belong only to
 runs wait, never create/retry. An internal wait timeout SHALL NOT be a Run outcome.
 
-Wrapper failure behavior SHALL be conditional on the Owner's Q2 choice, not an
-unbounded default: **统筹预设（推荐，Owner 可改）(a)** invokes the canonical
-pumpQueuedRuns scoped to its own admitted ID, claims through startAgentJob, composes
-the same terminal artifacts and waits; a daemon claim winner makes it only wait.
-(b) SHALL require an explicit daemon; (c) SHALL launch a new detached daemon, a new
-C7 #9 surface. Under (b)/(c), no executor/start failure after 30000 ms SHALL produce
-stdout `{apiVersion,job,wait:{state:"error",reason}}`, exit 8 and no result (L2 exception).
+The wrapper SHALL invoke the canonical pumpQueuedRuns scoped to its own admitted ID,
+claim through startAgentJob, compose the same terminal artifacts and wait, without
+an external daemon prerequisite or a detached launcher. If a daemon wins the claim,
+the wrapper SHALL only wait and SHALL NOT dispatch that Run again.
 A Run executing in the wrapper's own in-process pump SHALL be exempt from the 30000 ms
 no-progress window: its pending dispatch promise SHALL be liveness evidence, with
 existing runtime timeouts/cancel unchanged. For another process's claimant, progress
@@ -60,24 +57,22 @@ error SHALL NOT declare the Run dead. Healthy long work SHALL retain existing ru
 timeouts and S25 behavior. Existing recovery SHALL alone decide
 whether a stopped worker is interrupted, never an unknown liveness probe.
 
-Today's publish failure returns artifacts:[] with the committed outcome exit. In (a)
-the locally completed pump SHALL preserve those exact failure bytes; it SHALL NOT
-label that failure response as wait-ready. For a remote claimant under (a), or (b)/(c),
+Today's publish failure returns artifacts:[] with the committed outcome exit.
+The locally completed pump SHALL preserve those exact failure bytes; it SHALL NOT
+label that failure response as wait-ready. For a remote claimant,
 terminal files still pending 30000 ms after observing completed SHALL yield the
 identified error/8, reason=terminal_artifacts_pending. The independent wait operation
 SHALL keep its stricter publication barrier in every case. These R1 exceptions SHALL
-be explicitly accepted at APPROVED, never hidden in the normal-byte oracle.
+be disclosed as accepted by Owner on 2026-10-02, never hidden in the normal-byte oracle.
 
-Non-outcome read failure under (a) with an owned child SHALL stop that execution tree
+Non-outcome read failure with an owned child SHALL stop that execution tree
 and preserve the baseline stderr text and baseline exit (create: localJobApiCreateErrorCode
 returns 2, or 3 for messages matching /unsupported/i; retry: 3) without a false terminal;
-an admitted but not yet started own Run SHALL use existing queued cancel cleanup. Under (b)/(c) or a remote
+an admitted but not yet started own Run SHALL use existing queued cancel cleanup. For a remote
 claimant it SHALL return stdout `{apiVersion,job,wait:{state:"error",reason:"observation_failed"}}`
 with the admitted job ID, exit 8 and no result, so the consumer can cancel.
-R4's **统筹预设（推荐，Owner 可改）** for (b)/(c) and the daemon-first branch of (a)
-SHALL relay cancel only for the wrapper's admitted Run on catchable abort, including
-armed stdin EOF; the alternative is no relay (today's local-tree behavior only),
-requiring consumer cancel by ID. The platform contract SHALL be:
+For a daemon-first Run, the wrapper SHALL relay cancel only for its admitted Run
+on catchable abort, including armed stdin EOF. The platform contract SHALL be:
 
 | Platform | Catchable abort | Cannot relay cancellation |
 | --- | --- | --- |
@@ -92,7 +87,7 @@ not substituting an ordinary numeric 128+n exit; EOF cleanup SHALL exit 8 withou
 terminal envelope. EOF-cancel SHALL be armed only if stdin is an open pipe at admission
 and closes later. Ignored/already-closed stdin and the pre-admission EOF delimiting a
 --request - body SHALL NOT arm cancellation.
-Under (a), local own-pump process-tree abort behavior SHALL remain as today. Independent
+Local own-pump process-tree abort behavior SHALL remain as today. Independent
 submit exit SHALL NOT cancel admitted work. SIGKILL/TerminateProcess of a daemon-backed
 waiter SHALL NOT be claimed to stop or cancel its Run. Career Kit's 500 ms kill grace
 can truncate the 5 s acknowledgement wait; in the normal catchable relay case the cancel
@@ -102,7 +97,7 @@ request is persisted before the later kill, but hard-kill delivery is not guaran
 - **GIVEN** `tests/fixtures/local-job-api-async/terminal-bytes.json#S03`, with independent profiles with injected job ID, createdAt/startedAt/completedAt,
   workerId, workerPid, appVersion, cwd/artifact paths and sanitized deterministic runtime
   results for succeeded/failed/canceled/interrupted and specialized baseline 0–8 exits
-- **WHEN** old-shaped create under Q2(a) and submit+wait through the same canonical pump
+- **WHEN** old-shaped create with the own-Run scoped pump and submit+wait through the same canonical pump
   run separately with equivalent inputs and all terminal files published
 - **THEN** complete stdout including newline and exit match the frozen baseline golden
   byte-for-byte, with no removed fields or post-output normalization
@@ -134,13 +129,10 @@ request is persisted before the later kill, but hard-kill delivery is not guaran
 
 #### Scenario: S34 Create and retry run without an external executor
 - **GIVEN** `tests/fixtures/local-job-api-async/terminal-bytes.json#S34`, with isolated profiles with no daemon lock, valid agent/completion create requests,
-  terminal retry sources, controlled pump and launcher ports, and selected Q2 branch
+  terminal retry sources and controlled canonical pump ports
 - **WHEN** create/default retry runs and the deterministic worker is released
-- **THEN** for recommended (a) exactly the own admitted ID is claimed by pumpQueuedRuns,
+- **THEN** exactly the own admitted ID is claimed by pumpQueuedRuns,
   no daemon launches, unrelated queued work is untouched and stdout/exit equal baseline
-- **AND** for (b) no executor for 30000 ms gives identified executor_unavailable error/8;
-  for (c) launcher success uses the same pump/claim, launcher failure at 30000 ms gives
-  identified error/8; neither gives timeout/9 or claims a false Run outcome
 - **AND** a daemon-first variant never double-dispatches; a stalled unknown worker with
   no heartbeat/high-water progress yields identified executor_unknown/8 within 30000 ms
 - **AND** a daemon-first kind:"completion" variant with a 45000 ms upstream call, committed
@@ -149,21 +141,20 @@ request is persisted before the later kill, but hard-kill delivery is not guaran
 
 #### Scenario: S35 Aborting a wrapper applies the chosen cancel policy
 - **GIVEN** `tests/fixtures/local-job-api-async/controls.json#S35`, with a running wrapper-owned child, a daemon-first Run, two unrelated Runs and
-  (b)/(c) cases for both relay and no-relay policies; file-based requests have an open
+  file-based requests with an open
   stdin pipe at admission, with separate ignored/already-closed stdin variants and a
   relay-ack latch held beyond 500 ms for the forced-kill timing case
 - **WHEN** POSIX harnesses send SIGINT/SIGTERM or SIGKILL, Windows harnesses deliver console
   Ctrl or parent child.kill()/TerminateProcess, and both platforms close an armed stdin pipe;
   include Career Kit's POSIX SIGTERM→500 ms→SIGKILL sequence, a separate POSIX wrapper
   process-group kill for baseline own-tree receipts, and win32 non-detached kill
-- **THEN** (a)'s own-pump tree matches baseline child-alive/dead, row-status and recovery
-  receipts; recommended daemon-first and (b)/(c) catchable abort relays cancel only for
+- **THEN** the own-pump tree matches baseline child-alive/dead, row-status and recovery
+  receipts; daemon-first catchable abort relays cancel only for
   the admitted ID, persists the request before the normal later kill, and awaits ack at most 5000 ms
 - **AND** signal cleanup re-raises the caught signal and the parent records that signal,
   while EOF cleanup exits 8 without a terminal envelope; a 500 ms hard kill truncates
   the acknowledgement wait without undoing an already persisted cancel request
-- **AND** remote-claimant no-relay variants record zero cancel requests until explicit runs cancel by ID;
-  unrelated Runs continue in both policies
+- **AND** unrelated Runs continue and receive zero cancel requests from the wrapper
 - **AND** SIGKILL/TerminateProcess of only a daemon-backed waiter records zero relayed
   cancel requests, leaves its daemon/Run running and queryable until explicit cancel or
   independently eligible recovery, and does not produce the own-pump tree-stop outcome
@@ -236,8 +227,8 @@ here SHALL retain their baseline shapes/streams/exits.
 - **AND** result.artifacts is the prepared tail without sequence, not the initial state
   refs or the runs-result default subset; artifact-free completion is ready at commit
 - **AND** throwing publish leaves wait non-ready/terminal_artifacts_pending/exit 9;
-  Q2(a) locally completed create returns the baseline artifacts:[] and outcome exit,
-  whereas (b)/(c) or daemon-first wrapper returns identified error/8 after 30000 ms
+  locally completed create returns the baseline artifacts:[] and outcome exit,
+  whereas a daemon-first wrapper returns identified error/8 after 30000 ms
 
 #### Scenario: S06 Wait has explicit bounded timeout semantics
 - **GIVEN** `tests/fixtures/local-job-api-async/wait-observation.json#S06`, with fake-clock cases queued+available, queued+no-lock, queued+legacy-lock,
@@ -514,8 +505,7 @@ this SHALL not claim native protocol stability or live-attach support.
 The features array and closed discoveryFeature schema enum SHALL additionally include
 async-submit once storage/claim activation is complete. The existing preflight rule
 SHALL apply; pinned schema consumers SHALL refresh as predeclared in the guide.
-The R2 direct extension remains conditional on Owner approval, with pinned-old-schema
-failure evidence retained.
+Pinned-old-schema failure evidence SHALL be retained for the direct enum extension.
 
 #### Scenario: Consumer detects readiness support
 <!-- Scenario register: S52 (retained living scenario; title unchanged for MODIFIED archive) -->

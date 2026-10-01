@@ -1,6 +1,6 @@
 # Verification
 
-Status: **DRAFT — awaiting Owner APPROVED**
+Status: **APPROVED 2026-10-02 (Owner, bound to 0f998436) — awaiting red suite (test-first)**
 
 ## Draft identity and authority
 
@@ -10,15 +10,29 @@ Status: **DRAFT — awaiting Owner APPROVED**
 - Branch: `codex/add-local-job-api-async-submit-draft`。
 - Author / date: Codex / 2026-10-01 (Pacific/Auckland)。
 - Revision parent: `79c4e7b0767b2e6c5ed4706abd41bc573924e349`；第三版输入为二审 `async-submit-redraft-synthesis-79c4e7b0.md` §3 的 12 项有界编辑、§2 的 0 P1 / 8 P2 / 13 P3；§4 六项 Owner 决策原文搬入 design Open questions，推荐默认不变。
-- Draft receipt commit：本文件所在的单一本地 `docs(openspec): bounded text touch-up of local job api async submit per second review` 提交；用 `git log -1 --format=%H -- openspec/changes/add-local-job-api-async-submit` 解析，避免自引用 SHA。
+- Historical v3 draft receipt commit：`0f9984367a9fbc8c5030f9aecc85ac9628a71cde`，单一本地 `docs(openspec): bounded text touch-up of local job api async submit per second review` 提交。当前批准记录提交只登记决策与 prune；由 git history 解析其 SHA，避免自引用。
 - Product source edits/tests authored: **none**。本记录不声称实现、conformance 或 packaged smoke 已通过。
-- Owner APPROVED / C7 R1–R4,Q1–Q6: **pending**。
+- Owner APPROVED / C7 R1–R4,Q1–Q6: **APPROVED 2026-10-02，bound to `0f9984367a9fbc8c5030f9aecc85ac9628a71cde`，六项推荐默认全选**；完整决定见 proposal §10 / design Owner decisions。
 - Implementation source SHA / Codex IMPLEMENTATION_VERIFIED: **not applicable to draft / not issued**。
 - Fresh Claude Code REVIEW_APPROVED / reviewed source SHA: **not issued for this revision**；79c4e7b0 的二审 synthesis 为 CHANGES_REQUESTED，本版等待对本提交 exact SHA 的单次 closure check（不是新三视角轮次）。
-- Local merge SHA / Owner ACCEPTED: **none / pending**。
+- Local merge SHA / ACCEPTED: **none / pending**；Owner 2026-10-02 授权统筹代行，条件是 Codex IMPLEMENTATION_VERIFIED + fresh-context Claude REVIEW_APPROVED 同 source SHA、无开放 Red，只有红灯项回 Owner。
 - Remote push/PR/merge/release/rules: **not authorized / not performed**；本次也不本地 merge。
 
-## Draft-only checks actually performed
+## Approval record checks (2026-10-02，纯文档)
+
+Owner 批准仍绑定 `0f9984367a9fbc8c5030f9aecc85ac9628a71cde`；本次只有决策记录与选定分支 prune，不新增设计或产品实现。只勾选 tasks 1.1；1.6 文字 prune 已完成但独立 closure re-check 未取得，测试先行与全部实施任务仍未勾选。
+
+| Check | Result / scope |
+| --- | --- |
+| 指定 binary `openspec validate add-local-job-api-async-submit --strict --no-interactive` | Exit 0：`Change 'add-local-job-api-async-submit' is valid`。 |
+| 指定 binary `openspec validate --all --strict --no-interactive` | Exit 0：`Totals: 54 passed, 0 failed (54 items)`。 |
+| `git diff --check` / staged diff check | Exit 0；七个 OpenSpec 文档，无 src/tests/docs 改动。 |
+| Scenario 登记一致性 | S01–S54 登记表与批准基线逐字相同，全部 pending / not run；S34/S35 合同仅裁剪未选分支，ID/标题保留。 |
+| `bun run check:full` | Exit 1 / environment blocked：lint 无受支持文件需检查；architecture guard 通过、ledger self-test 17/17；retired-runtime 阶段 Node `spawnSync /bin/sh EPERM`，后续 typecheck/tests/spec/build 未执行，不计 full gate 通过。 |
+
+Prune：Q2 仅 (a)，(a′)/(b)/(c) 已否决；R3 daemon env/native home accepted，caller-only claim 已否决；R4 daemon-first relay，no-relay 与 (b)/(c) 行为已否决；Q1 v1 + submit/retry-only key + create reject，keyed create/ignore/v1.1 已否决；R2 direct，version/facade/defer 已否决；Q4/Q5/Q6 全部接受，TICKET-128 全量前置及新增 exit code 已否决。备选后果保留在 design Owner decisions；deltas 不含互斥合同。
+
+## Historical v3 draft-only checks actually performed（0f998436）
 
 调用指定基线 worktree 的已安装 OpenSpec binary，工作目录始终为本 draft worktree；未安装依赖、未写产品文件。
 
@@ -33,7 +47,7 @@ Status: **DRAFT — awaiting Owner APPROVED**
 完整本地命令日志 `/tmp/async-submit-v3-validate-all.log`、
 `/tmp/async-submit-v3-check-full.log` 是临时执行记录，不是 durable 产品证据。
 
-## Second-round synthesis §3 touch-up disposition（author self-check；非独立批准）
+## Historical second-round synthesis §3 touch-up disposition（v3 author self-check；非独立批准）
 
 | §3 item | Status | 文件与具体关闭内容 |
 | --- | --- | --- |
@@ -61,8 +75,8 @@ Status: **DRAFT — awaiting Owner APPROVED**
 | F-G | CLOSED | 7 |
 | F-H | CLOSED | 8 |
 
-“CLOSED”只表示二审有界文字修补落实，不是实现、Owner APPROVED 或独立 reviewer verdict。F-F 按权威 §3.6 关闭为决策后强制 prune gate；当前 DRAFT 未擅替 Owner 选分支，待决分支不获归档授权。无未按清单落实的编辑；F-U 是 REC、原位保留，无新动作。
-不变项自查：D1 单核/owner、D3 ack/committed fact/TICKET-128、D4 reservation 同事务/unique/compensation/raw key never stored、D2 command shapes 与 wait 30 s/0–86400000/exit9-only、v1、R2 Owner decision、S01–S40 IDs、六项推荐默认；L1–L11、tasks 顺序和 8.7/8.8、DRAFT 状态、未来证据表均保留。Owner §4 六项按原文搬入并逐字比对。
+“CLOSED”只表示二审有界文字修补落实，不是实现、Owner APPROVED 或独立 reviewer verdict。F-F 按权威 §3.6 关闭为决策后强制 prune gate；当时 DRAFT 未擅替 Owner 选分支；现 Owner 已批准默认，本次按 1.6 prune，待独立 closure re-check，仍未获归档授权。无未按清单落实的编辑；F-U 是 REC、原位保留，无新动作。
+不变项自查：D1 单核/owner、D3 ack/committed fact/TICKET-128、D4 reservation 同事务/unique/compensation/raw key never stored、D2 command shapes 与 wait 30 s/0–86400000/exit9-only、v1、R2 Owner decision、S01–S40 IDs、六项推荐默认；L1–L11、tasks 顺序和 8.7/8.8、DRAFT 状态、未来证据表均保留。Owner §4 六项当时按原文搬入并逐字比对。以上“不变项”描述为 v3 历史记录，当前状态/决策以本次 APPROVED 记录为准。
 
 ## Future evidence required
 
@@ -70,7 +84,8 @@ Status: **DRAFT — awaiting Owner APPROVED**
 
 | Evidence | Required receipt | Current state |
 | --- | --- | --- |
-| Owner change / C7 | 精确 approved draft SHA；Q1–Q6、Red R1–R4 决定及兼容/版本组合 | pending |
+| Owner APPROVED / C7 | `0f9984367a9fbc8c5030f9aecc85ac9628a71cde`；proposal §10 / design Owner decisions 的六项默认、R1–R4 已决 | APPROVED 2026-10-02 (Owner, bound to 0f998436) |
+| Decision prune closure | tasks 1.6；选定分支 SHALL / S34/S35 prune 已记录，独立 closure re-check 绑定本次记录提交 SHA | text prune complete / independent closure re-check pending |
 | Independent red author | 作者/独立上下文、测试 source SHA、S01–S54 red 结果，不看实现猜断言 | not authored |
 | Implementation | 冻结产品 source SHA，old-path deletion inventory、owner map 行、migration ID | not implemented |
 | Admission / idempotency | immediate ack、same/cross consumer、normalize/conflict/race、rollback/补偿/kill、TTL/redaction | not run |
@@ -81,7 +96,7 @@ Status: **DRAFT — awaiting Owner APPROVED**
 | Aggregate gates | 精确 source SHA 的 bun run check:full、targeted suite、strict all、diff check；失败不 waive 成 pass | not run for implementation |
 | Manual / packaged | macOS/Windows 的 OS/arch、app/runtime source/version/digest、脱敏 auth mode、命令与退出码、截图/日志；WSL 不替代 | not run |
 | Dual technical verdicts | Codex IMPLEMENTATION_VERIFIED + fresh-context Claude REVIEW_APPROVED，**同一 exact source SHA** | not issued |
-| Integration / acceptance | 另行获授权的 local merge SHA + post-merge gates；Owner explicit ACCEPTED | pending |
+| Integration / acceptance | 另行获授权的 local merge SHA + post-merge gates；统筹代行 ACCEPTED（同 SHA 双技术标记、无开放 Red；红灯回 Owner） | pending |
 | Remote | 没有明确新授权则持续 not authorized / not performed | not authorized |
 
 手工 smoke：独立 profile 下启动既有 daemon，submit 返回后立即退出 submitter，status/events/wait/result
@@ -164,8 +179,8 @@ TICKET-128 已披露孤儿与 partial publish 仍在；本切片只证明“不�
 ## Stop gates and known limitations
 
 - 文档 strict pass 不等于 Owner APPROVED、产品 VERIFIED、独立 REVIEW_APPROVED 或 ACCEPTED。
-- L2 的正常终态 bytes 目标明确；Q2(a) own-Run pump 为统筹预设；daemon-first/异常分支仍属 R1 待决，R3 env/R4 abort 与 SIGKILL/TerminateProcess、500 ms kill 残余在 Open questions / D2 明列，未将推荐当批准。
-- feature enum 扩展是 Red R2，旧 pinned schema 失败是要披露的合同影响，不能删除失败 fixture。
-- full check 本次因缺少 worktree 依赖未完成；实施 gate 必须在完整依赖环境重跑。
-- Q4 需要 Owner 选择接受最小 read/ack barrier 残差或将 TICKET-128 完整修复前置。
-- 未获 Owner ACCEPTED 停止收尾/归档；push 未获授权。任何后续代码变化都使实现验证和独立评审失效。
+- Owner 已选 Q2(a) own-Run pump 并接受 R1 daemon-first/异常分支；R3 accept env、R4 relay 与 SIGKILL/TerminateProcess、500 ms kill 残余仍在 Owner decisions / D2 明列。批准不等于实际验证。
+- Owner 已选 R2 direct 扩 feature enum；旧 pinned schema 失败仍须披露并保留失败 fixture。
+- 本次 full check 在 retired-runtime 阶段因 Node spawnSync EPERM 未完成；v3 历史另有缺依赖记录。实施 gate 必须在完整可执行环境重跑。
+- Owner Q4 已接受最小 ack/claim/read barrier + TICKET-128 残余；不得把全量修复塞入本切片。
+- 未记录 ACCEPTED 停止收尾/归档；统筹代行需同 SHA 双技术标记、无开放 Red，红灯回 Owner；push 未获授权。任何后续代码变化都使实现验证和独立评审失效。

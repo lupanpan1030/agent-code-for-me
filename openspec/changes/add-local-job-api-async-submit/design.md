@@ -1,10 +1,10 @@
 # Design: Local Job API async submit
 
-Status: **DRAFT — awaiting Owner APPROVED**（第三版；second-round synthesis @ 79c4e7b0，有界文字修补）
+Status: **APPROVED 2026-10-02 (Owner, bound to 0f998436) — awaiting red suite (test-first)**
 
 ## Context and source basis
 
-本稿是 Phase 3 第二份提案，不是实施授权或已发布合同。只读基线为
+本稿是 Phase 3 第二份提案，Owner 已批准；独立 red suite 先于产品实现，尚非已发布合同。只读基线为
 `2c59664f1b80a5f782eb05f82d33f718d9bc7053`；以下仓库 `file:line` 均相对该 SHA；b26c0651 没有产品代码变动。
 `openspec/STATUS.md:9` 在起草前没有 active change；姊妹账本切片已经归档。
 
@@ -51,15 +51,15 @@ TICKET-128 的全量原子 creation / 可恢复整组发布协议不在本稿冒
 Phase 3 artifact refs 的新增公共寻址/搬运能力留给独立 artifact-ref proposal；本切片只消费既有 ledger refs，不宣称交付该路线项。
 不改变 `locus run` one-shot、desktop chat 的执行形态或 runtime/provider/profile 默认选择。
 
-## Decisions — 统筹预设 L1–L11（Owner 可改）
+## Decisions — L1–L11（Owner 已确认，2026-10-02）
 
-| ID | 预设裁定 |
+| ID | 已确认裁定 |
 | --- | --- |
 | L1 | create/submit/retry 共用“校验→持久化 Run（host 提交 job_created）→立即返回 ID”的核心；daemon/既有应用内执行者通过 claim 执行；同步 create 是 submit+wait；jobs-stdio job.run 同核，删除内联执行；不新建 worker、queue 表、状态机。 |
 | L2 | `runs submit` 返回 `{apiVersion,job}` queued admission；`runs wait <id> [--timeout]` 在 completed 提交且终态文件 publish 后返回 create 的 `{apiVersion,job,result}`；超时结构化返回并有专用退出码；现有 create 的终态信封和退出码逐字节保留。 |
 | L3 | 可选 idempotencyKey，以 consumer.id+key 作用域；同规范化请求重放、不同请求冲突；key 与 job 同 SQLite 事务占用，creation 补偿删除同时释放；规定清理期，原 key 不进入日志/事件。 |
 | L4 | ack 只保证持久化并可认领，不保证已开始；无执行者须结构化可查；wait 有明确默认超时和显式 timeout。 |
-| L5 | 保持 locus.local-job.v1；新操作/字段 additive 并广告 async-submit；保留 12 events、六字段、create 响应、既有退出码、after/follow；v1.1 请求门控交 Owner；完整十节 C7，所有 Red 显式待决。 |
+| L5 | 保持 locus.local-job.v1；新操作/字段 additive 并广告 async-submit；保留 12 events、六字段、create 响应、既有退出码、after/follow；不采用 v1.1 请求门控；完整十节 C7，R1–R4 已由 Owner 明确接受。 |
 | L6 | queued cancel 沿既有 pre-start ledger settle canceled；retry 新 job 并支持 key；同步 wrapper 退出码语义保留。 |
 | L7 | creation fact 提交后才 ack；wait 的观察点是 completed commit 且 publish 完成；只经 host 的 appendExactRunEventBatch 单一路径。 |
 | L8 | key 不跨 consumer 重放；不扩大文件系统范围；执行者信息沿现有脱敏规则；无新凭据路径。 |
@@ -67,7 +67,7 @@ Phase 3 artifact refs 的新增公共寻址/搬运能力留给独立 artifact-re
 | L10 | 独立作者先按 spec 写 red bun tests；每个 Scenario 有入口、夹具、断言；覆盖派单列出的全部 conformance 场景。 |
 | L11 | 明确 canonical owner、旧路径删除点、additive 存储迁移 gate、验证消费者；OWNERSHIP_MAP 新增项只列实施任务。 |
 
-以下细化采用二审合成 §2–§4；六组选择均为 **统筹预设（推荐，Owner 可改）**，不是 Owner APPROVED。L1–L11 不变；L3 的 public key surface 按本次派单收窄为 submit / retry --request，create 不新增字段并显式拒绝 key（Q1 预设的 #2 验证收紧）。
+以下细化采用二审合成 §2–§4；六组推荐默认均为 **Owner 已确认（2026-10-02，bound to 0f998436）**。L1–L11 不变；L3 的 public key surface 为 submit / retry --request，create 不新增字段并显式拒绝 key（Q1 已确认的 #2 验证收紧）。
 
 ## D1. Single submit core and owner map
 
@@ -103,7 +103,7 @@ locus api runs create --request <path|-> --json
 locus api runs retry <job-id> [--request <path|->] [--async] --json
 ```
 
-**统筹预设（推荐，Owner 可改）Q1**：create 不接受新字段并显式拒绝 `idempotencyKey`；只有 submit 的 agent/completion body 和 retry `--request` 接受 optional key。新版 create 若带 key 返回 stdout v1 error / exit 2 / `idempotency_key_not_supported`，不执行；选择 stdout 是沿现有 create project/provider error envelopes（cli-dispatcher.ts:514-520），而非 generic validation 的 stderr。这是 C7 #2 验证收紧及 #10 新 code 披露：今日 create 静默接受 key 并执行无幂等 job。子选项是 reject（推荐，fail-closed）或继续像今日一样 ignore；二者都不能使旧 build 的 keyed create 获得幂等性，duplicate-execution 风险必须披露。retry body 只接受 `{apiVersion,consumer:{id},idempotencyKey?}`；无 body 沿原 Run 的 consumer/input。`--async` 返回 admission，其余 retry 同步等待。cancel 外形不变。
+**Owner 已确认（2026-10-02）Q1**：create 不接受新字段并显式拒绝 `idempotencyKey`；只有 submit 的 agent/completion body 和 retry `--request` 接受 optional key。新版 create 若带 key 返回 stdout v1 error / exit 2 / `idempotency_key_not_supported`，不执行；选择 stdout 是沿现有 create project/provider error envelopes（cli-dispatcher.ts:514-520），而非 generic validation 的 stderr。这是 C7 #2 验证收紧及 #10 新 code 披露：今日 create 静默接受 key 并执行无幂等 job。系统 SHALL reject（fail-closed）；继续 ignore 是已否决的备选，不实现，后果保留在决策记录。旧 build 的 keyed create 不获得幂等性，duplicate-execution 风险必须披露。retry body 只接受 `{apiVersion,consumer:{id},idempotencyKey?}`；无 body 沿原 Run 的 consumer/input。`--async` 返回 admission，其余 retry 同步等待。cancel 外形不变。
 
 fresh submit ack 是 `{apiVersion,job}`，exit 0、无 result，queued 是已完成 admission 的固定快照；另一个进程可以先于 stdout claim，随后 status 必须读到 running。此解释放入指南，不用不可观测的 “SHALL NOT imply” 充当验收。replay 返回当前 job 状态并仅在 keyed replay 加 `idempotentReplay:true`；无 key 的 create/retry/wait 不添加该字段或 execution。
 
@@ -113,25 +113,25 @@ ready 的完整 `{apiVersion,job,result}` 使用既有 serializer 和 `normalize
 
 S03/S04 在独立 DB 固定 job ID、createdAt/startedAt/completedAt、workerId、workerPid、appVersion、cwd/artifact paths 和 runtime result，比较完整 stdout（含换行），不删字段、不在比较后归一化。另用真实进程断言 workerId/workerPid 属实际执行者；daemon 认领时 provenance 值变化按 proposal #3 披露。
 
-### Q2 / Red R1 条件化 wrapper 合同
+### Q2 / Red R1 已确认 wrapper 合同
 
-以下三个分支都是待 Owner 选择的条件合同；不得把任一分支写成已批准事实。当前没有后台 daemon launcher，也没有能捞 API queue 的 Desktop worker；`locus daemon run` 是 foreground、opt-in。
+Owner 2026-10-02 选择 (a)：wrapper SHALL 在自己的 admitted Run 范围内调用 canonical pump；daemon 先认领则 SHALL 只等待。当前没有后台 daemon launcher，也没有能捞 API queue 的 Desktop worker；`locus daemon run` 是 foreground、opt-in。下表 (b)/(c) 仅保留已否决备选及后果，不实现。
 
 | Q2 选项 | 无 daemon / executor 停滞 | publish failure 与非 outcome failure |
 | --- | --- | --- |
-| **(a) 统筹预设（推荐，Owner 可改）** | wrapper 调用 `pumpQueuedRuns({admittedIds:[ownId]})`，经 startAgentJob 和既有 runner/terminal composition，再 waitForRun；与 stdio 使用同一 symbol。无 daemon 也运行；若 daemon 已 claim，wrapper 只 wait，不第二次执行。own-pump Run 豁免 30 s no-progress 窗口，pending dispatch promise 是存活证据，沿既有 runtime timeout/cancel；daemon-first 以 high-water、job.heartbeatAt 变化或 D5 committed worker identity + 120 s 窗内 + confirmed alive 为进展，只有 queued 或 worker evidence unknown/absent 且无进展才 bounded observer error；确认死亡只由 recovery 结算。 | 本进程 pump 完成但 publish 失败时保留今日 `artifacts:[]` + committed outcome exit 基线（wrapper 的明确 failure parity 分支，不把它标作 wait ready）；新 `runs wait` 仍返回 terminal_artifacts_pending/9。daemon-first 无本地 publish 结果时，terminal commit 后最多 30 s 未 ready 即 error/8。本地非 outcome 故障停止自己的执行树，保留 baseline stderr text 与 exit（create 的 localJobApiCreateErrorCode：2，message 匹配 /unsupported/i 时 3；retry：3），不伪造 terminal；远端已 claim 时使用带 id 的 error envelope。 |
-| (b) 显式 daemon prerequisite | 没有 executor 或无进展的观察窗达 30 s 时 bounded error/8；活跃执行按既有 timeout。构成 **L2 例外 / Red R1**。 | publish 未 ready 达 30 s 为带 id 的 error/8，不能宣称 outcome；须 Owner 明确接受偏离今日 publish-failure baseline。 |
-| (c) 新 detached launcher | 新增跨平台后台启动、锁竞争和生命周期 surface（C7 #9）；启动最多 30 s，失败 bounded error/8；启动成功同 (b)。 | 同 (b)，还需独立 launcher/platform 夹具；不是“复用”现成编排，成本最高，不推荐。 |
+| **(a) Owner 已确认（2026-10-02）** | wrapper 调用 `pumpQueuedRuns({admittedIds:[ownId]})`，经 startAgentJob 和既有 runner/terminal composition，再 waitForRun；与 stdio 使用同一 symbol。无 daemon 也运行；若 daemon 已 claim，wrapper 只 wait，不第二次执行。own-pump Run 豁免 30 s no-progress 窗口，pending dispatch promise 是存活证据，沿既有 runtime timeout/cancel；daemon-first 以 high-water、job.heartbeatAt 变化或 D5 committed worker identity + 120 s 窗内 + confirmed alive 为进展，只有 queued 或 worker evidence unknown/absent 且无进展才 bounded observer error；确认死亡只由 recovery 结算。 | 本进程 pump 完成但 publish 失败时保留今日 `artifacts:[]` + committed outcome exit 基线（wrapper 的明确 failure parity 分支，不把它标作 wait ready）；新 `runs wait` 仍返回 terminal_artifacts_pending/9。daemon-first 无本地 publish 结果时，terminal commit 后最多 30 s 未 ready 即 error/8。本地非 outcome 故障停止自己的执行树，保留 baseline stderr text 与 exit（create 的 localJobApiCreateErrorCode：2，message 匹配 /unsupported/i 时 3；retry：3），不伪造 terminal；远端已 claim 时使用带 id 的 error envelope。 |
+| (b) 已否决的备选，不实现：显式 daemon prerequisite | 没有 executor 或无进展的观察窗达 30 s 时 bounded error/8；活跃执行按既有 timeout。构成 **L2 例外 / Red R1**。 | publish 未 ready 达 30 s 为带 id 的 error/8，不能宣称 outcome；该备选会偏离今日 publish-failure baseline。 |
+| (c) 已否决的备选，不实现：新 detached launcher | 新增跨平台后台启动、锁竞争和生命周期 surface（C7 #9）；启动最多 30 s，失败 bounded error/8；启动成功同 (b)。 | 同 (b)，还需独立 launcher/platform 夹具；不是“复用”现成编排，成本最高，不推荐。 |
 
-wrapper own in-process pump 执行中的 Run 豁免 30 s no-progress 窗口，pending dispatch promise 是 liveness evidence，runtime timeout/cancel 保持原行为。其他进程认领的 Run 以 committed high-water 变化、job.heartbeatAt 变化，或 D5 running 行的 committed worker identity + heartbeat 在 120 s recovery 窗内 + confirmed alive 为进展；只有仍 queued 或 worker evidence unknown/absent 且整个 30 s 窗无进展才 observer error，不判死。没有 committed worker identity 的裸 PID 不算进展。completion 无 heartbeat 的 45 s upstream call：own-pump 保留 baseline bytes；daemon-first 在 D5 worker evidence available 时也不能报 error/8。terminal 未 publish 的 30 s 上限独立于心跳。初始数据库读取失败立即按错误规则返回。S25 的正常长任务在首次 wait timeout 后继续等，不泄漏 exit 9。任何 (b)/(c) 选择都必须连同 fixtures 在 APPROVED 前确认 L2 例外；(a) 的 daemon-first error 分支同属明确披露的 R1 残余。
+wrapper own in-process pump 执行中的 Run 豁免 30 s no-progress 窗口，pending dispatch promise 是 liveness evidence，runtime timeout/cancel 保持原行为。其他进程认领的 Run 以 committed high-water 变化、job.heartbeatAt 变化，或 D5 running 行的 committed worker identity + heartbeat 在 120 s recovery 窗内 + confirmed alive 为进展；只有仍 queued 或 worker evidence unknown/absent 且整个 30 s 窗无进展才 observer error，不判死。没有 committed worker identity 的裸 PID 不算进展。completion 无 heartbeat 的 45 s upstream call：own-pump 保留 baseline bytes；daemon-first 在 D5 worker evidence available 时也不能报 error/8。terminal 未 publish 的 30 s 上限独立于心跳。初始数据库读取失败立即按错误规则返回。S25 的正常长任务在首次 wait timeout 后继续等，不泄漏 exit 9。(b)/(c) 的 L2 例外已否决，不实现；(a) 的 daemon-first error 分支是 Owner 已接受、仍须披露的 R1 残余。
 
-非 outcome wait 读失败（如 SQLITE_BUSY）在已有 job 快照后返回 stdout `{apiVersion,job,wait:{state:"error",reason:"observation_failed"}}` / exit 8；无已读 job 时 stderr 纯文本 `Failed to observe job: <id>` 加换行 / exit 8（不是 JSON error envelope）。wrapper (b)/(c) 或 (a) daemon-first 必须携带已 admitted job.id；reason 为 `executor_unavailable`、`executor_unknown`、`terminal_artifacts_pending` 或 `observation_failed`。无 result 表示不能按 exit code 推断 Run outcome；consumer 可按 id status/cancel。本地 (a) 不留下仍运行的 owned child；已 admitted 但尚未 start 的 own Run 经既有 queued cancel 收束；不通过重跑 submit 恢复 observer。
+非 outcome wait 读失败（如 SQLITE_BUSY）在已有 job 快照后返回 stdout `{apiVersion,job,wait:{state:"error",reason:"observation_failed"}}` / exit 8；无已读 job 时 stderr 纯文本 `Failed to observe job: <id>` 加换行 / exit 8（不是 JSON error envelope）。wrapper daemon-first SHALL 携带已 admitted job.id；reason 为 `executor_unavailable`、`executor_unknown`、`terminal_artifacts_pending` 或 `observation_failed`。无 result 表示不能按 exit code 推断 Run outcome；consumer 可按 id status/cancel。本地 (a) 不留下仍运行的 owned child；已 admitted 但尚未 start 的 own Run 经既有 queued cancel 收束；不通过重跑 submit 恢复 observer。
 
 ### R3 / R4 执行环境与退出
 
-**Red R3（#6/#7/#9），统筹预设（推荐，Owner 可改）接受**：daemon 认领的 Run 使用 daemon process env，各 runtime adapter 按平台 allowlist 放行的 native-home variables（例如 POSIX 的 `HOME` / `CODEX_HOME` / `CLAUDE_CONFIG_DIR`，Windows 的 `USERPROFILE` / `APPDATA` / `LOCALAPPDATA`）及 PATH-family variables 来自执行者；proxy 仅在 adapter 转发它时迁移。daemon-claimed Run 会绕过 consumer 自己的 env minimisation；同样剥离 secrets，不宣称转移 OPENAI_API_KEY 或新增 API-key billing 路径。`runtimes list` 仍检查调用 CLI 的环境，ready 不证明 daemon 同样 ready。不得持久化 env snapshot：living headless-agent-jobs:174 禁止接收 client raw env。另一选择是保持 caller-process execution（Q2(a) 的 wrapper-owned Runs），不能传 env 绕过边界。
+**Red R3（#6/#7/#9），Owner 已确认（2026-10-02）接受**：daemon 认领的 Run 使用 daemon process env，各 runtime adapter 按平台 allowlist 放行的 native-home variables（例如 POSIX 的 `HOME` / `CODEX_HOME` / `CLAUDE_CONFIG_DIR`，Windows 的 `USERPROFILE` / `APPDATA` / `LOCALAPPDATA`）及 PATH-family variables 来自执行者；proxy 仅在 adapter 转发它时迁移。daemon-claimed Run 会绕过 consumer 自己的 env minimisation；同样剥离 secrets，不宣称转移 OPENAI_API_KEY 或新增 API-key billing 路径。`runtimes list` 仍检查调用 CLI 的环境，ready 不证明 daemon 同样 ready。不得持久化 env snapshot：living headless-agent-jobs:174 禁止接收 client raw env。限制为 caller-process execution、缩小 daemon claim 集合是已否决的备选，不实现；wrapper-owned Runs 仍在 caller process 执行，不能传 env 绕过边界。
 
-**Red R4（#4/#9），统筹预设（推荐，Owner 可改）**：对 (b)/(c) **以及 (a) daemon-first 分支**，wrapper 对可捕获 abort（含 armed stdin EOF）经 existing cancel 转发 own admitted ID，不取消别人的 Run。备选 **no relay（仅保留今日 local-tree 行为）**，即 waiter exit ≠ cancel，consumer 自己保存/恢复 ID 后 cancel；未拿到 ID 的 unkeyed caller 无可靠取消入口。own-pump Run 在 (a) 下仍保留今日本地执行树的 abort/EOF 行为。
+**Red R4（#4/#9），Owner 已确认（2026-10-02）**：daemon-first 分支的 wrapper SHALL 对可捕获 abort（含 armed stdin EOF）经 existing cancel 转发 own admitted ID，不取消别人的 Run。**no relay 是已否决的备选，不实现**：其后果是 waiter exit ≠ cancel，consumer 须自己保存/恢复 ID 后 cancel；未拿到 ID 的 unkeyed caller 无可靠取消入口。own-pump Run SHALL 保留今日本地执行树的 abort/EOF 行为。
 
 | 平台 | 可捕获并 relay | 不可 relay |
 | --- | --- | --- |
@@ -174,7 +174,7 @@ requestHash = canonical JSON SHA-256：canonical cwd/project/artifact-base、ali
 
 解析后先查 retained reservation；匹配 replay 不重跑 provider admission、不 mkdir、不重复调用 runtime，configuration 变化不改已接受 attempt。新 reservation 才检查当前 gates。唯一约束控制并发 winner，loser 读 committed reservation 返回 replay/conflict/pending，不能 query-then-insert。公共错误见 delta 的 stream/exit/code 表。
 
-**统筹预设（推荐，Owner 可改）Q5**：verified terminal publication 后保留至少 30 天（2,592,000,000 ms）。expiresAt 一次写入：worker/有文件 queued-cancel 的 lifecycle host 在 preparer publish 成功且 digest verification 通过后设；artifact-free、recovery、缺 initial admission 的 queued cancel 在 settle 成功时设（required terminal refs 空集）。preparation 失败且未登记 terminal refs 也在 settle 时设。partial publish 不设；成功 publish 后在设 TTL 前崩溃也保守保留。wait/status/replay 不写 TTL，不续期。
+**Owner 已确认（2026-10-02）Q5**：verified terminal publication 后保留至少 30 天（2,592,000,000 ms）。expiresAt 一次写入：worker/有文件 queued-cancel 的 lifecycle host 在 preparer publish 成功且 digest verification 通过后设；artifact-free、recovery、缺 initial admission 的 queued cancel 在 settle 成功时设（required terminal refs 空集）。preparation 失败且未登记 terminal refs 也在 settle 时设。partial publish 不设；成功 publish 后在设 TTL 前崩溃也保守保留。wait/status/replay 不写 TTL，不续期。
 
 cleanup 唯一 owner 为 job-store `cleanupExpiredAgentJobIdempotency(db,{now,consumerId?})`：每次 submit 在 lookup 前清理同 consumer，到 daemon 每个 loop tick 清理全部到期 reservations；谓词 expiresAt 非 NULL 且 <= now 且 committed terminal，只删 reservation，不删 jobs/events/files。非 terminal、未发布 terminal、creation orphan 不自动过期。不存在“既有获授权 job 删除”入口；只保留 creation compensation 的 FK cascade。过期后同 key 新建且不带 replay；orphan remedy 是同 key 重试或明确承担重复风险的新 key，永久修复在 TICKET-128。
 
@@ -199,7 +199,7 @@ terminal staged 名唯一包含 process PID + 高熵 preparation-attempt token�
 | worker | claim/reopen 后注册既有 preparer，stage → terminal commit → publish | 验证该 commit 的 prepared tail 全部发布才 ready；成功发布并核验后设 expiry |
 | queued cancel，initial admission 完整 | cancel host 从 persistent input + reopened handle 组合同一 preparer，再条件 settle | 同 worker；claim/cancel 输家丢弃自己的 staging |
 | queued cancel 无 initial admission；artifact-free；preparation/reopen fail closed | 不登记 terminal refs，host settle 对应 outcome/reason | committed completed 即 ready；settle 设 expiry |
-| recovery（统筹预设，推荐，Owner 可改） | 保留既有 recovery owner/liveness；settle interrupted，**不登记新 terminal refs** | registered terminal set 为空，立即 ready，初始 refs 仍保留在历史；prepared tail/result.artifacts=[]；settle 设 expiry |
+| recovery（Owner 已确认，2026-10-02） | 保留既有 recovery owner/liveness；settle interrupted，**不登记新 terminal refs** | registered terminal set 为空，立即 ready，初始 refs 仍保留在历史；prepared tail/result.artifacts=[]；settle 设 expiry |
 
 wait/status **observation itself** 不 settle/cancel/改 status；CLI 既有 `recoverStaleAgentJobs` prologue 不变，故启动 read 命令可能先触发既有 recovery writer，不能宣称整个命令绝无写入。daemon 恢复和 wrapper 有界观察窗末调用同一 recovery owner，不复制 liveness 或 interrupted FSM。恢复需要既有 stale heartbeat（120 s）+ confirmed stopped，不因 unknown 判死。
 
@@ -236,9 +236,9 @@ TICKET-128 的 partial rename、stage crash residue、publish→expiresAt crash 
 
 ## D6. Public boundary and security
 
-**统筹预设（推荐，Owner 可改）Q1：v1 + async-submit**，只 submit/retry --request 接 key。旧 build 会对 unknown submit command 或 unexpected retry --request 参数 stderr/exit 2，形状 fail-closed。反例是 keyed create：旧 parser 会忽略 key 并真执行无幂等 job，重复执行风险必须披露，不能 silent downgrade。无论推荐 submit/retry-only key 还是备选 keyed create，指南 `docs/local-job-api-v1-consumer-guide.md:210` 的 “v1 has no request field that requires a feature” 都须收窄并计 **C7 #10**：推荐 surface 改为“existing create fields do not; submit/retry idempotencyKey requires async-submit preflight”；keyed create 备选也须要求该 key preflight。推荐方案拒绝 create key 是另列的 #2 tightening / #10 idempotency_key_not_supported 披露，不暗加 create 字段。
+**Owner 已确认（2026-10-02）Q1：v1 + async-submit**，系统 SHALL 只在 submit/retry --request 接 key，create 带 key SHALL 返回 stdout `idempotency_key_not_supported`/exit 2，零执行。旧 build 会对 unknown submit command 或 unexpected retry --request 参数 stderr/exit 2，形状 fail-closed。反例是 keyed create：旧 parser 会忽略 key 并真执行无幂等 job，重复执行风险必须披露，不能 silent downgrade。指南 `docs/local-job-api-v1-consumer-guide.md:210` 的 “v1 has no request field that requires a feature” SHALL 收窄为“existing create fields do not; submit/retry idempotencyKey requires async-submit preflight”，计 **C7 #10**；create key 拒绝另列 #2 tightening / #10 新 code 披露。keyed create、继续 ignore 和 v1.1 均为已否决的备选，不实现，后果见决策记录。
 
-**Red R2 / Q3 仍待 Owner**：直接扩 closed discoveryFeature enum 的依据是指南 :209-216 已预声明的 feature preflight/enum refresh，以及 living Discovery :476-478 的“不认为静默丢弃字段已生效”。C7 §9.8 按预声明规则判断；`canonical-run-ledger` archived proposal row 10 把 enum extension 分类为 **Non-breaking**，附 pinned-schema refresh disclosure；其接受的是该机制和 refresh 规则的披露，并非 enum-specific Owner Red 决定。本稿按一审裁定仍将 R2 作为明确 Owner decision，不借先例预先批准。本次 pinned-old-schema fixture 必须失败，new schema 必须通过，Owner 仍明确选择 direct/version/facade/defer。
+**Red R2 / Q3 — Owner 已确认（2026-10-02）direct**：系统 SHALL 直接扩 closed discoveryFeature enum 加 `async-submit`，依据是指南 :209-216 已预声明的 feature preflight/enum refresh，以及 living Discovery :476-478 的“不认为静默丢弃字段已生效”。C7 §9.8 按预声明规则判断；`canonical-run-ledger` archived proposal row 10 把 enum extension 分类为 **Non-breaking**，附 pinned-schema refresh disclosure；先例接受的是该机制和 refresh 规则的披露，本次 R2 的 direct 决定由 Owner 对 0f998436 明确批准。pinned-old-schema fixture SHALL 失败，new schema SHALL 通过。version/facade/defer 是已否决的备选，不实现，保留后果作为记录。
 
 Runtime/profile/policy 选择 owner 不变；R3 native-home/env 来源与 R4 abort 是 public Red，不伪装 internal。所有文件仍经 registered roots/stable-directory/redaction；claim 前复核 gates 和 queued age。没有 env 持久化、client token、跨 consumer replay、认证替代或 Windows path-only fallback。
 
@@ -250,14 +250,15 @@ disposable test profiles 仍选 additive reservation migration，具体新 drizz
 
 rollback 停提交/执行并 drain/cancel，旧构建用隔离 profile或经证明的完整 backup restore，保留 consumer jobs/events/files；不混用 writer，不 silent downgrade。此提案不授权 merge/push/PR/release。
 
-## Open questions — Owner decision needed
+## Owner decisions (2026-10-02)
 
-以下六项逐字搬自二审合成 §4；均为 **统筹预设（推荐，Owner 可改）**，全部 PENDING，尚非 Owner 决定。
-(a′) 补充成本说明：wrapper-held Runs 不被 daemon 认领，dead holder 的 queued Run 取消/恢复、不得稍后执行，需要 holder-liveness rule 和专门 scenarios；因此不替换 (a) 推荐默认。
+**Owner APPROVED 2026-10-02 @ 0f998436 — 六项决策按推荐默认；Owner 已确认。** 以下列明已选项；备选及其后果仅作决策历史，均为**已否决的备选，不实现**，不进入 delta SHALL 或实施验收。
 
-1. **Q2 / R1 — executor for the synchronous wrapper**: (a) the wrapper runs the canonical pump scoped to its own admitted Run (no daemon needed; a running daemon may claim first, in which case the wrapper only waits; sub-option (a′) makes wrapper-held Runs daemon-ineligible at the cost of a holder-liveness rule), (b) explicit daemon prerequisite with bounded error/8 (L2 exception), or (c) a new detached launcher (new #9 surface) — [**(a)**; after touch-up 1 it keeps L2 bytes for agent and completion Runs, L4 bounded behaviour, L8 no new credential path and today's local abort semantics]. Choosing (b)/(c) makes every old `create` depend on a user-started daemon and accepts an L2 exception; choosing (a′) adds lifecycle semantics for dead holders.
-2. **R3 — execution-context provenance**: accept that a daemon-claimed Run executes under the daemon's environment and per-platform native-credential home (no env persisted; secrets stripped on both paths; CLI `runtimes list` readiness ≠ daemon readiness; a consumer's own env minimisation is bypassed), classified Red #6/#7/#9 — [**accept**; under (a) only daemon-claimed Runs are affected]. Choosing otherwise means restricting execution to the caller process and shrinking the daemon's claim set, which must then be re-specified in the queue contract.
-3. **R4 — waiter abort semantics**: for (b)/(c) and for the daemon-first branch of (a), the wrapper relays a cancel of its own Run on catchable abort (POSIX SIGINT/SIGTERM, stdin EOF; on Windows only EOF/console Ctrl), waiting ≤ 5 s for acknowledgement, versus "waiter exit ≠ cancel, consumers cancel by id" — [**relay**; local own-pump Runs under (a) keep today's process-tree behaviour]. Choosing "no relay" leaves unkeyed callers that never received an id without a cancel path; either way SIGKILL/TerminateProcess cannot be relayed and only cancel-by-id is reliable on every platform.
-4. **Q1 — wire version and key surface**: keep `locus.local-job.v1` + `async-submit`; accept `idempotencyKey` only on `runs submit` and `runs retry --request` (old builds reject those shapes with exit 2); and **reject** a key sent on `runs create` with `idempotency_key_not_supported`/2 as a disclosed #2 tightening (alternative: keep ignoring it as today) — [**v1 + submit/retry-only keys + reject on create**]. Choosing keyed create requires the guide:210 rule change and accepts that old builds silently run an unkeyed job; choosing "ignore" keeps today's validation but lets a new build silently run an unkeyed job for a consumer that meant a keyed one; choosing v1.1 adds a parser/serializer path, dual fixtures and a sunset while fixing none of R1/R3/R4.
-5. **Q3 / R2 — closed `discoveryFeature` enum**: extend it directly with `async-submit`, relying on the guide:212-216 refresh rule and the living Discovery consumer rule (restored verbatim by touch-up 4), keeping the pinned-old-schema failure fixture; the ledger precedent treated the same mechanism as a Non-breaking disclosure — [**direct**]. Choosing a new version or a discovery facade adds dual-schema cost for a change that is already pre-declared; deferring withholds the feature advertisement and therefore the whole async surface.
-6. **Q4 / Q5 / Q6 bundle**: accept the minimal ack/claim/read barrier with the TICKET-128 residuals disclosed; recovery registers no terminal refs; 30-day retention after verified publication with the named cleanup trigger; `wait` 30 s default / 24 h cap / exit 9; `submission_pending` keeps exit 8 with `error.code` and `retryable:true`; max queued age 24 h; and the stated exit mapping for the five new fail-closed codes (7 for project/cwd identity, binding mapping for profile, 1 for age/admission mismatch) — [**accept all**]. Choosing to front-load TICKET-128 is more reliable but defers this slice; a new exit code for `submission_pending` or the fail-closed codes forces consumer migration of the 0–8 table.
+1. **Q2 / R1 — executor for the synchronous wrapper：已选 (a)**。wrapper SHALL 在自己的 admitted Run 范围内跑 canonical pump，无 daemon 也可运行；daemon 先认领则 SHALL 只等待。保留 agent/completion 本地 L2 bytes、L4 有界行为、L8 无新凭据路径及今日 local abort 语义。已否决：(a′) wrapper-held Runs 不可被 daemon 认领，需要 holder-liveness rule、dead holder queued cancel/recovery 与专门 scenarios，增加 lifecycle 成本；(b) explicit daemon prerequisite + bounded error/8，使旧 create 依赖 user-started daemon，接受 L2 例外；(c) detached launcher 新增 C7 #9 surface 和平台/生命周期夹具成本。
+2. **R3 — execution-context provenance：已选 accept**。daemon-claimed Run SHALL 使用 daemon environment 与各平台 adapter allowlist 的 native-credential home；SHALL 不持久化 env，双方剥离 secrets，CLI runtimes list readiness ≠ daemon readiness，consumer 自身 env minimisation 会被绕过；按 Red #6/#7/#9 披露。只有 daemon-claimed Runs 受影响。已否决：限制为 caller process，会缩小 daemon claim 集合并要求重写 queue contract。
+3. **R4 — waiter abort semantics：已选 relay**。daemon-first wrapper SHALL 在可捕获 abort/armed EOF 时取消自己的 Run，等确认 ≤5 s；own-pump SHALL 保留今日 process-tree 行为。POSIX SIGKILL、Windows child.kill()/TerminateProcess 不可 relay，cancel-by-id 是跨平台保证；平台/EOF 条件见 D2。已否决：no relay（waiter exit ≠ cancel），会让未拿到 ID 的 unkeyed caller 无取消入口；(b)/(c) 下的 R4 行为随 Q2 备选一并否决，不实现。
+4. **Q1 — wire version and key surface：已选 v1 + submit/retry-only keys + reject on create**。系统 SHALL 保持 `locus.local-job.v1` + `async-submit`；仅 `runs submit`、`runs retry --request` 接受 `idempotencyKey`；`runs create` 带 key SHALL 返回 stdout `idempotency_key_not_supported`/exit 2、不执行，按 C7 #2 tightening / #10 披露并收窄 guide:210 preflight 规则。已否决：keyed create（旧 build silently unkeyed execute，重复风险）；继续 ignore（新 build 也可能将 keyed 意图静默变成无幂等执行）；v1.1（增加 parser/serializer path、dual fixtures、sunset，不能解决 R1/R3/R4）。
+5. **Q3 / R2 — closed discoveryFeature enum：已选 direct**。系统 SHALL 直接扩枚举 `async-submit`，引用指南 :212-216 刷新规则、living consumer rule 与 canonical-run-ledger Non-breaking refresh disclosure 先例；SHALL 保留 pinned-old-schema 失败夹具。已否决：new version/discovery facade（增加 dual-schema 成本）；defer（无法广告 feature，整个 async surface 延后）。
+6. **Q4 / Q5 / Q6 bundle：已选 accept all**。系统 SHALL 使用最小 ack/claim/read barrier 并披露 TICKET-128 残余；recovery SHALL 不登记终态 refs；verified publication 后至少保留 30 天，空 terminal refs 按 settle 起算，按 D4 命名 cleanup 触发；wait SHALL 默认 30 s、上限 24 h、超时 exit 9；submission_pending SHALL 保留 exit 8 + error.code + retryable:true；最大排队 SHALL 为 24 h；五个 fail-closed code SHALL 按既有 exit 映射 7/7/(binding 4,2,6 else 3)/1/1。已否决：前置 TICKET-128 全量修复（更可靠但延后本切片）；给 pending/fail-closed 新 exit code（强迫迁移 0–8 表）。
+
+Owner 同日启用「自我迭代」：后续 ACCEPTED 由统筹代行，条件为 Codex IMPLEMENTATION_VERIFIED 与 fresh-context Claude REVIEW_APPROVED 绑定同一 source SHA、无开放 Red；只有红灯项回到 Owner。该授权不构成本次实现验证、独立批准、ACCEPTED 或 merge/push 权限。
