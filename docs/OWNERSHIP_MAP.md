@@ -566,14 +566,19 @@ or UI helper.
   idempotency reservation, committed `job_created`, winner-only initial
   admission, ack); `src/main/lib/headless/run-submission.ts#waitForRun` is
   its read-only bounded wait. `src/main/lib/headless/daemon.ts#pumpQueuedRuns`
-  is the only dispatch of queued Runs (daemon slots daemon → schedule → api;
-  the create/retry wrapper and a protocol session pass their own admitted
-  IDs); its runners run the claim-time API gate after the conditional claim.
+  is the only dispatch of queued headless, API and protocol Runs (daemon
+  slots daemon → schedule → api; the create/retry wrapper and a protocol
+  session pass their own admitted IDs); its runners run the claim-time API
+  gate after the conditional claim. Desktop Runs keep their own
+  desktop-source claim and dispatch in `src/main/lib/desktop-agent-jobs.ts`,
+  which is a separate owner, not a duplicate of the pump.
   `src/main/lib/headless/job-store.ts#insertQueuedAgentJobRecord` (with the
   private reservation-aware insert behind `createAgentJob`/`retryAgentJob`)
   is the only `agent_jobs` row insertion; schedules call it inside their
   fire/audit transaction. `src/main/lib/agent-runtime/run-artifacts.ts#reopenAdmittedRunDir`
-  owns the claimant's cross-process reopen of an admitted run directory.
+  owns the cross-process reopen of an admitted run directory, by the
+  claimant and by the queued-cancel host that composes the same terminal
+  preparer.
   The CLI and jobs-stdio adapters only parse and translate envelopes; they
   never call a runner or the claim primitives (the human `locus run` keeps
   its in-process runner). `scripts/check-architecture-guards.mjs` enforces
