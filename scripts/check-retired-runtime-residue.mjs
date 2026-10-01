@@ -79,7 +79,7 @@ const ALLOWED = new Map([
     "tests the cleanup above, including its symlink-escape guard",
   ],
   [
-    "tests/agent-runtime-registry.test.ts",
+    "tests/agent-runtime-router-surface.test.ts",
     "negative assertions proving the router no longer contains the retired symbols",
   ],
   [
