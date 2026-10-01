@@ -4566,6 +4566,10 @@ function assertRunEventLedgerGuards() {
 // through a migration toggle. Its self-test consumes
 // LOCAL_JOB_API_ASYNC_ARCHITECTURE_FIXTURE_PATH and the repository is always
 // enforced in that end state.
+// Detection limits (disclosed): runner/claim calls are matched by callee name
+// (direct, named-import alias, namespace or element access); a reference
+// re-bound by assignment (`const r = runner; r()`), an indirect
+// `.call`/`.apply`, and raw SQL `INSERT INTO agent_jobs` text are not caught.
 // ---------------------------------------------------------------------------
 
 const LOCAL_JOB_API_ASYNC_ARCHITECTURE_FIXTURE_PATH =
