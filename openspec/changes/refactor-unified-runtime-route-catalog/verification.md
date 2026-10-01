@@ -1,6 +1,6 @@
 # Verification: Unified Runtime Route Catalog
 
-Status: **APPROVED 2026-10-02 (coordinator-acted under Owner mandate, bound to a9b74594; Owner may revoke) — awaiting red suite (test-first)**
+Status: **APPROVED 2026-10-02 (coordinator-acted under Owner mandate, bound to a9b74594; Owner may revoke) — RED suite frozen at c297872d (77 tests: 69 RED / 8 green by design); awaiting implementation Phase I**
 
 本文件是实施验证骨架与起草校验回执。没有产品实现、RED suite、技术 verdict 或验收；
 S01–S53 全部 **NOT RUN**。文档可解析不证明目录或 Runtime 行为已实现。
@@ -21,7 +21,7 @@ S01–S53 全部 **NOT RUN**。文档可解析不证明目录或 Runtime 行为�
 | APPROVED / Consumer Impact §10（统筹代行，非 Owner 签署） | APPROVED 2026-10-02（统筹代行；Owner 2026-10-02 自我迭代授权；绑定 a9b74594） |
 | Q1–Q5 / OD-1–OD-5 | 已采纳（统筹代行，Owner 可改）；缩窄 L2 / 受约束 optional routes / binding read model / P23→B / 验收代行，见 design Decisions adopted 2026-10-02；非 Owner 签署，Owner 可撤回 |
 | Approved spec SHA | `a9b74594`（完整 SHA `a9b745949b02e2b7c1bbd883c224c14b324d3dbc`） |
-| Independent RED author / suite SHA / adjudication SHA | — / — / — |
+| Independent RED author / suite SHA / adjudication SHA | 4 independent Opus authors (catalog-core / capabilities / surfaces / public-guards) + Fable audit (Workflow wf_32724556) / `c297872d` / `c297872d`（P1-1..P1-3 修正与 P2-1..P2-4 裁定随同一提交，见 red-receipt §9–§10） |
 | Implementation source SHA / test fixture hashes | — / — |
 | Codex IMPLEMENTATION_VERIFIED SHA / verdict / receipt | — / NOT ISSUED / — |
 | Fresh-context Claude Code REVIEW_APPROVED SHA / receipt | — / NOT ISSUED / — |
@@ -162,65 +162,149 @@ S14/S15 与 S33–S52 保留 living scenario 原标题，通过 delta 注释登�
 
 | ID | Spec delta | Fixture / key | 拟 bun test 入口 | Observable oracle / 当前结果 |
 | --- | --- | --- | --- | --- |
-| S01 | agent-runtime-core | catalog.json#S01 | query.test.ts | 生产表/真实 refs、重复/相交/缺引用/非法 namespace/enforcement/probe validation，初始化故障 host 映射；NOT RUN |
-| S02 | agent-runtime-core | catalog.json#S02 | query.test.ts | 查询/枚举排列不变、readonly、不调用 factory/probe/DB；NOT RUN |
-| S03 | agent-runtime-core | routes.json#S03 | routes.test.ts | 两个具名 desktop hosts 的 typed delegate/目录 spy、procedure guard 与 preflight 拒绝顺序；NOT RUN |
-| S04 | agent-runtime-core | routes.json#S04 | routes.test.ts | entry input / executionSurface output，各入口同 batch leaf、原 source/provenance；NOT RUN |
-| S05 | agent-runtime-core | policy.json#S05 | routes.test.ts | Codex grant 原 enforcement、Claude/invalid/hard guard 拒绝；NOT RUN |
-| S06 | agent-runtime-core | refusals.json#S06 | query.test.ts | unknown/retired/missing/非法组合 route_not_found；overlap 仅 validation catalog_invalid；NOT RUN |
-| S07 | agent-runtime-core | renderer.json#S07 | renderer.test.ts | 真实 claude.chat 对 Codex binding，rejectStaleRunPayload 原 message/hint、零 secret/factory；NOT RUN |
-| S08 | agent-runtime-core | policy.json#S08 | routes.test.ts | 删除 preferredAdapterSource；fallbackReason:null 与 internal interactive 原拒绝；NOT RUN |
-| S09 | agent-runtime-core | completion.json#S09 | completion.test.ts | 显式 profile、一次 upstream、零 agent child；NOT RUN |
-| S10 | agent-runtime-capabilities | capabilities.json#S10 | capabilities.test.ts | 引用 canonical manifest，adapter evidence 不虚报；NOT RUN |
-| S11 | agent-runtime-capabilities | readiness.json#S11 | capabilities.test.ts | default/native/cache/no-probe/missing route-probe→unknown 原行为，advisory 不阻断合法 admission；NOT RUN |
-| S12 | agent-runtime-capabilities | capabilities.json#S12 | capabilities.test.ts | projection owner 决定可用性，无 adapter kind 不造 stub；NOT RUN |
-| S13 | agent-runtime-capabilities | extensions.json#S13 | capabilities.test.ts | 既有 schema、unknown optional 忽略、internal required 拒绝；NOT RUN |
-| S14 | headless-agent-jobs | headless.json#S14 | headless.test.ts | CLI/daemon/schedule/protocol/API batch 原 argv/stdin/cancel；NOT RUN |
-| S15 | headless-agent-jobs | headless.json#S15 | headless.test.ts | rich factory 可用也不暗选、unsupported 零 provider work；NOT RUN |
-| S16 | headless-agent-jobs | executor.json#S16 | executor.test.ts | 两连接 kind dispatch 保留，test catalog 只转发/claim 后查，原 slots/exclusions；NOT RUN |
-| S17 | headless-agent-jobs | executor.json#S17 | executor.test.ts | replay/scoped wrapper/stdio 仍使用原 submission/pump；NOT RUN |
-| S18 | desktop-agent-jobs | renderer.json#S18 | renderer.test.ts | helper read-state 单测+两站点映射/不缓存 guard；unknown/unavailable/error 零订阅；NOT RUN |
-| S19 | desktop-agent-jobs | renderer.json#S19 | renderer.test.ts | existing-wire fixture；具名 helper/event-state guards、question/guard/finish atom transitions；NOT RUN |
-| S20 | desktop-agent-jobs | desktop-actions.json#S20 | renderer.test.ts | exact-owner cancel、source retry 拒绝不变；NOT RUN |
-| S21 | local-job-api | public-contract.json#S21 | public-contract.test.ts | create/submit/wait/retry/status/events/result/cancel 全 bytes/channels/exits；NOT RUN |
-| S22 | local-job-api | discovery.json#S22 | discovery.test.ts | 旧/新 schema/reader、unknown open values、exact keys、防 leaks、producer extensions；NOT RUN |
-| S23 | local-job-api | readiness.json#S23 | discovery.test.ts | submitter 与 daemon env 如实分离，no-probe 无 native work；NOT RUN |
-| S24 | local-job-api | errors.json#S24 | public-contract.test.ts | 原 surface error/exit/JSON-RPC/IPC，无新 public code；NOT RUN |
-| S25 | local-job-api | artifacts.json#S25 | public-contract.test.ts | Windows admission 与 incomplete publish 不被 route availability 绕过；NOT RUN |
-| S26 | architecture-ownership | architecture-fixtures.json#S26 | guards.test.ts | runtime 分支/map/alias/namespace/wrapper/lifecycle leaf value-import exact findings；NOT RUN |
-| S27 | architecture-ownership | architecture-fixtures.json#S27 | guards.test.ts | retired modules/exports/两分支 exact mutation；合法 rewires 由 S03/S11/S16 spies；NOT RUN |
-| S28 | architecture-ownership | architecture-fixtures.json#S28 | guards.test.ts | import direction、readiness cycle 拒绝；旧 ratchet 不放宽；NOT RUN |
-| S29 | architecture-ownership | architecture-fixtures.json#S29 | guards.test.ts | 合法相邻 owner/P34 typed delegate 注入正例通过，配对重复选择 mutation 失败；NOT RUN |
-| S30 | architecture-ownership | architecture-fixtures.json#S30 | guards.test.ts | catalog 不新增状态 owner、无 env/fs/config，production test-port override 被拒绝；NOT RUN |
-| S31 | agent-runtime-core | routes.json#S31 | routes.test.ts | Codex desktop 失败不 exec fallback/重复 terminal；NOT RUN |
-| S32 | agent-runtime-core | provider.json#S32 | provider.test.ts | explicit/model/default/native precedence、cleanup、secret-safe projection；NOT RUN |
-| S33 | agent-runtime-core | catalog.json#S33 | query.test.ts | 真实声明初始化、唯一 runtime、重复拒绝；NOT RUN |
-| S34 | agent-runtime-core | capabilities.json#S34 | capabilities.test.ts | 基本 route 不要求可选 unsupported native 能力；NOT RUN |
-| S35 | agent-runtime-core | capabilities.json#S35 | capabilities.test.ts | 只读 metadata/manifest 明确能力状态与理由；NOT RUN |
-| S36 | agent-runtime-core | capabilities.json#S36 | capabilities.test.ts | 声明 supported 的实际 adapter capability port 执行；NOT RUN |
-| S37 | agent-runtime-core | capabilities.json#S37 | capabilities.test.ts | pre-execution 工具 allow/deny/rewrite 与诊断；NOT RUN |
-| S38 | agent-runtime-core | capabilities.json#S38 | capabilities.test.ts | 缺 pre-hook 不宣称 hard enforcement；NOT RUN |
-| S39 | agent-runtime-core | capabilities.json#S39 | capabilities.test.ts | Codex missing capability 从目录可测；NOT RUN |
-| S40 | agent-runtime-core | policy.json#S40 | routes.test.ts | grant enforcement evidence/原 scope-binding 或 refusal；NOT RUN |
-| S41 | agent-runtime-core | routes.json#S41 | routes.test.ts | Claude alias normalization/shared runner 原 events/result；NOT RUN |
-| S42 | agent-runtime-core | routes.json#S42 | routes.test.ts | Codex shared runner 原 events/result；NOT RUN |
-| S43 | agent-runtime-core | routes.json#S43 | routes.test.ts | headless/API default batch 与 source diagnostic；NOT RUN |
-| S44 | agent-runtime-core | policy.json#S44 | routes.test.ts | 无交互通道的 internal query 原拒绝；NOT RUN |
-| S45 | agent-runtime-core | policy.json#S45 | routes.test.ts | 保留 living fallback 标题；无隐式 downgrade，fallbackReason:null；NOT RUN |
-| S46 | agent-runtime-core | refusals.json#S46 | query.test.ts | public parser 原 unsupported runtime；internal route_not_found；NOT RUN |
-| S47 | agent-runtime-core | capabilities.json#S47 | capabilities.test.ts | required capability union gate/原诊断；NOT RUN |
-| S48 | architecture-ownership | architecture-fixtures.json#S48 | guards.test.ts | 目录唯一 owner、route-local dispatch exact finding；NOT RUN |
-| S49 | architecture-ownership | routes.json#S49 | routes.test.ts | 真实 ledger/redaction 经 host 投影，不造第二 event owner；NOT RUN |
-| S50 | architecture-ownership | architecture-fixtures.json#S50 | guards.test.ts | 无 selector dual path/production test flag；NOT RUN |
-| S51 | codex-runtime-parity | capabilities.json#S51 | capabilities.test.ts | Codex manifest shared truth 从目录到 caller gate；NOT RUN |
-| S52 | codex-runtime-parity | capabilities.json#S52 | capabilities.test.ts | supported claim 必须真实 enforcing port 测试；NOT RUN |
-| S53 | desktop-agent-jobs | renderer.json#S53 | renderer.test.ts | 真实 chat-query/createSubChat 经 withRuntimeRouteTransportId；两 runtime 值等于 renderer projection，DB 无该列，failure-state 无字段，main literal mapping guard；NOT RUN |
+| S01 | agent-runtime-core | catalog.json#S01 | query.test.ts | 生产表/真实 refs、重复/相交/缺引用/非法 namespace/enforcement/probe validation，初始化故障 host 映射；RED suite @ c297872d: 4 tests（4 RED / 0 GREEN by design）in runtime-route-catalog-query.test.ts |
+| S02 | agent-runtime-core | catalog.json#S02 | query.test.ts | 查询/枚举排列不变、readonly、不调用 factory/probe/DB；RED suite @ c297872d: 1 tests（1 RED / 0 GREEN by design）in runtime-route-catalog-query.test.ts |
+| S03 | agent-runtime-core | routes.json#S03 | routes.test.ts | 两个具名 desktop hosts 的 typed delegate/目录 spy、procedure guard 与 preflight 拒绝顺序；RED suite @ c297872d: 4 tests（3 RED / 1 GREEN by design）in runtime-route-catalog-routes.test.ts |
+| S04 | agent-runtime-core | routes.json#S04 | routes.test.ts | entry input / executionSurface output，各入口同 batch leaf、原 source/provenance；RED suite @ c297872d: 1 tests（1 RED / 0 GREEN by design）in runtime-route-catalog-routes.test.ts |
+| S05 | agent-runtime-core | policy.json#S05 | routes.test.ts | Codex grant 原 enforcement、Claude/invalid/hard guard 拒绝；RED suite @ c297872d: 2 tests（1 RED / 1 GREEN by design）in runtime-route-catalog-routes.test.ts |
+| S06 | agent-runtime-core | refusals.json#S06 | query.test.ts | unknown/retired/missing/非法组合 route_not_found；overlap 仅 validation catalog_invalid；RED suite @ c297872d: 1 tests（1 RED / 0 GREEN by design）in runtime-route-catalog-query.test.ts |
+| S07 | agent-runtime-core | renderer.json#S07 | renderer.test.ts | 真实 claude.chat 对 Codex binding，rejectStaleRunPayload 原 message/hint、零 secret/factory；RED suite @ c297872d: 2 tests（0 RED / 2 GREEN by design）in runtime-route-catalog-renderer.test.ts |
+| S08 | agent-runtime-core | policy.json#S08 | routes.test.ts | 删除 preferredAdapterSource；fallbackReason:null 与 internal interactive 原拒绝；RED suite @ c297872d: 2 tests（2 RED / 0 GREEN by design）in runtime-route-catalog-routes.test.ts |
+| S09 | agent-runtime-core | completion.json#S09 | completion.test.ts | 显式 profile、一次 upstream、零 agent child；RED suite @ c297872d: 1 tests（1 RED / 0 GREEN by design）in runtime-route-catalog-completion.test.ts |
+| S10 | agent-runtime-capabilities | capabilities.json#S10 | capabilities.test.ts | 引用 canonical manifest，adapter evidence 不虚报；RED suite @ c297872d: 1 tests（1 RED / 0 GREEN by design）in runtime-route-catalog-capabilities.test.ts |
+| S11 | agent-runtime-capabilities | readiness.json#S11 | capabilities.test.ts | default/native/cache/no-probe/missing route-probe→unknown 原行为，advisory 不阻断合法 admission；RED suite @ c297872d: 1 tests（1 RED / 0 GREEN by design）in runtime-route-catalog-capabilities.test.ts |
+| S12 | agent-runtime-capabilities | capabilities.json#S12 | capabilities.test.ts | projection owner 决定可用性，无 adapter kind 不造 stub；RED suite @ c297872d: 1 tests（1 RED / 0 GREEN by design）in runtime-route-catalog-capabilities.test.ts |
+| S13 | agent-runtime-capabilities | extensions.json#S13 | capabilities.test.ts | 既有 schema、unknown optional 忽略、internal required 拒绝；RED suite @ c297872d: 1 tests（1 RED / 0 GREEN by design）in runtime-route-catalog-capabilities.test.ts |
+| S14 | headless-agent-jobs | headless.json#S14 | headless.test.ts | CLI/daemon/schedule/protocol/API batch 原 argv/stdin/cancel；RED suite @ c297872d: 2 tests（1 RED / 1 GREEN by design）in runtime-route-catalog-headless.test.ts |
+| S15 | headless-agent-jobs | headless.json#S15 | headless.test.ts | rich factory 可用也不暗选、unsupported 零 provider work；RED suite @ c297872d: 2 tests（1 RED / 1 GREEN by design）in runtime-route-catalog-headless.test.ts |
+| S16 | headless-agent-jobs | executor.json#S16 | executor.test.ts | 两连接 kind dispatch 保留，test catalog 只转发/claim 后查，原 slots/exclusions；RED suite @ c297872d: 1 tests（1 RED / 0 GREEN by design）in runtime-route-catalog-executor.test.ts |
+| S17 | headless-agent-jobs | executor.json#S17 | executor.test.ts | replay/scoped wrapper/stdio 仍使用原 submission/pump；RED suite @ c297872d: 3 tests（3 RED / 0 GREEN by design）in runtime-route-catalog-executor.test.ts |
+| S18 | desktop-agent-jobs | renderer.json#S18 | renderer.test.ts | helper read-state 单测+两站点映射/不缓存 guard；unknown/unavailable/error 零订阅；RED suite @ c297872d: 2 tests（2 RED / 0 GREEN by design）in runtime-route-catalog-renderer.test.ts |
+| S19 | desktop-agent-jobs | renderer.json#S19 | renderer.test.ts | existing-wire fixture；具名 helper/event-state guards、question/guard/finish atom transitions；RED suite @ c297872d: 3 tests（2 RED / 1 GREEN by design）in runtime-route-catalog-renderer.test.ts |
+| S20 | desktop-agent-jobs | desktop-actions.json#S20 | renderer.test.ts | exact-owner cancel、source retry 拒绝不变；RED suite @ c297872d: 1 tests（0 RED / 1 GREEN by design）in runtime-route-catalog-renderer.test.ts |
+| S21 | local-job-api | public-contract.json#S21 | public-contract.test.ts | create/submit/wait/retry/status/events/result/cancel 全 bytes/channels/exits；RED suite @ c297872d: 3 tests（3 RED / 0 GREEN by design）in runtime-route-catalog-public-contract.test.ts |
+| S22 | local-job-api | discovery.json#S22 | discovery.test.ts | 旧/新 schema/reader、unknown open values、exact keys、防 leaks、producer extensions；RED suite @ c297872d: 1 tests（1 RED / 0 GREEN by design）in runtime-route-catalog-discovery.test.ts |
+| S23 | local-job-api | readiness.json#S23 | discovery.test.ts | submitter 与 daemon env 如实分离，no-probe 无 native work；RED suite @ c297872d: 1 tests（1 RED / 0 GREEN by design）in runtime-route-catalog-discovery.test.ts |
+| S24 | local-job-api | errors.json#S24 | public-contract.test.ts | 原 surface error/exit/JSON-RPC/IPC，无新 public code；RED suite @ c297872d: 2 tests（2 RED / 0 GREEN by design）in runtime-route-catalog-public-contract.test.ts |
+| S25 | local-job-api | artifacts.json#S25 | public-contract.test.ts | Windows admission 与 incomplete publish 不被 route availability 绕过；RED suite @ c297872d: 1 tests（1 RED / 0 GREEN by design）in runtime-route-catalog-public-contract.test.ts |
+| S26 | architecture-ownership | architecture-fixtures.json#S26 | guards.test.ts | runtime 分支/map/alias/namespace/wrapper/lifecycle leaf value-import exact findings；RED suite @ c297872d: 1 tests（1 RED / 0 GREEN by design）in runtime-route-catalog-guards.test.ts |
+| S27 | architecture-ownership | architecture-fixtures.json#S27 | guards.test.ts | retired modules/exports/两分支 exact mutation；合法 rewires 由 S03/S11/S16 spies；RED suite @ c297872d: 1 tests（1 RED / 0 GREEN by design）in runtime-route-catalog-guards.test.ts |
+| S28 | architecture-ownership | architecture-fixtures.json#S28 | guards.test.ts | import direction、readiness cycle 拒绝；旧 ratchet 不放宽；RED suite @ c297872d: 1 tests（1 RED / 0 GREEN by design）in runtime-route-catalog-guards.test.ts |
+| S29 | architecture-ownership | architecture-fixtures.json#S29 | guards.test.ts | 合法相邻 owner/P34 typed delegate 注入正例通过，配对重复选择 mutation 失败；RED suite @ c297872d: 1 tests（1 RED / 0 GREEN by design）in runtime-route-catalog-guards.test.ts |
+| S30 | architecture-ownership | architecture-fixtures.json#S30 | guards.test.ts | catalog 不新增状态 owner、无 env/fs/config，production test-port override 被拒绝；RED suite @ c297872d: 2 tests（2 RED / 0 GREEN by design）in runtime-route-catalog-guards.test.ts |
+| S31 | agent-runtime-core | routes.json#S31 | routes.test.ts | Codex desktop 失败不 exec fallback/重复 terminal；RED suite @ c297872d: 1 tests（1 RED / 0 GREEN by design）in runtime-route-catalog-routes.test.ts |
+| S32 | agent-runtime-core | provider.json#S32 | provider.test.ts | explicit/model/default/native precedence、cleanup、secret-safe projection；RED suite @ c297872d: 2 tests（2 RED / 0 GREEN by design）in runtime-route-catalog-provider.test.ts |
+| S33 | agent-runtime-core | catalog.json#S33 | query.test.ts | 真实声明初始化、唯一 runtime、重复拒绝；RED suite @ c297872d: 1 tests（1 RED / 0 GREEN by design）in runtime-route-catalog-query.test.ts |
+| S34 | agent-runtime-core | capabilities.json#S34 | capabilities.test.ts | 基本 route 不要求可选 unsupported native 能力；RED suite @ c297872d: 1 tests（1 RED / 0 GREEN by design）in runtime-route-catalog-capabilities.test.ts |
+| S35 | agent-runtime-core | capabilities.json#S35 | capabilities.test.ts | 只读 metadata/manifest 明确能力状态与理由；RED suite @ c297872d: 1 tests（1 RED / 0 GREEN by design）in runtime-route-catalog-capabilities.test.ts |
+| S36 | agent-runtime-core | capabilities.json#S36 | capabilities.test.ts | 声明 supported 的实际 adapter capability port 执行；RED suite @ c297872d: 1 tests（1 RED / 0 GREEN by design）in runtime-route-catalog-capabilities.test.ts |
+| S37 | agent-runtime-core | capabilities.json#S37 | capabilities.test.ts | pre-execution 工具 allow/deny/rewrite 与诊断；RED suite @ c297872d: 1 tests（1 RED / 0 GREEN by design）in runtime-route-catalog-capabilities.test.ts |
+| S38 | agent-runtime-core | capabilities.json#S38 | capabilities.test.ts | 缺 pre-hook 不宣称 hard enforcement；RED suite @ c297872d: 1 tests（1 RED / 0 GREEN by design）in runtime-route-catalog-capabilities.test.ts |
+| S39 | agent-runtime-core | capabilities.json#S39 | capabilities.test.ts | Codex missing capability 从目录可测；RED suite @ c297872d: 1 tests（1 RED / 0 GREEN by design）in runtime-route-catalog-capabilities.test.ts |
+| S40 | agent-runtime-core | policy.json#S40 | routes.test.ts | grant enforcement evidence/原 scope-binding 或 refusal；RED suite @ c297872d: 1 tests（1 RED / 0 GREEN by design）in runtime-route-catalog-routes.test.ts |
+| S41 | agent-runtime-core | routes.json#S41 | routes.test.ts | Claude alias normalization/shared runner 原 events/result；RED suite @ c297872d: 1 tests（1 RED / 0 GREEN by design）in runtime-route-catalog-routes.test.ts |
+| S42 | agent-runtime-core | routes.json#S42 | routes.test.ts | Codex shared runner 原 events/result；RED suite @ c297872d: 1 tests（1 RED / 0 GREEN by design）in runtime-route-catalog-routes.test.ts |
+| S43 | agent-runtime-core | routes.json#S43 | routes.test.ts | headless/API default batch 与 source diagnostic；RED suite @ c297872d: 1 tests（1 RED / 0 GREEN by design）in runtime-route-catalog-routes.test.ts |
+| S44 | agent-runtime-core | policy.json#S44 | routes.test.ts | 无交互通道的 internal query 原拒绝；RED suite @ c297872d: 1 tests（1 RED / 0 GREEN by design）in runtime-route-catalog-routes.test.ts |
+| S45 | agent-runtime-core | policy.json#S45 | routes.test.ts | 保留 living fallback 标题；无隐式 downgrade，fallbackReason:null；RED suite @ c297872d: 1 tests（1 RED / 0 GREEN by design）in runtime-route-catalog-routes.test.ts |
+| S46 | agent-runtime-core | refusals.json#S46 | query.test.ts | public parser 原 unsupported runtime；internal route_not_found；RED suite @ c297872d: 1 tests（1 RED / 0 GREEN by design）in runtime-route-catalog-query.test.ts |
+| S47 | agent-runtime-core | capabilities.json#S47 | capabilities.test.ts | required capability union gate/原诊断；RED suite @ c297872d: 1 tests（1 RED / 0 GREEN by design）in runtime-route-catalog-capabilities.test.ts |
+| S48 | architecture-ownership | architecture-fixtures.json#S48 | guards.test.ts | 目录唯一 owner、route-local dispatch exact finding；RED suite @ c297872d: 1 tests（1 RED / 0 GREEN by design）in runtime-route-catalog-guards.test.ts |
+| S49 | architecture-ownership | routes.json#S49 | routes.test.ts | 真实 ledger/redaction 经 host 投影，不造第二 event owner；RED suite @ c297872d: 1 tests（1 RED / 0 GREEN by design）in runtime-route-catalog-routes.test.ts |
+| S50 | architecture-ownership | architecture-fixtures.json#S50 | guards.test.ts | 无 selector dual path/production test flag；RED suite @ c297872d: 1 tests（1 RED / 0 GREEN by design）in runtime-route-catalog-guards.test.ts |
+| S51 | codex-runtime-parity | capabilities.json#S51 | capabilities.test.ts | Codex manifest shared truth 从目录到 caller gate；RED suite @ c297872d: 1 tests（1 RED / 0 GREEN by design）in runtime-route-catalog-capabilities.test.ts |
+| S52 | codex-runtime-parity | capabilities.json#S52 | capabilities.test.ts | supported claim 必须真实 enforcing port 测试；RED suite @ c297872d: 1 tests（1 RED / 0 GREEN by design）in runtime-route-catalog-capabilities.test.ts |
+| S53 | desktop-agent-jobs | renderer.json#S53 | renderer.test.ts | 真实 chat-query/createSubChat 经 withRuntimeRouteTransportId；两 runtime 值等于 renderer projection，DB 无该列，failure-state 无字段，main literal mapping guard；RED suite @ c297872d: 4 tests（4 RED / 0 GREEN by design）in runtime-route-catalog-renderer.test.ts |
 
 S22 的支持文件为同根 `discovery-schema-before.json`（冻结基线真实 schema 与 hash）及
 `discovery-reader-before.ts`（注明规则来源的 neutral old reader）。它不是真实 consumer E2E。
 Q1 若改为 internal-only，批准前同步删除 public delta/S22 及关联任务；不能留下“可不测”的场景。
 Q2 若拒绝 binding read model 且没有可行替代，则 S18/S19/S53 与 desktop delta 必须先重写、重校验
 和重新审批；不得用 renderer lookup/async lifecycle 隐式扩大边界。
+
+### 3b. RED suite 逐测试登记（suite SHA c297872d；实现前状态）
+
+| Scenario | Test file | Test title | State @ suite SHA |
+| --- | --- | --- | --- |
+| S01 | `runtime-route-catalog-query.test.ts` | S01 Invalid declarations cannot become executable | RED |
+| S01 | `runtime-route-catalog-query.test.ts` | S01 Invalid declarations cannot become executable | RED |
+| S01 | `runtime-route-catalog-query.test.ts` | S01 Invalid declarations cannot become executable | RED |
+| S01 | `runtime-route-catalog-query.test.ts` | S01 Invalid declarations cannot become executable | RED |
+| S02 | `runtime-route-catalog-query.test.ts` | S02 Query and enumeration are deterministic and side-effect free | RED |
+| S03 | `runtime-route-catalog-routes.test.ts` | S03 Desktop routes select the existing native adapters | RED |
+| S03 | `runtime-route-catalog-routes.test.ts` | S03 Desktop routes select the existing native adapters | RED |
+| S03 | `runtime-route-catalog-routes.test.ts` | S03 Desktop routes select the existing native adapters | RED |
+| S03 | `runtime-route-catalog-routes.test.ts` | S03 Desktop routes select the existing native adapters | GREEN by design |
+| S04 | `runtime-route-catalog-routes.test.ts` | S04 Entry surfaces resolve to the same batch leaf | RED |
+| S05 | `runtime-route-catalog-routes.test.ts` | S05 Policy grant does not upgrade adapter enforcement | GREEN by design |
+| S05 | `runtime-route-catalog-routes.test.ts` | S05 Policy grant does not upgrade adapter enforcement | RED |
+| S06 | `runtime-route-catalog-query.test.ts` | S06 Missing routes and invalid catalogs have distinct oracles | RED |
+| S07 | `runtime-route-catalog-renderer.test.ts` | S07 A wrong desktop procedure cannot override the binding | GREEN by design |
+| S07 | `runtime-route-catalog-renderer.test.ts` | S07 A wrong desktop procedure cannot override the binding | GREEN by design |
+| S08 | `runtime-route-catalog-routes.test.ts` | S08 No dead preference option or implicit downgrade remains | RED |
+| S08 | `runtime-route-catalog-routes.test.ts` | S08 No dead preference option or implicit downgrade remains | RED |
+| S09 | `runtime-route-catalog-completion.test.ts` | S09 Completion routes are provider-only execution | RED |
+| S10 | `runtime-route-catalog-capabilities.test.ts` | S10 Capability truth is referenced rather than copied | RED |
+| S11 | `runtime-route-catalog-capabilities.test.ts` | S11 Readiness selects the existing probe without becoming admission | RED |
+| S12 | `runtime-route-catalog-capabilities.test.ts` | S12 Concrete projection availability is not guessed from the route | RED |
+| S13 | `runtime-route-catalog-capabilities.test.ts` | S13 Optional and required extensions are distinguished | RED |
+| S14 | `runtime-route-catalog-headless.test.ts` | S14 Existing batch behavior is preserved | GREEN by design |
+| S14 | `runtime-route-catalog-headless.test.ts` | S14 Existing batch behavior is preserved | RED |
+| S15 | `runtime-route-catalog-headless.test.ts` | S15 Rich adapter is not silently selected | GREEN by design |
+| S15 | `runtime-route-catalog-headless.test.ts` | S15 Rich adapter is not silently selected | RED |
+| S16 | `runtime-route-catalog-executor.test.ts` | S16 Concurrent pumps still execute an admitted Run once | RED |
+| S17 | `runtime-route-catalog-executor.test.ts` | S17 Submission replay and scoped protocol execution reuse existing owners | RED |
+| S17 | `runtime-route-catalog-executor.test.ts` | S17 Submission replay and scoped protocol execution reuse existing owners | RED |
+| S17 | `runtime-route-catalog-executor.test.ts` | S17 Submission replay and scoped protocol execution reuse existing owners | RED |
+| S18 | `runtime-route-catalog-renderer.test.ts` | S18 Both renderer entry points consume the binding descriptor | RED |
+| S18 | `runtime-route-catalog-renderer.test.ts` | S18 Both renderer entry points consume the binding descriptor | RED |
+| S19 | `runtime-route-catalog-renderer.test.ts` | S19 A fixture Runtime reuses an existing wire family without core edits | RED |
+| S19 | `runtime-route-catalog-renderer.test.ts` | S19 A fixture Runtime reuses an existing wire family without core edits | GREEN by design |
+| S19 | `runtime-route-catalog-renderer.test.ts` | S19 A fixture Runtime reuses an existing wire family without core edits | RED |
+| S20 | `runtime-route-catalog-renderer.test.ts` | S20 Job actions preserve exact desktop ownership | GREEN by design |
+| S21 | `runtime-route-catalog-public-contract.test.ts` | S21 Existing operations match frozen complete contract oracles | RED |
+| S21 | `runtime-route-catalog-public-contract.test.ts` | S21 Existing operations match frozen complete contract oracles | RED |
+| S21 | `runtime-route-catalog-public-contract.test.ts` | S21 Existing operations match frozen complete contract oracles | RED |
+| S22 | `runtime-route-catalog-discovery.test.ts` | S22 Old discovery readers safely ignore optional summaries | RED |
+| S23 | `runtime-route-catalog-discovery.test.ts` | S23 Readiness does not claim a different executor environment | RED |
+| S24 | `runtime-route-catalog-public-contract.test.ts` | S24 Refusals retain surface-specific errors and exit codes | RED |
+| S24 | `runtime-route-catalog-public-contract.test.ts` | S24 Refusals retain surface-specific errors and exit codes | RED |
+| S25 | `runtime-route-catalog-public-contract.test.ts` | S25 Artifact and ledger residuals are not bypassed by route availability | RED |
+| S26 | `runtime-route-catalog-guards.test.ts` | S26 Duplicate routing is detected through direct and aliased forms | RED |
+| S27 | `runtime-route-catalog-guards.test.ts` | S27 All retired selector symbols and transport branches are absent | RED |
+| S28 | `runtime-route-catalog-guards.test.ts` | S28 Catalog imports preserve runtime core direction | RED |
+| S29 | `runtime-route-catalog-guards.test.ts` | S29 Adjacent legitimate owners are not banned as routing duplicates | RED |
+| S30 | `runtime-route-catalog-guards.test.ts` | S30 Catalog composition cannot create another business core | RED |
+| S30 | `runtime-route-catalog-guards.test.ts` | S30 Catalog composition cannot create another business core | RED |
+| S31 | `runtime-route-catalog-routes.test.ts` | S31 Codex desktop failure does not activate a batch fallback | RED |
+| S32 | `runtime-route-catalog-provider.test.ts` | S32 Provider precedence and secret handling stay with binding owners | RED |
+| S32 | `runtime-route-catalog-provider.test.ts` | S32 Provider precedence and secret handling stay with binding owners | RED |
+| S33 | `runtime-route-catalog-query.test.ts` | S33 Runtime is registered | RED |
+| S34 | `runtime-route-catalog-capabilities.test.ts` | S34 Runtime-specific behavior is not forced into the contract | RED |
+| S35 | `runtime-route-catalog-capabilities.test.ts` | S35 Caller requests runtime capabilities | RED |
+| S36 | `runtime-route-catalog-capabilities.test.ts` | S36 Runtime declares support | RED |
+| S37 | `runtime-route-catalog-capabilities.test.ts` | S37 Runtime supports hard tool guard | RED |
+| S38 | `runtime-route-catalog-capabilities.test.ts` | S38 Runtime lacks pre-tool interception | RED |
+| S39 | `runtime-route-catalog-capabilities.test.ts` | S39 Codex capability is missing | RED |
+| S40 | `runtime-route-catalog-routes.test.ts` | S40 Policy grant requires adapter enforcement | RED |
+| S41 | `runtime-route-catalog-routes.test.ts` | S41 Run Claude through shared runner | RED |
+| S42 | `runtime-route-catalog-routes.test.ts` | S42 Run Codex through shared runner | RED |
+| S43 | `runtime-route-catalog-routes.test.ts` | S43 Default headless batch runtime is selected | RED |
+| S44 | `runtime-route-catalog-routes.test.ts` | S44 Interactive runtime is requested without interaction | RED |
+| S45 | `runtime-route-catalog-routes.test.ts` | S45 Adapter selection falls back | RED |
+| S46 | `runtime-route-catalog-query.test.ts` | S46 Unsupported runtime requested | RED |
+| S47 | `runtime-route-catalog-capabilities.test.ts` | S47 Unsupported capability requested | RED |
+| S48 | `runtime-route-catalog-guards.test.ts` | S48 Adapter selection changes | RED |
+| S49 | `runtime-route-catalog-routes.test.ts` | S49 Runtime events cross surfaces | RED |
+| S50 | `runtime-route-catalog-guards.test.ts` | S50 Temporary dual execution path is required | RED |
+| S51 | `runtime-route-catalog-capabilities.test.ts` | S51 Headless jobs depend on capability truth | RED |
+| S52 | `runtime-route-catalog-capabilities.test.ts` | S52 Parity claim is attempted without implementation | RED |
+| S53 | `runtime-route-catalog-renderer.test.ts` | S53 Main stamps transport IDs only on the binding read model | RED |
+| S53 | `runtime-route-catalog-renderer.test.ts` | S53 Main stamps transport IDs only on the binding read model | RED |
+| S53 | `runtime-route-catalog-renderer.test.ts` | S53 Main stamps transport IDs only on the binding read model | RED |
+| S53 | `runtime-route-catalog-renderer.test.ts` | S53 Main stamps transport IDs only on the binding read model | RED |
+
+合计 77 条：69 RED / 8 GREEN by design；覆盖 53 个 scenario；未映射 0。
 
 ## 4. 实施与手工 smoke 回执骨架
 

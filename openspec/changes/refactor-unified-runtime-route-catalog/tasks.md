@@ -56,14 +56,14 @@ Status: **APPROVED 2026-10-02 (coordinator-acted under Owner mandate, bound to a
 
 ## 6. Conformance fixtures（测试先行）
 
-- [ ] 6.1 独立作者仅从批准 delta/design 起草 S01–S53 的 bun 测试，产品实现前提交 RED suite；同一 RED-suite commit 在 scripts/check-retired-runtime-residue.mjs ALLOWED 中加入精确路径 tests/fixtures/runtime-route-catalog/refusals.json，reason=S06/S46 retired-ID refusal fixtures（registry-test entry 此时保留，待 §4.6 实施重命名时原子替换）；保真场景可为 baseline pass，但目录新行为/删除守卫必须有可解释的 failure-before，不用无条件 throw 或只检查不存在文件制造 RED。
+- [x] 6.1（RED suite c297872d，4 独立 Opus 作者 + Fable 审计；refusals.json ALLOWED entry 已随同一提交加入）独立作者仅从批准 delta/design 起草 S01–S53 的 bun 测试，产品实现前提交 RED suite；同一 RED-suite commit 在 scripts/check-retired-runtime-residue.mjs ALLOWED 中加入精确路径 tests/fixtures/runtime-route-catalog/refusals.json，reason=S06/S46 retired-ID refusal fixtures（registry-test entry 此时保留，待 §4.6 实施重命名时原子替换）；保真场景可为 baseline pass，但目录新行为/删除守卫必须有可解释的 failure-before，不用无条件 throw 或只检查不存在文件制造 RED。
 - [ ] 6.2 目录/匹配 S01–S09：非法表、排列不变、精确 desktop/headless/profile/kind、未知/初始化重叠拒绝、wrong-procedure binding、无 dead preference/downgrade、completion 无 child。
 - [ ] 6.3 能力/readiness/extensions S10–S13：canonical reference、adapter evidence、cache/no-probe、bad default、projection availability 与 unknown optional/required 扩展。
 - [ ] 6.4 headless/pump S14–S17：完整保留 batch argv/stdin/cancel，rich 不暗选；两 DB 连接竞争、source exclusions、scoped dispatch、replay 不二次执行。
 - [ ] 6.5 renderer/actions S18–S20/S53：main chat-query/createSubChat helper stamping（两 runtime 值、失败省略字段、无持久列），两个创建入口、unknown transport、复用 existing-wire-family 的 stub，具名 helper/event-state guard 与 atom transitions、exact owner cancel/retry 拒绝。
 - [ ] 6.6 public S21–S25：真实 handler golden、old/new schema/reader、executor-env、errorCode/exit/channel、artifact/refusal 与 partial publish 不绕过。
 - [ ] 6.7 guards S26–S30、native/provider S31–S32：正负 mutation findings、所有删除点、import/cycle、相邻 owner 白名单范围、fallback 禁止与 secret-safe projection。
-- [ ] 6.8 冻结 suite SHA、fixture hashes、基线运行/RED 原因；实现者不得自行改 oracle 使测试通过，契约疑义由统筹裁定并另记 test-adjudication SHA。
+- [x] 6.8（suite SHA c297872d；fixture sha256 见 red-receipt §10；基线 77 = 69 RED / 8 GREEN；裁定见 red-receipt §9）冻结 suite SHA、fixture hashes、基线运行/RED 原因；实现者不得自行改 oracle 使测试通过，契约疑义由统筹裁定并另记 test-adjudication SHA。
 - [ ] 6.9 S33–S52 覆盖完整 MODIFIED living scenarios，入口与 fixtures 同 verification；Capability Honesty 为源码真实标题，不能创建不存在的 Runtime Capability Truth。
 
 ## 7. Fixture 目录约定与场景绑定
@@ -96,8 +96,8 @@ spec GIVEN 的 `file.json#Sxx` 是准确键，不是随意 prose anchor。当前
 | discovery-schema-before.json | S22 supporting | 从 `6192b13f:docs/local-job-api-v1.schema.json` 冻结、记录 SHA-256，不手写宽松旧 schema |
 | discovery-reader-before.ts | S22 supporting | 从 6192b13f 版已发布指南的 unknown-field/common-core 规则冻结 neutral old reader，记录来源/版本/SHA-256；不是冒充真实 Career Kit/Amadeus adapter |
 
-- [ ] 7.1 独立作者按上表创建 fixtures，核对所有 GIVEN 路径/键实际可加载；CI/测试报告登记缺失和重复 key。
-- [ ] 7.2 测试文件固定前缀 `tests/runtime-route-catalog-*.test.ts`；在 verification 逐 Sxx 填具体 test file/name、RED/GREEN SHA、断言及限制，不以一个 omnibus test 掩盖未覆盖子项。
+- [x] 7.1（19 个扁平 fixture 文件，53 个 GIVEN 键全部可加载；审计未发现缺失/重复 key）独立作者按上表创建 fixtures，核对所有 GIVEN 路径/键实际可加载；CI/测试报告登记缺失和重复 key。
+- [x] 7.2（11 个 tests/runtime-route-catalog-*.test.ts；逐 Sxx 登记见 verification §3/§3b）测试文件固定前缀 `tests/runtime-route-catalog-*.test.ts`；在 verification 逐 Sxx 填具体 test file/name、RED/GREEN SHA、断言及限制，不以一个 omnibus test 掩盖未覆盖子项。
 - [ ] 7.3 使用隔离临时 DB/profile、fake clock/claim latches/recording ports，不读真实 secret、不依赖用户 HOME；fixtures 不调用真实计费 Runtime。真实 smoke 另列 §8。
 - [ ] 7.4 Stub third Runtime 仅进入 test catalog/dependency ports，production ID/公共 enum 不扩；S18/S19 先用结构 guard 和 reducer/atom observable assertions，不能以 RED-time 或同进程前后 hash 充验收。hash 仅在实现完成后作为 helper/event-state 后续回归锁登记，不能限制本次必要改写。
 

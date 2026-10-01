@@ -8,7 +8,7 @@ Updated: 2026-10-02 (Pacific/Auckland); previous: 2026-10-01 (Pacific/Auckland)
 
 | Active change | Status | Scope / next gate |
 | --- | --- | --- |
-| [refactor-unified-runtime-route-catalog](changes/refactor-unified-runtime-route-catalog/) | APPROVED 2026-10-02（统筹代行，bound a9b74594，Owner 可撤回）— next gate: red test authoring (test-first) | Phase 3 第三份：T1–T20 文档闭环与闭合检查 N-01–N-05 精度修补；S01–S53、OD-1–OD-5 已采纳（Owner 可改）；非 Owner 签署，仅文档登记；产品实现前先冻结独立 RED suite。 |
+| [refactor-unified-runtime-route-catalog](changes/refactor-unified-runtime-route-catalog/) | APPROVED 2026-10-02（统筹代行，bound a9b74594，Owner 可撤回）— RED suite frozen c297872d（77 = 69 RED / 8 GREEN）— next gate: implementation Phase I (Opus 5.5) | Phase 3 第三份：T1–T20 文档闭环与闭合检查 N-01–N-05 精度修补；S01–S53、OD-1–OD-5 已采纳（Owner 可改）；非 Owner 签署，仅文档登记；产品实现前先冻结独立 RED suite。 |
 
 Parked proposals are indexed in [`deferred/README.md`](deferred/README.md) and
 do not appear in the active list.
