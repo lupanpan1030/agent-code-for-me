@@ -23,7 +23,7 @@ Desktop/packaged/真实 Runtime smoke 在本主机 host-blocked（§7），不�
 | APPROVED / Consumer Impact §10（统筹代行，非 Owner 签署） | APPROVED 2026-10-02（统筹代行；Owner 2026-10-02 自我迭代授权；绑定 a9b74594） |
 | Q1–Q5 / OD-1–OD-5 | 已采纳（统筹代行，Owner 可改）；缩窄 L2 / 受约束 optional routes / binding read model / P23→B / 验收代行，见 design Decisions adopted 2026-10-02；非 Owner 签署，Owner 可撤回 |
 | Approved spec SHA | `a9b74594`（完整 SHA `a9b745949b02e2b7c1bbd883c224c14b324d3dbc`） |
-| Independent RED author / suite SHA / adjudication SHA | 4 independent Opus authors (catalog-core / capabilities / surfaces / public-guards) + Fable audit (Workflow wf_32724556) / `c297872d` / `c297872d`（P1-1..P1-3 / P2-1..P2-4，修正与裁定随同一提交，见 red-receipt §9–§10）+ `24801faa`（S03 oracle，red-receipt §9 P1-4） |
+| Independent RED author / suite SHA / adjudication SHA | 4 independent Opus authors (catalog-core / capabilities / surfaces / public-guards) + Fable audit (Workflow wf_32724556) / `c297872d` / `c297872d`（P1-1..P1-3 / P2-1..P2-4，修正与裁定随同一提交，见 red-receipt §9–§10）+ `24801faa`（S03 oracle，red-receipt §9 P1-4）。**不可变零差异参照 = `24801faa`**（P1-4 裁定后的 RED 套件）；`76921ae8` 是裁定前的 RED 登记提交，不再作零差异参照（其 `routes.test.ts` 与 red-receipt 两处在 `24801faa` 经裁定改动） |
 | Implementation source SHA / test fixture hashes | `50a0577f86229b66a064f2509251e06535d28d3e`（Phase I `9f06b6f7` → Phase II `258e4081` → test adjudication `24801faa` → T1 `a52d6a93` → T2 `50a0577f`；T2 只改 `scripts/check-architecture-guards.mjs` 与 `tests/runtime-route-guard-production-probes.test.ts`，`src` 对 `a52d6a93` 0 diff）/ red-receipt §10 的 35 个 sha256 在候选上 `sha256sum -c` 全 OK |
 | Frozen implementation candidate | T2 重新冻结提交（subject `docs(openspec): re-freeze the unified runtime route catalog implementation candidate after T2`，即包含本记录的提交）；提交无法引用自身 SHA，准确 SHA 见 T2 handoff（`handoff/dispatch-logs/impl-route-catalog-t2.report.md`）。被取代：Phase III 候选 `e35a286b`（source `a52d6a93`） |
 | Codex IMPLEMENTATION_VERIFIED SHA / verdict / receipt | 须绑定冻结候选 / NOT ISSUED / — |
@@ -40,7 +40,7 @@ Desktop/packaged/真实 Runtime smoke 在本主机 host-blocked（§7），不�
 
 | 阶段 | 提交 | 独立评审 |
 | --- | --- | --- |
-| RED suite | `c297872d`（suite + 统筹 P1-1..P1-3 / P2-1..P2-4 裁定）、`76921ae8`（登记） | red-receipt §9–§10 |
+| RED suite | `c297872d`（suite + 统筹 P1-1..P1-3 / P2-1..P2-4 裁定）、`76921ae8`（登记；裁定前 RED 提交，不作零差异参照） | red-receipt §9–§10 |
 | Phase I | `4b6218a2`、`1bceedf7`、`4edfe4f7`、`ff3556a7`、`832dab68`、`9f06b6f7` | `route-catalog-phase1-review-design-probes-9f06b6f7….md`：REVIEW_APPROVED（Phase I 范围；1 P2、3 P3）；`…-tests-security-9f06b6f7….md`：REVIEW_APPROVED（4 P3） |
 | Phase II | `d1276de7`、`0066e018`、`959433b9`、`2c15a1a0`、`d6a6c23f`、`f5e64523`、`543f9e93`、`646c7e5a`、`8227e73a`、`347209b5`、`fc5e9762`、`06a63b9c`、`c6d73891`、`22fa8dae`、`a24124d1`、`258e4081` | `route-catalog-phase2-review-design-probes-258e4081….md`：CHANGES_REQUESTED（P1-1 S03 oracle、P2-1、3 P3）；`…-tests-security-258e4081….md`：CHANGES_REQUESTED（P1 S03 oracle、2 P3） |
 | Test adjudication | `24801faa`（S03 只计绑定后 factory 查找；red-receipt §9 P1-4，§10 routes.test.ts 重新 hash） | 统筹裁定（tasks 6.8） |
@@ -87,7 +87,7 @@ package.json lint-baseline.json` 为空。`a52d6a93..50a0577f` 在 `src tests sc
 | Strict OpenSpec | `bun run spec:validate`；`openspec validate refactor-unified-runtime-route-catalog --strict --no-interactive` | `Totals: 54 passed, 0 failed (54 items)`；`Change 'refactor-unified-runtime-route-catalog' is valid`（每个 Phase III 与 T2 文档提交前均运行） |
 | Lint ratchet | `git diff 6192b13f <候选> -- lint-baseline.json` | 只删/降：`agent-runtime/run-contract.ts`、`claude/agent-sdk-desktop-run-runtime.ts`、`headless/adapter-selector.ts`、`headless/agent-runtime.ts`、`tests/agent-runtime-preflight.test.ts`、`tests/agent-runtime-registry.test.ts`、`tests/headless-adapter-selector.test.ts` 删除，`tests/desktop-runtime-adapter-factory.test.ts` 3→2；对 `24801faa` 与 `e35a286b` 0 diff |
 | Architecture baselines | `git diff 6192b13f <候选> -- scripts/architecture-baselines.json` | 0 diff（含 `#reachThroughWrappers`） |
-| Immutable set | `git diff --stat 24801faa <候选> -- <11 red tests> <4 kits> tests/fixtures/runtime-route-catalog openspec/changes/refactor-unified-runtime-route-catalog/red-receipt.md` | 空；red-receipt §10 35 个 sha256 `sha256sum -c` 全 OK |
+| Immutable set | `git diff --stat 24801faa <候选> -- <11 red tests> <4 kits> tests/fixtures/runtime-route-catalog openspec/changes/refactor-unified-runtime-route-catalog/red-receipt.md` | 空；red-receipt §10 35 个 sha256 `sha256sum -c` 全 OK。零差异参照是 `24801faa`（P1-4 裁定后），不是裁定前的 RED 提交 `76921ae8`：对 `76921ae8` 有且仅有 `routes.test.ts`（:284、:414）与 red-receipt（§9 P1-4、§10 hash）两处裁定差异 |
 | No migration | `git diff --stat 6192b13f <候选> -- drizzle src/main/lib/db` | 空 |
 | Whitespace | `git diff --check 6192b13f <候选>`；每个 Phase III 与 T2 提交前 `git diff --check` | clean |
 
