@@ -5,6 +5,7 @@ import {
   existsSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   statSync,
   writeFileSync,
 } from "node:fs"
@@ -6186,76 +6187,109 @@ function assertRuntimeRouteCatalogGuards() {
   )
 }
 
-if (updateArchitectureBaselines) {
-  updateArchitectureBaselineRegistry()
-} else {
-  const architectureBaselines = parseArchitectureBaselines()
-  const committedArchitectureBaselines = [
-    readCommittedArchitectureBaselines("HEAD", "committed HEAD"),
-  ]
-  const previousBaselineRevision = previousArchitectureBaselineRevision()
-  if (previousBaselineRevision) {
-    committedArchitectureBaselines.push(
-      readCommittedArchitectureBaselines(
-        previousBaselineRevision,
-        "previous committed architecture baseline",
-      ),
-    )
-  }
-  const diffBaseSha = process.env.DIFF_BASE_SHA?.trim()
-  if (diffBaseSha) {
-    committedArchitectureBaselines.push(
-      readCommittedArchitectureBaselines(diffBaseSha, "configured diff base", {
-        allowMissingFile: true,
-      }),
-    )
-  }
-  assertOwnershipDocs()
-  assertPackageScripts()
-  assertCiRunsArchitectureCheck()
-  assertRuntimeCapabilitySingleOwner()
-  assertEngineIdSingleOwner()
-  assertGuardDecisionSingleOwner()
-  assertRuntimeEventSinglePath()
-  assertRunEventLedgerGuards()
-  assertLocalJobApiAsyncGuards()
-  assertRuntimeRouteCatalogGuards()
-  assertRuntimeEventStateOwner()
-  assertChatMessageModelOwner()
-  assertChatSessionBindingSingleOwner()
-  assertChatMaintenanceFenceSingleOwner()
-  assertNoUnresolvedDangerousRouterInput()
-  assertArchitectureRatchetSelfTests()
-  if (architectureBaselines) {
-    const comparedBaselineContents = new Set()
-    for (const committed of committedArchitectureBaselines) {
-      if (!committed?.baseline) continue
-      const contentKey = JSON.stringify(committed.baseline)
-      if (comparedBaselineContents.has(contentKey)) continue
-      comparedBaselineContents.add(contentKey)
-      assertArchitectureBaselineOnlyShrinks(
-        architectureBaselines,
-        committed.baseline,
-        `Working architecture baseline against ${committed.label} ${committed.commitSha}`,
+/**
+ * Runs every architecture guard and exits non-zero on a failure. The module
+ * only runs it when it is the invoked entry script, so unit probes can import
+ * the pure rule collectors below without running the repository checks.
+ */
+function runArchitectureGuardCli() {
+  if (updateArchitectureBaselines) {
+    updateArchitectureBaselineRegistry()
+  } else {
+    const architectureBaselines = parseArchitectureBaselines()
+    const committedArchitectureBaselines = [
+      readCommittedArchitectureBaselines("HEAD", "committed HEAD"),
+    ]
+    const previousBaselineRevision = previousArchitectureBaselineRevision()
+    if (previousBaselineRevision) {
+      committedArchitectureBaselines.push(
+        readCommittedArchitectureBaselines(
+          previousBaselineRevision,
+          "previous committed architecture baseline",
+        ),
       )
     }
+    const diffBaseSha = process.env.DIFF_BASE_SHA?.trim()
+    if (diffBaseSha) {
+      committedArchitectureBaselines.push(
+        readCommittedArchitectureBaselines(
+          diffBaseSha,
+          "configured diff base",
+          {
+            allowMissingFile: true,
+          },
+        ),
+      )
+    }
+    assertOwnershipDocs()
+    assertPackageScripts()
+    assertCiRunsArchitectureCheck()
+    assertRuntimeCapabilitySingleOwner()
+    assertEngineIdSingleOwner()
+    assertGuardDecisionSingleOwner()
+    assertRuntimeEventSinglePath()
+    assertRunEventLedgerGuards()
+    assertLocalJobApiAsyncGuards()
+    assertRuntimeRouteCatalogGuards()
+    assertRuntimeEventStateOwner()
+    assertChatMessageModelOwner()
+    assertChatSessionBindingSingleOwner()
+    assertChatMaintenanceFenceSingleOwner()
+    assertNoUnresolvedDangerousRouterInput()
+    assertArchitectureRatchetSelfTests()
+    if (architectureBaselines) {
+      const comparedBaselineContents = new Set()
+      for (const committed of committedArchitectureBaselines) {
+        if (!committed?.baseline) continue
+        const contentKey = JSON.stringify(committed.baseline)
+        if (comparedBaselineContents.has(contentKey)) continue
+        comparedBaselineContents.add(contentKey)
+        assertArchitectureBaselineOnlyShrinks(
+          architectureBaselines,
+          committed.baseline,
+          `Working architecture baseline against ${committed.label} ${committed.commitSha}`,
+        )
+      }
+    }
+    if (architectureBaselines) {
+      assertRouteSurfaceRatchets(architectureBaselines)
+      assertRuntimeCoreImportBoundary(architectureBaselines)
+      assertReverseDirectionImports(architectureBaselines)
+      assertReachThroughWrapperRegistry(architectureBaselines)
+    }
+    assertNoDeadSettingsState()
+    assertCanonicalVocabularyI18n()
   }
-  if (architectureBaselines) {
-    assertRouteSurfaceRatchets(architectureBaselines)
-    assertRuntimeCoreImportBoundary(architectureBaselines)
-    assertReverseDirectionImports(architectureBaselines)
-    assertReachThroughWrapperRegistry(architectureBaselines)
+
+  if (failures.length > 0) {
+    console.error("Architecture guard failed:")
+    for (const failure of failures) {
+      console.error(`- ${failure}`)
+    }
+    process.exit(1)
   }
-  assertNoDeadSettingsState()
-  assertCanonicalVocabularyI18n()
+
+  console.log("Architecture guard passed.")
 }
 
-if (failures.length > 0) {
-  console.error("Architecture guard failed:")
-  for (const failure of failures) {
-    console.error(`- ${failure}`)
-  }
-  process.exit(1)
+/** The pure Runtime Route Catalog rule collectors (implementer unit probes). */
+export {
+  collectRuntimeRouteCatalogFindings,
+  RUNTIME_ROUTE_CATALOG_SECTION,
+  RUNTIME_ROUTE_RULE,
 }
 
-console.log("Architecture guard passed.")
+function isArchitectureGuardEntry() {
+  const entry = process.argv[1]
+  if (!entry) return false
+  try {
+    return (
+      realpathSync(path.resolve(entry)) ===
+      realpathSync(fileURLToPath(import.meta.url))
+    )
+  } catch {
+    return false
+  }
+}
+
+if (isArchitectureGuardEntry()) runArchitectureGuardCli()
