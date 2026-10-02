@@ -1,6 +1,6 @@
 # Change: Refactor Unified Runtime Route Catalog
 
-Status: **APPROVED 2026-10-02 (coordinator-acted under Owner mandate, bound to a9b74594; Owner may revoke) — awaiting red suite (test-first)**
+Status: **APPROVED 2026-10-02 (coordinator-acted under Owner mandate, bound to a9b74594; Owner may revoke) — IMPLEMENTATION CANDIDATE frozen (source a52d6a93; candidate SHA in the Phase III handoff); awaiting same-SHA Codex IMPLEMENTATION_VERIFIED + fresh Claude REVIEW_APPROVED**
 
 ## Why
 
@@ -72,7 +72,12 @@ Decision owner: Repository Owner (mandate 2026-10-02) — recorded by coordinato
 Implementation blocked until: 独立作者 RED suite 冻结先于产品实现；第 10 节统筹代行 APPROVED 已填，Q1–Q5 默认（OD-1–OD-5）已采纳，Owner 可改。
 ```
 
-仅登记统筹代行 APPROVED；无 IMPLEMENTATION_VERIFIED、REVIEW_APPROVED 或 ACCEPTED 声明。
+Phase III 证据指针（不改变任何分类）：独立 RED suite `c297872d`（77 = 69 RED / 8 GREEN by design），
+统筹 test-adjudication `24801faa`（S03 oracle，red-receipt §9 P1-4）；实施 source
+`a52d6a93f8a2c809fb5dc16e16c98b7b9cedc6ce`（Phase I `9f06b6f7`、Phase II `258e4081`、T1 `a52d6a93`）；
+Phase III 文档提交与冻结候选见 [verification §1/§2](verification.md#1-source-与治理绑定)，冻结候选 SHA 记于 Phase III handoff。
+候选门禁：十一份 red 文件 77/77、`bun run check:full` exit 0、strict 54/54。
+仍无 IMPLEMENTATION_VERIFIED、最终 REVIEW_APPROVED 或 ACCEPTED 声明；统筹代行 APPROVED 不变。
 
 ### 2. 一句话变化
 
@@ -221,17 +226,17 @@ PR mutation 或外部通知。现有 TICKET-127–131 残余不能通过代码�
 
 ### 9. 验证证据
 
-以下为实施验收，全部未执行；[verification](verification.md) 登记 S01–S53，不以起草校验代替：
+以下为实施验收；Phase III 按冻结候选回填证据指针（详见 [verification](verification.md) §2–§8），未满足项保持未勾：
 
-- [ ] Optional discovery machine-readable schema/types、指南与示例同 change 更新；原 schema snapshot 仍接受追加字段。
-- [ ] Common-core、既有请求完整 stdout/stderr/exit、默认 adapter、policy/provider、async lifecycle conformance。
-- [ ] Facade tests：N/A（无新 facade）；现有 v1 serializers 的行为保真必须验证。
-- [ ] Unknown route、invalid catalog、required extension/capability fail-closed；无自动 fallback。
-- [ ] Neutral fixtures 不依赖真实凭据/binaries；独立作者基线 RED/保真项 baseline receipt 绑定 SHA。
-- [ ] 目录单 owner、旧符号删除、alias/wrapper/import 正负例守卫。
-- [ ] `bun run check:full` 与 fresh-context Claude Code review 绑定同一准确 source SHA。
-- [ ] Desktop/CLI/stdio/daemon smoke；macOS/Windows packaged receipts 各自列明，host-blocked 不记通过。
-- [ ] Consumer adapter/E2E unknown 的状态和残余逐项记录。
+- [x] Optional discovery machine-readable schema/types、指南与示例同 change 更新；原 schema snapshot 仍接受追加字段。（DTO `4b6218a2`、schema `832dab68`、指南 `0a86fd0a`；S22 green；Phase III 发射 bytes 对新/旧 schema 校验，verification §2）
+- [x] Common-core、既有请求完整 stdout/stderr/exit、默认 adapter、policy/provider、async lifecycle conformance。（S21/S24/S25 冻结 golden、S14–S17、S32 green @ a52d6a93；无 golden 重录）
+- [x] Facade tests：N/A（无新 facade）；现有 v1 serializers 的行为保真必须验证。（S21 全 bytes green）
+- [x] Unknown route、invalid catalog、required extension/capability fail-closed；无自动 fallback。（S01/S06/S08/S13/S31/S45/S46/S47 green）
+- [x] Neutral fixtures 不依赖真实凭据/binaries；独立作者基线 RED/保真项 baseline receipt 绑定 SHA。（red-receipt `c297872d`、§10 hashes 35/35 OK @ a52d6a93）
+- [x] 目录单 owner、旧符号删除、alias/wrapper/import 正负例守卫。（S26–S30/S48/S50 green；canonical guard 77/77；T1 production probes；两个开放 P3 绕过形式见 verification §5）
+- [ ] `bun run check:full` 与 fresh-context Claude Code review 绑定同一准确 source SHA。（check:full exit 0 已在候选上记录，verification §2；冻结候选的 fresh review 与 Codex verdict 待签发）
+- [ ] Desktop/CLI/stdio/daemon smoke；macOS/Windows packaged receipts 各自列明，host-blocked 不记通过。（本主机全部 host-blocked / not claimed，原因与复跑命令见 verification §7）
+- [x] Consumer adapter/E2E unknown 的状态和残余逐项记录。（verification §8：Career Kit / Amadeus unknown，TICKET-127–131 照旧）
 
 ### 10. Owner 决定
 
