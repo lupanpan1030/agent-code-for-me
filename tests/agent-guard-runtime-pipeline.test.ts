@@ -258,6 +258,10 @@ describe("agent guard runtime pipeline", () => {
       "src/main/lib/codex/runtime-status.ts",
       "utf8",
     )
+    const codexNativeRuntimeStatus = readFileSync(
+      "src/main/lib/codex/native-runtime-status.ts",
+      "utf8",
+    )
     const codexAppServerTransport = readFileSync(
       "src/renderer/features/agents/lib/codex-app-server-chat-transport.ts",
       "utf8",
@@ -275,10 +279,13 @@ describe("agent guard runtime pipeline", () => {
     expect(codexDesktopRunPreflight).toContain(
       "const runtimeStatus = await dependencies.getRuntimeStatus()",
     )
-    expect(codexRuntimeStatus).toContain(
+    expect(codexNativeRuntimeStatus).toContain(
       "const integration = await getCodexIntegrationStatus()",
     )
-    expect(codexRuntimeStatus).toContain('id: "login"')
+    expect(codexNativeRuntimeStatus).toContain('id: "login"')
+    expect(codexRuntimeStatus).toContain(
+      "await probeCodexLoginComponent(loginCli)",
+    )
     expect(codexRuntimeStatus).toContain('id: "adapter-source"')
     expect(codexRuntimeStatus).toContain(
       "CODEX_APP_SERVER_DESKTOP_ADAPTER_METADATA",
