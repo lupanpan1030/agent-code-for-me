@@ -8,7 +8,7 @@ Updated: 2026-10-02 (Pacific/Auckland); previous: 2026-10-01 (Pacific/Auckland)
 
 | Active change | Status | Scope / next gate |
 | --- | --- | --- |
-| [refactor-unified-runtime-route-catalog](changes/refactor-unified-runtime-route-catalog/) | IMPLEMENTATION CANDIDATE — frozen（SHA in handoff `impl-route-catalog-t2.report.md`；source 50a0577f；T2 re-freeze supersedes e35a286b）— APPROVED 2026-10-02（统筹代行，bound a9b74594，Owner 可撤回）— RED suite c297872d 77/77 green — next gate: same-SHA Codex IMPLEMENTATION_VERIFIED + fresh Claude REVIEW_APPROVED | Phase 3 第三份：单一 runtime route catalog 实施（Phase I/II/T1/T2）+ Phase III 文档与冻结；T2 关闭 4 个 T1 P3 与 3 个 Phase III 文档 P3（verification §5 无 OPEN）；check:full exit 0；Desktop/packaged/真实 Runtime smoke host-blocked；未 merge、未 push。 |
+| [refactor-unified-runtime-route-catalog](changes/refactor-unified-runtime-route-catalog/) | IMPLEMENTATION CANDIDATE — frozen（SHA in handoff `impl-route-catalog-t3.report.md`；source f8e538bc；T3 re-freeze supersedes 2bde5acb）— APPROVED 2026-10-02（统筹代行，bound a9b74594，Owner 可撤回）— RED suite c297872d 77/77 green（零差异参照 24801faa）— next gate: same-SHA Codex IMPLEMENTATION_VERIFIED + fresh Claude REVIEW_APPROVED | Phase 3 第三份：单一 runtime route catalog 实施（Phase I/II/T1/T2/T3）+ Phase III 文档与冻结；T3 关闭 Codex R1 P2（schema kind/profile 联动）、终审 4 个 P3 与 T2 评审 2 个文档 P3（verification §5 无 OPEN）；check:full exit 0；Desktop/packaged/真实 Runtime smoke host-blocked；未 merge、未 push。 |
 
 Parked proposals are indexed in [`deferred/README.md`](deferred/README.md) and
 do not appear in the active list.

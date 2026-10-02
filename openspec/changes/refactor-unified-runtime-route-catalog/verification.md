@@ -1,10 +1,12 @@
 # Verification: Unified Runtime Route Catalog
 
-Status: **IMPLEMENTATION CANDIDATE — re-frozen after T2 (source 50a0577f; candidate = the T2 re-freeze commit, SHA in the T2 handoff; superseded Phase III candidate e35a286b) — APPROVED 2026-10-02 (coordinator-acted under Owner mandate, bound to a9b74594; Owner may revoke); awaiting same-SHA Codex IMPLEMENTATION_VERIFIED + fresh Claude REVIEW_APPROVED**
+Status: **IMPLEMENTATION CANDIDATE — re-frozen after T3 (source f8e538bc; candidate = the T3 re-freeze commit, SHA in the T3 handoff; supersedes the T2 candidate 2bde5acb) — APPROVED 2026-10-02 (coordinator-acted under Owner mandate, bound to a9b74594; Owner may revoke); awaiting same-SHA Codex IMPLEMENTATION_VERIFIED + fresh Claude REVIEW_APPROVED**
 
-本文件登记实施候选的验证证据。RED suite `c297872d` 的 77 个测试在源码 `a52d6a93` 与 T2 源码 `50a0577f` 全部通过（§2/§3）；
-Phase III 只改文档并冻结候选 `e35a286b`；T2 只改守卫脚本、守卫探针与文档（`src` 与 `a52d6a93` 逐字节相同），关闭 §5 的四个 T1 P3
-与三个 Phase III 文档 P3，并以本记录重新冻结候选。尚无 Codex IMPLEMENTATION_VERIFIED、绑定冻结候选的 REVIEW_APPROVED 或 ACCEPTED；
+本文件登记实施候选的验证证据。RED suite `c297872d`（零差异参照 `24801faa`）的 77 个测试在源码 `a52d6a93`、T2 源码 `50a0577f`
+与 T3 源码 `f8e538bc` 全部通过（§2/§3）；Phase III 只改文档并冻结候选 `e35a286b`；T2 只改守卫脚本、守卫探针与文档并冻结 `2bde5acb`。
+T3 关闭 `2bde5acb` 上的 Codex R1 P2（schema kind/profile 联动）、三镜头终审的 4 个 P3、T2 评审的 2 个文档 P3 与零差异参照措辞（§5），
+改动 schema（只收紧，发射 bytes 不变）、两份指南、`src`（native status 拆分与共享 DTO，行为不变）、守卫与测试，并以本记录重新冻结候选。
+`2bde5acb` 上的任何 verdict 都不沿用到本候选；尚无绑定本候选的 Codex IMPLEMENTATION_VERIFIED、REVIEW_APPROVED 或 ACCEPTED；
 Desktop/packaged/真实 Runtime smoke 在本主机 host-blocked（§7），不记通过。
 
 ## 1. Source 与治理绑定
@@ -12,7 +14,7 @@ Desktop/packaged/真实 Runtime smoke 在本主机 host-blocked（§7），不�
 | 栏位 | 当前值 / 实施时回填 |
 | --- | --- |
 | Draft base | `6192b13f74603fbcc57c8ba858cb6b0f0d0ac776` |
-| Base 核对 | 第一版核对记录：6192b13f 含已归档 ledger 与 async-submit；第二/三版未重新联网核对 main；Phase III 与 T2（2026-10-02）再核对本地 `main` = `6192b13f`，未前移 |
+| Base 核对 | 第一版核对记录：6192b13f 含已归档 ledger 与 async-submit；第二/三版未重新联网核对 main；Phase III、T2 与 T3（2026-10-02）再核对本地 `main` = `6192b13f`，未前移 |
 | Redraft input HEAD（第二版历史） | `f7a3f7bd454b95deb7ae6f6596efebe0dd3d9cf3` |
 | Touch-up input HEAD / parent | `283f29ca1401f5567df998b850bbc605a064ee5f`，第三版开工 branch/HEAD/clean tree 已核对 |
 | Touch-up authority | `route-catalog-redraft-synthesis-283f29ca.md` §3 T1–T20 / §4；OD-1–OD-5 / Must-stay 不变 |
@@ -24,14 +26,14 @@ Desktop/packaged/真实 Runtime smoke 在本主机 host-blocked（§7），不�
 | Q1–Q5 / OD-1–OD-5 | 已采纳（统筹代行，Owner 可改）；缩窄 L2 / 受约束 optional routes / binding read model / P23→B / 验收代行，见 design Decisions adopted 2026-10-02；非 Owner 签署，Owner 可撤回 |
 | Approved spec SHA | `a9b74594`（完整 SHA `a9b745949b02e2b7c1bbd883c224c14b324d3dbc`） |
 | Independent RED author / suite SHA / adjudication SHA | 4 independent Opus authors (catalog-core / capabilities / surfaces / public-guards) + Fable audit (Workflow wf_32724556) / `c297872d` / `c297872d`（P1-1..P1-3 / P2-1..P2-4，修正与裁定随同一提交，见 red-receipt §9–§10）+ `24801faa`（S03 oracle，red-receipt §9 P1-4）。**不可变零差异参照 = `24801faa`**（P1-4 裁定后的 RED 套件）；`76921ae8` 是裁定前的 RED 登记提交，不再作零差异参照（其 `routes.test.ts` 与 red-receipt 两处在 `24801faa` 经裁定改动） |
-| Implementation source SHA / test fixture hashes | `50a0577f86229b66a064f2509251e06535d28d3e`（Phase I `9f06b6f7` → Phase II `258e4081` → test adjudication `24801faa` → T1 `a52d6a93` → T2 `50a0577f`；T2 只改 `scripts/check-architecture-guards.mjs` 与 `tests/runtime-route-guard-production-probes.test.ts`，`src` 对 `a52d6a93` 0 diff）/ red-receipt §10 的 35 个 sha256 在候选上 `sha256sum -c` 全 OK |
-| Frozen implementation candidate | T2 重新冻结提交（subject `docs(openspec): re-freeze the unified runtime route catalog implementation candidate after T2`，即包含本记录的提交）；提交无法引用自身 SHA，准确 SHA 见 T2 handoff（`handoff/dispatch-logs/impl-route-catalog-t2.report.md`）。被取代：Phase III 候选 `e35a286b`（source `a52d6a93`） |
-| Codex IMPLEMENTATION_VERIFIED SHA / verdict / receipt | 须绑定冻结候选 / NOT ISSUED / — |
-| Fresh-context Claude Code REVIEW_APPROVED SHA / receipt | 冻结候选：NOT ISSUED。历史（不替代最终 verdict）：Phase I 两镜头 REVIEW_APPROVED @`9f06b6f7`（Phase I 范围）；Phase II 两镜头 CHANGES_REQUESTED @`258e4081`；T1 REVIEW_APPROVED @`a52d6a93`（touch-up 范围，4 P3，T2 关闭）；Phase III 文档/C7 镜头 REVIEW_APPROVED @`e35a286b`（3 P3，T2 关闭）。回执在 `handoff/reviews/route-catalog-{phase1,phase2,t1}-review-*.md` 与 `route-catalog-phase3-check-e35a286b….md` |
-| Security review SHA / findings disposition | tests-security 镜头：@`9f06b6f7` REVIEW_APPROVED（4 P3）、@`258e4081` CHANGES_REQUESTED（仅 S03 oracle，已裁定）；最终 fresh security lens 待派 / 全部处置见 §5 |
+| Implementation source SHA / test fixture hashes | `f8e538bc`（T3 最后一个代码/schema/公共文档提交；Phase I `9f06b6f7` → Phase II `258e4081` → test adjudication `24801faa` → T1 `a52d6a93` → T2 `50a0577f` → T3 `f8e538bc`；T3 改 `docs/local-job-api-v1.schema.json`、两份 consumer guide、`src`（`codex/native-runtime-status.ts` 新增、`codex/runtime-status.ts`、`headless/runtime-readiness.ts`、`shared/runtime-route-descriptor.ts` 新增、`runtime-route-read-model.ts`、`active-chat.tsx` 一行类型）、守卫脚本与测试；不可变集合对 `24801faa` 0 diff）/ red-receipt §10 的 35 个 sha256 在候选上 `sha256sum -c` 全 OK |
+| Frozen implementation candidate | T3 重新冻结提交（subject `docs(openspec): re-freeze the unified runtime route catalog implementation candidate after T3`，即包含本记录的提交）；提交无法引用自身 SHA，准确 SHA 见 T3 handoff（`handoff/dispatch-logs/impl-route-catalog-t3.report.md`）。被取代：T2 候选 `2bde5acb`（source `50a0577f`）、Phase III 候选 `e35a286b`（source `a52d6a93`）。不可变零差异参照仍为 `24801faa`（P1-4 裁定后），`76921ae8` 为裁定前 RED 提交 |
+| Codex IMPLEMENTATION_VERIFIED SHA / verdict / receipt | 须绑定冻结候选 / NOT ISSUED / —。历史：Codex R1 协商 @`2bde5acb` NOT_VERIFIED（A1–A7、A9–A11 CLOSED；A8 PARTIAL = schema 未联动 kind/profile，P2；阻塞项为零差异参照 `76921ae8`/`24801faa` 措辞冲突），两项均由 T3 关闭（§5），回执 `handoff/dispatch-logs/negotiate-route-catalog-r1-codex.last.md` |
+| Fresh-context Claude Code REVIEW_APPROVED SHA / receipt | 冻结候选：NOT ISSUED。历史（不替代最终 verdict）：Phase I 两镜头 REVIEW_APPROVED @`9f06b6f7`（Phase I 范围）；Phase II 两镜头 CHANGES_REQUESTED @`258e4081`；T1 REVIEW_APPROVED @`a52d6a93`（touch-up 范围，4 P3，T2 关闭）；Phase III 文档/C7 镜头 REVIEW_APPROVED @`e35a286b`（3 P3，T2 关闭）；T2 评审 REVIEW_APPROVED @`2bde5acb`（2 文档 P3，T3 关闭）；三镜头终审 @`2bde5acb` 均 REVIEW_APPROVED（design-conformance 2 P3、test-integrity/static 1 P3、security/C7 1 P3，T3 关闭）。回执在 `handoff/reviews/route-catalog-{phase1,phase2,t1}-review-*.md`、`route-catalog-phase3-check-e35a286b….md`、`route-catalog-t2-review-2bde5acb….md` 与 `route-catalog-final-review-{design-conformance,test-integrity-static,security-c7}-2bde5acb.md`。T3 改了 src/tests/scripts/schema，这些 verdict 均不沿用到本候选 |
+| Security review SHA / findings disposition | tests-security 镜头：@`9f06b6f7` REVIEW_APPROVED（4 P3）、@`258e4081` CHANGES_REQUESTED（仅 S03 oracle，已裁定）；security/C7 终审镜头 @`2bde5acb` REVIEW_APPROVED（1 P3，T3 `31d3306e` 关闭）；绑定本候选的 security lens 待派 / 全部处置见 §5 |
 | Owner or authorized coordinator ACCEPTED / authority / SHA | NOT ISSUED / Owner 2026-10-02 自我迭代授权（OD-5，条件见 §8）/ — |
 | Local merge SHA / post-merge verification | — / — |
-| External action authorization / target / SHA | NONE；Phase III 与 T2 派单不 push、不远程 PR mutation、不 merge、不 archive |
+| External action authorization / target / SHA | NONE；Phase III、T2 与 T3 派单不 push、不远程 PR mutation、不 merge、不 archive |
 
 两技术 verdict 必须绑定同一准确 source SHA；后续代码变化使两者同时失效。
 测试作者、实施者、fresh reviewer 的责任不能由起草自查替代。
@@ -46,12 +48,14 @@ Desktop/packaged/真实 Runtime smoke 在本主机 host-blocked（§7），不�
 | Test adjudication | `24801faa`（S03 只计绑定后 factory 查找；red-receipt §9 P1-4，§10 routes.test.ts 重新 hash） | 统筹裁定（tasks 6.8） |
 | T1 touch-up | `16c2add0`、`06dc3e2c`、`2042da86`、`0fe80991`、`58f2bf76`、`a52d6a93` | `route-catalog-t1-review-a52d6a93….md`：REVIEW_APPROVED（0 P0/P1/P2，4 P3） |
 | Phase III（纯文档） | `0a86fd0a`（指南）、`95aeaddd`（OWNERSHIP_MAP 相邻 owner）、`09e95e2d`（tasks/proposal 指针）、`e35a286b`（冻结；已被 T2 取代） | `route-catalog-phase3-check-e35a286b….md`：REVIEW_APPROVED（文档/C7 镜头；3 P3） |
-| T2 touch-up（本次） | `438958bd`（T2-1 renderer value wrapper）、`f17fe915`（T2-2 host import alias）、`ee91e29e`（T2-3 main transport 条件式改报 renderer 规则）、`50a0577f`（T2-4 守卫头注释与检测限制）、`0ccb1a9b`（T2-5 文档 nits）、重新冻结提交（本记录；SHA 见 T2 handoff） | 待派：Codex IMPLEMENTATION_VERIFIED + fresh Claude REVIEW_APPROVED（同一冻结 SHA） |
+| T2 touch-up | `438958bd`（T2-1 renderer value wrapper）、`f17fe915`（T2-2 host import alias）、`ee91e29e`（T2-3 main transport 条件式改报 renderer 规则）、`50a0577f`（T2-4 守卫头注释与检测限制）、`0ccb1a9b`（T2-5 文档 nits）、`2bde5acb`（重新冻结；已被 T3 取代） | `route-catalog-t2-review-2bde5acb….md`：REVIEW_APPROVED（2 文档 P3）；三镜头终审 @`2bde5acb` REVIEW_APPROVED（4 P3）；Codex R1 @`2bde5acb` NOT_VERIFIED（A8 P2 + 零差异参照措辞） |
+| T3 touch-up（本次） | `bcaa8bdc`（T3-1 schema kind/profile 联动 + Ajv 测试）、`ffb1e61a`（T3-1 中英文指南一行）、`3f16ff16`（T3-2 native Codex status）、`57707621`（T3-2 readiness 传递闭包守卫）、`b53ef8db`（T3-3 共享 DTO）、`a0e580b0`（T3-4 renderer map 门控）、`31d3306e`（T3-5 按绑定判定转发）、`f8e538bc`（T3-2 pipeline 源码钉改指）、`dd4d7c7c`（T3-6 文档 nits）、`42dc536a`（T3-7 零差异参照措辞）、`fee0b6a4`（§4 决定 25–28）、重新冻结提交（本记录；SHA 见 T3 handoff） | 待派：Codex IMPLEMENTATION_VERIFIED + fresh Claude REVIEW_APPROVED（同一冻结 SHA） |
 
 每个 P0–P2 已在 `a52d6a93` 关闭：Phase I design P2-1（OWNERSHIP_MAP，`8227e73a`）；Phase II 两镜头的
 S03 oracle P1（统筹裁定 `24801faa`，测试缺陷，非实现缺陷）；Phase II design P2-1（renderer/transportId
 守卫负例，`06dc3e2c`）。T1 评审以 remove-the-fix 探针确认这些关闭。Phase III 未发现需要改代码的 P0–P2。
-T2 关闭全部剩余 P3（§5）；每个守卫修复的新探针在撤掉修复时失败（T2 handoff 记录）。
+T2 关闭全部剩余 P3（§5）；每个守卫修复的新探针在撤掉修复时失败（T2 handoff 记录）。T3 关闭 `2bde5acb` 上的 Codex R1 P2
+与全部终审/T2 评审 P3（§5）；每个守卫或 schema 修复都有在撤掉修复时失败的测试（T3 handoff 记录）。
 
 ### 统筹代行授权与登记事实（本次派单提供，非 Owner 签署）
 
@@ -67,31 +71,31 @@ T2 关闭全部剩余 P3（§5）；每个守卫修复的新探针在撤掉修�
 
 ## 2. Candidate gates（冻结候选）
 
-源码 SHA `50a0577f86229b66a064f2509251e06535d28d3e`（T2 最后一个代码提交）之后只有文档提交（`0ccb1a9b` 与本重新冻结提交：
-本 change 的 proposal/tasks/verification、`openspec/STATUS.md`）；`git diff --stat 50a0577f <候选> -- src tests scripts
-package.json lint-baseline.json` 为空。`a52d6a93..50a0577f` 在 `src tests scripts` 下只改 `scripts/check-architecture-guards.mjs` 与
-`tests/runtime-route-guard-production-probes.test.ts`（其余为 Phase III 文档），`src`、`drizzle`、`docs/local-job-api-v1.schema.json` 0 diff。
-下列门禁在 T2（2026-10-02，本 WSL2 主机）于代码终态 `0ccb1a9b`（与候选代码逐字节相同）运行，
-并在重新冻结提交后于该准确 SHA 复跑，复跑结果记于 T2 handoff。
+源码 SHA `f8e538bc`（T3 最后一个代码/schema/公共文档提交）之后只有 `openspec/` 文档提交（`dd4d7c7c`、`42dc536a`、`fee0b6a4`
+与本重新冻结提交：本 change 的 tasks/verification、`openspec/STATUS.md`）；`git diff --stat f8e538bc <候选> -- src tests scripts docs
+package.json lint-baseline.json` 为空。`2bde5acb..f8e538bc` 改 `docs/local-job-api-v1.schema.json`（只收紧）、两份 consumer guide、
+`src`（native status 拆分、共享 DTO，行为不变）、`scripts/check-architecture-guards.mjs` 与测试；`drizzle`、`src/main/lib/db` 0 diff。
+下列门禁在 T3（2026-10-02，本 WSL2 主机）于代码终态 `f8e538bc`（与候选代码逐字节相同）运行，
+并在重新冻结提交后于该准确 SHA 复跑，复跑结果记于 T3 handoff。
 
 | Gate | Command | Result |
 | --- | --- | --- |
-| 十一份 red 文件 | `bun test --isolate` 显式列出 11 个 `tests/runtime-route-catalog-{query,routes,provider,completion,capabilities,headless,executor,renderer,public-contract,discovery,guards}.test.ts` | 77 pass / 0 fail / 0 skip，414 `expect()`，11 files（在 `a52d6a93`、`e35a286b` 与 T2 代码终态各跑一次，结果相同） |
-| red-file glob（含实施者单元） | `bun test --isolate tests/runtime-route-catalog-*.test.ts` | 78 pass / 0 fail，420 `expect()`，12 files（第 12 个为 Phase I 的 `runtime-route-catalog-null-factory.test.ts`） |
-| Aggregate | `bun run check:full` | exit 0（5 min 36 s，无 EPERM/EROFS）：lint:changed “No changed files supported by Biome.”；三个 guard self-test（ledger 17/17、async 17/17、route catalog 77/77）与 `Architecture guard passed.`；retired-runtime residue passed（1871 files，11 allowlisted）；`tsc --noEmit` clean；3017 pass / 2 skip / 0 fail，15079 `expect()`，3019 tests in 382 files（2 skip 为 `local-job-api-wrapper-relay-signals.test.ts` 的 win32-only 用例；比 `e35a286b` 多出的 3 个为 T2 守卫探针）；strict `Totals: 54 passed, 0 failed (54 items)`；build `✓ built`；diff:check clean。Phase III 候选 `e35a286b` 上为 exit 0，3014 / 2 / 0 |
+| 十一份 red 文件 | `bun test --isolate` 显式列出 11 个 `tests/runtime-route-catalog-{query,routes,provider,completion,capabilities,headless,executor,renderer,public-contract,discovery,guards}.test.ts` | 77 pass / 0 fail / 0 skip，414 `expect()`，11 files（在 `a52d6a93`、`e35a286b`、T2 代码终态与 T3 代码终态 `f8e538bc` 各跑一次，结果相同） |
+| red-file glob（含实施者单元） | `bun test --isolate tests/runtime-route-catalog-*.test.ts` | 78 pass / 0 fail，420 `expect()`，12 files（第 12 个为 Phase I 的 `runtime-route-catalog-null-factory.test.ts`；T3 复跑相同） |
+| Aggregate | `bun run check:full` | T3 代码终态 `f8e538bc`：exit 0（5 min 43 s，无 EPERM/EROFS）：lint:changed “No changed files supported by Biome.”；三个 guard self-test（ledger 17/17、async 17/17、route catalog 77/77）与 `Architecture guard passed.`；retired-runtime residue passed（1876 files，11 allowlisted）；`tsc --noEmit` clean；3033 pass / 2 skip / 0 fail，15140 `expect()`，3035 tests in 385 files（2 skip 为 `local-job-api-wrapper-relay-signals.test.ts` 的 win32-only 用例；比 `2bde5acb` 多出的 16 个为 T3 新测试：probes +8、schema 4、native status 2、DTO 2）；strict `Totals: 54 passed, 0 failed (54 items)`；build `✓ built`；diff:check clean。T3 中途 `31d3306e` 一次 exit 1（`agent-guard-runtime-pipeline` 源码钉仍指旧位置），由 `f8e538bc` 改指后复跑如上。T2 候选 `2bde5acb` 上为 exit 0，3017 / 2 / 0 |
 | PR-base lint | `BIOME_CHANGED_SINCE=6192b13f node scripts/run-biome-changed.mjs` | exit 0（“Biome reported diagnostics only outside changed lines; ignoring legacy file diagnostics.”）；T2 复跑 exit 0 |
 | Architecture guard（canonical） | `node scripts/check-architecture-guards.mjs` | exit 0：`Run event ledger guard self-test: 17/17 …`、`Local job API async submission guard self-test: 17/17 …`、`Runtime route catalog guard self-test: 77/77 fixture cases matched; repository ownership enforced.`、`Architecture guard passed.` |
 | Architecture guard（mutated fixture self-check） | `runtime-route-catalog-guards.test.ts` 内 `--runtime-route-catalog-fixtures=<mutated>` | exit 1，`63/77`，14 行 case mismatch，均以 `See Runtime Route Catalog Single Owner.` 结尾（guards 8/8 green；Phase II design 评审另以独立 Python 变异复现；T2 以同一变异规则在 scratch 生成 fixture 直接跑 CLI 复现 exit 1、63/77、14 行） |
-| Guard production probes | `bun test --isolate tests/runtime-route-guard-production-probes.test.ts tests/runtime-route-transport-keys.test.ts tests/runtime-route-desktop-host-assertions.test.ts` | 31 pass / 0 fail，112 `expect()`（probes 18，含 T2 的 m7f/m7g、value-wrapper clean、m4-import-alias） |
-| Retired-runtime residue | `node scripts/check-retired-runtime-residue.mjs` | exit 0，`Retired-runtime residue check passed (1871 files scanned, 11 allowlisted).` |
-| Strict OpenSpec | `bun run spec:validate`；`openspec validate refactor-unified-runtime-route-catalog --strict --no-interactive` | `Totals: 54 passed, 0 failed (54 items)`；`Change 'refactor-unified-runtime-route-catalog' is valid`（每个 Phase III 与 T2 文档提交前均运行） |
-| Lint ratchet | `git diff 6192b13f <候选> -- lint-baseline.json` | 只删/降：`agent-runtime/run-contract.ts`、`claude/agent-sdk-desktop-run-runtime.ts`、`headless/adapter-selector.ts`、`headless/agent-runtime.ts`、`tests/agent-runtime-preflight.test.ts`、`tests/agent-runtime-registry.test.ts`、`tests/headless-adapter-selector.test.ts` 删除，`tests/desktop-runtime-adapter-factory.test.ts` 3→2；对 `24801faa` 与 `e35a286b` 0 diff |
+| Guard production probes | `bun test --isolate tests/runtime-route-guard-production-probes.test.ts tests/runtime-route-transport-keys.test.ts tests/runtime-route-desktop-host-assertions.test.ts` | 39 pass / 0 fail，143 `expect()`（probes 26：含 T2 的 m7f/m7g、value-wrapper clean、m4-import-alias，T3 的 readiness 传递闭包 3、renderer map 2、按绑定转发 3）。T3 实施者测试另跑 `tests/local-job-api-route-summary-schema.test.ts tests/codex-native-runtime-status.test.ts tests/runtime-route-descriptor-dto.test.ts`：8 pass / 0 fail |
+| Retired-runtime residue | `node scripts/check-retired-runtime-residue.mjs` | exit 0，`Retired-runtime residue check passed (1876 files scanned, 11 allowlisted).`（T3 新增 5 个文件） |
+| Strict OpenSpec | `bun run spec:validate`；`openspec validate refactor-unified-runtime-route-catalog --strict --no-interactive` | `Totals: 54 passed, 0 failed (54 items)`；`Change 'refactor-unified-runtime-route-catalog' is valid`（每个 Phase III、T2 与 T3 文档提交前均运行 `bun run spec:validate`） |
+| Lint ratchet | `git diff 6192b13f <候选> -- lint-baseline.json` | 只删/降：`agent-runtime/run-contract.ts`、`claude/agent-sdk-desktop-run-runtime.ts`、`headless/adapter-selector.ts`、`headless/agent-runtime.ts`、`tests/agent-runtime-preflight.test.ts`、`tests/agent-runtime-registry.test.ts`、`tests/headless-adapter-selector.test.ts` 删除，`tests/desktop-runtime-adapter-factory.test.ts` 3→2；对 `24801faa`、`e35a286b` 与 `2bde5acb` 0 diff |
 | Architecture baselines | `git diff 6192b13f <候选> -- scripts/architecture-baselines.json` | 0 diff（含 `#reachThroughWrappers`） |
 | Immutable set | `git diff --stat 24801faa <候选> -- <11 red tests> <4 kits> tests/fixtures/runtime-route-catalog openspec/changes/refactor-unified-runtime-route-catalog/red-receipt.md` | 空；red-receipt §10 35 个 sha256 `sha256sum -c` 全 OK。零差异参照是 `24801faa`（P1-4 裁定后），不是裁定前的 RED 提交 `76921ae8`：对 `76921ae8` 有且仅有 `routes.test.ts`（:284、:414）与 red-receipt（§9 P1-4、§10 hash）两处裁定差异 |
 | No migration | `git diff --stat 6192b13f <候选> -- drizzle src/main/lib/db` | 空 |
-| Whitespace | `git diff --check 6192b13f <候选>`；每个 Phase III 与 T2 提交前 `git diff --check` | clean |
+| Whitespace | `git diff --check 6192b13f <候选>`；每个 Phase III、T2 与 T3 提交前 `git diff --check` | clean |
 
-**Schema 核对（task 5.3，未改 schema）**：经真实 `runHeadlessCliCommand` 发射的 `api runtimes list --json --no-probe` 与
+**Schema 核对（task 5.3；T3 只收紧 `runtimeRouteSummary`，见末段）**：经真实 `runHeadlessCliCommand` 发射的 `api runtimes list --json --no-probe` 与
 `api runtimes list --json`（stub readiness）两份输出：两个 runtime 的键均为 `runtimeId, label, description, capabilities,
 readiness, routes`；claude-code 2 条（`claude-code.completion`、`claude-code.headless.batch`），codex 3 条
 （`codex.api.policy-grant`、`codex.completion`、`codex.headless.batch`）；route 键恰为
@@ -101,7 +105,13 @@ completion 项 `executionProfile: null`。Ajv 2020（`#/$defs/runtimeManifestEnv
 或 extension 加未列字段均被拒绝（`additionalProperties: false`）；冻结的旧 schema（`discovery-schema-before.json`）
 两份输出与加字段变体均接受。schema 的 `runtimeRouteSummary` / `runtimeRouteExtension` 与代码（`src/shared/local-job-api.ts`
 DTO、`runtime-route-catalog.ts#publicSummary`）一致：`kind` 引用 `jobKind`、`executionProfile` 为 `executionProfile`|null、
-`maturity` 为开放字符串（代码只发 `experimental`）、`schemaRef` 模式 `^#/`；`routes` 非 required。没有矛盾，未改 schema。
+`maturity` 为开放字符串（代码只发 `experimental`）、`schemaRef` 模式 `^#/`；`routes` 非 required。Phase III 没有发现矛盾、未改 schema。
+Codex R1 @`2bde5acb` 指出 delta spec 的 kind/profile 联动（completion ⇒ `executionProfile: null`、agent ⇒ 封闭 `executionProfile`）
+未在 schema 落实（A8 PARTIAL，P2）：T3 `bcaa8bdc` 在 def 内加两个 `if/then`（§4 决定 25）。`tests/local-job-api-route-summary-schema.test.ts`
+以真实 `runHeadlessCliCommand` 发射的 `api runtimes list --json --no-probe` 证明：5 条真实摘要逐条与整个 envelope 仍通过；completion+batch、
+completion+policy-grant、agent+null、agent+interactive 四种组合作为摘要与放入 envelope 后均被拒绝；撤掉条件时 completion+batch、
+completion+policy-grant、agent+null 三项被接受（结构断言与拒绝断言两个测试失败，agent+interactive 仍被封闭 enum 拒绝）。
+S22（冻结旧 schema 副本未动）与 `local-job-api-schema`/async envelope schema 测试照常通过；发射 bytes 不变。
 
 ## 3. Scenario 登记表
 
@@ -111,7 +121,7 @@ S53 main-side binding stamping，合计 **53 条**。T16 将 S33–S52 每条两
 
 fixture 根固定为 `tests/fixtures/runtime-route-catalog/`，**扁平布局**；`#Sxx` 表示 JSON
 顶层键，和 spec GIVEN、tasks §7 一致。fixture 与测试已随 RED suite `c297872d` 创建（S03 oracle 经 `24801faa` 裁定）；下表末列为 GREEN @ `a52d6a93` 证据；
-T2 未改 `src` 与十一份 red 文件，在 T2 源码 `50a0577f` 复跑同一命令仍为 77/77（§2），逐行结论不变。
+T2 未改 `src` 与十一份 red 文件，在 T2 源码 `50a0577f` 复跑同一命令仍为 77/77（§2），逐行结论不变；T3 未改十一份 red 文件（不可变集合对 `24801faa` 0 diff），在 T3 源码 `f8e538bc` 复跑仍为 77/77、414 `expect()`。
 测试入口前缀为 `tests/runtime-route-catalog-`，“bun test 入口”列的 `query.test.ts` 等是该前缀下的实际文件；
 每个测试的完整标题与结果见 §3b，RED 时状态见 §3c；命令与门禁见 §2。
 S14/S15 与 S33–S52 保留 living scenario 原标题，通过 delta 注释登记 ID；共 53 条
@@ -179,7 +189,7 @@ Q1 若改为 internal-only，批准前同步删除 public delta/S22 及关联任
 Q2 若拒绝 binding read model 且没有可行替代，则 S18/S19/S53 与 desktop delta 必须先重写、重校验
 和重新审批；不得用 renderer lookup/async lifecycle 隐式扩大边界。
 
-### 3b. 逐测试结果（GREEN @ a52d6a93，T2 源码 50a0577f 复跑相同；十一份 red 文件，junit reporter 导出的完整标题）
+### 3b. 逐测试结果（GREEN @ a52d6a93，T2 源码 50a0577f 与 T3 源码 f8e538bc 复跑相同；十一份 red 文件，junit reporter 导出的完整标题）
 
 命令：`bun test --isolate --reporter=junit` 显式列出十一份 red 文件；77 pass / 0 fail / 0 skip，414 `expect()`。
 
@@ -424,8 +434,8 @@ D5 列表外、由已批准删除/移动强制的 baseline 测试改动（Phase 
 ## 5. Disclosures（评审记录的全部发现及处置）
 
 处置用语：**CLOSED** = 已有提交并经后续评审探针确认；**ACCEPTED** = 已披露、无公共影响，按设计接受（统筹可改判）；
-**OPEN** = 未修复，需统筹在验收前裁定“先修”或“登记 follow-up”。Phase III 是纯文档派单；T2 关闭此前全部 OPEN 项。
-下表无开放 P0–P3；仍存在的守卫检测缺口作为披露列于 §6 末。
+**OPEN** = 未修复，需统筹在验收前裁定“先修”或“登记 follow-up”。Phase III 是纯文档派单；T2 关闭此前全部 OPEN 项；
+T3 关闭 `2bde5acb` 上的 Codex R1 P2 与全部终审/T2 评审 P3。下表无开放 P0–P3；仍存在的守卫检测缺口作为披露列于 §6 末。
 
 | 评审 @ SHA | Finding | 级别 | 处置 | 证据 |
 | --- | --- | --- | --- | --- |
@@ -455,11 +465,20 @@ D5 列表外、由已批准删除/移动强制的 baseline 测试改动（Phase 
 | Phase III check @e35a286b | P3-1 §1 adjudication SHA 栏漏 `24801faa` | P3 | CLOSED | `0ccb1a9b`（§1 改为 `c297872d` + `24801faa`） |
 | Phase III check @e35a286b | P3-2 proposal §4 discovery 示例 routeId 与候选发射值不同 | P3 | CLOSED | `0ccb1a9b`：示例下加注 routeId 仅示意，实际值见指南 Route summaries 与 §2；JSON 未改形 |
 | Phase III check @e35a286b | P3-3 proposal 两处引 guide `:1729` 已移位 | P3 | CLOSED | `0ccb1a9b`：两处改为 `:1729@6192b13f`（Stability Contract 末行） |
+| Codex R1 @2bde5acb | A8 PARTIAL：schema `runtimeRouteSummary` 未联动 kind/profile，接受 completion+batch 与 agent+null | P2 | CLOSED | `bcaa8bdc`：def 内两个 2020-12 `if/then`；Ajv 测试拒绝四种非法组合、接受真实发射摘要，撤掉条件时三项被接受；`ffb1e61a` 中英文指南各一行；发射 bytes 与冻结旧 schema 不变（§2 末段、§4 决定 25） |
+| Codex R1 @2bde5acb | B 阻塞：派单要求红套件对 `76921ae8` 零差异，实际对其有 `routes.test.ts`/red-receipt 两处裁定差异 | P1（验收基线措辞冲突，非产品缺陷） | CLOSED（措辞统一） | `42dc536a`：§1、提交历史与 §2 不可变集合行写明零差异参照 = `24801faa`（P1-4 裁定后），`76921ae8` 为裁定前 RED 提交；不可变集合对 `24801faa` 0 diff、§10 35/35；red-receipt 未改 |
+| T2 review @2bde5acb | P3-1 决定 21 仍写 one-hop wrapper 检查只在 routers | P3 | CLOSED | `dd4d7c7c`：追加“（T2 起 active-chat 全文件运行 transportId-yield 规则，覆盖同文件 value wrapper，见决定 22）” |
+| T2 review @2bde5acb | P3-2 §2 PR-base lint 行重复 | P3 | CLOSED | `dd4d7c7c`：合并为一行“exit 0；T2 复跑 exit 0” |
+| Final design @2bde5acb | P3-1 Codex readiness probe 经 status 回到目录（catalog → readiness → codex/runtime-status → catalog 值导入环），守卫只查直接 import | P3 | CLOSED | `3f16ff16`：readiness 用 `codex/native-runtime-status.ts`（无目录 import），IPC 组合留在 runtime-status，输出逐字节相同；`57707621`：forbidden-dependency 扩到 readiness 传递值导入闭包，探针证明旧环被报、修复后 clean；`f8e538bc` 源码钉改指（§4 决定 26） |
+| Final design @2bde5acb | P3-2 D2 共享 DTO 文件未建，renderer 以无类型 cast 读 transportId | P3 | CLOSED | `b53ef8db`：`src/shared/runtime-route-descriptor.ts`（只含类型）被 read-model 与 active-chat 共同引用；落点记于 §4 决定 27 |
+| Final tests-static @2bde5acb | P3-1 active-chat 上 runtime-keyed transportId map 不被守卫报告 | P3 | CLOSED | `a0e580b0`：map 分支门控改为 `src/main/` 或 renderer 站点；m14b 旁三探针（mapper 内查表、调用处内联、仅声明）报 `renderer-route-projection-bypass`，label map clean；撤掉修复时探针失败 |
+| Final security @2bde5acb | P3-1 forwarded-option 规则按名放行任何 `runtimeRouteCatalog` 值 | P3 | CLOSED | `31d3306e`：按最近词法绑定判定（参数/解构参数转发，本地跟随 initializer，属性访问要求 receiver 被转发），并检查 shorthand；生产构造值（模块 const、显式/shorthand、遮蔽参数的本地、外来 receiver、查询参数）报 test-port tuple，九个生产转发站点与合法形式 clean；撤掉修复时探针失败 |
 | red-receipt §7 | P3-1…P3-11（RED suite 审计） | P3 | 按 red-receipt §9 “Recorded as written” | §6 implementer-unit 项已由 null-factory 等单元测试承担 |
 
 Phase II 实施者自报残余：renderer 路由失败只 `console.error`，无 toast/i18n 文案（§4 决定 19，若 Owner 要文案属
 用户可见产品取舍，另案）；`chats.create` / `forkSubChat` 未盖章 binding 依赖重读 chats.get（§4 决定 18，
-Phase II design 评审确认不会被消费）。T1 enabling 提交改变了守卫脚本 CLI 尾部结构（§4 决定 23，行为不变）。T2 未改 CLI 行为与输出。
+Phase II design 评审确认不会被消费）。T1 enabling 提交改变了守卫脚本 CLI 尾部结构（§4 决定 23，行为不变）。T2 与 T3 未改 CLI 输出格式；
+T3 的守卫规则只增加报告面（readiness 传递闭包、renderer map、按绑定转发），canonical fixture 仍 77/77。
 
 ## 6. C7 scope check
 
@@ -468,7 +487,7 @@ proposal Consumer Impact §3 的每一行 ↔ 候选上的实际变化 ↔ 指�
 | Consumer Impact 行（proposal §3） | 实际变化 @ 候选 | 指南 | 证据 |
 | --- | --- | --- | --- |
 | `locus.local-job.v1` runs create/submit/wait/retry/status/events/result/cancel — 不变 | 无公共变化；内部经目录选 adapter | 无改动（不需要） | S21 3/3、S17 green；冻结 golden 全 bytes |
-| runtimes list --json / --no-probe — optional `runtimes[].routes`（C7 #2/#10 additive Yellow） | 追加于 `readiness` 后，带/不带 `--no-probe` 都输出；仅 surface=api；exact keys；schema defs `runtimeRouteSummary`/`runtimeRouteExtension`（additionalProperties:false）；无新 feature/enum/required 字段 | Runtime Capabilities → Route summaries（含升级清单）；Stability Contract（Not stable 条目）；Troubleshooting 新行 | S22 green；§2 发射 bytes 核对 |
+| runtimes list --json / --no-probe — optional `runtimes[].routes`（C7 #2/#10 additive Yellow） | 追加于 `readiness` 后，带/不带 `--no-probe` 都输出；仅 surface=api；exact keys；schema defs `runtimeRouteSummary`/`runtimeRouteExtension`（additionalProperties:false；T3 起 `runtimeRouteSummary` 以 `if/then` 强制 kind/profile 联动，发射 bytes 不变）；无新 feature/enum/required 字段 | Runtime Capabilities → Route summaries（含升级清单；T3 在 Compatibility 加联动一行）；Stability Contract（Not stable 条目）；Troubleshooting 新行 | S22 green；§2 发射 bytes 核对；`tests/local-job-api-route-summary-schema.test.ts` |
 | error/exit/diagnostic — 不变 | 无公共变化；内部 selection message 措辞变化不进入任何公共 payload（§4 决定 5） | 无改动 | S24 2/2 green |
 | events/native metadata/artifact refs — 不变 | 无变化；目录不是 event/artifact producer | 无改动 | S21、S25、S49 green |
 | `locus-jobs-stdio.v1` — 不变 | 无变化；protocol routes 不在 discovery 中公开 | 无改动（stdio 不在本指南） | S17、S24 green |
@@ -482,6 +501,9 @@ C7 §9.2 十类复核：#1 Green（仅 internal 模块/导出删除）；#2 Yell
 S30 env/fs/config 守卫）；#8 Green（S25）；#9 Green（transport 只是描述串，未改实际传输/startup/平台）；#10 Yellow additive，见下。
 
 - 指南只写 proposal §3 已列的消费者可见变化（optional routes 与其规则）；没有写入 proposal 未列的变化。
+- T3 的 schema 收紧不是新的 C7 分类：`runtimeRouteSummary` 是本 change 自己新增、尚未合并发布的 experimental 定义，收紧只把
+  delta spec 已规定的 kind/profile 联动写进 schema；真实发射 bytes 不变且仍通过，冻结旧 schema 副本不受影响，指南既有的
+  “固定副本须刷新”说明覆盖它。
 - 没有出现 Red：无公共删除/重命名、无新 feature/enum/required 字段/error code/exit、无默认或 enforcement 变化、
   无新 credential/probe I/O/动态加载、无新 Host/transport/后台启动。
 - **OD-2 Yellow（C7 #2/#10）由 S22 关闭**：`tests/runtime-route-catalog-discovery.test.ts` 中
@@ -495,7 +517,8 @@ S30 env/fs/config 守卫）；#8 Green（S25）；#9 Green（transport 只是描
 
 **守卫检测缺口（披露，非开放 finding；与 `scripts/check-architecture-guards.mjs` 节头 “Detection limits” 一致）**：
 T1/T2 已覆盖 `.runtime`/`.runtimeId` 操作数、includes、条件位置的同文件谓词、具名 host（按名、成员访问与 import alias）、
-active-chat 同文件 value wrapper 产出 transportId。仍不报：runtime 测试先存入本地布尔再分支；经本地 const 间接得到的
+active-chat 同文件 value wrapper 产出 transportId；T3 另覆盖 active-chat 上的 runtime-keyed transportId map、readiness 传递值导入闭包
+到目录的环（type-only 不计），并按最近绑定（而非名字）判定 `runtimeRouteCatalog` 转发。仍不报：runtime 测试先存入本地布尔再分支；经本地 const 间接得到的
 transportId literal（T1 评审探针 m16-const-indirection：`b.runtime === "codex" ? CODEX_TID : CLAUDE_TID`）；
 computed/dynamic 成员访问（如 `hosts["runCodexDesktopChatRun"]`）；computed map key；反射；经另一模块重新绑定；多跳 wrapper。
 这些不在 design D5 :431 列举的 alias/namespace/一跳 wrapper 形式之内（T1 评审将 const 间接视为可接受的 re-binding），由代码评审兜底；若统筹要求收紧，需另派守卫切片。
@@ -561,17 +584,19 @@ macOS / Windows packaged：`bun run package:mac` / `bun run package:win` 后在�
 | 其他 v1 / jobs-stdio client | neutral fixtures 为 producer gate（S21/S22/S24）；真实 E2E unknown |
 
 不因 unknown 声称没有 consumer。残余：§6 末披露的守卫检测缺口、§4 决定 19 的无 UI 文案、TICKET-127–131、全部 host-blocked smoke（§5 无 OPEN 项）。
+T3 的 schema 收紧对固定了本 change 草稿期 schema 副本的 consumer 仍属“刷新副本”范畴（指南已写明）；真实发射 bytes 不变。
 
 停止门（tasks 8.5–8.9）：
 
 - **8.5 待定**：Codex IMPLEMENTATION_VERIFIED 与 fresh-context Claude REVIEW_APPROVED 都必须绑定本冻结候选（同一准确 SHA）；
   另有 fresh security lens 验 factory/secret/descriptor boundary。T1 评审 REVIEW_APPROVED @`a52d6a93` 只覆盖 T1 touch-up，
-  Phase III 文档镜头 @`e35a286b` 只覆盖文档/C7；T2 改了 scripts/tests，因此此前任何候选上的 verdict 都不能沿用到本候选。
-  任何后续 src/tests/scripts 变化使两 verdict 同时失效；T2 之后的文档提交不使 source 结论失效。
+  Phase III 文档镜头 @`e35a286b` 只覆盖文档/C7；T2 评审与三镜头终审 @`2bde5acb` 只覆盖 T2 候选，Codex R1 @`2bde5acb` 为 NOT_VERIFIED；
+  T3 改了 schema/指南/src/scripts/tests，因此此前任何候选上的 verdict 都不能沿用到本候选。
+  任何后续 src/tests/scripts/schema 变化使两 verdict 同时失效；`f8e538bc` 之后的 openspec 文档提交不使 source 结论失效。
 - **8.6**：当前无开放 Red、无旧 selector 残留、无未裁定 C7 变化；host-blocked 只列缺口、未记通过。
 - **8.7 ACCEPTED**：统筹（Claude Fable 5.1）可依 Owner 2026-10-02 自我迭代授权代行，前提是 8.5 两 verdict 绑定同一 SHA、
-  无开放 Red、§5 无 OPEN 项（T2 后已满足）、§7 未测场景如实记载；条件未满足不得代行。Owner 可改为亲自验收。
-- **8.8 / 8.9**：Phase III 与 T2 派单不 merge、不 archive、不 push；push 依 Owner 2026-09-04 规矩由统筹另行派单，固定准确 SHA 与 target。
+  无开放 Red、§5 无 OPEN 项（T3 后已满足）、§7 未测场景如实记载；条件未满足不得代行。Owner 可改为亲自验收。
+- **8.8 / 8.9**：Phase III、T2 与 T3 派单不 merge、不 archive、不 push；push 依 Owner 2026-09-04 规矩由统筹另行派单，固定准确 SHA 与 target。
 
 ## 9. 历史：起草校验（不计实施验收）
 
