@@ -307,6 +307,138 @@ Completion jobs are stricter than agent jobs: they require
 `provider.profileId` and do not use runtime defaults or native credential
 fallback.
 
+### Route summaries (`runtimes[].routes`, experimental)
+
+Builds that contain the unified runtime route catalog add an optional
+`routes` array to every runtime in `locus api runtimes list --json`. The array
+follows `readiness` and is emitted both with and without `--no-probe`: it does
+not depend on any readiness probe. No discovery feature identifier announces
+it, and no request field accepts anything from it. Check for the member
+itself.
+
+The Codex entry of a current build (`label`, `description`, `capabilities`
+and `readiness` elided):
+
+```json
+{
+  "runtimeId": "codex",
+  "routes": [
+    {
+      "routeId": "codex.api.policy-grant",
+      "surface": "api",
+      "kind": "agent",
+      "executionProfile": "policy-grant",
+      "adapterSource": "codex-app-server",
+      "transport": "json-rpc-stdio",
+      "extensions": [
+        {
+          "namespace": "runtime.codex.v1",
+          "schemaVersion": 1,
+          "maturity": "experimental",
+          "schemaRef": "#/$defs/eventPayloadExtensions/properties/runtime.codex.v1"
+        }
+      ]
+    },
+    {
+      "routeId": "codex.completion",
+      "surface": "api",
+      "kind": "completion",
+      "executionProfile": null,
+      "adapterSource": "locus-completion",
+      "transport": "provider-http",
+      "extensions": []
+    },
+    {
+      "routeId": "codex.headless.batch",
+      "surface": "api",
+      "kind": "agent",
+      "executionProfile": "batch",
+      "adapterSource": "codex-batch",
+      "transport": "process-stdio",
+      "extensions": []
+    }
+  ]
+}
+```
+
+The `claude-code` entry lists `claude-code.completion` (`kind: "completion"`,
+`adapterSource: "locus-completion"`, `transport: "provider-http"`) and
+`claude-code.headless.batch` (`kind: "agent"`, `executionProfile: "batch"`,
+`adapterSource: "claude-code-batch"`, `transport: "process-stdio"`), both with
+`extensions: []`. The order of the array is not significant.
+
+Each summary has exactly these members:
+
+| Member | Meaning |
+| --- | --- |
+| `routeId` | Descriptive label of the route. It is not an identity and is not stable across versions: do not persist it, compare it between builds or use it to select behavior. No request field accepts it. |
+| `surface` | Entry surface. Only `api` is listed. |
+| `kind` | The existing closed `jobKind`: `agent` or `completion`. |
+| `executionProfile` | For `agent`, the existing closed `executionProfile`: `batch` or `policy-grant`. For `completion`, `null`. |
+| `adapterSource` | Descriptive adapter label. Known values: `claude-code-batch`, `codex-batch`, `codex-app-server`, `locus-completion`. |
+| `transport` | Descriptive transport label. Known values: `process-stdio`, `json-rpc-stdio`, `provider-http`. |
+| `extensions` | Runtime extension namespaces the route's real event producer can emit, each with exactly `namespace`, `schemaVersion`, `maturity` and `schemaRef` (a JSON Pointer into [local-job-api-v1.schema.json](local-job-api-v1.schema.json)). Only the Codex `policy-grant` route declares `runtime.codex.v1`; batch and completion routes declare `[]`. A declaration does not mean every event carries the extension. |
+
+Rules for readers:
+
+- Only the request combinations that the API currently accepts
+  (`surface: "api"`) are listed. Protocol routes are omitted, because
+  jobs-stdio `initialize` owns that contract, and desktop routes are never
+  listed.
+- `routeId`, `surface`, `adapterSource` and `transport` are open
+  vocabularies. The known values above are not exhaustive: accept values you
+  do not recognize. `kind` and `executionProfile` reuse the closed
+  definitions of the request contract.
+- Do not branch on `adapterSource` or `transport`. Choose what to send from
+  `features`, `capabilities` and the request contract; Locus still selects the
+  adapter from the request (`runtime.id`, `kind`,
+  `runtime.executionProfile`) exactly as before.
+- A route summary is descriptive, not an authorization. It does not grant
+  execution, does not override `capabilities` or `readiness`, does not
+  authorize a native extension and is not an endpoint. Every request
+  validation, capability gate, permission check and claim-time check still
+  applies, and there is no route execution command.
+- Advisory readiness is not daemon readiness. A listed route says nothing
+  about whether the runtime is ready, and, like `readiness`, it describes the
+  process that ran `runtimes list`, not a `locus daemon run` executor.
+- An absent `routes` member means the build does not describe its routes. It
+  never means that `async-submit`, `completion`, `policy-grant` or any other
+  existing feature is unsupported; keep using `features` and the request
+  contract.
+
+Compatibility:
+
+- Readers that follow the [Stability Contract](#stability-contract) rule
+  "Use the documented v1 fields and ignore unknown JSON fields" need no
+  change. That published rule is the precondition under which Locus classifies
+  this member as an additive change (interoperability contract C7 §9.2).
+- The schema defines the items as `runtimeRouteSummary` and
+  `runtimeRouteExtension`, both with `additionalProperties: false` and exact
+  keys. A copy of [local-job-api-v1.schema.json](local-job-api-v1.schema.json)
+  pinned before this block accepts `routes` as an unknown runtime member, but
+  a copy that contains these definitions rejects any route or extension
+  member it does not list. As with the closed `discoveryFeature` enum above,
+  ignoring unknown fields does not cover members of a closed object: refresh
+  the pinned copy whenever this block changes.
+- Because the block is experimental, Locus may change its key set. Any added,
+  removed or renamed member of a route summary or of an extension declaration
+  is a new compatibility decision (interoperability contract C7 #2 and #10)
+  that is documented here; the open-vocabulary rule covers new values only,
+  never new members.
+
+#### Upgrade checklist (`runtimes[].routes`)
+
+1. No change is required. Readers that ignore unknown fields keep working.
+2. If you validate discovery output against a pinned
+   `local-job-api-v1.schema.json`, refresh the copy, and refresh it again
+   whenever this experimental block changes.
+3. Accept unknown values of `routeId`, `surface`, `adapterSource` and
+   `transport`; never persist `routeId` or branch on `adapterSource` or
+   `transport`.
+4. Treat a missing `routes` member as "not described", not as a missing
+   feature.
+5. Do not treat a listed route as ready, authorized or executable.
+
 ## Agent Create Request
 
 Example for a generic local package:
@@ -1684,6 +1816,7 @@ locus api runs create --request "$PACKAGE_DIR/request.json" --json
 | The runtime reported success but the run is `failed` with `policy_denied`, `output_empty`, `output_invalid` or `output_evidence_missing` | Corrected terminal truth: denial, invalid output and empty output fail the run. | Inspect `diagnostics` and the run's `status`/`error` events. |
 | Schema validation rejects `canonical-run-ledger` in `features` | A pinned older copy of the schema has a closed `discoveryFeature` enum. | Refresh your copy of `local-job-api-v1.schema.json`. |
 | Schema validation rejects `async-submit` in `features` | Same closed enum; `async-submit` is newer than your copy. | Refresh your copy of `local-job-api-v1.schema.json`. |
+| Schema validation rejects a member inside `runtimes[].routes` | Your pinned copy defines the experimental route summaries with exact keys, and the block changed after you pinned it. | Refresh your copy of `local-job-api-v1.schema.json`; see [Route summaries](#route-summaries-runtimesroutes-experimental). |
 | `runs wait` exits `9` | The run was not ready by the deadline (`wait.reason` says why). It is not a failure. | Wait again, or read `runs status`. For `executor_unavailable`, start `locus daemon run`. |
 | `runs submit` succeeded but the run stays `queued` | No executor is running (`execution.reason: "no_executor"`). | Start `locus daemon run`, or use `runs create` to run it in-process. |
 | `idempotency_conflict` | The key is already bound to a different request for this consumer. | Use a new key for a different request. |
@@ -1723,6 +1856,10 @@ Not stable in v1:
 - error `message` text, the format of `job.workerId`, and executor timing
   details (heartbeat cadence, per-iteration settlement bounds)
 - `payload.extensions["runtime.codex.v1"]` (`maturity: "experimental"`)
+- `runtimes[].routes` (experimental): whether it is present, its `routeId`
+  values and the open values of `surface`, `adapterSource` and `transport`;
+  any change to its key set is a new compatibility decision documented in
+  [Route summaries](#route-summaries-runtimesroutes-experimental)
 - Workbench rendering details
 - human CLI formatting under `locus run` and `locus jobs`
 
