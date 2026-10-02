@@ -4983,7 +4983,9 @@ function assertLocalJobApiAsyncGuards() {
 //   query catalog argument that is not forwarded unchanged;
 // - route-catalog-forbidden-dependency: a catalog import of Electron, tRPC,
 //   renderer, preload or a router (also through a one-hop wrapper), or a
-//   readiness -> catalog cycle;
+//   readiness -> catalog cycle, direct or anywhere in the transitive value
+//   import closure of runtime-readiness over src/ (type-only imports
+//   excluded; reported at the readiness import that leads to the catalog);
 // - route-catalog-owner-bypass: a catalog import of the queue/ledger/
 //   artifact/provider-storage owners or a process.env/fs/config read;
 // - renderer-route-projection-bypass: a renderer construction site that
@@ -5742,14 +5744,18 @@ function runtimeRouteCalleeName(call) {
   return null
 }
 
-function runtimeRouteModuleSource(key, fileSources, readRepository) {
+/** `{file, source}` of a module key from the scanned set or the repository. */
+function runtimeRouteModuleFile(key, fileSources, readRepository) {
   for (const extension of ["", ...RUNTIME_CORE_SOURCE_EXTENSIONS]) {
     if (fileSources.has(`${key}${extension}`)) {
-      return fileSources.get(`${key}${extension}`)
+      const file = `${key}${extension}`
+      return { file, source: fileSources.get(file) }
     }
     for (const index of ["", "/index"]) {
       const candidate = `${key}${index}${extension}`
-      if (fileSources.has(candidate)) return fileSources.get(candidate)
+      if (fileSources.has(candidate)) {
+        return { file: candidate, source: fileSources.get(candidate) }
+      }
     }
   }
   if (!readRepository) return null
@@ -5760,11 +5766,65 @@ function runtimeRouteModuleSource(key, fileSources, readRepository) {
     ]) {
       const absolutePath = path.join(repoRoot, candidate)
       if (existsSync(absolutePath) && statSync(absolutePath).isFile()) {
-        return readFileSync(absolutePath, "utf8")
+        return { file: candidate, source: readFileSync(absolutePath, "utf8") }
       }
     }
   }
   return null
+}
+
+function runtimeRouteModuleSource(key, fileSources, readRepository) {
+  return (
+    runtimeRouteModuleFile(key, fileSources, readRepository)?.source ?? null
+  )
+}
+
+/**
+ * The readiness module's value imports whose transitive value-import closure
+ * over src/ reaches the catalog (type-only imports excluded; dynamic imports
+ * count). Each is reported at its first-hop specifier, so a direct readiness
+ * -> catalog import keeps its tuple.
+ */
+function runtimeRouteReadinessCycleSpecifiers(
+  imports,
+  fileSources,
+  readRepository,
+) {
+  const valueImportKeys = new Map()
+  const valueImportsOf = (key) => {
+    if (valueImportKeys.has(key)) return valueImportKeys.get(key)
+    const module = runtimeRouteModuleFile(key, fileSources, readRepository)
+    const keys = module
+      ? collectRuntimeRouteImports(
+          module.file,
+          runtimeRouteParse(module.file, module.source),
+        )
+          .filter((entry) => entry.hasValue && entry.key?.startsWith("src/"))
+          .map((entry) => entry.key)
+      : []
+    valueImportKeys.set(key, keys)
+    return keys
+  }
+  const reachesCatalog = (start) => {
+    const visited = new Set([RUNTIME_ROUTE_READINESS_MODULE])
+    const queue = [start]
+    while (queue.length > 0) {
+      const key = queue.shift()
+      if (key === RUNTIME_ROUTE_CATALOG_OWNER_MODULE) return true
+      if (visited.has(key)) continue
+      visited.add(key)
+      queue.push(...valueImportsOf(key))
+    }
+    return false
+  }
+  return imports
+    .filter(
+      (entry) =>
+        entry.hasValue &&
+        entry.key?.startsWith("src/") &&
+        reachesCatalog(entry.key),
+    )
+    .map((entry) => entry.specifier)
 }
 
 function runtimeRouteForbiddenTarget(specifier, key) {
@@ -5939,21 +5999,15 @@ function collectRuntimeRouteCatalogFindings(
       continue
     }
 
-    // readiness -> catalog cycle.
+    // readiness -> catalog cycle, direct or through the transitive
+    // value-import closure of the readiness module.
     if (moduleKey === RUNTIME_ROUTE_READINESS_MODULE) {
-      for (const entry of imports) {
-        if (
-          entry.hasValue &&
-          entry.key === RUNTIME_ROUTE_CATALOG_OWNER_MODULE
-        ) {
-          add(
-            runtimeRouteFinding(
-              RUNTIME_ROUTE_RULE.dependency,
-              file,
-              entry.specifier,
-            ),
-          )
-        }
+      for (const specifier of runtimeRouteReadinessCycleSpecifiers(
+        imports,
+        fileSources,
+        readRepository,
+      )) {
+        add(runtimeRouteFinding(RUNTIME_ROUTE_RULE.dependency, file, specifier))
       }
     }
 

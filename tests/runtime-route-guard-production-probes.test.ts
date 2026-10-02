@@ -441,3 +441,83 @@ export const ${name} = resolveCodexRuntimeReadiness
     }
   })
 })
+
+describe("T3-2 readiness transitive import closure", () => {
+  const READINESS = "src/main/lib/headless/runtime-readiness.ts"
+  const RUNTIME_STATUS = "src/main/lib/codex/runtime-status.ts"
+  const NATIVE_IMPORT = `import { getCodexNativeRuntimeStatus } from "../codex/native-runtime-status"`
+  const FORMER_IMPORT = `import { getCodexRuntimeStatus } from "../codex/runtime-status"`
+  const readiness = readRepoFile(READINESS)
+  /** The readiness leaf as it was at 2bde5acb: status through runtime-status. */
+  const formerReadiness = () => mutate(readiness, NATIVE_IMPORT, FORMER_IMPORT)
+
+  function scanRepository(files: Record<string, string>): Finding[] {
+    return collectRuntimeRouteCatalogFindings(
+      Object.entries(files).map(([file, source]) => ({ file, source })),
+      { readRepository: true },
+    ) as Finding[]
+  }
+
+  test("clean: the fixed readiness leaf's whole value-import closure over the repository never reaches the catalog", () => {
+    expect(scanRepository({ [READINESS]: readiness })).toEqual([])
+    expect(scan({ [READINESS]: readiness })).toEqual([])
+  })
+
+  test("the former cycle (readiness -> codex/runtime-status -> catalog) is a route-catalog-forbidden-dependency at the readiness import, from the repository or the scanned set", () => {
+    const expected = [
+      finding(
+        RUNTIME_ROUTE_RULE.dependency,
+        READINESS,
+        "../codex/runtime-status",
+      ),
+    ]
+    expect(scanRepository({ [READINESS]: formerReadiness() })).toEqual(expected)
+    expect(
+      scan({
+        [READINESS]: formerReadiness(),
+        [RUNTIME_STATUS]: readRepoFile(RUNTIME_STATUS),
+      }),
+    ).toEqual(expected)
+  })
+
+  test("a multi-hop value chain is reported at its first hop; a direct import keeps its tuple; type-only links are not edges", () => {
+    const HOP_ONE = "src/main/lib/headless/readiness-hop.ts"
+    const HOP_TWO = "src/main/lib/codex/status-hop.ts"
+    const withImport = (line: string) => `${line}\n${readiness}`
+    expect(
+      scan({
+        [READINESS]: withImport(`import { hop } from "./readiness-hop"`),
+        [HOP_ONE]: `export { statusHop as hop } from "../codex/status-hop"\n`,
+        [HOP_TWO]: `import { listRuntimeRoutes } from "../agent-runtime/runtime-route-catalog"\nexport const statusHop = () => listRuntimeRoutes({ runtimeId: "codex", entry: "desktop" })\n`,
+      }),
+    ).toEqual([
+      finding(RUNTIME_ROUTE_RULE.dependency, READINESS, "./readiness-hop"),
+    ])
+    expect(
+      scan({
+        [READINESS]: withImport(
+          `import { listRuntimeRoutes } from "../agent-runtime/runtime-route-catalog"`,
+        ),
+      }),
+    ).toEqual([
+      finding(
+        RUNTIME_ROUTE_RULE.dependency,
+        READINESS,
+        "../agent-runtime/runtime-route-catalog",
+      ),
+    ])
+    expect(
+      scan({
+        [READINESS]: withImport(`import { hop } from "./readiness-hop"`),
+        [HOP_ONE]: `import type { RuntimeRouteResolution } from "../agent-runtime/runtime-route-catalog"\nexport const hop = (value: RuntimeRouteResolution | null) => value\n`,
+      }),
+    ).toEqual([])
+    expect(
+      scanRepository({
+        [READINESS]: withImport(
+          `import type { CodexAdapterRuntimeStatusMetadata } from "../codex/runtime-status"`,
+        ),
+      }),
+    ).toEqual([])
+  })
+})
