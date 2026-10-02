@@ -88,7 +88,7 @@ export async function runAgentTask(
   }
 
   if (
-    route.delegate === null ||
+    typeof route.delegate !== "function" ||
     (route.executionSurface !== "headless-exec" &&
       route.executionSurface !== "headless-app-server")
   ) {

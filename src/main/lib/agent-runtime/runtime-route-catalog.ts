@@ -834,7 +834,9 @@ function validateRoute(
     if (!isNonEmptyString(value.factoryRef)) {
       invalid("agent_factory_missing", "factoryRef", at)
     }
-    if (typeof references.lookupAgentFactory(value.factoryRef) !== "function") {
+    // The reference port resolves the typed delegate; the catalog treats it
+    // as opaque and only requires that the reference resolves.
+    if (references.lookupAgentFactory(value.factoryRef) == null) {
       invalid("agent_factory_unresolved", "factoryRef", at)
     }
     factoryRef = value.factoryRef
@@ -1480,7 +1482,7 @@ function resolveAgent(input: {
     exact.factoryRef === null
       ? null
       : data.references.lookupAgentFactory(exact.factoryRef)
-  if (typeof delegate !== "function") {
+  if (delegate == null) {
     return unavailable(view, "catalog_invalid", exact)
   }
   return selectedResolution({
