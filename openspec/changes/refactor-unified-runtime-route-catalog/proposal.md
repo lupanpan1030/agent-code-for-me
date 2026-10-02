@@ -92,7 +92,7 @@ Why: main 路由通过目录、adapter 与自有 router/transport 静态注册�
 | Contract / version | Surface | 当前 → proposed | Breaking? / 分类 | 证据 |
 | --- | --- | --- | --- | --- |
 | `locus.local-job.v1` | runs create/submit/wait/retry/status/events/result/cancel | 相同请求/字段/命令/等待/幂等语义，内部 adapter 查目录 | 拟不变；需完整 golden，不以 parse 成功作证明 | `src/shared/local-job-api.ts:16`; `openspec/specs/local-job-api/spec.md:528`, `:561` |
-| same | runtimes list --json / --no-probe | manifest/readiness/features 保持；可选追加 runtimes[].routes | C7 #2/#10 additive **Yellow，非 Red**，Q1 受约束默认；旧 schema 和忽略字段 reader 必须通过 | schema `:1001`, `:1318`; local-job-api.ts `:481`；C7 §9.2 前置：已发布 `docs/local-job-api-v1-consumer-guide.md:1729` unknown-field 规则 |
+| same | runtimes list --json / --no-probe | manifest/readiness/features 保持；可选追加 runtimes[].routes | C7 #2/#10 additive **Yellow，非 Red**，Q1 受约束默认；旧 schema 和忽略字段 reader 必须通过 | schema `:1001`, `:1318`; local-job-api.ts `:481`；C7 §9.2 前置：已发布 `docs/local-job-api-v1-consumer-guide.md:1729@6192b13f`（Stability Contract 末行）unknown-field 规则 |
 | same | error/exit/diagnostic | 保留 parser、provider、selector、claim-time、wait 各自映射 | 不变；目录新内部 reason 不直接外泄成 public code | design D4 源码表 |
 | same | events/native metadata/artifact refs | 12 types、六字段、dense sequence、cursor、runtime.codex.v1、run-dir refs 原样 | 不变；目录不是 event/artifact producer | local-job-api.ts `:455`, `:755`; shared/local-job-api.ts `:26` |
 | `locus-jobs-stdio.v1` | initialize/job.run/job.cancel/shutdown | 原 JSON-RPC 信封和 session-scoped submit/pump，间接查目录 | 不变；不增加 completion/profile 方法能力 | jobs-stdio.ts `:247`, `:268`, `:293`, `:407` |
@@ -154,7 +154,9 @@ Discovery proposed（节选，保留全部原字段，展示 agent 与 completio
 {"apiVersion":"locus.local-job.v1","features":["runtime-readiness","provider-binding","completion","canonical-run-ledger","async-submit"],"runtimes":[{"runtimeId":"codex","readiness":{"state":"unknown"},"routes":[{"routeId":"codex.api.agent.batch","surface":"api","kind":"agent","executionProfile":"batch","adapterSource":"codex-batch","transport":"process-stdio","extensions":[]},{"routeId":"codex.api.completion","surface":"api","kind":"completion","executionProfile":null,"adapterSource":"locus-completion","transport":"provider-http","extensions":[]}]}]}
 ```
 
-C7 §9.2 additive 前置来自已发布 `docs/local-job-api-v1-consumer-guide.md:1729`：
+注：上例 routeId 仅为示意（routeId 非身份、不保证稳定）；候选实际发射的值见中英文 consumer guide 的 Route summaries 小节与 verification §2。
+
+C7 §9.2 additive 前置来自已发布 `docs/local-job-api-v1-consumer-guide.md:1729@6192b13f`（Stability Contract 末行）：
 “Use the documented v1 fields and ignore unknown JSON fields”。
 routes block 为 **experimental**；items 为 additionalProperties:false，固定 schema 副本须刷新
 （同 guide :232–238 discoveryFeature caveat）；任何 experimental block key-set 变化须重新做

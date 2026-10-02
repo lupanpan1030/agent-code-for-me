@@ -22,7 +22,7 @@ Desktop/packaged/真实 Runtime smoke 在本主机 host-blocked（§7），不�
 | APPROVED / Consumer Impact §10（统筹代行，非 Owner 签署） | APPROVED 2026-10-02（统筹代行；Owner 2026-10-02 自我迭代授权；绑定 a9b74594） |
 | Q1–Q5 / OD-1–OD-5 | 已采纳（统筹代行，Owner 可改）；缩窄 L2 / 受约束 optional routes / binding read model / P23→B / 验收代行，见 design Decisions adopted 2026-10-02；非 Owner 签署，Owner 可撤回 |
 | Approved spec SHA | `a9b74594`（完整 SHA `a9b745949b02e2b7c1bbd883c224c14b324d3dbc`） |
-| Independent RED author / suite SHA / adjudication SHA | 4 independent Opus authors (catalog-core / capabilities / surfaces / public-guards) + Fable audit (Workflow wf_32724556) / `c297872d` / `c297872d`（P1-1..P1-3 修正与 P2-1..P2-4 裁定随同一提交，见 red-receipt §9–§10） |
+| Independent RED author / suite SHA / adjudication SHA | 4 independent Opus authors (catalog-core / capabilities / surfaces / public-guards) + Fable audit (Workflow wf_32724556) / `c297872d` / `c297872d`（P1-1..P1-3 / P2-1..P2-4，修正与裁定随同一提交，见 red-receipt §9–§10）+ `24801faa`（S03 oracle，red-receipt §9 P1-4） |
 | Implementation source SHA / test fixture hashes | `a52d6a93f8a2c809fb5dc16e16c98b7b9cedc6ce`（Phase I `9f06b6f7` → Phase II `258e4081` → test adjudication `24801faa` → T1 `a52d6a93`）/ red-receipt §10 的 35 个 sha256 在候选上 `sha256sum -c` 全 OK |
 | Frozen implementation candidate | Phase III 冻结提交（subject `docs(openspec): freeze the unified runtime route catalog implementation candidate`，即包含本记录的提交）；提交无法引用自身 SHA，准确 SHA 见 Phase III handoff（`handoff/dispatch-logs/impl-route-catalog-phase3.report.md`） |
 | Codex IMPLEMENTATION_VERIFIED SHA / verdict / receipt | 须绑定冻结候选 / NOT ISSUED / — |
