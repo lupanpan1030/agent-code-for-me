@@ -153,7 +153,7 @@ describe("provider credential storage hardening", () => {
     expect(codexRouterSource).not.toContain("authConfig")
     expect(codexDesktopProviderBindingSource).not.toContain("authConfig")
     expect(codexDesktopProviderBindingSource).toContain("codexAuthMethod")
-    expect(codexRouterSource).toContain("runCodexAppServerDesktopAdapter")
+    expect(codexRouterSource).toContain("runCodexDesktopChatRun")
     expect(codexRouterSource).not.toContain("createCodexAppServerAdapter")
     expect(codexAppServerRunnerSource).toContain(
       "createAdapter: createCodexAppServerAdapter",

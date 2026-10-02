@@ -270,7 +270,7 @@ describe("agent guard runtime pipeline", () => {
     expect(codexDesktopRunPreflight).toContain("buildCodexRuntimeStatusChunk")
     expect(codexDesktopRunPreflight).toContain("buildCodexCapabilityErrorChunk")
     expect(codexRuntimeStatus).toContain(
-      'getRegisteredAgentRuntimeManifest("codex")',
+      'getAgentRuntimeCapabilityManifest("codex")',
     )
     expect(codexDesktopRunPreflight).toContain(
       "const runtimeStatus = await dependencies.getRuntimeStatus()",

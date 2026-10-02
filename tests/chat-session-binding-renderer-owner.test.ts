@@ -56,14 +56,20 @@ function sliceBetween(source: string, start: string, end: string): string {
 
 describe("renderer chat session binding owner", () => {
   test("uses the DTO binding as the only existing-chat runtime truth", () => {
-    expect(activeChatSource).toContain("const chatProvider = binding.runtime")
+    // refactor-unified-runtime-route-catalog (P14/P15): both construction
+    // sites build the transport from the DTO binding's route descriptor
+    // through createRuntimeRouteTransport instead of a runtime branch.
+    expect(activeChatSource).not.toContain(
+      "const chatProvider = binding.runtime",
+    )
     expect(activeChatSource).toContain("binding={binding}")
+    expect(activeChatSource).not.toMatch(
+      /new (?:CodexAppServerChatTransport|IPCChatTransport)\(/,
+    )
     const transportConstructors = [
-      ...activeChatSource.matchAll(
-        /new (?:CodexAppServerChatTransport|IPCChatTransport)\(\{/g,
-      ),
+      ...activeChatSource.matchAll(/createRuntimeRouteTransport\(/g),
     ]
-    expect(transportConstructors).toHaveLength(4)
+    expect(transportConstructors).toHaveLength(2)
     for (const constructorMatch of transportConstructors) {
       const constructorSource = activeChatSource.slice(
         constructorMatch.index,
