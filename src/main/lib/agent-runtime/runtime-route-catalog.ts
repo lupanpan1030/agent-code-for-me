@@ -568,12 +568,20 @@ const PRODUCTION_READINESS_PROBES: Readonly<
   "readiness:codex": productionReadinessProbe("codex"),
 }
 
+/**
+ * The typed enforcement evidence each leaf exports (its value is the one the
+ * side-effect-free evidence module holds, so referencing it loads no leaf):
+ * the type checker binds every entry to its leaf's export.
+ */
 const PRODUCTION_ENFORCEMENT_EVIDENCE: Readonly<
   Record<string, AgentRuntimeEnforcementEvidence>
 > = {
-  "headless:claude-code-batch": CLAUDE_CODE_BATCH_ENFORCEMENT_EVIDENCE,
-  "headless:codex-batch": CODEX_BATCH_ENFORCEMENT_EVIDENCE,
-  "headless:codex-app-server": CODEX_APP_SERVER_HEADLESS_ENFORCEMENT_EVIDENCE,
+  "headless:claude-code-batch":
+    CLAUDE_CODE_BATCH_ENFORCEMENT_EVIDENCE satisfies typeof import("../headless/adapters/claude-code").CLAUDE_CODE_BATCH_ENFORCEMENT_EVIDENCE,
+  "headless:codex-batch":
+    CODEX_BATCH_ENFORCEMENT_EVIDENCE satisfies typeof import("../headless/adapters/codex").CODEX_BATCH_ENFORCEMENT_EVIDENCE,
+  "headless:codex-app-server":
+    CODEX_APP_SERVER_HEADLESS_ENFORCEMENT_EVIDENCE satisfies typeof import("../headless/adapters/codex-app-server").CODEX_APP_SERVER_HEADLESS_ENFORCEMENT_EVIDENCE,
   "desktop:claude-agent-sdk": CLAUDE_AGENT_SDK_DESKTOP_ENFORCEMENT_EVIDENCE,
   "desktop:codex-app-server": CODEX_APP_SERVER_DESKTOP_ENFORCEMENT_EVIDENCE,
 }

@@ -14,6 +14,12 @@ import type {
   AgentRuntimeRunResult,
 } from "../agent-runtime-contract"
 
+/**
+ * The enforcement evidence this leaf exports for the runtime route catalog
+ * (design D1): the catalog references it and never claims a stronger level.
+ */
+export { CODEX_APP_SERVER_HEADLESS_ENFORCEMENT_EVIDENCE } from "./enforcement-evidence"
+
 export type CodexAppServerHeadlessAdapterFactory = (
   options?: CreateHeadlessCodexAppServerDesktopAdapterOptions,
 ) => Pick<CodexDesktopAdapter, "metadata" | "run">

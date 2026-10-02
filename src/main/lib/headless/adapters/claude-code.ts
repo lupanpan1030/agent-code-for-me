@@ -21,6 +21,12 @@ import {
   runProcessAgentTask,
 } from "../process-runner"
 
+/**
+ * The enforcement evidence this leaf exports for the runtime route catalog
+ * (design D1): the catalog references it and never claims a stronger level.
+ */
+export { CLAUDE_CODE_BATCH_ENFORCEMENT_EVIDENCE } from "./enforcement-evidence"
+
 type BuildClaudeEnvFn = typeof buildClaudeEnv
 type GetValidClaudeCodeCredentialFn = () => Promise<{
   accessToken: string | null
