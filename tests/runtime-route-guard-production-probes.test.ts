@@ -242,3 +242,71 @@ export function assertCodexRuntime(binding: { runtime: string }) {
     expect(scan({ [file]: clean })).toEqual([])
   })
 })
+
+describe("T1-2 a runtime choice between the D1 named hosts", () => {
+  test("clean: the catalog and the typed per-procedure hosts and their callers yield no finding", () => {
+    const files = [
+      OWNER,
+      "src/main/lib/claude/agent-sdk-desktop-run-runtime.ts",
+      "src/main/lib/codex/desktop-chat-run.ts",
+      "src/main/lib/headless/agent-runtime.ts",
+      "src/main/lib/headless/job-runner.ts",
+      "src/main/lib/trpc/routers/claude.ts",
+      "src/main/lib/trpc/routers/codex.ts",
+    ]
+    expect(
+      scan(Object.fromEntries(files.map((file) => [file, readRepoFile(file)]))),
+    ).toEqual([])
+  })
+
+  test("m4: a router runtimeId branch choosing between the Codex and Claude desktop hosts is a route-dispatch-outside-owner finding", () => {
+    const file = "src/main/lib/trpc/routers/desktop-runtime.ts"
+    const source = `import { runClaudeAgentSdkDesktopRuntimeWithMcpReadiness } from "../../claude/agent-sdk-desktop-run-runtime"
+import { runCodexDesktopChatRun } from "../../codex/desktop-chat-run"
+
+export async function runDesktopRuntime(runtimeId: string, input: never) {
+  if (runtimeId === "codex") return runCodexDesktopChatRun(input)
+  return runClaudeAgentSdkDesktopRuntimeWithMcpReadiness(input)
+}
+`
+    expect(scan({ [file]: source })).toEqual([
+      finding(RUNTIME_ROUTE_RULE.dispatch, file, "runDesktopRuntime"),
+    ])
+  })
+
+  test("m5: a runtime-keyed map of named hosts in headless is a route-dispatch-outside-owner finding", () => {
+    const file = "src/main/lib/headless/runtime-hosts.ts"
+    const source = `import { runCodexDesktopChatRun } from "../codex/desktop-chat-run"
+import { runAgentTask } from "./agent-runtime"
+
+export const HOSTS_BY_RUNTIME = {
+  codex: runCodexDesktopChatRun,
+  "claude-code": runAgentTask,
+}
+`
+    expect(scan({ [file]: source })).toEqual([
+      finding(RUNTIME_ROUTE_RULE.dispatch, file, "HOSTS_BY_RUNTIME"),
+    ])
+  })
+
+  test("a runtime ternary picking a lazily imported host member is reported; a fixed-runtime host call is not", () => {
+    const file = "src/main/lib/headless/job-runner.ts"
+    const source = `export async function hostFor(runtimeId: string) {
+  return runtimeId === "claude-code"
+    ? (await import("./agent-runtime")).runAgentTask
+    : (await import("../codex/desktop-chat-run")).runCodexDesktopChatRun
+}
+`
+    expect(scan({ [file]: source })).toEqual([
+      finding(RUNTIME_ROUTE_RULE.dispatch, file, "hostFor"),
+    ])
+    const fixed = `import { runCodexDesktopChatRun } from "../codex/desktop-chat-run"
+
+export async function codexChatRunBody(input: { runtime: string }) {
+  if (input.runtime !== "codex") throw new Error("stale binding")
+  return runCodexDesktopChatRun(input as never)
+}
+`
+    expect(scan({ [file]: fixed })).toEqual([])
+  })
+})

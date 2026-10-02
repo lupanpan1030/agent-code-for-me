@@ -4987,7 +4987,9 @@ function assertLocalJobApiAsyncGuards() {
 // state, any runtime discrimination inside a renderer construction path and
 // any runtime-id literal or branch in the transport helper
 // (renderer-route-projection-bypass); a runtime condition in main whose
-// branch yields a transportId literal is route-dispatch-outside-owner. Its
+// branch yields a transportId literal, and a runtime branch or
+// runtime-keyed map choosing between the D1 named hosts, are
+// route-dispatch-outside-owner. Its
 // self-test consumes
 // RUNTIME_ROUTE_CATALOG_FIXTURE_PATH (or --runtime-route-catalog-fixtures=)
 // and the repository is always enforced in that end state.
@@ -5051,6 +5053,15 @@ const RUNTIME_ROUTE_RETIRED_SYMBOLS = new Set([
   "resolveCodexDesktopAdapterSelection",
   "resolveCodexAppServerDesktopAdapter",
   "resolveClaudeAgentSdkDesktopAdapter",
+])
+/**
+ * The D1 named hosts, each with one fixed runtime (P02/P11/P12): a runtime
+ * branch or runtime-keyed map choosing between them is a dispatch.
+ */
+const RUNTIME_ROUTE_NAMED_HOSTS = new Set([
+  "runAgentTask",
+  "runCodexDesktopChatRun",
+  "runClaudeAgentSdkDesktopRuntimeWithMcpReadiness",
 ])
 /** Renderer construction sites and the transport helper (P14-P16). */
 const RUNTIME_ROUTE_RENDERER_SITE =
@@ -5533,6 +5544,33 @@ function runtimeRouteDeclarationSymbol(node) {
   return name
 }
 
+/**
+ * A reference to a D1 named host by name: an identifier that is not a
+ * declaration or property key, or a `.host` member access (including
+ * `(await import(module)).host`).
+ */
+function isRuntimeRouteNamedHostReference(node) {
+  if (ts.isPropertyAccessExpression(node)) {
+    return RUNTIME_ROUTE_NAMED_HOSTS.has(node.name.text)
+  }
+  if (!ts.isIdentifier(node) || !RUNTIME_ROUTE_NAMED_HOSTS.has(node.text)) {
+    return false
+  }
+  const parent = node.parent
+  return !(
+    parent &&
+    (ts.isFunctionDeclaration(parent) ||
+      ts.isVariableDeclaration(parent) ||
+      ts.isPropertyAssignment(parent) ||
+      ts.isPropertyAccessExpression(parent) ||
+      ts.isMethodDeclaration(parent) ||
+      ts.isParameter(parent) ||
+      ts.isImportSpecifier(parent) ||
+      ts.isExportSpecifier(parent)) &&
+    parent.name === node
+  )
+}
+
 /** Name of a function declaration or a const bound to a (wrapped) function. */
 function runtimeRouteDeclaredFunctionName(node) {
   if (ts.isFunctionDeclaration(node) && node.name) return node.name.text
@@ -5958,7 +5996,8 @@ function collectRuntimeRouteCatalogFindings(
       (ts.isPropertyAccessExpression(node) &&
         ts.isIdentifier(node.expression) &&
         leafNamespaces.has(node.expression.text) &&
-        RUNTIME_ROUTE_LEAF_EXPORT.test(node.name.text))
+        RUNTIME_ROUTE_LEAF_EXPORT.test(node.name.text)) ||
+      isRuntimeRouteNamedHostReference(node)
     const predicates = collectRuntimeRoutePredicates(sourceFile)
 
     runtimeRouteVisit(sourceFile, (node) => {
