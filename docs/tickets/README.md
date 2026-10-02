@@ -171,3 +171,15 @@ Owner 对 `add-renderer-untrusted-content-hardening` 选择先合入、开票补
 |------|------|------|------|
 | [TICKET-130](TICKET-130-async-submit-relay-and-windows-verification.md) | R4 最终让出窗口、held abort、Windows 退出码与 Electron packaged 信号验证 | 🟡 转发/平台验证 | Open / 待独立批准与宿主回执 |
 | [TICKET-131](TICKET-131-async-submit-followups.md) | 迁移/回滚夹具、并发 PARTIAL、SYN-25 缓存与守卫检测增强 | 🟡 验证/优化 | Open / 未授权实施 |
+
+## 第十三批 — Unified runtime route catalog 统筹代行验收后续（2026-10-02）
+
+来源：`refactor-unified-runtime-route-catalog` coordinator **ACCEPTED @ f4783c38925fd59db11e3684d97bcc1088492c08**，
+统筹 Claude Fable 5.1 依据 Owner 2026-10-02 自我迭代授权代行；双签同 SHA、无开放 Red。
+接受披露与残余见 change verification 的 ACCEPTED (a)–(j)。以下仅登记，实施需另行批准；
+Desktop / CLI / daemon / stdio host-blocked、macOS/Windows not claimed、consumer E2E unknown，
+TICKET-127–131 保持 Open。
+
+| 工单 | 标题 | 级别 | 状态 |
+|------|------|------|------|
+| [TICKET-132](TICKET-132-runtime-route-catalog-followups.md) | Route catalog 守卫限制/forwarded P3、Phase 4-conformance 具名残余、smoke 平台矩阵、renderer 提示与冻结夹具后续 | 🟡 架构/验证/体验 | Open / 未授权实施 |

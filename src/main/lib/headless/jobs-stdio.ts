@@ -5,6 +5,7 @@ import {
   type AgentJobContractRuntime,
 } from "../../../shared/agent-jobs"
 import { CONTRACT_RUNTIME_IDS } from "../../../shared/agent-runtime-capabilities"
+import type { RuntimeRouteCatalogState } from "../agent-runtime/runtime-route-catalog"
 import type { AgentTaskRunner } from "./agent-runtime-contract"
 import { serializeAgentJob, serializeAgentJobEvent } from "./cli-output"
 import { pumpQueuedRuns } from "./daemon"
@@ -36,6 +37,8 @@ export type RunJobsStdioServerOptions = {
   stderr?: Writer
   env?: NodeJS.ProcessEnv
   runner?: AgentTaskRunner | null
+  /** Test-only runtime route catalog state, forwarded to the session pump. */
+  runtimeRouteCatalog?: RuntimeRouteCatalogState
 }
 
 export const JOBS_STDIO_PROTOCOL_VERSION = "locus-jobs-stdio.v1"
@@ -294,6 +297,7 @@ async function handleJobRun(
     db: options.db,
     env: options.env,
     runner: options.runner,
+    runtimeRouteCatalog: options.runtimeRouteCatalog,
     admittedIds: [job.id],
     concurrency: 1,
     signal: abortController.signal,

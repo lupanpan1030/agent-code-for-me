@@ -79,8 +79,12 @@ const ALLOWED = new Map([
     "tests the cleanup above, including its symlink-escape guard",
   ],
   [
-    "tests/agent-runtime-registry.test.ts",
+    "tests/agent-runtime-router-surface.test.ts",
     "negative assertions proving the router no longer contains the retired symbols",
+  ],
+  [
+    "tests/fixtures/runtime-route-catalog/refusals.json",
+    "S06/S46 retired-ID refusal fixtures (refactor-unified-runtime-route-catalog RED suite, tasks 6.1 / design D5)",
   ],
   [
     "tests/agent-chat-provider-routing.test.ts",

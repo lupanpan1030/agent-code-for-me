@@ -27,6 +27,17 @@ export const LOCAL_JOB_API_DISCOVERY_FEATURES = [
 export const LOCAL_JOB_API_CODEX_RUNTIME_EXTENSION = "runtime.codex.v1" as const
 
 /**
+ * Published JSON Pointers (into docs/local-job-api-v1.schema.json) of the
+ * runtime extension namespaces a runtime route may declare.
+ */
+export const LOCAL_JOB_API_RUNTIME_EXTENSION_SCHEMA_REFS: Readonly<
+  Record<string, string>
+> = {
+  [LOCAL_JOB_API_CODEX_RUNTIME_EXTENSION]:
+    "#/$defs/eventPayloadExtensions/properties/runtime.codex.v1",
+}
+
+/**
  * Optional `payload.extensions["runtime.codex.v1"]` of runtime-backed Codex
  * event payloads (feature `canonical-run-ledger`): redacted native identities
  * present in that boundary only; absent before execution binding.
@@ -327,8 +338,37 @@ export type LocalJobApiRuntimeReadiness = {
   hint?: string
 }
 
+/**
+ * Experimental, descriptive runtime extension declaration of a route summary
+ * (discovery `runtimes[].routes[].extensions[]`). Not an execution grant.
+ */
+export type LocalJobApiRuntimeRouteExtension = {
+  namespace: string
+  schemaVersion: number
+  maturity: string
+  schemaRef: string
+}
+
+/**
+ * Optional experimental route summary of discovery (`runtimes[].routes[]`).
+ * `routeId`, `surface`, `adapterSource` and `transport` are open descriptive
+ * strings: `routeId` is not a stable identity and consumers must not branch
+ * on `adapterSource` or `transport`.
+ */
+export type LocalJobApiRuntimeRouteSummary = {
+  routeId: string
+  surface: string
+  kind: AgentJobKind
+  executionProfile: LocalJobApiExecutionProfile | null
+  adapterSource: string
+  transport: string
+  extensions: LocalJobApiRuntimeRouteExtension[]
+}
+
 export type LocalJobApiRuntimeManifest = AgentRuntimeCapabilityManifest & {
   readiness: LocalJobApiRuntimeReadiness
+  /** Experimental optional route summaries (surface `api` only). */
+  routes?: LocalJobApiRuntimeRouteSummary[]
 }
 
 export type LocalJobApiRuntimeManifestEnvelope = {

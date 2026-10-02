@@ -1,25 +1,33 @@
 import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import {
-  checkRegisteredAgentRuntimeCapability,
-  getRegisteredAgentRuntimeManifest,
-  listRegisteredAgentRuntimeManifests,
-  resolveRegisteredAgentRuntimeCapability,
-  resolveRegisteredAgentRuntimeManifest,
-} from "../src/main/lib/agent-runtime/runtime-registry"
+  CONTRACT_RUNTIME_IDS,
+  checkAgentRuntimeCapability,
+  getAgentRuntimeCapabilityManifest,
+  resolveAgentRuntimeCapability,
+  resolveAgentRuntimeCapabilityManifest,
+} from "../src/shared/agent-runtime-capabilities"
 
-describe("agent runtime registry", () => {
+// refactor-unified-runtime-route-catalog (design D5): renamed from
+// tests/agent-runtime-registry.test.ts. The runtime-registry facade is
+// retired; its facade tests migrate onto the shared capability owner that
+// pure capability callers now use directly (catalog coverage: S06 unknown /
+// retired IDs, S10 manifest truth). The two router-surface source-scan
+// ratchets below are kept verbatim.
+describe("agent runtime router surface", () => {
   test("exposes non-secret Claude Code and Codex capability manifests", () => {
-    const manifests = listRegisteredAgentRuntimeManifests()
+    const manifests = CONTRACT_RUNTIME_IDS.map((runtimeId) =>
+      getAgentRuntimeCapabilityManifest(runtimeId),
+    )
 
     expect(manifests.map((manifest) => manifest.runtimeId)).toEqual([
       "claude-code",
       "codex",
     ])
-    expect(getRegisteredAgentRuntimeManifest("claude").runtimeId).toBe(
+    expect(getAgentRuntimeCapabilityManifest("claude").runtimeId).toBe(
       "claude-code",
     )
-    expect(getRegisteredAgentRuntimeManifest("codex").runtimeId).toBe("codex")
+    expect(getAgentRuntimeCapabilityManifest("codex").runtimeId).toBe("codex")
     expect(JSON.stringify(manifests)).not.toMatch(
       /(^|[^A-Za-z0-9_])sk-[A-Za-z0-9_-]{20,}/,
     )
@@ -28,13 +36,13 @@ describe("agent runtime registry", () => {
 
   test("provides reusable runtime gating for future desktop CLI job and protocol callers", () => {
     expect(
-      checkRegisteredAgentRuntimeCapability({
+      checkAgentRuntimeCapability({
         runtime: "claude-code",
         capabilityId: "rollback",
       }).ok,
     ).toBe(true)
 
-    const codexRollback = checkRegisteredAgentRuntimeCapability({
+    const codexRollback = checkAgentRuntimeCapability({
       runtime: "codex",
       capabilityId: "rollback",
     })
@@ -45,7 +53,7 @@ describe("agent runtime registry", () => {
   })
 
   test("returns normalized unavailable-runtime diagnostics for unknown callers", () => {
-    expect(resolveRegisteredAgentRuntimeManifest("future-runtime")).toEqual({
+    expect(resolveAgentRuntimeCapabilityManifest("future-runtime")).toEqual({
       ok: false,
       runtimeId: "future-runtime",
       diagnostic: {
@@ -57,7 +65,7 @@ describe("agent runtime registry", () => {
     })
 
     expect(
-      resolveRegisteredAgentRuntimeCapability({
+      resolveAgentRuntimeCapability({
         runtime: "future-runtime",
         capabilityId: "planMode",
       }),
@@ -108,12 +116,8 @@ describe("agent runtime registry", () => {
       `provider === "${retiredManagedRuntimeId}"`,
     )
     expect(activeChat).not.toContain(`provider === "${retiredCliRuntimeId}"`)
-    expect(runtimeCapabilities).not.toContain(
-      "KUN_RUNTIME_MANIFEST",
-    )
-    expect(runtimeCapabilities).not.toContain(
-      "QWEN_CODE_RUNTIME_MANIFEST",
-    )
+    expect(runtimeCapabilities).not.toContain("KUN_RUNTIME_MANIFEST")
+    expect(runtimeCapabilities).not.toContain("QWEN_CODE_RUNTIME_MANIFEST")
   })
 
   test("renderer consumes runtime manifests through a store instead of static capability truth", () => {

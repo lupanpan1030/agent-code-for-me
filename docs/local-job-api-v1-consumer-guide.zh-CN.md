@@ -285,6 +285,123 @@ provider token、headers 或 environment variables。
 completion job 比 agent job 更严格：必须提供 `provider.profileId`，不会使用 runtime
 defaults，也不会回落到 native credentials。
 
+### Route summaries (`runtimes[].routes`, experimental)
+
+包含统一 runtime route catalog 的 build 会在 `locus api runtimes list --json` 的每个
+runtime 上追加可选的 `routes` 数组。该数组位于 `readiness` 之后，带或不带
+`--no-probe` 都会输出：它不依赖任何 readiness probe。没有 discovery feature 标识宣告它，
+也没有任何 request 字段接受其中的内容。consumer 应直接检查该成员本身。
+
+当前 build 的 Codex 条目（省略 `label`、`description`、`capabilities` 与
+`readiness`）：
+
+```json
+{
+  "runtimeId": "codex",
+  "routes": [
+    {
+      "routeId": "codex.api.policy-grant",
+      "surface": "api",
+      "kind": "agent",
+      "executionProfile": "policy-grant",
+      "adapterSource": "codex-app-server",
+      "transport": "json-rpc-stdio",
+      "extensions": [
+        {
+          "namespace": "runtime.codex.v1",
+          "schemaVersion": 1,
+          "maturity": "experimental",
+          "schemaRef": "#/$defs/eventPayloadExtensions/properties/runtime.codex.v1"
+        }
+      ]
+    },
+    {
+      "routeId": "codex.completion",
+      "surface": "api",
+      "kind": "completion",
+      "executionProfile": null,
+      "adapterSource": "locus-completion",
+      "transport": "provider-http",
+      "extensions": []
+    },
+    {
+      "routeId": "codex.headless.batch",
+      "surface": "api",
+      "kind": "agent",
+      "executionProfile": "batch",
+      "adapterSource": "codex-batch",
+      "transport": "process-stdio",
+      "extensions": []
+    }
+  ]
+}
+```
+
+`claude-code` 条目列出 `claude-code.completion`（`kind: "completion"`、
+`adapterSource: "locus-completion"`、`transport: "provider-http"`）与
+`claude-code.headless.batch`（`kind: "agent"`、`executionProfile: "batch"`、
+`adapterSource: "claude-code-batch"`、`transport: "process-stdio"`），两者都是
+`extensions: []`。数组顺序没有含义。
+
+每条摘要恰好包含以下成员：
+
+| 成员 | 含义 |
+| --- | --- |
+| `routeId` | 路线的描述性标签。它不是身份，也不保证跨版本稳定：不要持久化、不要跨 build 比较，也不要用它选择行为。没有 request 字段接受它。 |
+| `surface` | 入口 surface。只列出 `api`。 |
+| `kind` | 既有封闭的 `jobKind`：`agent` 或 `completion`。 |
+| `executionProfile` | `agent` 时为既有封闭的 `executionProfile`：`batch` 或 `policy-grant`；`completion` 时为 `null`。 |
+| `adapterSource` | 描述性的 adapter 标签。已知取值：`claude-code-batch`、`codex-batch`、`codex-app-server`、`locus-completion`。 |
+| `transport` | 描述性的 transport 标签。已知取值：`process-stdio`、`json-rpc-stdio`、`provider-http`。 |
+| `extensions` | 该路线真实 event producer 可能输出的 runtime extension namespace，每项恰好包含 `namespace`、`schemaVersion`、`maturity` 与 `schemaRef`（指向 [local-job-api-v1.schema.json](local-job-api-v1.schema.json) 的 JSON Pointer）。只有 Codex `policy-grant` 路线声明 `runtime.codex.v1`；batch 与 completion 路线声明 `[]`。声明不代表每条 event 都携带该 extension。 |
+
+读取规则：
+
+- 只列出 API 当前接受的 request 组合（`surface: "api"`）。protocol 路线被省略，因为
+  jobs-stdio 的 `initialize` 拥有该合同；desktop 路线从不列出。
+- `routeId`、`surface`、`adapterSource` 与 `transport` 是开放词表。上面的已知取值并不
+  穷尽：遇到不认识的值也要接受。`kind` 与 `executionProfile` 复用 request 合同中的
+  封闭定义。
+- 不要按 `adapterSource` 或 `transport` 分支。根据 `features`、`capabilities` 与
+  request 合同决定发送什么；Locus 仍按 request（`runtime.id`、`kind`、
+  `runtime.executionProfile`）选择 adapter，与以前完全相同。
+- 路线摘要是描述，不是授权。它不授予执行权，不覆盖 `capabilities` 或 `readiness`，
+  不授权 native extension，也不是 endpoint。所有 request 校验、capability gate、权限
+  检查与 claim-time 检查照常执行，也不存在按路线执行的命令。
+- advisory readiness 不是 daemon readiness。列出某条路线不说明该 runtime 已就绪；与
+  `readiness` 一样，它描述的是执行 `runtimes list` 的进程，而不是 `locus daemon run`
+  executor。
+- 缺少 `routes` 成员只表示该 build 不描述自己的路线，绝不表示 `async-submit`、
+  `completion`、`policy-grant` 或其他既有 feature 不受支持；继续按 `features` 与
+  request 合同调用。
+
+兼容性：
+
+- 遵循 [稳定性合同](#稳定性合同) 中“只依赖本手册列出的 v1 字段，并忽略未知 JSON 字段”
+  规则的 reader 无需修改。这条已发布规则是 Locus 将该成员归类为 additive 变化的前提
+  （interoperability contract C7 §9.2）。
+- schema 以 `runtimeRouteSummary` 与 `runtimeRouteExtension` 定义各项，两者都是
+  `additionalProperties: false` 且键集精确。在该 block 之前固定的
+  [local-job-api-v1.schema.json](local-job-api-v1.schema.json) 副本会把 `routes`
+  当作未知 runtime 成员接受；但包含这些定义的副本会拒绝其中未列出的任何 route 或
+  extension 成员。与上文封闭的 `discoveryFeature` enum 一样，“忽略未知字段”不覆盖
+  封闭对象中的成员：该 block 每次变化都要刷新固定副本。
+- schema 同时强制 `kind` 与 `executionProfile` 的联动：`completion` 摘要必须是
+  `executionProfile: null`，`agent` 摘要必须是 `batch` 或 `policy-grant`。
+- 由于该 block 是 experimental，Locus 可能改变它的键集。route 摘要或 extension 声明
+  的任何新增、删除或重命名成员都是新的兼容性决定（interoperability contract C7 #2 与
+  #10），并会在这里记录；开放词表规则只覆盖新取值，从不覆盖新成员。
+
+#### 升级检查清单（`runtimes[].routes`）
+
+1. 无需修改。忽略未知字段的 reader 继续可用。
+2. 如果用本地固定的 `local-job-api-v1.schema.json` 校验 discovery 输出，刷新该副本；
+   该 experimental block 以后每次变化都要再次刷新。
+3. 接受 `routeId`、`surface`、`adapterSource` 与 `transport` 的未知取值；不要持久化
+   `routeId`，也不要按 `adapterSource` 或 `transport` 分支。
+4. 把缺少 `routes` 成员理解为“未描述”，不是缺少 feature。
+5. 不要把列出的路线当作已就绪、已授权或可执行。
+
 ## Agent Create Request
 
 通用本地 package 示例：
@@ -1521,6 +1638,7 @@ locus api runs create --request "$PACKAGE_DIR/request.json" --json
 | runtime 报告成功，但 run 为 `failed`，原因是 `policy_denied`、`output_empty`、`output_invalid` 或 `output_evidence_missing` | 修正后的终态真相：拒绝、无效输出和空输出会使 run 失败。 | 查看 `diagnostics` 以及该 run 的 `status`/`error` events。 |
 | schema 校验拒绝 `features` 中的 `canonical-run-ledger` | 本地固定的旧版 schema 的 `discoveryFeature` enum 是封闭的。 | 刷新 `local-job-api-v1.schema.json` 副本。 |
 | schema 校验拒绝 `features` 中的 `async-submit` | 同一个封闭 enum；`async-submit` 比你的副本新。 | 刷新 `local-job-api-v1.schema.json` 副本。 |
+| schema 校验拒绝 `runtimes[].routes` 中的某个成员 | 你固定的副本以精确键集定义 experimental route 摘要，而该 block 在你固定之后发生了变化。 | 刷新 `local-job-api-v1.schema.json` 副本；见 [Route summaries](#route-summaries-runtimesroutes-experimental)。 |
 | `runs wait` exit `9` | 截止时 run 尚未就绪（原因见 `wait.reason`）。这不是失败。 | 再次 wait，或读取 `runs status`。`executor_unavailable` 时启动 `locus daemon run`。 |
 | `runs submit` 成功但 run 一直 `queued` | 没有运行中的 executor（`execution.reason: "no_executor"`）。 | 启动 `locus daemon run`，或用 `runs create` 在进程内执行。 |
 | `idempotency_conflict` | 该 key 已为此 consumer 绑定到不同的 request。 | 不同的 request 使用新 key。 |
@@ -1557,6 +1675,9 @@ v1 不稳定：
 - error `message` 文本、`job.workerId` 的格式，以及 executor 的时序细节（心跳
   节奏、每次循环的结算上限）
 - `payload.extensions["runtime.codex.v1"]`（`maturity: "experimental"`）
+- `runtimes[].routes`（experimental）：是否出现、`routeId` 的取值，以及 `surface`、
+  `adapterSource`、`transport` 的开放取值；其键集的任何变化都是新的兼容性决定，记录在
+  [Route summaries](#route-summaries-runtimesroutes-experimental)
 - Workbench 渲染细节
 - `locus run` 和 `locus jobs` 的人工 CLI 格式
 

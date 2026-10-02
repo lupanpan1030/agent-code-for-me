@@ -1,0 +1,920 @@
+{
+  "fixtureVersion": 1,
+  "evidenceClass": "synthetic",
+  "sourceRefs": [
+    "openspec/changes/refactor-unified-runtime-route-catalog/specs/agent-runtime-core/spec.md:102-106",
+    "openspec/changes/refactor-unified-runtime-route-catalog/design.md:357-375",
+    "openspec/changes/refactor-unified-runtime-route-catalog/design.md:260",
+    "src/main/lib/headless/provider-binding.ts:150-163",
+    "src/main/lib/headless/provider-binding.ts:550-620",
+    "src/main/lib/headless/job-runner.ts:766-777",
+    "src/main/lib/headless/job-runner.ts:879-885",
+    "src/main/lib/provider-profiles/storage.ts:89-131"
+  ],
+  "provenance": {
+    "author": "independent red-test author (catalog-core domain)",
+    "approvedSpec": "a9b745949b02e2b7c1bbd883c224c14b324d3dbc",
+    "base": "19986552",
+    "method": "expectOwner recorded by calling the base resolveHeadlessProviderBinding with the listed sentinel dependencies; expectHost recorded by running the base CLI `run` with the same dependencies and an injected recording runner standing in for the executing leaf (the runner seam only captured the provider binding the owner handed to execution; no selection payload is taken from it). In the catalog run the recording catalog delegate replaces that position, so the sequence's runner step is written as invoke:<factoryRef>. Sentinel values are non-secret fixture strings.",
+    "declarationsRef": "catalog.json#S01.declarations"
+  },
+  "S32": {
+    "sentinelProfile": {
+      "baseUrl": "https://provider.example.com/v1",
+      "protocol": "openai-responses",
+      "authMode": "bearer",
+      "tokenPrefix": "nonsecret-sentinel-credential-",
+      "headerName": "X-Sentinel-Header",
+      "headerPrefix": "nonsecret-sentinel-header-"
+    },
+    "seededProfileRow": {
+      "id": "profile-explicit",
+      "name": "profile-explicit-name",
+      "defaultModel": "profile-explicit-default-model",
+      "targets": ["claude", "codex"]
+    },
+    "gateway": {
+      "baseUrlPrefix": "http://127.0.0.1:47000/gateway/",
+      "tokenPrefix": "gateway-sentinel-token-"
+    },
+    "badDefault": {
+      "profileId": "profile-default-bad",
+      "message": "Provider profile profile-default-bad is invalid."
+    },
+    "cases": [
+      {
+        "caseId": "claude-code:explicit-profile",
+        "runtime": "claude-code",
+        "flags": ["--provider-profile", "profile-explicit"],
+        "ownerInput": {
+          "providerProfileId": "profile-explicit",
+          "modelOverride": null
+        },
+        "defaultProfile": "none",
+        "expectOwner": {
+          "ok": true,
+          "providerBinding": {
+            "model": "profile-explicit-default-model",
+            "modelSource": "provider-profile:profile-explicit",
+            "providerProfileId": "profile-explicit",
+            "providerProfileName": "profile-explicit-name",
+            "gatewayEndpoint": "http://127.0.0.1:47000/gateway/anthropic",
+            "gatewayToken": "gateway-sentinel-token-1",
+            "authMode": "provider-profile",
+            "diagnostics": [
+              {
+                "id": "headless-provider-binding",
+                "status": "ready",
+                "message": "Resolved provider profile through a scoped local gateway token."
+              }
+            ]
+          },
+          "resolvedProvider": {
+            "source": "request-profile",
+            "profileId": "profile-explicit",
+            "model": "profile-explicit-default-model"
+          },
+          "secretHints": [
+            "nonsecret-sentinel-credential-profile-explicit",
+            "gateway-sentinel-token-1"
+          ],
+          "ownerCalls": [
+            "runtime-config:profile-explicit",
+            "gateway:profile-explicit:anthropic",
+            "revoke:gateway-sentinel-token-1"
+          ]
+        },
+        "expectHost": {
+          "code": 0,
+          "stderr": "",
+          "jobs": [
+            {
+              "status": "succeeded",
+              "exit_code": 0,
+              "error_code": null,
+              "error_message": null,
+              "resolvedProvider": {
+                "source": "request-profile",
+                "profileId": "profile-explicit",
+                "model": "profile-explicit-default-model"
+              }
+            }
+          ],
+          "delegateProviderBindings": [
+            {
+              "model": "profile-explicit-default-model",
+              "modelSource": "provider-profile:profile-explicit",
+              "providerProfileId": "profile-explicit",
+              "providerProfileName": "profile-explicit-name",
+              "gatewayEndpoint": "http://127.0.0.1:47000/gateway/anthropic",
+              "gatewayToken": "gateway-sentinel-token-1",
+              "authMode": "provider-profile",
+              "diagnostics": [
+                {
+                  "id": "headless-provider-binding",
+                  "status": "ready",
+                  "message": "Resolved provider profile through a scoped local gateway token."
+                }
+              ]
+            }
+          ],
+          "sequence": [
+            "runtime-config:profile-explicit",
+            "gateway:profile-explicit:anthropic",
+            "invoke:factory:claude-code-batch",
+            "revoke:gateway-sentinel-token-1"
+          ]
+        }
+      },
+      {
+        "caseId": "claude-code:explicit-profile-model",
+        "runtime": "claude-code",
+        "flags": [
+          "--provider-profile",
+          "profile-explicit",
+          "--model",
+          "explicit-model-override"
+        ],
+        "ownerInput": {
+          "providerProfileId": "profile-explicit",
+          "modelOverride": "explicit-model-override"
+        },
+        "defaultProfile": "none",
+        "expectOwner": {
+          "ok": true,
+          "providerBinding": {
+            "model": "explicit-model-override",
+            "modelSource": "provider-profile:profile-explicit",
+            "providerProfileId": "profile-explicit",
+            "providerProfileName": "profile-explicit-name",
+            "gatewayEndpoint": "http://127.0.0.1:47000/gateway/anthropic",
+            "gatewayToken": "gateway-sentinel-token-1",
+            "authMode": "provider-profile",
+            "diagnostics": [
+              {
+                "id": "headless-provider-binding",
+                "status": "ready",
+                "message": "Resolved provider profile through a scoped local gateway token."
+              }
+            ]
+          },
+          "resolvedProvider": {
+            "source": "request-profile",
+            "profileId": "profile-explicit",
+            "model": "explicit-model-override"
+          },
+          "secretHints": [
+            "nonsecret-sentinel-credential-profile-explicit",
+            "gateway-sentinel-token-1"
+          ],
+          "ownerCalls": [
+            "runtime-config:profile-explicit",
+            "gateway:profile-explicit:anthropic",
+            "revoke:gateway-sentinel-token-1"
+          ]
+        },
+        "expectHost": {
+          "code": 0,
+          "stderr": "",
+          "jobs": [
+            {
+              "status": "succeeded",
+              "exit_code": 0,
+              "error_code": null,
+              "error_message": null,
+              "resolvedProvider": {
+                "source": "request-profile",
+                "profileId": "profile-explicit",
+                "model": "explicit-model-override"
+              }
+            }
+          ],
+          "delegateProviderBindings": [
+            {
+              "model": "explicit-model-override",
+              "modelSource": "provider-profile:profile-explicit",
+              "providerProfileId": "profile-explicit",
+              "providerProfileName": "profile-explicit-name",
+              "gatewayEndpoint": "http://127.0.0.1:47000/gateway/anthropic",
+              "gatewayToken": "gateway-sentinel-token-1",
+              "authMode": "provider-profile",
+              "diagnostics": [
+                {
+                  "id": "headless-provider-binding",
+                  "status": "ready",
+                  "message": "Resolved provider profile through a scoped local gateway token."
+                }
+              ]
+            }
+          ],
+          "sequence": [
+            "runtime-config:profile-explicit",
+            "gateway:profile-explicit:anthropic",
+            "invoke:factory:claude-code-batch",
+            "revoke:gateway-sentinel-token-1"
+          ]
+        }
+      },
+      {
+        "caseId": "claude-code:model-only",
+        "runtime": "claude-code",
+        "flags": ["--model", "model-only-override"],
+        "ownerInput": {
+          "providerProfileId": null,
+          "modelOverride": "model-only-override"
+        },
+        "defaultProfile": "good",
+        "expectOwner": {
+          "ok": true,
+          "providerBinding": {
+            "model": "model-only-override",
+            "modelSource": "request",
+            "providerProfileId": null,
+            "gatewayEndpoint": null,
+            "authMode": "runtime-managed",
+            "diagnostics": [
+              {
+                "id": "headless-provider-binding-native-model",
+                "status": "ready",
+                "message": "Resolved explicit model for runtime-managed credentials."
+              }
+            ]
+          },
+          "resolvedProvider": {
+            "source": "native",
+            "profileId": null,
+            "model": "model-only-override"
+          },
+          "secretHints": [],
+          "ownerCalls": []
+        },
+        "expectHost": {
+          "code": 0,
+          "stderr": "",
+          "jobs": [
+            {
+              "status": "succeeded",
+              "exit_code": 0,
+              "error_code": null,
+              "error_message": null,
+              "resolvedProvider": {
+                "source": "native",
+                "profileId": null,
+                "model": "model-only-override"
+              }
+            }
+          ],
+          "delegateProviderBindings": [
+            {
+              "model": "model-only-override",
+              "modelSource": "request",
+              "providerProfileId": null,
+              "gatewayEndpoint": null,
+              "authMode": "runtime-managed",
+              "diagnostics": [
+                {
+                  "id": "headless-provider-binding-native-model",
+                  "status": "ready",
+                  "message": "Resolved explicit model for runtime-managed credentials."
+                }
+              ]
+            }
+          ],
+          "sequence": ["invoke:factory:claude-code-batch"]
+        }
+      },
+      {
+        "caseId": "claude-code:default-good",
+        "runtime": "claude-code",
+        "flags": [],
+        "ownerInput": {
+          "providerProfileId": null,
+          "modelOverride": null
+        },
+        "defaultProfile": "good",
+        "expectOwner": {
+          "ok": true,
+          "providerBinding": {
+            "model": "profile-default-default-model",
+            "modelSource": "provider-profile:profile-default",
+            "providerProfileId": "profile-default",
+            "providerProfileName": "profile-default-name",
+            "gatewayEndpoint": "http://127.0.0.1:47000/gateway/anthropic",
+            "gatewayToken": "gateway-sentinel-token-1",
+            "authMode": "provider-profile",
+            "diagnostics": [
+              {
+                "id": "headless-provider-binding",
+                "status": "ready",
+                "message": "Resolved provider profile through a scoped local gateway token."
+              }
+            ]
+          },
+          "resolvedProvider": {
+            "source": "default-profile",
+            "profileId": "profile-default",
+            "model": "profile-default-default-model"
+          },
+          "secretHints": [
+            "nonsecret-sentinel-credential-profile-default",
+            "gateway-sentinel-token-1"
+          ],
+          "ownerCalls": [
+            "default:claude-main",
+            "gateway:profile-default:anthropic",
+            "revoke:gateway-sentinel-token-1"
+          ]
+        },
+        "expectHost": {
+          "code": 0,
+          "stderr": "",
+          "jobs": [
+            {
+              "status": "succeeded",
+              "exit_code": 0,
+              "error_code": null,
+              "error_message": null,
+              "resolvedProvider": {
+                "source": "default-profile",
+                "profileId": "profile-default",
+                "model": "profile-default-default-model"
+              }
+            }
+          ],
+          "delegateProviderBindings": [
+            {
+              "model": "profile-default-default-model",
+              "modelSource": "provider-profile:profile-default",
+              "providerProfileId": "profile-default",
+              "providerProfileName": "profile-default-name",
+              "gatewayEndpoint": "http://127.0.0.1:47000/gateway/anthropic",
+              "gatewayToken": "gateway-sentinel-token-1",
+              "authMode": "provider-profile",
+              "diagnostics": [
+                {
+                  "id": "headless-provider-binding",
+                  "status": "ready",
+                  "message": "Resolved provider profile through a scoped local gateway token."
+                }
+              ]
+            }
+          ],
+          "sequence": [
+            "default:claude-main",
+            "gateway:profile-default:anthropic",
+            "invoke:factory:claude-code-batch",
+            "revoke:gateway-sentinel-token-1"
+          ]
+        }
+      },
+      {
+        "caseId": "claude-code:default-bad",
+        "runtime": "claude-code",
+        "flags": [],
+        "ownerInput": {
+          "providerProfileId": null,
+          "modelOverride": null
+        },
+        "defaultProfile": "bad",
+        "expectOwner": {
+          "ok": false,
+          "code": "provider_profile_unavailable",
+          "message": "Provider profile profile-default-bad is invalid.",
+          "source": "default-profile",
+          "profileId": "profile-default-bad",
+          "ownerCalls": ["default:claude-main"]
+        },
+        "expectHost": {
+          "code": 4,
+          "stderr": "",
+          "jobs": [
+            {
+              "status": "failed",
+              "exit_code": 4,
+              "error_code": "provider_profile_unavailable",
+              "error_message": "Provider profile profile-default-bad is invalid.",
+              "resolvedProvider": {
+                "source": "default-profile",
+                "profileId": "profile-default-bad",
+                "model": null
+              }
+            }
+          ],
+          "delegateProviderBindings": [],
+          "sequence": ["default:claude-main"]
+        }
+      },
+      {
+        "caseId": "claude-code:explicit-missing",
+        "runtime": "claude-code",
+        "flags": ["--provider-profile", "profile-missing"],
+        "ownerInput": {
+          "providerProfileId": "profile-missing",
+          "modelOverride": null
+        },
+        "defaultProfile": "good",
+        "expectOwner": {
+          "ok": false,
+          "code": "provider_profile_not_found",
+          "message": "Provider profile profile-missing was not found.",
+          "source": "request-profile",
+          "profileId": "profile-missing",
+          "ownerCalls": ["runtime-config:profile-missing"]
+        },
+        "expectHost": {
+          "code": 2,
+          "stderr": "Provider profile profile-missing was not found.\n",
+          "jobs": [],
+          "delegateProviderBindings": [],
+          "sequence": []
+        }
+      },
+      {
+        "caseId": "claude-code:native",
+        "runtime": "claude-code",
+        "flags": [],
+        "ownerInput": {
+          "providerProfileId": null,
+          "modelOverride": null
+        },
+        "defaultProfile": "none",
+        "expectOwner": {
+          "ok": true,
+          "providerBinding": null,
+          "resolvedProvider": {
+            "source": "native",
+            "profileId": null,
+            "model": null
+          },
+          "secretHints": [],
+          "ownerCalls": ["default:claude-main"]
+        },
+        "expectHost": {
+          "code": 0,
+          "stderr": "",
+          "jobs": [
+            {
+              "status": "succeeded",
+              "exit_code": 0,
+              "error_code": null,
+              "error_message": null,
+              "resolvedProvider": {
+                "source": "native",
+                "profileId": null,
+                "model": null
+              }
+            }
+          ],
+          "delegateProviderBindings": [null],
+          "sequence": [
+            "default:claude-main",
+            "invoke:factory:claude-code-batch"
+          ]
+        }
+      },
+      {
+        "caseId": "codex:explicit-profile",
+        "runtime": "codex",
+        "flags": ["--provider-profile", "profile-explicit"],
+        "ownerInput": {
+          "providerProfileId": "profile-explicit",
+          "modelOverride": null
+        },
+        "defaultProfile": "none",
+        "expectOwner": {
+          "ok": true,
+          "providerBinding": {
+            "model": "profile-explicit-default-model",
+            "modelSource": "provider-profile:profile-explicit",
+            "providerProfileId": "profile-explicit",
+            "providerProfileName": "profile-explicit-name",
+            "gatewayEndpoint": "http://127.0.0.1:47000/gateway/responses",
+            "gatewayToken": "gateway-sentinel-token-1",
+            "authMode": "provider-profile",
+            "diagnostics": [
+              {
+                "id": "headless-provider-binding",
+                "status": "ready",
+                "message": "Resolved provider profile through a scoped local gateway token."
+              }
+            ]
+          },
+          "resolvedProvider": {
+            "source": "request-profile",
+            "profileId": "profile-explicit",
+            "model": "profile-explicit-default-model"
+          },
+          "secretHints": [
+            "nonsecret-sentinel-credential-profile-explicit",
+            "gateway-sentinel-token-1"
+          ],
+          "ownerCalls": [
+            "runtime-config:profile-explicit",
+            "gateway:profile-explicit:responses",
+            "revoke:gateway-sentinel-token-1"
+          ]
+        },
+        "expectHost": {
+          "code": 0,
+          "stderr": "",
+          "jobs": [
+            {
+              "status": "succeeded",
+              "exit_code": 0,
+              "error_code": null,
+              "error_message": null,
+              "resolvedProvider": {
+                "source": "request-profile",
+                "profileId": "profile-explicit",
+                "model": "profile-explicit-default-model"
+              }
+            }
+          ],
+          "delegateProviderBindings": [
+            {
+              "model": "profile-explicit-default-model",
+              "modelSource": "provider-profile:profile-explicit",
+              "providerProfileId": "profile-explicit",
+              "providerProfileName": "profile-explicit-name",
+              "gatewayEndpoint": "http://127.0.0.1:47000/gateway/responses",
+              "gatewayToken": "gateway-sentinel-token-1",
+              "authMode": "provider-profile",
+              "diagnostics": [
+                {
+                  "id": "headless-provider-binding",
+                  "status": "ready",
+                  "message": "Resolved provider profile through a scoped local gateway token."
+                }
+              ]
+            }
+          ],
+          "sequence": [
+            "runtime-config:profile-explicit",
+            "gateway:profile-explicit:responses",
+            "invoke:factory:codex-batch",
+            "revoke:gateway-sentinel-token-1"
+          ]
+        }
+      },
+      {
+        "caseId": "codex:explicit-profile-model",
+        "runtime": "codex",
+        "flags": [
+          "--provider-profile",
+          "profile-explicit",
+          "--model",
+          "explicit-model-override"
+        ],
+        "ownerInput": {
+          "providerProfileId": "profile-explicit",
+          "modelOverride": "explicit-model-override"
+        },
+        "defaultProfile": "none",
+        "expectOwner": {
+          "ok": true,
+          "providerBinding": {
+            "model": "explicit-model-override",
+            "modelSource": "provider-profile:profile-explicit",
+            "providerProfileId": "profile-explicit",
+            "providerProfileName": "profile-explicit-name",
+            "gatewayEndpoint": "http://127.0.0.1:47000/gateway/responses",
+            "gatewayToken": "gateway-sentinel-token-1",
+            "authMode": "provider-profile",
+            "diagnostics": [
+              {
+                "id": "headless-provider-binding",
+                "status": "ready",
+                "message": "Resolved provider profile through a scoped local gateway token."
+              }
+            ]
+          },
+          "resolvedProvider": {
+            "source": "request-profile",
+            "profileId": "profile-explicit",
+            "model": "explicit-model-override"
+          },
+          "secretHints": [
+            "nonsecret-sentinel-credential-profile-explicit",
+            "gateway-sentinel-token-1"
+          ],
+          "ownerCalls": [
+            "runtime-config:profile-explicit",
+            "gateway:profile-explicit:responses",
+            "revoke:gateway-sentinel-token-1"
+          ]
+        },
+        "expectHost": {
+          "code": 0,
+          "stderr": "",
+          "jobs": [
+            {
+              "status": "succeeded",
+              "exit_code": 0,
+              "error_code": null,
+              "error_message": null,
+              "resolvedProvider": {
+                "source": "request-profile",
+                "profileId": "profile-explicit",
+                "model": "explicit-model-override"
+              }
+            }
+          ],
+          "delegateProviderBindings": [
+            {
+              "model": "explicit-model-override",
+              "modelSource": "provider-profile:profile-explicit",
+              "providerProfileId": "profile-explicit",
+              "providerProfileName": "profile-explicit-name",
+              "gatewayEndpoint": "http://127.0.0.1:47000/gateway/responses",
+              "gatewayToken": "gateway-sentinel-token-1",
+              "authMode": "provider-profile",
+              "diagnostics": [
+                {
+                  "id": "headless-provider-binding",
+                  "status": "ready",
+                  "message": "Resolved provider profile through a scoped local gateway token."
+                }
+              ]
+            }
+          ],
+          "sequence": [
+            "runtime-config:profile-explicit",
+            "gateway:profile-explicit:responses",
+            "invoke:factory:codex-batch",
+            "revoke:gateway-sentinel-token-1"
+          ]
+        }
+      },
+      {
+        "caseId": "codex:model-only",
+        "runtime": "codex",
+        "flags": ["--model", "model-only-override"],
+        "ownerInput": {
+          "providerProfileId": null,
+          "modelOverride": "model-only-override"
+        },
+        "defaultProfile": "good",
+        "expectOwner": {
+          "ok": true,
+          "providerBinding": {
+            "model": "model-only-override",
+            "modelSource": "request",
+            "providerProfileId": null,
+            "gatewayEndpoint": null,
+            "authMode": "runtime-managed",
+            "diagnostics": [
+              {
+                "id": "headless-provider-binding-native-model",
+                "status": "ready",
+                "message": "Resolved explicit model for runtime-managed credentials."
+              }
+            ]
+          },
+          "resolvedProvider": {
+            "source": "native",
+            "profileId": null,
+            "model": "model-only-override"
+          },
+          "secretHints": [],
+          "ownerCalls": []
+        },
+        "expectHost": {
+          "code": 0,
+          "stderr": "",
+          "jobs": [
+            {
+              "status": "succeeded",
+              "exit_code": 0,
+              "error_code": null,
+              "error_message": null,
+              "resolvedProvider": {
+                "source": "native",
+                "profileId": null,
+                "model": "model-only-override"
+              }
+            }
+          ],
+          "delegateProviderBindings": [
+            {
+              "model": "model-only-override",
+              "modelSource": "request",
+              "providerProfileId": null,
+              "gatewayEndpoint": null,
+              "authMode": "runtime-managed",
+              "diagnostics": [
+                {
+                  "id": "headless-provider-binding-native-model",
+                  "status": "ready",
+                  "message": "Resolved explicit model for runtime-managed credentials."
+                }
+              ]
+            }
+          ],
+          "sequence": ["invoke:factory:codex-batch"]
+        }
+      },
+      {
+        "caseId": "codex:default-good",
+        "runtime": "codex",
+        "flags": [],
+        "ownerInput": {
+          "providerProfileId": null,
+          "modelOverride": null
+        },
+        "defaultProfile": "good",
+        "expectOwner": {
+          "ok": true,
+          "providerBinding": {
+            "model": "profile-default-default-model",
+            "modelSource": "provider-profile:profile-default",
+            "providerProfileId": "profile-default",
+            "providerProfileName": "profile-default-name",
+            "gatewayEndpoint": "http://127.0.0.1:47000/gateway/responses",
+            "gatewayToken": "gateway-sentinel-token-1",
+            "authMode": "provider-profile",
+            "diagnostics": [
+              {
+                "id": "headless-provider-binding",
+                "status": "ready",
+                "message": "Resolved provider profile through a scoped local gateway token."
+              }
+            ]
+          },
+          "resolvedProvider": {
+            "source": "default-profile",
+            "profileId": "profile-default",
+            "model": "profile-default-default-model"
+          },
+          "secretHints": [
+            "nonsecret-sentinel-credential-profile-default",
+            "gateway-sentinel-token-1"
+          ],
+          "ownerCalls": [
+            "default:codex-main",
+            "gateway:profile-default:responses",
+            "revoke:gateway-sentinel-token-1"
+          ]
+        },
+        "expectHost": {
+          "code": 0,
+          "stderr": "",
+          "jobs": [
+            {
+              "status": "succeeded",
+              "exit_code": 0,
+              "error_code": null,
+              "error_message": null,
+              "resolvedProvider": {
+                "source": "default-profile",
+                "profileId": "profile-default",
+                "model": "profile-default-default-model"
+              }
+            }
+          ],
+          "delegateProviderBindings": [
+            {
+              "model": "profile-default-default-model",
+              "modelSource": "provider-profile:profile-default",
+              "providerProfileId": "profile-default",
+              "providerProfileName": "profile-default-name",
+              "gatewayEndpoint": "http://127.0.0.1:47000/gateway/responses",
+              "gatewayToken": "gateway-sentinel-token-1",
+              "authMode": "provider-profile",
+              "diagnostics": [
+                {
+                  "id": "headless-provider-binding",
+                  "status": "ready",
+                  "message": "Resolved provider profile through a scoped local gateway token."
+                }
+              ]
+            }
+          ],
+          "sequence": [
+            "default:codex-main",
+            "gateway:profile-default:responses",
+            "invoke:factory:codex-batch",
+            "revoke:gateway-sentinel-token-1"
+          ]
+        }
+      },
+      {
+        "caseId": "codex:default-bad",
+        "runtime": "codex",
+        "flags": [],
+        "ownerInput": {
+          "providerProfileId": null,
+          "modelOverride": null
+        },
+        "defaultProfile": "bad",
+        "expectOwner": {
+          "ok": false,
+          "code": "provider_profile_unavailable",
+          "message": "Provider profile profile-default-bad is invalid.",
+          "source": "default-profile",
+          "profileId": "profile-default-bad",
+          "ownerCalls": ["default:codex-main"]
+        },
+        "expectHost": {
+          "code": 4,
+          "stderr": "",
+          "jobs": [
+            {
+              "status": "failed",
+              "exit_code": 4,
+              "error_code": "provider_profile_unavailable",
+              "error_message": "Provider profile profile-default-bad is invalid.",
+              "resolvedProvider": {
+                "source": "default-profile",
+                "profileId": "profile-default-bad",
+                "model": null
+              }
+            }
+          ],
+          "delegateProviderBindings": [],
+          "sequence": ["default:codex-main"]
+        }
+      },
+      {
+        "caseId": "codex:explicit-missing",
+        "runtime": "codex",
+        "flags": ["--provider-profile", "profile-missing"],
+        "ownerInput": {
+          "providerProfileId": "profile-missing",
+          "modelOverride": null
+        },
+        "defaultProfile": "good",
+        "expectOwner": {
+          "ok": false,
+          "code": "provider_profile_not_found",
+          "message": "Provider profile profile-missing was not found.",
+          "source": "request-profile",
+          "profileId": "profile-missing",
+          "ownerCalls": ["runtime-config:profile-missing"]
+        },
+        "expectHost": {
+          "code": 2,
+          "stderr": "Provider profile profile-missing was not found.\n",
+          "jobs": [],
+          "delegateProviderBindings": [],
+          "sequence": []
+        }
+      },
+      {
+        "caseId": "codex:native",
+        "runtime": "codex",
+        "flags": [],
+        "ownerInput": {
+          "providerProfileId": null,
+          "modelOverride": null
+        },
+        "defaultProfile": "none",
+        "expectOwner": {
+          "ok": true,
+          "providerBinding": null,
+          "resolvedProvider": {
+            "source": "native",
+            "profileId": null,
+            "model": null
+          },
+          "secretHints": [],
+          "ownerCalls": ["default:codex-main"]
+        },
+        "expectHost": {
+          "code": 0,
+          "stderr": "",
+          "jobs": [
+            {
+              "status": "succeeded",
+              "exit_code": 0,
+              "error_code": null,
+              "error_message": null,
+              "resolvedProvider": {
+                "source": "native",
+                "profileId": null,
+                "model": null
+              }
+            }
+          ],
+          "delegateProviderBindings": [null],
+          "sequence": ["default:codex-main", "invoke:factory:codex-batch"]
+        }
+      }
+    ],
+    "sentinelStrings": [
+      "nonsecret-sentinel-credential-",
+      "nonsecret-sentinel-header-",
+      "gateway-sentinel-token-",
+      "X-Sentinel-Header",
+      "nonsecret-sentinel-env-s32"
+    ],
+    "envSentinel": {
+      "name": "LOCUS_ROUTE_CATALOG_S32_SENTINEL",
+      "value": "nonsecret-sentinel-env-s32"
+    },
+    "storageReaders": [
+      "getProviderProfileRuntimeConfigFromDatabase",
+      "getProviderDefaultRuntimeConfigFromDatabase",
+      "getProviderProfileRuntimeMetadataFromDatabase"
+    ]
+  }
+}

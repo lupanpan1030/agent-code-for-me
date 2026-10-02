@@ -1,0 +1,1089 @@
+{
+  "fixtureVersion": 1,
+  "evidenceClass": "synthetic",
+  "sourceRefs": [
+    "openspec/changes/refactor-unified-runtime-route-catalog/specs/agent-runtime-capabilities/spec.md:3-30 (S10, S12)",
+    "openspec/changes/refactor-unified-runtime-route-catalog/specs/agent-runtime-core/spec.md:121-187 (S34-S39)",
+    "openspec/changes/refactor-unified-runtime-route-catalog/specs/agent-runtime-core/spec.md:252-258 (S47)",
+    "openspec/changes/refactor-unified-runtime-route-catalog/specs/codex-runtime-parity/spec.md:6-20 (S51, S52)",
+    "openspec/changes/refactor-unified-runtime-route-catalog/design.md:121-241 (D1 seams, Result fields, refusal order, accepted matrix)",
+    "openspec/changes/refactor-unified-runtime-route-catalog/design.md:293-296 (D3 renderer transportIds), :308-313 (readiness), :325-343 (public route / extension exact keys)",
+    "src/shared/agent-runtime-capabilities.ts:290-694 (canonical manifests), :754-784 (diagnostic template), :797-823 (gate)",
+    "src/main/lib/headless/adapter-selector.ts:83-115 (baseline enforcement levels), :154-188 (unsupported_capability), :247-258 (pre-execution refusal), :299-343 (refusal order)",
+    "src/main/lib/claude/agent-sdk-tool-permission.ts:223-636 (Claude pre-execution canUseTool / PreToolUse port)",
+    "src/main/lib/codex/app-server-approval.ts:530-700 (Codex app-server approval bridge port)",
+    "src/main/lib/runtime-capability-projection/service.ts:38-72 (projection owner, registered=false for missing adapters)",
+    "src/main/lib/trpc/routers/agent-runtime.ts:4-8 (renderer-facing manifest DTO)"
+  ],
+  "provenance": {
+    "author": "independent red-test author (capabilities domain)",
+    "baseSha": "19986552",
+    "approvedSpecSha": "a9b74594",
+    "method": "Canonical states/reasons copied from getAgentRuntimeCapabilityManifests() on the base; baseline refusal codes/messages recorded by running the base selector (headless/adapter-selector.ts) on createAgentRuntimeRunRequest inputs with the same runtime/profile/capabilities; enforcing-port responses recorded by driving the real Claude/Codex permission ports through tests/runtime-route-catalog-capabilities-kit.ts runEnforcingOperation.",
+    "placeholders": "/fixture-repo is a synthetic contract cwd, not a checkout path."
+  },
+  "S10": {
+    "manifestOverrides": [
+      {
+        "runtimeId": "codex",
+        "capabilityId": "attachments",
+        "status": "degraded",
+        "scope": "runtime-specific",
+        "reason": "Fixture-injected manifest: Codex attachment resolution is degraded for this route catalog test.",
+        "hint": "Fixture hint: clear the injected degradation before attaching files."
+      }
+    ],
+    "unmetQuery": {
+      "runtimeId": "codex",
+      "entry": "api",
+      "executionProfile": "batch",
+      "requiredCapabilities": ["attachments"]
+    },
+    "expectedRefusal": {
+      "reason": "capability_refused",
+      "errorCode": "unsupported_capability",
+      "exitCode": 1,
+      "candidateAdapterSource": "codex-batch",
+      "errorMessage": "Codex Attachments is degraded. Fixture-injected manifest: Codex attachment resolution is degraded for this route catalog test.",
+      "capability": {
+        "runtimeId": "codex",
+        "capability": "attachments",
+        "status": "degraded",
+        "scope": "runtime-specific",
+        "reason": "Fixture-injected manifest: Codex attachment resolution is degraded for this route catalog test.",
+        "hint": "Fixture hint: clear the injected degradation before attaching files."
+      }
+    },
+    "metQuery": {
+      "runtimeId": "codex",
+      "entry": "api",
+      "executionProfile": "batch",
+      "requiredCapabilities": ["providerProfiles"]
+    },
+    "expectedMetManifestRuntimeId": "codex",
+    "envelopeExpected": {
+      "runtimeId": "codex",
+      "capabilityId": "attachments",
+      "status": "degraded",
+      "reason": "Fixture-injected manifest: Codex attachment resolution is degraded for this route catalog test."
+    },
+    "canonicalAfter": {
+      "runtimeId": "codex",
+      "capabilityId": "attachments",
+      "status": "supported"
+    },
+    "desktopSupportedHeadlessLimited": {
+      "desktopRuntimeId": "claude-code",
+      "capabilityId": "hardToolGuard",
+      "desktopManifestStatus": "supported",
+      "query": {
+        "runtimeId": "claude-code",
+        "entry": "headless",
+        "executionProfile": "batch",
+        "requiredCapabilities": ["hardToolGuard"]
+      },
+      "expected": {
+        "errorCode": "guarded_scope_requires_pre_execution_hook",
+        "errorMessage": "Claude Code batch exposes only sandbox-level enforcement for this headless adapter; guarded scope contracts require a pre-execution hook or must fail closed before provider work.",
+        "exitCode": 1,
+        "candidateAdapterSource": "claude-code-batch",
+        "candidateAdapterLabel": "Claude Code batch",
+        "diagnosticReason": "guarded_scope_requires_pre_execution_hook",
+        "capability": null,
+        "reason": "policy_refused"
+      },
+      "desktopQuery": {
+        "runtimeId": "claude-code",
+        "requiredCapabilities": ["hardToolGuard"]
+      },
+      "desktopExpectedEnforcement": "pre-execution"
+    }
+  },
+  "S12": {
+    "runtimeId": "codex",
+    "classCapability": "mcpAuth",
+    "classCapabilityStatus": "supported",
+    "query": {
+      "runtimeId": "codex",
+      "requiredCapabilities": ["mcpAuth"]
+    },
+    "registeredKind": "mcp-server",
+    "projectionRecord": {
+      "kind": "mcp-server",
+      "capabilityId": "fixture-github",
+      "runtimeId": "codex",
+      "state": "unavailable",
+      "source": {
+        "type": "user",
+        "id": "fixture-github"
+      },
+      "diagnostics": [
+        {
+          "code": "fixture_needs_auth",
+          "message": "Fixture: MCP server is installed but needs authentication."
+        }
+      ]
+    },
+    "unregisteredKind": "skill",
+    "forbiddenRouteKeyPattern": "install|availab|usab|projection|verified|ready",
+    "forbiddenRouteValues": [
+      "available",
+      "unavailable",
+      "incompatible",
+      "not_projected",
+      "installed",
+      "verified"
+    ],
+    "expectedRoute": {
+      "ok": true,
+      "adapterSource": "codex-app-server",
+      "executionSurface": "desktop-app-server",
+      "manifestRuntimeId": "codex",
+      "enforcementEvidence": "pre-execution",
+      "delegateType": "function",
+      "fallbackReason": null
+    }
+  },
+  "S34": {
+    "runtimeId": "codex",
+    "basicQuery": {
+      "runtimeId": "codex",
+      "entry": "headless",
+      "executionProfile": "batch",
+      "requiredCapabilities": []
+    },
+    "expectedBasic": {
+      "adapterSource": "codex-batch",
+      "executionSurface": "headless-exec",
+      "manifestRuntimeId": "codex",
+      "enforcementEvidence": "sandbox-level"
+    },
+    "optional": [
+      {
+        "capabilityId": "rollback",
+        "status": "unsupported",
+        "errorMessage": "Codex Rollback and fork is unsupported. Codex session IDs are persisted, but rollback and fork are not wired through durable shared session references."
+      },
+      {
+        "capabilityId": "runtimeCommands",
+        "status": "unsupported",
+        "errorMessage": "Codex Runtime commands is unsupported. Codex runtime command invocation is not yet implemented for command-guide or chat command surfaces."
+      },
+      {
+        "capabilityId": "runtimeWorkflows",
+        "status": "unsupported",
+        "errorMessage": "Codex Runtime workflows is unsupported. Claude Dynamic Workflows have no Codex-equivalent adapter or shared workflow layer yet."
+      },
+      {
+        "capabilityId": "runtimePlugins",
+        "status": "degraded",
+        "errorMessage": "Codex Runtime plugins is degraded. Codex runtime plugin execution remains blocked: app-server exposes global plugin inventory and accepts a no-turn thread/start with fail-closed plugin config keys, but no managed turn proof shows plugin execution or Locus-controlled per-run filtering."
+      }
+    ],
+    "basicRequestInput": {
+      "jobId": "route-catalog-basic",
+      "runtime": "codex",
+      "cwd": "/fixture-repo",
+      "mode": "agent",
+      "source": "cli",
+      "prompt": "fixture prompt"
+    },
+    "basicRequestKeys": [
+      "context",
+      "identity",
+      "permissionPolicy",
+      "prompt",
+      "providerBinding",
+      "requestedCapabilities",
+      "signal"
+    ],
+    "basicRequestedCapabilities": [],
+    "forbiddenOptionalFields": [
+      "rollback",
+      "fork",
+      "forkSessionId",
+      "workflow",
+      "workflows",
+      "plugins",
+      "runtimeCommands",
+      "command",
+      "sessionOperation",
+      "resumeSessionId"
+    ]
+  },
+  "S35": {
+    "rendererRoutes": [
+      {
+        "runtimeId": "claude-code",
+        "transportId": "claude-chat-ipc"
+      },
+      {
+        "runtimeId": "codex",
+        "transportId": "codex-chat-ipc"
+      }
+    ],
+    "states": {
+      "claude-code": {
+        "hardToolGuard": {
+          "status": "supported"
+        },
+        "planMode": {
+          "status": "supported"
+        },
+        "quickChatAssistant": {
+          "status": "supported"
+        },
+        "scopeExpansion": {
+          "status": "supported"
+        },
+        "askUserQuestion": {
+          "status": "supported"
+        },
+        "rollback": {
+          "status": "supported"
+        },
+        "mcpAuth": {
+          "status": "supported"
+        },
+        "mcpConfiguration": {
+          "status": "degraded",
+          "reason": "Claude MCP configuration is visible and editable, but not every runtime-scoped operation has a shared capability contract yet."
+        },
+        "providerProfiles": {
+          "status": "supported"
+        },
+        "attachments": {
+          "status": "supported"
+        },
+        "usageMetadata": {
+          "status": "degraded",
+          "reason": "Claude usage and context metadata are surfaced when available, but exact provider quota semantics are still runtime-specific."
+        },
+        "runtimePlugins": {
+          "status": "degraded",
+          "reason": "Claude reviewed native plugin commands, skills, agents, and hooks can be staged into isolated SDK runs with native MCP discovery skipped; safe-mode, unreviewed-global, identity-drift, and full lifecycle proofs are still incomplete."
+        },
+        "runtimeCommands": {
+          "status": "degraded",
+          "reason": "Claude command discovery exists through the command guide, but runtime-owned command execution is not fully modeled."
+        },
+        "runtimeWorkflows": {
+          "status": "unsupported",
+          "reason": "Claude Dynamic Workflows have an OpenSpec proposal, but the runtime adapter is not implemented yet."
+        },
+        "appAgents": {
+          "status": "degraded",
+          "reason": "Locus Agent mentions can be prompt-prepared for Claude, but runtime-native agent execution is incomplete."
+        }
+      },
+      "codex": {
+        "hardToolGuard": {
+          "status": "supported"
+        },
+        "planMode": {
+          "status": "supported"
+        },
+        "quickChatAssistant": {
+          "status": "supported"
+        },
+        "scopeExpansion": {
+          "status": "supported"
+        },
+        "askUserQuestion": {
+          "status": "supported"
+        },
+        "rollback": {
+          "status": "unsupported",
+          "reason": "Codex session IDs are persisted, but rollback and fork are not wired through durable shared session references."
+        },
+        "mcpAuth": {
+          "status": "supported"
+        },
+        "mcpConfiguration": {
+          "status": "degraded",
+          "reason": "Codex can resolve app/global and project MCP state, but parity for all shared configuration operations is incomplete."
+        },
+        "providerProfiles": {
+          "status": "supported"
+        },
+        "attachments": {
+          "status": "supported"
+        },
+        "usageMetadata": {
+          "status": "supported"
+        },
+        "runtimePlugins": {
+          "status": "degraded",
+          "reason": "Codex runtime plugin execution remains blocked: app-server exposes global plugin inventory and accepts a no-turn thread/start with fail-closed plugin config keys, but no managed turn proof shows plugin execution or Locus-controlled per-run filtering."
+        },
+        "runtimeCommands": {
+          "status": "unsupported",
+          "reason": "Codex runtime command invocation is not yet implemented for command-guide or chat command surfaces."
+        },
+        "runtimeWorkflows": {
+          "status": "unsupported",
+          "reason": "Claude Dynamic Workflows have no Codex-equivalent adapter or shared workflow layer yet."
+        },
+        "appAgents": {
+          "status": "degraded",
+          "reason": "Codex Locus Agent mentions are prompt-prepared, but runtime-neutral execution and limitation reporting are incomplete."
+        }
+      }
+    },
+    "explicitStatuses": ["supported", "degraded", "unsupported"],
+    "secretPatterns": [
+      "(^|[^A-Za-z0-9_])sk-[A-Za-z0-9_-]{20,}",
+      "access_token",
+      "refresh_token",
+      "[Bb]earer\\s+[A-Za-z0-9._-]+"
+    ],
+    "cliArgv": ["api", "runtimes", "list", "--json", "--no-probe"]
+  },
+  "S36": {
+    "desktopRoutes": [
+      {
+        "runtimeId": "claude-code",
+        "adapterSource": "claude-agent-sdk",
+        "executionSurface": "desktop-sdk",
+        "enforcementEvidence": "pre-execution"
+      },
+      {
+        "runtimeId": "codex",
+        "adapterSource": "codex-app-server",
+        "executionSurface": "desktop-app-server",
+        "enforcementEvidence": "pre-execution"
+      }
+    ],
+    "enforcementCapabilities": [
+      "hardToolGuard",
+      "planMode",
+      "quickChatAssistant"
+    ],
+    "conformance": [
+      {
+        "runtimeId": "claude-code",
+        "capabilityId": "hardToolGuard",
+        "policy": {
+          "mode": "agent",
+          "workspaceKind": "project",
+          "guarded": true
+        },
+        "operation": {
+          "port": "canUseTool",
+          "toolName": "Bash",
+          "toolInput": {
+            "command": "rm -rf /"
+          }
+        },
+        "expected": {
+          "response": {
+            "behavior": "deny",
+            "message": "Guarded run blocked high-risk or ambiguous shell command: rm -rf /"
+          },
+          "guardEventTypes": ["blocked"]
+        }
+      },
+      {
+        "runtimeId": "claude-code",
+        "capabilityId": "planMode",
+        "policy": {
+          "mode": "plan",
+          "workspaceKind": "project",
+          "guarded": false
+        },
+        "operation": {
+          "port": "canUseTool",
+          "toolName": "Write",
+          "toolInput": {
+            "file_path": "/fixture-repo/src/app.ts",
+            "content": "x"
+          }
+        },
+        "expected": {
+          "response": {
+            "behavior": "deny",
+            "message": "Tool \"Write\" blocked in plan mode."
+          },
+          "guardEventTypes": []
+        }
+      },
+      {
+        "runtimeId": "claude-code",
+        "capabilityId": "quickChatAssistant",
+        "policy": {
+          "mode": "agent",
+          "workspaceKind": "folderless",
+          "guarded": false
+        },
+        "operation": {
+          "port": "canUseTool",
+          "toolName": "Bash",
+          "toolInput": {
+            "command": "ls"
+          }
+        },
+        "expected": {
+          "response": {
+            "behavior": "deny",
+            "message": "Assistant mode blocked Bash: shell and process tools are unavailable in quick chat."
+          },
+          "guardEventTypes": []
+        }
+      },
+      {
+        "runtimeId": "codex",
+        "capabilityId": "hardToolGuard",
+        "policy": {
+          "mode": "agent",
+          "workspaceKind": "project",
+          "guarded": true
+        },
+        "operation": {
+          "port": "handleCommandExecution",
+          "command": "rm -rf /"
+        },
+        "expected": {
+          "response": {
+            "decision": "decline"
+          },
+          "guardEventTypes": ["blocked"]
+        }
+      },
+      {
+        "runtimeId": "codex",
+        "capabilityId": "planMode",
+        "policy": {
+          "mode": "plan",
+          "workspaceKind": "project",
+          "guarded": false
+        },
+        "operation": {
+          "port": "handleFileChange",
+          "grantRoot": "/fixture-repo/src/app.ts"
+        },
+        "expected": {
+          "response": {
+            "decision": "decline"
+          },
+          "guardEventTypes": []
+        }
+      },
+      {
+        "runtimeId": "codex",
+        "capabilityId": "quickChatAssistant",
+        "policy": {
+          "mode": "agent",
+          "workspaceKind": "folderless",
+          "guarded": false
+        },
+        "operation": {
+          "port": "handleCommandExecution",
+          "command": "echo hi"
+        },
+        "expected": {
+          "response": {
+            "decision": "decline"
+          },
+          "guardEventTypes": []
+        }
+      }
+    ],
+    "mismatchVariant": {
+      "runtimeId": "codex",
+      "capabilityId": "planMode",
+      "declaredResponse": {
+        "decision": "accept"
+      },
+      "expectedFailures": ["result-mismatch"]
+    }
+  },
+  "S37": {
+    "capabilityId": "hardToolGuard",
+    "decisions": [
+      {
+        "caseId": "claude-allow",
+        "runtimeId": "claude-code",
+        "decision": "allow",
+        "policy": {
+          "mode": "agent",
+          "workspaceKind": "project",
+          "guarded": true
+        },
+        "operation": {
+          "port": "canUseTool",
+          "toolName": "Read",
+          "toolInput": {
+            "file_path": "/fixture-repo/src/app.ts"
+          }
+        },
+        "expected": {
+          "response": {
+            "behavior": "allow",
+            "updatedInput": {
+              "file_path": "/fixture-repo/src/app.ts"
+            }
+          },
+          "guardEventTypes": ["allowed"],
+          "emittedChunkTypes": ["guard-event"]
+        }
+      },
+      {
+        "caseId": "claude-deny",
+        "runtimeId": "claude-code",
+        "decision": "deny",
+        "policy": {
+          "mode": "agent",
+          "workspaceKind": "project",
+          "guarded": true
+        },
+        "operation": {
+          "port": "canUseTool",
+          "toolName": "Bash",
+          "toolInput": {
+            "command": "rm -rf /"
+          }
+        },
+        "expected": {
+          "response": {
+            "behavior": "deny",
+            "message": "Guarded run blocked high-risk or ambiguous shell command: rm -rf /"
+          },
+          "guardEventTypes": ["blocked"],
+          "emittedChunkTypes": ["guard-event"]
+        }
+      },
+      {
+        "caseId": "claude-rewrite",
+        "runtimeId": "claude-code",
+        "decision": "rewrite",
+        "policy": {
+          "mode": "agent",
+          "workspaceKind": "project",
+          "guarded": true,
+          "isUsingOllama": true
+        },
+        "operation": {
+          "port": "canUseTool",
+          "toolName": "Read",
+          "toolInput": {
+            "file": "src/app.ts"
+          }
+        },
+        "expected": {
+          "response": {
+            "behavior": "allow",
+            "updatedInput": {
+              "file_path": "src/app.ts"
+            }
+          },
+          "recordedInput": {
+            "file_path": "src/app.ts"
+          },
+          "guardEventTypes": ["allowed"],
+          "emittedChunkTypes": ["guard-event"]
+        }
+      },
+      {
+        "caseId": "codex-allow",
+        "runtimeId": "codex",
+        "decision": "allow",
+        "policy": {
+          "mode": "agent",
+          "workspaceKind": "project",
+          "guarded": true
+        },
+        "operation": {
+          "port": "handleCommandExecution",
+          "command": "bun test"
+        },
+        "expected": {
+          "response": {
+            "decision": "accept"
+          },
+          "guardEventTypes": ["allowed"],
+          "emittedChunkTypes": ["ask-user-question", "ask-user-question-result"]
+        }
+      },
+      {
+        "caseId": "codex-deny",
+        "runtimeId": "codex",
+        "decision": "deny",
+        "policy": {
+          "mode": "agent",
+          "workspaceKind": "project",
+          "guarded": true
+        },
+        "operation": {
+          "port": "handleCommandExecution",
+          "command": "rm -rf /"
+        },
+        "expected": {
+          "response": {
+            "decision": "decline"
+          },
+          "guardEventTypes": ["blocked"],
+          "emittedChunkTypes": []
+        }
+      }
+    ],
+    "rewriteNote": "Codex app-server approvals expose allow/decline only; the rewrite fixture is the Claude Agent SDK updatedInput path (Ollama alias repair) observed before the tool executes."
+  },
+  "S38": {
+    "headlessEvidence": [
+      {
+        "runtimeId": "claude-code",
+        "entry": "headless",
+        "executionProfile": "batch",
+        "adapterSource": "claude-code-batch",
+        "enforcementEvidence": "sandbox-level"
+      },
+      {
+        "runtimeId": "codex",
+        "entry": "headless",
+        "executionProfile": "batch",
+        "adapterSource": "codex-batch",
+        "enforcementEvidence": "sandbox-level"
+      },
+      {
+        "runtimeId": "codex",
+        "entry": "api",
+        "executionProfile": "policy-grant",
+        "grantedScopes": ["workspace-read"],
+        "adapterSource": "codex-app-server",
+        "enforcementEvidence": "admission-audit"
+      }
+    ],
+    "guardedHeadlessRefusals": [
+      {
+        "errorCode": "guarded_scope_requires_pre_execution_hook",
+        "errorMessage": "Claude Code batch exposes only sandbox-level enforcement for this headless adapter; guarded scope contracts require a pre-execution hook or must fail closed before provider work.",
+        "exitCode": 1,
+        "candidateAdapterSource": "claude-code-batch",
+        "candidateAdapterLabel": "Claude Code batch",
+        "diagnosticReason": "guarded_scope_requires_pre_execution_hook",
+        "capability": null,
+        "reason": "policy_refused",
+        "query": {
+          "runtimeId": "claude-code",
+          "entry": "headless",
+          "executionProfile": "batch"
+        }
+      },
+      {
+        "errorCode": "guarded_scope_requires_pre_execution_hook",
+        "errorMessage": "Codex headless/batch exposes only sandbox-level enforcement for this headless adapter; guarded scope contracts require a pre-execution hook or must fail closed before provider work.",
+        "exitCode": 1,
+        "candidateAdapterSource": "codex-batch",
+        "candidateAdapterLabel": "Codex headless/batch",
+        "diagnosticReason": "guarded_scope_requires_pre_execution_hook",
+        "capability": null,
+        "reason": "policy_refused",
+        "query": {
+          "runtimeId": "codex",
+          "entry": "headless",
+          "executionProfile": "batch"
+        }
+      },
+      {
+        "errorCode": "guarded_scope_requires_pre_execution_hook",
+        "errorMessage": "Codex app-server exposes only admission-audit enforcement for this headless adapter; guarded scope contracts require a pre-execution hook or must fail closed before provider work.",
+        "exitCode": 1,
+        "candidateAdapterSource": "codex-app-server",
+        "candidateAdapterLabel": "Codex app-server",
+        "diagnosticReason": "guarded_scope_requires_pre_execution_hook",
+        "capability": null,
+        "reason": "policy_refused",
+        "query": {
+          "runtimeId": "codex",
+          "entry": "api",
+          "executionProfile": "policy-grant",
+          "grantedScopes": ["workspace-read"]
+        }
+      }
+    ],
+    "variants": [
+      {
+        "variantId": "prompt-only",
+        "override": {
+          "runtimeId": "codex",
+          "capabilityId": "hardToolGuard",
+          "status": "degraded",
+          "scope": "runtime-specific",
+          "reason": "Fixture prompt-only variant: guard rules are only written into the prompt; no pre-execution hook intercepts tools.",
+          "hint": "Fixture: do not rely on prompt-only guard text."
+        },
+        "expectedMessage": "Codex Hard tool guard is degraded. Fixture prompt-only variant: guard rules are only written into the prompt; no pre-execution hook intercepts tools."
+      },
+      {
+        "variantId": "post-run-audit",
+        "override": {
+          "runtimeId": "codex",
+          "capabilityId": "hardToolGuard",
+          "status": "unsupported",
+          "scope": "unavailable",
+          "reason": "Fixture post-run-audit variant: changed files are only audited after the run; nothing is blocked before execution.",
+          "hint": "Fixture: audit after the run is not enforcement."
+        },
+        "expectedMessage": "Codex Hard tool guard is unsupported. Fixture post-run-audit variant: changed files are only audited after the run; nothing is blocked before execution."
+      }
+    ]
+  },
+  "S39": {
+    "runtimeId": "codex",
+    "capabilityId": "rollback",
+    "claudeStatus": "supported",
+    "codex": {
+      "status": "unsupported",
+      "scope": "unavailable",
+      "reason": "Codex session IDs are persisted, but rollback and fork are not wired through durable shared session references.",
+      "hint": "Do not expose Codex rollback or fork as runtime-neutral behavior yet.",
+      "message": "Codex Rollback and fork is unsupported. Codex session IDs are persisted, but rollback and fork are not wired through durable shared session references."
+    },
+    "queries": [
+      {
+        "surface": "desktop",
+        "runtimeId": "codex",
+        "candidateAdapterSource": "codex-app-server"
+      },
+      {
+        "surface": "headless",
+        "runtimeId": "codex",
+        "entry": "headless",
+        "executionProfile": "batch",
+        "candidateAdapterSource": "codex-batch"
+      },
+      {
+        "surface": "api",
+        "runtimeId": "codex",
+        "entry": "api",
+        "executionProfile": "batch",
+        "candidateAdapterSource": "codex-batch"
+      }
+    ],
+    "cliArgv": ["api", "runtimes", "list", "--json", "--no-probe"]
+  },
+  "S47": {
+    "cases": [
+      {
+        "caseId": "codex-api-plan-rollback",
+        "query": {
+          "runtimeId": "codex",
+          "entry": "api",
+          "executionProfile": "batch",
+          "mode": "plan"
+        },
+        "explicit": ["rollback"],
+        "implicitInput": {
+          "mode": "plan"
+        },
+        "expected": {
+          "errorCode": "unsupported_capability",
+          "errorMessage": "Codex Rollback and fork is unsupported. Codex session IDs are persisted, but rollback and fork are not wired through durable shared session references.",
+          "exitCode": 1,
+          "candidateAdapterSource": "codex-batch",
+          "candidateAdapterLabel": "Codex headless/batch",
+          "diagnosticReason": "unsupported_capability",
+          "capability": {
+            "type": "unsupported-capability",
+            "runtimeId": "codex",
+            "capability": "rollback",
+            "status": "unsupported",
+            "scope": "unavailable",
+            "message": "Codex Rollback and fork is unsupported. Codex session IDs are persisted, but rollback and fork are not wired through durable shared session references.",
+            "reason": "Codex session IDs are persisted, but rollback and fork are not wired through durable shared session references.",
+            "hint": "Do not expose Codex rollback or fork as runtime-neutral behavior yet."
+          },
+          "reason": "capability_refused"
+        }
+      },
+      {
+        "caseId": "codex-headless-mcp-configuration",
+        "query": {
+          "runtimeId": "codex",
+          "entry": "headless",
+          "executionProfile": "batch",
+          "mode": "agent"
+        },
+        "explicit": ["mcpConfiguration"],
+        "implicitInput": {
+          "mode": "agent"
+        },
+        "expected": {
+          "errorCode": "unsupported_capability",
+          "errorMessage": "Codex MCP configuration is degraded. Codex can resolve app/global and project MCP state, but parity for all shared configuration operations is incomplete.",
+          "exitCode": 1,
+          "candidateAdapterSource": "codex-batch",
+          "candidateAdapterLabel": "Codex headless/batch",
+          "diagnosticReason": "unsupported_capability",
+          "capability": {
+            "type": "unsupported-capability",
+            "runtimeId": "codex",
+            "capability": "mcpConfiguration",
+            "status": "degraded",
+            "scope": "runtime-specific",
+            "message": "Codex MCP configuration is degraded. Codex can resolve app/global and project MCP state, but parity for all shared configuration operations is incomplete.",
+            "reason": "Codex can resolve app/global and project MCP state, but parity for all shared configuration operations is incomplete.",
+            "hint": "Keep Codex MCP configuration surfaces tied to explicit capability state."
+          },
+          "reason": "capability_refused"
+        }
+      },
+      {
+        "caseId": "codex-protocol-runtime-commands",
+        "query": {
+          "runtimeId": "codex",
+          "entry": "protocol",
+          "executionProfile": "batch",
+          "mode": "agent"
+        },
+        "explicit": ["runtimeCommands"],
+        "implicitInput": {
+          "mode": "agent"
+        },
+        "expected": {
+          "errorCode": "unsupported_capability",
+          "errorMessage": "Codex Runtime commands is unsupported. Codex runtime command invocation is not yet implemented for command-guide or chat command surfaces.",
+          "exitCode": 1,
+          "candidateAdapterSource": "codex-batch",
+          "candidateAdapterLabel": "Codex headless/batch",
+          "diagnosticReason": "unsupported_capability",
+          "capability": {
+            "type": "unsupported-capability",
+            "runtimeId": "codex",
+            "capability": "runtimeCommands",
+            "status": "unsupported",
+            "scope": "unavailable",
+            "message": "Codex Runtime commands is unsupported. Codex runtime command invocation is not yet implemented for command-guide or chat command surfaces.",
+            "reason": "Codex runtime command invocation is not yet implemented for command-guide or chat command surfaces.",
+            "hint": "Disable Codex command execution controls until command parity is implemented."
+          },
+          "reason": "capability_refused"
+        }
+      },
+      {
+        "caseId": "claude-headless-runtime-workflows",
+        "query": {
+          "runtimeId": "claude-code",
+          "entry": "headless",
+          "executionProfile": "batch",
+          "mode": "agent"
+        },
+        "explicit": ["runtimeWorkflows"],
+        "implicitInput": {
+          "mode": "agent"
+        },
+        "expected": {
+          "errorCode": "unsupported_capability",
+          "errorMessage": "Claude Code Runtime workflows is unsupported. Claude Dynamic Workflows have an OpenSpec proposal, but the runtime adapter is not implemented yet.",
+          "exitCode": 1,
+          "candidateAdapterSource": "claude-code-batch",
+          "candidateAdapterLabel": "Claude Code batch",
+          "diagnosticReason": "unsupported_capability",
+          "capability": {
+            "type": "unsupported-capability",
+            "runtimeId": "claude-code",
+            "capability": "runtimeWorkflows",
+            "status": "unsupported",
+            "scope": "unavailable",
+            "message": "Claude Code Runtime workflows is unsupported. Claude Dynamic Workflows have an OpenSpec proposal, but the runtime adapter is not implemented yet.",
+            "reason": "Claude Dynamic Workflows have an OpenSpec proposal, but the runtime adapter is not implemented yet.",
+            "hint": "Do not expose dynamic workflow execution until the dedicated proposal is implemented."
+          },
+          "reason": "capability_refused"
+        }
+      },
+      {
+        "caseId": "claude-api-plan-usage-metadata",
+        "query": {
+          "runtimeId": "claude-code",
+          "entry": "api",
+          "executionProfile": "batch",
+          "mode": "plan"
+        },
+        "explicit": ["usageMetadata"],
+        "implicitInput": {
+          "mode": "plan"
+        },
+        "expected": {
+          "errorCode": "unsupported_capability",
+          "errorMessage": "Claude Code Usage metadata is degraded. Claude usage and context metadata are surfaced when available, but exact provider quota semantics are still runtime-specific.",
+          "exitCode": 1,
+          "candidateAdapterSource": "claude-code-batch",
+          "candidateAdapterLabel": "Claude Code batch",
+          "diagnosticReason": "unsupported_capability",
+          "capability": {
+            "type": "unsupported-capability",
+            "runtimeId": "claude-code",
+            "capability": "usageMetadata",
+            "status": "degraded",
+            "scope": "runtime-specific",
+            "message": "Claude Code Usage metadata is degraded. Claude usage and context metadata are surfaced when available, but exact provider quota semantics are still runtime-specific.",
+            "reason": "Claude usage and context metadata are surfaced when available, but exact provider quota semantics are still runtime-specific.",
+            "hint": "Do not treat missing Claude usage fields as zero usage."
+          },
+          "reason": "capability_refused"
+        }
+      }
+    ],
+    "supportedControl": {
+      "query": {
+        "runtimeId": "codex",
+        "entry": "api",
+        "executionProfile": "batch",
+        "mode": "plan"
+      },
+      "explicit": ["providerProfiles"],
+      "implicitInput": {
+        "mode": "plan"
+      },
+      "expectedAdapterSource": "codex-batch"
+    }
+  },
+  "S51": {
+    "runtimeId": "codex",
+    "states": {
+      "hardToolGuard": {
+        "status": "supported"
+      },
+      "planMode": {
+        "status": "supported"
+      },
+      "quickChatAssistant": {
+        "status": "supported"
+      },
+      "scopeExpansion": {
+        "status": "supported"
+      },
+      "askUserQuestion": {
+        "status": "supported"
+      },
+      "rollback": {
+        "status": "unsupported",
+        "reason": "Codex session IDs are persisted, but rollback and fork are not wired through durable shared session references."
+      },
+      "mcpAuth": {
+        "status": "supported"
+      },
+      "mcpConfiguration": {
+        "status": "degraded",
+        "reason": "Codex can resolve app/global and project MCP state, but parity for all shared configuration operations is incomplete."
+      },
+      "providerProfiles": {
+        "status": "supported"
+      },
+      "attachments": {
+        "status": "supported"
+      },
+      "usageMetadata": {
+        "status": "supported"
+      },
+      "runtimePlugins": {
+        "status": "degraded",
+        "reason": "Codex runtime plugin execution remains blocked: app-server exposes global plugin inventory and accepts a no-turn thread/start with fail-closed plugin config keys, but no managed turn proof shows plugin execution or Locus-controlled per-run filtering."
+      },
+      "runtimeCommands": {
+        "status": "unsupported",
+        "reason": "Codex runtime command invocation is not yet implemented for command-guide or chat command surfaces."
+      },
+      "runtimeWorkflows": {
+        "status": "unsupported",
+        "reason": "Claude Dynamic Workflows have no Codex-equivalent adapter or shared workflow layer yet."
+      },
+      "appAgents": {
+        "status": "degraded",
+        "reason": "Codex Locus Agent mentions are prompt-prepared, but runtime-neutral execution and limitation reporting are incomplete."
+      }
+    },
+    "messages": {
+      "rollback": "Codex Rollback and fork is unsupported. Codex session IDs are persisted, but rollback and fork are not wired through durable shared session references.",
+      "mcpConfiguration": "Codex MCP configuration is degraded. Codex can resolve app/global and project MCP state, but parity for all shared configuration operations is incomplete.",
+      "runtimePlugins": "Codex Runtime plugins is degraded. Codex runtime plugin execution remains blocked: app-server exposes global plugin inventory and accepts a no-turn thread/start with fail-closed plugin config keys, but no managed turn proof shows plugin execution or Locus-controlled per-run filtering.",
+      "runtimeCommands": "Codex Runtime commands is unsupported. Codex runtime command invocation is not yet implemented for command-guide or chat command surfaces.",
+      "runtimeWorkflows": "Codex Runtime workflows is unsupported. Claude Dynamic Workflows have no Codex-equivalent adapter or shared workflow layer yet.",
+      "appAgents": "Codex Locus Agents and skills is degraded. Codex Locus Agent mentions are prompt-prepared, but runtime-neutral execution and limitation reporting are incomplete."
+    },
+    "headlessQuery": {
+      "runtimeId": "codex",
+      "entry": "headless",
+      "executionProfile": "batch"
+    },
+    "headlessPolicyGated": {
+      "hardToolGuard": {
+        "errorCode": "guarded_scope_requires_pre_execution_hook",
+        "errorMessage": "Codex headless/batch exposes only sandbox-level enforcement for this headless adapter; guarded scope contracts require a pre-execution hook or must fail closed before provider work.",
+        "exitCode": 1,
+        "candidateAdapterSource": "codex-batch",
+        "candidateAdapterLabel": "Codex headless/batch",
+        "diagnosticReason": "guarded_scope_requires_pre_execution_hook",
+        "capability": null,
+        "reason": "policy_refused"
+      }
+    },
+    "cliArgv": ["api", "runtimes", "list", "--json", "--no-probe"]
+  },
+  "S52": {
+    "runtimeId": "codex",
+    "adapterSource": "codex-app-server",
+    "capabilities": [
+      {
+        "capabilityId": "hardToolGuard",
+        "policy": {
+          "mode": "agent",
+          "workspaceKind": "project",
+          "guarded": true
+        },
+        "operation": {
+          "port": "handleCommandExecution",
+          "command": "rm -rf /"
+        },
+        "expected": {
+          "response": {
+            "decision": "decline"
+          },
+          "guardEventTypes": ["blocked"]
+        }
+      },
+      {
+        "capabilityId": "planMode",
+        "policy": {
+          "mode": "plan",
+          "workspaceKind": "project",
+          "guarded": false
+        },
+        "operation": {
+          "port": "handleFileChange",
+          "grantRoot": "/fixture-repo/src/app.ts"
+        },
+        "expected": {
+          "response": {
+            "decision": "decline"
+          },
+          "guardEventTypes": []
+        }
+      }
+    ],
+    "nonEnforcingVariants": [
+      "prompt-only",
+      "ui-label",
+      "indexed-documentation",
+      "post-run-audit"
+    ],
+    "expectedVariantFailures": ["enforcing-port-uncalled"],
+    "auditSnapshots": {
+      "preRunStatus": {
+        "dirty": false,
+        "files": [],
+        "capturedAt": "2026-10-02T00:00:00.000Z",
+        "available": true
+      },
+      "postRunStatus": {
+        "dirty": true,
+        "files": ["src/app.ts"],
+        "capturedAt": "2026-10-02T00:00:05.000Z",
+        "available": true
+      },
+      "startedAt": "2026-10-02T00:00:00.000Z",
+      "finishedAt": "2026-10-02T00:00:05.000Z"
+    }
+  }
+}

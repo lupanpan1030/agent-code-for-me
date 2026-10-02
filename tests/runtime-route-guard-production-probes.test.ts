@@ -1,0 +1,673 @@
+/**
+ * Implementer unit probes for refactor-unified-runtime-route-catalog touch-up
+ * T1: the Runtime Route Catalog Single Owner production rules of
+ * scripts/check-architecture-guards.mjs run over inline source text. Each
+ * mutation probe starts from the real production file (or a minimal one),
+ * applies one Phase II review mutation and must be reported with its exact
+ * finding tuple; each clean counterpart must yield no finding. The frozen
+ * architecture fixture (tests/fixtures/runtime-route-catalog) is untouched.
+ */
+import { describe, expect, test } from "bun:test"
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
+import {
+  collectRuntimeRouteCatalogFindings,
+  collectRuntimeRouteRetiredMentions,
+  RUNTIME_ROUTE_CATALOG_SECTION,
+  RUNTIME_ROUTE_RULE,
+} from "../scripts/check-architecture-guards.mjs"
+
+const REPO_ROOT = join(import.meta.dir, "..")
+const OWNER = "src/main/lib/agent-runtime/runtime-route-catalog.ts"
+const ACTIVE_CHAT = "src/renderer/features/agents/main/active-chat.tsx"
+const TRANSPORT_HELPER =
+  "src/renderer/features/agents/lib/runtime-route-transport.ts"
+const SUB_CHATS_ROUTER = "src/main/lib/trpc/routers/chats-sub-chats.ts"
+
+type Finding = {
+  rule: string
+  file: string
+  symbol: string
+  owner: string
+  ownerSection: string
+}
+
+function readRepoFile(file: string): string {
+  return readFileSync(join(REPO_ROOT, file), "utf8")
+}
+
+/** Replaces the one occurrence of `anchor` (a missing anchor fails loudly). */
+function mutate(source: string, anchor: string, replacement: string): string {
+  expect(source.split(anchor).length - 1).toBe(1)
+  return source.replace(anchor, replacement)
+}
+
+function scan(files: Record<string, string>): Finding[] {
+  return collectRuntimeRouteCatalogFindings(
+    Object.entries(files).map(([file, source]) => ({ file, source })),
+  ) as Finding[]
+}
+
+function finding(rule: string, file: string, symbol: string): Finding {
+  return {
+    rule,
+    file,
+    symbol,
+    owner: OWNER,
+    ownerSection: RUNTIME_ROUTE_CATALOG_SECTION,
+  }
+}
+
+describe("T1-1 renderer construction path, transport helper and main transportId selection", () => {
+  const activeChat = readRepoFile(ACTIVE_CHAT)
+  const helper = readRepoFile(TRANSPORT_HELPER)
+  const subChats = readRepoFile(SUB_CHATS_ROUTER)
+  /** getOrCreateChat passes its transport input through pickRouteInput3. */
+  const routeInputThroughWrapper = () =>
+    mutate(
+      activeChat,
+      `        toRuntimeRouteTransportInput({
+          readFailed: isLocalChatReadError,
+          binding,
+        }),
+        { chatId, subChatId, binding, projectPath, mode: subChatMode },`,
+      `        pickRouteInput3(binding, isLocalChatReadError),
+        { chatId, subChatId, binding, projectPath, mode: subChatMode },`,
+    )
+
+  test("clean counterparts: the production construction sites, helper and stamping router yield no finding", () => {
+    expect(scan({ [ACTIVE_CHAT]: activeChat })).toEqual([])
+    expect(scan({ [TRANSPORT_HELPER]: helper })).toEqual([])
+    expect(scan({ [SUB_CHATS_ROUTER]: subChats })).toEqual([])
+  })
+
+  test("m7b: a binding.runtime ternary picking the transport input inside getOrCreateChat (still two helper calls) is a renderer-route-projection-bypass", () => {
+    const mutated = mutate(
+      activeChat,
+      `        toRuntimeRouteTransportInput({
+          readFailed: isLocalChatReadError,
+          binding,
+        }),
+        { chatId, subChatId, binding, projectPath, mode: subChatMode },`,
+      `        binding.runtime === "codex"
+          ? { state: "loaded", transportId: "codex-chat-ipc" }
+          : toRuntimeRouteTransportInput({
+              readFailed: isLocalChatReadError,
+              binding,
+            }),
+        { chatId, subChatId, binding, projectPath, mode: subChatMode },`,
+    )
+    expect(mutated.match(/createRuntimeRouteTransport\(/g)).toHaveLength(2)
+    expect(scan({ [ACTIVE_CHAT]: mutated })).toEqual([
+      finding(RUNTIME_ROUTE_RULE.renderer, ACTIVE_CHAT, "getOrCreateChat"),
+    ])
+  })
+
+  test("m7c: a binding.runtime comparison on the failed-route branch of getOrCreateChat is a renderer-route-projection-bypass", () => {
+    const mutated = mutate(
+      activeChat,
+      "      if (!route.ok) {",
+      '      if (!route.ok && binding.runtime === "claude-code") {',
+    )
+    expect(scan({ [ACTIVE_CHAT]: mutated })).toEqual([
+      finding(RUNTIME_ROUTE_RULE.renderer, ACTIVE_CHAT, "getOrCreateChat"),
+    ])
+  })
+
+  test("construction path: a .runtime switch or includes test inside the P15 handler is reported; a runtime branch outside both paths is not", () => {
+    const anchor = "    const newSubChatBinding = getNewSubChatBinding()\n"
+    const switched = mutate(
+      activeChat,
+      anchor,
+      `${anchor}    switch (newSubChatBinding.runtime) {
+      default:
+        break
+    }
+`,
+    )
+    expect(scan({ [ACTIVE_CHAT]: switched })).toEqual([
+      finding(
+        RUNTIME_ROUTE_RULE.renderer,
+        ACTIVE_CHAT,
+        "handleCreateNewSubChat",
+      ),
+    ])
+    const included = mutate(
+      activeChat,
+      anchor,
+      `${anchor}    if (["codex"].includes(newSubChatBinding.runtime)) {
+      store.setActiveSubChat(chatId)
+    }
+`,
+    )
+    expect(scan({ [ACTIVE_CHAT]: included })).toEqual([
+      finding(
+        RUNTIME_ROUTE_RULE.renderer,
+        ACTIVE_CHAT,
+        "handleCreateNewSubChat",
+      ),
+    ])
+    // P25/P26-style adjacent branch outside the construction paths.
+    const adjacent = `${activeChat}
+export function adjacentRuntimeLabel(binding: { runtime: string }) {
+  return binding.runtime === "codex" ? "Codex" : "Claude Code"
+}
+`
+    expect(scan({ [ACTIVE_CHAT]: adjacent })).toEqual([])
+  })
+
+  test("m7f/m7g: a same-file value wrapper selecting a transportId by binding.runtime for getOrCreateChat is a renderer-route-projection-bypass", () => {
+    const wrapped = routeInputThroughWrapper()
+    const wrappers = {
+      m7f: `function pickRouteInput3(b, readFailed) {
+  return b.runtime === "codex"
+    ? { state: "loaded", transportId: "codex-chat-ipc" }
+    : toRuntimeRouteTransportInput({ readFailed, binding: b })
+}
+`,
+      m7g: `function pickRouteInput3(b, readFailed) {
+  if (b.runtime === "codex") {
+    return { state: "loaded", transportId: "codex-chat-ipc" }
+  }
+  return toRuntimeRouteTransportInput({ readFailed, binding: b })
+}
+`,
+    }
+    for (const wrapper of Object.values(wrappers)) {
+      const mutated = `${wrapped}\n${wrapper}`
+      // The construction path itself still holds two helper calls and no
+      // runtime comparison; only the wrapper selects the transport.
+      expect(mutated.match(/createRuntimeRouteTransport\(/g)).toHaveLength(2)
+      expect(scan({ [ACTIVE_CHAT]: mutated })).toEqual([
+        finding(RUNTIME_ROUTE_RULE.renderer, ACTIVE_CHAT, "pickRouteInput3"),
+      ])
+    }
+  })
+
+  test("value wrapper clean counterparts: a wrapper without a runtime branch and a runtime branch yielding no transportId yield no finding", () => {
+    const wrapped = routeInputThroughWrapper()
+    const plain = `${wrapped}
+function pickRouteInput3(b, readFailed) {
+  return toRuntimeRouteTransportInput({ readFailed, binding: b })
+}
+`
+    expect(scan({ [ACTIVE_CHAT]: plain })).toEqual([])
+    const labelOnly = `${activeChat}
+export function runtimeRouteFailureLabel(b: { runtime: string }) {
+  if (b.runtime === "codex") {
+    console.error("codex-chat-ipc transport unavailable")
+    return "Codex"
+  }
+  return "Claude Code"
+}
+`
+    expect(scan({ [ACTIVE_CHAT]: labelOnly })).toEqual([])
+  })
+
+  test("m14b: a runtime-keyed transportId map appended to the transport helper is a renderer-route-projection-bypass", () => {
+    const mutated = `${helper}
+export const TRANSPORT_ID_BY_RUNTIME = {
+  codex: "codex-chat-ipc",
+  "claude-code": "claude-chat-ipc",
+}
+`
+    expect(scan({ [TRANSPORT_HELPER]: mutated })).toEqual([
+      finding(
+        RUNTIME_ROUTE_RULE.renderer,
+        TRANSPORT_HELPER,
+        "TRANSPORT_ID_BY_RUNTIME",
+      ),
+    ])
+  })
+
+  test("T3-4: a runtime-keyed transportId map on the renderer construction site is a renderer-route-projection-bypass, whether looked up in toRuntimeRouteTransportInput, inlined at the getOrCreateChat createRuntimeRouteTransport call or only declared", () => {
+    const declaration = `
+const TRANSPORT_ID_BY_RUNTIME: Record<string, string> = {
+  codex: "codex-chat-ipc",
+  "claude-code": "claude-chat-ipc",
+}
+`
+    const lookedUpInMapper = `${mutate(
+      activeChat,
+      "      ? (read.binding as RuntimeRouteTransportStamp).transportId",
+      "      ? TRANSPORT_ID_BY_RUNTIME[String((read.binding as { runtime?: unknown }).runtime)]",
+    )}${declaration}`
+    const inlinedAtCall = `${mutate(
+      activeChat,
+      `        toRuntimeRouteTransportInput({
+          readFailed: isLocalChatReadError,
+          binding,
+        }),
+        { chatId, subChatId, binding, projectPath, mode: subChatMode },`,
+      `        {
+          state: "loaded",
+          transportId: TRANSPORT_ID_BY_RUNTIME[String(binding?.runtime)],
+        },
+        { chatId, subChatId, binding, projectPath, mode: subChatMode },`,
+    )}${declaration}`
+    const declaredOnly = `${activeChat}${declaration}`
+    for (const mutated of [lookedUpInMapper, inlinedAtCall, declaredOnly]) {
+      expect(scan({ [ACTIVE_CHAT]: mutated })).toEqual([
+        finding(
+          RUNTIME_ROUTE_RULE.renderer,
+          ACTIVE_CHAT,
+          "TRANSPORT_ID_BY_RUNTIME",
+        ),
+      ])
+    }
+  })
+
+  test("T3-4 clean counterpart: a runtime-keyed map of labels on the renderer construction site is not reported", () => {
+    const labels = `${activeChat}
+const RUNTIME_LABELS: Record<string, string> = {
+  codex: "Codex",
+  "claude-code": "Claude Code",
+}
+`
+    expect(scan({ [ACTIVE_CHAT]: labels })).toEqual([])
+  })
+
+  test("helper: a lone runtime-id literal or a .runtime branch inside createRuntimeRouteTransport is reported", () => {
+    const literal = mutate(
+      helper,
+      '  if (input.state === "error") {',
+      '  const fallbackRuntime = "claude"\n  if (input.state === "error") {',
+    )
+    expect(scan({ [TRANSPORT_HELPER]: literal })).toEqual([
+      finding(
+        RUNTIME_ROUTE_RULE.renderer,
+        TRANSPORT_HELPER,
+        "createRuntimeRouteTransport",
+      ),
+    ])
+    const branch = mutate(
+      helper,
+      '  if (input.state === "error") {',
+      '  if ((config as { runtime?: string }).runtime !== (input as { runtime?: string }).runtime) {\n    return { ok: false, failure: "unknown_transport" }\n  }\n  if (input.state === "error") {',
+    )
+    expect(scan({ [TRANSPORT_HELPER]: branch })).toEqual([
+      finding(
+        RUNTIME_ROUTE_RULE.renderer,
+        TRANSPORT_HELPER,
+        "createRuntimeRouteTransport",
+      ),
+    ])
+  })
+
+  test("m16: a runtime ternary stamping transportId literals in the main read model is a renderer-route-projection-bypass", () => {
+    const mutated = mutate(
+      subChats,
+      "        binding: withRuntimeRouteTransportId(getSubChatBinding(db, subChat.id)),",
+      `        binding: {
+          ...getSubChatBinding(db, subChat.id),
+          transportId:
+            getSubChatBinding(db, subChat.id).runtime === "codex"
+              ? "codex-chat-ipc"
+              : "claude-chat-ipc",
+        },`,
+    )
+    expect(scan({ [SUB_CHATS_ROUTER]: mutated })).toEqual([
+      finding(RUNTIME_ROUTE_RULE.renderer, SUB_CHATS_ROUTER, "getSubChat"),
+    ])
+  })
+
+  test("main: if, switch and logical forms yielding transportId literals are renderer-route-projection-bypass findings like the map form; runtime branches yielding other values are not", () => {
+    const file = "src/main/lib/agent-runtime/runtime-route-read-model.ts"
+    const ifForm = `export function transportIdFor(binding: { runtime: string }) {
+  if (binding.runtime === "claude-code") return "claude-chat-ipc"
+  return "codex-chat-ipc"
+}
+`
+    const switchForm = `export function transportIdFor(runtimeId: string) {
+  switch (runtimeId) {
+    case "codex":
+      return "codex-chat-ipc"
+    default:
+      return "claude-chat-ipc"
+  }
+}
+`
+    const logicalForm = `export function transportIdFor(binding: { runtimeId: string }) {
+  return (binding.runtimeId === "codex" && "codex-chat-ipc") || null
+}
+`
+    for (const source of [ifForm, switchForm, logicalForm]) {
+      expect(scan({ [file]: source })).toEqual([
+        finding(RUNTIME_ROUTE_RULE.renderer, file, "transportIdFor"),
+      ])
+    }
+    // P25 provider target and a runtime-specific error message: no transportId.
+    const clean = `export function providerTargetForBinding(binding: { runtime: string }) {
+  return binding.runtime === "codex" ? "codex" : "claude"
+}
+
+export function assertCodexRuntime(binding: { runtime: string }) {
+  if (binding.runtime !== "codex") {
+    throw new Error("Codex transport requires the codex runtime.")
+  }
+}
+`
+    expect(scan({ [file]: clean })).toEqual([])
+  })
+})
+
+describe("T1-2 a runtime choice between the D1 named hosts", () => {
+  test("clean: the catalog and the typed per-procedure hosts and their callers yield no finding", () => {
+    const files = [
+      OWNER,
+      "src/main/lib/claude/agent-sdk-desktop-run-runtime.ts",
+      "src/main/lib/codex/desktop-chat-run.ts",
+      "src/main/lib/headless/agent-runtime.ts",
+      "src/main/lib/headless/job-runner.ts",
+      "src/main/lib/trpc/routers/claude.ts",
+      "src/main/lib/trpc/routers/codex.ts",
+    ]
+    expect(
+      scan(Object.fromEntries(files.map((file) => [file, readRepoFile(file)]))),
+    ).toEqual([])
+  })
+
+  test("m4: a router runtimeId branch choosing between the Codex and Claude desktop hosts is a route-dispatch-outside-owner finding", () => {
+    const file = "src/main/lib/trpc/routers/desktop-runtime.ts"
+    const source = `import { runClaudeAgentSdkDesktopRuntimeWithMcpReadiness } from "../../claude/agent-sdk-desktop-run-runtime"
+import { runCodexDesktopChatRun } from "../../codex/desktop-chat-run"
+
+export async function runDesktopRuntime(runtimeId: string, input: never) {
+  if (runtimeId === "codex") return runCodexDesktopChatRun(input)
+  return runClaudeAgentSdkDesktopRuntimeWithMcpReadiness(input)
+}
+`
+    expect(scan({ [file]: source })).toEqual([
+      finding(RUNTIME_ROUTE_RULE.dispatch, file, "runDesktopRuntime"),
+    ])
+  })
+
+  test("m4-import-alias: a runtimeId branch choosing between named hosts imported under aliases is a route-dispatch-outside-owner finding", () => {
+    const file = "src/main/lib/trpc/routers/desktop-runtime.ts"
+    const source = `import { runClaudeAgentSdkDesktopRuntimeWithMcpReadiness as runClaude } from "../../claude/agent-sdk-desktop-run-runtime"
+import { runCodexDesktopChatRun as runCodex } from "../../codex/desktop-chat-run"
+
+export async function runDesktopRuntime(runtimeId: string, input: never) {
+  if (runtimeId === "codex") return runCodex(input)
+  return runClaude(input)
+}
+`
+    expect(scan({ [file]: source })).toEqual([
+      finding(RUNTIME_ROUTE_RULE.dispatch, file, "runDesktopRuntime"),
+    ])
+    // An aliased host called without a runtime branch stays clean.
+    const fixed = `import { runCodexDesktopChatRun as runCodex } from "../../codex/desktop-chat-run"
+
+export async function runCodexDesktop(input: never) {
+  return runCodex(input)
+}
+`
+    expect(scan({ [file]: fixed })).toEqual([])
+  })
+
+  test("m5: a runtime-keyed map of named hosts in headless is a route-dispatch-outside-owner finding", () => {
+    const file = "src/main/lib/headless/runtime-hosts.ts"
+    const source = `import { runCodexDesktopChatRun } from "../codex/desktop-chat-run"
+import { runAgentTask } from "./agent-runtime"
+
+export const HOSTS_BY_RUNTIME = {
+  codex: runCodexDesktopChatRun,
+  "claude-code": runAgentTask,
+}
+`
+    expect(scan({ [file]: source })).toEqual([
+      finding(RUNTIME_ROUTE_RULE.dispatch, file, "HOSTS_BY_RUNTIME"),
+    ])
+  })
+
+  test("a runtime ternary picking a lazily imported host member is reported; a fixed-runtime host call is not", () => {
+    const file = "src/main/lib/headless/job-runner.ts"
+    const source = `export async function hostFor(runtimeId: string) {
+  return runtimeId === "claude-code"
+    ? (await import("./agent-runtime")).runAgentTask
+    : (await import("../codex/desktop-chat-run")).runCodexDesktopChatRun
+}
+`
+    expect(scan({ [file]: source })).toEqual([
+      finding(RUNTIME_ROUTE_RULE.dispatch, file, "hostFor"),
+    ])
+    const fixed = `import { runCodexDesktopChatRun } from "../codex/desktop-chat-run"
+
+export async function codexChatRunBody(input: { runtime: string }) {
+  if (input.runtime !== "codex") throw new Error("stale binding")
+  return runCodexDesktopChatRun(input as never)
+}
+`
+    expect(scan({ [file]: fixed })).toEqual([])
+  })
+})
+
+describe("T1-4 retired registry and readiness facade names", () => {
+  const READ_MODEL = "src/main/lib/agent-runtime/runtime-route-read-model.ts"
+  const READINESS = "src/main/lib/headless/runtime-readiness.ts"
+  const RETIRED_NAMES = [
+    "listRegisteredAgentRuntimeManifests",
+    "getRegisteredAgentRuntimeManifest",
+    "getRegisteredAgentRuntimeId",
+    "checkRegisteredAgentRuntimeCapability",
+    "resolveRegisteredAgentRuntimeManifest",
+    "resolveRegisteredAgentRuntimeCapability",
+    "resolveLocalJobApiRuntimeReadiness",
+  ]
+
+  test("clean: the production read model and readiness owner mention no retired name", () => {
+    expect(
+      collectRuntimeRouteRetiredMentions(READ_MODEL, readRepoFile(READ_MODEL)),
+    ).toEqual([])
+    expect(
+      collectRuntimeRouteRetiredMentions(READINESS, readRepoFile(READINESS)),
+    ).toEqual([])
+  })
+
+  test("m10: a forwarding alias re-export under a deleted registry name is a retired-route-selector finding", () => {
+    const mutated = `${readRepoFile(READ_MODEL)}
+export { listRuntimeRouteManifests as getRegisteredAgentRuntimeManifest } from "./runtime-route-catalog"
+`
+    expect(collectRuntimeRouteRetiredMentions(READ_MODEL, mutated)).toEqual([
+      finding(
+        RUNTIME_ROUTE_RULE.retired,
+        READ_MODEL,
+        "getRegisteredAgentRuntimeManifest",
+      ),
+    ])
+  })
+
+  test("every deleted registry export and the readiness facade name is rejected as a const forwarding alias", () => {
+    for (const name of RETIRED_NAMES) {
+      const mutated = `${readRepoFile(READINESS)}
+export const ${name} = resolveCodexRuntimeReadiness
+`
+      expect(collectRuntimeRouteRetiredMentions(READINESS, mutated)).toEqual([
+        finding(RUNTIME_ROUTE_RULE.retired, READINESS, name),
+      ])
+    }
+  })
+})
+
+describe("T3-2 readiness transitive import closure", () => {
+  const READINESS = "src/main/lib/headless/runtime-readiness.ts"
+  const RUNTIME_STATUS = "src/main/lib/codex/runtime-status.ts"
+  const NATIVE_IMPORT = `import { getCodexNativeRuntimeStatus } from "../codex/native-runtime-status"`
+  const FORMER_IMPORT = `import { getCodexRuntimeStatus } from "../codex/runtime-status"`
+  const readiness = readRepoFile(READINESS)
+  /** The readiness leaf as it was at 2bde5acb: status through runtime-status. */
+  const formerReadiness = () => mutate(readiness, NATIVE_IMPORT, FORMER_IMPORT)
+
+  function scanRepository(files: Record<string, string>): Finding[] {
+    return collectRuntimeRouteCatalogFindings(
+      Object.entries(files).map(([file, source]) => ({ file, source })),
+      { readRepository: true },
+    ) as Finding[]
+  }
+
+  test("clean: the fixed readiness leaf's whole value-import closure over the repository never reaches the catalog", () => {
+    expect(scanRepository({ [READINESS]: readiness })).toEqual([])
+    expect(scan({ [READINESS]: readiness })).toEqual([])
+  })
+
+  test("the former cycle (readiness -> codex/runtime-status -> catalog) is a route-catalog-forbidden-dependency at the readiness import, from the repository or the scanned set", () => {
+    const expected = [
+      finding(
+        RUNTIME_ROUTE_RULE.dependency,
+        READINESS,
+        "../codex/runtime-status",
+      ),
+    ]
+    expect(scanRepository({ [READINESS]: formerReadiness() })).toEqual(expected)
+    expect(
+      scan({
+        [READINESS]: formerReadiness(),
+        [RUNTIME_STATUS]: readRepoFile(RUNTIME_STATUS),
+      }),
+    ).toEqual(expected)
+  })
+
+  test("a multi-hop value chain is reported at its first hop; a direct import keeps its tuple; type-only links are not edges", () => {
+    const HOP_ONE = "src/main/lib/headless/readiness-hop.ts"
+    const HOP_TWO = "src/main/lib/codex/status-hop.ts"
+    const withImport = (line: string) => `${line}\n${readiness}`
+    expect(
+      scan({
+        [READINESS]: withImport(`import { hop } from "./readiness-hop"`),
+        [HOP_ONE]: `export { statusHop as hop } from "../codex/status-hop"\n`,
+        [HOP_TWO]: `import { listRuntimeRoutes } from "../agent-runtime/runtime-route-catalog"\nexport const statusHop = () => listRuntimeRoutes({ runtimeId: "codex", entry: "desktop" })\n`,
+      }),
+    ).toEqual([
+      finding(RUNTIME_ROUTE_RULE.dependency, READINESS, "./readiness-hop"),
+    ])
+    expect(
+      scan({
+        [READINESS]: withImport(
+          `import { listRuntimeRoutes } from "../agent-runtime/runtime-route-catalog"`,
+        ),
+      }),
+    ).toEqual([
+      finding(
+        RUNTIME_ROUTE_RULE.dependency,
+        READINESS,
+        "../agent-runtime/runtime-route-catalog",
+      ),
+    ])
+    expect(
+      scan({
+        [READINESS]: withImport(`import { hop } from "./readiness-hop"`),
+        [HOP_ONE]: `import type { RuntimeRouteResolution } from "../agent-runtime/runtime-route-catalog"\nexport const hop = (value: RuntimeRouteResolution | null) => value\n`,
+      }),
+    ).toEqual([])
+    expect(
+      scanRepository({
+        [READINESS]: withImport(
+          `import type { CodexAdapterRuntimeStatusMetadata } from "../codex/runtime-status"`,
+        ),
+      }),
+    ).toEqual([])
+  })
+})
+
+describe("T3-5 runtimeRouteCatalog forwarding is decided by binding, not by name", () => {
+  const ENTRY = "src/main/index.ts"
+  const HOST = "src/main/lib/headless/forwarding-probe.ts"
+  const FORWARDING_SITES = [
+    "src/main/lib/headless/daemon.ts",
+    "src/main/lib/headless/cli-dispatcher.ts",
+    "src/main/lib/headless/jobs-stdio.ts",
+    "src/main/lib/headless/job-runner.ts",
+    "src/main/lib/headless/agent-runtime.ts",
+    "src/main/lib/headless/local-job-api.ts",
+    "src/main/lib/codex/desktop-chat-run.ts",
+    "src/main/lib/claude/agent-sdk-desktop-run-runtime.ts",
+    "src/main/lib/claude/agent-sdk-desktop-route.ts",
+  ]
+  const IMPORTS = `import { runHeadlessCliCommand } from "./lib/headless/cli-dispatcher"
+import { loadCatalogOverride } from "./lib/catalog-override"
+`
+  const testPort = (file: string, symbol = "runtimeRouteCatalog") =>
+    finding(RUNTIME_ROUTE_RULE.testPort, file, symbol)
+
+  test("clean: every production forwarding call site yields no finding", () => {
+    for (const file of FORWARDING_SITES) {
+      expect({ file, findings: scan({ [file]: readRepoFile(file) }) }).toEqual({
+        file,
+        findings: [],
+      })
+    }
+  })
+
+  test("a production-built value bound to the name runtimeRouteCatalog is reported with the test-port tuple (module const, shorthand or explicit property, local const shadowing a parameter, foreign receiver, query argument)", () => {
+    const moduleConstShorthand = `${IMPORTS}const runtimeRouteCatalog = loadCatalogOverride()
+export function start(argv: string[]) {
+  return runHeadlessCliCommand({ argv, runtimeRouteCatalog })
+}
+`
+    const moduleConstProperty = `${IMPORTS}const runtimeRouteCatalog = loadCatalogOverride()
+export function start(argv: string[]) {
+  return runHeadlessCliCommand({ argv, runtimeRouteCatalog: runtimeRouteCatalog })
+}
+`
+    const shadowingLocal = `${IMPORTS}export function start(argv: string[], runtimeRouteCatalog?: unknown) {
+  if (argv.length > 0) {
+    const runtimeRouteCatalog = loadCatalogOverride()
+    return runHeadlessCliCommand({ argv, runtimeRouteCatalog })
+  }
+  return runHeadlessCliCommand({ argv, runtimeRouteCatalog })
+}
+`
+    const foreignReceiver = `${IMPORTS}export function start(argv: string[]) {
+  return runHeadlessCliCommand({
+    argv,
+    runtimeRouteCatalog: loadCatalogOverride().runtimeRouteCatalog,
+  })
+}
+`
+    for (const source of [
+      moduleConstShorthand,
+      moduleConstProperty,
+      shadowingLocal,
+      foreignReceiver,
+    ]) {
+      expect(scan({ [ENTRY]: source })).toEqual([testPort(ENTRY)])
+    }
+    const queryArgument = `import { listRuntimeRoutes } from "../agent-runtime/runtime-route-catalog"
+import { loadCatalogOverride } from "../catalog-override"
+const runtimeRouteCatalog = loadCatalogOverride()
+export const routes = () =>
+  listRuntimeRoutes({ runtimeId: "codex", entry: "api" }, runtimeRouteCatalog)
+`
+    expect(scan({ [HOST]: queryArgument })).toEqual([
+      testPort(HOST, "listRuntimeRoutes"),
+    ])
+  })
+
+  test("legitimate forwarding stays clean: parameter, destructured parameter, options receiver, local alias of a forwarded value, destructured local and undefined", () => {
+    const source = `import { runHeadlessCliCommand } from "./cli-dispatcher"
+import { listRuntimeRoutes } from "../agent-runtime/runtime-route-catalog"
+type Options = { argv: string[]; runtimeRouteCatalog?: unknown }
+export function viaOptions(options: Options) {
+  return runHeadlessCliCommand({ argv: options.argv, runtimeRouteCatalog: options.runtimeRouteCatalog })
+}
+export function viaParameter(argv: string[], runtimeRouteCatalog?: unknown) {
+  return runHeadlessCliCommand({ argv, runtimeRouteCatalog })
+}
+export function viaDestructuredParameter({ argv, runtimeRouteCatalog }: Options) {
+  return runHeadlessCliCommand({ argv, runtimeRouteCatalog })
+}
+export function viaLocalAlias(options: Options) {
+  const catalog = options.runtimeRouteCatalog
+  return listRuntimeRoutes({ runtimeId: "codex", entry: "api" }, catalog)
+}
+export function viaDestructuredLocal(options: Options) {
+  const { runtimeRouteCatalog } = options
+  return runHeadlessCliCommand({ argv: options.argv, runtimeRouteCatalog })
+}
+export function withoutCatalog(argv: string[]) {
+  return runHeadlessCliCommand({ argv, runtimeRouteCatalog: undefined })
+}
+`
+    expect(scan({ [HOST]: source })).toEqual([])
+  })
+})

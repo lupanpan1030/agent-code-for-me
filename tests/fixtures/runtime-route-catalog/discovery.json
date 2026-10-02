@@ -1,0 +1,148 @@
+{
+  "fixtureVersion": 1,
+  "evidenceClass": "synthetic",
+  "sourceRefs": [
+    "openspec/changes/refactor-unified-runtime-route-catalog/specs/local-job-api/spec.md:36-69",
+    "openspec/changes/refactor-unified-runtime-route-catalog/design.md:313-356",
+    "openspec/changes/refactor-unified-runtime-route-catalog/design.md:229-238",
+    "openspec/changes/refactor-unified-runtime-route-catalog/tasks.md:93-97",
+    "openspec/changes/refactor-unified-runtime-route-catalog/proposal.md",
+    "docs/local-job-api-v1-consumer-guide.md:224",
+    "docs/local-job-api-v1-consumer-guide.md:232-238",
+    "docs/local-job-api-v1-consumer-guide.md:1729",
+    "docs/local-job-api-v1.schema.json:1001",
+    "docs/local-job-api-v1.schema.json:1318",
+    "docs/local-job-api-v1.schema.json:1388",
+    "src/shared/local-job-api.ts:18-36",
+    "src/main/lib/agent-runtime/run-event-ledger.ts:337",
+    "src/main/lib/agent-runtime/run-event-ledger.ts:1205-1219"
+  ],
+  "provenance": {
+    "capturedFrom": "product source 6192b13f74603fbcc57c8ba858cb6b0f0d0ac776 (worktree base 19986552 carries no src/docs diff from it)",
+    "method": "oldResponse is the complete stdout of in-process `locus api runtimes list --json --no-probe` at 6192b13f with the async-submit kit READINESS_STUB readiness ports (no real probe, no credentials). expectedPublicSummaries are the surface=api accepted combinations of design.md D1 table (:229-238) with the documented known descriptive values of D3 (:331-333); routeId is deliberately not pinned (open, non-identity). Supporting files: discovery-schema-before.json is a byte copy of 6192b13f:docs/local-job-api-v1.schema.json; discovery-reader-before.ts is the neutral old reader frozen from the 6192b13f consumer guide.",
+    "author": "independent red author (public-guards domain), 2026-10-02",
+    "secrets": "none",
+    "frozenShapes": [
+      "descriptive transport known values per execution leaf: claude-code-batch/codex-batch -> process-stdio, codex-app-server -> json-rpc-stdio, locus-completion -> provider-http (design D1 transport column + D3 known values)",
+      "runtime.codex.v1 route extension maturity = experimental, schemaVersion = 1 (the existing producer values, run-event-ledger.ts:1212-1214)"
+    ]
+  },
+  "S22": {
+    "supportFiles": {
+      "schemaBefore": {
+        "path": "tests/fixtures/runtime-route-catalog/discovery-schema-before.json",
+        "source": "6192b13f:docs/local-job-api-v1.schema.json",
+        "sha256": "5953fe859f011ae56148b8b396417c810098e3ade610cec1d610efe2b80e3ed9"
+      },
+      "readerBefore": {
+        "path": "tests/fixtures/runtime-route-catalog/discovery-reader-before.ts",
+        "source": "6192b13f:docs/local-job-api-v1-consumer-guide.md",
+        "guideSha256": "c81abca1bc135f7397990621a3985694d485f3ff4e5c54a93d0fa77805c6bd87"
+      }
+    },
+    "argv": ["api", "runtimes", "list", "--json", "--no-probe"],
+    "features": [
+      "runtime-readiness",
+      "provider-binding",
+      "completion",
+      "canonical-run-ledger",
+      "async-submit"
+    ],
+    "routeKeys": [
+      "adapterSource",
+      "executionProfile",
+      "extensions",
+      "kind",
+      "routeId",
+      "surface",
+      "transport"
+    ],
+    "extensionKeys": ["maturity", "namespace", "schemaRef", "schemaVersion"],
+    "expectedPublicSummaries": {
+      "claude-code": [
+        {
+          "surface": "api",
+          "kind": "agent",
+          "executionProfile": "batch",
+          "adapterSource": "claude-code-batch",
+          "transport": "process-stdio",
+          "extensions": []
+        },
+        {
+          "surface": "api",
+          "kind": "completion",
+          "executionProfile": null,
+          "adapterSource": "locus-completion",
+          "transport": "provider-http",
+          "extensions": []
+        }
+      ],
+      "codex": [
+        {
+          "surface": "api",
+          "kind": "agent",
+          "executionProfile": "batch",
+          "adapterSource": "codex-batch",
+          "transport": "process-stdio",
+          "extensions": []
+        },
+        {
+          "surface": "api",
+          "kind": "agent",
+          "executionProfile": "policy-grant",
+          "adapterSource": "codex-app-server",
+          "transport": "json-rpc-stdio",
+          "extensions": [
+            {
+              "namespace": "runtime.codex.v1",
+              "schemaVersion": 1,
+              "maturity": "experimental",
+              "schemaRef": "#/$defs/eventPayloadExtensions/properties/runtime.codex.v1"
+            }
+          ]
+        },
+        {
+          "surface": "api",
+          "kind": "completion",
+          "executionProfile": null,
+          "adapterSource": "locus-completion",
+          "transport": "provider-http",
+          "extensions": []
+        }
+      ]
+    },
+    "oldResponse": "{\"apiVersion\":\"locus.local-job.v1\",\"features\":[\"runtime-readiness\",\"provider-binding\",\"completion\",\"canonical-run-ledger\",\"async-submit\"],\"runtimes\":[{\"runtimeId\":\"claude-code\",\"label\":\"Claude Code\",\"description\":\"Claude Code runtime support through Locus's Claude Agent SDK adapter and shared local safety layers.\",\"capabilities\":[{\"id\":\"hardToolGuard\",\"label\":\"Hard tool guard\",\"status\":\"supported\",\"scope\":\"runtime-neutral\",\"reason\":\"Locus routes Claude tool requests through the guarded canUseTool path before allowing mutating operations.\",\"hint\":\"Guarded Claude runs use the same local scope contract before tool approval.\",\"support\":{\"kind\":\"runtime-code\",\"references\":[\"src/main/lib/trpc/routers/claude.ts\",\"src/main/lib/agent-guard\"]}},{\"id\":\"planMode\",\"label\":\"Plan mode enforcement\",\"status\":\"supported\",\"scope\":\"runtime-neutral\",\"reason\":\"Claude plan-mode chats use read-only permission semantics and require explicit approval before agent-mode work.\",\"hint\":\"Plan-mode writes remain gated until the plan is approved.\",\"support\":{\"kind\":\"runtime-code\",\"references\":[\"src/main/lib/trpc/routers/claude.ts\"]}},{\"id\":\"quickChatAssistant\",\"label\":\"Quick chat assistant enforcement\",\"status\":\"supported\",\"scope\":\"runtime-neutral\",\"reason\":\"Claude folderless quick chats derive assistant controls from desktop preflight and deny non-web tools through the Agent SDK canUseTool and PreToolUse policy path.\",\"hint\":\"Quick chat permits web search/fetch tools only; attach a project before using file, shell, MCP, or runtime tools.\",\"support\":{\"kind\":\"runtime-code\",\"references\":[\"src/main/lib/agent-runtime/permission-policy.ts\",\"src/main/lib/claude/agent-sdk-tool-permission.ts\",\"tests/claude-agent-sdk-tool-permission.test.ts\"]}},{\"id\":\"scopeExpansion\",\"label\":\"Scope expansion approval\",\"status\":\"supported\",\"scope\":\"runtime-neutral\",\"reason\":\"Claude guarded runs emit scope-expansion events and deny out-of-scope tool use until the user approves the expanded scope.\",\"hint\":\"Approve the requested scope expansion, then retry the guarded operation.\",\"support\":{\"kind\":\"locus-shared-layer\",\"references\":[\"src/main/lib/agent-guard\",\"src/main/lib/trpc/routers/claude.ts\"]}},{\"id\":\"askUserQuestion\",\"label\":\"Ask user question\",\"status\":\"supported\",\"scope\":\"runtime-neutral\",\"reason\":\"Claude tool/question flows are bridged through the shared desktop question UI contract.\",\"hint\":\"Question requests block until the user answers, skips, or the request expires.\",\"support\":{\"kind\":\"runtime-code\",\"references\":[\"src/main/lib/trpc/routers/claude.ts\"]}},{\"id\":\"rollback\",\"label\":\"Rollback and fork\",\"status\":\"supported\",\"scope\":\"runtime-specific\",\"reason\":\"Claude session metadata is wired through resume/fork support and message rollback paths.\",\"hint\":\"Rollback and fork remain Claude-specific until another runtime exposes equivalent durable references.\",\"support\":{\"kind\":\"stable-runtime-primitive\",\"references\":[\"src/main/lib/trpc/routers/claude.ts\",\"src/main/lib/trpc/routers/chats.ts\"]}},{\"id\":\"mcpAuth\",\"label\":\"MCP auth\",\"status\":\"supported\",\"scope\":\"runtime-neutral\",\"reason\":\"Locus checks Claude MCP auth state and can start OAuth before provider work depends on authenticated servers.\",\"hint\":\"Authenticate the reported MCP server, then retry the Claude run.\",\"support\":{\"kind\":\"runtime-code\",\"references\":[\"src/main/lib/trpc/routers/claude.ts\",\"src/main/lib/mcp-auth.ts\"]}},{\"id\":\"mcpConfiguration\",\"label\":\"MCP configuration\",\"status\":\"degraded\",\"scope\":\"runtime-specific\",\"reason\":\"Claude MCP configuration is visible and editable, but not every runtime-scoped operation has a shared capability contract yet.\",\"hint\":\"Keep Claude MCP configuration actions tied to explicit runtime capability state.\",\"support\":null},{\"id\":\"providerProfiles\",\"label\":\"Provider profiles\",\"status\":\"supported\",\"scope\":\"runtime-neutral\",\"reason\":\"Claude provider profiles are resolved in the main process and renderer callers pass only safe profile IDs.\",\"hint\":\"Renderer callers should pass only the provider profile ID.\",\"support\":{\"kind\":\"runtime-code\",\"references\":[\"src/main/lib/trpc/routers/claude.ts\",\"src/main/lib/provider-profiles\"]}},{\"id\":\"attachments\",\"label\":\"Attachments\",\"status\":\"supported\",\"scope\":\"runtime-neutral\",\"reason\":\"Claude resolves image and long-text attachments through local main-process attachment stores before runtime injection.\",\"hint\":\"Unsupported attachment references fail before provider work starts.\",\"support\":{\"kind\":\"locus-shared-layer\",\"references\":[\"src/main/lib/chat-attachments.ts\",\"src/main/lib/long-text-attachments.ts\",\"src/main/lib/trpc/routers/claude.ts\"]}},{\"id\":\"usageMetadata\",\"label\":\"Usage metadata\",\"status\":\"degraded\",\"scope\":\"runtime-specific\",\"reason\":\"Claude usage and context metadata are surfaced when available, but exact provider quota semantics are still runtime-specific.\",\"hint\":\"Do not treat missing Claude usage fields as zero usage.\",\"support\":null},{\"id\":\"runtimePlugins\",\"label\":\"Runtime plugins\",\"status\":\"degraded\",\"scope\":\"runtime-specific\",\"reason\":\"Claude reviewed native plugin commands, skills, agents, and hooks can be staged into isolated SDK runs with native MCP discovery skipped; safe-mode, unreviewed-global, identity-drift, and full lifecycle proofs are still incomplete.\",\"hint\":\"Keep plugin enablement, MCP approval, identity review, and execution boundaries explicit.\",\"support\":{\"kind\":\"runtime-code\",\"references\":[\"src/main/lib/claude/agent-sdk-config-dir.ts\",\"src/main/lib/claude/agent-sdk-runtime-startup.ts\",\"src/main/lib/claude/agent-sdk-runtime-lifecycle.ts\",\"src/main/lib/claude/agent-sdk-query-options.ts\",\"scripts/probe-claude-agent-sdk-plugin-loading.ts\"]}},{\"id\":\"runtimeCommands\",\"label\":\"Runtime commands\",\"status\":\"degraded\",\"scope\":\"runtime-specific\",\"reason\":\"Claude command discovery exists through the command guide, but runtime-owned command execution is not fully modeled.\",\"hint\":\"Separate documentation indexing, prompt-template commands, and runtime command execution.\",\"support\":null},{\"id\":\"runtimeWorkflows\",\"label\":\"Runtime workflows\",\"status\":\"unsupported\",\"scope\":\"unavailable\",\"reason\":\"Claude Dynamic Workflows have an OpenSpec proposal, but the runtime adapter is not implemented yet.\",\"hint\":\"Do not expose dynamic workflow execution until the dedicated proposal is implemented.\",\"support\":null},{\"id\":\"appAgents\",\"label\":\"Locus Agents and skills\",\"status\":\"degraded\",\"scope\":\"runtime-specific\",\"reason\":\"Locus Agent mentions can be prompt-prepared for Claude, but runtime-native agent execution is incomplete.\",\"hint\":\"Do not count prompt preparation alone as full Locus Agent runtime support.\",\"support\":null}],\"readiness\":{\"state\":\"needs-auth\",\"detail\":\"No Claude credential source is available.\",\"hint\":\"Sign in through Locus desktop or log in with the claude CLI.\"}},{\"runtimeId\":\"codex\",\"label\":\"Codex\",\"description\":\"Codex runtime support through Locus's app-server desktop adapter, the headless/batch Codex CLI path, and shared local safety layers.\",\"capabilities\":[{\"id\":\"hardToolGuard\",\"label\":\"Hard tool guard\",\"status\":\"supported\",\"scope\":\"runtime-neutral\",\"reason\":\"Locus routes Codex app-server tool and controlled-edit requests through shared guarded-run decisions before mutating operations.\",\"hint\":\"Guarded Codex runs fail closed if app-server approval handling cannot be attached.\",\"support\":{\"kind\":\"runtime-code\",\"references\":[\"src/main/lib/codex/app-server-approval.ts\",\"src/main/lib/codex/app-server-controlled-edit.ts\",\"src/main/lib/trpc/routers/codex.ts\"]}},{\"id\":\"planMode\",\"label\":\"Plan mode enforcement\",\"status\":\"supported\",\"scope\":\"runtime-neutral\",\"reason\":\"Locus maps Codex app-server plan runs to read-only permission semantics and denies edit, move, delete, and execute requests before execution.\",\"hint\":\"Plan-mode writes and shell commands are rejected through app-server approval handling.\",\"support\":{\"kind\":\"runtime-code\",\"references\":[\"src/main/lib/codex/app-server-approval.ts\",\"src/main/lib/trpc/routers/codex.ts\"]}},{\"id\":\"quickChatAssistant\",\"label\":\"Quick chat assistant enforcement\",\"status\":\"supported\",\"scope\":\"runtime-neutral\",\"reason\":\"Codex folderless quick chats derive assistant controls from desktop preflight and deny non-web app-server approval requests through fail-closed handlers.\",\"hint\":\"Quick chat permits web search/fetch tools only; attach a project before using file, shell, MCP, or runtime tools.\",\"support\":{\"kind\":\"runtime-code\",\"references\":[\"src/main/lib/agent-runtime/permission-policy.ts\",\"src/main/lib/codex/tool-permission.ts\",\"src/main/lib/codex/app-server-approval.ts\",\"tests/codex-tool-permission.test.ts\",\"tests/codex-app-server-approval.test.ts\"]}},{\"id\":\"scopeExpansion\",\"label\":\"Scope expansion approval\",\"status\":\"supported\",\"scope\":\"runtime-neutral\",\"reason\":\"Out-of-scope Codex guarded operations emit a scope-expansion event and are denied before the permission request is approved.\",\"hint\":\"Approve the requested scope expansion, then retry the guarded run.\",\"support\":{\"kind\":\"locus-shared-layer\",\"references\":[\"src/main/lib/agent-guard\",\"src/main/lib/codex/app-server-guarded-scope.ts\"]}},{\"id\":\"askUserQuestion\",\"label\":\"Ask user question\",\"status\":\"supported\",\"scope\":\"runtime-neutral\",\"reason\":\"Locus maps Codex app-server user-input and MCP elicitation requests to the shared desktop question UI contract, including pending, answer, timeout, and denial events.\",\"hint\":\"Codex question requests remain blocking until the user answers, skips, or the request times out.\",\"support\":{\"kind\":\"runtime-code\",\"references\":[\"src/main/lib/codex/ask-user-question.ts\",\"src/main/lib/codex/app-server-user-interaction.ts\",\"src/main/lib/trpc/routers/codex.ts\"]}},{\"id\":\"rollback\",\"label\":\"Rollback and fork\",\"status\":\"unsupported\",\"scope\":\"unavailable\",\"reason\":\"Codex session IDs are persisted, but rollback and fork are not wired through durable shared session references.\",\"hint\":\"Do not expose Codex rollback or fork as runtime-neutral behavior yet.\",\"support\":null},{\"id\":\"mcpAuth\",\"label\":\"MCP auth\",\"status\":\"supported\",\"scope\":\"runtime-neutral\",\"reason\":\"Codex runs preflight MCP needs-auth checks and blocks affected runs before provider work starts.\",\"hint\":\"Authenticate the reported MCP server, then retry the Codex run.\",\"support\":{\"kind\":\"runtime-code\",\"references\":[\"src/main/lib/trpc/routers/codex.ts\",\"src/main/lib/mcp-auth.ts\"]}},{\"id\":\"mcpConfiguration\",\"label\":\"MCP configuration\",\"status\":\"degraded\",\"scope\":\"runtime-specific\",\"reason\":\"Codex can resolve app/global and project MCP state, but parity for all shared configuration operations is incomplete.\",\"hint\":\"Keep Codex MCP configuration surfaces tied to explicit capability state.\",\"support\":null},{\"id\":\"providerProfiles\",\"label\":\"Provider profiles\",\"status\":\"supported\",\"scope\":\"runtime-neutral\",\"reason\":\"Codex accepts renderer-safe provider profile IDs, resolves gateway tokens in the main process, and redacts provider secrets from errors and logs.\",\"hint\":\"Renderer callers should pass only the provider profile ID.\",\"support\":{\"kind\":\"runtime-code\",\"references\":[\"src/main/lib/provider-profiles\",\"src/main/lib/codex/desktop-run-provider-binding.ts\",\"src/main/lib/trpc/routers/codex.ts\"]}},{\"id\":\"attachments\",\"label\":\"Attachments\",\"status\":\"supported\",\"scope\":\"runtime-neutral\",\"reason\":\"Codex resolves image attachments in the main process, prepends long-text attachments through the shared local attachment store, and includes file-content parts in the prompt.\",\"hint\":\"Unsupported attachment references fail before provider work starts.\",\"support\":{\"kind\":\"locus-shared-layer\",\"references\":[\"src/main/lib/chat-attachments.ts\",\"src/main/lib/long-text-attachments.ts\",\"src/main/lib/trpc/routers/codex.ts\"]}},{\"id\":\"usageMetadata\",\"label\":\"Usage metadata\",\"status\":\"supported\",\"scope\":\"runtime-specific\",\"reason\":\"Codex polls session token_count events and emits normalized token and context metadata when available without inventing missing values.\",\"hint\":\"Missing Codex usage fields are omitted rather than reported as zero.\",\"support\":{\"kind\":\"runtime-code\",\"references\":[\"src/main/lib/codex/desktop-run-persistence.ts\",\"src/main/lib/trpc/routers/codex.ts\"]}},{\"id\":\"runtimePlugins\",\"label\":\"Runtime plugins\",\"status\":\"degraded\",\"scope\":\"runtime-specific\",\"reason\":\"Codex runtime plugin execution remains blocked: app-server exposes global plugin inventory and accepts a no-turn thread/start with fail-closed plugin config keys, but no managed turn proof shows plugin execution or Locus-controlled per-run filtering.\",\"hint\":\"Keep Codex plugin execute controls blocked until a managed-run proof covers plugin turn execution and app-server per-run enforcement.\",\"support\":null},{\"id\":\"runtimeCommands\",\"label\":\"Runtime commands\",\"status\":\"unsupported\",\"scope\":\"unavailable\",\"reason\":\"Codex runtime command invocation is not yet implemented for command-guide or chat command surfaces.\",\"hint\":\"Disable Codex command execution controls until command parity is implemented.\",\"support\":null},{\"id\":\"runtimeWorkflows\",\"label\":\"Runtime workflows\",\"status\":\"unsupported\",\"scope\":\"unavailable\",\"reason\":\"Claude Dynamic Workflows have no Codex-equivalent adapter or shared workflow layer yet.\",\"hint\":\"Keep workflow parity out of Codex until implemented or explicitly rescoped.\",\"support\":null},{\"id\":\"appAgents\",\"label\":\"Locus Agents and skills\",\"status\":\"degraded\",\"scope\":\"runtime-specific\",\"reason\":\"Codex Locus Agent mentions are prompt-prepared, but runtime-neutral execution and limitation reporting are incomplete.\",\"hint\":\"Do not count prompt injection alone as Locus Agent parity.\",\"support\":null}],\"readiness\":{\"state\":\"unknown\",\"detail\":\"Codex login status probe was skipped.\",\"hint\":\"Run without --no-probe to check Codex login readiness.\"}}]}\n",
+    "unknownOpenValues": {
+      "routeId": "route-from-a-future-build",
+      "surface": "future-surface",
+      "adapterSource": "future-adapter-source",
+      "transport": "future-transport"
+    },
+    "leakedFields": [
+      {
+        "transportId": "codex-chat-ipc"
+      },
+      {
+        "factory": "createCodexHeadlessTaskRunner"
+      },
+      {
+        "modulePath": "{{REPO_ROOT}}/src/main/lib/headless/adapters/codex.ts"
+      },
+      {
+        "env": {
+          "CODEX_HOME": "/s22/leak"
+        }
+      }
+    ],
+    "closedVocabularyViolations": [
+      {
+        "kind": "interactive-session"
+      },
+      {
+        "executionProfile": "interactive"
+      }
+    ],
+    "routeQueryMode": "plan",
+    "policyGrantScopes": ["repo.read"]
+  }
+}

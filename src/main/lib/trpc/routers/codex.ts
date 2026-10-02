@@ -53,12 +53,12 @@ import {
   subscribeCodexApiKeyModelIds,
   validateCodexApiKey,
 } from "../../codex/api-key-validation"
-import { runCodexAppServerDesktopAdapter } from "../../codex/app-server-adapter-runner"
 import { createCodexDesktopRouteRenderer } from "../../codex/app-server-finish-gate"
 import { getLastCodexSessionId } from "../../codex/chat-history"
 import { codexChatInputSchema } from "../../codex/chat-input-schema"
 import { resolveBundledCodexCliPath } from "../../codex/cli-path"
 import { runCodexCli } from "../../codex/cli-runner"
+import { runCodexDesktopChatRun } from "../../codex/desktop-chat-run"
 import {
   cleanupCodexDesktopRunSubscription,
   createAndRegisterCodexDesktopRunJob,
@@ -776,7 +776,7 @@ export const codexRouter = router({
 
             await appServerFinishGate.runWithDeferredFinish(
               () =>
-                runCodexAppServerDesktopAdapter({
+                runCodexDesktopChatRun({
                   request: desktopRunRequest,
                   providerGatewayToken: codexProviderProfile?.token ?? null,
                   appManagedApiKey: appManagedCodexApiKey,

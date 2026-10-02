@@ -1,4 +1,3 @@
-import type { AgentRuntimeId } from "../../../shared/agent-runtime-capabilities"
 import type { DesktopRunRequest, DesktopRunResult } from "./desktop-run-request"
 import type { DesktopPermissionRuntime } from "./permission-policy"
 
@@ -19,11 +18,6 @@ export type DesktopRuntimeAdapterMetadata = {
 export type DesktopRuntimeAdapter = {
   metadata: DesktopRuntimeAdapterMetadata
   run(request: DesktopRunRequest): Promise<DesktopRunResult>
-}
-
-export type DesktopRuntimeAdapterLookup = {
-  runtimeId: AgentRuntimeId
-  source?: DesktopRuntimeAdapterSource
 }
 
 export function assertDesktopRuntimeAdapterMatchesRequest(
@@ -61,65 +55,4 @@ export async function recordDesktopRuntimeAdapterStarted(
       removalCondition: metadata.removalCondition ?? null,
     },
   })
-}
-
-function adapterKey(
-  runtimeId: DesktopPermissionRuntime,
-  source: DesktopRuntimeAdapterSource,
-): string {
-  return `${runtimeId}:${source}`
-}
-
-export class DesktopRuntimeAdapterFactory {
-  private readonly adapters = new Map<string, DesktopRuntimeAdapter>()
-
-  constructor(adapters: DesktopRuntimeAdapter[] = []) {
-    for (const adapter of adapters) {
-      this.register(adapter)
-    }
-  }
-
-  register(adapter: DesktopRuntimeAdapter): void {
-    const { runtimeId, source } = adapter.metadata
-    const key = adapterKey(runtimeId, source)
-    if (this.adapters.has(key)) {
-      throw new Error(`Duplicate desktop runtime adapter: ${key}`)
-    }
-    this.adapters.set(key, adapter)
-  }
-
-  get({
-    runtimeId,
-    source,
-  }: DesktopRuntimeAdapterLookup): DesktopRuntimeAdapter {
-    if (source) {
-      const adapter = this.adapters.get(adapterKey(runtimeId, source))
-      if (!adapter) {
-        throw new Error(
-          `Desktop runtime adapter not registered: ${runtimeId}:${source}`,
-        )
-      }
-      return adapter
-    }
-
-    const matchingAdapters = [...this.adapters.values()].filter(
-      (candidate) => candidate.metadata.runtimeId === runtimeId,
-    )
-    if (matchingAdapters.length > 1) {
-      throw new Error(
-        `Desktop runtime adapter source required for runtime with multiple adapters: ${runtimeId}`,
-      )
-    }
-    const adapter = matchingAdapters[0]
-    if (!adapter) {
-      throw new Error(`Desktop runtime adapter not registered: ${runtimeId}`)
-    }
-    return adapter
-  }
-
-  listMetadata(): DesktopRuntimeAdapterMetadata[] {
-    return [...this.adapters.values()].map((adapter) => ({
-      ...adapter.metadata,
-    }))
-  }
 }

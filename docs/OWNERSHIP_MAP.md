@@ -316,23 +316,85 @@ or UI helper.
   second durable interpretation of plan mode, guarded scope, or side-effect
   approval.
 
-## Headless Runtime Adapter Selection
+## Runtime Route Catalog Single Owner
 
-- Canonical owner: `src/main/lib/headless/adapter-selector.ts`
-- Consumers: `src/main/lib/headless/agent-runtime.ts`, Local Job API job
-  runner, headless process adapters, Codex app-server headless wrapper
-- Rule: headless/runtime adapter choice, execution profile gating, selected or
-  refused diagnostics, fallback reasons, and policy-grant enforcement labels
-  belong to the selector. Local Job API request parsing may validate input, but
-  must not own a second adapter-selection or policy-grant enforcement table.
-  Current Local Job API `policyGrant.scopes` are admission/audit metadata unless
-  a later approved scope-enforcement change binds them to adapter permission
-  decisions.
+- Canonical owner: `src/main/lib/agent-runtime/runtime-route-catalog.ts`
+  (refactor-unified-runtime-route-catalog). It is the one static, validated,
+  deep-frozen declaration of which runtime and entry (desktop, headless, api,
+  protocol, completion) reach which leaf adapter, transport, manifest
+  reference, readiness probe, enforcement evidence and runtime extension; the
+  only route matcher (`resolveRuntimeRoute`, with the baseline refusal chain
+  and diagnostics); and the only route enumeration and projections
+  (`listRuntimeRoutes`, `projectRuntimeRoutes("public" | "renderer")`,
+  `listRuntimeRouteManifests`, `probeRuntimeRouteReadiness`). An invalid table
+  is a non-executable failure state; hosts surface only "Runtime route catalog
+  is unavailable.".
+- Consumers: `src/main/lib/headless/agent-runtime.ts#runAgentTask` (after the
+  runner's claim, claim gate and provider binding); the named desktop hosts
+  `src/main/lib/claude/agent-sdk-desktop-run-runtime.ts#runClaudeAgentSdkDesktopRuntimeWithMcpReadiness`
+  (through `src/main/lib/claude/agent-sdk-desktop-route.ts`, injecting the
+  typed delegate into `agent-sdk-runtime-lifecycle.ts`) and
+  `src/main/lib/codex/desktop-chat-run.ts#runCodexDesktopChatRun`, each after
+  its procedure's admission; Local Job API discovery
+  (`src/main/lib/headless/local-job-api.ts`); `agentRuntime.listManifests`;
+  the `codex.getRuntimeStatus` adapter-selection projection
+  (`src/main/lib/codex/runtime-status.ts`, metadata only); and the binding
+  read model `src/main/lib/agent-runtime/runtime-route-read-model.ts#withRuntimeRouteTransportId`,
+  whose transportId the renderer turns into an existing wire adapter through
+  `src/renderer/features/agents/lib/runtime-route-transport.ts#createRuntimeRouteTransport`.
+- Factory/probe dependencies: lazy references to the leaf run exports
+  (`src/main/lib/headless/adapters/{claude-code,codex,codex-app-server}.ts`,
+  `src/main/lib/claude/agent-sdk-adapter-runner.ts`,
+  `src/main/lib/codex/app-server-adapter-runner.ts`), their typed enforcement
+  evidence, the per-runtime probes of `src/main/lib/headless/runtime-readiness.ts`
+  (which keeps probe, cache and default-profile ownership and never imports
+  the catalog) and the shared capability owner
+  `src/shared/agent-runtime-capabilities.ts` (capability truth stays there).
+  The catalog owns no queue, claim, binding, provider policy, event, artifact,
+  secret or terminal state and reads no environment, filesystem or config.
+- Forbidden duplicate paths: a second adapter/transport selector or
+  runtime-keyed adapter/transport map outside the catalog (including the
+  retired `src/main/lib/headless/adapter-selector.ts`,
+  `src/main/lib/agent-runtime/runtime-registry.ts`, the desktop adapter
+  factory and the Codex/Claude desktop selection wrappers); a value import of
+  a leaf run/create export outside the catalog; a production caller that
+  constructs, validates or overrides a catalog (the `runtimeRouteCatalog`
+  options and query catalog arguments are test-only and forwarded unchanged);
+  a renderer Engine branch or runtimeId -> transportId table; and any
+  migration or dual-path flag. `scripts/check-architecture-guards.mjs`
+  enforces this section with
+  `tests/fixtures/runtime-route-catalog/architecture-fixtures.json`.
+- Adjacent owners that stay outside the catalog: provider target/purpose
+  mapping, permission policy, chat session binding admission, the desktop
+  runtime allowlist, job-source cancel/retry, command/method parsing, native
+  protocol decoding, `chunk.type` event state, renderer approval dispatch and
+  UI defaults, and the pump's own `job.kind` dispatch.
+- Neighbouring owners this section does not take over (each keeps its own
+  section): submission, wait and the queued-Run pump
+  (`src/main/lib/headless/run-submission.ts`,
+  `src/main/lib/headless/daemon.ts#pumpQueuedRuns`; Headless Agent Runtime);
+  the Run ledger and its host (`src/main/lib/agent-runtime/run-event-ledger.ts`,
+  `run-event-ledger-host.ts`; Runtime Events, Trace, And Redaction); run
+  directories and published artifacts
+  (`src/main/lib/agent-runtime/run-artifacts.ts`); capability truth (Runtime
+  Capability Truth); readiness probing, caching and default-profile checks
+  (`src/main/lib/headless/runtime-readiness.ts`), provider binding (Provider
+  Credentials, `src/main/lib/headless/provider-binding.ts`) and capability
+  projection availability (Runtime Capability Projection); and the renderer
+  event state (`src/renderer/features/agents/lib/runtime-event-state.ts`;
+  Runtime Chat UI Event State). The catalog references these owners and
+  never re-implements them.
+- Rule: Local Job API `policyGrant.scopes` remain admission/audit metadata
+  (Codex app-server `admission-audit` evidence) unless a later approved
+  scope-enforcement change binds them to adapter permission decisions.
 
 ## Desktop Runtime Request And Adapter Boundary
 
 - Canonical owners: `src/main/lib/agent-runtime/desktop-run-request.ts`,
-  `src/main/lib/agent-runtime/desktop-runner.ts`
+  `src/main/lib/agent-runtime/desktop-runner.ts` (the adapter contract, the
+  adapter/request matching assertion and the adapter-started ledger helper;
+  desktop adapter selection belongs to the Runtime Route Catalog Single
+  Owner)
 - Consumers: Claude desktop runtime, Codex desktop runtime, desktop job shell,
   Workbench trace surfaces
 - Rule: desktop runtime adapters receive verified context, permission policy,
@@ -479,6 +541,12 @@ or UI helper.
   removes this temporary-owner clause.
 - Rule: the bundled Claude Code CLI is an install/runtime asset, not a second
   desktop chat implementation.
+- Route: after admission the route calls
+  `src/main/lib/claude/agent-sdk-desktop-run-runtime.ts#runClaudeAgentSdkDesktopRuntimeWithMcpReadiness`,
+  which asserts the catalog's Claude desktop route and injects its typed
+  Agent SDK delegate into `agent-sdk-runtime-lifecycle.ts`; the lifecycle
+  never imports the leaf run export, and policy retry stays in
+  `src/main/lib/claude/agent-sdk-adapter-runner.ts`.
 - Run events: the desktop run state holds the job's Run ledger.
   `src/main/lib/claude/agent-sdk-desktop-job.ts` binds the bundled executable's
   provenance before the query starts and hands the tuple to the desktop
@@ -506,11 +574,14 @@ or UI helper.
     `src/main/lib/codex/desktop-run-persistence.ts`
   - desktop job state, finalization, and subscription cancellation:
     `src/main/lib/codex/desktop-run-finalize.ts`
-  - adapter construction and factory dispatch:
+  - post-admission run host: `src/main/lib/codex/desktop-chat-run.ts`
+    (`runCodexDesktopChatRun` asserts the catalog's Codex desktop route and
+    calls its typed delegate)
+  - single native adapter construction:
     `src/main/lib/codex/app-server-adapter-runner.ts`
 - App-server transport and behavior owners remain under
-  `src/main/lib/codex/app-server-*`; adapter selection remains owned by
-  `src/main/lib/codex/desktop-adapter-selection.ts`.
+  `src/main/lib/codex/app-server-*`; desktop adapter selection is owned by
+  the Runtime Route Catalog Single Owner.
 - Run events: `src/main/lib/codex/app-server-adapter.ts` binds the resolved
   executable's provenance before spawn and submits correlated responses,
   notifications, server requests, response sends, resolved notifications and
@@ -541,7 +612,9 @@ or UI helper.
 
 - Canonical owner: `src/main/lib/headless/agent-runtime.ts`
 - Runtime adapters: `src/main/lib/headless/adapters/claude-code.ts`,
-  `src/main/lib/headless/adapters/codex.ts`
+  `src/main/lib/headless/adapters/codex.ts`,
+  `src/main/lib/headless/adapters/codex-app-server.ts`; `runAgentTask`
+  reaches them only through the Runtime Route Catalog Single Owner
 - Rule: headless adapters own batch/job invocation semantics only. They must not
   duplicate desktop chat stream, approval, or UI-state behavior.
 - Run events: `src/main/lib/headless/job-runner.ts` owns the thin coarse

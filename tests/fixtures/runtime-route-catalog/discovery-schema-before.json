@@ -1,0 +1,1704 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/lupanpan1030/agent-code-for-me/blob/main/docs/local-job-api-v1.schema.json",
+  "title": "Locus Local Job API v1 schema bundle",
+  "description": "Machine-readable JSON Schema bundle for the local CLI + JSON contract exposed by `locus api ...`. Consumers may validate individual shapes with refs such as `#/$defs/createRequest`, `#/$defs/eventEnvelope`, and `#/$defs/resultEnvelope`. Feature async-submit adds `#/$defs/submitRequest`, `#/$defs/retryRequest`, `#/$defs/waitEnvelope` and `#/$defs/asyncErrorEnvelope`; `#/$defs/jobEnvelope` also covers submit and retry --async admissions, keyed replays and status with `execution`.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/createRequest"
+    },
+    {
+      "$ref": "#/$defs/createResponseEnvelope"
+    },
+    {
+      "$ref": "#/$defs/jobEnvelope"
+    },
+    {
+      "$ref": "#/$defs/runtimeManifestEnvelope"
+    },
+    {
+      "$ref": "#/$defs/eventEnvelope"
+    },
+    {
+      "$ref": "#/$defs/resultEnvelope"
+    },
+    {
+      "$ref": "#/$defs/artifactManifest"
+    }
+  ],
+  "$defs": {
+    "apiVersion": {
+      "const": "locus.local-job.v1"
+    },
+    "boundedId80": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80,
+      "pattern": "^[A-Za-z0-9._:-]+$"
+    },
+    "boundedId160": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^[A-Za-z0-9._:-]+$"
+    },
+    "absoluteLocalPath": {
+      "type": "string",
+      "minLength": 1,
+      "anyOf": [
+        {
+          "pattern": "^/"
+        },
+        {
+          "pattern": "^[A-Za-z]:[\\\\/]"
+        },
+        {
+          "pattern": "^\\\\\\\\"
+        }
+      ]
+    },
+    "dateTimeOrNull": {
+      "oneOf": [
+        {
+          "type": "string",
+          "format": "date-time"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "runtimeId": {
+      "enum": ["claude-code", "codex"]
+    },
+    "runtimeIdInput": {
+      "description": "`claude` is accepted in create requests and normalized to `claude-code` in persisted/envelope output.",
+      "enum": ["claude-code", "codex", "claude"]
+    },
+    "runtimeCapabilityId": {
+      "enum": [
+        "hardToolGuard",
+        "planMode",
+        "quickChatAssistant",
+        "scopeExpansion",
+        "askUserQuestion",
+        "rollback",
+        "mcpAuth",
+        "mcpConfiguration",
+        "providerProfiles",
+        "attachments",
+        "usageMetadata",
+        "runtimePlugins",
+        "runtimeCommands",
+        "runtimeWorkflows",
+        "appAgents"
+      ]
+    },
+    "runtimeCapabilityStatus": {
+      "enum": ["supported", "degraded", "unsupported"]
+    },
+    "runtimeCapabilityScope": {
+      "enum": ["runtime-neutral", "runtime-specific", "unavailable"]
+    },
+    "runtimeReadinessState": {
+      "enum": ["ready", "needs-auth", "unavailable", "unknown"]
+    },
+    "discoveryFeature": {
+      "enum": [
+        "runtime-readiness",
+        "provider-binding",
+        "completion",
+        "canonical-run-ledger",
+        "async-submit"
+      ]
+    },
+    "jobKind": {
+      "enum": ["agent", "completion"]
+    },
+    "agentMode": {
+      "enum": ["plan", "agent"]
+    },
+    "agentJobStatus": {
+      "enum": [
+        "queued",
+        "running",
+        "succeeded",
+        "failed",
+        "canceled",
+        "interrupted"
+      ]
+    },
+    "writePolicy": {
+      "enum": ["metadata-only", "proposal-only"]
+    },
+    "executionProfile": {
+      "enum": ["batch", "policy-grant"]
+    },
+    "providerModelId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "pattern": "^[A-Za-z0-9._:@/+,=-]+$"
+    },
+    "providerSelection": {
+      "type": "object",
+      "description": "Optional provider selector. Only profile/model references are accepted; credentials and headers are rejected by runtime validation.",
+      "additionalProperties": false,
+      "anyOf": [
+        {
+          "required": ["profileId"]
+        },
+        {
+          "required": ["model"]
+        }
+      ],
+      "properties": {
+        "profileId": {
+          "$ref": "#/$defs/boundedId160"
+        },
+        "model": {
+          "$ref": "#/$defs/providerModelId"
+        }
+      }
+    },
+    "normalizedProviderSelection": {
+      "type": "object",
+      "required": ["profileId", "model"],
+      "properties": {
+        "profileId": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/boundedId160"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "model": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/providerModelId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "explicitProviderSelection": {
+      "type": "object",
+      "description": "Required provider profile selector for completion jobs. Completion jobs do not use default profile or native credential fallback.",
+      "required": ["profileId"],
+      "additionalProperties": false,
+      "properties": {
+        "profileId": {
+          "$ref": "#/$defs/boundedId160"
+        },
+        "model": {
+          "$ref": "#/$defs/providerModelId"
+        }
+      }
+    },
+    "normalizedExplicitProviderSelection": {
+      "type": "object",
+      "required": ["profileId", "model"],
+      "properties": {
+        "profileId": {
+          "$ref": "#/$defs/boundedId160"
+        },
+        "model": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/providerModelId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "completionMessage": {
+      "type": "object",
+      "required": ["role", "content"],
+      "additionalProperties": false,
+      "properties": {
+        "role": {
+          "enum": ["system", "user", "assistant"]
+        },
+        "content": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "responseFormat": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["type"],
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "text"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type", "schema"],
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "json_schema"
+            },
+            "schema": {
+              "type": "object",
+              "description": "Caller-owned JSON Schema passed through opaquely and used only to validate the returned JSON."
+            }
+          }
+        }
+      ]
+    },
+    "completionUsage": {
+      "type": "object",
+      "required": ["inputTokens", "outputTokens"],
+      "properties": {
+        "inputTokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "outputTokens": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "completionResult": {
+      "type": "object",
+      "required": ["content", "usage", "resolvedProvider"],
+      "properties": {
+        "content": true,
+        "usage": {
+          "$ref": "#/$defs/completionUsage"
+        },
+        "resolvedProvider": {
+          "$ref": "#/$defs/resolvedProvider"
+        }
+      }
+    },
+    "resolvedProviderSource": {
+      "enum": ["request-profile", "default-profile", "native"]
+    },
+    "resolvedProvider": {
+      "type": "object",
+      "required": ["source", "profileId", "model"],
+      "properties": {
+        "source": {
+          "$ref": "#/$defs/resolvedProviderSource"
+        },
+        "profileId": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/boundedId160"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "model": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/providerModelId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "eventType": {
+      "enum": [
+        "job_created",
+        "job_started",
+        "assistant_delta",
+        "reasoning_delta",
+        "tool_started",
+        "tool_delta",
+        "tool_finished",
+        "usage_update",
+        "artifact_created",
+        "status",
+        "error",
+        "completed"
+      ]
+    },
+    "consumer": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/boundedId80"
+        },
+        "runExternalId": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/boundedId160"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "normalizedConsumer": {
+      "type": "object",
+      "required": ["id", "runExternalId"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/boundedId80"
+        },
+        "runExternalId": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/boundedId160"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "agentCreateRequest": {
+      "type": "object",
+      "description": "Agent job input accepted by `locus api runs create --request <path|-> --json`. Runtime validation also rejects secret-like keys and values recursively, enforces a 1 MiB request JSON limit, and validates artifact paths against the filesystem/project boundary.",
+      "required": [
+        "apiVersion",
+        "consumer",
+        "project",
+        "runtime",
+        "mode",
+        "prompt"
+      ],
+      "properties": {
+        "apiVersion": {
+          "$ref": "#/$defs/apiVersion"
+        },
+        "kind": {
+          "const": "agent",
+          "default": "agent"
+        },
+        "consumer": {
+          "$ref": "#/$defs/consumer"
+        },
+        "project": {
+          "type": "object",
+          "required": ["cwd"],
+          "properties": {
+            "cwd": {
+              "$ref": "#/$defs/absoluteLocalPath"
+            },
+            "projectId": {
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        "runtime": {
+          "type": "object",
+          "required": ["id"],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/runtimeIdInput"
+            },
+            "requiredCapabilities": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/runtimeCapabilityId"
+              },
+              "uniqueItems": true,
+              "default": []
+            },
+            "executionProfile": {
+              "$ref": "#/$defs/executionProfile",
+              "default": "batch"
+            },
+            "policyGrant": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "required": ["scopes"],
+                  "properties": {
+                    "scopes": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/boundedId160"
+                      },
+                      "uniqueItems": true
+                    },
+                    "canDecideAutomatically": {
+                      "type": "boolean"
+                    }
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          }
+        },
+        "mode": {
+          "$ref": "#/$defs/agentMode"
+        },
+        "prompt": {
+          "type": "object",
+          "required": ["text"],
+          "properties": {
+            "text": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 262144
+            }
+          }
+        },
+        "provider": {
+          "$ref": "#/$defs/providerSelection"
+        },
+        "input": {
+          "type": "object",
+          "description": "Consumer-owned structured metadata. Provider credentials, authorization headers, environment snapshots, private keys, passwords, and secret-like values are rejected by runtime validation.",
+          "default": {}
+        },
+        "artifacts": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "baseDir": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/$defs/absoluteLocalPath"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "writePolicy": {
+                  "$ref": "#/$defs/writePolicy",
+                  "default": "metadata-only"
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": {}
+        }
+      }
+    },
+    "completionRequestMembers": {
+      "type": "object",
+      "description": "Members shared by `completionCreateRequest` and `completionSubmitRequest`. Open on its own; each request closes it with `unevaluatedProperties: false`, so the two member sets cannot drift.",
+      "required": ["apiVersion", "kind", "consumer", "provider", "messages"],
+      "properties": {
+        "apiVersion": {
+          "$ref": "#/$defs/apiVersion"
+        },
+        "kind": {
+          "const": "completion"
+        },
+        "consumer": {
+          "$ref": "#/$defs/consumer"
+        },
+        "runtime": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "$ref": "#/$defs/runtimeIdInput"
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "provider": {
+          "$ref": "#/$defs/explicitProviderSelection"
+        },
+        "messages": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 128,
+          "items": {
+            "$ref": "#/$defs/completionMessage"
+          }
+        },
+        "maxTokens": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200000
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "temperature": {
+          "oneOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 2
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "responseFormat": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/responseFormat"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": {
+            "type": "text"
+          }
+        }
+      }
+    },
+    "completionCreateRequest": {
+      "type": "object",
+      "description": "Consumer-neutral completion input accepted by `locus api runs create --request <path|-> --json`. `responseFormat.schema` is caller-owned and opaque to Locus except for JSON Schema validation of the returned content.",
+      "allOf": [
+        {
+          "$ref": "#/$defs/completionRequestMembers"
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "createRequest": {
+      "description": "Input accepted by `locus api runs create --request <path|-> --json`. Omitted `kind` is treated as `agent` for backward compatibility. On builds with feature async-submit, `idempotencyKey` is rejected with idempotency_key_not_supported (use `#/$defs/submitRequest`).",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/agentCreateRequest"
+        },
+        {
+          "$ref": "#/$defs/completionCreateRequest"
+        }
+      ],
+      "not": {
+        "type": "object",
+        "required": ["idempotencyKey"]
+      }
+    },
+    "normalizedAgentCreateRequest": {
+      "type": "object",
+      "description": "Normalized agent request shape after `validateLocalJobApiCreateRequest` succeeds.",
+      "required": [
+        "apiVersion",
+        "kind",
+        "consumer",
+        "project",
+        "runtime",
+        "mode",
+        "prompt",
+        "provider",
+        "input",
+        "artifacts"
+      ],
+      "properties": {
+        "apiVersion": {
+          "$ref": "#/$defs/apiVersion"
+        },
+        "kind": {
+          "const": "agent"
+        },
+        "consumer": {
+          "$ref": "#/$defs/normalizedConsumer"
+        },
+        "project": {
+          "type": "object",
+          "required": ["cwd", "projectId"],
+          "properties": {
+            "cwd": {
+              "$ref": "#/$defs/absoluteLocalPath"
+            },
+            "projectId": {
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        "runtime": {
+          "type": "object",
+          "required": [
+            "id",
+            "requiredCapabilities",
+            "executionProfile",
+            "policyGrant"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/runtimeId"
+            },
+            "requiredCapabilities": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/runtimeCapabilityId"
+              },
+              "uniqueItems": true
+            },
+            "executionProfile": {
+              "$ref": "#/$defs/executionProfile"
+            },
+            "policyGrant": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "required": ["scopes"],
+                  "properties": {
+                    "scopes": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/$defs/boundedId160"
+                      },
+                      "uniqueItems": true
+                    },
+                    "canDecideAutomatically": {
+                      "type": "boolean"
+                    }
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        "mode": {
+          "$ref": "#/$defs/agentMode"
+        },
+        "prompt": {
+          "type": "object",
+          "required": ["text"],
+          "properties": {
+            "text": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 262144
+            }
+          }
+        },
+        "input": {
+          "type": "object"
+        },
+        "provider": {
+          "$ref": "#/$defs/normalizedProviderSelection"
+        },
+        "artifacts": {
+          "type": "object",
+          "required": ["baseDir", "writePolicy"],
+          "properties": {
+            "baseDir": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/absoluteLocalPath"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "writePolicy": {
+              "$ref": "#/$defs/writePolicy"
+            }
+          }
+        }
+      }
+    },
+    "normalizedCompletionCreateRequest": {
+      "type": "object",
+      "description": "Normalized completion request shape after `validateLocalJobApiCreateRequest` succeeds.",
+      "required": [
+        "apiVersion",
+        "kind",
+        "consumer",
+        "runtime",
+        "provider",
+        "messages",
+        "maxTokens",
+        "temperature",
+        "responseFormat"
+      ],
+      "properties": {
+        "apiVersion": {
+          "$ref": "#/$defs/apiVersion"
+        },
+        "kind": {
+          "const": "completion"
+        },
+        "consumer": {
+          "$ref": "#/$defs/normalizedConsumer"
+        },
+        "runtime": {
+          "type": "object",
+          "required": ["id"],
+          "properties": {
+            "id": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/runtimeId"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        "provider": {
+          "$ref": "#/$defs/normalizedExplicitProviderSelection"
+        },
+        "messages": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 128,
+          "items": {
+            "$ref": "#/$defs/completionMessage"
+          }
+        },
+        "maxTokens": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200000
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "temperature": {
+          "oneOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 2
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "responseFormat": {
+          "$ref": "#/$defs/responseFormat"
+        }
+      }
+    },
+    "normalizedCreateRequest": {
+      "description": "Normalized request shape after `validateLocalJobApiCreateRequest` succeeds.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/normalizedAgentCreateRequest"
+        },
+        {
+          "$ref": "#/$defs/normalizedCompletionCreateRequest"
+        }
+      ]
+    },
+    "artifact": {
+      "type": "object",
+      "required": ["role", "path", "sha256", "contentType", "sizeBytes"],
+      "properties": {
+        "role": {
+          "type": "string",
+          "minLength": 1
+        },
+        "path": {
+          "$ref": "#/$defs/absoluteLocalPath"
+        },
+        "sha256": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "contentType": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sizeBytes": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "artifactManifest": {
+      "type": "object",
+      "required": [
+        "apiVersion",
+        "jobId",
+        "artifactBaseDir",
+        "artifacts",
+        "createdAt"
+      ],
+      "properties": {
+        "apiVersion": {
+          "$ref": "#/$defs/apiVersion"
+        },
+        "jobId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "artifactBaseDir": {
+          "$ref": "#/$defs/absoluteLocalPath"
+        },
+        "artifacts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/artifact"
+          }
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "diagnostic": {
+      "type": "object",
+      "required": ["code", "message"],
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "runtimeCapability": {
+      "type": "object",
+      "required": [
+        "id",
+        "label",
+        "status",
+        "scope",
+        "reason",
+        "hint",
+        "support"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/runtimeCapabilityId"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "$ref": "#/$defs/runtimeCapabilityStatus"
+        },
+        "scope": {
+          "$ref": "#/$defs/runtimeCapabilityScope"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "hint": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "support": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": ["kind", "references"],
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "runtime-code",
+                    "stable-runtime-primitive",
+                    "locus-shared-layer"
+                  ]
+                },
+                "references": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "runtimeManifest": {
+      "type": "object",
+      "required": [
+        "runtimeId",
+        "label",
+        "description",
+        "capabilities",
+        "readiness"
+      ],
+      "properties": {
+        "runtimeId": {
+          "$ref": "#/$defs/runtimeId"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/runtimeCapability"
+          }
+        },
+        "readiness": {
+          "$ref": "#/$defs/runtimeReadiness"
+        }
+      }
+    },
+    "runtimeReadiness": {
+      "type": "object",
+      "required": ["state"],
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/runtimeReadinessState"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "hint": {
+          "type": "string"
+        }
+      }
+    },
+    "serializedAgentJob": {
+      "type": "object",
+      "required": [
+        "id",
+        "retryOfJobId",
+        "attempt",
+        "kind",
+        "source",
+        "runtime",
+        "status",
+        "mode",
+        "cwd",
+        "projectId",
+        "chatId",
+        "subChatId",
+        "promptPreview",
+        "apiConsumerId",
+        "apiConsumerRunId",
+        "artifactBaseDir",
+        "artifactManifestPath",
+        "providerProfileId",
+        "modelOverride",
+        "createdAt",
+        "startedAt",
+        "finishedAt",
+        "exitCode",
+        "errorCode",
+        "errorMessage",
+        "result",
+        "workerId",
+        "workerPid",
+        "heartbeatAt",
+        "cancelRequestedAt",
+        "cancelRequestedBy"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "retryOfJobId": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "kind": {
+          "$ref": "#/$defs/jobKind"
+        },
+        "source": {
+          "enum": ["desktop", "cli", "api", "daemon", "schedule", "protocol"]
+        },
+        "runtime": {
+          "$ref": "#/$defs/runtimeId"
+        },
+        "status": {
+          "$ref": "#/$defs/agentJobStatus"
+        },
+        "mode": {
+          "$ref": "#/$defs/agentMode"
+        },
+        "cwd": {
+          "$ref": "#/$defs/absoluteLocalPath"
+        },
+        "projectId": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "chatId": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "subChatId": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "promptPreview": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "apiConsumerId": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "apiConsumerRunId": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "artifactBaseDir": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/absoluteLocalPath"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "artifactManifestPath": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/absoluteLocalPath"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "providerProfileId": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/boundedId160"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "modelOverride": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/providerModelId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "createdAt": {
+          "$ref": "#/$defs/dateTimeOrNull"
+        },
+        "startedAt": {
+          "$ref": "#/$defs/dateTimeOrNull"
+        },
+        "finishedAt": {
+          "$ref": "#/$defs/dateTimeOrNull"
+        },
+        "exitCode": {
+          "oneOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "errorCode": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "errorMessage": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "result": true,
+        "workerId": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "workerPid": {
+          "oneOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "heartbeatAt": {
+          "$ref": "#/$defs/dateTimeOrNull"
+        },
+        "cancelRequestedAt": {
+          "$ref": "#/$defs/dateTimeOrNull"
+        },
+        "cancelRequestedBy": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "jobEnvelope": {
+      "type": "object",
+      "required": ["apiVersion", "job"],
+      "properties": {
+        "apiVersion": {
+          "$ref": "#/$defs/apiVersion"
+        },
+        "job": {
+          "$ref": "#/$defs/serializedAgentJob"
+        },
+        "idempotentReplay": {
+          "const": true,
+          "description": "Feature async-submit: present only on a keyed submit or retry --request replay of a retained Run."
+        },
+        "execution": {
+          "$ref": "#/$defs/executionObservation"
+        }
+      }
+    },
+    "runtimeManifestEnvelope": {
+      "type": "object",
+      "required": ["apiVersion", "features", "runtimes"],
+      "properties": {
+        "apiVersion": {
+          "$ref": "#/$defs/apiVersion"
+        },
+        "features": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/discoveryFeature"
+          },
+          "uniqueItems": true
+        },
+        "runtimes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/runtimeManifest"
+          }
+        }
+      }
+    },
+    "eventEnvelope": {
+      "type": "object",
+      "required": [
+        "apiVersion",
+        "jobId",
+        "sequence",
+        "type",
+        "createdAt",
+        "payload"
+      ],
+      "properties": {
+        "apiVersion": {
+          "$ref": "#/$defs/apiVersion"
+        },
+        "jobId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "type": {
+          "$ref": "#/$defs/eventType"
+        },
+        "createdAt": {
+          "$ref": "#/$defs/dateTimeOrNull"
+        },
+        "payload": {
+          "if": {
+            "type": "object"
+          },
+          "then": {
+            "type": "object",
+            "properties": {
+              "extensions": {
+                "$ref": "#/$defs/eventPayloadExtensions"
+              }
+            }
+          }
+        }
+      }
+    },
+    "eventPayloadExtensions": {
+      "type": "object",
+      "description": "Optional namespaced native metadata on object event payloads (feature canonical-run-ledger). Consumers ignore namespaces they do not know.",
+      "properties": {
+        "runtime.codex.v1": {
+          "type": "object",
+          "description": "Experimental redacted Codex native identities of a runtime-backed record; absent before execution binding and never added retroactively.",
+          "required": ["schemaVersion", "maturity"],
+          "properties": {
+            "schemaVersion": {
+              "const": 1
+            },
+            "maturity": {
+              "const": "experimental"
+            },
+            "threadId": {
+              "type": "string"
+            },
+            "turnId": {
+              "type": "string"
+            },
+            "itemId": {
+              "type": "string"
+            },
+            "sessionId": {
+              "type": "string"
+            },
+            "requestId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                }
+              ]
+            },
+            "callId": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "resultEnvelope": {
+      "type": "object",
+      "required": [
+        "apiVersion",
+        "jobId",
+        "status",
+        "runtime",
+        "mode",
+        "consumer",
+        "artifactManifestPath",
+        "artifacts",
+        "diagnostics",
+        "resolvedProvider",
+        "result"
+      ],
+      "properties": {
+        "apiVersion": {
+          "$ref": "#/$defs/apiVersion"
+        },
+        "jobId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "$ref": "#/$defs/agentJobStatus"
+        },
+        "runtime": {
+          "$ref": "#/$defs/runtimeId"
+        },
+        "mode": {
+          "$ref": "#/$defs/agentMode"
+        },
+        "consumer": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/normalizedConsumer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "artifactManifestPath": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/absoluteLocalPath"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "artifacts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/artifact"
+          }
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/diagnostic"
+          }
+        },
+        "resolvedProvider": {
+          "$ref": "#/$defs/resolvedProvider"
+        },
+        "result": true
+      }
+    },
+    "idempotencyKey": {
+      "description": "Feature async-submit: optional key accepted only by `runs submit` and `runs retry --request`; scoped by normalized consumer.id, case-sensitive and never trimmed. `runs create` rejects it with idempotency_key_not_supported.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^[A-Za-z0-9._:-]+$"
+    },
+    "retryRequest": {
+      "description": "Feature async-submit: body of `runs retry <id> --request <path|->`.",
+      "type": "object",
+      "required": ["apiVersion", "consumer"],
+      "additionalProperties": false,
+      "properties": {
+        "apiVersion": {
+          "$ref": "#/$defs/apiVersion"
+        },
+        "consumer": {
+          "type": "object",
+          "required": ["id"],
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/boundedId80"
+            }
+          }
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/idempotencyKey"
+        }
+      }
+    },
+    "executionObservation": {
+      "description": "Feature async-submit: advisory executor observation on `runs status` for queued/running jobs only; omitted for terminal jobs.",
+      "type": "object",
+      "required": ["state", "reason", "observedAt"],
+      "additionalProperties": false,
+      "properties": {
+        "state": {
+          "enum": ["available", "unavailable", "unknown"]
+        },
+        "reason": {
+          "enum": [
+            "executor_observed",
+            "no_executor",
+            "probe_unavailable",
+            "admission_incomplete"
+          ]
+        },
+        "observedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "hint": {
+          "const": "locus daemon run"
+        }
+      }
+    },
+    "waitReason": {
+      "enum": [
+        "admission_incomplete",
+        "run_pending",
+        "executor_unavailable",
+        "executor_unknown",
+        "terminal_artifacts_pending",
+        "observation_failed"
+      ]
+    },
+    "waitEnvelope": {
+      "description": "Feature async-submit: non-ready `runs wait` (timeout, exit 9) or observer error (exit 8). It carries no result and is not a Run outcome.",
+      "type": "object",
+      "required": ["apiVersion", "job", "wait"],
+      "properties": {
+        "apiVersion": {
+          "$ref": "#/$defs/apiVersion"
+        },
+        "job": {
+          "$ref": "#/$defs/serializedAgentJob"
+        },
+        "wait": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": ["state", "timeoutMs", "reason"],
+              "additionalProperties": false,
+              "properties": {
+                "state": {
+                  "const": "timeout"
+                },
+                "timeoutMs": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 86400000
+                },
+                "reason": {
+                  "$ref": "#/$defs/waitReason"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": ["state", "reason"],
+              "additionalProperties": false,
+              "properties": {
+                "state": {
+                  "const": "error"
+                },
+                "reason": {
+                  "$ref": "#/$defs/waitReason"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "asyncErrorEnvelope": {
+      "description": "Feature async-submit: stdout v1 error of submit/create/retry --request. It never echoes the key or stored request content.",
+      "type": "object",
+      "required": ["apiVersion", "error"],
+      "additionalProperties": false,
+      "properties": {
+        "apiVersion": {
+          "$ref": "#/$defs/apiVersion"
+        },
+        "error": {
+          "type": "object",
+          "required": ["code", "message"],
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "enum": [
+                "idempotency_key_not_supported",
+                "idempotency_conflict",
+                "consumer_mismatch",
+                "invalid_idempotency_key",
+                "secret_in_request",
+                "submission_pending"
+              ]
+            },
+            "message": {
+              "type": "string"
+            },
+            "retryable": {
+              "const": true
+            }
+          }
+        }
+      }
+    },
+    "agentSubmitRequest": {
+      "type": "object",
+      "description": "Feature async-submit: agent input of `locus api runs submit --request <path|-> --json`: an agent create request plus the optional idempotencyKey.",
+      "allOf": [
+        {
+          "$ref": "#/$defs/agentCreateRequest"
+        }
+      ],
+      "properties": {
+        "idempotencyKey": {
+          "$ref": "#/$defs/idempotencyKey"
+        }
+      }
+    },
+    "completionSubmitRequest": {
+      "type": "object",
+      "description": "Feature async-submit: completion input of `locus api runs submit --request <path|-> --json`: the completion create request members (`completionRequestMembers`, same rules) plus the optional idempotencyKey.",
+      "allOf": [
+        {
+          "$ref": "#/$defs/completionRequestMembers"
+        }
+      ],
+      "properties": {
+        "idempotencyKey": {
+          "$ref": "#/$defs/idempotencyKey"
+        }
+      },
+      "unevaluatedProperties": false
+    },
+    "submitRequest": {
+      "description": "Feature async-submit: input accepted by `locus api runs submit --request <path|-> --json`. Omitted `kind` is treated as `agent`.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/agentSubmitRequest"
+        },
+        {
+          "$ref": "#/$defs/completionSubmitRequest"
+        }
+      ]
+    },
+    "createResponseEnvelope": {
+      "type": "object",
+      "required": ["apiVersion", "job", "result"],
+      "properties": {
+        "apiVersion": {
+          "$ref": "#/$defs/apiVersion"
+        },
+        "job": {
+          "$ref": "#/$defs/serializedAgentJob"
+        },
+        "result": {
+          "$ref": "#/$defs/resultEnvelope"
+        }
+      }
+    }
+  }
+}

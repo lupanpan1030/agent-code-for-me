@@ -30,7 +30,7 @@ describe("Codex desktop service extraction boundary", () => {
       "persistCodexDesktopRunUserMessage",
       "createCodexDesktopRunState",
       "createAndRegisterCodexDesktopRunJob",
-      "runCodexAppServerDesktopAdapter",
+      "runCodexDesktopChatRun",
       "finalizeCodexDesktopRunAfterLifecycle",
       "cleanupCodexDesktopRunSubscription",
     ]) {

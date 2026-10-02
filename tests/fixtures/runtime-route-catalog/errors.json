@@ -1,0 +1,409 @@
+{
+  "fixtureVersion": 1,
+  "evidenceClass": "synthetic",
+  "sourceRefs": [
+    "openspec/changes/refactor-unified-runtime-route-catalog/specs/local-job-api/spec.md:24-28",
+    "openspec/changes/refactor-unified-runtime-route-catalog/design.md:357-396",
+    "src/main/lib/headless/job-runner.ts:766-836",
+    "src/main/lib/headless/cli-dispatcher.ts:1500-1516",
+    "src/main/lib/headless/cli-dispatcher.ts:1682-1688",
+    "src/main/lib/headless/jobs-stdio.ts:404-440",
+    "src/main/lib/headless/adapter-selector.ts:154-263",
+    "src/main/lib/headless/local-job-api.ts:786-797"
+  ],
+  "provenance": {
+    "capturedFrom": "product source 6192b13f74603fbcc57c8ba858cb6b0f0d0ac776 (worktree base 19986552 carries no src/ diff from it)",
+    "method": "same harness as public-contract.json#S21 (real runAgentTask/selector, recording headless leaf modules only, no runner fake). create-leaf-throw-oracle runs the recording leaf in throw mode with the sanitized message \"Runtime route catalog is unavailable.\"; it is the runner-level runtime_error/1 envelope of job-runner.ts:820-836 that an injected RuntimeRouteCatalogFailureState must reproduce. Placeholders as in public-contract.json.",
+    "author": "independent red author (public-guards domain), 2026-10-02",
+    "secrets": "none"
+  },
+  "S24": {
+    "requests": {
+      "admissionUnsupportedCodex": {
+        "apiVersion": "locus.local-job.v1",
+        "consumer": {
+          "id": "fixture-a",
+          "runExternalId": "err-codex-rollback"
+        },
+        "project": {
+          "cwd": "{{PACKAGE_DIR}}"
+        },
+        "runtime": {
+          "id": "codex",
+          "requiredCapabilities": ["rollback"]
+        },
+        "mode": "plan",
+        "prompt": {
+          "text": "Review this local package."
+        },
+        "input": {
+          "contract": "example.local-package.v1"
+        }
+      },
+      "admissionUnsupportedClaude": {
+        "apiVersion": "locus.local-job.v1",
+        "consumer": {
+          "id": "fixture-a",
+          "runExternalId": "err-claude-workflows"
+        },
+        "project": {
+          "cwd": "{{PACKAGE_DIR}}"
+        },
+        "runtime": {
+          "id": "claude-code",
+          "requiredCapabilities": ["runtimeWorkflows"]
+        },
+        "mode": "plan",
+        "prompt": {
+          "text": "Review this local package."
+        },
+        "input": {
+          "contract": "example.local-package.v1"
+        }
+      },
+      "parserUnknownRuntime": {
+        "apiVersion": "locus.local-job.v1",
+        "consumer": {
+          "id": "fixture-a",
+          "runExternalId": "err-unknown-runtime"
+        },
+        "project": {
+          "cwd": "{{PACKAGE_DIR}}"
+        },
+        "runtime": {
+          "id": "gemini",
+          "requiredCapabilities": ["planMode"]
+        },
+        "mode": "plan",
+        "prompt": {
+          "text": "Review this local package."
+        },
+        "input": {
+          "contract": "example.local-package.v1"
+        }
+      },
+      "providerProfileMissing": {
+        "apiVersion": "locus.local-job.v1",
+        "consumer": {
+          "id": "fixture-a",
+          "runExternalId": "err-missing-profile"
+        },
+        "project": {
+          "cwd": "{{PACKAGE_DIR}}"
+        },
+        "runtime": {
+          "id": "codex",
+          "requiredCapabilities": ["planMode"]
+        },
+        "mode": "plan",
+        "prompt": {
+          "text": "Review this local package."
+        },
+        "input": {
+          "contract": "example.local-package.v1"
+        },
+        "provider": {
+          "profileId": "missing-profile"
+        }
+      },
+      "guardedScopeHardToolGuard": {
+        "apiVersion": "locus.local-job.v1",
+        "consumer": {
+          "id": "fixture-a",
+          "runExternalId": "err-hard-tool-guard"
+        },
+        "project": {
+          "cwd": "{{PACKAGE_DIR}}"
+        },
+        "runtime": {
+          "id": "codex",
+          "requiredCapabilities": ["hardToolGuard"]
+        },
+        "mode": "plan",
+        "prompt": {
+          "text": "Review this local package."
+        },
+        "input": {
+          "contract": "example.local-package.v1"
+        }
+      },
+      "claudePolicyGrant": {
+        "apiVersion": "locus.local-job.v1",
+        "consumer": {
+          "id": "fixture-a",
+          "runExternalId": "err-claude-grant"
+        },
+        "project": {
+          "cwd": "{{PACKAGE_DIR}}"
+        },
+        "runtime": {
+          "id": "claude-code",
+          "requiredCapabilities": ["planMode"],
+          "executionProfile": "policy-grant",
+          "policyGrant": {
+            "scopes": ["repo.read"]
+          }
+        },
+        "mode": "plan",
+        "prompt": {
+          "text": "Review this local package."
+        },
+        "input": {
+          "contract": "example.local-package.v1"
+        }
+      },
+      "codexFailClosed": {
+        "apiVersion": "locus.local-job.v1",
+        "consumer": {
+          "id": "fixture-a",
+          "runExternalId": "err-fail-closed"
+        },
+        "project": {
+          "cwd": "{{PACKAGE_DIR}}"
+        },
+        "runtime": {
+          "id": "codex",
+          "requiredCapabilities": ["planMode"],
+          "executionProfile": "policy-grant",
+          "policyGrant": {
+            "scopes": ["repo.read"],
+            "canDecideAutomatically": false
+          }
+        },
+        "mode": "plan",
+        "prompt": {
+          "text": "Review this local package."
+        },
+        "input": {
+          "contract": "example.local-package.v1"
+        }
+      },
+      "waitOnly": {
+        "apiVersion": "locus.local-job.v1",
+        "consumer": {
+          "id": "fixture-a",
+          "runExternalId": "err-wait-only"
+        },
+        "project": {
+          "cwd": "{{PACKAGE_DIR}}"
+        },
+        "runtime": {
+          "id": "codex",
+          "requiredCapabilities": ["planMode"]
+        },
+        "mode": "plan",
+        "prompt": {
+          "text": "Review this local package."
+        },
+        "input": {
+          "contract": "example.local-package.v1"
+        }
+      },
+      "codexBatch": {
+        "apiVersion": "locus.local-job.v1",
+        "consumer": {
+          "id": "fixture-a",
+          "runExternalId": "err-catalog-failure-oracle"
+        },
+        "project": {
+          "cwd": "{{PACKAGE_DIR}}"
+        },
+        "runtime": {
+          "id": "codex",
+          "requiredCapabilities": ["planMode"]
+        },
+        "mode": "plan",
+        "prompt": {
+          "text": "Review this local package."
+        },
+        "input": {
+          "contract": "example.local-package.v1"
+        }
+      }
+    },
+    "surfaces": {
+      "steps": [
+        {
+          "step": "create-admissionUnsupportedCodex",
+          "code": 3,
+          "stdout": "",
+          "stderr": "Codex Rollback and fork is unsupported. Codex session IDs are persisted, but rollback and fork are not wired through durable shared session references.\n"
+        },
+        {
+          "step": "create-admissionUnsupportedClaude",
+          "code": 3,
+          "stdout": "",
+          "stderr": "Claude Code Runtime workflows is unsupported. Claude Dynamic Workflows have an OpenSpec proposal, but the runtime adapter is not implemented yet.\n"
+        },
+        {
+          "step": "create-parserUnknownRuntime",
+          "code": 3,
+          "stdout": "",
+          "stderr": "Unsupported runtime.id\n"
+        },
+        {
+          "step": "create-providerProfileMissing",
+          "code": 2,
+          "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"error\":{\"code\":\"provider_profile_not_found\",\"message\":\"Provider profile missing-profile was not found.\",\"source\":\"request-profile\",\"profileId\":\"missing-profile\"}}\n",
+          "stderr": ""
+        },
+        {
+          "step": "create-guardedScopeHardToolGuard",
+          "code": 0,
+          "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"job\":{\"id\":\"{{J1}}\",\"retryOfJobId\":null,\"attempt\":1,\"kind\":\"agent\",\"source\":\"api\",\"runtime\":\"codex\",\"status\":\"succeeded\",\"mode\":\"plan\",\"cwd\":\"{{PACKAGE_DIR}}\",\"projectId\":\"project-1\",\"chatId\":null,\"subChatId\":null,\"promptPreview\":\"Review this local package.\",\"apiConsumerId\":\"fixture-a\",\"apiConsumerRunId\":\"err-hard-tool-guard\",\"artifactBaseDir\":null,\"artifactManifestPath\":null,\"providerProfileId\":null,\"modelOverride\":null,\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"startedAt\":\"2026-10-02T00:00:00.000Z\",\"finishedAt\":\"2026-10-02T00:00:00.000Z\",\"exitCode\":0,\"errorCode\":null,\"errorMessage\":null,\"result\":{\"finalMessage\":\"fixture codex-batch done\",\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}},\"workerId\":\"{{W1}}\",\"workerPid\":{{PID}},\"heartbeatAt\":\"2026-10-02T00:00:00.000Z\",\"cancelRequestedAt\":null,\"cancelRequestedBy\":null},\"result\":{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{J1}}\",\"status\":\"succeeded\",\"runtime\":\"codex\",\"mode\":\"plan\",\"consumer\":{\"id\":\"fixture-a\",\"runExternalId\":\"err-hard-tool-guard\"},\"artifactManifestPath\":null,\"artifacts\":[],\"diagnostics\":[],\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null},\"result\":{\"finalMessage\":\"fixture codex-batch done\",\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}}}}\n",
+          "stderr": ""
+        },
+        {
+          "step": "create-claudePolicyGrant",
+          "code": 1,
+          "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"job\":{\"id\":\"{{J2}}\",\"retryOfJobId\":null,\"attempt\":1,\"kind\":\"agent\",\"source\":\"api\",\"runtime\":\"claude-code\",\"status\":\"failed\",\"mode\":\"plan\",\"cwd\":\"{{PACKAGE_DIR}}\",\"projectId\":\"project-1\",\"chatId\":null,\"subChatId\":null,\"promptPreview\":\"Review this local package.\",\"apiConsumerId\":\"fixture-a\",\"apiConsumerRunId\":\"err-claude-grant\",\"artifactBaseDir\":null,\"artifactManifestPath\":null,\"providerProfileId\":null,\"modelOverride\":null,\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"startedAt\":\"2026-10-02T00:00:00.000Z\",\"finishedAt\":\"2026-10-02T00:00:00.000Z\",\"exitCode\":1,\"errorCode\":\"policy_grant_adapter_unavailable\",\"errorMessage\":\"Claude Code batch exposes only sandbox-level enforcement for this headless adapter; policy-grant execution requires an app-server admission gate or true pre-execution scope binding before provider work.\",\"result\":{\"value\":null,\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}},\"workerId\":\"{{W2}}\",\"workerPid\":{{PID}},\"heartbeatAt\":\"2026-10-02T00:00:00.000Z\",\"cancelRequestedAt\":null,\"cancelRequestedBy\":null},\"result\":{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{J2}}\",\"status\":\"failed\",\"runtime\":\"claude-code\",\"mode\":\"plan\",\"consumer\":{\"id\":\"fixture-a\",\"runExternalId\":\"err-claude-grant\"},\"artifactManifestPath\":null,\"artifacts\":[],\"diagnostics\":[{\"code\":\"policy_grant_adapter_unavailable\",\"message\":\"Claude Code batch exposes only sandbox-level enforcement for this headless adapter; policy-grant execution requires an app-server admission gate or true pre-execution scope binding before provider work.\"}],\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null},\"result\":{\"value\":null,\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}}}}\n",
+          "stderr": ""
+        },
+        {
+          "step": "create-codexFailClosed",
+          "code": 1,
+          "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"job\":{\"id\":\"{{J3}}\",\"retryOfJobId\":null,\"attempt\":1,\"kind\":\"agent\",\"source\":\"api\",\"runtime\":\"codex\",\"status\":\"failed\",\"mode\":\"plan\",\"cwd\":\"{{PACKAGE_DIR}}\",\"projectId\":\"project-1\",\"chatId\":null,\"subChatId\":null,\"promptPreview\":\"Review this local package.\",\"apiConsumerId\":\"fixture-a\",\"apiConsumerRunId\":\"err-fail-closed\",\"artifactBaseDir\":null,\"artifactManifestPath\":null,\"providerProfileId\":null,\"modelOverride\":null,\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"startedAt\":\"2026-10-02T00:00:00.000Z\",\"finishedAt\":\"2026-10-02T00:00:00.000Z\",\"exitCode\":1,\"errorCode\":\"permission_policy_fail_closed\",\"errorMessage\":\"api plan job refused before provider work: policy-grant execution requires bounded scopes that can be decided without a visible user.\",\"result\":{\"value\":null,\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}},\"workerId\":\"{{W3}}\",\"workerPid\":{{PID}},\"heartbeatAt\":\"2026-10-02T00:00:00.000Z\",\"cancelRequestedAt\":null,\"cancelRequestedBy\":null},\"result\":{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{J3}}\",\"status\":\"failed\",\"runtime\":\"codex\",\"mode\":\"plan\",\"consumer\":{\"id\":\"fixture-a\",\"runExternalId\":\"err-fail-closed\"},\"artifactManifestPath\":null,\"artifacts\":[],\"diagnostics\":[{\"code\":\"permission_policy_fail_closed\",\"message\":\"api plan job refused before provider work: policy-grant execution requires bounded scopes that can be decided without a visible user.\"}],\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null},\"result\":{\"value\":null,\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}}}}\n",
+          "stderr": ""
+        },
+        {
+          "step": "submit-for-wait",
+          "code": 0,
+          "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"job\":{\"id\":\"{{J4}}\",\"retryOfJobId\":null,\"attempt\":1,\"kind\":\"agent\",\"source\":\"api\",\"runtime\":\"codex\",\"status\":\"queued\",\"mode\":\"plan\",\"cwd\":\"{{PACKAGE_DIR}}\",\"projectId\":\"project-1\",\"chatId\":null,\"subChatId\":null,\"promptPreview\":\"Review this local package.\",\"apiConsumerId\":\"fixture-a\",\"apiConsumerRunId\":\"err-wait-only\",\"artifactBaseDir\":null,\"artifactManifestPath\":null,\"providerProfileId\":null,\"modelOverride\":null,\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"startedAt\":null,\"finishedAt\":null,\"exitCode\":null,\"errorCode\":null,\"errorMessage\":null,\"result\":null,\"workerId\":null,\"workerPid\":null,\"heartbeatAt\":null,\"cancelRequestedAt\":null,\"cancelRequestedBy\":null}}\n",
+          "stderr": ""
+        },
+        {
+          "step": "wait-only-timeout",
+          "code": 9,
+          "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"job\":{\"id\":\"{{J4}}\",\"retryOfJobId\":null,\"attempt\":1,\"kind\":\"agent\",\"source\":\"api\",\"runtime\":\"codex\",\"status\":\"queued\",\"mode\":\"plan\",\"cwd\":\"{{PACKAGE_DIR}}\",\"projectId\":\"project-1\",\"chatId\":null,\"subChatId\":null,\"promptPreview\":\"Review this local package.\",\"apiConsumerId\":\"fixture-a\",\"apiConsumerRunId\":\"err-wait-only\",\"artifactBaseDir\":null,\"artifactManifestPath\":null,\"providerProfileId\":null,\"modelOverride\":null,\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"startedAt\":null,\"finishedAt\":null,\"exitCode\":null,\"errorCode\":null,\"errorMessage\":null,\"result\":null,\"workerId\":null,\"workerPid\":null,\"heartbeatAt\":null,\"cancelRequestedAt\":null,\"cancelRequestedBy\":null},\"wait\":{\"state\":\"timeout\",\"timeoutMs\":1,\"reason\":\"executor_unavailable\"}}\n",
+          "stderr": ""
+        },
+        {
+          "step": "cancel-wait-only",
+          "code": 0,
+          "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"job\":{\"id\":\"{{J4}}\",\"retryOfJobId\":null,\"attempt\":1,\"kind\":\"agent\",\"source\":\"api\",\"runtime\":\"codex\",\"status\":\"canceled\",\"mode\":\"plan\",\"cwd\":\"{{PACKAGE_DIR}}\",\"projectId\":\"project-1\",\"chatId\":null,\"subChatId\":null,\"promptPreview\":\"Review this local package.\",\"apiConsumerId\":\"fixture-a\",\"apiConsumerRunId\":\"err-wait-only\",\"artifactBaseDir\":null,\"artifactManifestPath\":null,\"providerProfileId\":null,\"modelOverride\":null,\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"startedAt\":null,\"finishedAt\":\"2026-10-02T00:00:00.000Z\",\"exitCode\":5,\"errorCode\":\"job_canceled\",\"errorMessage\":\"Job was canceled before it started.\",\"result\":null,\"workerId\":null,\"workerPid\":null,\"heartbeatAt\":\"2026-10-02T00:00:00.000Z\",\"cancelRequestedAt\":\"2026-10-02T00:00:00.000Z\",\"cancelRequestedBy\":\"api\"}}\n",
+          "stderr": ""
+        },
+        {
+          "step": "claim-gate-daemon-once",
+          "code": 0,
+          "stdout": "daemon stopped (once); scheduled=0 started=1 completed=1 failed=0 interrupted=0\n",
+          "stderr": "[Daemon] Started local agent daemon pid={{PID}} concurrency=1\n[Daemon] Stopped local agent daemon\n"
+        },
+        {
+          "step": "claim-gate-status",
+          "code": 0,
+          "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"job\":{\"id\":\"{{J5}}\",\"retryOfJobId\":null,\"attempt\":1,\"kind\":\"agent\",\"source\":\"api\",\"runtime\":\"codex\",\"status\":\"failed\",\"mode\":\"plan\",\"cwd\":\"{{PACKAGE_DIR}}\",\"projectId\":\"project-1\",\"chatId\":null,\"subChatId\":null,\"promptPreview\":\"Review this local package.\",\"apiConsumerId\":\"fixture-a\",\"apiConsumerRunId\":null,\"artifactBaseDir\":null,\"artifactManifestPath\":null,\"providerProfileId\":null,\"modelOverride\":null,\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"startedAt\":\"2026-10-02T00:00:00.000Z\",\"finishedAt\":\"2026-10-02T00:00:00.000Z\",\"exitCode\":7,\"errorCode\":\"cwd_identity_changed\",\"errorMessage\":\"The Run's cwd no longer has its admitted identity.\",\"result\":{\"value\":null,\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}},\"workerId\":\"{{W4}}\",\"workerPid\":{{PID}},\"heartbeatAt\":\"2026-10-02T00:00:00.000Z\",\"cancelRequestedAt\":null,\"cancelRequestedBy\":null}}\n",
+          "stderr": ""
+        },
+        {
+          "step": "run-unsupported-runtime",
+          "code": 3,
+          "stdout": "",
+          "stderr": "Unsupported --runtime\n"
+        },
+        {
+          "step": "schedule-unsupported-runtime",
+          "code": 3,
+          "stdout": "",
+          "stderr": "Unsupported --runtime\n"
+        },
+        {
+          "step": "schedule-unregistered-cwd",
+          "code": 7,
+          "stdout": "",
+          "stderr": "Invalid or inaccessible cwd: {{ROOT}}/unregistered\n"
+        },
+        {
+          "step": "jobs-stdio-malformed",
+          "code": 0,
+          "stdout": "{\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{\"code\":-32700,\"message\":\"Parse error\"}}\n{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32601,\"message\":\"Unknown method: job.unknown\"}}\n{\"jsonrpc\":\"2.0\",\"id\":2,\"error\":{\"code\":-32602,\"message\":\"[\\n  {\\n    \\\"code\\\": \\\"invalid_value\\\",\\n    \\\"values\\\": [\\n      \\\"claude-code\\\",\\n      \\\"codex\\\"\\n    ],\\n    \\\"path\\\": [\\n      \\\"runtime\\\"\\n    ],\\n    \\\"message\\\": \\\"Invalid option: expected one of \\\\\\\"claude-code\\\\\\\"|\\\\\\\"codex\\\\\\\"\\\"\\n  }\\n]\"}}\n{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{\"ok\":true}}\n",
+          "stderr": "[jobs-stdio] Request failed: [\n  {\n    \"code\": \"invalid_value\",\n    \"values\": [\n      \"claude-code\",\n      \"codex\"\n    ],\n    \"path\": [\n      \"runtime\"\n    ],\n    \"message\": \"Invalid option: expected one of \\\"claude-code\\\"|\\\"codex\\\"\"\n  }\n]\n"
+        },
+        {
+          "step": "create-leaf-throw-oracle",
+          "code": 1,
+          "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"job\":{\"id\":\"{{J6}}\",\"retryOfJobId\":null,\"attempt\":1,\"kind\":\"agent\",\"source\":\"api\",\"runtime\":\"codex\",\"status\":\"failed\",\"mode\":\"plan\",\"cwd\":\"{{PACKAGE_DIR}}\",\"projectId\":\"project-1\",\"chatId\":null,\"subChatId\":null,\"promptPreview\":\"Review this local package.\",\"apiConsumerId\":\"fixture-a\",\"apiConsumerRunId\":\"err-catalog-failure-oracle\",\"artifactBaseDir\":null,\"artifactManifestPath\":null,\"providerProfileId\":null,\"modelOverride\":null,\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"startedAt\":\"2026-10-02T00:00:00.000Z\",\"finishedAt\":\"2026-10-02T00:00:00.000Z\",\"exitCode\":1,\"errorCode\":\"runtime_error\",\"errorMessage\":\"Runtime route catalog is unavailable.\",\"result\":{\"value\":null,\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}},\"workerId\":\"{{W5}}\",\"workerPid\":{{PID}},\"heartbeatAt\":\"2026-10-02T00:00:00.000Z\",\"cancelRequestedAt\":null,\"cancelRequestedBy\":null},\"result\":{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{J6}}\",\"status\":\"failed\",\"runtime\":\"codex\",\"mode\":\"plan\",\"consumer\":{\"id\":\"fixture-a\",\"runExternalId\":\"err-catalog-failure-oracle\"},\"artifactManifestPath\":null,\"artifacts\":[],\"diagnostics\":[{\"code\":\"runtime_error\",\"message\":\"Runtime route catalog is unavailable.\"}],\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null},\"result\":{\"value\":null,\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}}}}\n",
+          "stderr": ""
+        }
+      ],
+      "leafCalls": [
+        {
+          "leaf": "codex-batch",
+          "jobId": "{{J1}}",
+          "runtimeId": "codex",
+          "source": "api",
+          "mode": "plan",
+          "executionProfile": "batch",
+          "permissionPolicyKind": "headless-batch"
+        },
+        {
+          "leaf": "codex-batch",
+          "jobId": "{{J6}}",
+          "runtimeId": "codex",
+          "source": "api",
+          "mode": "plan",
+          "executionProfile": "batch",
+          "permissionPolicyKind": "headless-batch"
+        }
+      ],
+      "fetchCalls": 0
+    },
+    "internal": {
+      "unsupportedCapability": {
+        "input": {
+          "runtime": "codex",
+          "mode": "plan",
+          "executionProfile": "batch",
+          "requestedCapabilities": ["rollback"]
+        },
+        "oracle": {
+          "events": [
+            {
+              "type": "status",
+              "payload": {
+                "status": "runtime_selection_refused",
+                "runtime": "codex",
+                "source": "api",
+                "adapterSource": "codex-batch",
+                "executionProfile": "batch",
+                "reason": "unsupported_capability",
+                "message": "Codex Rollback and fork is unsupported. Codex session IDs are persisted, but rollback and fork are not wired through durable shared session references.",
+                "errorCode": "unsupported_capability"
+              }
+            }
+          ],
+          "result": {
+            "status": "failed",
+            "exitCode": 1,
+            "errorCode": "unsupported_capability",
+            "errorMessage": "Codex Rollback and fork is unsupported. Codex session IDs are persisted, but rollback and fork are not wired through durable shared session references."
+          },
+          "leafCalls": []
+        },
+        "normalizedExit": 3
+      }
+    },
+    "catalogFailureOracle": {
+      "steps": [
+        {
+          "step": "create-catalog-failure",
+          "code": 1,
+          "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"job\":{\"id\":\"{{J1}}\",\"retryOfJobId\":null,\"attempt\":1,\"kind\":\"agent\",\"source\":\"api\",\"runtime\":\"codex\",\"status\":\"failed\",\"mode\":\"plan\",\"cwd\":\"{{PACKAGE_DIR}}\",\"projectId\":\"project-1\",\"chatId\":null,\"subChatId\":null,\"promptPreview\":\"Review this local package.\",\"apiConsumerId\":\"fixture-a\",\"apiConsumerRunId\":\"err-catalog-failure-oracle\",\"artifactBaseDir\":null,\"artifactManifestPath\":null,\"providerProfileId\":null,\"modelOverride\":null,\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"startedAt\":\"2026-10-02T00:00:00.000Z\",\"finishedAt\":\"2026-10-02T00:00:00.000Z\",\"exitCode\":1,\"errorCode\":\"runtime_error\",\"errorMessage\":\"Runtime route catalog is unavailable.\",\"result\":{\"value\":null,\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}},\"workerId\":\"{{W1}}\",\"workerPid\":{{PID}},\"heartbeatAt\":\"2026-10-02T00:00:00.000Z\",\"cancelRequestedAt\":null,\"cancelRequestedBy\":null},\"result\":{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{J1}}\",\"status\":\"failed\",\"runtime\":\"codex\",\"mode\":\"plan\",\"consumer\":{\"id\":\"fixture-a\",\"runExternalId\":\"err-catalog-failure-oracle\"},\"artifactManifestPath\":null,\"artifacts\":[],\"diagnostics\":[{\"code\":\"runtime_error\",\"message\":\"Runtime route catalog is unavailable.\"}],\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null},\"result\":{\"value\":null,\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}}}}\n",
+          "stderr": ""
+        }
+      ],
+      "leafCalls": [
+        {
+          "leaf": "codex-batch",
+          "jobId": "{{J1}}",
+          "runtimeId": "codex",
+          "source": "api",
+          "mode": "plan",
+          "executionProfile": "batch",
+          "permissionPolicyKind": "headless-batch"
+        }
+      ],
+      "fetchCalls": 0
+    }
+  }
+}

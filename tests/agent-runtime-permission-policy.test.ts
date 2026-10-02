@@ -375,7 +375,7 @@ describe("desktop runtime permission policy", () => {
     expect(codex).toContain("resolveDesktopPermissionPolicy")
     expect(codex).toContain("workspaceKind: verifiedRunContext.kind")
     expect(codex).toContain('codexAdapterSource: "codex-app-server"')
-    expect(codex).toContain("runCodexAppServerDesktopAdapter")
+    expect(codex).toContain("runCodexDesktopChatRun")
     expect(codex).not.toContain("createCodexAppServerAdapter")
     expect(codexAppServerRunner).toContain(
       "createAdapter: createCodexAppServerAdapter",

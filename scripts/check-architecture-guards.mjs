@@ -5,6 +5,7 @@ import {
   existsSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   statSync,
   writeFileSync,
 } from "node:fs"
@@ -748,7 +749,7 @@ function assertRuntimeCoreImportBoundarySelfTest() {
   const cleanFindings = collectRuntimeCoreImportBoundaryFindings(
     cleanFixturePath,
     `
-      import "./adapter-selector"
+      import "./runtime-route-catalog"
       const packageName = "electron"
       const example = 'import type { AnyRouter } from "@trpc/server"'
       const anotherExample = "require('trpc-electron')"
@@ -4962,75 +4963,1802 @@ function assertLocalJobApiAsyncGuards() {
   )
 }
 
-if (updateArchitectureBaselines) {
-  updateArchitectureBaselineRegistry()
-} else {
-  const architectureBaselines = parseArchitectureBaselines()
-  const committedArchitectureBaselines = [
-    readCommittedArchitectureBaselines("HEAD", "committed HEAD"),
-  ]
-  const previousBaselineRevision = previousArchitectureBaselineRevision()
-  if (previousBaselineRevision) {
-    committedArchitectureBaselines.push(
-      readCommittedArchitectureBaselines(
-        previousBaselineRevision,
-        "previous committed architecture baseline",
-      ),
+// ---------------------------------------------------------------------------
+// Runtime Route Catalog Single Owner (refactor-unified-runtime-route-catalog)
+//
+// src/main/lib/agent-runtime/runtime-route-catalog.ts is the only owner of
+// runtime -> adapter/transport/readiness selection (design D1/D2/D5). The
+// fixture-driven rules below reject:
+// - route-dispatch-outside-owner: a runtimeId/binding.runtime condition
+//   (directly or through a one-hop local predicate) or a runtime-keyed map
+//   that selects a leaf adapter, a transport class or one of the D1 named
+//   hosts outside the catalog;
+// - duplicate-route-catalog: a second declaration table built through the
+//   catalog's validator or test constructor;
+// - retired-route-selector: any retired selector module, export, import or
+//   forwarding alias, and the deleted registry/readiness facade names;
+// - leaf-adapter-import-outside-catalog: a value import/call of a leaf
+//   run/create export outside the catalog;
+// - route-catalog-test-port-in-production: a production catalog option
+//   (explicit or shorthand) or query catalog argument that is not forwarded
+//   unchanged, decided by the value's nearest binding (a parameter, or a
+//   local whose initializer is forwarded), never by the name
+//   runtimeRouteCatalog alone;
+// - route-catalog-forbidden-dependency: a catalog import of Electron, tRPC,
+//   renderer, preload or a router (also through a one-hop wrapper), or a
+//   readiness -> catalog cycle, direct or anywhere in the transitive value
+//   import closure of runtime-readiness over src/ (type-only imports
+//   excluded; reported at the readiness import that leads to the catalog);
+// - route-catalog-owner-bypass: a catalog import of the queue/ledger/
+//   artifact/provider-storage owners or a process.env/fs/config read;
+// - renderer-route-projection-bypass: a renderer construction site that
+//   does not map the descriptor read state or caches a Chat on ok:false;
+//   any runtime discrimination inside a renderer construction path; any
+//   runtime-id literal or branch in the transport helper; and any
+//   runtimeId -> transportId literal mapping outside the catalog, whether a
+//   runtime-keyed map or a runtime condition (ternary, if, switch, logical
+//   operator) whose branch yields a transportId literal, in main or on the
+//   renderer construction site (including a same-file value wrapper).
+// Its self-test consumes RUNTIME_ROUTE_CATALOG_FIXTURE_PATH (or
+// --runtime-route-catalog-fixtures=) and the repository is always enforced
+// in that end state.
+//
+// Detection scope: a runtime condition is a comparison (===, !==, ==, !=),
+// a switch or an `includes` test whose operand is a runtime-id literal or a
+// `.runtime` / `.runtimeId` member, or a call to a same-file predicate
+// holding one. Leaf and transport references are matched by imported
+// binding (named, aliased or namespace) and `(await import(leaf)).export`;
+// the D1 named hosts by name (identifier or member access) and by import
+// alias.
+// Detection limits (disclosed): a runtime test hoisted into a local boolean,
+// a transportId literal reached through a local const (`isCodex ? CODEX_TID
+// : CLAUDE_TID`), computed or dynamic member access (`hosts["run..."]`),
+// computed map keys, reflection, re-binding through another module and
+// multi-hop wrappers are not caught.
+// ---------------------------------------------------------------------------
+
+const RUNTIME_ROUTE_CATALOG_FIXTURE_PATH =
+  "tests/fixtures/runtime-route-catalog/architecture-fixtures.json"
+const RUNTIME_ROUTE_CATALOG_FIXTURE_FLAG = "--runtime-route-catalog-fixtures="
+const RUNTIME_ROUTE_CATALOG_GUARD_LABEL =
+  "Runtime route catalog guard self-test"
+const RUNTIME_ROUTE_CATALOG_OWNER =
+  "src/main/lib/agent-runtime/runtime-route-catalog.ts"
+const RUNTIME_ROUTE_CATALOG_OWNER_MODULE =
+  "src/main/lib/agent-runtime/runtime-route-catalog"
+const RUNTIME_ROUTE_CATALOG_SECTION = "Runtime Route Catalog Single Owner"
+const RUNTIME_ROUTE_CATALOG_FINDING_FIELDS = [
+  "rule",
+  "file",
+  "symbol",
+  "owner",
+  "ownerSection",
+]
+const RUNTIME_ROUTE_RULE = {
+  dispatch: "route-dispatch-outside-owner",
+  duplicate: "duplicate-route-catalog",
+  retired: "retired-route-selector",
+  leaf: "leaf-adapter-import-outside-catalog",
+  testPort: "route-catalog-test-port-in-production",
+  dependency: "route-catalog-forbidden-dependency",
+  ownerBypass: "route-catalog-owner-bypass",
+  renderer: "renderer-route-projection-bypass",
+}
+const RUNTIME_ROUTE_RUNTIME_LITERALS = new Set([
+  "claude-code",
+  "codex",
+  "claude",
+])
+const RUNTIME_ROUTE_LEAF_MODULES = new Set([
+  "src/main/lib/headless/adapters/claude-code",
+  "src/main/lib/headless/adapters/codex",
+  "src/main/lib/headless/adapters/codex-app-server",
+  "src/main/lib/codex/app-server-adapter-runner",
+  "src/main/lib/claude/agent-sdk-adapter-runner",
+])
+const RUNTIME_ROUTE_LEAF_EXPORT = /^(run|create)[A-Z]/
+const RUNTIME_ROUTE_RETIRED_MODULES = new Map([
+  ["src/main/lib/headless/adapter-selector", "adapter-selector"],
+  ["src/main/lib/agent-runtime/runtime-registry", "runtime-registry"],
+])
+const RUNTIME_ROUTE_RETIRED_SYMBOLS = new Set([
+  "getAgentRuntimeAdapter",
+  "selectAgentRuntimeAdapter",
+  "SelectAgentRuntimeAdapterOptions",
+  "preferredAdapterSource",
+  "DesktopRuntimeAdapterFactory",
+  "resolveCodexDesktopAdapterSelection",
+  "resolveCodexAppServerDesktopAdapter",
+  "resolveClaudeAgentSdkDesktopAdapter",
+])
+/**
+ * Exports of the deleted runtime-registry facade (P06) and the deleted
+ * readiness dispatch facade (P18). Only the src-wide word scan rejects them,
+ * so a forwarding alias under a retired name is caught; the frozen S28 clean
+ * case keeps the facade name as synthetic lazy-reference text.
+ */
+const RUNTIME_ROUTE_RETIRED_SCAN_SYMBOLS = new Set([
+  ...RUNTIME_ROUTE_RETIRED_SYMBOLS,
+  "listRegisteredAgentRuntimeManifests",
+  "getRegisteredAgentRuntimeManifest",
+  "getRegisteredAgentRuntimeId",
+  "checkRegisteredAgentRuntimeCapability",
+  "resolveRegisteredAgentRuntimeManifest",
+  "resolveRegisteredAgentRuntimeCapability",
+  "resolveLocalJobApiRuntimeReadiness",
+])
+/**
+ * The D1 named hosts, each with one fixed runtime (P02/P11/P12): a runtime
+ * branch or runtime-keyed map choosing between them is a dispatch.
+ */
+const RUNTIME_ROUTE_NAMED_HOSTS = new Set([
+  "runAgentTask",
+  "runCodexDesktopChatRun",
+  "runClaudeAgentSdkDesktopRuntimeWithMcpReadiness",
+])
+/** Renderer construction sites and the transport helper (P14-P16). */
+const RUNTIME_ROUTE_RENDERER_SITE =
+  "src/renderer/features/agents/main/active-chat"
+const RUNTIME_ROUTE_RENDERER_HELPER =
+  "src/renderer/features/agents/lib/runtime-route-transport"
+const RUNTIME_ROUTE_RENDERER_HELPER_CALL = "createRuntimeRouteTransport"
+/**
+ * The renderer construction paths (P14 getOrCreateChat, P15 createNewSubChat
+ * / its production handler); the innermost named declaration of every helper
+ * call or transport construction joins them.
+ */
+const RUNTIME_ROUTE_RENDERER_CONSTRUCTION_PATHS = new Set([
+  "getOrCreateChat",
+  "createNewSubChat",
+  "handleCreateNewSubChat",
+])
+/** Property names whose comparison is a runtime discrimination. */
+const RUNTIME_ROUTE_RUNTIME_PROPERTIES = new Set(["runtime", "runtimeId"])
+/** Query/projection functions and the index of their test-only catalog. */
+const RUNTIME_ROUTE_CATALOG_ARGUMENT_INDEX = new Map([
+  ["resolveRuntimeRoute", 1],
+  ["listRuntimeRoutes", 1],
+  ["projectRuntimeRoutes", 1],
+  ["listRuntimeRouteManifests", 0],
+  ["withRuntimeRouteTransportId", 1],
+])
+const RUNTIME_ROUTE_CATALOG_CONSTRUCTORS = new Set([
+  "validateRuntimeRouteCatalog",
+  "createRuntimeRouteCatalogForTests",
+])
+const RUNTIME_ROUTE_HOST_OPTION = "runtimeRouteCatalog"
+/** Business owners the catalog must not reach (queue/ledger/artifacts/secrets). */
+const RUNTIME_ROUTE_ADJACENT_OWNERS = new Map([
+  ["src/main/lib/headless/job-store", "src/main/lib/headless/job-store.ts"],
+  [
+    "src/main/lib/agent-runtime/run-event-ledger",
+    "src/main/lib/agent-runtime/run-event-ledger.ts",
+  ],
+  [
+    "src/main/lib/agent-runtime/run-artifacts",
+    "src/main/lib/agent-runtime/run-artifacts.ts",
+  ],
+  [
+    "src/main/lib/provider-profiles/storage",
+    "src/main/lib/provider-profiles/storage.ts",
+  ],
+])
+const RUNTIME_ROUTE_FS_SPECIFIERS = new Set([
+  "fs",
+  "node:fs",
+  "fs/promises",
+  "node:fs/promises",
+])
+const RUNTIME_ROUTE_CONFIG_SPECIFIER =
+  /(claude-config|user-data-path|electron-store)/
+const RUNTIME_ROUTE_READINESS_MODULE = "src/main/lib/headless/runtime-readiness"
+const RUNTIME_ROUTE_TRANSPORT_ID_LITERAL = /(^[a-z0-9-]+-ipc$|transport)/
+/** A transportId is a kebab-case id (no prose such as error messages). */
+const RUNTIME_ROUTE_TRANSPORT_ID_SHAPE = /^[a-z0-9][a-z0-9-]*$/
+/** Production scan scope (design D5): selection-adjacent main and renderer. */
+const RUNTIME_ROUTE_SCANNED_DIRECTORIES = [
+  "src/main/lib/agent-runtime",
+  "src/main/lib/headless",
+  "src/main/lib/codex",
+  "src/main/lib/claude",
+  "src/main/lib/trpc",
+  "src/renderer/features/agents/lib",
+]
+const RUNTIME_ROUTE_SCANNED_FILES = [
+  "src/renderer/features/agents/main/active-chat.tsx",
+  "src/main/lib/chat-session-binding.ts",
+  "src/main/lib/desktop-agent-jobs.ts",
+]
+const RUNTIME_ROUTE_CATALOG_PINNED_EXPORTS = [
+  "validateRuntimeRouteCatalog",
+  "createRuntimeRouteCatalogForTests",
+  "resolveRuntimeRoute",
+  "listRuntimeRoutes",
+  "projectRuntimeRoutes",
+  "probeRuntimeRouteReadiness",
+]
+const RUNTIME_ROUTE_PATH_FLAG =
+  /LOCUS_[A-Z0-9_]*(ROUTE|SELECTOR|DUAL_PATH)[A-Z0-9_]*/
+
+function runtimeRouteModuleKey(filePath) {
+  let key = filePath.replaceAll("\\", "/")
+  for (const extension of RUNTIME_CORE_SOURCE_EXTENSIONS) {
+    if (key.endsWith(extension)) {
+      key = key.slice(0, -extension.length)
+      break
+    }
+  }
+  if (key.endsWith("/index")) key = key.slice(0, -"/index".length)
+  return key
+}
+
+/** Repo-relative module key of a relative/src specifier, else null. */
+function runtimeRouteResolveSpecifier(filePath, specifier) {
+  const target = specifier.replace(/[?#].*$/, "")
+  let resolved = null
+  if (target.startsWith(".")) {
+    resolved = path.posix.normalize(
+      path.posix.join(path.posix.dirname(filePath), target),
+    )
+  } else if (target.startsWith("src/")) {
+    resolved = path.posix.normalize(target)
+  }
+  return resolved ? runtimeRouteModuleKey(resolved) : null
+}
+
+function runtimeRouteFinding(
+  rule,
+  file,
+  symbol,
+  owner = RUNTIME_ROUTE_CATALOG_OWNER,
+) {
+  return {
+    rule,
+    file,
+    symbol,
+    owner,
+    ownerSection: RUNTIME_ROUTE_CATALOG_SECTION,
+  }
+}
+
+function runtimeRouteParse(filePath, source) {
+  return ts.createSourceFile(
+    filePath,
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    filePath.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+  )
+}
+
+function runtimeRouteVisit(node, visitor) {
+  visitor(node)
+  ts.forEachChild(node, (child) => runtimeRouteVisit(child, visitor))
+}
+
+function runtimeRouteStringValue(expression) {
+  const unwrapped = unwrapExpression(expression)
+  return unwrapped && ts.isStringLiteralLike(unwrapped) ? unwrapped.text : null
+}
+
+function isRuntimeRouteDynamicImport(node) {
+  return (
+    ts.isCallExpression(node) &&
+    node.expression.kind === ts.SyntaxKind.ImportKeyword &&
+    node.arguments.length > 0 &&
+    ts.isStringLiteralLike(node.arguments[0])
+  )
+}
+
+/**
+ * Import facts of one file: value/type imports with their imported and local
+ * names, namespace imports, re-exports and dynamic imports.
+ */
+function collectRuntimeRouteImports(filePath, sourceFile) {
+  const imports = []
+  for (const statement of sourceFile.statements) {
+    if (
+      ts.isImportDeclaration(statement) &&
+      ts.isStringLiteralLike(statement.moduleSpecifier)
+    ) {
+      const specifier = statement.moduleSpecifier.text
+      const clause = statement.importClause
+      const declarationTypeOnly = Boolean(clause?.isTypeOnly)
+      const entry = {
+        specifier,
+        key: runtimeRouteResolveSpecifier(filePath, specifier),
+        typeOnly: declarationTypeOnly,
+        named: [],
+        namespaces: [],
+        hasValue: !clause,
+      }
+      if (clause?.name && !declarationTypeOnly) {
+        entry.named.push({ imported: "default", local: clause.name.text })
+        entry.hasValue = true
+      }
+      const bindings = clause?.namedBindings
+      if (bindings && ts.isNamespaceImport(bindings) && !declarationTypeOnly) {
+        entry.namespaces.push(bindings.name.text)
+        entry.hasValue = true
+      } else if (bindings && ts.isNamedImports(bindings)) {
+        for (const element of bindings.elements) {
+          if (declarationTypeOnly || element.isTypeOnly) continue
+          entry.named.push({
+            imported: (element.propertyName ?? element.name).text,
+            local: element.name.text,
+          })
+          entry.hasValue = true
+        }
+      }
+      imports.push(entry)
+    } else if (
+      ts.isExportDeclaration(statement) &&
+      statement.moduleSpecifier &&
+      ts.isStringLiteralLike(statement.moduleSpecifier) &&
+      !statement.isTypeOnly
+    ) {
+      const specifier = statement.moduleSpecifier.text
+      const entry = {
+        specifier,
+        key: runtimeRouteResolveSpecifier(filePath, specifier),
+        typeOnly: false,
+        named: [],
+        namespaces: [],
+        hasValue: true,
+        reexport: true,
+      }
+      if (statement.exportClause && ts.isNamedExports(statement.exportClause)) {
+        for (const element of statement.exportClause.elements) {
+          if (element.isTypeOnly) continue
+          entry.named.push({
+            imported: (element.propertyName ?? element.name).text,
+            local: element.name.text,
+          })
+        }
+      }
+      imports.push(entry)
+    }
+  }
+  runtimeRouteVisit(sourceFile, (node) => {
+    if (!isRuntimeRouteDynamicImport(node)) return
+    const specifier = node.arguments[0].text
+    const entry = {
+      specifier,
+      key: runtimeRouteResolveSpecifier(filePath, specifier),
+      typeOnly: false,
+      named: [],
+      namespaces: [],
+      hasValue: true,
+      dynamic: true,
+    }
+    // `(await import(leaf)).member` binds the member as the used export.
+    let current = node.parent
+    while (
+      current &&
+      (ts.isAwaitExpression(current) || ts.isParenthesizedExpression(current))
+    ) {
+      current = current.parent
+    }
+    if (current && ts.isPropertyAccessExpression(current)) {
+      entry.named.push({ imported: current.name.text, local: null })
+    }
+    imports.push(entry)
+  })
+  return imports
+}
+
+/** Innermost enclosing named declaration (function or const-bound function). */
+function runtimeRouteEnclosingName(node) {
+  let current = node.parent
+  while (current) {
+    if (
+      (ts.isFunctionDeclaration(current) ||
+        ts.isMethodDeclaration(current) ||
+        ts.isClassDeclaration(current)) &&
+      current.name
+    ) {
+      return current.name.getText()
+    }
+    if (
+      (ts.isArrowFunction(current) || ts.isFunctionExpression(current)) &&
+      current.parent
+    ) {
+      let holder = current.parent
+      while (
+        holder &&
+        (ts.isCallExpression(holder) ||
+          ts.isParenthesizedExpression(holder) ||
+          ts.isAsExpression(holder) ||
+          ts.isSatisfiesExpression(holder))
+      ) {
+        holder = holder.parent
+      }
+      if (
+        holder &&
+        ts.isVariableDeclaration(holder) &&
+        ts.isIdentifier(holder.name)
+      ) {
+        return holder.name.text
+      }
+      if (holder && ts.isPropertyAssignment(holder)) {
+        const name = objectPropertyName(holder.name)
+        if (name) return name
+      }
+    }
+    current = current.parent
+  }
+  return "<module>"
+}
+
+const RUNTIME_ROUTE_EQUALITY_OPERATORS = new Set([
+  ts.SyntaxKind.EqualsEqualsEqualsToken,
+  ts.SyntaxKind.ExclamationEqualsEqualsToken,
+  ts.SyntaxKind.EqualsEqualsToken,
+  ts.SyntaxKind.ExclamationEqualsToken,
+])
+
+function isRuntimeRouteRuntimeComparison(node) {
+  if (!ts.isBinaryExpression(node)) return false
+  if (!RUNTIME_ROUTE_EQUALITY_OPERATORS.has(node.operatorToken.kind)) {
+    return false
+  }
+  return [node.left, node.right].some((side) => {
+    const value = runtimeRouteStringValue(side)
+    return value !== null && RUNTIME_ROUTE_RUNTIME_LITERALS.has(value)
+  })
+}
+
+function isRuntimeRouteRuntimeProperty(expression) {
+  const value = unwrapExpression(expression)
+  return Boolean(
+    value &&
+      ts.isPropertyAccessExpression(value) &&
+      RUNTIME_ROUTE_RUNTIME_PROPERTIES.has(value.name.text),
+  )
+}
+
+function isRuntimeRouteRuntimeLiteral(expression) {
+  return RUNTIME_ROUTE_RUNTIME_LITERALS.has(
+    runtimeRouteStringValue(expression) ?? "",
+  )
+}
+
+/**
+ * A node that discriminates on a runtime: a comparison with a runtime-id
+ * literal or of a `.runtime` / `.runtimeId` property, a switch over either,
+ * an `includes` test of either, or a call to a same-file runtime predicate.
+ */
+function isRuntimeRouteDiscriminant(node, predicates) {
+  if (isRuntimeRouteRuntimeComparison(node)) return true
+  if (
+    ts.isBinaryExpression(node) &&
+    RUNTIME_ROUTE_EQUALITY_OPERATORS.has(node.operatorToken.kind) &&
+    (isRuntimeRouteRuntimeProperty(node.left) ||
+      isRuntimeRouteRuntimeProperty(node.right))
+  ) {
+    return true
+  }
+  if (ts.isSwitchStatement(node)) {
+    return (
+      isRuntimeRouteSwitch(node) ||
+      isRuntimeRouteRuntimeProperty(node.expression)
     )
   }
-  const diffBaseSha = process.env.DIFF_BASE_SHA?.trim()
-  if (diffBaseSha) {
-    committedArchitectureBaselines.push(
-      readCommittedArchitectureBaselines(diffBaseSha, "configured diff base", {
-        allowMissingFile: true,
-      }),
+  if (!ts.isCallExpression(node)) return false
+  const callee = unwrapExpression(node.expression)
+  if (!callee) return false
+  if (ts.isIdentifier(callee)) {
+    return predicates.has(callee.text) && isRuntimeRouteConditionOperand(node)
+  }
+  if (!ts.isPropertyAccessExpression(callee) || callee.name.text !== "includes")
+    return false
+  if (node.arguments.some(isRuntimeRouteRuntimeProperty)) return true
+  const receiver = unwrapExpression(callee.expression)
+  return Boolean(
+    receiver &&
+      ts.isArrayLiteralExpression(receiver) &&
+      receiver.elements.some(isRuntimeRouteRuntimeLiteral),
+  )
+}
+
+/**
+ * Whether an expression is (part of) a branch condition: an if/ternary
+ * condition, a switch subject or a logical operand. A same-file predicate
+ * called for its value elsewhere is not a runtime branch.
+ */
+function isRuntimeRouteConditionOperand(node) {
+  let child = node
+  let parent = node.parent
+  while (parent) {
+    if (ts.isIfStatement(parent)) return parent.expression === child
+    if (ts.isConditionalExpression(parent)) return parent.condition === child
+    if (ts.isSwitchStatement(parent)) return parent.expression === child
+    if (
+      ts.isBinaryExpression(parent) &&
+      [
+        ts.SyntaxKind.AmpersandAmpersandToken,
+        ts.SyntaxKind.BarBarToken,
+        ts.SyntaxKind.QuestionQuestionToken,
+      ].includes(parent.operatorToken.kind)
+    ) {
+      return true
+    }
+    if (
+      !ts.isParenthesizedExpression(parent) &&
+      !ts.isPrefixUnaryExpression(parent) &&
+      !ts.isAsExpression(parent) &&
+      !ts.isNonNullExpression(parent)
+    ) {
+      return false
+    }
+    child = parent
+    parent = parent.parent
+  }
+  return false
+}
+
+/** A runtime-id string literal or a runtime-id property key/access name. */
+function isRuntimeRouteRuntimeIdToken(node) {
+  if (ts.isStringLiteralLike(node)) {
+    return RUNTIME_ROUTE_RUNTIME_LITERALS.has(node.text)
+  }
+  if (
+    !ts.isIdentifier(node) ||
+    !RUNTIME_ROUTE_RUNTIME_LITERALS.has(node.text)
+  ) {
+    return false
+  }
+  const parent = node.parent
+  return Boolean(
+    parent &&
+      (ts.isPropertyAssignment(parent) ||
+        ts.isPropertySignature(parent) ||
+        ts.isShorthandPropertyAssignment(parent) ||
+        ts.isPropertyAccessExpression(parent) ||
+        ts.isMethodDeclaration(parent)) &&
+      parent.name === node,
+  )
+}
+
+/** A transportId-shaped literal in a value-yielding position. */
+function isRuntimeRouteYieldedTransportId(node) {
+  if (
+    !ts.isStringLiteralLike(node) ||
+    !RUNTIME_ROUTE_TRANSPORT_ID_SHAPE.test(node.text) ||
+    !RUNTIME_ROUTE_TRANSPORT_ID_LITERAL.test(node.text)
+  ) {
+    return false
+  }
+  let child = node
+  let parent = node.parent
+  while (
+    parent &&
+    (ts.isParenthesizedExpression(parent) ||
+      ts.isAsExpression(parent) ||
+      ts.isSatisfiesExpression(parent) ||
+      ts.isNonNullExpression(parent))
+  ) {
+    child = parent
+    parent = parent.parent
+  }
+  if (!parent) return false
+  if (ts.isBinaryExpression(parent)) {
+    const operator = parent.operatorToken.kind
+    return (
+      operator === ts.SyntaxKind.EqualsToken ||
+      operator === ts.SyntaxKind.AmpersandAmpersandToken ||
+      operator === ts.SyntaxKind.BarBarToken ||
+      operator === ts.SyntaxKind.QuestionQuestionToken
     )
   }
-  assertOwnershipDocs()
-  assertPackageScripts()
-  assertCiRunsArchitectureCheck()
-  assertRuntimeCapabilitySingleOwner()
-  assertEngineIdSingleOwner()
-  assertGuardDecisionSingleOwner()
-  assertRuntimeEventSinglePath()
-  assertRunEventLedgerGuards()
-  assertLocalJobApiAsyncGuards()
-  assertRuntimeEventStateOwner()
-  assertChatMessageModelOwner()
-  assertChatSessionBindingSingleOwner()
-  assertChatMaintenanceFenceSingleOwner()
-  assertNoUnresolvedDangerousRouterInput()
-  assertArchitectureRatchetSelfTests()
-  if (architectureBaselines) {
-    const comparedBaselineContents = new Set()
-    for (const committed of committedArchitectureBaselines) {
-      if (!committed?.baseline) continue
-      const contentKey = JSON.stringify(committed.baseline)
-      if (comparedBaselineContents.has(contentKey)) continue
-      comparedBaselineContents.add(contentKey)
-      assertArchitectureBaselineOnlyShrinks(
-        architectureBaselines,
-        committed.baseline,
-        `Working architecture baseline against ${committed.label} ${committed.commitSha}`,
+  return (
+    ts.isReturnStatement(parent) ||
+    ts.isArrowFunction(parent) ||
+    (ts.isConditionalExpression(parent) && parent.condition !== child) ||
+    (ts.isPropertyAssignment(parent) && parent.initializer === child) ||
+    (ts.isVariableDeclaration(parent) && parent.initializer === child)
+  )
+}
+
+/**
+ * The finding symbol of a node: its innermost named function, else the
+ * module-level variable it initialises, else "<module>".
+ */
+function runtimeRouteDeclarationSymbol(node) {
+  const name = runtimeRouteEnclosingName(node)
+  if (name !== "<module>") return name
+  let current = node.parent
+  while (current) {
+    if (ts.isVariableDeclaration(current) && ts.isIdentifier(current.name)) {
+      return current.name.text
+    }
+    current = current.parent
+  }
+  return name
+}
+
+/**
+ * A reference to a D1 named host by name: an identifier that is not a
+ * declaration or property key, or a `.host` member access (including
+ * `(await import(module)).host`).
+ */
+function isRuntimeRouteNamedHostReference(node) {
+  if (ts.isPropertyAccessExpression(node)) {
+    return RUNTIME_ROUTE_NAMED_HOSTS.has(node.name.text)
+  }
+  if (!ts.isIdentifier(node) || !RUNTIME_ROUTE_NAMED_HOSTS.has(node.text)) {
+    return false
+  }
+  const parent = node.parent
+  return !(
+    parent &&
+    (ts.isFunctionDeclaration(parent) ||
+      ts.isVariableDeclaration(parent) ||
+      ts.isPropertyAssignment(parent) ||
+      ts.isPropertyAccessExpression(parent) ||
+      ts.isMethodDeclaration(parent) ||
+      ts.isParameter(parent) ||
+      ts.isImportSpecifier(parent) ||
+      ts.isExportSpecifier(parent)) &&
+    parent.name === node
+  )
+}
+
+/** Name of a function declaration or a const bound to a (wrapped) function. */
+function runtimeRouteDeclaredFunctionName(node) {
+  if (ts.isFunctionDeclaration(node) && node.name) return node.name.text
+  if (
+    ts.isVariableDeclaration(node) &&
+    ts.isIdentifier(node.name) &&
+    node.initializer &&
+    runtimeRouteContains(
+      node.initializer,
+      (child) => ts.isArrowFunction(child) || ts.isFunctionExpression(child),
+    )
+  ) {
+    return node.name.text
+  }
+  return null
+}
+
+function runtimeRouteContains(node, predicate) {
+  let found = false
+  runtimeRouteVisit(node, (child) => {
+    if (!found && predicate(child)) found = true
+  })
+  return found
+}
+
+/** Same-file functions whose body compares a runtime id (one-hop wrapper). */
+function collectRuntimeRoutePredicates(sourceFile) {
+  const predicates = new Set()
+  runtimeRouteVisit(sourceFile, (node) => {
+    let name = null
+    let body = null
+    if (ts.isFunctionDeclaration(node) && node.name && node.body) {
+      name = node.name.text
+      body = node.body
+    } else if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.initializer
+    ) {
+      const initializer = unwrapExpression(node.initializer)
+      if (
+        initializer &&
+        (ts.isArrowFunction(initializer) ||
+          ts.isFunctionExpression(initializer))
+      ) {
+        name = node.name.text
+        body = initializer.body
+      }
+    }
+    if (
+      name &&
+      body &&
+      runtimeRouteContains(body, isRuntimeRouteRuntimeComparison)
+    ) {
+      predicates.add(name)
+    }
+  })
+  return predicates
+}
+
+function isRuntimeRouteCondition(expression, predicates) {
+  return runtimeRouteContains(
+    expression,
+    (node) =>
+      isRuntimeRouteRuntimeComparison(node) ||
+      (ts.isCallExpression(node) &&
+        ts.isIdentifier(node.expression) &&
+        predicates.has(node.expression.text)),
+  )
+}
+
+function isRuntimeRouteSwitch(node) {
+  return node.caseBlock.clauses.some((clause) => {
+    if (!ts.isCaseClause(clause)) return false
+    const value = runtimeRouteStringValue(clause.expression)
+    return value !== null && RUNTIME_ROUTE_RUNTIME_LITERALS.has(value)
+  })
+}
+
+/**
+ * The nearest lexical binding of `name` seen from `node`: a parameter (or
+ * destructured parameter) of an enclosing function, or a variable
+ * declaration (or destructured one) in an enclosing block or source file.
+ */
+function runtimeRouteNearestBinding(node, name) {
+  let current = node.parent
+  while (current) {
+    if (ts.isFunctionLike(current)) {
+      const names = new Set()
+      for (const parameter of current.parameters ?? []) {
+        collectBindingNames(parameter.name, names)
+      }
+      if (names.has(name)) return { kind: "parameter" }
+    }
+    if (
+      ts.isBlock(current) ||
+      ts.isSourceFile(current) ||
+      ts.isModuleBlock(current) ||
+      ts.isCaseClause(current) ||
+      ts.isDefaultClause(current)
+    ) {
+      for (const statement of current.statements) {
+        if (!ts.isVariableStatement(statement)) continue
+        for (const declaration of statement.declarationList.declarations) {
+          const names = new Set()
+          collectBindingNames(declaration.name, names)
+          if (names.has(name)) return { kind: "variable", declaration }
+        }
+      }
+    }
+    current = current.parent
+  }
+  return null
+}
+
+/**
+ * Forwarded unchanged = `undefined`; an identifier bound as a parameter (or
+ * destructured parameter) of an enclosing function, or as a local variable
+ * whose initializer is itself forwarded; or a `.runtimeRouteCatalog`
+ * property access whose receiver is forwarded. The name runtimeRouteCatalog
+ * alone never makes a production-built value forwarded.
+ */
+function isRuntimeRouteForwarded(expression, sourceFile, depth = 0) {
+  const value = unwrapExpression(expression)
+  if (!value || depth > 4) return false
+  if (ts.isIdentifier(value)) {
+    if (value.text === "undefined") return true
+    const binding = runtimeRouteNearestBinding(value, value.text)
+    if (!binding) return false
+    if (binding.kind === "parameter") return true
+    return Boolean(
+      binding.declaration.initializer &&
+        isRuntimeRouteForwarded(
+          binding.declaration.initializer,
+          sourceFile,
+          depth + 1,
+        ),
+    )
+  }
+  if (ts.isPropertyAccessExpression(value)) {
+    return (
+      value.name.text === RUNTIME_ROUTE_HOST_OPTION &&
+      isRuntimeRouteForwarded(value.expression, sourceFile, depth + 1)
+    )
+  }
+  return false
+}
+
+function runtimeRouteCalleeName(call) {
+  const callee = unwrapExpression(call.expression)
+  if (!callee) return null
+  if (ts.isIdentifier(callee)) return callee.text
+  if (ts.isPropertyAccessExpression(callee)) return callee.name.text
+  return null
+}
+
+/** `{file, source}` of a module key from the scanned set or the repository. */
+function runtimeRouteModuleFile(key, fileSources, readRepository) {
+  for (const extension of ["", ...RUNTIME_CORE_SOURCE_EXTENSIONS]) {
+    if (fileSources.has(`${key}${extension}`)) {
+      const file = `${key}${extension}`
+      return { file, source: fileSources.get(file) }
+    }
+    for (const index of ["", "/index"]) {
+      const candidate = `${key}${index}${extension}`
+      if (fileSources.has(candidate)) {
+        return { file: candidate, source: fileSources.get(candidate) }
+      }
+    }
+  }
+  if (!readRepository) return null
+  for (const extension of RUNTIME_CORE_SOURCE_EXTENSIONS) {
+    for (const candidate of [
+      `${key}${extension}`,
+      `${key}/index${extension}`,
+    ]) {
+      const absolutePath = path.join(repoRoot, candidate)
+      if (existsSync(absolutePath) && statSync(absolutePath).isFile()) {
+        return { file: candidate, source: readFileSync(absolutePath, "utf8") }
+      }
+    }
+  }
+  return null
+}
+
+function runtimeRouteModuleSource(key, fileSources, readRepository) {
+  return (
+    runtimeRouteModuleFile(key, fileSources, readRepository)?.source ?? null
+  )
+}
+
+/**
+ * The readiness module's value imports whose transitive value-import closure
+ * over src/ reaches the catalog (type-only imports excluded; dynamic imports
+ * count). Each is reported at its first-hop specifier, so a direct readiness
+ * -> catalog import keeps its tuple.
+ */
+function runtimeRouteReadinessCycleSpecifiers(
+  imports,
+  fileSources,
+  readRepository,
+) {
+  const valueImportKeys = new Map()
+  const valueImportsOf = (key) => {
+    if (valueImportKeys.has(key)) return valueImportKeys.get(key)
+    const module = runtimeRouteModuleFile(key, fileSources, readRepository)
+    const keys = module
+      ? collectRuntimeRouteImports(
+          module.file,
+          runtimeRouteParse(module.file, module.source),
+        )
+          .filter((entry) => entry.hasValue && entry.key?.startsWith("src/"))
+          .map((entry) => entry.key)
+      : []
+    valueImportKeys.set(key, keys)
+    return keys
+  }
+  const reachesCatalog = (start) => {
+    const visited = new Set([RUNTIME_ROUTE_READINESS_MODULE])
+    const queue = [start]
+    while (queue.length > 0) {
+      const key = queue.shift()
+      if (key === RUNTIME_ROUTE_CATALOG_OWNER_MODULE) return true
+      if (visited.has(key)) continue
+      visited.add(key)
+      queue.push(...valueImportsOf(key))
+    }
+    return false
+  }
+  return imports
+    .filter(
+      (entry) =>
+        entry.hasValue &&
+        entry.key?.startsWith("src/") &&
+        reachesCatalog(entry.key),
+    )
+    .map((entry) => entry.specifier)
+}
+
+function runtimeRouteForbiddenTarget(specifier, key) {
+  if (specifier === "electron" || specifier.startsWith("electron/")) return true
+  if (
+    specifier === "@trpc" ||
+    specifier.startsWith("@trpc/") ||
+    specifier === "trpc-electron" ||
+    specifier.startsWith("trpc-electron/") ||
+    specifier.startsWith("@/")
+  ) {
+    return true
+  }
+  return Boolean(
+    key &&
+      (key.startsWith("src/renderer/") ||
+        key.startsWith("src/preload/") ||
+        key === "src/preload" ||
+        key.startsWith("src/main/lib/trpc/")),
+  )
+}
+
+/**
+ * Every Runtime Route Catalog Single Owner finding for a set of
+ * `{file, source}` entries. `readRepository` lets a one-hop wrapper check
+ * read a module that is not in the set (repository mode).
+ */
+function collectRuntimeRouteCatalogFindings(
+  files,
+  { readRepository = false } = {},
+) {
+  const findings = []
+  const seen = new Set()
+  const add = (finding) => {
+    const key = findingKey(finding, RUNTIME_ROUTE_CATALOG_FINDING_FIELDS)
+    if (seen.has(key)) return
+    seen.add(key)
+    findings.push(finding)
+  }
+  const fileSources = new Map(files.map((entry) => [entry.file, entry.source]))
+  for (const { file, source } of files) {
+    const moduleKey = runtimeRouteModuleKey(file)
+    const isCatalog = moduleKey === RUNTIME_ROUTE_CATALOG_OWNER_MODULE
+    const sourceFile = runtimeRouteParse(file, source)
+    const imports = collectRuntimeRouteImports(file, sourceFile)
+
+    // retired-route-selector: restored module, or any retired symbol.
+    if (RUNTIME_ROUTE_RETIRED_MODULES.has(moduleKey)) {
+      add(
+        runtimeRouteFinding(
+          RUNTIME_ROUTE_RULE.retired,
+          file,
+          RUNTIME_ROUTE_RETIRED_MODULES.get(moduleKey),
+        ),
+      )
+    }
+    runtimeRouteVisit(sourceFile, (node) => {
+      if (
+        ts.isIdentifier(node) &&
+        RUNTIME_ROUTE_RETIRED_SYMBOLS.has(node.text)
+      ) {
+        add(runtimeRouteFinding(RUNTIME_ROUTE_RULE.retired, file, node.text))
+      }
+    })
+
+    if (isCatalog) {
+      for (const entry of imports) {
+        if (!entry.hasValue) continue
+        if (runtimeRouteForbiddenTarget(entry.specifier, entry.key)) {
+          add(
+            runtimeRouteFinding(
+              RUNTIME_ROUTE_RULE.dependency,
+              file,
+              entry.specifier,
+            ),
+          )
+          continue
+        }
+        if (RUNTIME_ROUTE_FS_SPECIFIERS.has(entry.specifier)) {
+          add(
+            runtimeRouteFinding(
+              RUNTIME_ROUTE_RULE.ownerBypass,
+              file,
+              entry.specifier,
+            ),
+          )
+          continue
+        }
+        if (RUNTIME_ROUTE_CONFIG_SPECIFIER.test(entry.specifier)) {
+          add(
+            runtimeRouteFinding(
+              RUNTIME_ROUTE_RULE.ownerBypass,
+              file,
+              entry.specifier,
+            ),
+          )
+          continue
+        }
+        const adjacentOwner = entry.key
+          ? RUNTIME_ROUTE_ADJACENT_OWNERS.get(entry.key)
+          : undefined
+        if (adjacentOwner) {
+          for (const imported of entry.named) {
+            add(
+              runtimeRouteFinding(
+                RUNTIME_ROUTE_RULE.ownerBypass,
+                file,
+                imported.imported,
+                adjacentOwner,
+              ),
+            )
+          }
+          for (const namespace of entry.namespaces) {
+            add(
+              runtimeRouteFinding(
+                RUNTIME_ROUTE_RULE.ownerBypass,
+                file,
+                namespace,
+                adjacentOwner,
+              ),
+            )
+          }
+          continue
+        }
+        // A router reached through a one-hop wrapper module.
+        if (entry.key && !entry.dynamic && entry.key.startsWith("src/")) {
+          const wrapperSource = runtimeRouteModuleSource(
+            entry.key,
+            fileSources,
+            readRepository,
+          )
+          if (wrapperSource) {
+            const wrapperFile = `${entry.key}.ts`
+            const wrapperImports = collectRuntimeRouteImports(
+              wrapperFile,
+              runtimeRouteParse(wrapperFile, wrapperSource),
+            )
+            if (
+              wrapperImports.some(
+                (wrapped) =>
+                  wrapped.hasValue &&
+                  wrapped.key?.startsWith("src/main/lib/trpc/"),
+              )
+            ) {
+              add(
+                runtimeRouteFinding(
+                  RUNTIME_ROUTE_RULE.dependency,
+                  file,
+                  entry.specifier,
+                ),
+              )
+            }
+          }
+        }
+      }
+      runtimeRouteVisit(sourceFile, (node) => {
+        if (
+          ts.isPropertyAccessExpression(node) &&
+          ts.isIdentifier(node.expression) &&
+          node.expression.text === "process" &&
+          node.name.text === "env"
+        ) {
+          add(
+            runtimeRouteFinding(
+              RUNTIME_ROUTE_RULE.ownerBypass,
+              file,
+              "process.env",
+            ),
+          )
+        }
+      })
+      continue
+    }
+
+    // readiness -> catalog cycle, direct or through the transitive
+    // value-import closure of the readiness module.
+    if (moduleKey === RUNTIME_ROUTE_READINESS_MODULE) {
+      for (const specifier of runtimeRouteReadinessCycleSpecifiers(
+        imports,
+        fileSources,
+        readRepository,
+      )) {
+        add(runtimeRouteFinding(RUNTIME_ROUTE_RULE.dependency, file, specifier))
+      }
+    }
+
+    // Leaf exports, transport classes and catalog constructors in scope.
+    const targets = new Set()
+    const leafNamespaces = new Set()
+    for (const entry of imports) {
+      if (!entry.hasValue || !entry.key) continue
+      if (RUNTIME_ROUTE_LEAF_MODULES.has(entry.key)) {
+        for (const imported of entry.named) {
+          if (!RUNTIME_ROUTE_LEAF_EXPORT.test(imported.imported)) continue
+          add(
+            runtimeRouteFinding(
+              RUNTIME_ROUTE_RULE.leaf,
+              file,
+              imported.imported,
+            ),
+          )
+          if (imported.local) targets.add(imported.local)
+        }
+        for (const namespace of entry.namespaces) leafNamespaces.add(namespace)
+      }
+      // D1 named hosts imported under an alias are dispatch targets too.
+      for (const imported of entry.named) {
+        if (
+          RUNTIME_ROUTE_NAMED_HOSTS.has(imported.imported) &&
+          imported.local
+        ) {
+          targets.add(imported.local)
+        }
+      }
+      if (entry.key.endsWith("-chat-transport")) {
+        for (const imported of entry.named) {
+          if (/ChatTransport$/.test(imported.imported) && imported.local) {
+            targets.add(imported.local)
+          }
+        }
+      }
+      if (entry.key === RUNTIME_ROUTE_CATALOG_OWNER_MODULE) {
+        for (const imported of entry.named) {
+          if (RUNTIME_ROUTE_CATALOG_CONSTRUCTORS.has(imported.imported)) {
+            add(
+              runtimeRouteFinding(
+                RUNTIME_ROUTE_RULE.duplicate,
+                file,
+                imported.imported,
+              ),
+            )
+          }
+        }
+      }
+    }
+    runtimeRouteVisit(sourceFile, (node) => {
+      if (
+        ts.isPropertyAccessExpression(node) &&
+        ts.isIdentifier(node.expression) &&
+        leafNamespaces.has(node.expression.text) &&
+        RUNTIME_ROUTE_LEAF_EXPORT.test(node.name.text)
+      ) {
+        add(runtimeRouteFinding(RUNTIME_ROUTE_RULE.leaf, file, node.name.text))
+      }
+    })
+    const isRendererSite = moduleKey === RUNTIME_ROUTE_RENDERER_SITE
+    const isRendererHelper = moduleKey === RUNTIME_ROUTE_RENDERER_HELPER
+    if (isRendererSite) targets.add(RUNTIME_ROUTE_RENDERER_HELPER_CALL)
+    const dispatchRule =
+      isRendererSite || isRendererHelper
+        ? RUNTIME_ROUTE_RULE.renderer
+        : RUNTIME_ROUTE_RULE.dispatch
+    const isTarget = (node) =>
+      (ts.isIdentifier(node) &&
+        targets.has(node.text) &&
+        !(
+          ts.isPropertyAccessExpression(node.parent) &&
+          node.parent.name === node
+        )) ||
+      (ts.isPropertyAccessExpression(node) &&
+        ts.isIdentifier(node.expression) &&
+        leafNamespaces.has(node.expression.text) &&
+        RUNTIME_ROUTE_LEAF_EXPORT.test(node.name.text)) ||
+      isRuntimeRouteNamedHostReference(node)
+    const predicates = collectRuntimeRoutePredicates(sourceFile)
+
+    runtimeRouteVisit(sourceFile, (node) => {
+      // route-dispatch-outside-owner / renderer bypass: runtime branches.
+      if (
+        ts.isIfStatement(node) &&
+        isRuntimeRouteCondition(node.expression, predicates)
+      ) {
+        if (
+          runtimeRouteContains(node.thenStatement, isTarget) ||
+          (node.elseStatement &&
+            runtimeRouteContains(node.elseStatement, isTarget))
+        ) {
+          add(
+            runtimeRouteFinding(
+              dispatchRule,
+              file,
+              runtimeRouteEnclosingName(node),
+            ),
+          )
+        }
+      } else if (
+        ts.isConditionalExpression(node) &&
+        isRuntimeRouteCondition(node.condition, predicates)
+      ) {
+        if (
+          runtimeRouteContains(node.whenTrue, isTarget) ||
+          runtimeRouteContains(node.whenFalse, isTarget)
+        ) {
+          add(
+            runtimeRouteFinding(
+              dispatchRule,
+              file,
+              runtimeRouteEnclosingName(node),
+            ),
+          )
+        }
+      } else if (ts.isSwitchStatement(node) && isRuntimeRouteSwitch(node)) {
+        if (runtimeRouteContains(node.caseBlock, isTarget)) {
+          add(
+            runtimeRouteFinding(
+              dispatchRule,
+              file,
+              runtimeRouteEnclosingName(node),
+            ),
+          )
+        }
+      } else if (
+        ts.isVariableDeclaration(node) &&
+        ts.isIdentifier(node.name) &&
+        node.initializer
+      ) {
+        // Runtime-keyed maps.
+        const initializer = unwrapExpression(node.initializer)
+        if (initializer && ts.isObjectLiteralExpression(initializer)) {
+          const runtimeKeyed = initializer.properties.some((property) => {
+            const name = property.name && objectPropertyName(property.name)
+            return (
+              name !== null &&
+              name !== undefined &&
+              RUNTIME_ROUTE_RUNTIME_LITERALS.has(name)
+            )
+          })
+          if (runtimeKeyed) {
+            if (runtimeRouteContains(initializer, isTarget)) {
+              add(runtimeRouteFinding(dispatchRule, file, node.name.text))
+            } else if (
+              (file.startsWith("src/main/") || isRendererSite) &&
+              initializer.properties.some(
+                (property) =>
+                  ts.isPropertyAssignment(property) &&
+                  RUNTIME_ROUTE_TRANSPORT_ID_LITERAL.test(
+                    runtimeRouteStringValue(property.initializer) ?? "",
+                  ),
+              )
+            ) {
+              add(
+                runtimeRouteFinding(
+                  RUNTIME_ROUTE_RULE.renderer,
+                  file,
+                  node.name.text,
+                ),
+              )
+            }
+          }
+        }
+      }
+
+      // route-catalog-test-port-in-production (also `{ runtimeRouteCatalog }`).
+      if (
+        ((ts.isPropertyAssignment(node) &&
+          objectPropertyName(node.name) === RUNTIME_ROUTE_HOST_OPTION &&
+          !isRuntimeRouteForwarded(node.initializer, sourceFile)) ||
+          (ts.isShorthandPropertyAssignment(node) &&
+            node.name.text === RUNTIME_ROUTE_HOST_OPTION &&
+            !isRuntimeRouteForwarded(node.name, sourceFile))) &&
+        ts.isObjectLiteralExpression(node.parent)
+      ) {
+        add(
+          runtimeRouteFinding(
+            RUNTIME_ROUTE_RULE.testPort,
+            file,
+            RUNTIME_ROUTE_HOST_OPTION,
+          ),
+        )
+      }
+      if (ts.isCallExpression(node)) {
+        const callee = runtimeRouteCalleeName(node)
+        const index = callee
+          ? RUNTIME_ROUTE_CATALOG_ARGUMENT_INDEX.get(callee)
+          : undefined
+        if (
+          index !== undefined &&
+          node.arguments.length > index &&
+          !isRuntimeRouteForwarded(node.arguments[index], sourceFile)
+        ) {
+          add(runtimeRouteFinding(RUNTIME_ROUTE_RULE.testPort, file, callee))
+        }
+      }
+    })
+
+    // renderer-route-projection-bypass: the transport helper maps
+    // transportIds only; any runtime-id literal or runtime branch is a bypass.
+    if (isRendererHelper) {
+      runtimeRouteVisit(sourceFile, (node) => {
+        if (
+          isRuntimeRouteRuntimeIdToken(node) ||
+          isRuntimeRouteDiscriminant(node, predicates)
+        ) {
+          add(
+            runtimeRouteFinding(
+              RUNTIME_ROUTE_RULE.renderer,
+              file,
+              runtimeRouteDeclarationSymbol(node),
+            ),
+          )
+        }
+      })
+    }
+
+    // renderer-route-projection-bypass: a runtime condition (ternary, if,
+    // switch or logical operator) whose branch yields a transportId literal
+    // is a runtimeId -> transportId literal mapping outside the catalog
+    // (design D5), in every syntactic form, in main and on the renderer
+    // construction site (including a same-file value wrapper).
+    if (file.startsWith("src/main/") || isRendererSite) {
+      const discriminates = (expression) =>
+        runtimeRouteContains(expression, (child) =>
+          isRuntimeRouteDiscriminant(child, predicates),
+        )
+      const yieldsTransportId = (branch) =>
+        Boolean(branch) &&
+        runtimeRouteContains(branch, isRuntimeRouteYieldedTransportId)
+      runtimeRouteVisit(sourceFile, (node) => {
+        let selectsTransport = false
+        if (ts.isConditionalExpression(node)) {
+          selectsTransport =
+            discriminates(node.condition) &&
+            (yieldsTransportId(node.whenTrue) ||
+              yieldsTransportId(node.whenFalse))
+        } else if (ts.isIfStatement(node)) {
+          selectsTransport =
+            discriminates(node.expression) &&
+            (yieldsTransportId(node.thenStatement) ||
+              yieldsTransportId(node.elseStatement))
+        } else if (ts.isSwitchStatement(node)) {
+          selectsTransport =
+            isRuntimeRouteDiscriminant(node, predicates) &&
+            yieldsTransportId(node.caseBlock)
+        } else if (
+          ts.isBinaryExpression(node) &&
+          [
+            ts.SyntaxKind.AmpersandAmpersandToken,
+            ts.SyntaxKind.BarBarToken,
+            ts.SyntaxKind.QuestionQuestionToken,
+          ].includes(node.operatorToken.kind)
+        ) {
+          selectsTransport =
+            discriminates(node.left) && yieldsTransportId(node.right)
+        }
+        if (selectsTransport) {
+          add(
+            runtimeRouteFinding(
+              RUNTIME_ROUTE_RULE.renderer,
+              file,
+              runtimeRouteDeclarationSymbol(node),
+            ),
+          )
+        }
+      })
+    }
+
+    if (isRendererSite) {
+      // Any runtime discrimination inside a construction path (P14/P15).
+      const constructionPaths = new Set(
+        RUNTIME_ROUTE_RENDERER_CONSTRUCTION_PATHS,
+      )
+      runtimeRouteVisit(sourceFile, (node) => {
+        if (
+          (ts.isCallExpression(node) &&
+            runtimeRouteCalleeName(node) ===
+              RUNTIME_ROUTE_RENDERER_HELPER_CALL) ||
+          (ts.isNewExpression(node) && isTarget(node.expression))
+        ) {
+          const name = runtimeRouteEnclosingName(node)
+          if (name !== "<module>") constructionPaths.add(name)
+        }
+      })
+      runtimeRouteVisit(sourceFile, (node) => {
+        const name = runtimeRouteDeclaredFunctionName(node)
+        if (
+          name &&
+          constructionPaths.has(name) &&
+          runtimeRouteContains(node, (child) =>
+            isRuntimeRouteDiscriminant(child, predicates),
+          )
+        ) {
+          add(runtimeRouteFinding(RUNTIME_ROUTE_RULE.renderer, file, name))
+        }
+      })
+
+      const helperCalls = []
+      const states = new Set()
+      runtimeRouteVisit(sourceFile, (node) => {
+        if (
+          ts.isCallExpression(node) &&
+          runtimeRouteCalleeName(node) === RUNTIME_ROUTE_RENDERER_HELPER_CALL
+        ) {
+          helperCalls.push(node)
+        }
+        if (ts.isObjectLiteralExpression(node)) {
+          for (const property of node.properties) {
+            if (
+              ts.isPropertyAssignment(property) &&
+              objectPropertyName(property.name) === "state"
+            ) {
+              const value = runtimeRouteStringValue(property.initializer)
+              if (value) states.add(value)
+            }
+          }
+        }
+        // A Chat cached or constructed on a failed descriptor.
+        if (ts.isIfStatement(node)) {
+          const condition = unwrapExpression(node.expression)
+          const failedRoute =
+            (ts.isPrefixUnaryExpression(condition) &&
+              condition.operator === ts.SyntaxKind.ExclamationToken &&
+              ts.isPropertyAccessExpression(
+                unwrapExpression(condition.operand),
+              ) &&
+              unwrapExpression(condition.operand).name.text === "ok") ||
+            (ts.isBinaryExpression(condition) &&
+              ts.isPropertyAccessExpression(unwrapExpression(condition.left)) &&
+              unwrapExpression(condition.left).name.text === "ok" &&
+              condition.right.kind === ts.SyntaxKind.FalseKeyword)
+          if (
+            failedRoute &&
+            runtimeRouteContains(
+              node.thenStatement,
+              (child) =>
+                (ts.isNewExpression(child) &&
+                  ts.isIdentifier(child.expression) &&
+                  child.expression.text === "Chat") ||
+                (ts.isCallExpression(child) &&
+                  ts.isPropertyAccessExpression(child.expression) &&
+                  child.expression.name.text === "set"),
+            )
+          ) {
+            add(
+              runtimeRouteFinding(
+                RUNTIME_ROUTE_RULE.renderer,
+                file,
+                runtimeRouteEnclosingName(node),
+              ),
+            )
+          }
+        }
+      })
+      // The read state must map loaded / not-loaded / error descriptors.
+      if (
+        helperCalls.length > 0 &&
+        !["loaded", "not-loaded", "error"].every((state) => states.has(state))
+      ) {
+        for (const call of helperCalls) {
+          add(
+            runtimeRouteFinding(
+              RUNTIME_ROUTE_RULE.renderer,
+              file,
+              runtimeRouteEnclosingName(call),
+            ),
+          )
+        }
+      }
+    }
+  }
+  return sortFindings(findings, RUNTIME_ROUTE_CATALOG_FINDING_FIELDS)
+}
+
+/**
+ * The src-wide retired-name word scan of one file: every retired selector,
+ * registry or readiness-facade name it mentions (any import, call, export or
+ * forwarding alias), as retired-route-selector findings.
+ */
+function collectRuntimeRouteRetiredMentions(file, content) {
+  const findings = []
+  for (const symbol of RUNTIME_ROUTE_RETIRED_SCAN_SYMBOLS) {
+    if (new RegExp(`\\b${symbol}\\b`).test(content)) {
+      findings.push(
+        runtimeRouteFinding(RUNTIME_ROUTE_RULE.retired, file, symbol),
       )
     }
   }
-  if (architectureBaselines) {
-    assertRouteSurfaceRatchets(architectureBaselines)
-    assertRuntimeCoreImportBoundary(architectureBaselines)
-    assertReverseDirectionImports(architectureBaselines)
-    assertReachThroughWrapperRegistry(architectureBaselines)
-  }
-  assertNoDeadSettingsState()
-  assertCanonicalVocabularyI18n()
+  return findings
 }
 
-if (failures.length > 0) {
-  console.error("Architecture guard failed:")
-  for (const failure of failures) {
-    console.error(`- ${failure}`)
+function loadRuntimeRouteCatalogArchitectureFixture() {
+  const fixturePath =
+    runEventLedgerOption(RUNTIME_ROUTE_CATALOG_FIXTURE_FLAG) ??
+    RUNTIME_ROUTE_CATALOG_FIXTURE_PATH
+  const absolutePath = path.isAbsolute(fixturePath)
+    ? fixturePath
+    : path.join(repoRoot, fixturePath)
+  if (!existsSync(absolutePath)) {
+    fail(`${fixturePath} is missing. See ${RUNTIME_ROUTE_CATALOG_SECTION}.`)
+    return null
   }
-  process.exit(1)
+  let fixture
+  try {
+    fixture = JSON.parse(readFileSync(absolutePath, "utf8"))
+  } catch (error) {
+    fail(
+      `${fixturePath} is not valid JSON: ${String(error)}. See ${RUNTIME_ROUTE_CATALOG_SECTION}.`,
+    )
+    return null
+  }
+  // Any non-empty set of /^S\d\d$/ keys, each {cases:[...]} in the D5 case
+  // shape (red-receipt 9 P2-1); header keys sit beside them.
+  const scenarioKeys = Object.keys(fixture ?? {})
+    .filter((key) => /^S\d\d$/.test(key))
+    .sort(compareCodePoints)
+  const illegal = (reason) => {
+    fail(
+      `${fixturePath} is not a legal runtime route catalog guard fixture: ${reason}. See ${RUNTIME_ROUTE_CATALOG_SECTION}.`,
+    )
+    return null
+  }
+  if (!fixture || typeof fixture !== "object" || Array.isArray(fixture)) {
+    return illegal("the fixture is not an object")
+  }
+  if (scenarioKeys.length === 0) return illegal("no Sxx scenario key")
+  const cases = []
+  for (const key of scenarioKeys) {
+    const scenario = fixture[key]
+    if (!scenario || !Array.isArray(scenario.cases)) {
+      return illegal(`${key} is not {cases:[...]}`)
+    }
+    for (const entry of scenario.cases) {
+      const legalCase =
+        entry &&
+        typeof entry.caseId === "string" &&
+        Array.isArray(entry.files) &&
+        entry.files.every(
+          (item) =>
+            item &&
+            typeof item.file === "string" &&
+            typeof item.source === "string",
+        ) &&
+        Array.isArray(entry.expectedFindings) &&
+        entry.expectedFindings.every(
+          (finding) =>
+            finding &&
+            RUNTIME_ROUTE_CATALOG_FINDING_FIELDS.every(
+              (field) => typeof finding[field] === "string",
+            ) &&
+            Object.keys(finding).length ===
+              RUNTIME_ROUTE_CATALOG_FINDING_FIELDS.length,
+        )
+      if (!legalCase)
+        return illegal(`${key} has a case outside the D5 case shape`)
+      cases.push(entry)
+    }
+  }
+  if (cases.length === 0) return illegal("no fixture cases")
+  return { fixturePath, cases }
 }
 
-console.log("Architecture guard passed.")
+function runtimeRouteCatalogFindingLabel(finding) {
+  return JSON.stringify(
+    RUNTIME_ROUTE_CATALOG_FINDING_FIELDS.map((field) => finding[field]),
+  )
+}
+
+/**
+ * Fixture-driven self-test: each case's files are scanned as if they were
+ * the repository files at their paths and must produce exactly the expected
+ * finding tuples. A mismatch prints one line per case and fails.
+ */
+function assertRuntimeRouteCatalogGuardSelfTest(loaded) {
+  const summary = { cases: 0, matched: 0 }
+  for (const entry of loaded.cases) {
+    summary.cases += 1
+    const produced = collectRuntimeRouteCatalogFindings(entry.files)
+      .map(runtimeRouteCatalogFindingLabel)
+      .sort(compareCodePoints)
+    const expected = entry.expectedFindings
+      .map(runtimeRouteCatalogFindingLabel)
+      .sort(compareCodePoints)
+    const missing = expected.filter((key) => !produced.includes(key))
+    const unexpected = produced.filter((key) => !expected.includes(key))
+    if (missing.length === 0 && unexpected.length === 0) {
+      summary.matched += 1
+      continue
+    }
+    console.error(
+      `${RUNTIME_ROUTE_CATALOG_GUARD_LABEL} case ${entry.caseId} missed ${missing.join(", ") || "nothing"} and produced unexpected ${unexpected.join(", ") || "nothing"}. See ${RUNTIME_ROUTE_CATALOG_SECTION}.`,
+    )
+  }
+  if (summary.matched !== summary.cases) {
+    fail(
+      `Runtime route catalog guard fixtures: ${summary.cases - summary.matched} of ${summary.cases} cases did not match (${loaded.fixturePath}). See ${RUNTIME_ROUTE_CATALOG_SECTION}.`,
+    )
+  }
+  return summary
+}
+
+/** Production scans (design D5 / red-receipt 8.1 "Guard"). */
+function assertRuntimeRouteCatalogOwnership() {
+  const failureCount = failures.length
+  const scanned = new Set()
+  for (const directory of RUNTIME_ROUTE_SCANNED_DIRECTORIES) {
+    for (const absolutePath of walkFiles(
+      directory,
+      RUNTIME_CORE_SOURCE_EXTENSIONS,
+    )) {
+      scanned.add(relative(absolutePath))
+    }
+  }
+  for (const file of RUNTIME_ROUTE_SCANNED_FILES) {
+    if (existsSync(path.join(repoRoot, file))) scanned.add(file)
+  }
+  for (const [moduleKey] of RUNTIME_ROUTE_RETIRED_MODULES) {
+    for (const extension of RUNTIME_CORE_SOURCE_EXTENSIONS) {
+      if (existsSync(path.join(repoRoot, `${moduleKey}${extension}`))) {
+        scanned.add(`${moduleKey}${extension}`)
+      }
+    }
+  }
+  const files = [...scanned].sort(compareCodePoints).map((file) => ({
+    file,
+    source: readFileSync(path.join(repoRoot, file), "utf8"),
+  }))
+  for (const finding of collectRuntimeRouteCatalogFindings(files, {
+    readRepository: true,
+  })) {
+    fail(
+      `Runtime route catalog ${finding.rule}: ${finding.file} ${finding.symbol} (owner ${finding.owner}). See ${RUNTIME_ROUTE_CATALOG_SECTION}.`,
+    )
+  }
+
+  // Retired selector symbols and path-selection flags anywhere in src.
+  for (const absolutePath of walkFiles("src", RUNTIME_CORE_SOURCE_EXTENSIONS)) {
+    const file = relative(absolutePath)
+    const content = readFileSync(absolutePath, "utf8")
+    for (const finding of collectRuntimeRouteRetiredMentions(file, content)) {
+      fail(
+        `Runtime route catalog ${finding.rule}: ${file} mentions ${finding.symbol}. See ${RUNTIME_ROUTE_CATALOG_SECTION}.`,
+      )
+    }
+    const flag = content.match(RUNTIME_ROUTE_PATH_FLAG)
+    if (flag) {
+      fail(
+        `Runtime route catalog dual-path flag ${flag[0]} in ${file}; no runtime route path-selection flag is allowed. See ${RUNTIME_ROUTE_CATALOG_SECTION}.`,
+      )
+    }
+  }
+
+  // The single owner defines and exports its D1 surface.
+  const catalogSource = readText(RUNTIME_ROUTE_CATALOG_OWNER)
+  const facts = collectRunEventLedgerSourceFacts(
+    RUNTIME_ROUTE_CATALOG_OWNER,
+    catalogSource,
+  )
+  for (const symbol of RUNTIME_ROUTE_CATALOG_PINNED_EXPORTS) {
+    if (!facts.definitions.has(symbol) || !facts.exportedNames.has(symbol)) {
+      fail(
+        `${symbol} must be defined and exported by ${RUNTIME_ROUTE_CATALOG_OWNER}. See ${RUNTIME_ROUTE_CATALOG_SECTION}.`,
+      )
+    }
+  }
+
+  // The renderer builds transports only through the helper at P14/P15.
+  const activeChat = readText(`${RUNTIME_ROUTE_RENDERER_SITE}.tsx`)
+  for (const construction of [
+    "new CodexAppServerChatTransport(",
+    "new IPCChatTransport(",
+  ]) {
+    if (activeChat.includes(construction)) {
+      fail(
+        `${RUNTIME_ROUTE_RENDERER_SITE}.tsx must not construct ${construction.slice(4, -1)} directly; use ${RUNTIME_ROUTE_RENDERER_HELPER_CALL}. See ${RUNTIME_ROUTE_CATALOG_SECTION}.`,
+      )
+    }
+  }
+  const helperCallCount = (
+    activeChat.match(
+      new RegExp(`${RUNTIME_ROUTE_RENDERER_HELPER_CALL}\\(`, "g"),
+    ) ?? []
+  ).length
+  if (helperCallCount !== 2) {
+    fail(
+      `${RUNTIME_ROUTE_RENDERER_SITE}.tsx must call ${RUNTIME_ROUTE_RENDERER_HELPER_CALL} exactly twice (getOrCreateChat and createNewSubChat); found ${helperCallCount}. See ${RUNTIME_ROUTE_CATALOG_SECTION}.`,
+    )
+  }
+
+  // The ownership map names the single owner and drops the superseded section.
+  const ownershipMap = readText(OWNERSHIP_MAP_PATH)
+  const sectionStart = ownershipMap.indexOf(
+    `## ${RUNTIME_ROUTE_CATALOG_SECTION}`,
+  )
+  const sectionEnd =
+    sectionStart < 0 ? -1 : ownershipMap.indexOf("\n## ", sectionStart + 3)
+  const section =
+    sectionStart < 0
+      ? ""
+      : ownershipMap.slice(
+          sectionStart,
+          sectionEnd < 0 ? undefined : sectionEnd,
+        )
+  if (!section.includes(`\`${RUNTIME_ROUTE_CATALOG_OWNER}\``)) {
+    fail(
+      `${OWNERSHIP_MAP_PATH} must have a "## ${RUNTIME_ROUTE_CATALOG_SECTION}" section naming \`${RUNTIME_ROUTE_CATALOG_OWNER}\`.`,
+    )
+  }
+  if (ownershipMap.includes("## Headless Runtime Adapter Selection")) {
+    fail(
+      `${OWNERSHIP_MAP_PATH} must not keep the superseded "Headless Runtime Adapter Selection" section. See ${RUNTIME_ROUTE_CATALOG_SECTION}.`,
+    )
+  }
+  return failures.length === failureCount
+}
+
+function assertRuntimeRouteCatalogGuards() {
+  const loaded = loadRuntimeRouteCatalogArchitectureFixture()
+  if (!loaded) return
+  const summary = assertRuntimeRouteCatalogGuardSelfTest(loaded)
+  const repositoryClean = assertRuntimeRouteCatalogOwnership()
+  console.log(
+    `${RUNTIME_ROUTE_CATALOG_GUARD_LABEL}: ${summary.matched}/${summary.cases} fixture cases matched; ${repositoryClean ? "repository ownership enforced" : "repository ownership violated"}.`,
+  )
+}
+
+/**
+ * Runs every architecture guard and exits non-zero on a failure. The module
+ * only runs it when it is the invoked entry script, so unit probes can import
+ * the pure rule collectors below without running the repository checks.
+ */
+function runArchitectureGuardCli() {
+  if (updateArchitectureBaselines) {
+    updateArchitectureBaselineRegistry()
+  } else {
+    const architectureBaselines = parseArchitectureBaselines()
+    const committedArchitectureBaselines = [
+      readCommittedArchitectureBaselines("HEAD", "committed HEAD"),
+    ]
+    const previousBaselineRevision = previousArchitectureBaselineRevision()
+    if (previousBaselineRevision) {
+      committedArchitectureBaselines.push(
+        readCommittedArchitectureBaselines(
+          previousBaselineRevision,
+          "previous committed architecture baseline",
+        ),
+      )
+    }
+    const diffBaseSha = process.env.DIFF_BASE_SHA?.trim()
+    if (diffBaseSha) {
+      committedArchitectureBaselines.push(
+        readCommittedArchitectureBaselines(
+          diffBaseSha,
+          "configured diff base",
+          {
+            allowMissingFile: true,
+          },
+        ),
+      )
+    }
+    assertOwnershipDocs()
+    assertPackageScripts()
+    assertCiRunsArchitectureCheck()
+    assertRuntimeCapabilitySingleOwner()
+    assertEngineIdSingleOwner()
+    assertGuardDecisionSingleOwner()
+    assertRuntimeEventSinglePath()
+    assertRunEventLedgerGuards()
+    assertLocalJobApiAsyncGuards()
+    assertRuntimeRouteCatalogGuards()
+    assertRuntimeEventStateOwner()
+    assertChatMessageModelOwner()
+    assertChatSessionBindingSingleOwner()
+    assertChatMaintenanceFenceSingleOwner()
+    assertNoUnresolvedDangerousRouterInput()
+    assertArchitectureRatchetSelfTests()
+    if (architectureBaselines) {
+      const comparedBaselineContents = new Set()
+      for (const committed of committedArchitectureBaselines) {
+        if (!committed?.baseline) continue
+        const contentKey = JSON.stringify(committed.baseline)
+        if (comparedBaselineContents.has(contentKey)) continue
+        comparedBaselineContents.add(contentKey)
+        assertArchitectureBaselineOnlyShrinks(
+          architectureBaselines,
+          committed.baseline,
+          `Working architecture baseline against ${committed.label} ${committed.commitSha}`,
+        )
+      }
+    }
+    if (architectureBaselines) {
+      assertRouteSurfaceRatchets(architectureBaselines)
+      assertRuntimeCoreImportBoundary(architectureBaselines)
+      assertReverseDirectionImports(architectureBaselines)
+      assertReachThroughWrapperRegistry(architectureBaselines)
+    }
+    assertNoDeadSettingsState()
+    assertCanonicalVocabularyI18n()
+  }
+
+  if (failures.length > 0) {
+    console.error("Architecture guard failed:")
+    for (const failure of failures) {
+      console.error(`- ${failure}`)
+    }
+    process.exit(1)
+  }
+
+  console.log("Architecture guard passed.")
+}
+
+/** The pure Runtime Route Catalog rule collectors (implementer unit probes). */
+export {
+  collectRuntimeRouteCatalogFindings,
+  collectRuntimeRouteRetiredMentions,
+  RUNTIME_ROUTE_CATALOG_SECTION,
+  RUNTIME_ROUTE_RULE,
+}
+
+function isArchitectureGuardEntry() {
+  const entry = process.argv[1]
+  if (!entry) return false
+  try {
+    return (
+      realpathSync(path.resolve(entry)) ===
+      realpathSync(fileURLToPath(import.meta.url))
+    )
+  } catch {
+    return false
+  }
+}
+
+if (isArchitectureGuardEntry()) runArchitectureGuardCli()

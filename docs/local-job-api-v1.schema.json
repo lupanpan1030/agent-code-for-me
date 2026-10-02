@@ -1027,6 +1027,124 @@
         },
         "readiness": {
           "$ref": "#/$defs/runtimeReadiness"
+        },
+        "routes": {
+          "type": "array",
+          "description": "Optional experimental route summaries (surface api accepted combinations only). Descriptive metadata, not an execution grant; absent routes do not negate any feature. routeId is not a stable identity; routeId, surface, adapterSource and transport are open descriptive strings and consumers must not branch on adapterSource or transport.",
+          "items": {
+            "$ref": "#/$defs/runtimeRouteSummary"
+          }
+        }
+      }
+    },
+    "runtimeRouteSummary": {
+      "type": "object",
+      "description": "Experimental. Exact keys; any key-set change needs a new C7 classification. kind and executionProfile are coupled: a completion route has executionProfile null and an agent route has a closed executionProfile (batch or policy-grant).",
+      "additionalProperties": false,
+      "required": [
+        "routeId",
+        "surface",
+        "kind",
+        "executionProfile",
+        "adapterSource",
+        "transport",
+        "extensions"
+      ],
+      "properties": {
+        "routeId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "surface": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "$ref": "#/$defs/jobKind"
+        },
+        "executionProfile": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/executionProfile"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "adapterSource": {
+          "type": "string",
+          "minLength": 1
+        },
+        "transport": {
+          "type": "string",
+          "minLength": 1
+        },
+        "extensions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/runtimeRouteExtension"
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "completion"
+              }
+            },
+            "required": ["kind"]
+          },
+          "then": {
+            "properties": {
+              "executionProfile": {
+                "const": null
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "agent"
+              }
+            },
+            "required": ["kind"]
+          },
+          "then": {
+            "properties": {
+              "executionProfile": {
+                "$ref": "#/$defs/executionProfile"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "runtimeRouteExtension": {
+      "type": "object",
+      "description": "Experimental runtime extension declaration of a route summary; schemaRef is a published JSON Pointer into this schema.",
+      "additionalProperties": false,
+      "required": ["namespace", "schemaVersion", "maturity", "schemaRef"],
+      "properties": {
+        "namespace": {
+          "type": "string",
+          "minLength": 1
+        },
+        "schemaVersion": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "maturity": {
+          "type": "string",
+          "minLength": 1
+        },
+        "schemaRef": {
+          "type": "string",
+          "pattern": "^#/"
         }
       }
     },

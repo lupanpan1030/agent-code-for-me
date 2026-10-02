@@ -60,7 +60,6 @@ type CodexAppServerChatTransportConfig = {
   binding: ChatSessionBinding
   projectPath?: string
   mode: "plan" | "agent"
-  provider: "codex"
 }
 
 type ImageAttachment = {

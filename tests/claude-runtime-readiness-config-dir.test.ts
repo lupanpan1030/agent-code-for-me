@@ -44,9 +44,8 @@ async function probeClaudeReadiness(input: {
     path.resolve(process.cwd(), "src/main/lib/headless/runtime-readiness.ts"),
   ).href
   const program = `
-    const { resolveLocalJobApiRuntimeReadiness } = await import(${JSON.stringify(readinessModuleUrl)});
-    const readiness = await resolveLocalJobApiRuntimeReadiness({
-      runtimeId: "claude-code",
+    const { resolveClaudeCodeRuntimeReadiness } = await import(${JSON.stringify(readinessModuleUrl)});
+    const readiness = await resolveClaudeCodeRuntimeReadiness({
       dependencies: { hasAnyClaudeCodeAccount: () => false },
     });
     process.stdout.write(JSON.stringify({ state: readiness.state, detail: readiness.detail }));

@@ -14,6 +14,7 @@ import {
   type NormalizedLocalJobApiCreateRequest,
   toLocalJobApiErrorEnvelope,
 } from "../../../shared/local-job-api"
+import type { RuntimeRouteCatalogState } from "../agent-runtime/runtime-route-catalog"
 import type { AgentJob, AgentJobEvent, Project } from "../db/schema"
 import {
   getProjectRegistrationForCwd,
@@ -126,6 +127,12 @@ export type RunHeadlessCliCommandOptions = {
    * waits (claim-latch seam).
    */
   beforeOwnPumpClaim?: (jobId: string) => Promise<void>
+  /**
+   * Test-only runtime route catalog state (design D1 host seam), forwarded
+   * unchanged to runners, pumps, the stdio server and discovery; production
+   * never sets it.
+   */
+  runtimeRouteCatalog?: RuntimeRouteCatalogState
 }
 
 export const HEADLESS_STDIN_MAX_BYTES = 1024 * 1024
@@ -350,6 +357,7 @@ async function runCommand(
     runner: options.runner,
     env: options.env,
     providerBindingDependencies: options.providerBindingDependencies,
+    runtimeRouteCatalog: options.runtimeRouteCatalog,
   })
   outputRunResult(options.stdout, command.output, result.job, result.events)
   return result.exitCode
@@ -1064,6 +1072,7 @@ async function runLocalJobApiWrapper(
       completionFetch: options.completionFetch,
       providerBindingDependencies: options.providerBindingDependencies,
       appVersion: options.appVersion,
+      runtimeRouteCatalog: options.runtimeRouteCatalog,
       admittedIds: [jobId],
       concurrency: 1,
       signal: ownAbort.signal,
@@ -1293,6 +1302,7 @@ async function apiRuntimesListCommand(
       probe: !command.noProbe,
       providerBindingDependencies: options.providerBindingDependencies,
       readinessDependencies: options.runtimeReadinessDependencies,
+      runtimeRouteCatalog: options.runtimeRouteCatalog,
     }),
   )
   return HEADLESS_EXIT_CODES.success
@@ -1803,6 +1813,7 @@ async function daemonRunCommand(
       completionFetch: options.completionFetch,
       providerBindingDependencies: options.providerBindingDependencies,
       appVersion: options.appVersion,
+      runtimeRouteCatalog: options.runtimeRouteCatalog,
     })
     if (shouldUseJson(command.output)) {
       writeJson(options.stdout, { daemon: result })
@@ -1835,6 +1846,7 @@ async function jobsStdioCommand(
     stderr: options.stderr,
     env: options.env,
     runner: options.runner,
+    runtimeRouteCatalog: options.runtimeRouteCatalog,
   })
 }
 

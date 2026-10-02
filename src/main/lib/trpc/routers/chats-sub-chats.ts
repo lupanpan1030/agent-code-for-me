@@ -16,6 +16,7 @@ import {
   formatChatMaintenanceBusyMessage,
   releaseChatMaintenanceFence,
 } from "../../agent-runtime/chat-maintenance-fence"
+import { withRuntimeRouteTransportId } from "../../agent-runtime/runtime-route-read-model"
 import {
   trackPRCreated,
   trackWorkspaceArchived,
@@ -105,7 +106,7 @@ export const subChatProcedures = {
 
       return {
         ...subChat,
-        binding: getSubChatBinding(db, subChat.id),
+        binding: withRuntimeRouteTransportId(getSubChatBinding(db, subChat.id)),
         chat: chat ? { ...chat, project } : null,
       }
     }),
@@ -139,7 +140,7 @@ export const subChatProcedures = {
           getProviderProfileMetadata:
             getProviderProfileChatBindingMetadataFromDatabase,
         })
-        return { ...subChat, binding }
+        return { ...subChat, binding: withRuntimeRouteTransportId(binding) }
       })
     }),
 
@@ -151,10 +152,12 @@ export const subChatProcedures = {
       }),
     )
     .mutation(({ input }) =>
-      updateSubChatBinding(getDatabase(), input.id, input.binding, {
-        getProviderProfileMetadata:
-          getProviderProfileChatBindingMetadataFromDatabase,
-      }),
+      withRuntimeRouteTransportId(
+        updateSubChatBinding(getDatabase(), input.id, input.binding, {
+          getProviderProfileMetadata:
+            getProviderProfileChatBindingMetadataFromDatabase,
+        }),
+      ),
     ),
 
   /**

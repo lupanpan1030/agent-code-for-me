@@ -1,0 +1,805 @@
+{
+  "fixtureVersion": 1,
+  "evidenceClass": "synthetic",
+  "sourceRefs": [
+    "openspec/changes/refactor-unified-runtime-route-catalog/specs/local-job-api/spec.md:12-16",
+    "openspec/changes/refactor-unified-runtime-route-catalog/design.md:189-199",
+    "openspec/changes/refactor-unified-runtime-route-catalog/design.md:387-393",
+    "openspec/changes/refactor-unified-runtime-route-catalog/tasks.md:91",
+    "src/main/lib/headless/agent-runtime.ts:12-45",
+    "src/main/lib/headless/adapter-selector.ts:292-400",
+    "src/main/lib/headless/cli-dispatcher.ts:104-129",
+    "src/main/lib/headless/job-runner.ts:740-850"
+  ],
+  "provenance": {
+    "capturedFrom": "product source 6192b13f74603fbcc57c8ba858cb6b0f0d0ac776 (worktree base 19986552 carries no src/ diff from it)",
+    "method": "in-process runHeadlessCliCommand through the real runAgentTask and the real 6192b13f adapter selector; only the three headless leaf modules (headless/adapters/{claude-code,codex,codex-app-server}.ts run/create exports) are recording stubs (tests/runtime-route-catalog-guards-kit.ts installRecordingLeafPorts); no options.runner and no LOCUS_HEADLESS_FAKE_RUNNER; migrated temp SQLite; bun:test setSystemTime(2026-10-02T00:00:00.000Z); fake monotonic clock for wait; completion upstream is a fake fetch. Per-run values are {{PLACEHOLDERS}} bound at test time from the profile DB/disk (J<n> = n-th agent_jobs row, W<n> = n-th distinct worker id, CORR_J<n>_<seq> = ledger correlation key, PID = process.pid, REPO_ROOT = checkout root), never from the stdout under test; no absolute path of any checkout is embedded.",
+    "author": "independent red author (public-guards domain), 2026-10-02",
+    "secrets": "none"
+  },
+  "S21": {
+    "requests": {
+      "codexBatch": {
+        "apiVersion": "locus.local-job.v1",
+        "consumer": {
+          "id": "fixture-a",
+          "runExternalId": "run-ext-001"
+        },
+        "project": {
+          "cwd": "{{PACKAGE_DIR}}"
+        },
+        "runtime": {
+          "id": "codex",
+          "requiredCapabilities": ["planMode"]
+        },
+        "mode": "plan",
+        "prompt": {
+          "text": "Review this local package."
+        },
+        "input": {
+          "contract": "example.local-package.v1"
+        }
+      },
+      "codexBatchKeyed": {
+        "apiVersion": "locus.local-job.v1",
+        "consumer": {
+          "id": "fixture-a",
+          "runExternalId": "run-ext-002"
+        },
+        "project": {
+          "cwd": "{{PACKAGE_DIR}}"
+        },
+        "runtime": {
+          "id": "codex",
+          "requiredCapabilities": ["planMode"]
+        },
+        "mode": "plan",
+        "prompt": {
+          "text": "Review this local package."
+        },
+        "input": {
+          "contract": "example.local-package.v1"
+        },
+        "idempotencyKey": "s21-key-1"
+      },
+      "codexBatchKeyedConflict": {
+        "apiVersion": "locus.local-job.v1",
+        "consumer": {
+          "id": "fixture-a",
+          "runExternalId": "run-ext-002"
+        },
+        "project": {
+          "cwd": "{{PACKAGE_DIR}}"
+        },
+        "runtime": {
+          "id": "codex",
+          "requiredCapabilities": ["planMode"]
+        },
+        "mode": "plan",
+        "prompt": {
+          "text": "A different prompt under the same key."
+        },
+        "input": {
+          "contract": "example.local-package.v1"
+        },
+        "idempotencyKey": "s21-key-1"
+      },
+      "claudePolicyGrant": {
+        "apiVersion": "locus.local-job.v1",
+        "consumer": {
+          "id": "fixture-a",
+          "runExternalId": "run-ext-claude-grant"
+        },
+        "project": {
+          "cwd": "{{PACKAGE_DIR}}"
+        },
+        "runtime": {
+          "id": "claude-code",
+          "requiredCapabilities": ["planMode"],
+          "executionProfile": "policy-grant",
+          "policyGrant": {
+            "scopes": ["repo.read"]
+          }
+        },
+        "mode": "plan",
+        "prompt": {
+          "text": "Review this local package."
+        },
+        "input": {
+          "contract": "example.local-package.v1"
+        }
+      },
+      "codexFailClosed": {
+        "apiVersion": "locus.local-job.v1",
+        "consumer": {
+          "id": "fixture-a",
+          "runExternalId": "run-ext-fail-closed"
+        },
+        "project": {
+          "cwd": "{{PACKAGE_DIR}}"
+        },
+        "runtime": {
+          "id": "codex",
+          "requiredCapabilities": ["planMode"],
+          "executionProfile": "policy-grant",
+          "policyGrant": {
+            "scopes": ["repo.read"],
+            "canDecideAutomatically": false
+          }
+        },
+        "mode": "plan",
+        "prompt": {
+          "text": "Review this local package."
+        },
+        "input": {
+          "contract": "example.local-package.v1"
+        }
+      },
+      "codexPolicyGrant": {
+        "apiVersion": "locus.local-job.v1",
+        "consumer": {
+          "id": "fixture-a",
+          "runExternalId": "run-ext-codex-grant"
+        },
+        "project": {
+          "cwd": "{{PACKAGE_DIR}}"
+        },
+        "runtime": {
+          "id": "codex",
+          "requiredCapabilities": ["planMode"],
+          "executionProfile": "policy-grant",
+          "policyGrant": {
+            "scopes": ["repo.read"]
+          }
+        },
+        "mode": "plan",
+        "prompt": {
+          "text": "Review this local package."
+        },
+        "input": {
+          "contract": "example.local-package.v1"
+        }
+      },
+      "claudeBatch": {
+        "apiVersion": "locus.local-job.v1",
+        "consumer": {
+          "id": "fixture-a",
+          "runExternalId": "run-ext-claude-batch"
+        },
+        "project": {
+          "cwd": "{{PACKAGE_DIR}}"
+        },
+        "runtime": {
+          "id": "claude-code",
+          "requiredCapabilities": ["planMode"]
+        },
+        "mode": "plan",
+        "prompt": {
+          "text": "Review this local package."
+        },
+        "input": {
+          "contract": "example.local-package.v1"
+        }
+      },
+      "completion": {
+        "apiVersion": "locus.local-job.v1",
+        "kind": "completion",
+        "consumer": {
+          "id": "fixture-a",
+          "runExternalId": "completion-ext-001"
+        },
+        "runtime": {
+          "id": "codex"
+        },
+        "provider": {
+          "profileId": "completion-main",
+          "model": "provider-model"
+        },
+        "messages": [
+          {
+            "role": "user",
+            "content": "Return the fixture summary."
+          }
+        ],
+        "responseFormat": {
+          "type": "json_schema",
+          "schema": {
+            "type": "object",
+            "properties": {
+              "summary": {
+                "type": "string"
+              }
+            },
+            "required": ["summary"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "completionKeyed": {
+        "apiVersion": "locus.local-job.v1",
+        "kind": "completion",
+        "consumer": {
+          "id": "fixture-a",
+          "runExternalId": "completion-ext-002"
+        },
+        "runtime": {
+          "id": "codex"
+        },
+        "provider": {
+          "profileId": "completion-main",
+          "model": "provider-model"
+        },
+        "messages": [
+          {
+            "role": "user",
+            "content": "Return the fixture summary."
+          }
+        ],
+        "responseFormat": {
+          "type": "json_schema",
+          "schema": {
+            "type": "object",
+            "properties": {
+              "summary": {
+                "type": "string"
+              }
+            },
+            "required": ["summary"],
+            "additionalProperties": false
+          }
+        },
+        "idempotencyKey": "s21-completion-key-1"
+      },
+      "completionKeyedConflict": {
+        "apiVersion": "locus.local-job.v1",
+        "kind": "completion",
+        "consumer": {
+          "id": "fixture-a",
+          "runExternalId": "completion-ext-002"
+        },
+        "runtime": {
+          "id": "codex"
+        },
+        "provider": {
+          "profileId": "completion-main",
+          "model": "provider-model"
+        },
+        "messages": [
+          {
+            "role": "user",
+            "content": "A different completion under the same key."
+          }
+        ],
+        "responseFormat": {
+          "type": "json_schema",
+          "schema": {
+            "type": "object",
+            "properties": {
+              "summary": {
+                "type": "string"
+              }
+            },
+            "required": ["summary"],
+            "additionalProperties": false
+          }
+        },
+        "idempotencyKey": "s21-completion-key-1"
+      },
+      "completionUpstreamFailure": {
+        "apiVersion": "locus.local-job.v1",
+        "kind": "completion",
+        "consumer": {
+          "id": "fixture-a",
+          "runExternalId": "completion-ext-fail"
+        },
+        "runtime": {
+          "id": "codex"
+        },
+        "provider": {
+          "profileId": "completion-main",
+          "model": "provider-model"
+        },
+        "messages": [
+          {
+            "role": "user",
+            "content": "FAIL_UPSTREAM fixture request."
+          }
+        ],
+        "responseFormat": {
+          "type": "json_schema",
+          "schema": {
+            "type": "object",
+            "properties": {
+              "summary": {
+                "type": "string"
+              }
+            },
+            "required": ["summary"],
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    "agent": {
+      "steps": [
+        {
+          "step": "create-batch",
+          "code": 0,
+          "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"job\":{\"id\":\"{{J1}}\",\"retryOfJobId\":null,\"attempt\":1,\"kind\":\"agent\",\"source\":\"api\",\"runtime\":\"codex\",\"status\":\"succeeded\",\"mode\":\"plan\",\"cwd\":\"{{PACKAGE_DIR}}\",\"projectId\":\"project-1\",\"chatId\":null,\"subChatId\":null,\"promptPreview\":\"Review this local package.\",\"apiConsumerId\":\"fixture-a\",\"apiConsumerRunId\":\"run-ext-001\",\"artifactBaseDir\":null,\"artifactManifestPath\":null,\"providerProfileId\":null,\"modelOverride\":null,\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"startedAt\":\"2026-10-02T00:00:00.000Z\",\"finishedAt\":\"2026-10-02T00:00:00.000Z\",\"exitCode\":0,\"errorCode\":null,\"errorMessage\":null,\"result\":{\"finalMessage\":\"fixture codex-batch done\",\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}},\"workerId\":\"{{W1}}\",\"workerPid\":{{PID}},\"heartbeatAt\":\"2026-10-02T00:00:00.000Z\",\"cancelRequestedAt\":null,\"cancelRequestedBy\":null},\"result\":{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{J1}}\",\"status\":\"succeeded\",\"runtime\":\"codex\",\"mode\":\"plan\",\"consumer\":{\"id\":\"fixture-a\",\"runExternalId\":\"run-ext-001\"},\"artifactManifestPath\":null,\"artifacts\":[],\"diagnostics\":[],\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null},\"result\":{\"finalMessage\":\"fixture codex-batch done\",\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}}}}\n",
+          "stderr": ""
+        },
+        {
+          "step": "submit-keyed",
+          "code": 0,
+          "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"job\":{\"id\":\"{{J2}}\",\"retryOfJobId\":null,\"attempt\":1,\"kind\":\"agent\",\"source\":\"api\",\"runtime\":\"codex\",\"status\":\"queued\",\"mode\":\"plan\",\"cwd\":\"{{PACKAGE_DIR}}\",\"projectId\":\"project-1\",\"chatId\":null,\"subChatId\":null,\"promptPreview\":\"Review this local package.\",\"apiConsumerId\":\"fixture-a\",\"apiConsumerRunId\":\"run-ext-002\",\"artifactBaseDir\":null,\"artifactManifestPath\":null,\"providerProfileId\":null,\"modelOverride\":null,\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"startedAt\":null,\"finishedAt\":null,\"exitCode\":null,\"errorCode\":null,\"errorMessage\":null,\"result\":null,\"workerId\":null,\"workerPid\":null,\"heartbeatAt\":null,\"cancelRequestedAt\":null,\"cancelRequestedBy\":null}}\n",
+          "stderr": ""
+        },
+        {
+          "step": "submit-keyed-replay",
+          "code": 0,
+          "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"idempotentReplay\":true,\"job\":{\"id\":\"{{J2}}\",\"retryOfJobId\":null,\"attempt\":1,\"kind\":\"agent\",\"source\":\"api\",\"runtime\":\"codex\",\"status\":\"queued\",\"mode\":\"plan\",\"cwd\":\"{{PACKAGE_DIR}}\",\"projectId\":\"project-1\",\"chatId\":null,\"subChatId\":null,\"promptPreview\":\"Review this local package.\",\"apiConsumerId\":\"fixture-a\",\"apiConsumerRunId\":\"run-ext-002\",\"artifactBaseDir\":null,\"artifactManifestPath\":null,\"providerProfileId\":null,\"modelOverride\":null,\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"startedAt\":null,\"finishedAt\":null,\"exitCode\":null,\"errorCode\":null,\"errorMessage\":null,\"result\":null,\"workerId\":null,\"workerPid\":null,\"heartbeatAt\":null,\"cancelRequestedAt\":null,\"cancelRequestedBy\":null}}\n",
+          "stderr": ""
+        },
+        {
+          "step": "submit-keyed-conflict",
+          "code": 2,
+          "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"error\":{\"code\":\"idempotency_conflict\",\"message\":\"The idempotency key is already bound to a different request.\"}}\n",
+          "stderr": ""
+        },
+        {
+          "step": "wait-timeout",
+          "code": 9,
+          "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"job\":{\"id\":\"{{J2}}\",\"retryOfJobId\":null,\"attempt\":1,\"kind\":\"agent\",\"source\":\"api\",\"runtime\":\"codex\",\"status\":\"queued\",\"mode\":\"plan\",\"cwd\":\"{{PACKAGE_DIR}}\",\"projectId\":\"project-1\",\"chatId\":null,\"subChatId\":null,\"promptPreview\":\"Review this local package.\",\"apiConsumerId\":\"fixture-a\",\"apiConsumerRunId\":\"run-ext-002\",\"artifactBaseDir\":null,\"artifactManifestPath\":null,\"providerProfileId\":null,\"modelOverride\":null,\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"startedAt\":null,\"finishedAt\":null,\"exitCode\":null,\"errorCode\":null,\"errorMessage\":null,\"result\":null,\"workerId\":null,\"workerPid\":null,\"heartbeatAt\":null,\"cancelRequestedAt\":null,\"cancelRequestedBy\":null},\"wait\":{\"state\":\"timeout\",\"timeoutMs\":1,\"reason\":\"executor_unavailable\"}}\n",
+          "stderr": ""
+        },
+        {
+          "step": "daemon-once",
+          "code": 0,
+          "stdout": "daemon stopped (once); scheduled=0 started=1 completed=1 failed=0 interrupted=0\n",
+          "stderr": "[Daemon] Started local agent daemon pid={{PID}} concurrency=1\n[Daemon] Stopped local agent daemon\n"
+        },
+        {
+          "step": "wait-ready",
+          "code": 0,
+          "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"job\":{\"id\":\"{{J2}}\",\"retryOfJobId\":null,\"attempt\":1,\"kind\":\"agent\",\"source\":\"api\",\"runtime\":\"codex\",\"status\":\"succeeded\",\"mode\":\"plan\",\"cwd\":\"{{PACKAGE_DIR}}\",\"projectId\":\"project-1\",\"chatId\":null,\"subChatId\":null,\"promptPreview\":\"Review this local package.\",\"apiConsumerId\":\"fixture-a\",\"apiConsumerRunId\":\"run-ext-002\",\"artifactBaseDir\":null,\"artifactManifestPath\":null,\"providerProfileId\":null,\"modelOverride\":null,\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"startedAt\":\"2026-10-02T00:00:00.000Z\",\"finishedAt\":\"2026-10-02T00:00:00.000Z\",\"exitCode\":0,\"errorCode\":null,\"errorMessage\":null,\"result\":{\"finalMessage\":\"fixture codex-batch done\",\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}},\"workerId\":\"{{W2}}\",\"workerPid\":{{PID}},\"heartbeatAt\":\"2026-10-02T00:00:00.000Z\",\"cancelRequestedAt\":null,\"cancelRequestedBy\":null},\"result\":{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{J2}}\",\"status\":\"succeeded\",\"runtime\":\"codex\",\"mode\":\"plan\",\"consumer\":{\"id\":\"fixture-a\",\"runExternalId\":\"run-ext-002\"},\"artifactManifestPath\":null,\"artifacts\":[],\"diagnostics\":[],\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null},\"result\":{\"finalMessage\":\"fixture codex-batch done\",\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}}}}\n",
+          "stderr": ""
+        },
+        {
+          "step": "status",
+          "code": 0,
+          "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"job\":{\"id\":\"{{J2}}\",\"retryOfJobId\":null,\"attempt\":1,\"kind\":\"agent\",\"source\":\"api\",\"runtime\":\"codex\",\"status\":\"succeeded\",\"mode\":\"plan\",\"cwd\":\"{{PACKAGE_DIR}}\",\"projectId\":\"project-1\",\"chatId\":null,\"subChatId\":null,\"promptPreview\":\"Review this local package.\",\"apiConsumerId\":\"fixture-a\",\"apiConsumerRunId\":\"run-ext-002\",\"artifactBaseDir\":null,\"artifactManifestPath\":null,\"providerProfileId\":null,\"modelOverride\":null,\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"startedAt\":\"2026-10-02T00:00:00.000Z\",\"finishedAt\":\"2026-10-02T00:00:00.000Z\",\"exitCode\":0,\"errorCode\":null,\"errorMessage\":null,\"result\":{\"finalMessage\":\"fixture codex-batch done\",\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}},\"workerId\":\"{{W2}}\",\"workerPid\":{{PID}},\"heartbeatAt\":\"2026-10-02T00:00:00.000Z\",\"cancelRequestedAt\":null,\"cancelRequestedBy\":null}}\n",
+          "stderr": ""
+        },
+        {
+          "step": "events-after",
+          "code": 0,
+          "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{J2}}\",\"sequence\":3,\"type\":\"status\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"payload\":{\"status\":\"runtime_selected\",\"runtime\":\"codex\",\"label\":\"Codex\",\"source\":\"api\",\"adapterSource\":\"codex-batch\",\"executionProfile\":\"batch\",\"fallbackReason\":null,\"subtype\":\"system_lifecycle\"}}\n{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{J2}}\",\"sequence\":4,\"type\":\"assistant_delta\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"payload\":{\"text\":\"fixture codex-batch response\",\"item\":{\"correlationKey\":\"{{CORR_J2_4}}\",\"channel\":\"assistant\",\"partIndex\":0}}}\n{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{J2}}\",\"sequence\":5,\"type\":\"completed\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"payload\":{\"status\":\"succeeded\",\"evidenceKeys\":[\"policy:no-recorded-denial\",\"record:4\",\"runner-result:finalMessage\",\"postrun:security-cleanup-ok\"],\"exitCode\":0,\"errorCode\":null,\"errorMessage\":null,\"result\":{\"finalMessage\":\"fixture codex-batch done\",\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}}}}\n",
+          "stderr": ""
+        },
+        {
+          "step": "events-follow",
+          "code": 0,
+          "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{J2}}\",\"sequence\":1,\"type\":\"job_created\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"payload\":{\"kind\":\"agent\",\"source\":\"api\",\"runtime\":\"codex\",\"mode\":\"plan\",\"cwd\":\"{{PACKAGE_DIR}}\"}}\n{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{J2}}\",\"sequence\":2,\"type\":\"job_started\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"payload\":{\"workerId\":\"{{W2}}\",\"workerPid\":{{PID}}}}\n{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{J2}}\",\"sequence\":3,\"type\":\"status\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"payload\":{\"status\":\"runtime_selected\",\"runtime\":\"codex\",\"label\":\"Codex\",\"source\":\"api\",\"adapterSource\":\"codex-batch\",\"executionProfile\":\"batch\",\"fallbackReason\":null,\"subtype\":\"system_lifecycle\"}}\n{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{J2}}\",\"sequence\":4,\"type\":\"assistant_delta\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"payload\":{\"text\":\"fixture codex-batch response\",\"item\":{\"correlationKey\":\"{{CORR_J2_4}}\",\"channel\":\"assistant\",\"partIndex\":0}}}\n{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{J2}}\",\"sequence\":5,\"type\":\"completed\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"payload\":{\"status\":\"succeeded\",\"evidenceKeys\":[\"policy:no-recorded-denial\",\"record:4\",\"runner-result:finalMessage\",\"postrun:security-cleanup-ok\"],\"exitCode\":0,\"errorCode\":null,\"errorMessage\":null,\"result\":{\"finalMessage\":\"fixture codex-batch done\",\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}}}}\n",
+          "stderr": ""
+        },
+        {
+          "step": "result",
+          "code": 0,
+          "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{J2}}\",\"status\":\"succeeded\",\"runtime\":\"codex\",\"mode\":\"plan\",\"consumer\":{\"id\":\"fixture-a\",\"runExternalId\":\"run-ext-002\"},\"artifactManifestPath\":null,\"artifacts\":[],\"diagnostics\":[],\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null},\"result\":{\"finalMessage\":\"fixture codex-batch done\",\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}}}\n",
+          "stderr": ""
+        },
+        {
+          "step": "create-claude-policy-grant",
+          "code": 1,
+          "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"job\":{\"id\":\"{{J3}}\",\"retryOfJobId\":null,\"attempt\":1,\"kind\":\"agent\",\"source\":\"api\",\"runtime\":\"claude-code\",\"status\":\"failed\",\"mode\":\"plan\",\"cwd\":\"{{PACKAGE_DIR}}\",\"projectId\":\"project-1\",\"chatId\":null,\"subChatId\":null,\"promptPreview\":\"Review this local package.\",\"apiConsumerId\":\"fixture-a\",\"apiConsumerRunId\":\"run-ext-claude-grant\",\"artifactBaseDir\":null,\"artifactManifestPath\":null,\"providerProfileId\":null,\"modelOverride\":null,\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"startedAt\":\"2026-10-02T00:00:00.000Z\",\"finishedAt\":\"2026-10-02T00:00:00.000Z\",\"exitCode\":1,\"errorCode\":\"policy_grant_adapter_unavailable\",\"errorMessage\":\"Claude Code batch exposes only sandbox-level enforcement for this headless adapter; policy-grant execution requires an app-server admission gate or true pre-execution scope binding before provider work.\",\"result\":{\"value\":null,\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}},\"workerId\":\"{{W3}}\",\"workerPid\":{{PID}},\"heartbeatAt\":\"2026-10-02T00:00:00.000Z\",\"cancelRequestedAt\":null,\"cancelRequestedBy\":null},\"result\":{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{J3}}\",\"status\":\"failed\",\"runtime\":\"claude-code\",\"mode\":\"plan\",\"consumer\":{\"id\":\"fixture-a\",\"runExternalId\":\"run-ext-claude-grant\"},\"artifactManifestPath\":null,\"artifacts\":[],\"diagnostics\":[{\"code\":\"policy_grant_adapter_unavailable\",\"message\":\"Claude Code batch exposes only sandbox-level enforcement for this headless adapter; policy-grant execution requires an app-server admission gate or true pre-execution scope binding before provider work.\"}],\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null},\"result\":{\"value\":null,\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}}}}\n",
+          "stderr": ""
+        },
+        {
+          "step": "events-claude-policy-grant",
+          "code": 0,
+          "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{J3}}\",\"sequence\":1,\"type\":\"job_created\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"payload\":{\"kind\":\"agent\",\"source\":\"api\",\"runtime\":\"claude-code\",\"mode\":\"plan\",\"cwd\":\"{{PACKAGE_DIR}}\"}}\n{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{J3}}\",\"sequence\":2,\"type\":\"job_started\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"payload\":{\"workerId\":\"{{W3}}\",\"workerPid\":{{PID}}}}\n{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{J3}}\",\"sequence\":3,\"type\":\"status\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"payload\":{\"status\":\"runtime_selection_refused\",\"runtime\":\"claude-code\",\"source\":\"api\",\"adapterSource\":\"claude-code-batch\",\"executionProfile\":\"policy-grant\",\"reason\":\"policy_grant_adapter_unavailable\",\"message\":\"Claude Code batch exposes only sandbox-level enforcement for this headless adapter; policy-grant execution requires an app-server admission gate or true pre-execution scope binding before provider work.\",\"errorCode\":\"policy_grant_adapter_unavailable\",\"subtype\":\"system_lifecycle\"}}\n{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{J3}}\",\"sequence\":4,\"type\":\"completed\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"payload\":{\"status\":\"failed\",\"reasons\":[\"output_empty\",\"host_failed\"],\"evidenceKeys\":[\"policy:no-recorded-denial\",\"postrun:security-cleanup-ok\"],\"exitCode\":1,\"errorCode\":\"policy_grant_adapter_unavailable\",\"errorMessage\":\"Claude Code batch exposes only sandbox-level enforcement for this headless adapter; policy-grant execution requires an app-server admission gate or true pre-execution scope binding before provider work.\",\"result\":{\"value\":null,\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}}}}\n",
+          "stderr": ""
+        },
+        {
+          "step": "result-claude-policy-grant",
+          "code": 0,
+          "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{J3}}\",\"status\":\"failed\",\"runtime\":\"claude-code\",\"mode\":\"plan\",\"consumer\":{\"id\":\"fixture-a\",\"runExternalId\":\"run-ext-claude-grant\"},\"artifactManifestPath\":null,\"artifacts\":[],\"diagnostics\":[{\"code\":\"policy_grant_adapter_unavailable\",\"message\":\"Claude Code batch exposes only sandbox-level enforcement for this headless adapter; policy-grant execution requires an app-server admission gate or true pre-execution scope binding before provider work.\"}],\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null},\"result\":{\"value\":null,\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}}}\n",
+          "stderr": ""
+        },
+        {
+          "step": "retry-sync",
+          "code": 1,
+          "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"job\":{\"id\":\"{{J4}}\",\"retryOfJobId\":\"{{J3}}\",\"attempt\":2,\"kind\":\"agent\",\"source\":\"api\",\"runtime\":\"claude-code\",\"status\":\"failed\",\"mode\":\"plan\",\"cwd\":\"{{PACKAGE_DIR}}\",\"projectId\":\"project-1\",\"chatId\":null,\"subChatId\":null,\"promptPreview\":\"Review this local package.\",\"apiConsumerId\":\"fixture-a\",\"apiConsumerRunId\":\"run-ext-claude-grant\",\"artifactBaseDir\":null,\"artifactManifestPath\":null,\"providerProfileId\":null,\"modelOverride\":null,\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"startedAt\":\"2026-10-02T00:00:00.000Z\",\"finishedAt\":\"2026-10-02T00:00:00.000Z\",\"exitCode\":1,\"errorCode\":\"policy_grant_adapter_unavailable\",\"errorMessage\":\"Claude Code batch exposes only sandbox-level enforcement for this headless adapter; policy-grant execution requires an app-server admission gate or true pre-execution scope binding before provider work.\",\"result\":{\"value\":null,\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}},\"workerId\":\"{{W4}}\",\"workerPid\":{{PID}},\"heartbeatAt\":\"2026-10-02T00:00:00.000Z\",\"cancelRequestedAt\":null,\"cancelRequestedBy\":null},\"result\":{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{J4}}\",\"status\":\"failed\",\"runtime\":\"claude-code\",\"mode\":\"plan\",\"consumer\":{\"id\":\"fixture-a\",\"runExternalId\":\"run-ext-claude-grant\"},\"artifactManifestPath\":null,\"artifacts\":[],\"diagnostics\":[{\"code\":\"policy_grant_adapter_unavailable\",\"message\":\"Claude Code batch exposes only sandbox-level enforcement for this headless adapter; policy-grant execution requires an app-server admission gate or true pre-execution scope binding before provider work.\"}],\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null},\"result\":{\"value\":null,\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}}}}\n",
+          "stderr": ""
+        },
+        {
+          "step": "retry-async",
+          "code": 0,
+          "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"job\":{\"id\":\"{{J5}}\",\"retryOfJobId\":\"{{J3}}\",\"attempt\":2,\"kind\":\"agent\",\"source\":\"api\",\"runtime\":\"claude-code\",\"status\":\"queued\",\"mode\":\"plan\",\"cwd\":\"{{PACKAGE_DIR}}\",\"projectId\":\"project-1\",\"chatId\":null,\"subChatId\":null,\"promptPreview\":\"Review this local package.\",\"apiConsumerId\":\"fixture-a\",\"apiConsumerRunId\":\"run-ext-claude-grant\",\"artifactBaseDir\":null,\"artifactManifestPath\":null,\"providerProfileId\":null,\"modelOverride\":null,\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"startedAt\":null,\"finishedAt\":null,\"exitCode\":null,\"errorCode\":null,\"errorMessage\":null,\"result\":null,\"workerId\":null,\"workerPid\":null,\"heartbeatAt\":null,\"cancelRequestedAt\":null,\"cancelRequestedBy\":null}}\n",
+          "stderr": ""
+        },
+        {
+          "step": "cancel",
+          "code": 0,
+          "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"job\":{\"id\":\"{{J5}}\",\"retryOfJobId\":\"{{J3}}\",\"attempt\":2,\"kind\":\"agent\",\"source\":\"api\",\"runtime\":\"claude-code\",\"status\":\"canceled\",\"mode\":\"plan\",\"cwd\":\"{{PACKAGE_DIR}}\",\"projectId\":\"project-1\",\"chatId\":null,\"subChatId\":null,\"promptPreview\":\"Review this local package.\",\"apiConsumerId\":\"fixture-a\",\"apiConsumerRunId\":\"run-ext-claude-grant\",\"artifactBaseDir\":null,\"artifactManifestPath\":null,\"providerProfileId\":null,\"modelOverride\":null,\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"startedAt\":null,\"finishedAt\":\"2026-10-02T00:00:00.000Z\",\"exitCode\":5,\"errorCode\":\"job_canceled\",\"errorMessage\":\"Job was canceled before it started.\",\"result\":null,\"workerId\":null,\"workerPid\":null,\"heartbeatAt\":\"2026-10-02T00:00:00.000Z\",\"cancelRequestedAt\":\"2026-10-02T00:00:00.000Z\",\"cancelRequestedBy\":\"api\"}}\n",
+          "stderr": ""
+        },
+        {
+          "step": "status-canceled",
+          "code": 0,
+          "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"job\":{\"id\":\"{{J5}}\",\"retryOfJobId\":\"{{J3}}\",\"attempt\":2,\"kind\":\"agent\",\"source\":\"api\",\"runtime\":\"claude-code\",\"status\":\"canceled\",\"mode\":\"plan\",\"cwd\":\"{{PACKAGE_DIR}}\",\"projectId\":\"project-1\",\"chatId\":null,\"subChatId\":null,\"promptPreview\":\"Review this local package.\",\"apiConsumerId\":\"fixture-a\",\"apiConsumerRunId\":\"run-ext-claude-grant\",\"artifactBaseDir\":null,\"artifactManifestPath\":null,\"providerProfileId\":null,\"modelOverride\":null,\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"startedAt\":null,\"finishedAt\":\"2026-10-02T00:00:00.000Z\",\"exitCode\":5,\"errorCode\":\"job_canceled\",\"errorMessage\":\"Job was canceled before it started.\",\"result\":null,\"workerId\":null,\"workerPid\":null,\"heartbeatAt\":\"2026-10-02T00:00:00.000Z\",\"cancelRequestedAt\":\"2026-10-02T00:00:00.000Z\",\"cancelRequestedBy\":\"api\"}}\n",
+          "stderr": ""
+        },
+        {
+          "step": "create-fail-closed",
+          "code": 1,
+          "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"job\":{\"id\":\"{{J6}}\",\"retryOfJobId\":null,\"attempt\":1,\"kind\":\"agent\",\"source\":\"api\",\"runtime\":\"codex\",\"status\":\"failed\",\"mode\":\"plan\",\"cwd\":\"{{PACKAGE_DIR}}\",\"projectId\":\"project-1\",\"chatId\":null,\"subChatId\":null,\"promptPreview\":\"Review this local package.\",\"apiConsumerId\":\"fixture-a\",\"apiConsumerRunId\":\"run-ext-fail-closed\",\"artifactBaseDir\":null,\"artifactManifestPath\":null,\"providerProfileId\":null,\"modelOverride\":null,\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"startedAt\":\"2026-10-02T00:00:00.000Z\",\"finishedAt\":\"2026-10-02T00:00:00.000Z\",\"exitCode\":1,\"errorCode\":\"permission_policy_fail_closed\",\"errorMessage\":\"api plan job refused before provider work: policy-grant execution requires bounded scopes that can be decided without a visible user.\",\"result\":{\"value\":null,\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}},\"workerId\":\"{{W5}}\",\"workerPid\":{{PID}},\"heartbeatAt\":\"2026-10-02T00:00:00.000Z\",\"cancelRequestedAt\":null,\"cancelRequestedBy\":null},\"result\":{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{J6}}\",\"status\":\"failed\",\"runtime\":\"codex\",\"mode\":\"plan\",\"consumer\":{\"id\":\"fixture-a\",\"runExternalId\":\"run-ext-fail-closed\"},\"artifactManifestPath\":null,\"artifacts\":[],\"diagnostics\":[{\"code\":\"permission_policy_fail_closed\",\"message\":\"api plan job refused before provider work: policy-grant execution requires bounded scopes that can be decided without a visible user.\"}],\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null},\"result\":{\"value\":null,\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}}}}\n",
+          "stderr": ""
+        },
+        {
+          "step": "events-fail-closed",
+          "code": 0,
+          "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{J6}}\",\"sequence\":1,\"type\":\"job_created\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"payload\":{\"kind\":\"agent\",\"source\":\"api\",\"runtime\":\"codex\",\"mode\":\"plan\",\"cwd\":\"{{PACKAGE_DIR}}\"}}\n{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{J6}}\",\"sequence\":2,\"type\":\"job_started\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"payload\":{\"workerId\":\"{{W5}}\",\"workerPid\":{{PID}}}}\n{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{J6}}\",\"sequence\":3,\"type\":\"status\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"payload\":{\"status\":\"runtime_selection_refused\",\"runtime\":\"codex\",\"source\":\"api\",\"adapterSource\":\"codex-app-server\",\"executionProfile\":\"policy-grant\",\"reason\":\"missing_policy_grant\",\"message\":\"api plan job refused before provider work: policy-grant execution requires bounded scopes that can be decided without a visible user.\",\"errorCode\":\"permission_policy_fail_closed\",\"subtype\":\"system_lifecycle\"}}\n{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{J6}}\",\"sequence\":4,\"type\":\"completed\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"payload\":{\"status\":\"failed\",\"reasons\":[\"output_empty\",\"host_failed\"],\"evidenceKeys\":[\"policy:no-recorded-denial\",\"postrun:security-cleanup-ok\"],\"exitCode\":1,\"errorCode\":\"permission_policy_fail_closed\",\"errorMessage\":\"api plan job refused before provider work: policy-grant execution requires bounded scopes that can be decided without a visible user.\",\"result\":{\"value\":null,\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}}}}\n",
+          "stderr": ""
+        },
+        {
+          "step": "create-codex-policy-grant",
+          "code": 0,
+          "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"job\":{\"id\":\"{{J7}}\",\"retryOfJobId\":null,\"attempt\":1,\"kind\":\"agent\",\"source\":\"api\",\"runtime\":\"codex\",\"status\":\"succeeded\",\"mode\":\"plan\",\"cwd\":\"{{PACKAGE_DIR}}\",\"projectId\":\"project-1\",\"chatId\":null,\"subChatId\":null,\"promptPreview\":\"Review this local package.\",\"apiConsumerId\":\"fixture-a\",\"apiConsumerRunId\":\"run-ext-codex-grant\",\"artifactBaseDir\":null,\"artifactManifestPath\":null,\"providerProfileId\":null,\"modelOverride\":null,\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"startedAt\":\"2026-10-02T00:00:00.000Z\",\"finishedAt\":\"2026-10-02T00:00:00.000Z\",\"exitCode\":0,\"errorCode\":null,\"errorMessage\":null,\"result\":{\"finalMessage\":\"fixture codex-app-server done\",\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}},\"workerId\":\"{{W6}}\",\"workerPid\":{{PID}},\"heartbeatAt\":\"2026-10-02T00:00:00.000Z\",\"cancelRequestedAt\":null,\"cancelRequestedBy\":null},\"result\":{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{J7}}\",\"status\":\"succeeded\",\"runtime\":\"codex\",\"mode\":\"plan\",\"consumer\":{\"id\":\"fixture-a\",\"runExternalId\":\"run-ext-codex-grant\"},\"artifactManifestPath\":null,\"artifacts\":[],\"diagnostics\":[],\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null},\"result\":{\"finalMessage\":\"fixture codex-app-server done\",\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}}}}\n",
+          "stderr": ""
+        },
+        {
+          "step": "events-codex-policy-grant",
+          "code": 0,
+          "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{J7}}\",\"sequence\":1,\"type\":\"job_created\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"payload\":{\"kind\":\"agent\",\"source\":\"api\",\"runtime\":\"codex\",\"mode\":\"plan\",\"cwd\":\"{{PACKAGE_DIR}}\"}}\n{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{J7}}\",\"sequence\":2,\"type\":\"job_started\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"payload\":{\"workerId\":\"{{W6}}\",\"workerPid\":{{PID}}}}\n{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{J7}}\",\"sequence\":3,\"type\":\"status\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"payload\":{\"status\":\"runtime_selected\",\"runtime\":\"codex\",\"label\":\"Codex\",\"source\":\"api\",\"adapterSource\":\"codex-app-server\",\"executionProfile\":\"policy-grant\",\"fallbackReason\":null,\"policyGrantScopeBinding\":\"admission-audit-only\",\"subtype\":\"system_lifecycle\"}}\n{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{J7}}\",\"sequence\":4,\"type\":\"assistant_delta\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"payload\":{\"text\":\"fixture codex-app-server response\",\"item\":{\"correlationKey\":\"{{CORR_J7_4}}\",\"channel\":\"assistant\",\"partIndex\":0}}}\n{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{J7}}\",\"sequence\":5,\"type\":\"completed\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"payload\":{\"status\":\"succeeded\",\"evidenceKeys\":[\"policy:no-recorded-denial\",\"record:4\",\"runner-result:finalMessage\",\"postrun:security-cleanup-ok\"],\"exitCode\":0,\"errorCode\":null,\"errorMessage\":null,\"result\":{\"finalMessage\":\"fixture codex-app-server done\",\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}}}}\n",
+          "stderr": ""
+        },
+        {
+          "step": "create-claude-batch",
+          "code": 0,
+          "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"job\":{\"id\":\"{{J8}}\",\"retryOfJobId\":null,\"attempt\":1,\"kind\":\"agent\",\"source\":\"api\",\"runtime\":\"claude-code\",\"status\":\"succeeded\",\"mode\":\"plan\",\"cwd\":\"{{PACKAGE_DIR}}\",\"projectId\":\"project-1\",\"chatId\":null,\"subChatId\":null,\"promptPreview\":\"Review this local package.\",\"apiConsumerId\":\"fixture-a\",\"apiConsumerRunId\":\"run-ext-claude-batch\",\"artifactBaseDir\":null,\"artifactManifestPath\":null,\"providerProfileId\":null,\"modelOverride\":null,\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"startedAt\":\"2026-10-02T00:00:00.000Z\",\"finishedAt\":\"2026-10-02T00:00:00.000Z\",\"exitCode\":0,\"errorCode\":null,\"errorMessage\":null,\"result\":{\"finalMessage\":\"fixture claude-code-batch done\",\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}},\"workerId\":\"{{W7}}\",\"workerPid\":{{PID}},\"heartbeatAt\":\"2026-10-02T00:00:00.000Z\",\"cancelRequestedAt\":null,\"cancelRequestedBy\":null},\"result\":{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{J8}}\",\"status\":\"succeeded\",\"runtime\":\"claude-code\",\"mode\":\"plan\",\"consumer\":{\"id\":\"fixture-a\",\"runExternalId\":\"run-ext-claude-batch\"},\"artifactManifestPath\":null,\"artifacts\":[],\"diagnostics\":[],\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null},\"result\":{\"finalMessage\":\"fixture claude-code-batch done\",\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}}}}\n",
+          "stderr": ""
+        },
+        {
+          "step": "events-claude-batch",
+          "code": 0,
+          "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{J8}}\",\"sequence\":1,\"type\":\"job_created\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"payload\":{\"kind\":\"agent\",\"source\":\"api\",\"runtime\":\"claude-code\",\"mode\":\"plan\",\"cwd\":\"{{PACKAGE_DIR}}\"}}\n{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{J8}}\",\"sequence\":2,\"type\":\"job_started\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"payload\":{\"workerId\":\"{{W7}}\",\"workerPid\":{{PID}}}}\n{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{J8}}\",\"sequence\":3,\"type\":\"status\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"payload\":{\"status\":\"runtime_selected\",\"runtime\":\"claude-code\",\"label\":\"Claude Code\",\"source\":\"api\",\"adapterSource\":\"claude-code-batch\",\"executionProfile\":\"batch\",\"fallbackReason\":null,\"subtype\":\"system_lifecycle\"}}\n{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{J8}}\",\"sequence\":4,\"type\":\"assistant_delta\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"payload\":{\"text\":\"fixture claude-code-batch response\",\"item\":{\"correlationKey\":\"{{CORR_J8_4}}\",\"channel\":\"assistant\",\"partIndex\":0}}}\n{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{J8}}\",\"sequence\":5,\"type\":\"completed\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"payload\":{\"status\":\"succeeded\",\"evidenceKeys\":[\"policy:no-recorded-denial\",\"record:4\",\"runner-result:finalMessage\",\"postrun:security-cleanup-ok\"],\"exitCode\":0,\"errorCode\":null,\"errorMessage\":null,\"result\":{\"finalMessage\":\"fixture claude-code-batch done\",\"resolvedProvider\":{\"source\":\"native\",\"profileId\":null,\"model\":null}}}}\n",
+          "stderr": ""
+        }
+      ],
+      "leafCalls": [
+        {
+          "leaf": "codex-batch",
+          "jobId": "{{J1}}",
+          "runtimeId": "codex",
+          "source": "api",
+          "mode": "plan",
+          "executionProfile": "batch",
+          "permissionPolicyKind": "headless-batch"
+        },
+        {
+          "leaf": "codex-batch",
+          "jobId": "{{J2}}",
+          "runtimeId": "codex",
+          "source": "api",
+          "mode": "plan",
+          "executionProfile": "batch",
+          "permissionPolicyKind": "headless-batch"
+        },
+        {
+          "leaf": "codex-app-server",
+          "jobId": "{{J7}}",
+          "runtimeId": "codex",
+          "source": "api",
+          "mode": "plan",
+          "executionProfile": "policy-grant",
+          "permissionPolicyKind": "policy-grant"
+        },
+        {
+          "leaf": "claude-code-batch",
+          "jobId": "{{J8}}",
+          "runtimeId": "claude-code",
+          "source": "api",
+          "mode": "plan",
+          "executionProfile": "batch",
+          "permissionPolicyKind": "headless-batch"
+        }
+      ],
+      "fetchCalls": 0
+    },
+    "completion": {
+      "steps": [
+        {
+          "step": "create-completion",
+          "code": 0,
+          "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"job\":{\"id\":\"{{J1}}\",\"retryOfJobId\":null,\"attempt\":1,\"kind\":\"completion\",\"source\":\"api\",\"runtime\":\"codex\",\"status\":\"succeeded\",\"mode\":\"agent\",\"cwd\":\"{{PROCESS_CWD}}\",\"projectId\":null,\"chatId\":null,\"subChatId\":null,\"promptPreview\":\"Return the fixture summary.\",\"apiConsumerId\":\"fixture-a\",\"apiConsumerRunId\":\"completion-ext-001\",\"artifactBaseDir\":null,\"artifactManifestPath\":null,\"providerProfileId\":\"completion-main\",\"modelOverride\":\"provider-model\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"startedAt\":\"2026-10-02T00:00:00.000Z\",\"finishedAt\":\"2026-10-02T00:00:00.000Z\",\"exitCode\":0,\"errorCode\":null,\"errorMessage\":null,\"result\":{\"content\":{\"summary\":\"fixture\"},\"usage\":{\"inputTokens\":11,\"outputTokens\":5},\"resolvedProvider\":{\"source\":\"request-profile\",\"profileId\":\"completion-main\",\"model\":\"provider-model\"}},\"workerId\":\"{{W1}}\",\"workerPid\":{{PID}},\"heartbeatAt\":\"2026-10-02T00:00:00.000Z\",\"cancelRequestedAt\":null,\"cancelRequestedBy\":null},\"result\":{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{J1}}\",\"status\":\"succeeded\",\"runtime\":\"codex\",\"mode\":\"agent\",\"consumer\":{\"id\":\"fixture-a\",\"runExternalId\":\"completion-ext-001\"},\"artifactManifestPath\":null,\"artifacts\":[],\"diagnostics\":[],\"resolvedProvider\":{\"source\":\"request-profile\",\"profileId\":\"completion-main\",\"model\":\"provider-model\"},\"result\":{\"content\":{\"summary\":\"fixture\"},\"usage\":{\"inputTokens\":11,\"outputTokens\":5},\"resolvedProvider\":{\"source\":\"request-profile\",\"profileId\":\"completion-main\",\"model\":\"provider-model\"}}}}\n",
+          "stderr": ""
+        },
+        {
+          "step": "submit-completion-keyed",
+          "code": 0,
+          "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"job\":{\"id\":\"{{J2}}\",\"retryOfJobId\":null,\"attempt\":1,\"kind\":\"completion\",\"source\":\"api\",\"runtime\":\"codex\",\"status\":\"queued\",\"mode\":\"agent\",\"cwd\":\"{{PROCESS_CWD}}\",\"projectId\":null,\"chatId\":null,\"subChatId\":null,\"promptPreview\":\"Return the fixture summary.\",\"apiConsumerId\":\"fixture-a\",\"apiConsumerRunId\":\"completion-ext-002\",\"artifactBaseDir\":null,\"artifactManifestPath\":null,\"providerProfileId\":\"completion-main\",\"modelOverride\":\"provider-model\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"startedAt\":null,\"finishedAt\":null,\"exitCode\":null,\"errorCode\":null,\"errorMessage\":null,\"result\":null,\"workerId\":null,\"workerPid\":null,\"heartbeatAt\":null,\"cancelRequestedAt\":null,\"cancelRequestedBy\":null}}\n",
+          "stderr": ""
+        },
+        {
+          "step": "submit-completion-replay",
+          "code": 0,
+          "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"idempotentReplay\":true,\"job\":{\"id\":\"{{J2}}\",\"retryOfJobId\":null,\"attempt\":1,\"kind\":\"completion\",\"source\":\"api\",\"runtime\":\"codex\",\"status\":\"queued\",\"mode\":\"agent\",\"cwd\":\"{{PROCESS_CWD}}\",\"projectId\":null,\"chatId\":null,\"subChatId\":null,\"promptPreview\":\"Return the fixture summary.\",\"apiConsumerId\":\"fixture-a\",\"apiConsumerRunId\":\"completion-ext-002\",\"artifactBaseDir\":null,\"artifactManifestPath\":null,\"providerProfileId\":\"completion-main\",\"modelOverride\":\"provider-model\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"startedAt\":null,\"finishedAt\":null,\"exitCode\":null,\"errorCode\":null,\"errorMessage\":null,\"result\":null,\"workerId\":null,\"workerPid\":null,\"heartbeatAt\":null,\"cancelRequestedAt\":null,\"cancelRequestedBy\":null}}\n",
+          "stderr": ""
+        },
+        {
+          "step": "submit-completion-conflict",
+          "code": 2,
+          "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"error\":{\"code\":\"idempotency_conflict\",\"message\":\"The idempotency key is already bound to a different request.\"}}\n",
+          "stderr": ""
+        },
+        {
+          "step": "wait-completion-timeout",
+          "code": 9,
+          "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"job\":{\"id\":\"{{J2}}\",\"retryOfJobId\":null,\"attempt\":1,\"kind\":\"completion\",\"source\":\"api\",\"runtime\":\"codex\",\"status\":\"queued\",\"mode\":\"agent\",\"cwd\":\"{{PROCESS_CWD}}\",\"projectId\":null,\"chatId\":null,\"subChatId\":null,\"promptPreview\":\"Return the fixture summary.\",\"apiConsumerId\":\"fixture-a\",\"apiConsumerRunId\":\"completion-ext-002\",\"artifactBaseDir\":null,\"artifactManifestPath\":null,\"providerProfileId\":\"completion-main\",\"modelOverride\":\"provider-model\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"startedAt\":null,\"finishedAt\":null,\"exitCode\":null,\"errorCode\":null,\"errorMessage\":null,\"result\":null,\"workerId\":null,\"workerPid\":null,\"heartbeatAt\":null,\"cancelRequestedAt\":null,\"cancelRequestedBy\":null},\"wait\":{\"state\":\"timeout\",\"timeoutMs\":1,\"reason\":\"executor_unavailable\"}}\n",
+          "stderr": ""
+        },
+        {
+          "step": "daemon-once",
+          "code": 0,
+          "stdout": "daemon stopped (once); scheduled=0 started=1 completed=1 failed=0 interrupted=0\n",
+          "stderr": "[Daemon] Started local agent daemon pid={{PID}} concurrency=1\n[Daemon] Stopped local agent daemon\n"
+        },
+        {
+          "step": "wait-completion-ready",
+          "code": 0,
+          "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"job\":{\"id\":\"{{J2}}\",\"retryOfJobId\":null,\"attempt\":1,\"kind\":\"completion\",\"source\":\"api\",\"runtime\":\"codex\",\"status\":\"succeeded\",\"mode\":\"agent\",\"cwd\":\"{{PROCESS_CWD}}\",\"projectId\":null,\"chatId\":null,\"subChatId\":null,\"promptPreview\":\"Return the fixture summary.\",\"apiConsumerId\":\"fixture-a\",\"apiConsumerRunId\":\"completion-ext-002\",\"artifactBaseDir\":null,\"artifactManifestPath\":null,\"providerProfileId\":\"completion-main\",\"modelOverride\":\"provider-model\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"startedAt\":\"2026-10-02T00:00:00.000Z\",\"finishedAt\":\"2026-10-02T00:00:00.000Z\",\"exitCode\":0,\"errorCode\":null,\"errorMessage\":null,\"result\":{\"content\":{\"summary\":\"fixture\"},\"usage\":{\"inputTokens\":11,\"outputTokens\":5},\"resolvedProvider\":{\"source\":\"request-profile\",\"profileId\":\"completion-main\",\"model\":\"provider-model\"}},\"workerId\":\"{{W2}}\",\"workerPid\":{{PID}},\"heartbeatAt\":\"2026-10-02T00:00:00.000Z\",\"cancelRequestedAt\":null,\"cancelRequestedBy\":null},\"result\":{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{J2}}\",\"status\":\"succeeded\",\"runtime\":\"codex\",\"mode\":\"agent\",\"consumer\":{\"id\":\"fixture-a\",\"runExternalId\":\"completion-ext-002\"},\"artifactManifestPath\":null,\"artifacts\":[],\"diagnostics\":[],\"resolvedProvider\":{\"source\":\"request-profile\",\"profileId\":\"completion-main\",\"model\":\"provider-model\"},\"result\":{\"content\":{\"summary\":\"fixture\"},\"usage\":{\"inputTokens\":11,\"outputTokens\":5},\"resolvedProvider\":{\"source\":\"request-profile\",\"profileId\":\"completion-main\",\"model\":\"provider-model\"}}}}\n",
+          "stderr": ""
+        },
+        {
+          "step": "status-completion",
+          "code": 0,
+          "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"job\":{\"id\":\"{{J2}}\",\"retryOfJobId\":null,\"attempt\":1,\"kind\":\"completion\",\"source\":\"api\",\"runtime\":\"codex\",\"status\":\"succeeded\",\"mode\":\"agent\",\"cwd\":\"{{PROCESS_CWD}}\",\"projectId\":null,\"chatId\":null,\"subChatId\":null,\"promptPreview\":\"Return the fixture summary.\",\"apiConsumerId\":\"fixture-a\",\"apiConsumerRunId\":\"completion-ext-002\",\"artifactBaseDir\":null,\"artifactManifestPath\":null,\"providerProfileId\":\"completion-main\",\"modelOverride\":\"provider-model\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"startedAt\":\"2026-10-02T00:00:00.000Z\",\"finishedAt\":\"2026-10-02T00:00:00.000Z\",\"exitCode\":0,\"errorCode\":null,\"errorMessage\":null,\"result\":{\"content\":{\"summary\":\"fixture\"},\"usage\":{\"inputTokens\":11,\"outputTokens\":5},\"resolvedProvider\":{\"source\":\"request-profile\",\"profileId\":\"completion-main\",\"model\":\"provider-model\"}},\"workerId\":\"{{W2}}\",\"workerPid\":{{PID}},\"heartbeatAt\":\"2026-10-02T00:00:00.000Z\",\"cancelRequestedAt\":null,\"cancelRequestedBy\":null}}\n",
+          "stderr": ""
+        },
+        {
+          "step": "events-completion-after",
+          "code": 0,
+          "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{J2}}\",\"sequence\":2,\"type\":\"job_started\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"payload\":{\"workerId\":\"{{W2}}\",\"workerPid\":{{PID}}}}\n{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{J2}}\",\"sequence\":3,\"type\":\"usage_update\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"payload\":{\"usage\":{\"inputTokens\":11,\"outputTokens\":5},\"resolvedProvider\":{\"source\":\"request-profile\",\"profileId\":\"completion-main\",\"model\":\"provider-model\"},\"kind\":\"snapshot\",\"total\":{\"inputTokens\":11,\"outputTokens\":5},\"last\":{\"inputTokens\":11,\"outputTokens\":5},\"delta\":{\"inputTokens\":11,\"outputTokens\":5},\"dedupeKey\":\"observation:168470ac67170ea905c30c49\",\"asOfSequence\":3}}\n{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{J2}}\",\"sequence\":4,\"type\":\"completed\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"payload\":{\"status\":\"succeeded\",\"evidenceKeys\":[\"policy:provider-only\",\"completion:content\",\"postrun:provider-only\"],\"exitCode\":0,\"errorCode\":null,\"errorMessage\":null,\"result\":{\"content\":{\"summary\":\"fixture\"},\"usage\":{\"inputTokens\":11,\"outputTokens\":5},\"resolvedProvider\":{\"source\":\"request-profile\",\"profileId\":\"completion-main\",\"model\":\"provider-model\"}}}}\n",
+          "stderr": ""
+        },
+        {
+          "step": "events-completion-follow",
+          "code": 0,
+          "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{J2}}\",\"sequence\":1,\"type\":\"job_created\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"payload\":{\"kind\":\"completion\",\"source\":\"api\",\"runtime\":\"codex\",\"mode\":\"agent\",\"cwd\":\"{{PROCESS_CWD}}\"}}\n{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{J2}}\",\"sequence\":2,\"type\":\"job_started\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"payload\":{\"workerId\":\"{{W2}}\",\"workerPid\":{{PID}}}}\n{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{J2}}\",\"sequence\":3,\"type\":\"usage_update\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"payload\":{\"usage\":{\"inputTokens\":11,\"outputTokens\":5},\"resolvedProvider\":{\"source\":\"request-profile\",\"profileId\":\"completion-main\",\"model\":\"provider-model\"},\"kind\":\"snapshot\",\"total\":{\"inputTokens\":11,\"outputTokens\":5},\"last\":{\"inputTokens\":11,\"outputTokens\":5},\"delta\":{\"inputTokens\":11,\"outputTokens\":5},\"dedupeKey\":\"observation:168470ac67170ea905c30c49\",\"asOfSequence\":3}}\n{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{J2}}\",\"sequence\":4,\"type\":\"completed\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"payload\":{\"status\":\"succeeded\",\"evidenceKeys\":[\"policy:provider-only\",\"completion:content\",\"postrun:provider-only\"],\"exitCode\":0,\"errorCode\":null,\"errorMessage\":null,\"result\":{\"content\":{\"summary\":\"fixture\"},\"usage\":{\"inputTokens\":11,\"outputTokens\":5},\"resolvedProvider\":{\"source\":\"request-profile\",\"profileId\":\"completion-main\",\"model\":\"provider-model\"}}}}\n",
+          "stderr": ""
+        },
+        {
+          "step": "result-completion",
+          "code": 0,
+          "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{J2}}\",\"status\":\"succeeded\",\"runtime\":\"codex\",\"mode\":\"agent\",\"consumer\":{\"id\":\"fixture-a\",\"runExternalId\":\"completion-ext-002\"},\"artifactManifestPath\":null,\"artifacts\":[],\"diagnostics\":[],\"resolvedProvider\":{\"source\":\"request-profile\",\"profileId\":\"completion-main\",\"model\":\"provider-model\"},\"result\":{\"content\":{\"summary\":\"fixture\"},\"usage\":{\"inputTokens\":11,\"outputTokens\":5},\"resolvedProvider\":{\"source\":\"request-profile\",\"profileId\":\"completion-main\",\"model\":\"provider-model\"}}}\n",
+          "stderr": ""
+        },
+        {
+          "step": "create-completion-upstream-failure",
+          "code": 1,
+          "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"job\":{\"id\":\"{{J3}}\",\"retryOfJobId\":null,\"attempt\":1,\"kind\":\"completion\",\"source\":\"api\",\"runtime\":\"codex\",\"status\":\"failed\",\"mode\":\"agent\",\"cwd\":\"{{PROCESS_CWD}}\",\"projectId\":null,\"chatId\":null,\"subChatId\":null,\"promptPreview\":\"FAIL_UPSTREAM fixture request.\",\"apiConsumerId\":\"fixture-a\",\"apiConsumerRunId\":\"completion-ext-fail\",\"artifactBaseDir\":null,\"artifactManifestPath\":null,\"providerProfileId\":\"completion-main\",\"modelOverride\":\"provider-model\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"startedAt\":\"2026-10-02T00:00:00.000Z\",\"finishedAt\":\"2026-10-02T00:00:00.000Z\",\"exitCode\":1,\"errorCode\":\"provider_request_failed\",\"errorMessage\":\"Provider request failed with status 500: {\\\"error\\\":{\\\"message\\\":\\\"fixture\\\"}}\",\"result\":null,\"workerId\":\"{{W3}}\",\"workerPid\":{{PID}},\"heartbeatAt\":\"2026-10-02T00:00:00.000Z\",\"cancelRequestedAt\":null,\"cancelRequestedBy\":null},\"result\":{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{J3}}\",\"status\":\"failed\",\"runtime\":\"codex\",\"mode\":\"agent\",\"consumer\":{\"id\":\"fixture-a\",\"runExternalId\":\"completion-ext-fail\"},\"artifactManifestPath\":null,\"artifacts\":[],\"diagnostics\":[{\"code\":\"provider_request_failed\",\"message\":\"Provider request failed with status 500: {\\\"error\\\":{\\\"message\\\":\\\"fixture\\\"}}\"}],\"resolvedProvider\":{\"source\":\"request-profile\",\"profileId\":\"completion-main\",\"model\":\"provider-model\"},\"result\":null}}\n",
+          "stderr": ""
+        },
+        {
+          "step": "retry-completion-sync",
+          "code": 1,
+          "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"job\":{\"id\":\"{{J4}}\",\"retryOfJobId\":\"{{J3}}\",\"attempt\":2,\"kind\":\"completion\",\"source\":\"api\",\"runtime\":\"codex\",\"status\":\"failed\",\"mode\":\"agent\",\"cwd\":\"{{PROCESS_CWD}}\",\"projectId\":null,\"chatId\":null,\"subChatId\":null,\"promptPreview\":\"FAIL_UPSTREAM fixture request.\",\"apiConsumerId\":\"fixture-a\",\"apiConsumerRunId\":\"completion-ext-fail\",\"artifactBaseDir\":null,\"artifactManifestPath\":null,\"providerProfileId\":\"completion-main\",\"modelOverride\":\"provider-model\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"startedAt\":\"2026-10-02T00:00:00.000Z\",\"finishedAt\":\"2026-10-02T00:00:00.000Z\",\"exitCode\":1,\"errorCode\":\"provider_request_failed\",\"errorMessage\":\"Provider request failed with status 500: {\\\"error\\\":{\\\"message\\\":\\\"fixture\\\"}}\",\"result\":null,\"workerId\":\"{{W4}}\",\"workerPid\":{{PID}},\"heartbeatAt\":\"2026-10-02T00:00:00.000Z\",\"cancelRequestedAt\":null,\"cancelRequestedBy\":null},\"result\":{\"apiVersion\":\"locus.local-job.v1\",\"jobId\":\"{{J4}}\",\"status\":\"failed\",\"runtime\":\"codex\",\"mode\":\"agent\",\"consumer\":{\"id\":\"fixture-a\",\"runExternalId\":\"completion-ext-fail\"},\"artifactManifestPath\":null,\"artifacts\":[],\"diagnostics\":[{\"code\":\"provider_request_failed\",\"message\":\"Provider request failed with status 500: {\\\"error\\\":{\\\"message\\\":\\\"fixture\\\"}}\"}],\"resolvedProvider\":{\"source\":\"request-profile\",\"profileId\":\"completion-main\",\"model\":\"provider-model\"},\"result\":null}}\n",
+          "stderr": ""
+        },
+        {
+          "step": "retry-completion-async",
+          "code": 0,
+          "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"job\":{\"id\":\"{{J5}}\",\"retryOfJobId\":\"{{J3}}\",\"attempt\":2,\"kind\":\"completion\",\"source\":\"api\",\"runtime\":\"codex\",\"status\":\"queued\",\"mode\":\"agent\",\"cwd\":\"{{PROCESS_CWD}}\",\"projectId\":null,\"chatId\":null,\"subChatId\":null,\"promptPreview\":\"FAIL_UPSTREAM fixture request.\",\"apiConsumerId\":\"fixture-a\",\"apiConsumerRunId\":\"completion-ext-fail\",\"artifactBaseDir\":null,\"artifactManifestPath\":null,\"providerProfileId\":\"completion-main\",\"modelOverride\":\"provider-model\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"startedAt\":null,\"finishedAt\":null,\"exitCode\":null,\"errorCode\":null,\"errorMessage\":null,\"result\":null,\"workerId\":null,\"workerPid\":null,\"heartbeatAt\":null,\"cancelRequestedAt\":null,\"cancelRequestedBy\":null}}\n",
+          "stderr": ""
+        },
+        {
+          "step": "cancel-completion",
+          "code": 0,
+          "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"job\":{\"id\":\"{{J5}}\",\"retryOfJobId\":\"{{J3}}\",\"attempt\":2,\"kind\":\"completion\",\"source\":\"api\",\"runtime\":\"codex\",\"status\":\"canceled\",\"mode\":\"agent\",\"cwd\":\"{{PROCESS_CWD}}\",\"projectId\":null,\"chatId\":null,\"subChatId\":null,\"promptPreview\":\"FAIL_UPSTREAM fixture request.\",\"apiConsumerId\":\"fixture-a\",\"apiConsumerRunId\":\"completion-ext-fail\",\"artifactBaseDir\":null,\"artifactManifestPath\":null,\"providerProfileId\":\"completion-main\",\"modelOverride\":\"provider-model\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"startedAt\":null,\"finishedAt\":\"2026-10-02T00:00:00.000Z\",\"exitCode\":5,\"errorCode\":\"job_canceled\",\"errorMessage\":\"Job was canceled before it started.\",\"result\":null,\"workerId\":null,\"workerPid\":null,\"heartbeatAt\":\"2026-10-02T00:00:00.000Z\",\"cancelRequestedAt\":\"2026-10-02T00:00:00.000Z\",\"cancelRequestedBy\":\"api\"}}\n",
+          "stderr": ""
+        },
+        {
+          "step": "status-completion-canceled",
+          "code": 0,
+          "stdout": "{\"apiVersion\":\"locus.local-job.v1\",\"job\":{\"id\":\"{{J5}}\",\"retryOfJobId\":\"{{J3}}\",\"attempt\":2,\"kind\":\"completion\",\"source\":\"api\",\"runtime\":\"codex\",\"status\":\"canceled\",\"mode\":\"agent\",\"cwd\":\"{{PROCESS_CWD}}\",\"projectId\":null,\"chatId\":null,\"subChatId\":null,\"promptPreview\":\"FAIL_UPSTREAM fixture request.\",\"apiConsumerId\":\"fixture-a\",\"apiConsumerRunId\":\"completion-ext-fail\",\"artifactBaseDir\":null,\"artifactManifestPath\":null,\"providerProfileId\":\"completion-main\",\"modelOverride\":\"provider-model\",\"createdAt\":\"2026-10-02T00:00:00.000Z\",\"startedAt\":null,\"finishedAt\":\"2026-10-02T00:00:00.000Z\",\"exitCode\":5,\"errorCode\":\"job_canceled\",\"errorMessage\":\"Job was canceled before it started.\",\"result\":null,\"workerId\":null,\"workerPid\":null,\"heartbeatAt\":\"2026-10-02T00:00:00.000Z\",\"cancelRequestedAt\":\"2026-10-02T00:00:00.000Z\",\"cancelRequestedBy\":\"api\"}}\n",
+          "stderr": ""
+        }
+      ],
+      "leafCalls": [],
+      "fetchCalls": 4
+    },
+    "internal": {
+      "cases": {
+        "interactiveCodex": {
+          "runtime": "codex",
+          "mode": "agent",
+          "executionProfile": "interactive",
+          "hasVisibleUserInteractionChannel": true
+        },
+        "interactiveClaude": {
+          "runtime": "claude-code",
+          "mode": "agent",
+          "executionProfile": "interactive",
+          "hasVisibleUserInteractionChannel": true
+        },
+        "selectedCodexBatch": {
+          "runtime": "codex",
+          "mode": "plan",
+          "executionProfile": "batch"
+        },
+        "selectedCodexGrant": {
+          "runtime": "codex",
+          "mode": "plan",
+          "executionProfile": "policy-grant",
+          "policyGrant": {
+            "scopes": ["repo.read"]
+          }
+        },
+        "refusedClaudeGrant": {
+          "runtime": "claude-code",
+          "mode": "plan",
+          "executionProfile": "policy-grant",
+          "policyGrant": {
+            "scopes": ["repo.read"]
+          }
+        }
+      },
+      "oracles": {
+        "interactiveCodex": {
+          "events": [
+            {
+              "type": "status",
+              "payload": {
+                "status": "runtime_selection_refused",
+                "runtime": "codex",
+                "source": "api",
+                "adapterSource": "codex-batch",
+                "executionProfile": "interactive",
+                "reason": "interactive_channel_required",
+                "message": "Interactive runtime execution requires a visible user interaction channel.",
+                "errorCode": "interactive_channel_required"
+              }
+            }
+          ],
+          "result": {
+            "status": "failed",
+            "exitCode": 1,
+            "errorCode": "interactive_channel_required",
+            "errorMessage": "Interactive runtime execution requires a visible user interaction channel."
+          },
+          "leafCalls": []
+        },
+        "interactiveClaude": {
+          "events": [
+            {
+              "type": "status",
+              "payload": {
+                "status": "runtime_selection_refused",
+                "runtime": "claude-code",
+                "source": "api",
+                "adapterSource": "claude-code-batch",
+                "executionProfile": "interactive",
+                "reason": "interactive_channel_required",
+                "message": "Interactive runtime execution requires a visible user interaction channel.",
+                "errorCode": "interactive_channel_required"
+              }
+            }
+          ],
+          "result": {
+            "status": "failed",
+            "exitCode": 1,
+            "errorCode": "interactive_channel_required",
+            "errorMessage": "Interactive runtime execution requires a visible user interaction channel."
+          },
+          "leafCalls": []
+        },
+        "selectedCodexBatch": {
+          "events": [
+            {
+              "type": "status",
+              "payload": {
+                "status": "runtime_selected",
+                "runtime": "codex",
+                "label": "Codex",
+                "source": "api",
+                "adapterSource": "codex-batch",
+                "executionProfile": "batch",
+                "fallbackReason": null
+              }
+            },
+            {
+              "type": "assistant_delta",
+              "payload": {
+                "text": "fixture codex-batch response"
+              }
+            }
+          ],
+          "result": {
+            "status": "succeeded",
+            "exitCode": 0,
+            "result": {
+              "finalMessage": "fixture codex-batch done"
+            }
+          },
+          "leafCalls": [
+            {
+              "leaf": "codex-batch",
+              "jobId": "s-direct-job",
+              "runtimeId": "codex",
+              "source": "api",
+              "mode": "plan",
+              "executionProfile": "batch",
+              "permissionPolicyKind": "headless-batch"
+            }
+          ]
+        },
+        "selectedCodexGrant": {
+          "events": [
+            {
+              "type": "status",
+              "payload": {
+                "status": "runtime_selected",
+                "runtime": "codex",
+                "label": "Codex",
+                "source": "api",
+                "adapterSource": "codex-app-server",
+                "executionProfile": "policy-grant",
+                "fallbackReason": null,
+                "policyGrantScopeBinding": "admission-audit-only"
+              }
+            },
+            {
+              "type": "assistant_delta",
+              "payload": {
+                "text": "fixture codex-app-server response"
+              }
+            }
+          ],
+          "result": {
+            "status": "succeeded",
+            "exitCode": 0,
+            "result": {
+              "finalMessage": "fixture codex-app-server done"
+            }
+          },
+          "leafCalls": [
+            {
+              "leaf": "codex-app-server",
+              "jobId": "s-direct-job",
+              "runtimeId": "codex",
+              "source": "api",
+              "mode": "plan",
+              "executionProfile": "policy-grant",
+              "permissionPolicyKind": "policy-grant"
+            }
+          ]
+        },
+        "refusedClaudeGrant": {
+          "events": [
+            {
+              "type": "status",
+              "payload": {
+                "status": "runtime_selection_refused",
+                "runtime": "claude-code",
+                "source": "api",
+                "adapterSource": "claude-code-batch",
+                "executionProfile": "policy-grant",
+                "reason": "policy_grant_adapter_unavailable",
+                "message": "Claude Code batch exposes only sandbox-level enforcement for this headless adapter; policy-grant execution requires an app-server admission gate or true pre-execution scope binding before provider work.",
+                "errorCode": "policy_grant_adapter_unavailable"
+              }
+            }
+          ],
+          "result": {
+            "status": "failed",
+            "exitCode": 1,
+            "errorCode": "policy_grant_adapter_unavailable",
+            "errorMessage": "Claude Code batch exposes only sandbox-level enforcement for this headless adapter; policy-grant execution requires an app-server admission gate or true pre-execution scope binding before provider work."
+          },
+          "leafCalls": []
+        }
+      }
+    }
+  }
+}

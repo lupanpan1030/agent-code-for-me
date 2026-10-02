@@ -1,10 +1,11 @@
 import { describe, expect, mock, test } from "bun:test"
-import type { AgentRuntimeCapabilityId } from "../src/shared/agent-runtime-capabilities"
 import {
-  createAgentRuntimeRunRequest,
   type AgentRuntimeObserver,
+  type AgentRuntimeRunRequest,
   type CreateAgentRuntimeRunRequestInput,
+  createAgentRuntimeRunRequest,
 } from "../src/main/lib/headless/agent-runtime-contract"
+import type { AgentRuntimeCapabilityId } from "../src/shared/agent-runtime-capabilities"
 
 const adapterRunCalls = {
   codex: 0,
@@ -48,10 +49,17 @@ mock.module("../src/main/lib/headless/adapters/claude-code", () => ({
   },
 }))
 
-const { selectAgentRuntimeAdapter } = await import(
-  "../src/main/lib/headless/adapter-selector"
+const { resolveRuntimeRoute } = await import(
+  "../src/main/lib/agent-runtime/runtime-route-catalog"
 )
-const { runAgentTask } = await import("../src/main/lib/headless/agent-runtime")
+const { agentTaskRouteQuery, runAgentTask } = await import(
+  "../src/main/lib/headless/agent-runtime"
+)
+
+/** The route query runAgentTask derives from a headless request. */
+function selectRoute(runRequest: AgentRuntimeRunRequest) {
+  return resolveRuntimeRoute(agentTaskRouteQuery(runRequest))
+}
 
 const baseInput = {
   jobId: "job-selector",
@@ -95,7 +103,9 @@ function observer() {
       }
     },
     heartbeat() {
-      return { id: "job-selector", status: "running" } as any
+      return { id: "job-selector", status: "running" } as unknown as ReturnType<
+        AgentRuntimeObserver["heartbeat"]
+      >
     },
     isCancelRequested() {
       return false
@@ -104,25 +114,20 @@ function observer() {
   return { observer: nextObserver, events }
 }
 
-describe("headless adapter selector", () => {
+describe("headless route selection through the runtime route catalog", () => {
   test("selects Codex batch for Local Job API runs by default", () => {
-    const selection = selectAgentRuntimeAdapter(
-      request({ runtime: "codex", source: "api" }),
-    )
+    const selection = selectRoute(request({ runtime: "codex", source: "api" }))
 
     expect(selection).toMatchObject({
       ok: true,
-      adapter: {
-        id: "codex",
-        sourceId: "codex-batch",
-        executionProfile: "batch",
-        requiresInteraction: false,
-        policyGrantEnforcement: "sandbox-level",
-      },
+      runtimeId: "codex",
+      entry: "api",
+      executionSurface: "headless-exec",
+      adapterSource: "codex-batch",
+      enforcementEvidence: "sandbox-level",
       diagnostic: {
         status: "selected",
         runtime: "codex",
-        source: "api",
         adapterSource: "codex-batch",
         executionProfile: "batch",
         fallbackReason: null,
@@ -131,7 +136,7 @@ describe("headless adapter selector", () => {
   })
 
   test("selects Codex app-server only for explicit policy-grant runs", () => {
-    const selection = selectAgentRuntimeAdapter(
+    const selection = selectRoute(
       request({
         runtime: "codex",
         source: "api",
@@ -144,17 +149,13 @@ describe("headless adapter selector", () => {
 
     expect(selection).toMatchObject({
       ok: true,
-      adapter: {
-        id: "codex",
-        sourceId: "codex-app-server",
-        executionProfile: "policy-grant",
-        requiresInteraction: false,
-        policyGrantEnforcement: "admission-audit",
-      },
+      runtimeId: "codex",
+      executionSurface: "headless-app-server",
+      adapterSource: "codex-app-server",
+      enforcementEvidence: "admission-audit",
       diagnostic: {
         status: "selected",
         runtime: "codex",
-        source: "api",
         adapterSource: "codex-app-server",
         executionProfile: "policy-grant",
         fallbackReason: null,
@@ -208,23 +209,20 @@ describe("headless adapter selector", () => {
   })
 
   test("selects Claude batch for daemon runs by default", () => {
-    const selection = selectAgentRuntimeAdapter(
+    const selection = selectRoute(
       request({ runtime: "claude-code", source: "daemon" }),
     )
 
     expect(selection).toMatchObject({
       ok: true,
-      adapter: {
-        id: "claude-code",
-        sourceId: "claude-code-batch",
-        executionProfile: "batch",
-        requiresInteraction: false,
-        policyGrantEnforcement: "sandbox-level",
-      },
+      runtimeId: "claude-code",
+      entry: "headless",
+      executionSurface: "headless-exec",
+      adapterSource: "claude-code-batch",
+      enforcementEvidence: "sandbox-level",
       diagnostic: {
         status: "selected",
         runtime: "claude-code",
-        source: "daemon",
         adapterSource: "claude-code-batch",
         executionProfile: "batch",
       },
@@ -232,7 +230,7 @@ describe("headless adapter selector", () => {
   })
 
   test("refuses unsupported requested capabilities before provider work", () => {
-    const selection = selectAgentRuntimeAdapter(
+    const selection = selectRoute(
       requestWithCapabilities({
         runtime: "codex",
         requestedCapabilities: ["rollback"],
@@ -241,6 +239,8 @@ describe("headless adapter selector", () => {
 
     expect(selection).toMatchObject({
       ok: false,
+      reason: "capability_refused",
+      candidateAdapterSource: "codex-batch",
       diagnostic: {
         type: "unsupported-capability",
         status: "refused",
@@ -264,30 +264,28 @@ describe("headless adapter selector", () => {
     }
   })
 
-  test("records fallback diagnostics when a preferred adapter source is unavailable", () => {
-    const selection = selectAgentRuntimeAdapter(
-      request({ runtime: "codex", source: "api" }),
-      { preferredAdapterSource: "codex-interactive" },
-    )
+  test("keeps fallbackReason null: no preference option or implicit downgrade exists", async () => {
+    const selection = selectRoute(request({ runtime: "codex", source: "api" }))
 
     expect(selection).toMatchObject({
       ok: true,
-      adapter: {
-        id: "codex",
-        sourceId: "codex-batch",
-      },
+      adapterSource: "codex-batch",
       diagnostic: {
         status: "selected",
-        runtime: "codex",
-        source: "api",
         adapterSource: "codex-batch",
-        preferredAdapterSource: "codex-interactive",
-        fallbackReason: "preferred_adapter_unavailable",
+        fallbackReason: null,
       },
     })
+    expect(Object.keys(selection.diagnostic)).not.toContain(
+      "preferredAdapterSource",
+    )
     if (selection.ok) {
       expect(selection.diagnostic.message).not.toMatch(/token|authorization/i)
     }
+    const catalogExports = Object.keys(
+      await import("../src/main/lib/agent-runtime/runtime-route-catalog"),
+    )
+    expect(catalogExports.filter((name) => /prefer/i.test(name))).toEqual([])
   })
 
   test("refuses interactive headless execution without a visible user channel", async () => {

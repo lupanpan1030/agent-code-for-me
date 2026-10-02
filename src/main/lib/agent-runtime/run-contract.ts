@@ -20,6 +20,16 @@ export type AgentRuntimeExecutionProfile =
   | "interactive"
   | "policy-grant"
 
+/**
+ * Enforcement evidence a leaf adapter exports as a typed constant (the
+ * runtime route catalog references it and never writes a stronger label).
+ */
+export type AgentRuntimeEnforcementEvidence =
+  | "none"
+  | "sandbox-level"
+  | "admission-audit"
+  | "pre-execution"
+
 export type AgentRuntimeRunContextBase = {
   runtimeId: AgentRuntimeId
   mode: AgentJobMode
@@ -100,8 +110,10 @@ export type AgentRuntimeRunObserver<Event = unknown> =
   | AgentRuntimePersistedObserver
 
 export type AgentRuntimeRunResultBase<
-  Status extends Exclude<AgentJobStatus, "queued" | "running"> =
-    Exclude<AgentJobStatus, "queued" | "running">,
+  Status extends Exclude<AgentJobStatus, "queued" | "running"> = Exclude<
+    AgentJobStatus,
+    "queued" | "running"
+  >,
 > = {
   status?: Status
   exitCode?: number | null

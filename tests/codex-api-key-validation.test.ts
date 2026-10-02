@@ -247,7 +247,7 @@ describe("Codex API key validation", () => {
       "const desktopJob = await createAndRegisterCodexDesktopRunJob",
     )
     const adapterCreationIndex = codexRouterSource.indexOf(
-      "runCodexAppServerDesktopAdapter({",
+      "runCodexDesktopChatRun({",
     )
 
     expect(validationIndex).toBeGreaterThan(0)

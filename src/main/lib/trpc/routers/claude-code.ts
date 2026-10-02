@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto"
 import { z } from "zod"
+import { getAgentRuntimeCapabilityManifest } from "../../../../shared/agent-runtime-capabilities"
 import { MAX_HEADER_SAFE_CREDENTIAL_LENGTH } from "../../../../shared/secret-redaction-policy"
-import { getRegisteredAgentRuntimeManifest } from "../../agent-runtime/runtime-registry"
 import {
   getBundledClaudeBinaryPath,
   getClaudeShellEnvironment,
@@ -167,7 +167,7 @@ export const claudeCodeRouter = router({
         hint,
       ),
       capabilities:
-        getRegisteredAgentRuntimeManifest("claude-code").capabilities,
+        getAgentRuntimeCapabilityManifest("claude-code").capabilities,
     }
   }),
 

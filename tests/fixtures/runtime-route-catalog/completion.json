@@ -1,0 +1,252 @@
+{
+  "fixtureVersion": 1,
+  "evidenceClass": "synthetic",
+  "sourceRefs": [
+    "openspec/changes/refactor-unified-runtime-route-catalog/specs/agent-runtime-core/spec.md:83-87",
+    "openspec/changes/refactor-unified-runtime-route-catalog/design.md:201-206",
+    "openspec/changes/refactor-unified-runtime-route-catalog/design.md:237",
+    "openspec/changes/refactor-unified-runtime-route-catalog/design.md:262",
+    "openspec/changes/refactor-unified-runtime-route-catalog/design.md:341-343",
+    "src/main/lib/headless/daemon.ts:426-459",
+    "src/shared/local-job-api.ts:500-538",
+    "src/main/lib/agent-runtime/run-provenance.ts:219-235",
+    "tests/run-event-ledger-guards.test.ts:876-935"
+  ],
+  "provenance": {
+    "author": "independent red-test author (catalog-core domain)",
+    "approvedSpec": "a9b745949b02e2b7c1bbd883c224c14b324d3dbc",
+    "base": "19986552",
+    "method": "Recorded at 19986552 by running the real CLI `api runs create --request - --json` (submit + own scoped pumpQueuedRuns) with a recording completion fetch and seeded provider profiles; invalid-variant stderr/exit copied from that run. Catalog completion metadata follows design D1 :201-206 / :237 and D3 :341-343 (delegate null, readinessProbe null, extensions []).",
+    "declarationsRef": "catalog.json#S01.declarations"
+  },
+  "S09": {
+    "providerProfiles": [
+      {
+        "id": "completion-codex",
+        "target": "codex"
+      },
+      {
+        "id": "completion-claude-code",
+        "target": "claude"
+      }
+    ],
+    "valid": [
+      {
+        "caseId": "codex-explicit-profile",
+        "family": "codex",
+        "request": {
+          "apiVersion": "locus.local-job.v1",
+          "kind": "completion",
+          "consumer": {
+            "id": "s09-consumer",
+            "runExternalId": "s09-codex"
+          },
+          "runtime": {
+            "id": "codex"
+          },
+          "provider": {
+            "profileId": "completion-codex",
+            "model": "provider-model"
+          },
+          "messages": [
+            {
+              "role": "user",
+              "content": "Return the fixture summary."
+            }
+          ],
+          "responseFormat": {
+            "type": "text"
+          }
+        },
+        "upstreamUrl": "https://provider.example.com/v1/responses"
+      },
+      {
+        "caseId": "claude-explicit-profile",
+        "family": "claude-code",
+        "request": {
+          "apiVersion": "locus.local-job.v1",
+          "kind": "completion",
+          "consumer": {
+            "id": "s09-consumer",
+            "runExternalId": "s09-claude-code"
+          },
+          "runtime": {
+            "id": "claude-code"
+          },
+          "provider": {
+            "profileId": "completion-claude-code",
+            "model": "provider-model"
+          },
+          "messages": [
+            {
+              "role": "user",
+              "content": "Return the fixture summary."
+            }
+          ],
+          "responseFormat": {
+            "type": "text"
+          }
+        },
+        "upstreamUrl": "https://provider.example.com/v1/responses"
+      }
+    ],
+    "invalid": [
+      {
+        "caseId": "codex-missing-profile",
+        "request": {
+          "apiVersion": "locus.local-job.v1",
+          "kind": "completion",
+          "consumer": {
+            "id": "s09-consumer",
+            "runExternalId": "s09-codex"
+          },
+          "runtime": {
+            "id": "codex"
+          },
+          "provider": {
+            "model": "provider-model"
+          },
+          "messages": [
+            {
+              "role": "user",
+              "content": "Return the fixture summary."
+            }
+          ],
+          "responseFormat": {
+            "type": "text"
+          }
+        },
+        "code": 2,
+        "stderr": "provider.profileId is required for completion jobs\n"
+      },
+      {
+        "caseId": "claude-missing-profile",
+        "request": {
+          "apiVersion": "locus.local-job.v1",
+          "kind": "completion",
+          "consumer": {
+            "id": "s09-consumer",
+            "runExternalId": "s09-claude-code"
+          },
+          "runtime": {
+            "id": "claude-code"
+          },
+          "provider": {
+            "model": "provider-model"
+          },
+          "messages": [
+            {
+              "role": "user",
+              "content": "Return the fixture summary."
+            }
+          ],
+          "responseFormat": {
+            "type": "text"
+          }
+        },
+        "code": 2,
+        "stderr": "provider.profileId is required for completion jobs\n"
+      },
+      {
+        "caseId": "codex-agent-only-mode",
+        "request": {
+          "apiVersion": "locus.local-job.v1",
+          "kind": "completion",
+          "consumer": {
+            "id": "s09-consumer",
+            "runExternalId": "s09-codex"
+          },
+          "runtime": {
+            "id": "codex"
+          },
+          "provider": {
+            "profileId": "completion-codex",
+            "model": "provider-model"
+          },
+          "messages": [
+            {
+              "role": "user",
+              "content": "Return the fixture summary."
+            }
+          ],
+          "responseFormat": {
+            "type": "text"
+          },
+          "mode": "agent"
+        },
+        "code": 2,
+        "stderr": "mode is not accepted for completion jobs\n"
+      },
+      {
+        "caseId": "claude-agent-only-execution-profile",
+        "request": {
+          "apiVersion": "locus.local-job.v1",
+          "kind": "completion",
+          "consumer": {
+            "id": "s09-consumer",
+            "runExternalId": "s09-claude-code"
+          },
+          "runtime": {
+            "id": "claude-code",
+            "executionProfile": "batch"
+          },
+          "provider": {
+            "profileId": "completion-claude-code",
+            "model": "provider-model"
+          },
+          "messages": [
+            {
+              "role": "user",
+              "content": "Return the fixture summary."
+            }
+          ],
+          "responseFormat": {
+            "type": "text"
+          }
+        },
+        "code": 2,
+        "stderr": "runtime.executionProfile is not accepted for completion jobs\n"
+      }
+    ],
+    "upstreamResponse": {
+      "output_text": "fixture summary",
+      "usage": {
+        "input_tokens": 3,
+        "output_tokens": 2
+      }
+    },
+    "expectedJob": {
+      "kind": "completion",
+      "source": "api",
+      "status": "succeeded",
+      "error_code": null,
+      "exit_code": 0,
+      "artifact_base_dir": null,
+      "artifact_manifest_path": null
+    },
+    "expectedProvenance": {
+      "kind": "locus-completion",
+      "adapterSource": "completion"
+    },
+    "forbiddenProvenanceKeys": [
+      "binarySha256",
+      "installationId",
+      "executablePath"
+    ],
+    "catalogMetadata": {
+      "executionSurface": "completion",
+      "adapterSource": "locus-completion",
+      "transport": "provider-http",
+      "extensions": [],
+      "entries": ["api", "completion"]
+    },
+    "contrast": {
+      "codex": {
+        "agentBatchOnApi": "codex-batch"
+      },
+      "claude-code": {
+        "agentBatchOnApi": "claude-code-batch"
+      }
+    }
+  }
+}
