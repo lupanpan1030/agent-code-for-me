@@ -181,7 +181,7 @@
     "src/main/lib/trpc/routers/chats.ts": 1,
     "src/main/lib/trpc/routers/claude-settings.ts": 3,
     "src/main/lib/trpc/routers/claude.ts": 1,
-    "src/main/lib/trpc/routers/codex.ts": 1,
+    "src/main/lib/trpc/routers/codex.ts": 2,
     "src/main/lib/trpc/routers/commands.ts": 1,
     "src/main/lib/trpc/routers/debug.ts": 3,
     "src/main/lib/trpc/routers/external.ts": 2,

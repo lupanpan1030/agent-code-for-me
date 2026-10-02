@@ -559,10 +559,11 @@ export const codexRouter = router({
               })
               return
             }
-            const runClaim = claimDesktopRunAdmissionWithMaintenanceFence(
-              runAdmission,
-              input.runId,
-            )
+            const runClaim =
+              claimDesktopRunAdmissionWithMaintenanceFence(
+                runAdmission,
+                input.runId,
+              )
             if (!runClaim.ok) {
               if (runClaim.reason === "maintenance") {
                 safeEmit({
@@ -625,9 +626,10 @@ export const codexRouter = router({
                 bindingAdmission.providerProfileId ?? undefined,
               codexAuthMethod: bindingAdmission.codexAuthMethod ?? undefined,
               requestedModel: bindingAdmission.requestedModel ?? undefined,
-              providerProfileBoundModelId: bindingAdmission.providerProfileId
-                ? (bindingAdmission.binding.modelId ?? undefined)
-                : undefined,
+              providerProfileBoundModelId:
+                bindingAdmission.providerProfileId
+                  ? (bindingAdmission.binding.modelId ?? undefined)
+                  : undefined,
               signal: abortController.signal,
               emit: safeEmit,
               complete: safeComplete,
