@@ -35,10 +35,3 @@ export function resolveClaudeAgentSdkDesktopRouteDelegate(
   }
   return route.delegate as ClaudeDesktopRuntimeRouteDelegate
 }
-
-/**
- * The lifecycle's default delegate when no host injected one: the
- * production catalog's Claude desktop delegate, resolved for this request.
- */
-export const runCatalogClaudeAgentSdkDesktopAdapter: ClaudeDesktopRuntimeRouteDelegate =
-  (input) => resolveClaudeAgentSdkDesktopRouteDelegate(input.request)(input)

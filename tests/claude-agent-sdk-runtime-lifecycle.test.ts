@@ -7,6 +7,7 @@ import {
   getActiveClaudeSession,
   setActiveClaudeSession,
 } from "../src/main/lib/claude/active-sessions"
+import { resolveClaudeAgentSdkDesktopRouteDelegate } from "../src/main/lib/claude/agent-sdk-desktop-route"
 import { runClaudeAgentSdkDesktopRuntimeLifecycle } from "../src/main/lib/claude/agent-sdk-runtime-lifecycle"
 import { createClaudeAgentSdkStreamConsumerMutableState } from "../src/main/lib/claude/agent-sdk-stream-consumer"
 import type { UIMessageChunk } from "../src/main/lib/claude/types"
@@ -184,6 +185,9 @@ function createLifecycleInput(
     streamStart: 1000,
     nowMs: () => 3500,
     prepareRuntimePrompt,
+    // The typed delegate the named host injects after asserting the
+    // catalog's Claude desktop route (design D5 typed-delegate disposition).
+    runDesktopAdapter: resolveClaudeAgentSdkDesktopRouteDelegate(request),
   }
 }
 
@@ -449,5 +453,34 @@ describe("Claude Agent SDK runtime lifecycle", () => {
     )
     expect(input.emit).toHaveBeenCalledWith({ type: "finish" })
     expect(input.complete).toHaveBeenCalledTimes(1)
+  })
+
+  test("fails closed without an injected delegate before any preparation or SDK query", async () => {
+    const db = createAgentJobTestDb()
+    seedChat(db)
+    const queryCalls: unknown[] = []
+    const { runDesktopAdapter: _injected, ...input } = createLifecycleInput(
+      db,
+      {
+        query: (params) => {
+          queryCalls.push(params)
+          return createClaudeAssistantStream()
+        },
+      },
+    )
+
+    // The lifecycle never resolves a route itself (design P34): only the
+    // named host's asserted catalog delegate may reach the Agent SDK leaf.
+    await expect(
+      runClaudeAgentSdkDesktopRuntimeLifecycle(
+        input as unknown as Parameters<
+          typeof runClaudeAgentSdkDesktopRuntimeLifecycle
+        >[0],
+      ),
+    ).rejects.toThrow(/^Runtime route catalog is unavailable\.$/)
+    expect(queryCalls).toEqual([])
+    expect(input.prepareRuntimePrompt).not.toHaveBeenCalled()
+    expect(input.emit).not.toHaveBeenCalled()
+    expect(input.complete).not.toHaveBeenCalled()
   })
 })

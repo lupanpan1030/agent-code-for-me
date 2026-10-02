@@ -29,7 +29,7 @@ export type ClaudeAgentSdkDesktopRunMcpReadinessStatus =
 
 export type RunClaudeAgentSdkDesktopRuntimeWithMcpReadinessInput = Omit<
   RunClaudeAgentSdkDesktopRuntimeWithRunStateInput,
-  "request"
+  "request" | "runDesktopAdapter"
 > & {
   desktopRunRequest: DesktopRunRequest
   mcpReadinessStatus: ClaudeAgentSdkDesktopRunMcpReadinessStatus

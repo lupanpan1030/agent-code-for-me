@@ -1,8 +1,8 @@
 import type { AgentGuardEvent } from "../../../shared/agent-scope-contracts"
 import { deleteActiveGuardedContractIfMatch } from "../agent-guard"
 import type { DesktopRunResult } from "../agent-runtime/desktop-run-request"
+import { RUNTIME_ROUTE_CATALOG_UNAVAILABLE_MESSAGE } from "../agent-runtime/runtime-route-catalog"
 import type { RunClaudeAgentSdkDesktopAdapterWithPreparedRuntimeQueryInput } from "./agent-sdk-adapter-runner"
-import { runCatalogClaudeAgentSdkDesktopAdapter } from "./agent-sdk-desktop-route"
 import {
   type PrepareClaudeAgentSdkRuntimePromptForDesktopRunInput,
   prepareClaudeAgentSdkRuntimePromptForDesktopRun,
@@ -107,10 +107,10 @@ export type RunClaudeAgentSdkDesktopRuntimeLifecycleInput = Omit<
   streamStart: number
   nowMs?: () => number
   /**
-   * The catalog-selected Agent SDK delegate injected by the named host;
-   * without one the production catalog's Claude desktop route is resolved.
+   * The catalog-selected Agent SDK delegate the named host injects after
+   * asserting its route (P34). The lifecycle never resolves a route itself.
    */
-  runDesktopAdapter?: ClaudeAgentSdkDesktopAdapterDelegate
+  runDesktopAdapter: ClaudeAgentSdkDesktopAdapterDelegate
 }
 
 export type RunClaudeAgentSdkDesktopRuntimeLifecycleResult =
@@ -137,9 +137,14 @@ export async function runClaudeAgentSdkDesktopRuntimeLifecycle(
     guardEvents,
     guardedRunStartedAt = new Date().toISOString(),
     runtimeStreamSetup,
-    runDesktopAdapter = runCatalogClaudeAgentSdkDesktopAdapter,
+    runDesktopAdapter,
     ...adapterInput
   } = input
+  // Fail closed before any prompt, query or secret preparation: only the
+  // named host's asserted catalog delegate may run the Agent SDK leaf.
+  if (typeof runDesktopAdapter !== "function") {
+    throw new Error(RUNTIME_ROUTE_CATALOG_UNAVAILABLE_MESSAGE)
+  }
   const { request } = input
   const requestContext = request.context
   const streamSetup =
