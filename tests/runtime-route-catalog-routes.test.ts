@@ -281,6 +281,10 @@ describe("runtime route catalog — surfaces, hosts and shared runner", () => {
       const { state, ports } = testCatalog(catalog, {
         [ref]: async () => stop,
       })
+      // Coordinator adjudication P1-4 (red-receipt §9): eager validation looks up
+      // every declared factory reference (S01/S24, tasks 2.2); only post-binding
+      // lookups count as "looked up the other runtime".
+      const validationLookupCount = ports.log.factoryLookups.length
       const admission = admitClaudeChatSessionBindingRun(
         profile.mdb.db,
         String(item.subChatId),
@@ -328,9 +332,9 @@ describe("runtime route catalog — surfaces, hosts and shared runner", () => {
           ports.log.sequence.indexOf(`lookup:${ref}`) >= 0 &&
           ports.log.sequence.indexOf(`lookup:${ref}`) <
             ports.log.sequence.indexOf(`invoke:${ref}`),
-        lookedUpOtherRuntime: ports.log.factoryLookups.some((name) =>
-          name.startsWith("factory:codex"),
-        ),
+        lookedUpOtherRuntime: ports.log.factoryLookups
+          .slice(validationLookupCount)
+          .some((name) => name.startsWith("factory:codex")),
         sameSignal: delegateRequest.signal === controller.signal,
         sameLedger: delegateRequest.ledger === ledger.ledger,
         sameSession: delegateRequest.session === session,
@@ -407,6 +411,10 @@ describe("runtime route catalog — surfaces, hosts and shared runner", () => {
       const { state, ports } = testCatalog(catalog, {
         [ref]: async () => stop,
       })
+      // Coordinator adjudication P1-4 (red-receipt §9): eager validation looks up
+      // every declared factory reference (S01/S24, tasks 2.2); only post-binding
+      // lookups count as "looked up the other runtime".
+      const validationLookupCount = ports.log.factoryLookups.length
       const admission = admitCodexChatSessionBindingRun(
         profile.mdb.db,
         String(item.subChatId),
@@ -446,9 +454,9 @@ describe("runtime route catalog — surfaces, hosts and shared runner", () => {
           ports.log.sequence.indexOf(`lookup:${ref}`) >= 0 &&
           ports.log.sequence.indexOf(`lookup:${ref}`) <
             ports.log.sequence.indexOf(`invoke:${ref}`),
-        lookedUpOtherRuntime: ports.log.factoryLookups.some((name) =>
-          name.startsWith("factory:claude"),
-        ),
+        lookedUpOtherRuntime: ports.log.factoryLookups
+          .slice(validationLookupCount)
+          .some((name) => name.startsWith("factory:claude")),
         sameRequest: delegateInput.request === verified,
         secretReachedOnlyDelegate: delegateInput.appManagedApiKey === appKey,
         ledgerCallsByHost: ledger.calls.length,

@@ -390,10 +390,11 @@ Authority: Owner 2026-10-02 self-iteration mandate (red tests, adjudications and
 | P2-3 S53 `chats.get` stamping test | **KEEP**. `withRuntimeRouteTransportId` is applied to all three binding read-model compositions — getSubChat, createSubChat and `chats.get` via `attachBindingsToSubChats` (chats-crud.ts) — never persisted; the architecture guard's clean cases accept the third call site. Design D3 / spec S53 name two sites; the third is required for the renderer path to be live (active-chat.tsx reads bindings populated by chats.get). This is an internal (C7 §9.1) composition detail, not a contract change; implementer records it in verification as an adjudicated extension of S53. | — |
 | P2-4 desktop evidence / policy-shape divergence | **Recorded**: production catalog exports `pre-execution` for both desktop routes (the only production assertion); the core test table's `admission-audit` for its synthetic desktop route is test-local. The resolver accepts any `AgentRuntimePermissionPolicySummary` whose `interaction` is `visible-user` for entry `desktop` (both `kind:"desktop"` and `kind:"interactive-user"` summaries) and must not narrow on `kind`. | — |
 | P3-1…P3-11 | Recorded as written in §7; §6 implementer-unit items stand. | — |
+| P1-4 S03 desktop-host `lookedUpOtherRuntime` oracle (found at Phase II 258e4081 by the implementer and both reviewers; reproduced) | **Test defect, adjudicated (tasks 6.8)**: the oracle counted every `lookupAgentFactory` call in `ports.log.factoryLookups`, including the lookups the catalog makes while validating the two-runtime `catalog.json#S01` table eagerly — which S01 (agent-missing-factory variant), S24 and tasks 2.2 require. The author's intent is the post-binding host behavior ("invokes only the catalog SDK/app-server delegate … queries its fixed runtime"). Fix: snapshot `factoryLookups.length` right after `testCatalog()` and count only later lookups (the surfaces kit already separates `validationLookups` from `lookups`). No implementation change; `routes.test.ts` 17/17 at 258e4081 after the edit. | Edited by the coordinator in `tests/runtime-route-catalog-routes.test.ts` (two blocks: Claude host, Codex host); §10 hash for that file updated below; the immutable zero-diff reference moves to the adjudication commit. |
 
 Immutable set after adjudication = §1 file list minus `readiness.public-guards.json`, plus the `scripts/check-retired-runtime-residue.mjs` ALLOWED edit (one entry; the script otherwise unchanged). The implementer must not edit any file in the immutable set; contract doubts return to the coordinator (tasks 6.8).
 
-## 10. Final immutable file hashes (sha256 at the RED-suite commit; supersede §1 where they differ — capabilities kit/test and extensions.json relinked per §9 P1-1, readiness.json merged and discovery.test.ts relinked per §9 P1-2, side file deleted, all files biome-formatted)
+## 10. Final immutable file hashes (sha256 at the RED-suite commit, routes.test.ts re-hashed at the P1-4 adjudication commit; supersede §1 where they differ — capabilities kit/test and extensions.json relinked per §9 P1-1, readiness.json merged and discovery.test.ts relinked per §9 P1-2, side file deleted, all files biome-formatted)
 
 | File | sha256 |
 | --- | --- |
@@ -430,7 +431,7 @@ Immutable set after adjudication = §1 file list minus `readiness.public-guards.
 | tests/runtime-route-catalog-public-contract.test.ts | a81a04450141da6dfaafa28a795d839360616ab9184972b90ad66a367b5f1548 |
 | tests/runtime-route-catalog-query.test.ts | 6a8a99d57a3dde233724e46208b0cbf149ba3b717d3655d0b58d3471574b74e6 |
 | tests/runtime-route-catalog-renderer.test.ts | 5dcbb3b109ab0b8b53fe2f2929d713f184688a8503a1fce3a83c15aedce8fc22 |
-| tests/runtime-route-catalog-routes.test.ts | 0218de1eee0467f0fd3b75288c22be706abd1071dab6de28065401e41578a1db |
+| tests/runtime-route-catalog-routes.test.ts | 92eb7653bacd72e138353a083baa0f3a958fdbc23b4730346a50b09954904c9a |
 | tests/runtime-route-catalog-surfaces-kit.ts | 4a029807e8b70e9d00412361101e7cbf2b1668c50cfa823050674424b19d6846 |
 
 scripts/check-retired-runtime-residue.mjs: one ALLOWED entry added (P1-3); implementer may edit this script only for the §4.6 registry-test rename.
