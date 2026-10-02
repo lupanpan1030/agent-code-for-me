@@ -4979,8 +4979,11 @@ function assertLocalJobApiAsyncGuards() {
 //   forwarding alias, and the deleted registry/readiness facade names;
 // - leaf-adapter-import-outside-catalog: a value import/call of a leaf
 //   run/create export outside the catalog;
-// - route-catalog-test-port-in-production: a production catalog option or
-//   query catalog argument that is not forwarded unchanged;
+// - route-catalog-test-port-in-production: a production catalog option
+//   (explicit or shorthand) or query catalog argument that is not forwarded
+//   unchanged, decided by the value's nearest binding (a parameter, or a
+//   local whose initializer is forwarded), never by the name
+//   runtimeRouteCatalog alone;
 // - route-catalog-forbidden-dependency: a catalog import of Electron, tRPC,
 //   renderer, preload or a router (also through a one-hop wrapper), or a
 //   readiness -> catalog cycle, direct or anywhere in the transitive value
@@ -5681,57 +5684,70 @@ function isRuntimeRouteSwitch(node) {
 }
 
 /**
- * Forwarded unchanged = `undefined`, a binding or property named
- * runtimeRouteCatalog, a parameter of an enclosing function, or a local
- * const initialised by such an expression.
+ * The nearest lexical binding of `name` seen from `node`: a parameter (or
+ * destructured parameter) of an enclosing function, or a variable
+ * declaration (or destructured one) in an enclosing block or source file.
+ */
+function runtimeRouteNearestBinding(node, name) {
+  let current = node.parent
+  while (current) {
+    if (ts.isFunctionLike(current)) {
+      const names = new Set()
+      for (const parameter of current.parameters ?? []) {
+        collectBindingNames(parameter.name, names)
+      }
+      if (names.has(name)) return { kind: "parameter" }
+    }
+    if (
+      ts.isBlock(current) ||
+      ts.isSourceFile(current) ||
+      ts.isModuleBlock(current) ||
+      ts.isCaseClause(current) ||
+      ts.isDefaultClause(current)
+    ) {
+      for (const statement of current.statements) {
+        if (!ts.isVariableStatement(statement)) continue
+        for (const declaration of statement.declarationList.declarations) {
+          const names = new Set()
+          collectBindingNames(declaration.name, names)
+          if (names.has(name)) return { kind: "variable", declaration }
+        }
+      }
+    }
+    current = current.parent
+  }
+  return null
+}
+
+/**
+ * Forwarded unchanged = `undefined`; an identifier bound as a parameter (or
+ * destructured parameter) of an enclosing function, or as a local variable
+ * whose initializer is itself forwarded; or a `.runtimeRouteCatalog`
+ * property access whose receiver is forwarded. The name runtimeRouteCatalog
+ * alone never makes a production-built value forwarded.
  */
 function isRuntimeRouteForwarded(expression, sourceFile, depth = 0) {
   const value = unwrapExpression(expression)
-  if (!value) return false
+  if (!value || depth > 4) return false
   if (ts.isIdentifier(value)) {
-    if (
-      value.text === "undefined" ||
-      value.text === RUNTIME_ROUTE_HOST_OPTION
-    ) {
-      return true
-    }
-    let current = value.parent
-    while (current) {
-      if (ts.isFunctionLike(current)) {
-        const names = new Set()
-        for (const parameter of current.parameters ?? []) {
-          collectBindingNames(parameter.name, names)
-        }
-        if (names.has(value.text)) return true
-      }
-      current = current.parent
-    }
-    if (depth > 2) return false
-    const declarations = []
-    runtimeRouteVisit(sourceFile, (node) => {
-      if (
-        ts.isVariableDeclaration(node) &&
-        ts.isIdentifier(node.name) &&
-        node.name.text === value.text
-      ) {
-        declarations.push(node)
-      }
-    })
-    return (
-      declarations.length > 0 &&
-      declarations.every(
-        (declaration) =>
-          declaration.initializer &&
-          isRuntimeRouteForwarded(
-            declaration.initializer,
-            sourceFile,
-            depth + 1,
-          ),
-      )
+    if (value.text === "undefined") return true
+    const binding = runtimeRouteNearestBinding(value, value.text)
+    if (!binding) return false
+    if (binding.kind === "parameter") return true
+    return Boolean(
+      binding.declaration.initializer &&
+        isRuntimeRouteForwarded(
+          binding.declaration.initializer,
+          sourceFile,
+          depth + 1,
+        ),
     )
   }
   if (ts.isPropertyAccessExpression(value)) {
-    return value.name.text === RUNTIME_ROUTE_HOST_OPTION
+    return (
+      value.name.text === RUNTIME_ROUTE_HOST_OPTION &&
+      isRuntimeRouteForwarded(value.expression, sourceFile, depth + 1)
+    )
   }
   return false
 }
@@ -6177,12 +6193,15 @@ function collectRuntimeRouteCatalogFindings(
         }
       }
 
-      // route-catalog-test-port-in-production.
+      // route-catalog-test-port-in-production (also `{ runtimeRouteCatalog }`).
       if (
-        ts.isPropertyAssignment(node) &&
-        objectPropertyName(node.name) === RUNTIME_ROUTE_HOST_OPTION &&
-        ts.isObjectLiteralExpression(node.parent) &&
-        !isRuntimeRouteForwarded(node.initializer, sourceFile)
+        ((ts.isPropertyAssignment(node) &&
+          objectPropertyName(node.name) === RUNTIME_ROUTE_HOST_OPTION &&
+          !isRuntimeRouteForwarded(node.initializer, sourceFile)) ||
+          (ts.isShorthandPropertyAssignment(node) &&
+            node.name.text === RUNTIME_ROUTE_HOST_OPTION &&
+            !isRuntimeRouteForwarded(node.name, sourceFile))) &&
+        ts.isObjectLiteralExpression(node.parent)
       ) {
         add(
           runtimeRouteFinding(

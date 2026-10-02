@@ -568,3 +568,106 @@ describe("T3-2 readiness transitive import closure", () => {
     ).toEqual([])
   })
 })
+
+describe("T3-5 runtimeRouteCatalog forwarding is decided by binding, not by name", () => {
+  const ENTRY = "src/main/index.ts"
+  const HOST = "src/main/lib/headless/forwarding-probe.ts"
+  const FORWARDING_SITES = [
+    "src/main/lib/headless/daemon.ts",
+    "src/main/lib/headless/cli-dispatcher.ts",
+    "src/main/lib/headless/jobs-stdio.ts",
+    "src/main/lib/headless/job-runner.ts",
+    "src/main/lib/headless/agent-runtime.ts",
+    "src/main/lib/headless/local-job-api.ts",
+    "src/main/lib/codex/desktop-chat-run.ts",
+    "src/main/lib/claude/agent-sdk-desktop-run-runtime.ts",
+    "src/main/lib/claude/agent-sdk-desktop-route.ts",
+  ]
+  const IMPORTS = `import { runHeadlessCliCommand } from "./lib/headless/cli-dispatcher"
+import { loadCatalogOverride } from "./lib/catalog-override"
+`
+  const testPort = (file: string, symbol = "runtimeRouteCatalog") =>
+    finding(RUNTIME_ROUTE_RULE.testPort, file, symbol)
+
+  test("clean: every production forwarding call site yields no finding", () => {
+    for (const file of FORWARDING_SITES) {
+      expect({ file, findings: scan({ [file]: readRepoFile(file) }) }).toEqual({
+        file,
+        findings: [],
+      })
+    }
+  })
+
+  test("a production-built value bound to the name runtimeRouteCatalog is reported with the test-port tuple (module const, shorthand or explicit property, local const shadowing a parameter, foreign receiver, query argument)", () => {
+    const moduleConstShorthand = `${IMPORTS}const runtimeRouteCatalog = loadCatalogOverride()
+export function start(argv: string[]) {
+  return runHeadlessCliCommand({ argv, runtimeRouteCatalog })
+}
+`
+    const moduleConstProperty = `${IMPORTS}const runtimeRouteCatalog = loadCatalogOverride()
+export function start(argv: string[]) {
+  return runHeadlessCliCommand({ argv, runtimeRouteCatalog: runtimeRouteCatalog })
+}
+`
+    const shadowingLocal = `${IMPORTS}export function start(argv: string[], runtimeRouteCatalog?: unknown) {
+  if (argv.length > 0) {
+    const runtimeRouteCatalog = loadCatalogOverride()
+    return runHeadlessCliCommand({ argv, runtimeRouteCatalog })
+  }
+  return runHeadlessCliCommand({ argv, runtimeRouteCatalog })
+}
+`
+    const foreignReceiver = `${IMPORTS}export function start(argv: string[]) {
+  return runHeadlessCliCommand({
+    argv,
+    runtimeRouteCatalog: loadCatalogOverride().runtimeRouteCatalog,
+  })
+}
+`
+    for (const source of [
+      moduleConstShorthand,
+      moduleConstProperty,
+      shadowingLocal,
+      foreignReceiver,
+    ]) {
+      expect(scan({ [ENTRY]: source })).toEqual([testPort(ENTRY)])
+    }
+    const queryArgument = `import { listRuntimeRoutes } from "../agent-runtime/runtime-route-catalog"
+import { loadCatalogOverride } from "../catalog-override"
+const runtimeRouteCatalog = loadCatalogOverride()
+export const routes = () =>
+  listRuntimeRoutes({ runtimeId: "codex", entry: "api" }, runtimeRouteCatalog)
+`
+    expect(scan({ [HOST]: queryArgument })).toEqual([
+      testPort(HOST, "listRuntimeRoutes"),
+    ])
+  })
+
+  test("legitimate forwarding stays clean: parameter, destructured parameter, options receiver, local alias of a forwarded value, destructured local and undefined", () => {
+    const source = `import { runHeadlessCliCommand } from "./cli-dispatcher"
+import { listRuntimeRoutes } from "../agent-runtime/runtime-route-catalog"
+type Options = { argv: string[]; runtimeRouteCatalog?: unknown }
+export function viaOptions(options: Options) {
+  return runHeadlessCliCommand({ argv: options.argv, runtimeRouteCatalog: options.runtimeRouteCatalog })
+}
+export function viaParameter(argv: string[], runtimeRouteCatalog?: unknown) {
+  return runHeadlessCliCommand({ argv, runtimeRouteCatalog })
+}
+export function viaDestructuredParameter({ argv, runtimeRouteCatalog }: Options) {
+  return runHeadlessCliCommand({ argv, runtimeRouteCatalog })
+}
+export function viaLocalAlias(options: Options) {
+  const catalog = options.runtimeRouteCatalog
+  return listRuntimeRoutes({ runtimeId: "codex", entry: "api" }, catalog)
+}
+export function viaDestructuredLocal(options: Options) {
+  const { runtimeRouteCatalog } = options
+  return runHeadlessCliCommand({ argv: options.argv, runtimeRouteCatalog })
+}
+export function withoutCatalog(argv: string[]) {
+  return runHeadlessCliCommand({ argv, runtimeRouteCatalog: undefined })
+}
+`
+    expect(scan({ [HOST]: source })).toEqual([])
+  })
+})
