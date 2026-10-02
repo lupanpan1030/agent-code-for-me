@@ -62,6 +62,18 @@ describe("T1-1 renderer construction path, transport helper and main transportId
   const activeChat = readRepoFile(ACTIVE_CHAT)
   const helper = readRepoFile(TRANSPORT_HELPER)
   const subChats = readRepoFile(SUB_CHATS_ROUTER)
+  /** getOrCreateChat passes its transport input through pickRouteInput3. */
+  const routeInputThroughWrapper = () =>
+    mutate(
+      activeChat,
+      `        toRuntimeRouteTransportInput({
+          readFailed: isLocalChatReadError,
+          binding,
+        }),
+        { chatId, subChatId, binding, projectPath, mode: subChatMode },`,
+      `        pickRouteInput3(binding, isLocalChatReadError),
+        { chatId, subChatId, binding, projectPath, mode: subChatMode },`,
+    )
 
   test("clean counterparts: the production construction sites, helper and stamping router yield no finding", () => {
     expect(scan({ [ACTIVE_CHAT]: activeChat })).toEqual([])
@@ -142,6 +154,54 @@ export function adjacentRuntimeLabel(binding: { runtime: string }) {
 }
 `
     expect(scan({ [ACTIVE_CHAT]: adjacent })).toEqual([])
+  })
+
+  test("m7f/m7g: a same-file value wrapper selecting a transportId by binding.runtime for getOrCreateChat is a renderer-route-projection-bypass", () => {
+    const wrapped = routeInputThroughWrapper()
+    const wrappers = {
+      m7f: `function pickRouteInput3(b, readFailed) {
+  return b.runtime === "codex"
+    ? { state: "loaded", transportId: "codex-chat-ipc" }
+    : toRuntimeRouteTransportInput({ readFailed, binding: b })
+}
+`,
+      m7g: `function pickRouteInput3(b, readFailed) {
+  if (b.runtime === "codex") {
+    return { state: "loaded", transportId: "codex-chat-ipc" }
+  }
+  return toRuntimeRouteTransportInput({ readFailed, binding: b })
+}
+`,
+    }
+    for (const wrapper of Object.values(wrappers)) {
+      const mutated = `${wrapped}\n${wrapper}`
+      // The construction path itself still holds two helper calls and no
+      // runtime comparison; only the wrapper selects the transport.
+      expect(mutated.match(/createRuntimeRouteTransport\(/g)).toHaveLength(2)
+      expect(scan({ [ACTIVE_CHAT]: mutated })).toEqual([
+        finding(RUNTIME_ROUTE_RULE.renderer, ACTIVE_CHAT, "pickRouteInput3"),
+      ])
+    }
+  })
+
+  test("value wrapper clean counterparts: a wrapper without a runtime branch and a runtime branch yielding no transportId yield no finding", () => {
+    const wrapped = routeInputThroughWrapper()
+    const plain = `${wrapped}
+function pickRouteInput3(b, readFailed) {
+  return toRuntimeRouteTransportInput({ readFailed, binding: b })
+}
+`
+    expect(scan({ [ACTIVE_CHAT]: plain })).toEqual([])
+    const labelOnly = `${activeChat}
+export function runtimeRouteFailureLabel(b: { runtime: string }) {
+  if (b.runtime === "codex") {
+    console.error("codex-chat-ipc transport unavailable")
+    return "Codex"
+  }
+  return "Claude Code"
+}
+`
+    expect(scan({ [ACTIVE_CHAT]: labelOnly })).toEqual([])
   })
 
   test("m14b: a runtime-keyed transportId map appended to the transport helper is a renderer-route-projection-bypass", () => {

@@ -6153,8 +6153,13 @@ function collectRuntimeRouteCatalogFindings(
 
     // route-dispatch-outside-owner: a runtime condition (ternary, if,
     // switch or logical operator) whose branch yields a transportId literal
-    // is a runtime -> transport selection outside the catalog.
-    if (file.startsWith("src/main/")) {
+    // is a runtime -> transport selection outside the catalog. On the
+    // renderer construction site the same selection, including one hidden in
+    // a same-file value wrapper, is a renderer-route-projection-bypass.
+    if (file.startsWith("src/main/") || isRendererSite) {
+      const transportSelectionRule = isRendererSite
+        ? RUNTIME_ROUTE_RULE.renderer
+        : RUNTIME_ROUTE_RULE.dispatch
       const discriminates = (expression) =>
         runtimeRouteContains(expression, (child) =>
           isRuntimeRouteDiscriminant(child, predicates),
@@ -6192,7 +6197,7 @@ function collectRuntimeRouteCatalogFindings(
         if (selectsTransport) {
           add(
             runtimeRouteFinding(
-              RUNTIME_ROUTE_RULE.dispatch,
+              transportSelectionRule,
               file,
               runtimeRouteDeclarationSymbol(node),
             ),
