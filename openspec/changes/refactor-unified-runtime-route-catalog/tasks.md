@@ -1,9 +1,9 @@
 # Tasks: Unified Runtime Route Catalog
 
-Status: **IMPLEMENTATION CANDIDATE — re-frozen after T3 (source f8e538bc; candidate SHA in the T3 handoff; supersedes 2bde5acb) — APPROVED 2026-10-02 (coordinator-acted under Owner mandate, bound to a9b74594; Owner may revoke); awaiting Codex IMPLEMENTATION_VERIFIED + fresh Claude REVIEW_APPROVED on the same SHA**
+Status: **ACCEPTED 2026-10-02 (coordinator Claude Fable 5.1, under the Owner's 2026-10-02 self-iteration mandate) @ f4783c38925fd59db11e3684d97bcc1088492c08 — 待合入；source f8e538bc；同 SHA Codex IMPLEMENTATION_VERIFIED + Claude REVIEW_APPROVED；smoke host-blocked / not claimed；Owner 可撤回或修改预设**
 
 本表是批准后的实施清单。Phase III（实施候选冻结，2026-10-02）按实际完成情况勾选并附证据（提交 SHA / 测试）；
-未完成项保持未勾并写明缺口：1.4（host 可用性/真实 smoke）与 8.1–8.9（同 SHA 双验、smoke、验收、merge、push 门禁）。章节是责任划分，
+未完成项保持未勾并写明缺口：1.4（host 可用性/真实 smoke）与 8.1–8.4、8.8/8.9（自动化清单、smoke、merge、push 门禁；8.1 勾选状态本段保留）；8.5–8.7 已据同 SHA 双签与统筹代行验收记录完成。章节是责任划分，
 **执行依赖为 1 → 2 → 6/7（独立 RED suite 冻结）→ 3/4/5 → 8**，不是先写产品再补测试。
 每项以 spec 的 observable assertion 为准；场景登记、synthetic pass、source tests、GUI 与 packaged
 证据分别记录，不能互相替代。fixtures 的唯一目录约定是 §7。
@@ -12,7 +12,7 @@ Status: **IMPLEMENTATION CANDIDATE — re-frozen after T3 (source f8e538bc; cand
 
 - [x] 1.1 统筹代行 APPROVED（Owner 2026-10-02 授权）绑定 a9b74594；§10 已填；Q1–Q5 预设采纳（Owner 可改）。
 - [x] 1.2（base `6192b13f` = 2026-10-02 再核对的 main HEAD；Phase I 自干净 `76921ae8` 起步，Phase I/II/T1/III 各自核对 branch/HEAD/clean；`openspec/STATUS.md` 仅本 change active，无 overlap；ledger/async-submit owner 以当前源码为准）核对实施 base/target SHA、干净 worktree、active overlap；再次读 ownership map、C1–C9、ledger/async-submit 当前 owner，不使用 archived proposal 的旧行号推断最新实现。
-- [x] 1.3（实施：Claude Opus 5.5（Phase I/II/T1/III）；独立 RED 作者：4×Opus + Fable 审计（`c297872d`）；fresh-context Claude 评审：Phase I 两镜头 @`9f06b6f7`、Phase II 两镜头 @`258e4081`、T1 @`a52d6a93`；安全镜头 = tests-security 评审；统筹/Integrator：Claude Fable 5.1；immutable set 仅统筹裁定修改（`24801faa`）；最终 Codex IMPLEMENTATION_VERIFIED 与同 SHA REVIEW_APPROVED 待派（8.5））明确 implementer、独立测试作者、fresh-context Claude Code reviewer、安全 reviewer 和 Integrator；测试作者只按批准 spec 写 RED，不以产品实现作 oracle。单文件单 writer。
+- [x] 1.3（实施：Claude Opus 5.5（Phase I/II/T1/III）；独立 RED 作者：4×Opus + Fable 审计（`c297872d`）；fresh-context Claude 评审：Phase I 两镜头 @`9f06b6f7`、Phase II 两镜头 @`258e4081`、T1 @`a52d6a93`；安全镜头 = tests-security 评审；统筹/Integrator：Claude Fable 5.1；immutable set 仅统筹裁定修改（`24801faa`）；最终 Codex gpt-6-astra R2 IMPLEMENTATION_VERIFIED 与 fresh-context Claude REVIEW_APPROVED 同绑定 f4783c38（8.5））明确 implementer、独立测试作者、fresh-context Claude Code reviewer、安全 reviewer 和 Integrator；测试作者只按批准 spec 写 RED，不以产品实现作 oracle。单文件单 writer。
 - [ ] 1.4（**未完成**：本 WSL2 主机 Electron 缺 `libnspr4.so`/`libnss3.so`/`libnssutil3.so`/`libsmime3.so`/`libasound.so.2`（exit 127），`resources/bin/` 无 bundled runtimes，`DISPLAY` 未设，无 macOS/Windows 主机；Desktop/packaged/真实 Runtime smoke 全部 host-blocked，复跑命令与 TICKET-127–131 disposition 见 verification §7）记录 runtime/GUI/packaged host 可用性、既有 smoke 缺口与 TICKET-127–131 disposition；未运行的平台不得提前勾通过。
 - [x] 1.5（verification §1 分列 source `f8e538bc`（T3；此前 T2 `50a0577f`、`a52d6a93`）/ RED suite `c297872d` / test-adjudication `24801faa`（不可变零差异参照；`76921ae8` 为裁定前 RED 提交）/ 冻结候选（T3 handoff）/ Codex verdict / fresh review / ACCEPTED / local merge 栏位；Phase III 只改文档，不使 source 失效）建立 source SHA / RED suite SHA / final verified SHA / fresh review SHA / local merge SHA 独立栏位；任何后续产品代码变化使验证与 review verdict 同时失效。
 
@@ -144,12 +144,12 @@ spec GIVEN 的 `file.json#Sxx` 是准确键，不是随意 prose anchor。当前
 
 ## 8. 验证、评审与停止门
 
-- [ ] 8.1（**未完成**：候选门禁已在 Phase III 冻结提交上运行（verification §2）；正式同 SHA 验证由 Codex IMPLEMENTATION_VERIFIED 执行，待派）同一准确 source SHA 跑 targeted `bun test --isolate tests/runtime-route-catalog-*.test.ts`（shell 展开）、有关既有 headless/desktop/async/ledger/provider tests、`bun run architecture:check`、`bun run check:full`、两种 strict OpenSpec validation 和 `git diff --check`；依赖/host 限制原样记录，不把未执行写 PASS。
+- [ ] 8.1（**未完成**：同 SHA Codex R2 IMPLEMENTATION_VERIFIED、Claude REVIEW_APPROVED 与统筹 check:full exit 0 已登记于 verification §1/§2；本段按派单只更新 8.5–8.7 勾选，8.1 清单保持未勾）同一准确 source SHA 跑 targeted `bun test --isolate tests/runtime-route-catalog-*.test.ts`（shell 展开）、有关既有 headless/desktop/async/ledger/provider tests、`bun run architecture:check`、`bun run check:full`、两种 strict OpenSpec validation 和 `git diff --check`；依赖/host 限制原样记录，不把未执行写 PASS。
 - [ ] 8.2（**未完成**：host-blocked：Electron 运行库缺失、无 DISPLAY、无 bundled runtimes/凭据；复跑命令见 verification §7）可重复 Desktop smoke：Claude/Codex 各 plan/agent、project/folderless、显式 profile 与 native、普通文本/工具/question/guard/取消/旧 Run 不取消新 Run、重载后读取；确认 descriptor 选择及原 UI 行为。
 - [ ] 8.3（**未完成**：host-blocked：打包 CLI 需 Electron；进程内 CLI/API fake runner 运行只算 TEST 证据；复跑命令见 verification §7）CLI/daemon/stdio smoke：两 runtime batch、Codex policy-grant、completion、create/submit/wait/retry/cancel/events、daemon-first 与 own-pump、未知 required capability、no-probe readiness、无凭据拒绝与 child teardown；stdout/stderr/exit 留脱敏回执。
 - [ ] 8.4（**未完成**：not claimed：无 macOS/Windows 主机；TICKET-130 平台矩阵未完成）macOS/Windows packaged 分别记录 app/runtime SHA/digest/OS/arch、同 neutral fixtures；Windows artifact-bearing request 的既有失败单列。Linux/WSL source 通过不替代 Tier-1 stable gate，不宣称 TICKET-130 平台矩阵已完成。
-- [ ] 8.5（**未完成**：Codex IMPLEMENTATION_VERIFIED 与 fresh-context Claude REVIEW_APPROVED 均未对冻结候选签发；T1 评审 REVIEW_APPROVED @a52d6a93 仅为 touch-up 镜头；开放 P3 见 verification §5）Codex IMPLEMENTATION_VERIFIED 与 fresh-context Claude Code REVIEW_APPROVED 绑定同一准确 source SHA；另有 fresh security lens 验 factory/secret/descriptor boundary。P0/P1 必须解决，P2 有明确 disposition，后续代码变化使两 verdict 失效。
-- [ ] 8.6（**未完成**：停止门持续生效；当前无开放 Red、无旧 selector 残留；host-blocked 项未记通过）**停止门**：无有效 APPROVED（含本次统筹代行）/独立 RED、缺 mandatory evidence、旧 selector 残留、未裁定 Red 或必要前置越界时不宣称实施完成/接受；Green 自主修，Yellow 只登记 follow-up，Red 回 Owner。host-blocked 只能列具体缺口，不能记通过。
-- [ ] 8.7（**未完成**：统筹代行 ACCEPTED 须待 8.5 两 verdict 绑定同一 SHA 且无开放 Red）**统筹代行 ACCEPTED 条件声明（OD-5 统筹预设，Owner 可改）**：统筹登记（非 Owner 签署；统筹记录，Owner 可撤回）：Owner 2026-10-02 自我迭代指示覆盖统筹代行 ACCEPTED（条件见本条）；本行不构成当前 APPROVED/ACCEPTED；Owner 可在 APPROVED 时改为亲自验收；push 依 2026-09-04 规矩由统筹派 Codex。统筹代行须同 SHA Codex IMPLEMENTATION_VERIFIED + Claude REVIEW_APPROVED、无开放 Red、全部验收/残余逐项裁定、未测场景如实记载，记录授权依据/统筹身份/日期/SHA。条件未满足不得代行，也不代替批准 spec 的门禁。
-- [ ] 8.8（**未完成**：本派单不 merge、不 archive）后续本地 merge/archive 仅按届时批准范围和派单处理，merge SHA 重跑门禁；冲突/target 前移/代码变化重新双验。本次起草明确不 merge、不 archive。
-- [ ] 8.9（**未完成**：本派单不 push；push 仅由统筹按 2026-09-04 规矩另行派单）**Push 规矩**：OD-5 确认依 Owner 2026-09-04 规矩由统筹派 Codex；后续 push 派单须固定准确 source SHA/remote target/通过门禁并遵守授权范围，不扩到其他 refs、远程 PR mutation/merge/tag/release。本次派单明确不 push、不 merge，唯一 Git 产物为本地 A、B 两个文档提交，APPROVED 绑定 A。
+- [x] 8.5（Codex gpt-6-astra R2 **IMPLEMENTATION_VERIFIED** + fresh-context Claude **REVIEW_APPROVED** 同绑定 `f4783c38925fd59db11e3684d97bcc1088492c08`；Claude 三视角结论经 binding review 重验，factory/secret/descriptor boundary 已覆盖；回执见 verification §1 / ACCEPTED 段）同 SHA 双技术验收完成；无开放 P0/P1/P2 或 C7 Red。后续代码变化使两 verdict 同时失效，须重新双验。
+- [x] 8.6（有效统筹代行 APPROVED 绑定 a9b74594、登记 19986552；独立 RED 与不可变零差异参照 24801faa、35/35 哈希、同 SHA mandatory technical evidence 已核对；无旧 selector 残留、无未裁定 Red）**停止门核对完成**：host-blocked / not claimed / consumer E2E unknown 如实保留；Yellow 与残余逐项裁定并登记 TICKET-132，不把未测写通过。停止门对后续变化继续生效。
+- [x] 8.7（**ACCEPTED 2026-10-02**；授权依据：Owner 2026-10-02 自我迭代指示与 OD-5；代行统筹：**Claude Fable 5.1**；日期：**2026-10-02**；绑定完整 SHA：**f4783c38925fd59db11e3684d97bcc1088492c08**）统筹代行验收（非 Owner 亲签；Owner 可撤回或修改预设）：双签同 SHA、无开放 Red、接受项与披露 (a)–(j) 逐项见 verification 的 ACCEPTED 段；8.2–8.4 不勾，TICKET-127–131 保持 open；本结论不构成 merge、push、远程 PR 或发布授权。
+- [ ] 8.8（**后续派单**：本段不 merge、不 archive）本地合并与归档须另按届时批准范围派单；在准确 merge SHA 重跑门禁，冲突、target 前移或代码变化须按范围重新双验。
+- [ ] 8.9（**后续派单**：本段不 push）push 仍依 Owner 2026-09-04 规矩由统筹另行派 Codex，固定准确 SHA、remote target 与通过门禁；不扩到其他 refs、远程 PR mutation/merge/tag/release。本段唯一 Git 产物为本地文档验收提交。

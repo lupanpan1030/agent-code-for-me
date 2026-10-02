@@ -8,7 +8,7 @@ Updated: 2026-10-02 (Pacific/Auckland); previous: 2026-10-01 (Pacific/Auckland)
 
 | Active change | Status | Scope / next gate |
 | --- | --- | --- |
-| [refactor-unified-runtime-route-catalog](changes/refactor-unified-runtime-route-catalog/) | IMPLEMENTATION CANDIDATE — frozen（SHA in handoff `impl-route-catalog-t3.report.md`；source f8e538bc；T3 re-freeze supersedes 2bde5acb）— APPROVED 2026-10-02（统筹代行，bound a9b74594，Owner 可撤回）— RED suite c297872d 77/77 green（零差异参照 24801faa）— next gate: same-SHA Codex IMPLEMENTATION_VERIFIED + fresh Claude REVIEW_APPROVED | Phase 3 第三份：单一 runtime route catalog 实施（Phase I/II/T1/T2/T3）+ Phase III 文档与冻结；T3 关闭 Codex R1 P2（schema kind/profile 联动）、终审 4 个 P3 与 T2 评审 2 个文档 P3（verification §5 无 OPEN）；check:full exit 0；Desktop/packaged/真实 Runtime smoke host-blocked；未 merge、未 push。 |
+| [refactor-unified-runtime-route-catalog](changes/refactor-unified-runtime-route-catalog/) | **ACCEPTED（待合入）2026-10-02** — 统筹 Claude Fable 5.1 依 Owner 2026-10-02 自我迭代授权代行；bound `f4783c38925fd59db11e3684d97bcc1088492c08`（source f8e538bc）；Owner 可撤回或修改预设 | Codex gpt-6-astra R2 IMPLEMENTATION_VERIFIED + fresh Claude REVIEW_APPROVED 同 SHA；统筹 check:full exit 0（3033 pass / 2 skip, win32-gated / 0 fail；守卫 17/17、17/17、77/77；strict 54/54），PR-base lint exit 0；接受披露逐项见 verification ACCEPTED 段，[TICKET-132](../docs/tickets/TICKET-132-runtime-route-catalog-followups.md) 承接残余。Desktop/packaged CLI/daemon/stdio smoke host-blocked；macOS/Windows not claimed；consumer E2E unknown；8.2–8.4 不勾；TICKET-127–131 保持 open；本地 merge / archive 与 push 留后续派单，本段未 merge、未 push。 |
 
 Parked proposals are indexed in [`deferred/README.md`](deferred/README.md) and
 do not appear in the active list.

@@ -1,6 +1,6 @@
 # Change: Refactor Unified Runtime Route Catalog
 
-Status: **APPROVED 2026-10-02 (coordinator-acted under Owner mandate, bound to a9b74594; Owner may revoke) — IMPLEMENTATION CANDIDATE frozen (source a52d6a93; candidate SHA in the Phase III handoff); awaiting same-SHA Codex IMPLEMENTATION_VERIFIED + fresh Claude REVIEW_APPROVED**
+Status: **ACCEPTED 2026-10-02 (coordinator Claude Fable 5.1, under the Owner's 2026-10-02 self-iteration mandate) @ f4783c38925fd59db11e3684d97bcc1088492c08 — 待合入；source f8e538bc；同 SHA Codex IMPLEMENTATION_VERIFIED + Claude REVIEW_APPROVED；smoke host-blocked / not claimed；Owner 可撤回或修改预设**
 
 ## Why
 
@@ -235,8 +235,8 @@ PR mutation 或外部通知。现有 TICKET-127–131 残余不能通过代码�
 - [x] Facade tests：N/A（无新 facade）；现有 v1 serializers 的行为保真必须验证。（S21 全 bytes green）
 - [x] Unknown route、invalid catalog、required extension/capability fail-closed；无自动 fallback。（S01/S06/S08/S13/S31/S45/S46/S47 green）
 - [x] Neutral fixtures 不依赖真实凭据/binaries；独立作者基线 RED/保真项 baseline receipt 绑定 SHA。（red-receipt `c297872d`、§10 hashes 35/35 OK @ a52d6a93）
-- [x] 目录单 owner、旧符号删除、alias/wrapper/import 正负例守卫。（S26–S30/S48/S50 green；canonical guard 77/77；T1 production probes；两个开放 P3 绕过形式见 verification §5）
-- [ ] `bun run check:full` 与 fresh-context Claude Code review 绑定同一准确 source SHA。（check:full exit 0 已在候选上记录，verification §2；冻结候选的 fresh review 与 Codex verdict 待签发）
+- [x] 目录单 owner、旧符号删除、alias/wrapper/import 正负例守卫。（S26–S30/S48/S50 green；canonical guard 77/77；T1 production probes；T2/T3 已关闭的绕过形式与剩余已披露限制见 verification §5/§6）
+- [x] `bun run check:full` 与 fresh-context Claude Code review 绑定同一准确 source SHA。（统筹门禁 exit 0、Claude binding REVIEW_APPROVED 与 Codex R2 IMPLEMENTATION_VERIFIED 均绑定 f4783c38925fd59db11e3684d97bcc1088492c08；verification §1 / ACCEPTED 段）
 - [ ] Desktop/CLI/stdio/daemon smoke；macOS/Windows packaged receipts 各自列明，host-blocked 不记通过。（本主机全部 host-blocked / not claimed，原因与复跑命令见 verification §7）
 - [x] Consumer adapter/E2E unknown 的状态和残余逐项记录。（verification §8：Career Kit / Amadeus unknown，TICKET-127–131 照旧）
 
@@ -252,7 +252,7 @@ Owner: Repository Owner (mandate 2026-10-02) — recorded by coordinator Claude 
 Date: 2026-10-02
 ```
 
-统筹登记（非 Owner 签署；统筹记录，Owner 可撤回）：Owner 2026-10-02 自我迭代指示覆盖统筹代行 ACCEPTED（条件见 tasks 8.7）；本行仅声明 OD-5 的已采纳条件，不构成当前 ACCEPTED；APPROVED 见上方 Decision；Owner 可改为亲自验收；push 依 2026-09-04 规矩由统筹派 Codex。
+**ACCEPTED 2026-10-02 (coordinator, mandate) @ f4783c38**（完整 SHA `f4783c38925fd59db11e3684d97bcc1088492c08`）。授权依据为 Owner 2026-10-02 自我迭代指示及 OD-5；统筹 Claude Fable 5.1 代行，非 Owner 亲签，Owner 可撤回或修改预设。此前 APPROVED 绑定 `a9b74594`、登记于 `19986552`。Codex gpt-6-astra R2 IMPLEMENTATION_VERIFIED 与 Claude REVIEW_APPROVED 同绑定该候选；统筹独立 check:full exit 0 与 PR-base lint exit 0。接受的披露 (a)–(j)、双签及门禁回执见 [verification](verification.md) 的 ACCEPTED 段；残余见 [TICKET-132](../../../docs/tickets/TICKET-132-runtime-route-catalog-followups.md)。Desktop/CLI/daemon/stdio smoke host-blocked、macOS/Windows not claimed、consumer E2E unknown；tasks 8.2–8.4 不勾，8.8/8.9 留后续派单。本结论不构成合并、push、远程 PR 或发布授权，后续代码变化须重新双验。
 
 模板的 DIRECT_NEW_STANDARD / NEW_VERSION / TEMPORARY_FACADE / DEFER / REJECT 为可能的
 breaking disposition；已选 disposition = 保持现有合同 + optional 追加；无 breaking disposition。
