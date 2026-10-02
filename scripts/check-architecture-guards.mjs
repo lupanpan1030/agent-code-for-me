@@ -4984,7 +4984,11 @@ function assertLocalJobApiAsyncGuards() {
 // process.env/fs/config read (route-catalog-owner-bypass); and a renderer
 // construction site or main read model that maps runtimes to transports
 // itself, caches a Chat on ok:false or does not map the descriptor read
-// state (renderer-route-projection-bypass). Its self-test consumes
+// state, any runtime discrimination inside a renderer construction path and
+// any runtime-id literal or branch in the transport helper
+// (renderer-route-projection-bypass); a runtime condition in main whose
+// branch yields a transportId literal is route-dispatch-outside-owner. Its
+// self-test consumes
 // RUNTIME_ROUTE_CATALOG_FIXTURE_PATH (or --runtime-route-catalog-fixtures=)
 // and the repository is always enforced in that end state.
 // Detection limits (disclosed): runtime conditions are comparisons with a
@@ -5054,6 +5058,18 @@ const RUNTIME_ROUTE_RENDERER_SITE =
 const RUNTIME_ROUTE_RENDERER_HELPER =
   "src/renderer/features/agents/lib/runtime-route-transport"
 const RUNTIME_ROUTE_RENDERER_HELPER_CALL = "createRuntimeRouteTransport"
+/**
+ * The renderer construction paths (P14 getOrCreateChat, P15 createNewSubChat
+ * / its production handler); the innermost named declaration of every helper
+ * call or transport construction joins them.
+ */
+const RUNTIME_ROUTE_RENDERER_CONSTRUCTION_PATHS = new Set([
+  "getOrCreateChat",
+  "createNewSubChat",
+  "handleCreateNewSubChat",
+])
+/** Property names whose comparison is a runtime discrimination. */
+const RUNTIME_ROUTE_RUNTIME_PROPERTIES = new Set(["runtime", "runtimeId"])
 /** Query/projection functions and the index of their test-only catalog. */
 const RUNTIME_ROUTE_CATALOG_ARGUMENT_INDEX = new Map([
   ["resolveRuntimeRoute", 1],
@@ -5093,6 +5109,8 @@ const RUNTIME_ROUTE_CONFIG_SPECIFIER =
   /(claude-config|user-data-path|electron-store)/
 const RUNTIME_ROUTE_READINESS_MODULE = "src/main/lib/headless/runtime-readiness"
 const RUNTIME_ROUTE_TRANSPORT_ID_LITERAL = /(^[a-z0-9-]+-ipc$|transport)/
+/** A transportId is a kebab-case id (no prose such as error messages). */
+const RUNTIME_ROUTE_TRANSPORT_ID_SHAPE = /^[a-z0-9][a-z0-9-]*$/
 /** Production scan scope (design D5): selection-adjacent main and renderer. */
 const RUNTIME_ROUTE_SCANNED_DIRECTORIES = [
   "src/main/lib/agent-runtime",
@@ -5328,21 +5346,208 @@ function runtimeRouteEnclosingName(node) {
   return "<module>"
 }
 
+const RUNTIME_ROUTE_EQUALITY_OPERATORS = new Set([
+  ts.SyntaxKind.EqualsEqualsEqualsToken,
+  ts.SyntaxKind.ExclamationEqualsEqualsToken,
+  ts.SyntaxKind.EqualsEqualsToken,
+  ts.SyntaxKind.ExclamationEqualsToken,
+])
+
 function isRuntimeRouteRuntimeComparison(node) {
   if (!ts.isBinaryExpression(node)) return false
-  const operator = node.operatorToken.kind
-  if (
-    operator !== ts.SyntaxKind.EqualsEqualsEqualsToken &&
-    operator !== ts.SyntaxKind.ExclamationEqualsEqualsToken &&
-    operator !== ts.SyntaxKind.EqualsEqualsToken &&
-    operator !== ts.SyntaxKind.ExclamationEqualsToken
-  ) {
+  if (!RUNTIME_ROUTE_EQUALITY_OPERATORS.has(node.operatorToken.kind)) {
     return false
   }
   return [node.left, node.right].some((side) => {
     const value = runtimeRouteStringValue(side)
     return value !== null && RUNTIME_ROUTE_RUNTIME_LITERALS.has(value)
   })
+}
+
+function isRuntimeRouteRuntimeProperty(expression) {
+  const value = unwrapExpression(expression)
+  return Boolean(
+    value &&
+      ts.isPropertyAccessExpression(value) &&
+      RUNTIME_ROUTE_RUNTIME_PROPERTIES.has(value.name.text),
+  )
+}
+
+function isRuntimeRouteRuntimeLiteral(expression) {
+  return RUNTIME_ROUTE_RUNTIME_LITERALS.has(
+    runtimeRouteStringValue(expression) ?? "",
+  )
+}
+
+/**
+ * A node that discriminates on a runtime: a comparison with a runtime-id
+ * literal or of a `.runtime` / `.runtimeId` property, a switch over either,
+ * an `includes` test of either, or a call to a same-file runtime predicate.
+ */
+function isRuntimeRouteDiscriminant(node, predicates) {
+  if (isRuntimeRouteRuntimeComparison(node)) return true
+  if (
+    ts.isBinaryExpression(node) &&
+    RUNTIME_ROUTE_EQUALITY_OPERATORS.has(node.operatorToken.kind) &&
+    (isRuntimeRouteRuntimeProperty(node.left) ||
+      isRuntimeRouteRuntimeProperty(node.right))
+  ) {
+    return true
+  }
+  if (ts.isSwitchStatement(node)) {
+    return (
+      isRuntimeRouteSwitch(node) ||
+      isRuntimeRouteRuntimeProperty(node.expression)
+    )
+  }
+  if (!ts.isCallExpression(node)) return false
+  const callee = unwrapExpression(node.expression)
+  if (!callee) return false
+  if (ts.isIdentifier(callee)) {
+    return predicates.has(callee.text) && isRuntimeRouteConditionOperand(node)
+  }
+  if (!ts.isPropertyAccessExpression(callee) || callee.name.text !== "includes")
+    return false
+  if (node.arguments.some(isRuntimeRouteRuntimeProperty)) return true
+  const receiver = unwrapExpression(callee.expression)
+  return Boolean(
+    receiver &&
+      ts.isArrayLiteralExpression(receiver) &&
+      receiver.elements.some(isRuntimeRouteRuntimeLiteral),
+  )
+}
+
+/**
+ * Whether an expression is (part of) a branch condition: an if/ternary
+ * condition, a switch subject or a logical operand. A same-file predicate
+ * called for its value elsewhere is not a runtime branch.
+ */
+function isRuntimeRouteConditionOperand(node) {
+  let child = node
+  let parent = node.parent
+  while (parent) {
+    if (ts.isIfStatement(parent)) return parent.expression === child
+    if (ts.isConditionalExpression(parent)) return parent.condition === child
+    if (ts.isSwitchStatement(parent)) return parent.expression === child
+    if (
+      ts.isBinaryExpression(parent) &&
+      [
+        ts.SyntaxKind.AmpersandAmpersandToken,
+        ts.SyntaxKind.BarBarToken,
+        ts.SyntaxKind.QuestionQuestionToken,
+      ].includes(parent.operatorToken.kind)
+    ) {
+      return true
+    }
+    if (
+      !ts.isParenthesizedExpression(parent) &&
+      !ts.isPrefixUnaryExpression(parent) &&
+      !ts.isAsExpression(parent) &&
+      !ts.isNonNullExpression(parent)
+    ) {
+      return false
+    }
+    child = parent
+    parent = parent.parent
+  }
+  return false
+}
+
+/** A runtime-id string literal or a runtime-id property key/access name. */
+function isRuntimeRouteRuntimeIdToken(node) {
+  if (ts.isStringLiteralLike(node)) {
+    return RUNTIME_ROUTE_RUNTIME_LITERALS.has(node.text)
+  }
+  if (
+    !ts.isIdentifier(node) ||
+    !RUNTIME_ROUTE_RUNTIME_LITERALS.has(node.text)
+  ) {
+    return false
+  }
+  const parent = node.parent
+  return Boolean(
+    parent &&
+      (ts.isPropertyAssignment(parent) ||
+        ts.isPropertySignature(parent) ||
+        ts.isShorthandPropertyAssignment(parent) ||
+        ts.isPropertyAccessExpression(parent) ||
+        ts.isMethodDeclaration(parent)) &&
+      parent.name === node,
+  )
+}
+
+/** A transportId-shaped literal in a value-yielding position. */
+function isRuntimeRouteYieldedTransportId(node) {
+  if (
+    !ts.isStringLiteralLike(node) ||
+    !RUNTIME_ROUTE_TRANSPORT_ID_SHAPE.test(node.text) ||
+    !RUNTIME_ROUTE_TRANSPORT_ID_LITERAL.test(node.text)
+  ) {
+    return false
+  }
+  let child = node
+  let parent = node.parent
+  while (
+    parent &&
+    (ts.isParenthesizedExpression(parent) ||
+      ts.isAsExpression(parent) ||
+      ts.isSatisfiesExpression(parent) ||
+      ts.isNonNullExpression(parent))
+  ) {
+    child = parent
+    parent = parent.parent
+  }
+  if (!parent) return false
+  if (ts.isBinaryExpression(parent)) {
+    const operator = parent.operatorToken.kind
+    return (
+      operator === ts.SyntaxKind.EqualsToken ||
+      operator === ts.SyntaxKind.AmpersandAmpersandToken ||
+      operator === ts.SyntaxKind.BarBarToken ||
+      operator === ts.SyntaxKind.QuestionQuestionToken
+    )
+  }
+  return (
+    ts.isReturnStatement(parent) ||
+    ts.isArrowFunction(parent) ||
+    (ts.isConditionalExpression(parent) && parent.condition !== child) ||
+    (ts.isPropertyAssignment(parent) && parent.initializer === child) ||
+    (ts.isVariableDeclaration(parent) && parent.initializer === child)
+  )
+}
+
+/**
+ * The finding symbol of a node: its innermost named function, else the
+ * module-level variable it initialises, else "<module>".
+ */
+function runtimeRouteDeclarationSymbol(node) {
+  const name = runtimeRouteEnclosingName(node)
+  if (name !== "<module>") return name
+  let current = node.parent
+  while (current) {
+    if (ts.isVariableDeclaration(current) && ts.isIdentifier(current.name)) {
+      return current.name.text
+    }
+    current = current.parent
+  }
+  return name
+}
+
+/** Name of a function declaration or a const bound to a (wrapped) function. */
+function runtimeRouteDeclaredFunctionName(node) {
+  if (ts.isFunctionDeclaration(node) && node.name) return node.name.text
+  if (
+    ts.isVariableDeclaration(node) &&
+    ts.isIdentifier(node.name) &&
+    node.initializer &&
+    runtimeRouteContains(
+      node.initializer,
+      (child) => ts.isArrowFunction(child) || ts.isFunctionExpression(child),
+    )
+  ) {
+    return node.name.text
+  }
+  return null
 }
 
 function runtimeRouteContains(node, predicate) {
@@ -5872,7 +6077,104 @@ function collectRuntimeRouteCatalogFindings(
       }
     })
 
+    // renderer-route-projection-bypass: the transport helper maps
+    // transportIds only; any runtime-id literal or runtime branch is a bypass.
+    if (isRendererHelper) {
+      runtimeRouteVisit(sourceFile, (node) => {
+        if (
+          isRuntimeRouteRuntimeIdToken(node) ||
+          isRuntimeRouteDiscriminant(node, predicates)
+        ) {
+          add(
+            runtimeRouteFinding(
+              RUNTIME_ROUTE_RULE.renderer,
+              file,
+              runtimeRouteDeclarationSymbol(node),
+            ),
+          )
+        }
+      })
+    }
+
+    // route-dispatch-outside-owner: a runtime condition (ternary, if,
+    // switch or logical operator) whose branch yields a transportId literal
+    // is a runtime -> transport selection outside the catalog.
+    if (file.startsWith("src/main/")) {
+      const discriminates = (expression) =>
+        runtimeRouteContains(expression, (child) =>
+          isRuntimeRouteDiscriminant(child, predicates),
+        )
+      const yieldsTransportId = (branch) =>
+        Boolean(branch) &&
+        runtimeRouteContains(branch, isRuntimeRouteYieldedTransportId)
+      runtimeRouteVisit(sourceFile, (node) => {
+        let selectsTransport = false
+        if (ts.isConditionalExpression(node)) {
+          selectsTransport =
+            discriminates(node.condition) &&
+            (yieldsTransportId(node.whenTrue) ||
+              yieldsTransportId(node.whenFalse))
+        } else if (ts.isIfStatement(node)) {
+          selectsTransport =
+            discriminates(node.expression) &&
+            (yieldsTransportId(node.thenStatement) ||
+              yieldsTransportId(node.elseStatement))
+        } else if (ts.isSwitchStatement(node)) {
+          selectsTransport =
+            isRuntimeRouteDiscriminant(node, predicates) &&
+            yieldsTransportId(node.caseBlock)
+        } else if (
+          ts.isBinaryExpression(node) &&
+          [
+            ts.SyntaxKind.AmpersandAmpersandToken,
+            ts.SyntaxKind.BarBarToken,
+            ts.SyntaxKind.QuestionQuestionToken,
+          ].includes(node.operatorToken.kind)
+        ) {
+          selectsTransport =
+            discriminates(node.left) && yieldsTransportId(node.right)
+        }
+        if (selectsTransport) {
+          add(
+            runtimeRouteFinding(
+              RUNTIME_ROUTE_RULE.dispatch,
+              file,
+              runtimeRouteDeclarationSymbol(node),
+            ),
+          )
+        }
+      })
+    }
+
     if (isRendererSite) {
+      // Any runtime discrimination inside a construction path (P14/P15).
+      const constructionPaths = new Set(
+        RUNTIME_ROUTE_RENDERER_CONSTRUCTION_PATHS,
+      )
+      runtimeRouteVisit(sourceFile, (node) => {
+        if (
+          (ts.isCallExpression(node) &&
+            runtimeRouteCalleeName(node) ===
+              RUNTIME_ROUTE_RENDERER_HELPER_CALL) ||
+          (ts.isNewExpression(node) && isTarget(node.expression))
+        ) {
+          const name = runtimeRouteEnclosingName(node)
+          if (name !== "<module>") constructionPaths.add(name)
+        }
+      })
+      runtimeRouteVisit(sourceFile, (node) => {
+        const name = runtimeRouteDeclaredFunctionName(node)
+        if (
+          name &&
+          constructionPaths.has(name) &&
+          runtimeRouteContains(node, (child) =>
+            isRuntimeRouteDiscriminant(child, predicates),
+          )
+        ) {
+          add(runtimeRouteFinding(RUNTIME_ROUTE_RULE.renderer, file, name))
+        }
+      })
+
       const helperCalls = []
       const states = new Set()
       runtimeRouteVisit(sourceFile, (node) => {
