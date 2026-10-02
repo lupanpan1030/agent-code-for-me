@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, test } from "bun:test"
 import {
   clearRuntimeReadinessCacheForTest,
-  resolveLocalJobApiRuntimeReadiness,
+  resolveClaudeCodeRuntimeReadiness,
+  resolveCodexRuntimeReadiness,
 } from "../src/main/lib/headless/runtime-readiness"
 import type { RuntimeExecutableStatus } from "../src/main/lib/runtime-executable"
 
@@ -68,8 +69,7 @@ describe("Local Job API runtime readiness", () => {
   })
 
   test("reports Claude ready from the app credential source first", async () => {
-    const readiness = await resolveLocalJobApiRuntimeReadiness({
-      runtimeId: "claude-code",
+    const readiness = await resolveClaudeCodeRuntimeReadiness({
       dependencies: {
         hasAnyClaudeCodeAccount: () => true,
         getClaudeCodeCredentialMetadata: () => claudeMetadata(),
@@ -86,8 +86,7 @@ describe("Local Job API runtime readiness", () => {
   })
 
   test("does not report expired unrefreshable Claude app credentials as ready", async () => {
-    const readiness = await resolveLocalJobApiRuntimeReadiness({
-      runtimeId: "claude-code",
+    const readiness = await resolveClaudeCodeRuntimeReadiness({
       dependencies: {
         hasAnyClaudeCodeAccount: () => true,
         getClaudeCodeCredentialMetadata: () =>
@@ -107,8 +106,7 @@ describe("Local Job API runtime readiness", () => {
   })
 
   test("does not report invalid stored Claude app credentials as ready", async () => {
-    const readiness = await resolveLocalJobApiRuntimeReadiness({
-      runtimeId: "claude-code",
+    const readiness = await resolveClaudeCodeRuntimeReadiness({
       dependencies: {
         hasAnyClaudeCodeAccount: () => true,
         getClaudeCodeCredentialMetadata: () =>
@@ -124,8 +122,7 @@ describe("Local Job API runtime readiness", () => {
   })
 
   test("does not report expiring unrefreshable Claude app credentials as ready", async () => {
-    const readiness = await resolveLocalJobApiRuntimeReadiness({
-      runtimeId: "claude-code",
+    const readiness = await resolveClaudeCodeRuntimeReadiness({
       dependencies: {
         hasAnyClaudeCodeAccount: () => true,
         getClaudeCodeCredentialMetadata: () =>
@@ -142,8 +139,7 @@ describe("Local Job API runtime readiness", () => {
   })
 
   test("falls back to Claude CLI login when app credential cannot refresh", async () => {
-    const readiness = await resolveLocalJobApiRuntimeReadiness({
-      runtimeId: "claude-code",
+    const readiness = await resolveClaudeCodeRuntimeReadiness({
       dependencies: {
         hasAnyClaudeCodeAccount: () => true,
         getClaudeCodeCredentialMetadata: () =>
@@ -166,8 +162,7 @@ describe("Local Job API runtime readiness", () => {
   })
 
   test("reports refreshable Claude app credentials as ready", async () => {
-    const readiness = await resolveLocalJobApiRuntimeReadiness({
-      runtimeId: "claude-code",
+    const readiness = await resolveClaudeCodeRuntimeReadiness({
       dependencies: {
         hasAnyClaudeCodeAccount: () => true,
         getClaudeCodeCredentialMetadata: () =>
@@ -186,8 +181,7 @@ describe("Local Job API runtime readiness", () => {
   })
 
   test("reports Claude ready from CLI login when no app account exists", async () => {
-    const readiness = await resolveLocalJobApiRuntimeReadiness({
-      runtimeId: "claude-code",
+    const readiness = await resolveClaudeCodeRuntimeReadiness({
       dependencies: {
         hasAnyClaudeCodeAccount: () => false,
         getExistingClaudeCredentials: () => ({
@@ -201,8 +195,7 @@ describe("Local Job API runtime readiness", () => {
   })
 
   test("does not report expired unrefreshable Claude CLI credentials as ready", async () => {
-    const readiness = await resolveLocalJobApiRuntimeReadiness({
-      runtimeId: "claude-code",
+    const readiness = await resolveClaudeCodeRuntimeReadiness({
       dependencies: {
         hasAnyClaudeCodeAccount: () => false,
         getExistingClaudeCredentials: () => ({
@@ -230,8 +223,7 @@ describe("Local Job API runtime readiness", () => {
       },
     ]) {
       clearRuntimeReadinessCacheForTest()
-      const readiness = await resolveLocalJobApiRuntimeReadiness({
-        runtimeId: "claude-code",
+      const readiness = await resolveClaudeCodeRuntimeReadiness({
         dependencies: {
           hasAnyClaudeCodeAccount: () => false,
           getExistingClaudeCredentials: () => credential,
@@ -243,8 +235,7 @@ describe("Local Job API runtime readiness", () => {
   })
 
   test("does not report expiring unrefreshable Claude CLI credentials as ready", async () => {
-    const readiness = await resolveLocalJobApiRuntimeReadiness({
-      runtimeId: "claude-code",
+    const readiness = await resolveClaudeCodeRuntimeReadiness({
       dependencies: {
         hasAnyClaudeCodeAccount: () => false,
         getExistingClaudeCredentials: () => ({
@@ -259,8 +250,7 @@ describe("Local Job API runtime readiness", () => {
   })
 
   test("reports expired refreshable Claude CLI credentials as ready", async () => {
-    const readiness = await resolveLocalJobApiRuntimeReadiness({
-      runtimeId: "claude-code",
+    const readiness = await resolveClaudeCodeRuntimeReadiness({
       dependencies: {
         hasAnyClaudeCodeAccount: () => false,
         getExistingClaudeCredentials: () => ({
@@ -277,8 +267,7 @@ describe("Local Job API runtime readiness", () => {
   })
 
   test("reports Claude needs-auth when neither credential source exists", async () => {
-    const readiness = await resolveLocalJobApiRuntimeReadiness({
-      runtimeId: "claude-code",
+    const readiness = await resolveClaudeCodeRuntimeReadiness({
       dependencies: {
         hasAnyClaudeCodeAccount: () => false,
         getExistingClaudeCredentials: () => null,
@@ -291,8 +280,7 @@ describe("Local Job API runtime readiness", () => {
   })
 
   test("reports ready from a usable default provider before native credentials", async () => {
-    const readiness = await resolveLocalJobApiRuntimeReadiness({
-      runtimeId: "claude-code",
+    const readiness = await resolveClaudeCodeRuntimeReadiness({
       dependencies: {
         inspectDefaultProviderBinding: () => ({
           state: "ready",
@@ -316,8 +304,7 @@ describe("Local Job API runtime readiness", () => {
   })
 
   test("reports a broken default provider as unavailable without native fallback", async () => {
-    const readiness = await resolveLocalJobApiRuntimeReadiness({
-      runtimeId: "codex",
+    const readiness = await resolveCodexRuntimeReadiness({
       dependencies: {
         inspectDefaultProviderBinding: () => ({
           state: "unavailable",
@@ -342,8 +329,7 @@ describe("Local Job API runtime readiness", () => {
   })
 
   test("falls through to native readiness only when no default is configured", async () => {
-    const readiness = await resolveLocalJobApiRuntimeReadiness({
-      runtimeId: "claude-code",
+    const readiness = await resolveClaudeCodeRuntimeReadiness({
       dependencies: {
         inspectDefaultProviderBinding: () => ({ state: "not-configured" }),
         hasAnyClaudeCodeAccount: () => false,
@@ -355,8 +341,7 @@ describe("Local Job API runtime readiness", () => {
   })
 
   test("no-probe still reports a usable default provider as ready", async () => {
-    const readiness = await resolveLocalJobApiRuntimeReadiness({
-      runtimeId: "codex",
+    const readiness = await resolveCodexRuntimeReadiness({
       probe: false,
       dependencies: {
         inspectDefaultProviderBinding: () => ({
@@ -375,8 +360,7 @@ describe("Local Job API runtime readiness", () => {
 
   test("maps Codex CLI and login readiness states", async () => {
     await expect(
-      resolveLocalJobApiRuntimeReadiness({
-        runtimeId: "codex",
+      resolveCodexRuntimeReadiness({
         dependencies: {
           getCodexExecutableStatus: () => executableStatus(false),
           getCodexRuntimeStatus: async () => {
@@ -388,8 +372,7 @@ describe("Local Job API runtime readiness", () => {
 
     clearRuntimeReadinessCacheForTest()
     await expect(
-      resolveLocalJobApiRuntimeReadiness({
-        runtimeId: "codex",
+      resolveCodexRuntimeReadiness({
         dependencies: {
           getCodexExecutableStatus: () => executableStatus(true),
           getCodexRuntimeStatus: async () => codexStatus("ready"),
@@ -399,8 +382,7 @@ describe("Local Job API runtime readiness", () => {
 
     clearRuntimeReadinessCacheForTest()
     await expect(
-      resolveLocalJobApiRuntimeReadiness({
-        runtimeId: "codex",
+      resolveCodexRuntimeReadiness({
         dependencies: {
           getCodexExecutableStatus: () => executableStatus(true),
           getCodexRuntimeStatus: async () =>
@@ -418,8 +400,7 @@ describe("Local Job API runtime readiness", () => {
 
   test("degrades Codex probe failures to unknown with a diagnostic", async () => {
     const diagnostics: string[] = []
-    const readiness = await resolveLocalJobApiRuntimeReadiness({
-      runtimeId: "codex",
+    const readiness = await resolveCodexRuntimeReadiness({
       onDiagnostic: (message) => diagnostics.push(message),
       dependencies: {
         getCodexExecutableStatus: () => executableStatus(true),
@@ -440,8 +421,7 @@ describe("Local Job API runtime readiness", () => {
   test("no-probe skips Codex subprocess probes while keeping cheap checks", async () => {
     let executableChecks = 0
     let probes = 0
-    const readiness = await resolveLocalJobApiRuntimeReadiness({
-      runtimeId: "codex",
+    const readiness = await resolveCodexRuntimeReadiness({
       probe: false,
       dependencies: {
         getCodexExecutableStatus: () => {
@@ -473,14 +453,12 @@ describe("Local Job API runtime readiness", () => {
     }
 
     await expect(
-      resolveLocalJobApiRuntimeReadiness({
-        runtimeId: "codex",
+      resolveCodexRuntimeReadiness({
         dependencies,
       }),
     ).resolves.toMatchObject({ state: "ready" })
     await expect(
-      resolveLocalJobApiRuntimeReadiness({
-        runtimeId: "codex",
+      resolveCodexRuntimeReadiness({
         dependencies,
       }),
     ).resolves.toMatchObject({ state: "ready" })
@@ -488,8 +466,7 @@ describe("Local Job API runtime readiness", () => {
 
     now += 30_001
     await expect(
-      resolveLocalJobApiRuntimeReadiness({
-        runtimeId: "codex",
+      resolveCodexRuntimeReadiness({
         dependencies,
       }),
     ).resolves.toMatchObject({ state: "needs-auth" })
@@ -497,8 +474,7 @@ describe("Local Job API runtime readiness", () => {
   })
 
   test("secret-looking readiness text is replaced by unknown", async () => {
-    const readiness = await resolveLocalJobApiRuntimeReadiness({
-      runtimeId: "codex",
+    const readiness = await resolveCodexRuntimeReadiness({
       dependencies: {
         getCodexExecutableStatus: () => executableStatus(true),
         getCodexRuntimeStatus: async () =>

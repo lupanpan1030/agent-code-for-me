@@ -56,11 +56,11 @@ export type RuntimeReadinessResolverDependencies = {
   now?: () => number
 }
 
-export type ResolveRuntimeReadinessOptions = {
+/** Context of one runtime's readiness probe (the route catalog's probe context). */
+export type RuntimeReadinessProbeOptions = {
   dependencies?: RuntimeReadinessResolverDependencies
   onDiagnostic?: (message: string) => void
   probe?: boolean
-  runtimeId: AgentRuntimeContractId
 }
 
 const RUNTIME_READINESS_CACHE_TTL_MS = 30_000
@@ -270,7 +270,7 @@ function readinessFromCodexStatus(
 }
 
 async function resolveCodexReadiness(
-  input: ResolveRuntimeReadinessOptions,
+  input: RuntimeReadinessProbeOptions,
 ): Promise<LocalJobApiRuntimeReadiness> {
   const dependencies = input.dependencies ?? {}
   const executable =
@@ -307,23 +307,55 @@ async function resolveCodexReadiness(
   return resolved
 }
 
-export async function resolveLocalJobApiRuntimeReadiness(
-  input: ResolveRuntimeReadinessOptions,
+/**
+ * One runtime's advisory readiness: the configured default provider profile
+ * first (a broken default never falls back to the native probe), then the
+ * runtime's native probe; any failure is `unknown`, never ready. Shared
+ * composition of the per-runtime leaf probes below, not a runtime dispatch.
+ */
+async function resolveRuntimeReadinessWith(
+  runtimeId: AgentRuntimeContractId,
+  input: RuntimeReadinessProbeOptions,
+  nativeProbe: () =>
+    | LocalJobApiRuntimeReadiness
+    | Promise<LocalJobApiRuntimeReadiness>,
 ): Promise<LocalJobApiRuntimeReadiness> {
   try {
     const defaultProviderReadiness = resolveDefaultProviderReadiness(
-      input.runtimeId,
+      runtimeId,
       input.dependencies ?? {},
     )
     if (defaultProviderReadiness) return defaultProviderReadiness
-    if (input.runtimeId === "claude-code") {
-      return resolveClaudeReadiness(input.dependencies ?? {})
-    }
-    return await resolveCodexReadiness(input)
+    return await nativeProbe()
   } catch {
-    emitUnknownDiagnostic(input.runtimeId, input.onDiagnostic)
+    emitUnknownDiagnostic(runtimeId, input.onDiagnostic)
     return readiness(unknownReadiness())
   }
+}
+
+/**
+ * Claude Code readiness leaf probe; the runtime route catalog references it
+ * for Claude routes. This module keeps probe, cache, credential and
+ * default-profile ownership and never imports the catalog.
+ */
+export function resolveClaudeCodeRuntimeReadiness(
+  input: RuntimeReadinessProbeOptions = {},
+): Promise<LocalJobApiRuntimeReadiness> {
+  return resolveRuntimeReadinessWith("claude-code", input, () =>
+    resolveClaudeReadiness(input.dependencies ?? {}),
+  )
+}
+
+/**
+ * Codex readiness leaf probe (bundled CLI, login status and the 30 s status
+ * cache); the runtime route catalog references it for Codex routes.
+ */
+export function resolveCodexRuntimeReadiness(
+  input: RuntimeReadinessProbeOptions = {},
+): Promise<LocalJobApiRuntimeReadiness> {
+  return resolveRuntimeReadinessWith("codex", input, () =>
+    resolveCodexReadiness(input),
+  )
 }
 
 /**

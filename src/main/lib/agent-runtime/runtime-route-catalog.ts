@@ -45,8 +45,10 @@ import type {
   AgentRuntimeRunResult,
 } from "../headless/agent-runtime-contract"
 import {
+  type RuntimeReadinessProbeOptions,
   type RuntimeReadinessResolverDependencies,
-  resolveLocalJobApiRuntimeReadiness,
+  resolveClaudeCodeRuntimeReadiness,
+  resolveCodexRuntimeReadiness,
   unknownRuntimeReadiness,
 } from "../headless/runtime-readiness"
 import {
@@ -549,23 +551,25 @@ const PRODUCTION_AGENT_FACTORIES: Readonly<
     )) satisfies CodexDesktopRuntimeRouteDelegate,
 }
 
-function productionReadinessProbe(
-  runtimeId: "claude-code" | "codex",
-): RuntimeRouteReadinessProbe {
-  return (context = {}) =>
-    resolveLocalJobApiRuntimeReadiness({
-      runtimeId,
-      ...(context.dependencies ? { dependencies: context.dependencies } : {}),
-      ...(context.onDiagnostic ? { onDiagnostic: context.onDiagnostic } : {}),
-      ...(context.probe === undefined ? {} : { probe: context.probe }),
-    })
+/** The probe context forwarded to a runtime's readiness leaf probe. */
+function readinessProbeOptions(
+  context: RuntimeRouteReadinessContext,
+): RuntimeReadinessProbeOptions {
+  return {
+    ...(context.dependencies ? { dependencies: context.dependencies } : {}),
+    ...(context.onDiagnostic ? { onDiagnostic: context.onDiagnostic } : {}),
+    ...(context.probe === undefined ? {} : { probe: context.probe }),
+  }
 }
 
+/** Per-runtime readiness leaf probes (runtime-readiness.ts owns them). */
 const PRODUCTION_READINESS_PROBES: Readonly<
   Record<string, RuntimeRouteReadinessProbe>
 > = {
-  "readiness:claude-code": productionReadinessProbe("claude-code"),
-  "readiness:codex": productionReadinessProbe("codex"),
+  "readiness:claude-code": (context = {}) =>
+    resolveClaudeCodeRuntimeReadiness(readinessProbeOptions(context)),
+  "readiness:codex": (context = {}) =>
+    resolveCodexRuntimeReadiness(readinessProbeOptions(context)),
 }
 
 /**
