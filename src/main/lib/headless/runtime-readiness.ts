@@ -13,7 +13,7 @@ import {
   getBundledCodexCliMissingHint,
   getBundledCodexCliPath,
 } from "../codex/cli-path"
-import { getCodexRuntimeStatus } from "../codex/runtime-status"
+import { getCodexNativeRuntimeStatus } from "../codex/native-runtime-status"
 import {
   getRuntimeExecutableStatus,
   type RuntimeExecutableStatus,
@@ -297,8 +297,10 @@ async function resolveCodexReadiness(
     return cached.readiness
   }
 
+  // Native status only: the desktop route metadata composition of
+  // codex.getRuntimeStatus would reach the route catalog again.
   const status = await (dependencies.getCodexRuntimeStatus?.() ??
-    getCodexRuntimeStatus())
+    getCodexNativeRuntimeStatus())
   const resolved = readinessFromCodexStatus(status)
   readinessCache.set("codex", {
     expiresAt: now + RUNTIME_READINESS_CACHE_TTL_MS,
