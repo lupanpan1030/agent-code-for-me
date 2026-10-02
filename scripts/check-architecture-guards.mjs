@@ -5964,6 +5964,15 @@ function collectRuntimeRouteCatalogFindings(
         }
         for (const namespace of entry.namespaces) leafNamespaces.add(namespace)
       }
+      // D1 named hosts imported under an alias are dispatch targets too.
+      for (const imported of entry.named) {
+        if (
+          RUNTIME_ROUTE_NAMED_HOSTS.has(imported.imported) &&
+          imported.local
+        ) {
+          targets.add(imported.local)
+        }
+      }
       if (entry.key.endsWith("-chat-transport")) {
         for (const imported of entry.named) {
           if (/ChatTransport$/.test(imported.imported) && imported.local) {

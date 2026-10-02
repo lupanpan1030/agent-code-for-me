@@ -335,6 +335,29 @@ export async function runDesktopRuntime(runtimeId: string, input: never) {
     ])
   })
 
+  test("m4-import-alias: a runtimeId branch choosing between named hosts imported under aliases is a route-dispatch-outside-owner finding", () => {
+    const file = "src/main/lib/trpc/routers/desktop-runtime.ts"
+    const source = `import { runClaudeAgentSdkDesktopRuntimeWithMcpReadiness as runClaude } from "../../claude/agent-sdk-desktop-run-runtime"
+import { runCodexDesktopChatRun as runCodex } from "../../codex/desktop-chat-run"
+
+export async function runDesktopRuntime(runtimeId: string, input: never) {
+  if (runtimeId === "codex") return runCodex(input)
+  return runClaude(input)
+}
+`
+    expect(scan({ [file]: source })).toEqual([
+      finding(RUNTIME_ROUTE_RULE.dispatch, file, "runDesktopRuntime"),
+    ])
+    // An aliased host called without a runtime branch stays clean.
+    const fixed = `import { runCodexDesktopChatRun as runCodex } from "../../codex/desktop-chat-run"
+
+export async function runCodexDesktop(input: never) {
+  return runCodex(input)
+}
+`
+    expect(scan({ [file]: fixed })).toEqual([])
+  })
+
   test("m5: a runtime-keyed map of named hosts in headless is a route-dispatch-outside-owner finding", () => {
     const file = "src/main/lib/headless/runtime-hosts.ts"
     const source = `import { runCodexDesktopChatRun } from "../codex/desktop-chat-run"
