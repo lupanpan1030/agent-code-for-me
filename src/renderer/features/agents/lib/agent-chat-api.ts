@@ -86,7 +86,7 @@ function useAgentChats(): { data: DesktopAgentChat[]; isLoading: boolean } {
 function useAgentChat(
   args?: { chatId: string },
   opts?: AnyObj,
-): { data: DesktopAgentChat | null; isLoading: boolean } {
+): { data: DesktopAgentChat | null; isLoading: boolean; isError: boolean } {
   const chatId = args?.chatId
   const result = trpc.chats.get.useQuery(
     { id: chatId! },
@@ -104,7 +104,7 @@ function useAgentChat(
         : null,
     [result.data],
   )
-  return { data, isLoading: result.isLoading }
+  return { data, isLoading: result.isLoading, isError: result.isError }
 }
 
 function useRenameChatMutation(opts?: { onSuccess?: AnyFn; onError?: AnyFn }) {

@@ -173,7 +173,6 @@ import { usePendingAgentMessages } from "../hooks/use-pending-agent-messages"
 import { useTextContextSelection } from "../hooks/use-text-context-selection"
 import { useToggleFocusOnCmdEsc } from "../hooks/use-toggle-focus-on-cmd-esc"
 import { useWorkspaceDiffFetch } from "../hooks/use-workspace-diff-fetch"
-import { CodexAppServerChatTransport } from "../lib/codex-app-server-chat-transport"
 import { isCurrentAuthRetryBindingIdentity } from "../lib/auth-retry-binding"
 import {
   getCanonicalMessageParts,
@@ -203,9 +202,13 @@ import {
   releaseFailedChatInitialGeneration,
   runClaimedChatInitialGeneration,
 } from "../lib/chat-initial-generation"
-import { IPCChatTransport } from "../lib/ipc-chat-transport"
 import { buildAgentMessageParts } from "../lib/message-parts"
 import { useRuntimeCapabilitySupported } from "../lib/runtime-manifest-store"
+import {
+  createRuntimeRouteTransport,
+  type RuntimeRouteTransportInput,
+  type RuntimeRouteTransportResult,
+} from "../lib/runtime-route-transport"
 import {
   clearRuntimeQuestionApprovalIfCurrent,
   respondToRuntimeQuestionApproval,
@@ -369,6 +372,27 @@ type OptimisticChatsListRow = {
   id: string
   updatedAt: Date | string
   [key: string]: unknown
+}
+
+/**
+ * Maps a binding read model's route-descriptor read state to the runtime
+ * route transport input (design D3): a failed chat read is an error, a read
+ * whose binding has no stamped transportId (not loaded yet or absent) is
+ * not-loaded, otherwise the stamped key is loaded. No runtime is inspected.
+ */
+function toRuntimeRouteTransportInput(read: {
+  readFailed: boolean
+  binding: unknown
+}): RuntimeRouteTransportInput {
+  if (read.readFailed) return { state: "error" }
+  const transportId =
+    read.binding && typeof read.binding === "object"
+      ? (read.binding as { transportId?: unknown }).transportId
+      : undefined
+  if (typeof transportId !== "string" || transportId.length === 0) {
+    return { state: "not-loaded" }
+  }
+  return { state: "loaded", transportId }
 }
 
 function clearRuntimeCachesForSubChat(subChatId: string) {
@@ -5032,7 +5056,11 @@ export function ChatView({
 
   // Fetch local chat data only. Hosted sandbox chats are not part of the
   // desktop local-first flow.
-  const { data: localAgentChat, isLoading: isLocalLoading } = agentChatApi.agents.getAgentChat.useQuery(
+  const {
+    data: localAgentChat,
+    isLoading: isLocalLoading,
+    isError: isLocalChatReadError,
+  } = agentChatApi.agents.getAgentChat.useQuery(
     { chatId },
     { enabled: !!chatId },
   )
@@ -6051,43 +6079,31 @@ Make sure to preserve all functionality from both branches when resolving confli
         .allSubChats.find((sc) => sc.id === subChatId)
       const subChatMode = subChatMeta?.mode || currentMode
 
-      const chatProvider = binding.runtime
-
       console.log("[getOrCreateChat] Transport selection", {
         subChatId: subChatId.slice(-8),
         worktreePath: worktreePath ? "exists" : "none",
         workspaceKind: isFolderlessChat ? "folderless" : "project",
       })
 
-      let transport: IPCChatTransport | CodexAppServerChatTransport | null =
-        null
-
-      if (chatProvider === "codex") {
-        console.log("[getOrCreateChat] Using CodexAppServerChatTransport", {
-          provider: chatProvider,
-        })
-        transport = new CodexAppServerChatTransport({
-          chatId,
-          subChatId,
+      // The binding read model carries the transportId main's runtime route
+      // catalog assigns (design D3); the renderer only maps its read state.
+      const route = createRuntimeRouteTransport(
+        toRuntimeRouteTransportInput({
+          readFailed: isLocalChatReadError,
           binding,
-          projectPath,
-          mode: subChatMode,
-          provider: "codex",
+        }),
+        { chatId, subChatId, binding, projectPath, mode: subChatMode },
+      )
+      if (!route.ok) {
+        // Visible failure without subscribing or caching a Chat; the next
+        // successful chat read retries.
+        console.error("[getOrCreateChat] Runtime route transport unavailable", {
+          subChatId: subChatId.slice(-8),
+          failure: route.failure,
         })
-      } else {
-        transport = new IPCChatTransport({
-          chatId,
-          subChatId,
-          binding,
-          projectPath,
-          mode: subChatMode,
-        })
-      }
-
-      if (!transport) {
-        console.error("[getOrCreateChat] No transport available")
         return null
       }
+      const transport = route.transport
 
       const newChat = new Chat<any>({
         id: subChatId,
@@ -6175,6 +6191,7 @@ Make sure to preserve all functionality from both branches when resolving confli
     },
     [
       agentChat,
+      isLocalChatReadError,
       worktreePath,
       isFolderlessChat,
       originalProjectPath,
@@ -6345,42 +6362,33 @@ Make sure to preserve all functionality from both branches when resolving confli
       workspaceKind: isFolderlessChat ? "folderless" : "project",
     })
 
-    const chatProvider = newSubChat.binding.runtime
-    let newSubChatTransport:
-      | IPCChatTransport
-      | CodexAppServerChatTransport
-      | null = null
-
+    // createSubChat returned the binding read model with the transportId
+    // main's runtime route catalog assigns (design D3).
+    let newSubChatRoute: RuntimeRouteTransportResult | null = null
     if (worktreePath || isFolderlessChat) {
-      if (chatProvider === "codex") {
-        console.log(
-          "[createNewSubChat] Using CodexAppServerChatTransport",
-          {
-            provider: chatProvider,
-          },
+      newSubChatRoute = createRuntimeRouteTransport(
+        toRuntimeRouteTransportInput({
+          readFailed: false,
+          binding: newSubChat.binding,
+        }),
+        {
+          chatId,
+          subChatId: newId,
+          binding: newSubChat.binding,
+          projectPath: isFolderlessChat ? undefined : projectPath,
+          mode: newSubChatMode,
+        },
+      )
+      if (!newSubChatRoute.ok) {
+        console.error(
+          "[createNewSubChat] Runtime route transport unavailable",
+          { newId: newId.slice(-8), failure: newSubChatRoute.failure },
         )
-        newSubChatTransport = new CodexAppServerChatTransport({
-          chatId,
-          subChatId: newId,
-          binding: newSubChat.binding,
-          projectPath: isFolderlessChat ? undefined : projectPath,
-          mode: newSubChatMode,
-          provider: "codex",
-        })
-      } else {
-        // Local worktree chat: use IPC transport
-        newSubChatTransport = new IPCChatTransport({
-          chatId,
-          subChatId: newId,
-          binding: newSubChat.binding,
-          projectPath: isFolderlessChat ? undefined : projectPath,
-          mode: newSubChatMode,
-        })
       }
     }
 
-    if (newSubChatTransport) {
-      const transport = newSubChatTransport
+    if (newSubChatRoute?.ok) {
+      const transport = newSubChatRoute.transport
 
       const newChat = new Chat<any>({
         id: newId,
