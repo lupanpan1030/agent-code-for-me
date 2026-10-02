@@ -4968,36 +4968,48 @@ function assertLocalJobApiAsyncGuards() {
 //
 // src/main/lib/agent-runtime/runtime-route-catalog.ts is the only owner of
 // runtime -> adapter/transport/readiness selection (design D1/D2/D5). The
-// fixture-driven rules below reject: a runtimeId/binding.runtime condition
-// (directly or through a one-hop local predicate) or a runtime-keyed map that
-// selects a leaf adapter or transport outside the catalog
-// (route-dispatch-outside-owner); a second declaration table built through
-// the catalog's validator or test constructor (duplicate-route-catalog); any
-// retired selector module/export/import/forwarding alias
-// (retired-route-selector); a value import/call of a leaf run/create export
-// outside the catalog (leaf-adapter-import-outside-catalog); a production
-// catalog option or query catalog argument that is not forwarded unchanged
-// (route-catalog-test-port-in-production); a catalog import of Electron,
-// tRPC, renderer, preload, a router (also through a one-hop wrapper) or a
-// readiness -> catalog cycle (route-catalog-forbidden-dependency); a catalog
-// import of the queue/ledger/artifact/provider-storage owners or a
-// process.env/fs/config read (route-catalog-owner-bypass); and a renderer
-// construction site or main read model that maps runtimes to transports
-// itself, caches a Chat on ok:false or does not map the descriptor read
-// state, any runtime discrimination inside a renderer construction path and
-// any runtime-id literal or branch in the transport helper
-// (renderer-route-projection-bypass); a runtime condition in main whose
-// branch yields a transportId literal, and a runtime branch or
-// runtime-keyed map choosing between the D1 named hosts, are
-// route-dispatch-outside-owner. Its
-// self-test consumes
-// RUNTIME_ROUTE_CATALOG_FIXTURE_PATH (or --runtime-route-catalog-fixtures=)
-// and the repository is always enforced in that end state.
-// Detection limits (disclosed): runtime conditions are comparisons with a
-// runtime-id string literal or a call to a same-file predicate holding one;
-// leaf/transport references are matched by imported binding (named or
-// namespace) and `(await import(leaf)).export`; reflection, computed keys,
-// re-binding through another module and multi-hop wrappers are not caught.
+// fixture-driven rules below reject:
+// - route-dispatch-outside-owner: a runtimeId/binding.runtime condition
+//   (directly or through a one-hop local predicate) or a runtime-keyed map
+//   that selects a leaf adapter, a transport class or one of the D1 named
+//   hosts outside the catalog;
+// - duplicate-route-catalog: a second declaration table built through the
+//   catalog's validator or test constructor;
+// - retired-route-selector: any retired selector module, export, import or
+//   forwarding alias, and the deleted registry/readiness facade names;
+// - leaf-adapter-import-outside-catalog: a value import/call of a leaf
+//   run/create export outside the catalog;
+// - route-catalog-test-port-in-production: a production catalog option or
+//   query catalog argument that is not forwarded unchanged;
+// - route-catalog-forbidden-dependency: a catalog import of Electron, tRPC,
+//   renderer, preload or a router (also through a one-hop wrapper), or a
+//   readiness -> catalog cycle;
+// - route-catalog-owner-bypass: a catalog import of the queue/ledger/
+//   artifact/provider-storage owners or a process.env/fs/config read;
+// - renderer-route-projection-bypass: a renderer construction site that
+//   does not map the descriptor read state or caches a Chat on ok:false;
+//   any runtime discrimination inside a renderer construction path; any
+//   runtime-id literal or branch in the transport helper; and any
+//   runtimeId -> transportId literal mapping outside the catalog, whether a
+//   runtime-keyed map or a runtime condition (ternary, if, switch, logical
+//   operator) whose branch yields a transportId literal, in main or on the
+//   renderer construction site (including a same-file value wrapper).
+// Its self-test consumes RUNTIME_ROUTE_CATALOG_FIXTURE_PATH (or
+// --runtime-route-catalog-fixtures=) and the repository is always enforced
+// in that end state.
+//
+// Detection scope: a runtime condition is a comparison (===, !==, ==, !=),
+// a switch or an `includes` test whose operand is a runtime-id literal or a
+// `.runtime` / `.runtimeId` member, or a call to a same-file predicate
+// holding one. Leaf and transport references are matched by imported
+// binding (named, aliased or namespace) and `(await import(leaf)).export`;
+// the D1 named hosts by name (identifier or member access) and by import
+// alias.
+// Detection limits (disclosed): a runtime test hoisted into a local boolean,
+// a transportId literal reached through a local const (`isCodex ? CODEX_TID
+// : CLAUDE_TID`), computed or dynamic member access (`hosts["run..."]`),
+// computed map keys, reflection, re-binding through another module and
+// multi-hop wrappers are not caught.
 // ---------------------------------------------------------------------------
 
 const RUNTIME_ROUTE_CATALOG_FIXTURE_PATH =
