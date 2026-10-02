@@ -8,12 +8,57 @@ Updated: 2026-10-02 (Pacific/Auckland); previous: 2026-10-01 (Pacific/Auckland)
 
 | Active change | Status | Scope / next gate |
 | --- | --- | --- |
-| [refactor-unified-runtime-route-catalog](changes/refactor-unified-runtime-route-catalog/) | **ACCEPTED（待合入）2026-10-02** — 统筹 Claude Fable 5.1 依 Owner 2026-10-02 自我迭代授权代行；bound `f4783c38925fd59db11e3684d97bcc1088492c08`（source f8e538bc）；Owner 可撤回或修改预设 | Codex gpt-6-astra R2 IMPLEMENTATION_VERIFIED + fresh Claude REVIEW_APPROVED 同 SHA；统筹 check:full exit 0（3033 pass / 2 skip, win32-gated / 0 fail；守卫 17/17、17/17、77/77；strict 54/54），PR-base lint exit 0；接受披露逐项见 verification ACCEPTED 段，[TICKET-132](../docs/tickets/TICKET-132-runtime-route-catalog-followups.md) 承接残余。Desktop/packaged CLI/daemon/stdio smoke host-blocked；macOS/Windows not claimed；consumer E2E unknown；8.2–8.4 不勾；TICKET-127–131 保持 open；本地 merge / archive 与 push 留后续派单，本段未 merge、未 push。 |
+| — | No active changes | Unified runtime route catalog archived 2026-10-02; push receipt below. |
 
 Parked proposals are indexed in [`deferred/README.md`](deferred/README.md) and
 do not appear in the active list.
 
 ## Locally archived 2026-10-02
+
+### Unified runtime route catalog
+
+`refactor-unified-runtime-route-catalog` was coordinator **ACCEPTED 2026-10-02**
+under the Owner's 2026-10-02 self-iteration mandate at final candidate
+`f4783c38925fd59db11e3684d97bcc1088492c08`, with same-SHA Codex
+IMPLEMENTATION_VERIFIED and fresh-context Claude REVIEW_APPROVED.
+The coordinator completed the local no-ff merge into `main` as
+`4a4e43bfab5e80d058e78cc27717d13ca80ef527` from branch head `103ba4be`
+(candidate `f4783c38` + acceptance record `103ba4be`).
+
+The coordinator independently verified exact merge SHA `4a4e43bf`:
+`bun run check:full` exit **0** (3033 pass / 2 skip, win32-gated / 0 fail;
+guards 17/17, 17/17, 77/77; strict 54/54; build OK) and PR-base lint exit **0**.
+Coordinator logs: `handoff/reviews/main-checkfull-4a4e43bf.log` and
+`handoff/reviews/main-lint-prbase-4a4e43bf.log`. This closeout did not rerun
+`check:full`.
+
+Archive:
+[`2026-10-02-refactor-unified-runtime-route-catalog`](changes/archive/2026-10-02-refactor-unified-runtime-route-catalog/).
+The standard archiver applied seven living-spec deltas (10 added / 6 modified
+requirements), preserving 47/54 checked tasks and the accepted unchecked
+smoke and delivery records. Desktop/packaged CLI/daemon/stdio smoke remains
+host-blocked; macOS/Windows evidence is not claimed; consumer E2E remains
+unknown. TICKET-127–131 remain open; TICKET-132 carries catalog follow-ups.
+Post-archive `openspec validate --all --strict --no-interactive` passed
+**53/53**, exit **0**; `git diff --check` passed.
+
+### Unified runtime route catalog slice push receipt
+
+Archive commit: `f708e565fb30875a24d918e1ee3b33e1b5663ac6`.
+
+slice: refactor-unified-runtime-route-catalog (approved a9b74594 coordinator-acted under the Owner's 2026-10-02 mandate; red suite c297872d + adjudications 24801faa; final candidate f4783c38; coordinator ACCEPTED 2026-10-02; merge 4a4e43bf) pushed 2026-10-02 (coordination-dispatched under the 2026-09-04 push policy)
+
+This receipt precedes the coordination-authorized single `git push origin main`.
+The execution handoff records the pre-push and post-push
+`git ls-remote origin refs/heads/main` values and latest CI run URL.
+The required pre-push remote main is `6192b13f`; only `origin/main` is authorized.
+
+Whole-group rollback: `git revert -m 1 4a4e43bf` (the single no-ff merge commit).
+There is no DB/schema migration. The OWNERSHIP_MAP catalog changes and new
+guard sections disappear together with the product changes in that revert.
+Do not separately revert individual commits from the accepted branch.
+Reconcile the later archive and push-receipt documentation if rollback is
+dispatched.
 
 `add-local-job-api-async-submit` was coordinator **ACCEPTED 2026-10-02**
 under the Owner's self-iteration mandate at source `432cc160`, with same-SHA
