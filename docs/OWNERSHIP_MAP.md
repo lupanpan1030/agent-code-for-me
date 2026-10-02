@@ -369,6 +369,21 @@ or UI helper.
   runtime allowlist, job-source cancel/retry, command/method parsing, native
   protocol decoding, `chunk.type` event state, renderer approval dispatch and
   UI defaults, and the pump's own `job.kind` dispatch.
+- Neighbouring owners this section does not take over (each keeps its own
+  section): submission, wait and the queued-Run pump
+  (`src/main/lib/headless/run-submission.ts`,
+  `src/main/lib/headless/daemon.ts#pumpQueuedRuns`; Headless Agent Runtime);
+  the Run ledger and its host (`src/main/lib/agent-runtime/run-event-ledger.ts`,
+  `run-event-ledger-host.ts`; Runtime Events, Trace, And Redaction); run
+  directories and published artifacts
+  (`src/main/lib/agent-runtime/run-artifacts.ts`); capability truth (Runtime
+  Capability Truth); readiness probing, caching and default-profile checks
+  (`src/main/lib/headless/runtime-readiness.ts`), provider binding (Provider
+  Credentials, `src/main/lib/headless/provider-binding.ts`) and capability
+  projection availability (Runtime Capability Projection); and the renderer
+  event state (`src/renderer/features/agents/lib/runtime-event-state.ts`;
+  Runtime Chat UI Event State). The catalog references these owners and
+  never re-implements them.
 - Rule: Local Job API `policyGrant.scopes` remain admission/audit metadata
   (Codex app-server `admission-audit` evidence) unless a later approved
   scope-enforcement change binds them to adapter permission decisions.
