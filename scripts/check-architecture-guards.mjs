@@ -4996,10 +4996,12 @@ function assertLocalJobApiAsyncGuards() {
 const RUNTIME_ROUTE_CATALOG_FIXTURE_PATH =
   "tests/fixtures/runtime-route-catalog/architecture-fixtures.json"
 const RUNTIME_ROUTE_CATALOG_FIXTURE_FLAG = "--runtime-route-catalog-fixtures="
-const RUNTIME_ROUTE_CATALOG_GUARD_LABEL = "Runtime route catalog guard self-test"
+const RUNTIME_ROUTE_CATALOG_GUARD_LABEL =
+  "Runtime route catalog guard self-test"
 const RUNTIME_ROUTE_CATALOG_OWNER =
   "src/main/lib/agent-runtime/runtime-route-catalog.ts"
-const RUNTIME_ROUTE_CATALOG_OWNER_MODULE = "src/main/lib/agent-runtime/runtime-route-catalog"
+const RUNTIME_ROUTE_CATALOG_OWNER_MODULE =
+  "src/main/lib/agent-runtime/runtime-route-catalog"
 const RUNTIME_ROUTE_CATALOG_SECTION = "Runtime Route Catalog Single Owner"
 const RUNTIME_ROUTE_CATALOG_FINDING_FIELDS = [
   "rule",
@@ -5018,7 +5020,11 @@ const RUNTIME_ROUTE_RULE = {
   ownerBypass: "route-catalog-owner-bypass",
   renderer: "renderer-route-projection-bypass",
 }
-const RUNTIME_ROUTE_RUNTIME_LITERALS = new Set(["claude-code", "codex", "claude"])
+const RUNTIME_ROUTE_RUNTIME_LITERALS = new Set([
+  "claude-code",
+  "codex",
+  "claude",
+])
 const RUNTIME_ROUTE_LEAF_MODULES = new Set([
   "src/main/lib/headless/adapters/claude-code",
   "src/main/lib/headless/adapters/codex",
@@ -5042,7 +5048,8 @@ const RUNTIME_ROUTE_RETIRED_SYMBOLS = new Set([
   "resolveClaudeAgentSdkDesktopAdapter",
 ])
 /** Renderer construction sites and the transport helper (P14-P16). */
-const RUNTIME_ROUTE_RENDERER_SITE = "src/renderer/features/agents/main/active-chat"
+const RUNTIME_ROUTE_RENDERER_SITE =
+  "src/renderer/features/agents/main/active-chat"
 const RUNTIME_ROUTE_RENDERER_HELPER =
   "src/renderer/features/agents/lib/runtime-route-transport"
 const RUNTIME_ROUTE_RENDERER_HELPER_CALL = "createRuntimeRouteTransport"
@@ -5081,7 +5088,8 @@ const RUNTIME_ROUTE_FS_SPECIFIERS = new Set([
   "fs/promises",
   "node:fs/promises",
 ])
-const RUNTIME_ROUTE_CONFIG_SPECIFIER = /(claude-config|user-data-path|electron-store)/
+const RUNTIME_ROUTE_CONFIG_SPECIFIER =
+  /(claude-config|user-data-path|electron-store)/
 const RUNTIME_ROUTE_READINESS_MODULE = "src/main/lib/headless/runtime-readiness"
 const RUNTIME_ROUTE_TRANSPORT_ID_LITERAL = /(^[a-z0-9-]+-ipc$|transport)/
 /** Production scan scope (design D5): selection-adjacent main and renderer. */
@@ -5106,7 +5114,8 @@ const RUNTIME_ROUTE_CATALOG_PINNED_EXPORTS = [
   "projectRuntimeRoutes",
   "probeRuntimeRouteReadiness",
 ]
-const RUNTIME_ROUTE_PATH_FLAG = /LOCUS_[A-Z0-9_]*(ROUTE|SELECTOR|DUAL_PATH)[A-Z0-9_]*/
+const RUNTIME_ROUTE_PATH_FLAG =
+  /LOCUS_[A-Z0-9_]*(ROUTE|SELECTOR|DUAL_PATH)[A-Z0-9_]*/
 
 function runtimeRouteModuleKey(filePath) {
   let key = filePath.replaceAll("\\", "/")
@@ -5134,7 +5143,12 @@ function runtimeRouteResolveSpecifier(filePath, specifier) {
   return resolved ? runtimeRouteModuleKey(resolved) : null
 }
 
-function runtimeRouteFinding(rule, file, symbol, owner = RUNTIME_ROUTE_CATALOG_OWNER) {
+function runtimeRouteFinding(
+  rule,
+  file,
+  symbol,
+  owner = RUNTIME_ROUTE_CATALOG_OWNER,
+) {
   return {
     rule,
     file,
@@ -5296,7 +5310,11 @@ function runtimeRouteEnclosingName(node) {
       ) {
         holder = holder.parent
       }
-      if (holder && ts.isVariableDeclaration(holder) && ts.isIdentifier(holder.name)) {
+      if (
+        holder &&
+        ts.isVariableDeclaration(holder) &&
+        ts.isIdentifier(holder.name)
+      ) {
         return holder.name.text
       }
       if (holder && ts.isPropertyAssignment(holder)) {
@@ -5351,13 +5369,18 @@ function collectRuntimeRoutePredicates(sourceFile) {
       const initializer = unwrapExpression(node.initializer)
       if (
         initializer &&
-        (ts.isArrowFunction(initializer) || ts.isFunctionExpression(initializer))
+        (ts.isArrowFunction(initializer) ||
+          ts.isFunctionExpression(initializer))
       ) {
         name = node.name.text
         body = initializer.body
       }
     }
-    if (name && body && runtimeRouteContains(body, isRuntimeRouteRuntimeComparison)) {
+    if (
+      name &&
+      body &&
+      runtimeRouteContains(body, isRuntimeRouteRuntimeComparison)
+    ) {
       predicates.add(name)
     }
   })
@@ -5392,7 +5415,10 @@ function isRuntimeRouteForwarded(expression, sourceFile, depth = 0) {
   const value = unwrapExpression(expression)
   if (!value) return false
   if (ts.isIdentifier(value)) {
-    if (value.text === "undefined" || value.text === RUNTIME_ROUTE_HOST_OPTION) {
+    if (
+      value.text === "undefined" ||
+      value.text === RUNTIME_ROUTE_HOST_OPTION
+    ) {
       return true
     }
     let current = value.parent
@@ -5422,7 +5448,11 @@ function isRuntimeRouteForwarded(expression, sourceFile, depth = 0) {
       declarations.every(
         (declaration) =>
           declaration.initializer &&
-          isRuntimeRouteForwarded(declaration.initializer, sourceFile, depth + 1),
+          isRuntimeRouteForwarded(
+            declaration.initializer,
+            sourceFile,
+            depth + 1,
+          ),
       )
     )
   }
@@ -5452,7 +5482,10 @@ function runtimeRouteModuleSource(key, fileSources, readRepository) {
   }
   if (!readRepository) return null
   for (const extension of RUNTIME_CORE_SOURCE_EXTENSIONS) {
-    for (const candidate of [`${key}${extension}`, `${key}/index${extension}`]) {
+    for (const candidate of [
+      `${key}${extension}`,
+      `${key}/index${extension}`,
+    ]) {
       const absolutePath = path.join(repoRoot, candidate)
       if (existsSync(absolutePath) && statSync(absolutePath).isFile()) {
         return readFileSync(absolutePath, "utf8")
@@ -5487,7 +5520,10 @@ function runtimeRouteForbiddenTarget(specifier, key) {
  * `{file, source}` entries. `readRepository` lets a one-hop wrapper check
  * read a module that is not in the set (repository mode).
  */
-function collectRuntimeRouteCatalogFindings(files, { readRepository = false } = {}) {
+function collectRuntimeRouteCatalogFindings(
+  files,
+  { readRepository = false } = {},
+) {
   const findings = []
   const seen = new Set()
   const add = (finding) => {
@@ -5514,7 +5550,10 @@ function collectRuntimeRouteCatalogFindings(files, { readRepository = false } = 
       )
     }
     runtimeRouteVisit(sourceFile, (node) => {
-      if (ts.isIdentifier(node) && RUNTIME_ROUTE_RETIRED_SYMBOLS.has(node.text)) {
+      if (
+        ts.isIdentifier(node) &&
+        RUNTIME_ROUTE_RETIRED_SYMBOLS.has(node.text)
+      ) {
         add(runtimeRouteFinding(RUNTIME_ROUTE_RULE.retired, file, node.text))
       }
     })
@@ -5523,15 +5562,33 @@ function collectRuntimeRouteCatalogFindings(files, { readRepository = false } = 
       for (const entry of imports) {
         if (!entry.hasValue) continue
         if (runtimeRouteForbiddenTarget(entry.specifier, entry.key)) {
-          add(runtimeRouteFinding(RUNTIME_ROUTE_RULE.dependency, file, entry.specifier))
+          add(
+            runtimeRouteFinding(
+              RUNTIME_ROUTE_RULE.dependency,
+              file,
+              entry.specifier,
+            ),
+          )
           continue
         }
         if (RUNTIME_ROUTE_FS_SPECIFIERS.has(entry.specifier)) {
-          add(runtimeRouteFinding(RUNTIME_ROUTE_RULE.ownerBypass, file, entry.specifier))
+          add(
+            runtimeRouteFinding(
+              RUNTIME_ROUTE_RULE.ownerBypass,
+              file,
+              entry.specifier,
+            ),
+          )
           continue
         }
         if (RUNTIME_ROUTE_CONFIG_SPECIFIER.test(entry.specifier)) {
-          add(runtimeRouteFinding(RUNTIME_ROUTE_RULE.ownerBypass, file, entry.specifier))
+          add(
+            runtimeRouteFinding(
+              RUNTIME_ROUTE_RULE.ownerBypass,
+              file,
+              entry.specifier,
+            ),
+          )
           continue
         }
         const adjacentOwner = entry.key
@@ -5581,7 +5638,11 @@ function collectRuntimeRouteCatalogFindings(files, { readRepository = false } = 
               )
             ) {
               add(
-                runtimeRouteFinding(RUNTIME_ROUTE_RULE.dependency, file, entry.specifier),
+                runtimeRouteFinding(
+                  RUNTIME_ROUTE_RULE.dependency,
+                  file,
+                  entry.specifier,
+                ),
               )
             }
           }
@@ -5594,7 +5655,13 @@ function collectRuntimeRouteCatalogFindings(files, { readRepository = false } = 
           node.expression.text === "process" &&
           node.name.text === "env"
         ) {
-          add(runtimeRouteFinding(RUNTIME_ROUTE_RULE.ownerBypass, file, "process.env"))
+          add(
+            runtimeRouteFinding(
+              RUNTIME_ROUTE_RULE.ownerBypass,
+              file,
+              "process.env",
+            ),
+          )
         }
       })
       continue
@@ -5603,8 +5670,17 @@ function collectRuntimeRouteCatalogFindings(files, { readRepository = false } = 
     // readiness -> catalog cycle.
     if (moduleKey === RUNTIME_ROUTE_READINESS_MODULE) {
       for (const entry of imports) {
-        if (entry.hasValue && entry.key === RUNTIME_ROUTE_CATALOG_OWNER_MODULE) {
-          add(runtimeRouteFinding(RUNTIME_ROUTE_RULE.dependency, file, entry.specifier))
+        if (
+          entry.hasValue &&
+          entry.key === RUNTIME_ROUTE_CATALOG_OWNER_MODULE
+        ) {
+          add(
+            runtimeRouteFinding(
+              RUNTIME_ROUTE_RULE.dependency,
+              file,
+              entry.specifier,
+            ),
+          )
         }
       }
     }
@@ -5617,7 +5693,13 @@ function collectRuntimeRouteCatalogFindings(files, { readRepository = false } = 
       if (RUNTIME_ROUTE_LEAF_MODULES.has(entry.key)) {
         for (const imported of entry.named) {
           if (!RUNTIME_ROUTE_LEAF_EXPORT.test(imported.imported)) continue
-          add(runtimeRouteFinding(RUNTIME_ROUTE_RULE.leaf, file, imported.imported))
+          add(
+            runtimeRouteFinding(
+              RUNTIME_ROUTE_RULE.leaf,
+              file,
+              imported.imported,
+            ),
+          )
           if (imported.local) targets.add(imported.local)
         }
         for (const namespace of entry.namespaces) leafNamespaces.add(namespace)
@@ -5632,7 +5714,13 @@ function collectRuntimeRouteCatalogFindings(files, { readRepository = false } = 
       if (entry.key === RUNTIME_ROUTE_CATALOG_OWNER_MODULE) {
         for (const imported of entry.named) {
           if (RUNTIME_ROUTE_CATALOG_CONSTRUCTORS.has(imported.imported)) {
-            add(runtimeRouteFinding(RUNTIME_ROUTE_RULE.duplicate, file, imported.imported))
+            add(
+              runtimeRouteFinding(
+                RUNTIME_ROUTE_RULE.duplicate,
+                file,
+                imported.imported,
+              ),
+            )
           }
         }
       }
@@ -5658,7 +5746,8 @@ function collectRuntimeRouteCatalogFindings(files, { readRepository = false } = 
       (ts.isIdentifier(node) &&
         targets.has(node.text) &&
         !(
-          ts.isPropertyAccessExpression(node.parent) && node.parent.name === node
+          ts.isPropertyAccessExpression(node.parent) &&
+          node.parent.name === node
         )) ||
       (ts.isPropertyAccessExpression(node) &&
         ts.isIdentifier(node.expression) &&
@@ -5668,12 +5757,22 @@ function collectRuntimeRouteCatalogFindings(files, { readRepository = false } = 
 
     runtimeRouteVisit(sourceFile, (node) => {
       // route-dispatch-outside-owner / renderer bypass: runtime branches.
-      if (ts.isIfStatement(node) && isRuntimeRouteCondition(node.expression, predicates)) {
+      if (
+        ts.isIfStatement(node) &&
+        isRuntimeRouteCondition(node.expression, predicates)
+      ) {
         if (
           runtimeRouteContains(node.thenStatement, isTarget) ||
-          (node.elseStatement && runtimeRouteContains(node.elseStatement, isTarget))
+          (node.elseStatement &&
+            runtimeRouteContains(node.elseStatement, isTarget))
         ) {
-          add(runtimeRouteFinding(dispatchRule, file, runtimeRouteEnclosingName(node)))
+          add(
+            runtimeRouteFinding(
+              dispatchRule,
+              file,
+              runtimeRouteEnclosingName(node),
+            ),
+          )
         }
       } else if (
         ts.isConditionalExpression(node) &&
@@ -5683,11 +5782,23 @@ function collectRuntimeRouteCatalogFindings(files, { readRepository = false } = 
           runtimeRouteContains(node.whenTrue, isTarget) ||
           runtimeRouteContains(node.whenFalse, isTarget)
         ) {
-          add(runtimeRouteFinding(dispatchRule, file, runtimeRouteEnclosingName(node)))
+          add(
+            runtimeRouteFinding(
+              dispatchRule,
+              file,
+              runtimeRouteEnclosingName(node),
+            ),
+          )
         }
       } else if (ts.isSwitchStatement(node) && isRuntimeRouteSwitch(node)) {
         if (runtimeRouteContains(node.caseBlock, isTarget)) {
-          add(runtimeRouteFinding(dispatchRule, file, runtimeRouteEnclosingName(node)))
+          add(
+            runtimeRouteFinding(
+              dispatchRule,
+              file,
+              runtimeRouteEnclosingName(node),
+            ),
+          )
         }
       } else if (
         ts.isVariableDeclaration(node) &&
@@ -5698,9 +5809,12 @@ function collectRuntimeRouteCatalogFindings(files, { readRepository = false } = 
         const initializer = unwrapExpression(node.initializer)
         if (initializer && ts.isObjectLiteralExpression(initializer)) {
           const runtimeKeyed = initializer.properties.some((property) => {
-            const name =
-              property.name && objectPropertyName(property.name)
-            return name !== null && name !== undefined && RUNTIME_ROUTE_RUNTIME_LITERALS.has(name)
+            const name = property.name && objectPropertyName(property.name)
+            return (
+              name !== null &&
+              name !== undefined &&
+              RUNTIME_ROUTE_RUNTIME_LITERALS.has(name)
+            )
           })
           if (runtimeKeyed) {
             if (runtimeRouteContains(initializer, isTarget)) {
@@ -5715,7 +5829,13 @@ function collectRuntimeRouteCatalogFindings(files, { readRepository = false } = 
                   ),
               )
             ) {
-              add(runtimeRouteFinding(RUNTIME_ROUTE_RULE.renderer, file, node.name.text))
+              add(
+                runtimeRouteFinding(
+                  RUNTIME_ROUTE_RULE.renderer,
+                  file,
+                  node.name.text,
+                ),
+              )
             }
           }
         }
@@ -5728,11 +5848,19 @@ function collectRuntimeRouteCatalogFindings(files, { readRepository = false } = 
         ts.isObjectLiteralExpression(node.parent) &&
         !isRuntimeRouteForwarded(node.initializer, sourceFile)
       ) {
-        add(runtimeRouteFinding(RUNTIME_ROUTE_RULE.testPort, file, RUNTIME_ROUTE_HOST_OPTION))
+        add(
+          runtimeRouteFinding(
+            RUNTIME_ROUTE_RULE.testPort,
+            file,
+            RUNTIME_ROUTE_HOST_OPTION,
+          ),
+        )
       }
       if (ts.isCallExpression(node)) {
         const callee = runtimeRouteCalleeName(node)
-        const index = callee ? RUNTIME_ROUTE_CATALOG_ARGUMENT_INDEX.get(callee) : undefined
+        const index = callee
+          ? RUNTIME_ROUTE_CATALOG_ARGUMENT_INDEX.get(callee)
+          : undefined
         if (
           index !== undefined &&
           node.arguments.length > index &&
@@ -5770,7 +5898,9 @@ function collectRuntimeRouteCatalogFindings(files, { readRepository = false } = 
           const failedRoute =
             (ts.isPrefixUnaryExpression(condition) &&
               condition.operator === ts.SyntaxKind.ExclamationToken &&
-              ts.isPropertyAccessExpression(unwrapExpression(condition.operand)) &&
+              ts.isPropertyAccessExpression(
+                unwrapExpression(condition.operand),
+              ) &&
               unwrapExpression(condition.operand).name.text === "ok") ||
             (ts.isBinaryExpression(condition) &&
               ts.isPropertyAccessExpression(unwrapExpression(condition.left)) &&
@@ -5867,7 +5997,9 @@ function loadRuntimeRouteCatalogArchitectureFixture() {
         Array.isArray(entry.files) &&
         entry.files.every(
           (item) =>
-            item && typeof item.file === "string" && typeof item.source === "string",
+            item &&
+            typeof item.file === "string" &&
+            typeof item.source === "string",
         ) &&
         Array.isArray(entry.expectedFindings) &&
         entry.expectedFindings.every(
@@ -5876,9 +6008,11 @@ function loadRuntimeRouteCatalogArchitectureFixture() {
             RUNTIME_ROUTE_CATALOG_FINDING_FIELDS.every(
               (field) => typeof finding[field] === "string",
             ) &&
-            Object.keys(finding).length === RUNTIME_ROUTE_CATALOG_FINDING_FIELDS.length,
+            Object.keys(finding).length ===
+              RUNTIME_ROUTE_CATALOG_FINDING_FIELDS.length,
         )
-      if (!legalCase) return illegal(`${key} has a case outside the D5 case shape`)
+      if (!legalCase)
+        return illegal(`${key} has a case outside the D5 case shape`)
       cases.push(entry)
     }
   }
@@ -5930,7 +6064,10 @@ function assertRuntimeRouteCatalogOwnership() {
   const failureCount = failures.length
   const scanned = new Set()
   for (const directory of RUNTIME_ROUTE_SCANNED_DIRECTORIES) {
-    for (const absolutePath of walkFiles(directory, RUNTIME_CORE_SOURCE_EXTENSIONS)) {
+    for (const absolutePath of walkFiles(
+      directory,
+      RUNTIME_CORE_SOURCE_EXTENSIONS,
+    )) {
       scanned.add(relative(absolutePath))
     }
   }
@@ -6002,7 +6139,9 @@ function assertRuntimeRouteCatalogOwnership() {
     }
   }
   const helperCallCount = (
-    activeChat.match(new RegExp(`${RUNTIME_ROUTE_RENDERER_HELPER_CALL}\\(`, "g")) ?? []
+    activeChat.match(
+      new RegExp(`${RUNTIME_ROUTE_RENDERER_HELPER_CALL}\\(`, "g"),
+    ) ?? []
   ).length
   if (helperCallCount !== 2) {
     fail(
@@ -6012,13 +6151,18 @@ function assertRuntimeRouteCatalogOwnership() {
 
   // The ownership map names the single owner and drops the superseded section.
   const ownershipMap = readText(OWNERSHIP_MAP_PATH)
-  const sectionStart = ownershipMap.indexOf(`## ${RUNTIME_ROUTE_CATALOG_SECTION}`)
+  const sectionStart = ownershipMap.indexOf(
+    `## ${RUNTIME_ROUTE_CATALOG_SECTION}`,
+  )
   const sectionEnd =
     sectionStart < 0 ? -1 : ownershipMap.indexOf("\n## ", sectionStart + 3)
   const section =
     sectionStart < 0
       ? ""
-      : ownershipMap.slice(sectionStart, sectionEnd < 0 ? undefined : sectionEnd)
+      : ownershipMap.slice(
+          sectionStart,
+          sectionEnd < 0 ? undefined : sectionEnd,
+        )
   if (!section.includes(`\`${RUNTIME_ROUTE_CATALOG_OWNER}\``)) {
     fail(
       `${OWNERSHIP_MAP_PATH} must have a "## ${RUNTIME_ROUTE_CATALOG_SECTION}" section naming \`${RUNTIME_ROUTE_CATALOG_OWNER}\`.`,
