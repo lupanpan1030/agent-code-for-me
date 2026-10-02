@@ -54,3 +54,5 @@ No feature expansion, new transport, full publication repair, platform backend
 or consumer-specific roadmap negotiation. Public contract/security changes
 require their own Consumer Impact/Owner decision. This ticket does not turn
 accepted deferrals into completed gates.
+
+2026-10-02 CI 36963937015：S25/S34 fake-clock 真实时间保护 3 s 在 runner 抢先触发（夹具字段，非产品）；阈值提至 10 s（1303bde8；保持低于 15 s 测试超时）；后续可把 releasedBy 从 toEqual oracle 中移出
