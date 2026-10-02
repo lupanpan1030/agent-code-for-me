@@ -220,6 +220,53 @@ export const TRANSPORT_ID_BY_RUNTIME = {
     ])
   })
 
+  test("T3-4: a runtime-keyed transportId map on the renderer construction site is a renderer-route-projection-bypass, whether looked up in toRuntimeRouteTransportInput, inlined at the getOrCreateChat createRuntimeRouteTransport call or only declared", () => {
+    const declaration = `
+const TRANSPORT_ID_BY_RUNTIME: Record<string, string> = {
+  codex: "codex-chat-ipc",
+  "claude-code": "claude-chat-ipc",
+}
+`
+    const lookedUpInMapper = `${mutate(
+      activeChat,
+      "      ? (read.binding as RuntimeRouteTransportStamp).transportId",
+      "      ? TRANSPORT_ID_BY_RUNTIME[String((read.binding as { runtime?: unknown }).runtime)]",
+    )}${declaration}`
+    const inlinedAtCall = `${mutate(
+      activeChat,
+      `        toRuntimeRouteTransportInput({
+          readFailed: isLocalChatReadError,
+          binding,
+        }),
+        { chatId, subChatId, binding, projectPath, mode: subChatMode },`,
+      `        {
+          state: "loaded",
+          transportId: TRANSPORT_ID_BY_RUNTIME[String(binding?.runtime)],
+        },
+        { chatId, subChatId, binding, projectPath, mode: subChatMode },`,
+    )}${declaration}`
+    const declaredOnly = `${activeChat}${declaration}`
+    for (const mutated of [lookedUpInMapper, inlinedAtCall, declaredOnly]) {
+      expect(scan({ [ACTIVE_CHAT]: mutated })).toEqual([
+        finding(
+          RUNTIME_ROUTE_RULE.renderer,
+          ACTIVE_CHAT,
+          "TRANSPORT_ID_BY_RUNTIME",
+        ),
+      ])
+    }
+  })
+
+  test("T3-4 clean counterpart: a runtime-keyed map of labels on the renderer construction site is not reported", () => {
+    const labels = `${activeChat}
+const RUNTIME_LABELS: Record<string, string> = {
+  codex: "Codex",
+  "claude-code": "Claude Code",
+}
+`
+    expect(scan({ [ACTIVE_CHAT]: labels })).toEqual([])
+  })
+
   test("helper: a lone runtime-id literal or a .runtime branch inside createRuntimeRouteTransport is reported", () => {
     const literal = mutate(
       helper,

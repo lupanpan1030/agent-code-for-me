@@ -6156,7 +6156,7 @@ function collectRuntimeRouteCatalogFindings(
             if (runtimeRouteContains(initializer, isTarget)) {
               add(runtimeRouteFinding(dispatchRule, file, node.name.text))
             } else if (
-              file.startsWith("src/main/") &&
+              (file.startsWith("src/main/") || isRendererSite) &&
               initializer.properties.some(
                 (property) =>
                   ts.isPropertyAssignment(property) &&
