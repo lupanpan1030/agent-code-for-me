@@ -247,7 +247,7 @@ export const TRANSPORT_ID_BY_RUNTIME = {
     ])
   })
 
-  test("m16: a runtime ternary stamping transportId literals in the main read model is a route-dispatch-outside-owner finding", () => {
+  test("m16: a runtime ternary stamping transportId literals in the main read model is a renderer-route-projection-bypass", () => {
     const mutated = mutate(
       subChats,
       "        binding: withRuntimeRouteTransportId(getSubChatBinding(db, subChat.id)),",
@@ -260,11 +260,11 @@ export const TRANSPORT_ID_BY_RUNTIME = {
         },`,
     )
     expect(scan({ [SUB_CHATS_ROUTER]: mutated })).toEqual([
-      finding(RUNTIME_ROUTE_RULE.dispatch, SUB_CHATS_ROUTER, "getSubChat"),
+      finding(RUNTIME_ROUTE_RULE.renderer, SUB_CHATS_ROUTER, "getSubChat"),
     ])
   })
 
-  test("main: if, switch and logical forms yielding transportId literals are reported; runtime branches yielding other values are not", () => {
+  test("main: if, switch and logical forms yielding transportId literals are renderer-route-projection-bypass findings like the map form; runtime branches yielding other values are not", () => {
     const file = "src/main/lib/agent-runtime/runtime-route-read-model.ts"
     const ifForm = `export function transportIdFor(binding: { runtime: string }) {
   if (binding.runtime === "claude-code") return "claude-chat-ipc"
@@ -286,7 +286,7 @@ export const TRANSPORT_ID_BY_RUNTIME = {
 `
     for (const source of [ifForm, switchForm, logicalForm]) {
       expect(scan({ [file]: source })).toEqual([
-        finding(RUNTIME_ROUTE_RULE.dispatch, file, "transportIdFor"),
+        finding(RUNTIME_ROUTE_RULE.renderer, file, "transportIdFor"),
       ])
     }
     // P25 provider target and a runtime-specific error message: no transportId.
