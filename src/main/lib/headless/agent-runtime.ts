@@ -29,7 +29,13 @@ function routeEntryForSource(source: AgentJobSource): RuntimeRouteEntry {
   return "headless"
 }
 
-function agentTaskRouteQuery(request: AgentRuntimeRunRequest): RouteQuery {
+/**
+ * The route query runAgentTask issues for a headless request (exported so
+ * tests exercise the production source -> entry mapping).
+ */
+export function agentTaskRouteQuery(
+  request: AgentRuntimeRunRequest,
+): RouteQuery {
   return {
     runtimeId: request.context.runtimeId,
     entry: routeEntryForSource(request.context.source),

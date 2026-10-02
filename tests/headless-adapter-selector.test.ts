@@ -6,7 +6,6 @@ import {
   createAgentRuntimeRunRequest,
 } from "../src/main/lib/headless/agent-runtime-contract"
 import type { AgentRuntimeCapabilityId } from "../src/shared/agent-runtime-capabilities"
-import { getAgentRunRequiredCapabilityIds } from "../src/shared/agent-runtime-capabilities"
 
 const adapterRunCalls = {
   codex: 0,
@@ -53,34 +52,13 @@ mock.module("../src/main/lib/headless/adapters/claude-code", () => ({
 const { resolveRuntimeRoute } = await import(
   "../src/main/lib/agent-runtime/runtime-route-catalog"
 )
-const { runAgentTask } = await import("../src/main/lib/headless/agent-runtime")
+const { agentTaskRouteQuery, runAgentTask } = await import(
+  "../src/main/lib/headless/agent-runtime"
+)
 
 /** The route query runAgentTask derives from a headless request. */
 function selectRoute(runRequest: AgentRuntimeRunRequest) {
-  const source = runRequest.context.source
-  return resolveRuntimeRoute({
-    runtimeId: runRequest.context.runtimeId,
-    entry:
-      source === "api"
-        ? "api"
-        : source === "protocol"
-          ? "protocol"
-          : "headless",
-    kind: "agent",
-    mode: runRequest.context.mode,
-    executionProfile: runRequest.context.executionProfile ?? "batch",
-    permissionPolicy: runRequest.permissionPolicy,
-    requiredCapabilities: [
-      ...new Set([
-        ...runRequest.requestedCapabilities,
-        ...getAgentRunRequiredCapabilityIds({
-          mode: runRequest.context.mode,
-          hasScopeContract: runRequest.context.hasScopeContract ?? false,
-        }),
-      ]),
-    ],
-    requiredExtensions: [],
-  })
+  return resolveRuntimeRoute(agentTaskRouteQuery(runRequest))
 }
 
 const baseInput = {
