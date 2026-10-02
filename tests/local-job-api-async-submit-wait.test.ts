@@ -221,6 +221,16 @@ function hasSequenceKey(value: unknown): boolean {
 // Asynchronous Run Submission
 // ===========================================================================
 
+/**
+ * Wall-clock safety net for the fake-clock latch races. The oracle expects the
+ * fake clock to win, so this bound must stay well above the real time a slow
+ * CI runner needs to drive the clock (GitHub run 36963937015 lost the race at
+ * 3000 ms with every product byte matching; measured ≈3.1 s), and it must stay
+ * BELOW the enclosing 15 000 ms test timeout so a stuck clock still fails with
+ * the `releasedBy` diff instead of a bare bun timeout and an orphaned timer.
+ */
+const REAL_TIME_GUARD_MS = 10_000
+
 describe("Asynchronous Run Submission", () => {
   test("S01 Submit returns before execution is released — submit acks one queued admission with a committed job_created before any dispatch, and a later claim is visible only through status", async () => {
     const fx = fixtureCase("public-submission.json", "S01")
@@ -601,7 +611,7 @@ describe("Synchronous Operations Use Submit And Wait", () => {
     let releasedBy = "pending"
     void Promise.race([
       clock.reached(fx.latchReleaseAtMs).then(() => "clock"),
-      realDelay(3000).then(() => "real-time-guard"),
+      realDelay(REAL_TIME_GUARD_MS).then(() => "real-time-guard"),
     ]).then((by) => {
       if (releasedBy === "pending") releasedBy = by
       latch.release()
@@ -649,7 +659,7 @@ describe("Synchronous Operations Use Submit And Wait", () => {
       beforeRespond: async () => {
         releasedBy = await Promise.race([
           clock.reached(fx.completionUpstreamMs).then(() => "clock"),
-          realDelay(3000).then(() => "real-time-guard"),
+          realDelay(REAL_TIME_GUARD_MS).then(() => "real-time-guard"),
         ])
       },
     })
@@ -861,7 +871,7 @@ describe("Synchronous Operations Use Submit And Wait", () => {
       beforeRespond: async () => {
         releasedBy = await Promise.race([
           clock.reached(fx.completionUpstreamMs).then(() => "clock"),
-          realDelay(3000).then(() => "real-time-guard"),
+          realDelay(REAL_TIME_GUARD_MS).then(() => "real-time-guard"),
         ])
       },
     })
