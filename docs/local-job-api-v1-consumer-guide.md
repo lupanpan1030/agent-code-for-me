@@ -420,6 +420,9 @@ Compatibility:
   member it does not list. As with the closed `discoveryFeature` enum above,
   ignoring unknown fields does not cover members of a closed object: refresh
   the pinned copy whenever this block changes.
+- The schema also enforces the `kind`/`executionProfile` coupling: a
+  `completion` summary must have `executionProfile: null`, and an `agent`
+  summary must have `batch` or `policy-grant`.
 - Because the block is experimental, Locus may change its key set. Any added,
   removed or renamed member of a route summary or of an extension declaration
   is a new compatibility decision (interoperability contract C7 #2 and #10)

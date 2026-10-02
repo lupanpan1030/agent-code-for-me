@@ -386,6 +386,8 @@ runtime 上追加可选的 `routes` 数组。该数组位于 `readiness` 之后�
   当作未知 runtime 成员接受；但包含这些定义的副本会拒绝其中未列出的任何 route 或
   extension 成员。与上文封闭的 `discoveryFeature` enum 一样，“忽略未知字段”不覆盖
   封闭对象中的成员：该 block 每次变化都要刷新固定副本。
+- schema 同时强制 `kind` 与 `executionProfile` 的联动：`completion` 摘要必须是
+  `executionProfile: null`，`agent` 摘要必须是 `batch` 或 `policy-grant`。
 - 由于该 block 是 experimental，Locus 可能改变它的键集。route 摘要或 extension 声明
   的任何新增、删除或重命名成员都是新的兼容性决定（interoperability contract C7 #2 与
   #10），并会在这里记录；开放词表规则只覆盖新取值，从不覆盖新成员。
