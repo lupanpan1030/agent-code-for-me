@@ -3,6 +3,7 @@ import { z } from "zod"
 import { buildAgentChatMessageMetadata } from "../../../../shared/chat-engine-id"
 import { agentUserMessagePartSchema } from "../../../../shared/chat-message"
 import { normalizeChatSessionBindingWrite } from "../../../../shared/chat-session-binding"
+import { withRuntimeRouteTransportId } from "../../agent-runtime/runtime-route-read-model"
 import {
   trackWorkspaceArchived,
   trackWorkspaceCreated,
@@ -93,7 +94,10 @@ export const chatCrudProcedures = {
 
       return {
         ...chat,
-        subChats: attachBindingsToSubChats(db, chatSubChats),
+        subChats: attachBindingsToSubChats(db, chatSubChats).map((subChat) => ({
+          ...subChat,
+          binding: withRuntimeRouteTransportId(subChat.binding),
+        })),
         project,
       }
     }),
