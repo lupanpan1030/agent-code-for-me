@@ -351,9 +351,9 @@ Q2 若拒绝 binding read model 且没有可行替代，则 S18/S19/S53 与 desk
 
 ## 4. 设计未规定处的实施决定（三份实施报告合并）
 
-以下是 design/red-receipt 未冻结、由实施者确定并已被对应评审复核的形状；均为内部形状，
-不改变任何公共合同（C7 分类见 §6）。来源：Phase I 报告 items 1–11、Phase II 报告 items 1–12、
-T1 报告 deviations 1–5。
+以下是 design/red-receipt 未冻结、由实施者确定并已被对应评审复核的形状；除决定 25（只收紧 experimental schema，发射 bytes 不变）外
+均为内部形状，不改变任何公共合同（C7 分类见 §6）。来源：Phase I 报告 items 1–11、Phase II 报告 items 1–12、
+T1 报告 deviations 1–5、T3 报告（决定 25–28，评审待派）。
 
 | # | 决定 | 来源 / 提交 | 复核 |
 | --- | --- | --- | --- |
@@ -381,6 +381,10 @@ T1 报告 deviations 1–5。
 | 22 | T1-1(c) 规则归属：T1 时 main 中 runtime 条件式产出 transportId literal 报 `route-dispatch-outside-owner`；T2 按统筹裁定（design D5 :438：main 除 catalog 外的 runtimeId→transportId literal mapping 不分语法形式）改报 `renderer-route-projection-bypass`，与冻结 S29 对象 map tuple 一致，并同样适用于 active-chat 构造站点（含同文件 value wrapper）。P15 生产名为 `handleCreateNewSubChat`（fixture 名 `createNewSubChat`），两者都在构造路径集合内 | T1 deviations 1–2；T2 `ee91e29e`、`438958bd` | T1 评审 P3-3（T2 关闭，§5） |
 | 23 | T1 enabling：`scripts/check-architecture-guards.mjs` 只在作为入口脚本时运行 CLI（比较 `process.argv[1]` 与 `import.meta.url` 的 realpath），并导出 `collectRuntimeRouteCatalogFindings`、`RUNTIME_ROUTE_RULE`、`RUNTIME_ROUTE_CATALOG_SECTION` 供单元探针；CLI 输出与退出码不变 | T1 deviation 3；`16c2add0` | T1 评审（四种调用方式均完整输出） |
 | 24 | `buildCodexAdapterRuntimeStatusMetadata(input)` 保留被忽略的 `env` 参数（由目录选择） | Phase II 12 | Phase II tests-security |
+| 25 | **Route summary kind/profile 联动（T3-1）**：`$defs.runtimeRouteSummary` 内加 `allOf` 两个 2020-12 `if/then`：`kind: completion` ⇒ `executionProfile` `const: null`；`kind: agent` ⇒ `executionProfile` `$ref: #/$defs/executionProfile`（即封闭 enum `batch`/`policy-grant`，复用既有定义而不复制 enum）；`properties.executionProfile` 仍为 `oneOf [$ref executionProfile, null]`，exact keys 与 `additionalProperties: false` 不变；描述串追加联动说明。发射 bytes 不变；冻结旧 schema 副本未动；中英文指南 Compatibility 各加一行 | T3 `bcaa8bdc`（schema + Ajv 测试）、`ffb1e61a`（指南） | Codex R1 P2 / A8（T3 关闭，§5） |
+| 26 | **Codex native status 拆分（T3-2）**：login CLI 可执行探测与 Codex login 探测移入 `src/main/lib/codex/native-runtime-status.ts`（不 import 目录或 runtime-status）；readiness 的 Codex leg 调 `getCodexNativeRuntimeStatus()`（可注入 port 名仍为 `getCodexRuntimeStatus`，冻结测试不变）；`codex.getRuntimeStatus` 仍在 `runtime-status.ts` 按原求值次序组合 native 片段与 `buildCodexAdapterRuntimeStatusMetadata`，IPC 输出逐字节相同（`adapters.selection` P30 形状不变）。readiness 值导入闭包从 139 个模块降到 39 个且不含目录。守卫 `route-catalog-forbidden-dependency` 从“readiness 直接 import 目录”扩到 readiness 在 src/ 上的传递值导入闭包（type-only 不计，dynamic import 计入），在通往目录的 readiness 首跳 import 处报告，直接 import 的冻结 tuple 不变；`tests/agent-guard-runtime-pipeline.test.ts` 的 login 源码钉改指 native 模块并加钉组合调用 | T3 `3f16ff16`、`57707621`、`f8e538bc` | final design P3-1（T3 关闭，§5） |
+| 27 | **D2 DTO 落点（T3-3）**：`src/shared/runtime-route-descriptor.ts` 只承载可序列化类型，当前为 binding 读模型盖章类型 `RuntimeRouteTransportStamp = { transportId?: string }`；main `runtime-route-read-model.ts` 由此导入并 re-export，renderer `active-chat.tsx` 的读路径以此类型取 `transportId`（替换无类型 `as { transportId?: unknown }`，运行时字符串检查不变）。公共 route summary DTO 按 tasks 5.3 留在 `src/shared/local-job-api.ts`；目录内部 descriptor/resolution 类型（含 delegate、factory/probe 引用）不可序列化，留在 main `runtime-route-catalog.ts` | T3 `b53ef8db` | final design P3-2（T3 关闭，§5） |
+| 28 | **守卫加固（T3-4/T3-5）**：对象字面量 runtime-keyed transportId map 分支的门控与条件式一致（`src/main/` 或 renderer 构造站点）；`isRuntimeRouteForwarded` 按最近词法绑定判断——函数参数（含解构参数）即转发，本地变量跟随其 initializer，`.runtimeRouteCatalog` 只在 receiver 本身被转发时接受，名称本身不再放行；`{ runtimeRouteCatalog }` shorthand 选项同样检查。九个生产转发站点保持 clean | T3 `a0e580b0`、`31d3306e` | final tests-static P3-1、final security P3-1（T3 关闭，§5） |
 
 ### D5 八份 baseline tests 处置（red-receipt §8.3）
 
@@ -401,10 +405,12 @@ D5 列表外、由已批准删除/移动强制的 baseline 测试改动（Phase 
 （P14/P15：断言恰两处 `createRuntimeRouteTransport(`）；`tests/codex-api-key-validation`、`codex-desktop-service-boundary`、
 `agent-runtime-permission-policy`、`provider-credential-storage`（P11：钉住字符串改为 `runCodexDesktopChatRun`）；
 `tests/agent-guard-runtime-pipeline.test.ts`（P06：改用 `getAgentRuntimeCapabilityManifest`）；
-`tests/claude-agent-sdk-runtime-lifecycle.test.ts`（T1-3：显式注入 typed delegate）。
-实施者单元测试：`tests/runtime-route-catalog-null-factory.test.ts`（1）、`tests/runtime-route-guard-production-probes.test.ts`（18，T2 +3）、
-`tests/runtime-route-transport-keys.test.ts`（9）、`tests/runtime-route-desktop-host-assertions.test.ts`（4）；
-后三者不带 `runtime-route-catalog-` 前缀，不进入 red-file glob。
+`tests/claude-agent-sdk-runtime-lifecycle.test.ts`（T1-3：显式注入 typed delegate）；`tests/agent-guard-runtime-pipeline.test.ts`
+（T3-2：login 探测源码钉改指 `codex/native-runtime-status.ts`，另钉 `await probeCodexLoginComponent(loginCli)`，无断言删除）。
+实施者单元测试：`tests/runtime-route-catalog-null-factory.test.ts`（1）、`tests/runtime-route-guard-production-probes.test.ts`（26，T2 +3，T3 +8）、
+`tests/runtime-route-transport-keys.test.ts`（9）、`tests/runtime-route-desktop-host-assertions.test.ts`（4），以及 T3 新增
+`tests/local-job-api-route-summary-schema.test.ts`（4）、`tests/codex-native-runtime-status.test.ts`（2）、`tests/runtime-route-descriptor-dto.test.ts`（2）；
+除 null-factory 外均不带 `runtime-route-catalog-` 前缀，不进入 red-file glob。
 
 ### Helper / event-state 回归锁（tasks 7.4，实施完成后登记）
 
