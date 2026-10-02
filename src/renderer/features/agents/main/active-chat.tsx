@@ -60,6 +60,7 @@ import type {
 } from "../../../../shared/chat-message"
 import { normalizeChatImageAttachmentPart } from "../../../../shared/chat-attachments"
 import { normalizePersistedChatMessages } from "../../../../shared/chat-message-normalizer"
+import type { RuntimeRouteTransportStamp } from "../../../../shared/runtime-route-descriptor"
 import {
   normalizeChatSessionBindingWrite,
   type ChatSessionBinding,
@@ -387,7 +388,7 @@ function toRuntimeRouteTransportInput(read: {
   if (read.readFailed) return { state: "error" }
   const transportId =
     read.binding && typeof read.binding === "object"
-      ? (read.binding as { transportId?: unknown }).transportId
+      ? (read.binding as RuntimeRouteTransportStamp).transportId
       : undefined
   if (typeof transportId !== "string" || transportId.length === 0) {
     return { state: "not-loaded" }

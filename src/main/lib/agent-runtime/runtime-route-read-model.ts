@@ -1,13 +1,10 @@
+import type { RuntimeRouteTransportStamp } from "../../../shared/runtime-route-descriptor"
 import {
   projectRuntimeRoutes,
   type RuntimeRouteCatalogState,
 } from "./runtime-route-catalog"
 
-/**
- * The renderer's transport key stamped on a binding read model (design D3,
- * OD-3): an internal, additive read-model field, never persisted.
- */
-export type RuntimeRouteTransportStamp = { transportId?: string }
+export type { RuntimeRouteTransportStamp }
 
 /**
  * Returns a copy of a binding read model stamped with the transportId the
