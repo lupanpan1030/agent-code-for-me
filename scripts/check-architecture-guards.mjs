@@ -5055,6 +5055,22 @@ const RUNTIME_ROUTE_RETIRED_SYMBOLS = new Set([
   "resolveClaudeAgentSdkDesktopAdapter",
 ])
 /**
+ * Exports of the deleted runtime-registry facade (P06) and the deleted
+ * readiness dispatch facade (P18). Only the src-wide word scan rejects them,
+ * so a forwarding alias under a retired name is caught; the frozen S28 clean
+ * case keeps the facade name as synthetic lazy-reference text.
+ */
+const RUNTIME_ROUTE_RETIRED_SCAN_SYMBOLS = new Set([
+  ...RUNTIME_ROUTE_RETIRED_SYMBOLS,
+  "listRegisteredAgentRuntimeManifests",
+  "getRegisteredAgentRuntimeManifest",
+  "getRegisteredAgentRuntimeId",
+  "checkRegisteredAgentRuntimeCapability",
+  "resolveRegisteredAgentRuntimeManifest",
+  "resolveRegisteredAgentRuntimeCapability",
+  "resolveLocalJobApiRuntimeReadiness",
+])
+/**
  * The D1 named hosts, each with one fixed runtime (P02/P11/P12): a runtime
  * branch or runtime-keyed map choosing between them is a dispatch.
  */
@@ -6291,6 +6307,23 @@ function collectRuntimeRouteCatalogFindings(
   return sortFindings(findings, RUNTIME_ROUTE_CATALOG_FINDING_FIELDS)
 }
 
+/**
+ * The src-wide retired-name word scan of one file: every retired selector,
+ * registry or readiness-facade name it mentions (any import, call, export or
+ * forwarding alias), as retired-route-selector findings.
+ */
+function collectRuntimeRouteRetiredMentions(file, content) {
+  const findings = []
+  for (const symbol of RUNTIME_ROUTE_RETIRED_SCAN_SYMBOLS) {
+    if (new RegExp(`\\b${symbol}\\b`).test(content)) {
+      findings.push(
+        runtimeRouteFinding(RUNTIME_ROUTE_RULE.retired, file, symbol),
+      )
+    }
+  }
+  return findings
+}
+
 function loadRuntimeRouteCatalogArchitectureFixture() {
   const fixturePath =
     runEventLedgerOption(RUNTIME_ROUTE_CATALOG_FIXTURE_FLAG) ??
@@ -6439,12 +6472,10 @@ function assertRuntimeRouteCatalogOwnership() {
   for (const absolutePath of walkFiles("src", RUNTIME_CORE_SOURCE_EXTENSIONS)) {
     const file = relative(absolutePath)
     const content = readFileSync(absolutePath, "utf8")
-    for (const symbol of RUNTIME_ROUTE_RETIRED_SYMBOLS) {
-      if (new RegExp(`\\b${symbol}\\b`).test(content)) {
-        fail(
-          `Runtime route catalog retired-route-selector: ${file} mentions ${symbol}. See ${RUNTIME_ROUTE_CATALOG_SECTION}.`,
-        )
-      }
+    for (const finding of collectRuntimeRouteRetiredMentions(file, content)) {
+      fail(
+        `Runtime route catalog ${finding.rule}: ${file} mentions ${finding.symbol}. See ${RUNTIME_ROUTE_CATALOG_SECTION}.`,
+      )
     }
     const flag = content.match(RUNTIME_ROUTE_PATH_FLAG)
     if (flag) {
@@ -6616,6 +6647,7 @@ function runArchitectureGuardCli() {
 /** The pure Runtime Route Catalog rule collectors (implementer unit probes). */
 export {
   collectRuntimeRouteCatalogFindings,
+  collectRuntimeRouteRetiredMentions,
   RUNTIME_ROUTE_CATALOG_SECTION,
   RUNTIME_ROUTE_RULE,
 }

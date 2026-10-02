@@ -12,6 +12,7 @@ import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import {
   collectRuntimeRouteCatalogFindings,
+  collectRuntimeRouteRetiredMentions,
   RUNTIME_ROUTE_CATALOG_SECTION,
   RUNTIME_ROUTE_RULE,
 } from "../scripts/check-architecture-guards.mjs"
@@ -308,5 +309,52 @@ export async function codexChatRunBody(input: { runtime: string }) {
 }
 `
     expect(scan({ [file]: fixed })).toEqual([])
+  })
+})
+
+describe("T1-4 retired registry and readiness facade names", () => {
+  const READ_MODEL = "src/main/lib/agent-runtime/runtime-route-read-model.ts"
+  const READINESS = "src/main/lib/headless/runtime-readiness.ts"
+  const RETIRED_NAMES = [
+    "listRegisteredAgentRuntimeManifests",
+    "getRegisteredAgentRuntimeManifest",
+    "getRegisteredAgentRuntimeId",
+    "checkRegisteredAgentRuntimeCapability",
+    "resolveRegisteredAgentRuntimeManifest",
+    "resolveRegisteredAgentRuntimeCapability",
+    "resolveLocalJobApiRuntimeReadiness",
+  ]
+
+  test("clean: the production read model and readiness owner mention no retired name", () => {
+    expect(
+      collectRuntimeRouteRetiredMentions(READ_MODEL, readRepoFile(READ_MODEL)),
+    ).toEqual([])
+    expect(
+      collectRuntimeRouteRetiredMentions(READINESS, readRepoFile(READINESS)),
+    ).toEqual([])
+  })
+
+  test("m10: a forwarding alias re-export under a deleted registry name is a retired-route-selector finding", () => {
+    const mutated = `${readRepoFile(READ_MODEL)}
+export { listRuntimeRouteManifests as getRegisteredAgentRuntimeManifest } from "./runtime-route-catalog"
+`
+    expect(collectRuntimeRouteRetiredMentions(READ_MODEL, mutated)).toEqual([
+      finding(
+        RUNTIME_ROUTE_RULE.retired,
+        READ_MODEL,
+        "getRegisteredAgentRuntimeManifest",
+      ),
+    ])
+  })
+
+  test("every deleted registry export and the readiness facade name is rejected as a const forwarding alias", () => {
+    for (const name of RETIRED_NAMES) {
+      const mutated = `${readRepoFile(READINESS)}
+export const ${name} = resolveCodexRuntimeReadiness
+`
+      expect(collectRuntimeRouteRetiredMentions(READINESS, mutated)).toEqual([
+        finding(RUNTIME_ROUTE_RULE.retired, READINESS, name),
+      ])
+    }
   })
 })
